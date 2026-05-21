@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
     ReadWholeRequest, ReadWholeResponse,
 };
 use common::generic_consts::Random;
-use common::mmap::AdviceSetting;
+use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     FileIndex, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
 };
@@ -127,10 +127,10 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let path = Self::resolve_path(&base, &collections_root, &path)?;
 
         let open_options = OpenOptions {
-            writeable: true,
-            need_sequential: true,
-            populate: Populate::Auto,
-            advice: AdviceSetting::Global,
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
             extra: Default::default(),
         };
         let length = tokio::task::spawn_blocking(move || {
@@ -163,10 +163,10 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
         let open_options = OpenOptions {
-            writeable: true,
-            need_sequential: true,
-            populate: Populate::Auto,
-            advice: AdviceSetting::Global,
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
             extra: Default::default(),
         };
 
@@ -207,10 +207,10 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
         let open_options = OpenOptions {
-            writeable: true,
-            need_sequential: true,
-            populate: Populate::Auto,
-            advice: AdviceSetting::Global,
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Sequential),
             extra: Default::default(),
         };
         let range = ReadRange::new(byte_offset, length);
@@ -271,10 +271,10 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
         let open_options = OpenOptions {
-            writeable: true,
-            need_sequential: true,
-            populate: Populate::Auto,
-            advice: AdviceSetting::Global,
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Sequential),
             extra: Default::default(),
         };
 
@@ -308,10 +308,10 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let path = Self::resolve_path(&base, &collections_root, &path)?;
 
         let open_options = OpenOptions {
-            writeable: true,
-            need_sequential: true,
-            populate: Populate::Auto,
-            advice: AdviceSetting::Global,
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
             extra: Default::default(),
         };
         let ranges = ranges
@@ -354,10 +354,10 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_multi")
             .await?;
         let open_options = OpenOptions {
-            writeable: true,
-            need_sequential: true,
-            populate: Populate::Auto,
-            advice: AdviceSetting::Global,
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
             extra: Default::default(),
         };
 

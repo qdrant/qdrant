@@ -159,7 +159,7 @@ where
 
         let options = OpenOptions {
             writeable: true,
-            need_sequential: true,
+            need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
             extra: Default::default(),

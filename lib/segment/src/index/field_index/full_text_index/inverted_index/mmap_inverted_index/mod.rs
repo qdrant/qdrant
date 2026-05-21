@@ -132,7 +132,7 @@ impl MmapInvertedIndex<MmapFile> {
                 &deleted_points_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: true,
+                    need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                     extra: Default::default(),
@@ -189,7 +189,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &vocab_path,
             OpenOptions {
                 writeable: false,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
@@ -200,7 +200,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &point_to_tokens_count_path,
             OpenOptions {
                 writeable: false,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
@@ -211,8 +211,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &deleted_points_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: true,
-                populate: Populate::Auto,
+                need_sequential: false,
+                populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
             },

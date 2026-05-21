@@ -82,7 +82,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: true,
+                    need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                     extra: Default::default(),
@@ -139,7 +139,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             &deleted_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
