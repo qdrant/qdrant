@@ -29,8 +29,8 @@ fn test_open_and_read_whole() {
     let runtime = BridgeRuntime::global();
     setup_bucket(&runtime, &[("hello.bin", b"hello rustfs")]);
 
-    let file = BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "hello.bin")
-        .expect("open");
+    let file =
+        BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "hello.bin").expect("open");
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello rustfs");
 }
@@ -47,8 +47,8 @@ fn test_read_range() {
         &[("ranged.bin", &(0u8..=63u8).collect::<Vec<u8>>())],
     );
 
-    let file = BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "ranged.bin")
-        .expect("open");
+    let file =
+        BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "ranged.bin").expect("open");
     let bytes = file
         .read::<common::generic_consts::Random, u8>(ReadRange::new(16, 16))
         .expect("read");

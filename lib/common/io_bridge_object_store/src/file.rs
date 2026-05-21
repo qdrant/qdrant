@@ -208,7 +208,11 @@ mod tests {
 
     #[test]
     fn read_returns_bytes_through_runtime() {
-        let file = BlobFile::new(MockSource::new(b"hello world"), BridgeRuntime::global(), "obj");
+        let file = BlobFile::new(
+            MockSource::new(b"hello world"),
+            BridgeRuntime::global(),
+            "obj",
+        );
         let cow = file
             .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
             .expect("read");
@@ -217,7 +221,11 @@ mod tests {
 
     #[test]
     fn read_subrange() {
-        let file = BlobFile::new(MockSource::new(b"hello world"), BridgeRuntime::global(), "obj");
+        let file = BlobFile::new(
+            MockSource::new(b"hello world"),
+            BridgeRuntime::global(),
+            "obj",
+        );
         let cow = file
             .read::<common::generic_consts::Random, u8>(ReadRange::new(6, 5))
             .expect("read");
@@ -237,7 +245,11 @@ mod tests {
 
     #[test]
     fn read_batch_returns_all_pairs() {
-        let file = BlobFile::new(MockSource::new(b"helloWORLDxyz"), BridgeRuntime::global(), "obj");
+        let file = BlobFile::new(
+            MockSource::new(b"helloWORLDxyz"),
+            BridgeRuntime::global(),
+            "obj",
+        );
         let inputs = vec![
             (1u32, ReadRange::new(0, 5)),
             (2u32, ReadRange::new(5, 5)),
