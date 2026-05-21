@@ -38,9 +38,9 @@ const DELETED_DIR_PATH: &str = "deleted";
 #[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct MultivectorMmapOffset {
-    offset: u32,
-    count: u32,
-    capacity: u32,
+    pub offset: u32,
+    pub count: u32,
+    pub capacity: u32,
 }
 
 impl VectorOffset for MultivectorMmapOffset {
@@ -50,6 +50,22 @@ impl VectorOffset for MultivectorMmapOffset {
 
     fn multi_vector_count(self) -> usize {
         self.count as _
+    }
+}
+
+pub(crate) fn flattened_to_multi_vector<T: PrimitiveVectorElement>(
+    flattened: Cow<'_, [T]>,
+    dim: usize,
+) -> CowMultiVector<'_, T> {
+    match flattened {
+        Cow::Borrowed(flattened_vectors) => CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
+            flattened_vectors,
+            dim,
+        }),
+        Cow::Owned(flattened_vectors) => CowMultiVector::Owned(TypedMultiDenseVector {
+            flattened_vectors,
+            dim,
+        }),
     }
 }
 
@@ -76,16 +92,7 @@ where
         .expect("mmap_offset must not be empty");
     let flattened =
         vectors.get_many::<P>(mmap_offset.offset(), mmap_offset.multi_vector_count())?;
-    Some(match flattened {
-        Cow::Borrowed(slice) => CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
-            flattened_vectors: slice,
-            dim: vectors.dim(),
-        }),
-        Cow::Owned(vec) => CowMultiVector::Owned(TypedMultiDenseVector {
-            flattened_vectors: vec,
-            dim: vectors.dim(),
-        }),
-    })
+    Some(flattened_to_multi_vector(flattened, vectors.dim()))
 }
 
 #[derive(Debug)]
