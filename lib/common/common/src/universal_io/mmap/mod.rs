@@ -156,7 +156,7 @@ impl UniversalRead for MmapFile {
 
                 // Whether or not `remap` moved the memory region let's update the pointers
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
-                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(self.ptr);
+                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(ptr);
                 let len = new_len as usize;
             }
             // otherwise, let's open again
