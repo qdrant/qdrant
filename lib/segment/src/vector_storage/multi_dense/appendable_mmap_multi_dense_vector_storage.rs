@@ -157,6 +157,34 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         deleted.clear_cache()?;
         Ok(())
     }
+
+    fn iter_vectors<P: AccessPattern, U>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+    ) -> impl Iterator<Item = (U, Cow<'_, [T]>)> {
+        let point_offsets = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| (user_data, point_offset as _, 1));
+
+        let vector_offsets =
+            self.offsets
+                .iter_vectors::<P, _>(point_offsets)
+                .map(|(user_data, multi_offset)| {
+                    let &[multi_offset] = multi_offset.as_ref() else {
+                        unreachable!("multi-vector offsets are stored as vectors of length 1");
+                    };
+
+                    let MultivectorMmapOffset {
+                        offset,
+                        count,
+                        capacity: _,
+                    } = multi_offset;
+
+                    (user_data, offset, count)
+                });
+
+        self.vectors.iter_vectors::<P, _>(vector_offsets)
+    }
 }
 
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T> {
@@ -262,6 +290,24 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector_opt::<P>(key).expect("vector not found")
+    }
+
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let point_offsets = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+
+        for ((user_data, point_offset), flattened) in self.iter_vectors::<P, _>(point_offsets) {
+            let vector = CowVector::MultiDense(T::into_float_multivector(
+                flattened_to_multi_vector(flattened, self.vectors.dim()),
+            ));
+
+            callback(user_data, point_offset, vector);
+        }
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
