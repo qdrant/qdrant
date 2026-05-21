@@ -34,13 +34,16 @@
 //!   └────────────────────────────────┘
 //!                  │
 //!                  ▼
-//!   ┌────────────────────────────────┐
-//!   │ PipelineInner<U>               │
-//!   │   tx, rx  : reply channel      │
-//!   │   pending : AHashMap<u64, U>   │
-//!   │   next_slot : u64              │
-//!   └────────────────────────────────┘
-//!                  │ schedule(rt, user_data, future)
+//!   ┌──────────────────────────────────────────┐
+//!   │ PipelineInner<T, U>                      │
+//!   │   tx, rx  : reply channel                │
+//!   │   pending : AHashMap<u64, (U, Vec<T>)>   │
+//!   │   next_slot : u64                        │
+//!   └──────────────────────────────────────────┘
+//!                  │ schedule(rt, user_data, Vec<T>, future)
+//!                  │  ─ allocates Vec<T> of exact size
+//!                  │  ─ moves it into `pending`
+//!                  │  ─ derives a SendBytePtr captured by `future`
 //!                  ▼
 //!   ┌────────────────────────────────┐                    ┌────────────────────────────────┐
 //!   │ BridgeRequest {                │   request channel  │ worker_loop:                   │
@@ -48,18 +51,19 @@
 //!   │   tx: reply_tx.clone(),        │ rt.tx().try_send() │           .recv().await        │
 //!   │   slot,                        │                    │                                │
 //!   │ }                              │                    │   tokio::spawn(async move {    │
-//!   └────────────────────────────────┘                    │     bytes = req.future.await   │
+//!   └────────────────────────────────┘                    │     // writes into the pending │
+//!                                                         │     // Vec<T> via SendBytePtr  │
+//!                                                         │     // + AlignedBufWriter      │
+//!                                                         │     status = req.future.await  │
 //!                                                         │     req.tx.send(               │
-//!                                                         │       BridgeResponse {         │
-//!   ┌────────────────────────────────┐                    │         slot,                  │
-//!   │ wait():                        │    reply channel   │         bytes,                 │
-//!   │   response =                   │ ◄───────────────── │       },                       │
-//!   │     reply_rx.blocking_recv()   │  spawned task uses │     ).await                    │
-//!   │   user_data =                  │  req.tx (clone of  │   })                           │
-//!   │     pending.remove(&slot)      │  pipeline reply_tx)└────────────────────────────────┘
-//!   │   items = cast(response.bytes?)│
-//!   │   return Some((user_data,      │
-//!   │                items))         │
+//!   ┌────────────────────────────────┐                    │       BridgeResponse {         │
+//!   │ wait():                        │    reply channel   │         slot,                  │
+//!   │   response =                   │ ◄───────────────── │         result: status,        │
+//!   │     reply_rx.blocking_recv()   │  spawned task uses │       },                       │
+//!   │   (user_data, buf) =           │  req.tx (clone of  │     ).await                    │
+//!   │     pending.remove(&slot)      │  pipeline reply_tx)│   })                           │
+//!   │   response.result?             │                    └────────────────────────────────┘
+//!   │   return Some((user_data, buf))│
 //!   └────────────────────────────────┘
 //!
 //!   Single-read fast path: BlobFile::read calls runtime.block_on(inner.read_range(..))
@@ -86,6 +90,13 @@
 //!   not `Arc<dyn ObjectStore>`. The only remaining type erasure is the boxed
 //!   future in [`BridgeRequest::future`] — required because struct fields
 //!   cannot hold `impl Trait` and the channel must carry one concrete type.
+//!
+//! - **No `Bytes` aggregation in the pipeline.** The pipeline owns the typed
+//!   destination `Vec<T>` for every in-flight request. The future writes the
+//!   stream chunks straight into that buffer through a `SendBytePtr` + an
+//!   `AlignedBufWriter`, and the channel reply carries only a `Result<()>`.
+//!   This removes the two redundant copies that an "aggregate to `Bytes`,
+//!   then cast to `Vec<T>`" path would do.
 
 mod backend;
 pub mod backends;
@@ -94,6 +105,7 @@ mod pipeline;
 mod read;
 mod runtime;
 mod source;
+mod writer;
 
 #[cfg(test)]
 mod tests;

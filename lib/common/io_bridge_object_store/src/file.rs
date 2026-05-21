@@ -6,10 +6,12 @@ use common::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
     UniversalReadFileOps, UserData,
 };
+use tokio::io::AsyncWriteExt;
 
 use crate::pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
+use crate::writer::AlignedBufWriter;
 
 /// Sync wrapper around a [`AsyncRead`] backend that implements [`UniversalRead`].
 ///
@@ -112,17 +114,24 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
         let start = range.byte_offset;
         let end = start + range.length * item_size;
         self.runtime.block_on(async move {
+            let mut buf = vec![T::zeroed(); item_count];
+            let mut writer = AlignedBufWriter::new(&mut buf);
             let mut stream = self.inner.read_range(&self.path, start..end).await?;
-            let mut buf: Vec<T> = vec![T::zeroed(); item_count];
-            let dst: &mut [u8] = bytemuck::cast_slice_mut(&mut buf);
-            let mut off = 0;
+
             while let Some(chunk) = stream.next().await {
-                let chunk = chunk?;
-                let next = off + chunk.len();
-                dst[off..next].copy_from_slice(&chunk);
-                off = next;
+                writer.write_all(&chunk?).await?;
             }
-            debug_assert_eq!(off, dst.len(), "stream produced wrong byte count");
+
+            if writer.written() != writer.capacity() {
+                return Err(UniversalIoError::S3Config {
+                    description: format!(
+                        "short read: expected {} bytes, got {}",
+                        writer.capacity(),
+                        writer.written()
+                    ),
+                });
+            }
+
             Ok::<_, UniversalIoError>(Cow::Owned(buf))
         })
     }

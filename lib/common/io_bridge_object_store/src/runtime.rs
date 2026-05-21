@@ -2,7 +2,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
 
-use bytes::Bytes;
 use common::universal_io::UniversalIoError;
 use tokio::sync::mpsc;
 
@@ -18,7 +17,13 @@ pub struct BridgeRequest {
     /// Boxing happens at the channel boundary because struct fields cannot
     /// hold `impl Future` directly; the trait surface (`AsyncRead::read_range`)
     /// returns an unboxed `impl Future`.
-    pub future: Pin<Box<dyn Future<Output = Result<Bytes, UniversalIoError>> + Send>>,
+    ///
+    /// The future writes its bytes directly into a caller-owned destination
+    /// buffer that lives in the originating pipeline's `pending` map (accessed
+    /// via a `SendBytePtr` captured in the future's closure). Completion is
+    /// signalled by the `Result<()>` here; the bytes are not shipped through
+    /// the channel.
+    pub future: Pin<Box<dyn Future<Output = Result<(), UniversalIoError>> + Send>>,
     /// Reply-channel sender cloned from the originating pipeline. The worker
     /// uses this to ship the [`BridgeResponse`] back, so the request itself
     /// carries its own return address — no global routing table is needed.
@@ -36,7 +41,7 @@ impl BridgeRequest {
     /// why boxing happens at the channel boundary.
     pub fn new<F>(future: F, tx: mpsc::Sender<BridgeResponse>, slot: u64) -> Self
     where
-        F: Future<Output = Result<Bytes, UniversalIoError>> + Send + 'static,
+        F: Future<Output = Result<(), UniversalIoError>> + Send + 'static,
     {
         Self {
             future: Box::pin(future),
@@ -47,19 +52,20 @@ impl BridgeRequest {
 }
 
 /// Reply shipped from the worker back to the originating pipeline. The slot
-/// is the correlation id; the bytes are the future's result.
+/// is the correlation id; `result` is the future's status — the actual bytes
+/// have already been written into the pipeline-owned destination buffer.
 #[derive(Debug)]
 pub struct BridgeResponse {
     pub slot: u64,
-    pub bytes: Result<Bytes, UniversalIoError>,
+    pub result: Result<(), UniversalIoError>,
 }
 
 impl BridgeResponse {
-    /// Build a reply for the given slot with the future's result. Symmetric to
+    /// Build a reply for the given slot with the future's status. Symmetric to
     /// [`BridgeRequest::new`]; provided so the worker thread doesn't have to
     /// reach into the struct layout when constructing the response.
-    pub fn new(slot: u64, bytes: Result<Bytes, UniversalIoError>) -> Self {
-        Self { slot, bytes }
+    pub fn new(slot: u64, result: Result<(), UniversalIoError>) -> Self {
+        Self { slot, result }
     }
 }
 
@@ -155,7 +161,7 @@ mod tests {
     fn runtime_executes_future_via_worker() {
         let rt = BridgeRuntime::new().expect("new runtime");
         let (tx, mut rx) = mpsc::channel(1);
-        let req = BridgeRequest::new(async { Ok(Bytes::from_static(b"hello")) }, tx, 7);
+        let req = BridgeRequest::new(async { Ok(()) }, tx, 7);
         rt.tx().try_send(req).expect("enqueue");
 
         let resp = rt
@@ -167,7 +173,6 @@ mod tests {
             .expect("response channel still open");
 
         assert_eq!(resp.slot, 7);
-        let bytes = resp.bytes.expect("future succeeded");
-        assert_eq!(&bytes[..], b"hello");
+        resp.result.expect("future succeeded");
     }
 }
