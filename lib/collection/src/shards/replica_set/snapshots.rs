@@ -330,12 +330,18 @@ impl ShardReplicaSet {
         }
     }
 
-    /// Drop the in-memory local shard (if any) and remove its on-disk data files.
+    /// Replace the in-memory local shard (if any) with a dummy and remove its on-disk
+    /// data files.
     ///
     /// Used by shard snapshot transfers to free disk space before the receiving node
     /// downloads the new snapshot, avoiding having both the old data and the incoming
     /// snapshot on disk at the same time. The configuration files and replica state
     /// are preserved, so the shard directory remains a valid (empty) shard.
+    ///
+    /// A dummy shard is left in place of the real one so that APIs still report a local
+    /// shard while the data is being cleared and recovered, rather than reporting none.
+    /// The subsequent `restore_local_replica_from` call drops this dummy and installs
+    /// the recovered shard.
     ///
     /// Only safe to call while the shard is in a state that prevents user requests
     /// (`PartialSnapshot` during a shard transfer). Do NOT call this from a
@@ -372,7 +378,13 @@ impl ShardReplicaSet {
         flag_file.sync_all().await?;
         sync_parent_dir_async(&shard_flag).await?;
 
-        if let Some(shard) = local.take() {
+        // Replace the local shard with a dummy rather than removing it entirely, so APIs
+        // keep reporting a local shard while the data is cleared and the replacement
+        // snapshot is recovered. `restore_local_replica_from` drops this dummy afterwards.
+        let dummy = Shard::Dummy(DummyShard::new(
+            "Local shard is being cleared for snapshot recovery",
+        ));
+        if let Some(shard) = local.replace(dummy) {
             shard.stop_gracefully().await;
         }
 
