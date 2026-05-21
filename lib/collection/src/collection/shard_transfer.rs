@@ -225,11 +225,18 @@ impl Collection {
         // With prevent_unoptimized, fall back to snapshot which preserves deferred
         // point state exactly (raw segment copy). stream_records sends deferred
         // points but they won't be deferred on the target.
-        // Otherwise use the configured cluster default transfer method.
+        // Otherwise use the configured cluster default transfer method, except
+        // never fall back to wal_delta: it's the method most likely to be
+        // failing (the only currently-fallible automatic transfer), and a same-
+        // method fallback would just be refused in the driver. Use snapshot as
+        // a safe fallback in that case, which is also the 1.18.0+ default.
         let fallback_method = if self.is_prevent_unoptimized().await {
             ShardTransferMethod::Snapshot
         } else {
-            self.default_shard_transfer_method()
+            match self.default_shard_transfer_method() {
+                ShardTransferMethod::WalDelta => ShardTransferMethod::Snapshot,
+                other => other,
+            }
         };
         let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
