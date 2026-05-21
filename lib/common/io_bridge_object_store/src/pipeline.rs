@@ -72,6 +72,55 @@ where
         self.pending.len() < BLOB_PIPELINE_CAPACITY
     }
 
+    /// Enqueue an async byte-producing operation on `runtime` and tag the
+    /// result with `user_data` so the eventual reply can be paired back with
+    /// its caller context.
+    ///
+    /// # Parameters
+    /// - `runtime`: the [`BridgeRuntime`] that will drive the future. The
+    ///   pipeline is runtime-agnostic, so different `schedule` calls on the
+    ///   same pipeline can target different runtimes.
+    /// - `user_data`: opaque caller context (e.g. a request id, point id,
+    ///   destination buffer key) stored in `pending` under the freshly
+    ///   assigned slot. Returned alongside the bytes from [`Self::wait`].
+    /// - `future`: the async work to perform. Must resolve to `Result<Bytes>`,
+    ///   be `Send + 'static`, and own all of its captured state — it will be
+    ///   moved to the worker thread and `.await`-ed there. In practice this
+    ///   is almost always the future returned by [`AsyncRead::read_range`],
+    ///   but any byte-producing future is accepted.
+    ///
+    /// The future is boxed at the channel boundary (see
+    /// [`BridgeRequest::future`]); callers pass an unboxed `impl Future` and
+    /// the pipeline handles the type-erasure.
+    ///
+    /// # Errors
+    /// - [`UniversalIoError::QueueIsFull`] if the pipeline already has
+    ///   [`BLOB_PIPELINE_CAPACITY`] pending requests.
+    /// - [`UniversalIoError::S3RuntimeShutDown`] if the runtime's request
+    ///   channel has been closed.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use bytes::Bytes;
+    /// use io_bridge_object_store::{BridgeRuntime, pipeline::PipelineInner};
+    ///
+    /// let runtime = BridgeRuntime::global();
+    /// let (tx, rx) = PipelineInner::<u32>::default_channel();
+    /// let mut pipeline: PipelineInner<u32> = PipelineInner::new(tx, rx);
+    ///
+    /// // Schedule a trivial future tagged with user_data = 42.
+    /// pipeline.schedule(&runtime, 42, async {
+    ///     Ok(Bytes::from_static(b"hello"))
+    /// })?;
+    ///
+    /// // Real usage: hand off the future produced by an AsyncRead backend.
+    /// // let fut = source.read_range(0..1024);
+    /// // pipeline.schedule(&runtime, point_id, fut)?;
+    ///
+    /// let (user_data, bytes) = pipeline.wait::<u8>()?.unwrap();
+    /// assert_eq!(user_data, 42);
+    /// assert_eq!(&bytes[..], b"hello");
+    /// ```
     pub(crate) fn schedule<F>(
         &mut self,
         runtime: &BridgeRuntime,
