@@ -235,7 +235,9 @@ impl Collection {
         } else {
             match self.default_shard_transfer_method() {
                 ShardTransferMethod::WalDelta => ShardTransferMethod::Snapshot,
-                other => other,
+                method @ (ShardTransferMethod::StreamRecords
+                | ShardTransferMethod::Snapshot
+                | ShardTransferMethod::ReshardingStreamRecords) => method,
             }
         };
         let transfer_task = transfer::driver::spawn_transfer_task(
