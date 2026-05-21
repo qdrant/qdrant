@@ -29,12 +29,38 @@ pub struct BridgeRequest {
     pub slot: u64,
 }
 
+impl BridgeRequest {
+    /// Build a request. The caller passes an unboxed `impl Future`; this
+    /// constructor performs the `Box::pin` type-erasure required to put the
+    /// future into the [`Self::future`] struct field. See the field doc for
+    /// why boxing happens at the channel boundary.
+    pub fn new<F>(future: F, tx: mpsc::Sender<BridgeResponse>, slot: u64) -> Self
+    where
+        F: Future<Output = Result<Bytes, UniversalIoError>> + Send + 'static,
+    {
+        Self {
+            future: Box::pin(future),
+            tx,
+            slot,
+        }
+    }
+}
+
 /// Reply shipped from the worker back to the originating pipeline. The slot
 /// is the correlation id; the bytes are the future's result.
 #[derive(Debug)]
 pub struct BridgeResponse {
     pub slot: u64,
     pub bytes: Result<Bytes, UniversalIoError>,
+}
+
+impl BridgeResponse {
+    /// Build a reply for the given slot with the future's result. Symmetric to
+    /// [`BridgeRequest::new`]; provided so the worker thread doesn't have to
+    /// reach into the struct layout when constructing the response.
+    pub fn new(slot: u64, bytes: Result<Bytes, UniversalIoError>) -> Self {
+        Self { slot, bytes }
+    }
 }
 
 pub(crate) struct BridgeRuntimeInner {
@@ -77,14 +103,7 @@ impl BridgeRuntime {
             while let Some(req) = rx.recv().await {
                 tokio::spawn(async move {
                     let result = req.future.await;
-                    std::mem::drop(
-                        req.tx
-                            .send(BridgeResponse {
-                                slot: req.slot,
-                                bytes: result,
-                            })
-                            .await,
-                    );
+                    std::mem::drop(req.tx.send(BridgeResponse::new(req.slot, result)).await);
                 });
             }
         };
@@ -136,11 +155,7 @@ mod tests {
     fn runtime_executes_future_via_worker() {
         let rt = BridgeRuntime::new().expect("new runtime");
         let (tx, mut rx) = mpsc::channel(1);
-        let req = BridgeRequest {
-            future: Box::pin(async { Ok(Bytes::from_static(b"hello")) }),
-            tx,
-            slot: 7,
-        };
+        let req = BridgeRequest::new(async { Ok(Bytes::from_static(b"hello")) }, tx, 7);
         rt.tx().try_send(req).expect("enqueue");
 
         let resp = rt

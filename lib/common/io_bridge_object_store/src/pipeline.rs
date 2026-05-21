@@ -137,11 +137,7 @@ where
         self.next_slot = self.next_slot.wrapping_add(1);
         self.pending.insert(slot, user_data);
 
-        let req = BridgeRequest {
-            future: Box::pin(future),
-            tx: self.tx.clone(),
-            slot,
-        };
+        let req = BridgeRequest::new(future, self.tx.clone(), slot);
         runtime
             .tx()
             .try_send(req)
