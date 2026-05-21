@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use clean::ShardCleanTasks;
@@ -64,43 +65,58 @@ use crate::telemetry::CollectionsAggregatedTelemetry;
 
 /// Coordinates background optimizer recreation so at most one recreation runs at a time.
 ///
+/// This tracks two things - "a task is running" and "another run is queued" - packed into a single
+/// atomic. They cannot be two independent atomics: deciding to stop (in [`Self::finish_run`]) and
+/// deciding to coalesce (in [`Self::request`]) each read *and* write a combination of the two, so
+/// the transition must be one atomic compare-and-swap. With separate atomics a request could be
+/// lost - a task stops while a concurrent request believes it coalesced into it.
+///
 /// See [`Collection::recreate_optimizers_background`].
 #[derive(Default)]
 struct RecreateOptimizersState {
-    /// A background recreation task is currently running.
-    running: bool,
-    /// A recreation was requested while a task was already running. When the running task
-    /// finishes it runs once more, to converge to the latest configuration.
-    pending: bool,
+    state: AtomicU8,
 }
+
+/// No recreation task is running.
+const RECREATE_IDLE: u8 = 0;
+/// A recreation task is running; no further run is queued.
+const RECREATE_RUNNING: u8 = 1;
+/// A recreation task is running and another run is queued for when it finishes.
+const RECREATE_RUNNING_PENDING: u8 = 2;
 
 impl RecreateOptimizersState {
     /// Register a recreation request.
     ///
     /// Returns `true` if the caller must spawn a new recreation task, or `false` if a task is
-    /// already running - in which case the request is coalesced into a single pending re-run.
-    fn request(&mut self) -> bool {
-        if self.running {
-            self.pending = true;
-            false
-        } else {
-            self.running = true;
-            true
-        }
+    /// already running - in which case the request is coalesced into a single queued re-run.
+    fn request(&self) -> bool {
+        let prev =
+            self.state
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
+                    RECREATE_IDLE => Some(RECREATE_RUNNING),
+                    RECREATE_RUNNING => Some(RECREATE_RUNNING_PENDING),
+                    // Already queued, nothing to change.
+                    _ => None,
+                });
+        // We must spawn exactly when we moved the state out of idle.
+        prev == Ok(RECREATE_IDLE)
     }
 
     /// Record that the running task finished one recreation.
     ///
     /// Returns `true` if it must run again (a request arrived while it was running), or `false` if
-    /// it should stop. When it stops, `running` is cleared so the next request spawns a new task.
-    fn finish_run(&mut self) -> bool {
-        if self.pending {
-            self.pending = false;
-            true
-        } else {
-            self.running = false;
-            false
-        }
+    /// it should stop. When it stops, the state returns to idle so the next request spawns anew.
+    fn finish_run(&self) -> bool {
+        let prev =
+            self.state
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
+                    RECREATE_RUNNING_PENDING => Some(RECREATE_RUNNING),
+                    RECREATE_RUNNING => Some(RECREATE_IDLE),
+                    // Idle would mean finish_run was called without a running task.
+                    _ => None,
+                });
+        // We run again exactly when we consumed a queued re-run.
+        prev == Ok(RECREATE_RUNNING_PENDING)
     }
 }
 
@@ -110,57 +126,38 @@ mod recreate_optimizers_state_tests {
 
     #[test]
     fn first_request_spawns() {
-        let mut state = RecreateOptimizersState::default();
+        let state = RecreateOptimizersState::default();
         assert!(state.request(), "first request must spawn a task");
-        assert!(state.running);
-        assert!(!state.pending);
     }
 
     #[test]
-    fn request_while_running_is_coalesced() {
-        let mut state = RecreateOptimizersState::default();
+    fn requests_while_running_are_coalesced() {
+        let state = RecreateOptimizersState::default();
         assert!(state.request());
 
         // Several requests arrive while the task runs: none spawns, all collapse into one re-run.
         assert!(!state.request());
         assert!(!state.request());
-        assert!(state.running);
-        assert!(state.pending);
     }
 
     #[test]
-    fn finish_without_pending_stops() {
-        let mut state = RecreateOptimizersState::default();
+    fn finish_without_pending_stops_then_next_request_spawns() {
+        let state = RecreateOptimizersState::default();
         state.request();
 
-        assert!(!state.finish_run(), "no pending request, so it must stop");
-        assert!(!state.running);
-        assert!(!state.pending);
+        assert!(!state.finish_run(), "no queued request, so it must stop");
+        // Back to idle: a fresh request spawns a new task again.
+        assert!(state.request(), "a request after stopping must spawn a new task");
     }
 
     #[test]
     fn finish_with_pending_runs_once_more_then_stops() {
-        let mut state = RecreateOptimizersState::default();
+        let state = RecreateOptimizersState::default();
         state.request();
-        state.request(); // coalesced -> pending
+        state.request(); // coalesced -> queued re-run
 
-        assert!(state.finish_run(), "pending request, so it must run again");
-        assert!(state.running, "still considered running across the re-run");
-        assert!(!state.pending, "pending consumed by the re-run");
-
-        // No further requests during the re-run: now it stops.
-        assert!(!state.finish_run());
-        assert!(!state.running);
-    }
-
-    #[test]
-    fn request_after_stop_spawns_again() {
-        let mut state = RecreateOptimizersState::default();
-        state.request();
-        state.finish_run(); // stops
-
-        assert!(state.request(), "a request after stopping must spawn a new task");
-        assert!(state.running);
+        assert!(state.finish_run(), "queued request, so it must run again");
+        assert!(!state.finish_run(), "no further requests, so it stops");
     }
 }
 
@@ -195,7 +192,7 @@ pub struct Collection {
     shard_clean_tasks: ShardCleanTasks,
     // Coordinates background optimizer recreation: at most one runs at a time, and requests that
     // arrive while one is running are coalesced into a single re-run.
-    recreate_optimizers_state: Arc<parking_lot::Mutex<RecreateOptimizersState>>,
+    recreate_optimizers_state: Arc<RecreateOptimizersState>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;

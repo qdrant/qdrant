@@ -314,8 +314,8 @@ impl Collection {
     /// (see `LocalShard::on_optimizer_config_update`).
     pub fn recreate_optimizers_background(&self) {
         // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
-        // into a pending re-run handled by the task that is already running.
-        if !self.recreate_optimizers_state.lock().request() {
+        // into a queued re-run handled by the task that is already running.
+        if !self.recreate_optimizers_state.request() {
             return;
         }
 
@@ -337,11 +337,11 @@ impl Collection {
                     ),
                 }
 
-                // Run again if a request arrived while we were running, otherwise stop. The check
-                // and the `running` reset happen under one lock (in `finish_run`), so a request
-                // arriving exactly now is never lost: it either sees `running` still set (and sets
-                // `pending`, handled by the next iteration) or sees it cleared (and spawns afresh).
-                if !recreate_state.lock().finish_run() {
+                // Run again if a request arrived while we were running, otherwise stop. The
+                // decision is a single atomic compare-and-swap (in `finish_run`), so a request
+                // arriving exactly now is never lost: it either still sees us running (and queues a
+                // re-run, handled by the next iteration) or sees us idle (and spawns a fresh task).
+                if !recreate_state.finish_run() {
                     break;
                 }
             }
