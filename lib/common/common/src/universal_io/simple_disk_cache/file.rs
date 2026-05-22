@@ -290,6 +290,10 @@ where
         Ok(Self::new(path.as_ref(), local_path, options))
     }
 
+    fn reopen(&mut self) -> Result<()> {
+        todo!();
+    }
+
     fn read<P, T>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>
     where
         P: AccessPattern,
