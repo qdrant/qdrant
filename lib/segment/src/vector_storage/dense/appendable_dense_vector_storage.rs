@@ -88,8 +88,11 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
             .expect("mmap vector not found")
     }
 
-    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
-        self.vectors.for_each_in_batch(keys, f);
+    fn for_each_in_dense_batch<F>(&self, keys: &[PointOffsetType], callback: F)
+    where
+        F: FnMut(usize, &[T]),
+    {
+        self.vectors.for_each_in_batch(keys, callback);
     }
 }
 

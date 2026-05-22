@@ -179,7 +179,10 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
     }
 
-    pub fn for_each_in_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
+    pub fn for_each_in_batch<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    where
+        F: FnMut(usize, &[T]),
+    {
         #[cfg(target_os = "linux")]
         if TypedStorage::<S, T>::kind() == common::universal_io::UniversalKind::IoUring {
             let point_offsets = keys
@@ -189,7 +192,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
                 .map(|(index, point_offset)| (index, point_offset, 1));
 
             for (idx, vectors) in self.iter_vectors::<Random, _>(point_offsets) {
-                f(idx, &vectors);
+                callback(idx, &vectors);
             }
 
             return;
@@ -214,7 +217,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
             for (vector_idx, vec) in vectors.iter().enumerate() {
-                f(batch_offset + vector_idx, vec.as_ref());
+                callback(batch_offset + vector_idx, vec.as_ref());
             }
         }
     }
