@@ -95,6 +95,10 @@ impl UniversalRead for IoUringFile {
         Ok(file)
     }
 
+    fn reopen(&mut self) -> Result<()> {
+        Ok(())
+    }
+
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         if self.direct_io {
             // direct_io needs special handling

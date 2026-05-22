@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, CacheRead, FileId};
@@ -14,6 +14,8 @@ use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, Cac
 /// (not `Vec<u8>`) so alignment is always correct.
 #[derive(Debug)]
 pub struct CachedSlice {
+    pub(crate) path: PathBuf,
+
     /// The id assigned by the controller for this file.
     file_id: FileId,
 
@@ -21,7 +23,7 @@ pub struct CachedSlice {
     len_bytes: usize,
 
     /// The controller backing this structure.
-    controller: Arc<CacheController>,
+    pub(crate) controller: Arc<CacheController>,
 }
 
 impl CachedSlice {
@@ -29,6 +31,7 @@ impl CachedSlice {
     pub fn open(controller: &Arc<CacheController>, path: &Path) -> io::Result<Self> {
         let (file_id, len) = controller.open_file(path)?;
         Ok(Self {
+            path: path.to_path_buf(),
             file_id,
             len_bytes: len,
             controller: Arc::clone(controller),
