@@ -343,8 +343,9 @@ impl StrictModeVerification for SearchParams {
         // Validate hnsw_ef lower bound
         if let Some(hnsw_ef) = self.hnsw_ef {
             if hnsw_ef < 1 {
-                return Err(CollectionError::bad_request(
-                    "hnsw_ef must be at least 1",
+                return Err(CollectionError::strict_mode(
+                    format!("Invalid value {hnsw_ef} for \"hnsw_ef\""),
+                    "Set \"hnsw_ef\" to at least 1.",
                 ));
             }
         }
@@ -689,11 +690,8 @@ mod test {
             hnsw_ef: Some(1),
             ..SearchParams::default()
         };
-        assert_strict_mode_success(
-            discover_fixture(None, None, Some(valid_params)),
-            collection,
-        )
-        .await;
+        assert_strict_mode_success(discover_fixture(None, None, Some(valid_params)), collection)
+            .await;
     }
 
     async fn assert_strict_mode_error<R: StrictModeVerification>(
