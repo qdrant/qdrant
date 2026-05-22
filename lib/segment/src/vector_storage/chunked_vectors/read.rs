@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
+use common::types::PointOffsetType;
 use common::universal_io::{
-    ReadRange, TypedStorage, UniversalIoError, UniversalRead, read_json_via,
+    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UserData, read_json_via,
 };
 use fs_err as fs;
 use num_traits::AsPrimitive;
@@ -181,7 +182,12 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     pub fn for_each_in_batch<F: FnMut(usize, &[T]), O: VectorOffset>(&self, keys: &[O], mut f: F) {
         #[cfg(target_os = "linux")]
         if TypedStorage::<S, T>::kind() == common::universal_io::UniversalKind::IoUring {
-            for (idx, vectors) in self.iter(keys) {
+            let point_offsets = keys
+                .iter()
+                .enumerate()
+                .map(|(index, offset)| (index, offset.offset(), offset.multi_vector_count()));
+
+            for (idx, vectors) in self.iter_vectors::<Random, _>(point_offsets) {
                 f(idx, &vectors);
             }
 
@@ -212,21 +218,26 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
     }
 
-    pub fn iter<O>(&self, offsets: &[O]) -> impl Iterator<Item = (usize, Cow<'_, [T]>)>
+    /// Iterate over flattened multi-vectors
+    pub fn iter_vectors<P, U>(
+        &self,
+        offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
+    ) -> impl Iterator<Item = (U, Cow<'_, [T]>)>
     where
-        O: VectorOffset,
+        P: AccessPattern,
+        U: UserData,
     {
-        let reads = offsets.iter().enumerate().map(|(idx, offset)| {
+        let reads = offsets.map(|(user_data, offset, count)| {
             let (chunk_idx, range) = self
-                .read_range(offset.offset(), offset.multi_vector_count())
+                .read_range(offset as _, count as _)
                 .expect("vectors exist");
 
             let chunk = &self.chunks[chunk_idx];
-            (idx, chunk, range)
+            (user_data, chunk, range)
         });
 
         // access pattern does not matter for io_uring
-        TypedStorage::<S, T>::read_multi_iter::<Random, _>(reads)
+        TypedStorage::read_multi_iter::<P, _>(reads)
             .expect("iterator initialized")
             .map(|result| result.expect("vector read"))
     }
