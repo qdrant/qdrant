@@ -34,8 +34,8 @@ use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
 use crate::proxy_segment::{
-    DeletedPoints, IntendedVector, ProxyIndexChange, ProxyIndexChanges, ProxySegment,
-    ProxyVectorNameChanges,
+    DeletedPoints, IntendedVector, ProxyIndexChange, ProxyIndexChanges, ProxyVectorNameChanges,
+    UnsyncedProxySegment,
 };
 use crate::segment_holder::SegmentId;
 use crate::segment_holder::locked::LockedSegmentHolder;
@@ -726,7 +726,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     let mut proxies = Vec::new();
     for sg in input_segments.iter() {
-        let proxy = ProxySegment::new(sg.clone());
+        let proxy = UnsyncedProxySegment::new(sg.clone());
         // Wrapped segment is fresh, so it has no operations
         // Operation with number 0 will be applied
         if let Some(extra_cow_segment) = &extra_cow_segment_opt {
@@ -761,9 +761,18 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // `optimize_segment_propagate_changes` remains  sound.
             // See: <https://github.com/qdrant/qdrant/pull/7208>
             debug_assert!(
-                matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
+                matches!(proxy.wrapped_segment(), LockedSegment::Original(_)),
                 "during optimization, wrapped segment must not be another proxy segment"
             );
+
+            // Now that this write lock froze the wrapped segment, finalize the proxy: this syncs
+            // `deleted_mask` from the (now immutable) segment. An upsert/delete could have raced
+            // onto the still-appendable wrapped segment between `UnsyncedProxySegment::new` and
+            // this lock; syncing here makes the mask cover the segment's full final point range —
+            // otherwise a
+            // point inserted in that window sits past the mask and scored search treats it as
+            // deleted. The type-state guarantees this happens exactly once and cannot be skipped.
+            let proxy = proxy.finalize();
 
             // replicate_field_indexes for the second time,
             // because optimized segments could have been changed.
