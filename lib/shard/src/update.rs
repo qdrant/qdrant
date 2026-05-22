@@ -919,6 +919,15 @@ pub fn create_field_index(
     };
 
     segments.apply_segments(|write_segment| {
+        // Fast path: when the new schema differs from the previous one
+        // only in `on_disk`, try the in-place swap instead of dropping
+        // and rebuilding the index.
+        if write_segment.with_upgraded(|segment| {
+            segment.try_swap_field_index(op_num, field_name, field_schema)
+        })? {
+            return Ok(true);
+        }
+
         write_segment.with_upgraded(|segment| {
             segment.delete_field_index_if_incompatible(op_num, field_name, field_schema)
         })?;

@@ -8,6 +8,7 @@ use super::StructPayloadIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::FieldIndex;
+use crate::index::field_index::schema_transition::{SchemaTransition, classify};
 use crate::index::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
@@ -65,6 +66,22 @@ impl PayloadIndex for StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let payload_schema = payload_schema.into();
+
+        // Fast paths: short-circuit when the schema is unchanged, or
+        // attempt the in-place swap when only `on_disk` flipped. On
+        // swap not-applicable, fall through to the legacy
+        // drop-and-rebuild path below.
+        if let Some(prev) = self.config.indices.get(field) {
+            match classify(&prev.schema, &payload_schema) {
+                SchemaTransition::Identical => return Ok(()),
+                SchemaTransition::OnlyOnDiskFlipped { new_on_disk } => {
+                    if self.try_swap_on_disk(field, new_on_disk, &payload_schema)? {
+                        return Ok(());
+                    }
+                }
+                SchemaTransition::Incompatible => {}
+            }
+        }
 
         self.drop_index_if_incompatible(field, &payload_schema)?;
 

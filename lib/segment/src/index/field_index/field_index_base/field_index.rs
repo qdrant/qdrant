@@ -232,6 +232,40 @@ impl FieldIndex {
         }
     }
 
+    /// Try to swap the in-memory wrapper variant in place when only the
+    /// `on_disk` flag changed, without rebuilding from payload storage.
+    ///
+    /// Returns:
+    /// - `Ok(true)`: swap completed in place. The caller still has to
+    ///   persist the new schema (`StructPayloadIndex` config).
+    /// - `Ok(false)`: swap is not applicable for this variant — either the
+    ///   underlying index is `Mutable` (Gridstore, which doesn't honor
+    ///   `on_disk` at the storage layer), or this family hasn't grown a
+    ///   real swap implementation yet. The caller must fall back to the
+    ///   legacy drop-and-rebuild path.
+    /// - `Err(_)`: swap started but failed. The caller is responsible for
+    ///   rolling back any already-swapped siblings on the same field.
+    ///
+    /// Phase 1 scaffolding: every arm returns `Ok(false)` so the wiring is
+    /// in place but the fast path never fires. Each family's real
+    /// implementation will replace its arm in later phases (numeric → map →
+    /// geo → full-text).
+    pub fn swap_on_disk(&mut self, _new_on_disk: bool) -> OperationResult<bool> {
+        match self {
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::NullIndex(_) => Ok(false),
+        }
+    }
+
     pub fn get_full_index_type(&self) -> FullPayloadIndexType {
         let index_type = match self {
             FieldIndex::IntIndex(_) => PayloadIndexType::IntIndex,
