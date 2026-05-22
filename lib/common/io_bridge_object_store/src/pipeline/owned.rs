@@ -40,9 +40,8 @@ where
     }
 
     fn schedule<P: AccessPattern>(&mut self, user_data: U, range: ReadRange) -> Result<()> {
-        let (buf, future) = read_into_buffer::<A, T>(&self.file, range);
-        self.inner
-            .schedule(&self.file.runtime, user_data, buf, future)
+        let future = read_into_buffer::<A, T>(&self.file, range);
+        self.inner.schedule(&self.file.runtime, user_data, future)
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {

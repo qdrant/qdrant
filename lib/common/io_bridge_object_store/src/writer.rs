@@ -25,14 +25,6 @@ impl<'a> AlignedBufWriter<'a> {
         Self { dst, off: 0 }
     }
 
-    /// Wrap a pre-cast byte slice. Used by the pipeline path where the typed
-    /// `&mut [T]` view has already been reconstructed from a raw pointer (see
-    /// `SendBytePtr` in `pipeline.rs`) and a fresh `bytemuck::cast_slice_mut`
-    /// would re-do work the caller has already done.
-    pub(crate) fn from_raw_bytes(buf: &'a mut [u8]) -> Self {
-        Self { dst: buf, off: 0 }
-    }
-
     pub(crate) fn written(&self) -> usize {
         self.off
     }
@@ -112,18 +104,5 @@ mod tests {
         w.write_all(&[0xAA; 4]).await.unwrap();
         let err = w.write(&[0xBB]).await.unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::WriteZero);
-    }
-
-    #[tokio::test]
-    async fn from_raw_bytes_writes_into_provided_slice() {
-        let mut buf: Vec<u8> = vec![0u8; 6];
-        {
-            let mut w = AlignedBufWriter::from_raw_bytes(&mut buf);
-            w.write_all(&[1, 2, 3]).await.unwrap();
-            w.write_all(&[4, 5, 6]).await.unwrap();
-            assert_eq!(w.written(), 6);
-            assert_eq!(w.capacity(), 6);
-        }
-        assert_eq!(buf, vec![1, 2, 3, 4, 5, 6]);
     }
 }

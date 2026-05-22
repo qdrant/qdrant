@@ -46,8 +46,8 @@ where
             let (tx, rx) = PipelineInner::<T, U>::default_channel();
             PipelineInner::new(tx, rx)
         });
-        let (buf, future) = read_into_buffer::<A, T>(file, range);
-        inner.schedule(&file.runtime, user_data, buf, future)
+        let future = read_into_buffer::<A, T>(file, range);
+        inner.schedule(&file.runtime, user_data, future)
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {

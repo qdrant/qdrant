@@ -10,7 +10,7 @@
 //! | `Arc<S>`         | The [`AsyncRead`] handle; any [`BlobBackend`] `S`.        |
 //! | [`BlobFile<A>`]  | Sync `UniversalRead` wrapper over an `AsyncRead` + path.  |
 //! | [`BridgeRuntime`]| Cheap-to-clone owner of a Tokio runtime.                  |
-//! | `PipelineInner`  | Reply channel + slot-keyed owned destination buffers.     |
+//! | `PipelineInner`  | Reply channel + slot-keyed caller `user_data` map.        |
 //!
 //! Concrete backends live under [`backends`]: [`backends::aws`],
 //! [`backends::gcp`], and [`backends::azure`]. Each module declares its own
@@ -40,27 +40,26 @@
 //!   ┌──────────────────────────────────────────┐
 //!   │ PipelineInner<T, U>                      │
 //!   │   tx, rx : reply channel                 │
-//!   │   slots  : PendingSlots<T, U>            │
-//!   │           (slot -> (U, Vec<T>))          │
+//!   │   slots  : PendingSlots<U>               │
+//!   │           (slot -> user_data)            │
 //!   └──────────────────────────────────────────┘
-//!                  │ schedule(rt, user_data, Vec<T>, future)
-//!                  │  ─ allocates Vec<T> of exact size
-//!                  │  ─ moves it into `slots`
-//!                  │  ─ derives a SendBytePtr captured by `future`
-//!                  ▼                                       ┌────────────────────────────────┐
+//!                  │ schedule(rt, user_data, future)
+//!                  │  ─ assigns a slot, stores user_data
+//!                  ▼                                      ┌────────────────────────────────┐
 //!   ┌────────────────────────────────┐  rt.handle()       │ spawned task:                  │
-//!   │ reply_tx = tx.clone()          │  .spawn(task)      │   // writes into the pending   │
-//!   │ slots.insert(user, buf) ->slot │ ─────────────────► │   // Vec<T> via SendBytePtr    │
-//!   └────────────────────────────────┘                    │   // + AlignedBufWriter        │
-//!                                                         │   status = future.await        │
+//!   │ reply_tx = tx.clone()          │  .spawn(task)      │   // future allocates the      │
+//!   │ slots.insert(user)  -> slot    │ ─────────────────► │   // destination Vec<T>,       │
+//!   └────────────────────────────────┘                    │   // streams chunks into it,   │
+//!                                                         │   // and returns it as output  │
+//!                                                         │   buf = future.await           │
 //!                                                         │   reply_tx.send(               │
-//!   ┌────────────────────────────────┐    reply channel   │     BridgeResponse{slot,status})│
+//!   ┌────────────────────────────────┐    reply channel   │     BridgeResponse{slot, buf}) │
 //!   │ wait():                        │ ◄───────────────── │   ).await                      │
 //!   │   response =                   │  spawned task uses └────────────────────────────────┘
 //!   │     reply_rx.blocking_recv()   │  reply_tx (clone of pipeline reply_tx)
-//!   │   (user_data, buf) =           │
+//!   │   user_data =                  │
 //!   │     slots.remove(&slot)        │
-//!   │   response.result?             │
+//!   │   buf = response.result?       │
 //!   │   return Some((user_data, buf))│
 //!   └────────────────────────────────┘
 //!
@@ -87,12 +86,13 @@
 //!   not `Arc<dyn ObjectStore>`. Spawning takes the future by generic type, so
 //!   no boxing or type erasure is needed at the dispatch boundary either.
 //!
-//! - **No `Bytes` aggregation in the pipeline.** The pipeline owns the typed
-//!   destination `Vec<T>` for every in-flight request. The future writes the
-//!   stream chunks straight into that buffer through a `SendBytePtr` + an
-//!   `AlignedBufWriter`, and the channel reply carries only a `Result<()>`.
-//!   This removes the two redundant copies that an "aggregate to `Bytes`,
-//!   then cast to `Vec<T>`" path would do.
+//! - **No `Bytes` aggregation in the pipeline.** The future allocates the
+//!   typed destination `Vec<T>` itself, streams stream chunks straight into it
+//!   through an `AlignedBufWriter`, and returns the buffer as its output. The
+//!   reply channel carries the buffer back (wrapped in a `SendableVec<T>` so
+//!   that the channel message is `Send` without forcing a `T: Send` bound on
+//!   the public trait surface). This removes the two redundant copies that an
+//!   "aggregate to `Bytes`, then cast to `Vec<T>`" path would do.
 
 mod backend;
 pub mod backends;
