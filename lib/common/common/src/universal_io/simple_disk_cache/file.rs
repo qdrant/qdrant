@@ -153,11 +153,7 @@ where
         Ok(cache)
     }
 
-    pub(super) fn new(
-        remote_path: impl AsRef<Path>,
-        local_path: PathBuf,
-        options: OpenOptions,
-    ) -> Self {
+    fn new(remote_path: impl AsRef<Path>, local_path: PathBuf, options: OpenOptions) -> Self {
         {
             Self {
                 remote_path: remote_path.as_ref().to_owned(),
@@ -335,6 +331,11 @@ where
     fn reopen(&mut self) -> Result<()> {
         // Wait for InitSource::Prefill, if set.
         self.init_local_state(false)?;
+
+        // Reopen the remote so `len()` reflects the current file size
+        if let Some(remote) = self.remote.get_mut() {
+            remote.reopen()?;
+        }
         let new_len = self.remote()?.len::<u8>()?;
         let Some(local) = self.local.get_mut() else {
             // nothing to do, it will be initialized on first read
@@ -359,7 +360,9 @@ where
         match self.open_options.populate {
             Populate::Auto | Populate::No => {}
             Populate::Blocking => self.populate_from(old_len)?,
-            Populate::PreferBackground => todo!("populate growth length on background"),
+            Populate::PreferBackground => {
+                // TODO: prefill old_len..new_len on background
+            }
         }
 
         Ok(())
