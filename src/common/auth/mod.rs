@@ -159,18 +159,18 @@ impl AuthKeys {
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
     ) -> Result<(Access, InferenceToken, AuthType, Option<String>), AuthError> {
+        if self.read_only_mode && !self.has_any_key() {
+            return Ok((
+                Access::full_ro("Read-only mode without configured API keys"),
+                InferenceToken(None),
+                AuthType::None,
+                None,
+            ));
+        }
+
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
-            if self.read_only_mode && !self.has_any_key() {
-                return Ok((
-                    Access::full_ro("Read-only mode without configured API keys"),
-                    InferenceToken(None),
-                    AuthType::None,
-                    None,
-                ));
-            }
-
             return Err(AuthError::Unauthorized(
                 "Must provide an API key or an Authorization bearer token".to_string(),
             ));
