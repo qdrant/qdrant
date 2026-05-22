@@ -480,6 +480,7 @@ pub async fn update_batch(
                 )
                 .await
             }
+            #[expect(deprecated)]
             points_update_operation::Operation::DeleteDeprecated(points) => {
                 delete(
                     StrictModeCheckedTocProvider::new(dispatcher),
@@ -643,6 +644,7 @@ pub async fn update_batch(
                 )
                 .await
             }
+            #[expect(deprecated)]
             Operation::ClearPayloadDeprecated(selector) => {
                 clear_payload(
                     StrictModeCheckedTocProvider::new(dispatcher),

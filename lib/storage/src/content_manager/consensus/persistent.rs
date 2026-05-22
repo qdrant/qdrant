@@ -10,11 +10,11 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
 use fs_err as fs;
 use fs_err::File;
-use http::Uri;
 use parking_lot::RwLock;
 use raft::RaftState;
 use raft::eraftpb::{ConfState, HardState, SnapshotMetadata};
 use serde::{Deserialize, Serialize};
+use tonic::transport::Uri;
 
 use crate::StorageError;
 use crate::content_manager::consensus::entry_queue::{EntryApplyProgressQueue, EntryId};
@@ -411,9 +411,9 @@ mod serialize_peer_addresses {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use http::Uri;
     use parking_lot::RwLock;
     use serde::{self, Deserializer, Serializer};
+    use tonic::transport::Uri;
 
     use crate::serialize_peer_addresses;
     use crate::types::PeerAddressById;
