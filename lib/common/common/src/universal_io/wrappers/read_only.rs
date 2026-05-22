@@ -53,6 +53,11 @@ where
     }
 
     #[inline]
+    fn reopen(&mut self) -> Result<()> {
+        self.0.reopen()
+    }
+
+    #[inline]
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         self.0.read::<P, T>(range)
     }

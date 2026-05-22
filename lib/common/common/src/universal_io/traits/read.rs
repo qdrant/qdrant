@@ -22,6 +22,12 @@ pub trait UniversalRead: UniversalReadFileOps {
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
+    /// Enables live-reloading of files. Append-only files can make the underlying file larger,
+    /// so reopening can account for this growth.
+    ///
+    /// This may be a no-op in some implementations.
+    fn reopen(&mut self) -> Result<()>;
+
     /// Prefer [`read_batch`] if you need high performance.
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
 
