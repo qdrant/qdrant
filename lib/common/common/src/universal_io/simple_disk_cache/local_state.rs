@@ -141,6 +141,9 @@ impl LocalState {
     ///
     /// Assumes the bytes slice covers the entirety of `blocks_range`.
     pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
+        // SAFETY:
+        // 1. The remote file is immutable, so worst case, same data is overwritten.
+        // 2. The `fetched` bitmap should track which blocks are already present.
         let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
         if self.fully_populated.load(Ordering::Acquire) {
             return;

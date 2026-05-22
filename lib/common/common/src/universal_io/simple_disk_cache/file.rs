@@ -261,6 +261,7 @@ where
         LocalState::new(&self.local_path, len, self.open_options)
     }
 
+    /// Make sure every byte in the range `byte_start..remote_len` is present on the local file
     fn populate_from(&self, byte_start: u64) -> std::result::Result<(), UniversalIoError> {
         if crate::low_memory::low_memory_mode().skip_populate() {
             return Ok(());
@@ -336,30 +337,30 @@ where
         if let Some(remote) = self.remote.get_mut() {
             remote.reopen()?;
         }
-        let new_len = self.remote()?.len::<u8>()?;
+        let remote_len = self.remote()?.len::<u8>()?;
         let Some(local) = self.local.get_mut() else {
             // nothing to do, it will be initialized on first read
             return Ok(());
         };
 
-        let old_len = local.mmap().len::<u8>()?;
-        if old_len > new_len {
+        let local_len = local.mmap().len::<u8>()?;
+        if local_len > remote_len {
             return Err(UniversalIoError::Io(io::Error::new(
                 ErrorKind::UnexpectedEof,
                 format!(
-                    "Reopen encountered a smaller file than expected; old_len: {old_len}, new_len: {new_len}"
+                    "Reopen encountered a smaller file than expected; old_len: {local_len}, new_len: {remote_len}"
                 ),
             )));
         }
-        if old_len == new_len {
+        if local_len == remote_len {
             return Ok(());
         }
 
-        local.resize(self.local_path.clone(), new_len)?;
+        local.resize(self.local_path.clone(), remote_len)?;
 
         match self.open_options.populate {
             Populate::Auto | Populate::No => {}
-            Populate::Blocking => self.populate_from(old_len)?,
+            Populate::Blocking => self.populate_from(local_len)?,
             Populate::PreferBackground => {
                 // TODO: prefill old_len..new_len on background
             }
@@ -383,8 +384,7 @@ where
 
     fn len<T>(&self) -> Result<u64> {
         let len = if let Some(local) = self.local.get() {
-            // SAFETY: `len` is a `&self` method
-            unsafe { local.mmap.get().as_ref_unchecked() }.len::<T>()?
+            local.mmap().len::<T>()?
         } else {
             self.remote()?.len::<T>()?
         };
