@@ -48,7 +48,7 @@ impl Scenario {
 
     fn open<R>(&self, prefill: bool) -> DiskCache<R>
     where
-        R: UniversalRead,
+        R: UniversalRead + Clone,
     {
         let populate = if prefill {
             Populate::PreferBackground

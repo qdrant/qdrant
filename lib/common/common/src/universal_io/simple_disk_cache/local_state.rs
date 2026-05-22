@@ -18,6 +18,7 @@ use crate::universal_io::{
 #[derive(Debug)]
 pub(super) struct LocalState {
     /// UnsafeCell so that we can write to it under non-mut reference.
+    /// Such as when the pipeline reads from remote first.
     pub mmap: UnsafeCell<MmapFile>,
     /// Bitmask to know which blocks have been fetched so far.
     pub fetched: Mutex<RoaringBitmap>,
@@ -72,7 +73,7 @@ impl LocalState {
         })
     }
 
-    pub(super) fn reopen(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> Result<()> {
+    pub(super) fn resize(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> Result<()> {
         let mmap = self.mmap.get_mut();
         let current_len = mmap.len::<u8>()?;
         if current_len == new_len {

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::io::{self, ErrorKind};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -27,9 +28,7 @@ use crate::universal_io::{
 /// blocks on demand from the remote) or eagerly if populate is set.
 ///
 /// WARN: There should be only a single instance of DiskCache per path.
-/// Initializing multiple instances will try to re-read from remote. Cloning is
-/// safe because of Arcs, though.
-#[derive(Clone)]
+/// Initializing multiple instances will try to re-read from remote.
 pub struct DiskCache<R>
 where
     R: UniversalRead,
@@ -46,7 +45,7 @@ where
     /// Path to the local mmap file.
     pub(super) local_path: PathBuf,
     /// Lazily-initialized local mirror.
-    pub(super) local: Arc<OnceLock<LocalState>>,
+    pub(super) local: OnceLock<LocalState>,
     /// Guards initialization of `local` and carries the source of init.
     init_lock: Arc<Mutex<InitSource<R>>>,
 }
@@ -76,7 +75,7 @@ enum InitSource<R: UniversalRead> {
 
 impl<R> DiskCache<R>
 where
-    R: UniversalRead,
+    R: UniversalRead + Clone,
 {
     /// Open a [`DiskCache`] with an explicit configuration.
     pub fn open_with_config(
@@ -141,7 +140,7 @@ where
                 remote: OnceLock::new(),
                 open_options: options,
                 local_path,
-                local: Arc::new(OnceLock::new()),
+                local: OnceLock::new(),
                 init_lock: Arc::new(Mutex::new(init_source)),
             }
         };
@@ -165,7 +164,7 @@ where
                 remote: OnceLock::new(),
                 open_options: options,
                 local_path,
-                local: Arc::new(OnceLock::new()),
+                local: OnceLock::new(),
                 init_lock: Arc::new(Mutex::new(InitSource::FromScratch)),
             }
         }
@@ -202,14 +201,29 @@ where
             return Ok(state);
         }
 
+        self.init_local_state(true)?;
+
+        Ok(self.local.get().expect("just initialized"))
+    }
+
+    /// Initialize the local state depending on `InitSource`
+    ///
+    /// If `allow_from_scratch` is false, this method will avoid initializing if `InitSource::FromScratch` is set.
+    /// This is helpful for [`Self::reopen`] scenario where we can avoid work if no reads have taken place.
+    fn init_local_state(&self, allow_from_scratch: bool) -> Result<()> {
         // Only the first thread is able to initialize.
         let mut guard = self.init_lock.lock();
-        if let Some(state) = self.local.get() {
-            return Ok(state);
+        if self.local.get().is_some() {
+            return Ok(());
         }
 
         let local = match std::mem::replace(&mut *guard, InitSource::FromScratch) {
-            InitSource::FromScratch => self.init_local_state_from_scratch()?,
+            InitSource::FromScratch => {
+                if !allow_from_scratch {
+                    return Ok(());
+                }
+                self.new_local_state_from_scratch()?
+            }
             InitSource::FromPrefiller(mut pipe) => {
                 match pipe.wait()? {
                     Some((blocks_range, bytes)) => {
@@ -229,8 +243,11 @@ where
                             false,
                             "Looks like the request for prefill bytes was incorrect"
                         );
+                        if !allow_from_scratch {
+                            return Ok(());
+                        }
                         // init from scratch
-                        self.init_local_state_from_scratch()?
+                        self.new_local_state_from_scratch()?
                     }
                 }
             }
@@ -240,11 +257,37 @@ where
             .set(local)
             .expect("OnceLock::set must succeed while holding init_lock");
 
-        Ok(self.local.get().expect("just initialized"))
+        Ok(())
     }
-    fn init_local_state_from_scratch(&self) -> Result<LocalState> {
+
+    fn new_local_state_from_scratch(&self) -> Result<LocalState> {
         let len = self.remote()?.len::<u8>()?;
         LocalState::new(&self.local_path, len, self.open_options)
+    }
+
+    fn populate_from(&self, byte_start: u64) -> std::result::Result<(), UniversalIoError> {
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return Ok(());
+        }
+
+        let remote_len = self.remote()?.len::<u8>()?;
+        if remote_len == 0 {
+            return Ok(());
+        }
+
+        let one_byte_per_block = (byte_start..remote_len)
+            .step_by(BLOCK_SIZE)
+            .map(|byte_offset| ((), ReadRange::one(byte_offset)));
+
+        for result in self.read_iter::<Sequential, u8, ()>(one_byte_per_block)? {
+            result?;
+        }
+
+        let local = self.local.get().expect("just populated it");
+        let last_block = remote_len.div_ceil(BLOCK_SIZE as u64) as u32;
+        local.mark_fully_populated(last_block);
+
+        Ok(())
     }
 }
 
@@ -290,7 +333,36 @@ where
     }
 
     fn reopen(&mut self) -> Result<()> {
-        todo!();
+        // Wait for InitSource::Prefill, if set.
+        self.init_local_state(false)?;
+        let new_len = self.remote()?.len::<u8>()?;
+        let Some(local) = self.local.get_mut() else {
+            // nothing to do, it will be initialized on first read
+            return Ok(());
+        };
+
+        let old_len = local.mmap().len::<u8>()?;
+        if old_len > new_len {
+            return Err(UniversalIoError::Io(io::Error::new(
+                ErrorKind::UnexpectedEof,
+                format!(
+                    "Reopen encountered a smaller file than expected; old_len: {old_len}, new_len: {new_len}"
+                ),
+            )));
+        }
+        if old_len == new_len {
+            return Ok(());
+        }
+
+        local.resize(self.local_path.clone(), new_len)?;
+
+        match self.open_options.populate {
+            Populate::Auto | Populate::No => {}
+            Populate::Blocking => self.populate_from(old_len)?,
+            Populate::PreferBackground => todo!("populate growth length on background"),
+        }
+
+        Ok(())
     }
 
     fn read<P, T>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>
@@ -318,28 +390,7 @@ where
     }
 
     fn populate(&self) -> Result<()> {
-        if crate::low_memory::low_memory_mode().skip_populate() {
-            return Ok(());
-        }
-
-        let remote_len = self.remote()?.len::<u8>()?;
-        if remote_len == 0 {
-            return Ok(());
-        }
-
-        let one_byte_per_block = (0..remote_len as usize)
-            .step_by(BLOCK_SIZE)
-            .map(|byte_offset| ((), ReadRange::one(byte_offset as u64)));
-
-        for result in self.read_iter::<Sequential, u8, ()>(one_byte_per_block)? {
-            result?;
-        }
-
-        let local = self.local.get().expect("just populated it");
-        let last_block = remote_len.div_ceil(BLOCK_SIZE as u64) as u32;
-        local.mark_fully_populated(last_block);
-
-        Ok(())
+        self.populate_from(0)
     }
 
     fn clear_ram_cache(&self) -> Result<()> {

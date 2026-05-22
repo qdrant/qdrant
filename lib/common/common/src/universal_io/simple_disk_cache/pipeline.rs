@@ -34,7 +34,7 @@ enum Source {
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<'a, P, T>(local: &'a LocalState, range: ReadRange) -> Result<Source>
+fn pick_source<P, T>(local: &LocalState, range: ReadRange) -> Result<Source>
 where
     P: AccessPattern,
     T: bytemuck::Pod,
@@ -95,7 +95,7 @@ unsafe fn read_local<R, T>(
     is_sequential: bool,
 ) -> universal_io::Result<&[T]>
 where
-    R: UniversalRead,
+    R: UniversalRead + Clone,
     T: bytemuck::Pod,
 {
     if range.length == 0 {
@@ -120,7 +120,7 @@ unsafe fn commit_and_read<'a, R, T>(
     read_range: ReadRange,
 ) -> universal_io::Result<&'a [T]>
 where
-    R: UniversalRead,
+    R: UniversalRead + Clone,
     T: bytemuck::Pod,
 {
     let local = file.local_state()?;
@@ -165,7 +165,7 @@ where
 
 impl<'file, R, T, U> BorrowedReadPipeline<'file, T, U> for DiskCachePipeline<'file, R, T, U>
 where
-    R: UniversalRead + 'file,
+    R: UniversalRead + Clone + 'file,
     T: Item,
 {
     type File = DiskCache<R>;
