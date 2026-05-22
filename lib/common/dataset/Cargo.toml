@@ -20,4 +20,4 @@ indicatif = { workspace = true }
 reqwest = { workspace = true }
 
 [dev-dependencies]
-fs-err = { workspace = true, features = ["debug"] }
+fs-err = { workspace = true, features = ["debug", "debug_tokio", "tokio"] }
