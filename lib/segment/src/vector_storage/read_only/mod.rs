@@ -8,7 +8,7 @@ use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, Vecto
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
-use crate::vector_storage::dense::read_only::chucked_vector_storage::ReadOnlyChunkedDenseVectorStorage;
+use crate::vector_storage::dense::read_only::chunked_vector_storage::ReadOnlyChunkedDenseVectorStorage;
 use crate::vector_storage::multi_dense::read_only::chunked_vector_storage::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::sparse::read_only::sparse_vector_storage::ReadOnlySparseVectorStorage;
 
