@@ -422,7 +422,9 @@ class EdgeOptimizersConfig:
             default_segment_number: Target number of segments (0 = auto).
             max_segment_size: Max segment size in KB.
             indexing_threshold: Indexing threshold in KB.
-            prevent_unoptimized: Block updates when unoptimized segments exceed threshold.
+            prevent_unoptimized: If enabled, points written to segments larger than the indexing threshold
+                become deferred (excluded from read/search until those segments are optimized).
+                Updates with `wait=true` will only return after the deferred points become visible.
         """
         ...
 
