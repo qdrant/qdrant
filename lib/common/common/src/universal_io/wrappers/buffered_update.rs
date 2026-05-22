@@ -51,6 +51,17 @@ where
         );
         self.pending_updates.lock().insert(index, value);
     }
+
+    /// Hint to the OS that pages backing the underlying storage can be reclaimed.
+    pub fn clear_cache(&self) -> Result<(), UniversalIoError> {
+        let Self {
+            slice,
+            len: _,
+            pending_updates: _,
+            is_alive_lock: _,
+        } = self;
+        slice.read().clear_ram_cache()
+    }
 }
 
 impl<S, T> SliceBufferedUpdateWrapper<S, T>
