@@ -14,6 +14,7 @@ use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
+use common::fs::clear_disk_cache;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -345,5 +346,23 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![mappings_path(&self.path)]
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            path,
+            deleted_wrapper,
+            internal_to_version: _, // kept in RAM
+            internal_to_version_wrapper,
+            mappings: _, // kept in RAM, file dropped via `path` below
+        } = self;
+        // `deleted` and `internal_to_version` are mmap-backed: page them out via
+        // `madvise`, which works on actively mapped pages.
+        deleted_wrapper.clear_cache()?;
+        internal_to_version_wrapper.clear_cache()?;
+        // `mappings` is read into RAM and is not mmap-backed, so its file pages
+        // can't be reached through a mapping. Drop them with `fadvise` instead.
+        clear_disk_cache(&mappings_path(path))?;
+        Ok(())
     }
 }

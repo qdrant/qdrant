@@ -221,4 +221,12 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.immutable_files(),
         }
     }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.clear_cache(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.clear_cache(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.clear_cache(),
+        }
+    }
 }

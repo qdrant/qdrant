@@ -99,6 +99,28 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new()
     }
+
+    /// Hint to the OS that the page cache backing this tracker's on-disk files
+    /// can be reclaimed.
+    ///
+    /// Used after building/optimizing a segment to avoid leaving cold id-tracker
+    /// pages resident in the page cache. The default implementation is a no-op
+    /// for fully in-memory trackers without backing files.
+    fn clear_cache(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    /// Clear the page cache for this tracker's on-disk files, but only if the
+    /// tracker data is expected to live on disk rather than in RAM.
+    ///
+    /// The id tracker currently always loads its data into RAM and has no
+    /// on-disk mode, so for now this unconditionally clears the cache. Once an
+    /// on-disk mode is added, this should be gated on that configuration,
+    /// mirroring the vector and payload storages.
+    fn clear_cache_if_on_disk(&self) -> OperationResult<()> {
+        // TODO: gate on an on-disk flag once the id tracker supports it.
+        self.clear_cache()
+    }
 }
 
 pub trait IdTrackerRead {
