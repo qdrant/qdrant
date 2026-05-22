@@ -97,6 +97,16 @@ impl LocalState {
 
         self.fully_populated.store(false, Ordering::Release);
 
+        // The previous tail block may have been only partially populated (its
+        // fetch was clamped to the old EOF). `set_len` zero-filled the bytes
+        // between the old EOF and the next block boundary, so the block is no
+        // longer accurate. Drop it from `fetched` to force a re-fetch on the
+        // next read.
+        if current_len % BLOCK_SIZE as u64 != 0 {
+            let partial_tail_block = (current_len / BLOCK_SIZE as u64) as u32;
+            self.fetched.lock().remove(partial_tail_block);
+        }
+
         Ok(())
     }
 
@@ -114,13 +124,6 @@ impl LocalState {
             return true;
         }
         self.fetched.lock().contains_range(blocks_range)
-    }
-
-    /// Mark the local mirror as fully populated. Subsequent reads can skip
-    /// the `fetched` bitmap check.
-    pub(super) fn mark_fully_populated(&self, last_block: u32) {
-        self.fully_populated.store(true, Ordering::Release);
-        self.fetched.lock().insert_range(0..last_block);
     }
 
     /// # Safety
@@ -169,5 +172,14 @@ impl LocalState {
             .expect("MmapFile::write is infallible");
 
         fetched.insert_range(blocks_range);
+
+        // If every block is now populated, turn `fully_populated` on.
+        let total_blocks = mmap
+            .len::<u8>()
+            .expect("MmapFile::len is infallible")
+            .div_ceil(BLOCK_SIZE as u64);
+        if fetched.len() == total_blocks {
+            self.fully_populated.store(true, Ordering::Release);
+        }
     }
 }

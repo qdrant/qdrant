@@ -369,4 +369,39 @@ mod tests_mod {
             .unwrap();
         assert_eq!(&*bytes, &new_data[original_len as usize..]);
     }
+
+    /// When the remote grows and the original tail block was only partially
+    /// populated, reopen must invalidate that block so the next read re-fetches
+    /// it instead of returning the zero-filled bytes left by `set_len`.
+    #[test]
+    fn reopen_growth_refetches_partial_tail_block() {
+        // Non-block-aligned remote: block 1 holds only 100 real bytes.
+        let mut scn = Scenario::new(BLOCK_SIZE + 100);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        // Touch the partial tail so block 1 ends up in the `fetched` bitmap
+        // (its fetch is clamped to the old EOF).
+        let _ = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: BLOCK_SIZE as u64,
+                length: 1,
+            })
+            .unwrap();
+
+        // Grow remote past the old tail block boundary.
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+
+        cache.reopen().unwrap();
+
+        // Read covers both the originally-partial range [BLOCK_SIZE..old_len)
+        // and the newly-grown tail [old_len..BLOCK_SIZE*2). Without the
+        // invalidation, the second half would be zeros from `set_len`.
+        let bytes = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: BLOCK_SIZE as u64,
+                length: BLOCK_SIZE as u64,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, &new_data[BLOCK_SIZE..BLOCK_SIZE * 2]);
+    }
 }

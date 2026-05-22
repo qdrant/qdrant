@@ -230,8 +230,7 @@ where
                             bytes.len() as u64,
                             self.open_options,
                         )?;
-                        unsafe { local.write_mmap_bytes(&bytes, blocks_range.clone()) };
-                        local.mark_fully_populated(blocks_range.end);
+                        unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
                         local
                     }
                     None => {
@@ -279,10 +278,6 @@ where
         for result in self.read_iter::<Sequential, u8, ()>(one_byte_per_block)? {
             result?;
         }
-
-        let local = self.local.get().expect("just populated it");
-        let last_block = remote_len.div_ceil(BLOCK_SIZE as u64) as u32;
-        local.mark_fully_populated(last_block);
 
         Ok(())
     }
@@ -333,15 +328,20 @@ where
         // Wait for InitSource::Prefill, if set.
         self.init_local_state(false)?;
 
+        if self.local.get().is_none() {
+            return Ok(());
+        }
+
         // Reopen the remote so `len()` reflects the current file size
         if let Some(remote) = self.remote.get_mut() {
             remote.reopen()?;
         }
         let remote_len = self.remote()?.len::<u8>()?;
-        let Some(local) = self.local.get_mut() else {
-            // nothing to do, it will be initialized on first read
-            return Ok(());
-        };
+
+        let local = self
+            .local
+            .get_mut()
+            .expect("We just ruled out `is_none` above, and we are holding &mut self");
 
         let local_len = local.mmap().len::<u8>()?;
         if local_len > remote_len {
