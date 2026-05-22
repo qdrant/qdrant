@@ -2,7 +2,8 @@ use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::ops::Range;
 
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, Random, Sequential};
+use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache, to_block_range};
 use crate::universal_io::traits::BorrowedReadPipeline;
 use crate::universal_io::{
@@ -21,7 +22,8 @@ struct RemoteMeta<File, U> {
 /// scheduled for `blocks_byte_range` covering `blocks_range`.
 enum Source {
     Local {
-        byte_range: Range<u64>,
+        range: ReadRange,
+        is_sequential: bool,
     },
     Remote {
         blocks_range: Range<u32>,
@@ -32,17 +34,21 @@ enum Source {
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<T>(local_state: &LocalState, range: ReadRange) -> Result<Source>
+fn pick_source<'a, P, T>(local: &'a LocalState, range: ReadRange) -> Result<Source>
 where
+    P: AccessPattern,
     T: bytemuck::Pod,
-    R: UniversalRead,
 {
-    let byte_range = range.into_byte_range::<T>();
     if range.length == 0 {
-        return Ok(Source::Local { byte_range });
+        return Ok(Source::Local {
+            range,
+            is_sequential: P::IS_SEQUENTIAL,
+        });
     }
 
-    if byte_range.end > local_state.mmap.len() as u64 {
+    let byte_range = range.into_byte_range::<T>();
+
+    if byte_range.end > local.mmap().len::<u8>()? {
         // If remote file has grown, and `reopen` hasn't been called, it is OOB
         return Err(UniversalIoError::OutOfBounds {
             start: byte_range.start,
@@ -54,17 +60,20 @@ where
     let blocks_range = to_block_range(byte_range.clone());
 
     // Fast path skips the bitmap mutex once the file is fully populated.
-    if local_state.contains(blocks_range.clone()) {
-        return Ok(Source::Local { byte_range });
+    if local.contains(blocks_range.clone()) {
+        return Ok(Source::Local {
+            range,
+            is_sequential: P::IS_SEQUENTIAL,
+        });
     }
 
     // BLOCK_SIZE aligned, clamped to EOF.
     let byte_offset = blocks_range.start as usize * BLOCK_SIZE;
     let fetch_length = blocks_range.len() * BLOCK_SIZE;
-    let max_length = local_state.mmap.len().saturating_sub(byte_offset);
+    let max_length = local.mmap().len::<u8>()?.saturating_sub(byte_offset as u64);
     let blocks_byte_range = ReadRange {
         byte_offset: byte_offset as u64,
-        length: fetch_length.min(max_length) as u64,
+        length: max_length.min(fetch_length as u64),
     };
 
     Ok(Source::Remote {
@@ -82,18 +91,22 @@ where
 /// [`complete_remote_read`] just fetched them).
 unsafe fn read_local<R, T>(
     file: &DiskCache<R>,
-    byte_range: Range<u64>,
+    range: ReadRange,
+    is_sequential: bool,
 ) -> universal_io::Result<&[T]>
 where
     R: UniversalRead,
     T: bytemuck::Pod,
 {
-    if byte_range.is_empty() {
+    if range.length == 0 {
         return Ok(&[]);
     }
     let local = file.local_state()?;
-    let bytes = unsafe { local.read_mmap_bytes(byte_range) };
-    Ok(bytemuck::cast_slice(bytes))
+    if is_sequential {
+        unsafe { local.read_mmap_bytes::<Sequential, T>(range) }
+    } else {
+        unsafe { local.read_mmap_bytes::<Random, T>(range) }
+    }
 }
 
 /// Commit remote-fetched `bytes` into local mmap and re-read the user's slice.
@@ -111,11 +124,10 @@ where
     T: bytemuck::Pod,
 {
     let local = file.local_state()?;
-    let mmap_bytes = unsafe {
+    unsafe {
         local.write_mmap_bytes(bytes, blocks_range);
-        local.read_mmap_bytes(read_range.into_byte_range::<T>())
-    };
-    Ok(bytemuck::cast_slice(mmap_bytes))
+        local.read_mmap_bytes::<Random, T>(read_range)
+    }
 }
 
 type BorrowedRemotePipeline<'file, R, U> =
@@ -179,10 +191,13 @@ where
         file: &'file DiskCache<R>,
         range: ReadRange,
     ) -> universal_io::Result<()> {
-        match pick_source::<T>(file.local_state()?, range)? {
-            Source::Local { byte_range } => {
+        match pick_source::<P, T>(file.local_state()?, range)? {
+            Source::Local {
+                range,
+                is_sequential,
+            } => {
                 // SAFETY: Source::Local confirms the range is local (or empty).
-                let bytes = unsafe { read_local::<R, T>(file, byte_range)? };
+                let bytes = unsafe { read_local::<R, T>(file, range, is_sequential)? };
                 self.result = Some((user_data, bytes));
             }
             Source::Remote {
@@ -238,7 +253,7 @@ where
     /// Pipeline for queuing remote reads.
     remote_pipeline: OnceCell<R::OwnedReadPipeline<u8, RemoteMeta<(), U>>>,
     /// A result ready to be read, contains (user_data, byte_range).
-    ready: Option<(U, Range<u64>)>,
+    ready: Option<(U, ReadRange, bool)>,
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -288,9 +303,12 @@ where
     where
         P: AccessPattern,
     {
-        match pick_source::<T>(self.file.local_state()?, range)? {
-            Source::Local { byte_range } => {
-                self.ready = Some((user_data, byte_range));
+        match pick_source::<P, T>(self.file.local_state()?, range)? {
+            Source::Local {
+                range,
+                is_sequential,
+            } => {
+                self.ready = Some((user_data, range, is_sequential));
             }
             Source::Remote {
                 blocks_range,
@@ -310,9 +328,9 @@ where
     }
 
     fn wait(&mut self) -> universal_io::Result<Option<(U, Cow<'_, [T]>)>> {
-        if let Some((user_data, byte_range)) = self.ready.take() {
+        if let Some((user_data, range, is_sequential)) = self.ready.take() {
             // SAFETY: being in `pending` confirms the range is local (or empty).
-            let items = unsafe { read_local::<R, T>(&self.file, byte_range)? };
+            let items = unsafe { read_local::<R, T>(&self.file, range, is_sequential)? };
             return Ok(Some((user_data, Cow::Borrowed(items))));
         }
 

@@ -349,7 +349,7 @@ impl MmapFile {
 }
 
 impl MmapFile {
-    pub(super) fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
+    pub(crate) fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
         let ptr = if P::IS_SEQUENTIAL {
             self.ptr_seq
         } else {
@@ -364,7 +364,7 @@ impl MmapFile {
 }
 
 #[inline]
-pub(super) fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
+pub(crate) fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
 where
     T: bytemuck::Pod,
 {

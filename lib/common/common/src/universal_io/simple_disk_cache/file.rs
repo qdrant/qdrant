@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use super::BLOCK_SIZE;
 use super::config::DiskCacheConfig;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::mmap::{AdviceSetting, Madviseable};
+use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::simple_disk_cache::to_block_range;
@@ -307,16 +307,14 @@ where
     }
 
     fn len<T>(&self) -> Result<u64> {
-        let t_size = size_of::<T>();
-        debug_assert!(t_size > 0, "zero-sized types are not supported");
-
-        let bytes_len = if let Some(local) = self.local.get() {
-            local.mmap.len() as u64
+        let len = if let Some(local) = self.local.get() {
+            // SAFETY: `len` is a `&self` method
+            unsafe { local.mmap.get().as_ref_unchecked() }.len::<T>()?
         } else {
-            self.remote()?.len::<u8>()?
+            self.remote()?.len::<T>()?
         };
 
-        Ok(bytes_len / t_size as u64)
+        Ok(len)
     }
 
     fn populate(&self) -> Result<()> {
@@ -346,7 +344,7 @@ where
 
     fn clear_ram_cache(&self) -> Result<()> {
         if let Some(state) = self.local.get() {
-            state.mmap.clear_cache();
+            state.mmap().clear_ram_cache()?;
         }
         Ok(())
     }
