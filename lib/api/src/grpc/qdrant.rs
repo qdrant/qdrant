@@ -855,10 +855,14 @@ pub struct OptimizersConfigDiff {
     /// If 0 - no optimization threads, optimizations will be disabled.
     #[prost(message, optional, tag = "9")]
     pub max_optimization_threads: ::core::option::Option<MaxOptimizationThreads>,
-    /// If this option is set, service will try to prevent creation of large unoptimized segments.
-    /// When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
-    /// Updates will be resumed when optimization is completed and segments are optimized below the threshold.
-    /// Using this option may lead to increased delay between submitting an update and its application.
+    /// If enabled, the service will try to prevent the creation of large unoptimized segments.
+    /// When enabled, new points written to segments larger than the indexing threshold are stored
+    /// as "deferred points": they are persisted in the WAL and segments, but excluded from
+    /// read/search results until the corresponding segments are optimized (e.g. indexed,
+    /// quantized, or moved to mmap storage).
+    /// Update requests with wait=true will only return after the deferred points become visible,
+    /// which may significantly increase the perceived latency between submitting an update and its
+    /// completion. Update requests with wait=false are not affected.
     /// Default is disabled.
     #[prost(bool, optional, tag = "10")]
     pub prevent_unoptimized: ::core::option::Option<bool>,
