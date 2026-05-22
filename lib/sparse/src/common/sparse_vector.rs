@@ -132,6 +132,11 @@ impl SparseVector {
         Ok(vector)
     }
 
+    #[cfg(feature = "testing")]
+    pub fn new_unchecked(indices: Vec<DimId>, values: Vec<DimWeight>) -> Self {
+        SparseVector { indices, values }
+    }
+
     /// Sort this vector by indices.
     ///
     /// Sorting is required for scoring and overlap checks.
