@@ -97,3 +97,11 @@ pub(crate) fn out_of_bounds(id: DimOffset, len: usize) -> UniversalIoError {
         format!("DimOffset {id} out of bounds. Index contains {len} posting lists."),
     ))
 }
+
+/// Error returned when on-disk index bytes fail length or alignment checks.
+pub(crate) fn corrupted_index() -> UniversalIoError {
+    UniversalIoError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "Sparse index is corrupted",
+    ))
+}

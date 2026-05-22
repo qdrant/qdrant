@@ -34,8 +34,11 @@ pub fn bench_search(c: &mut Criterion) {
     bench_uniform_random(c, "random-500k", 500_000);
 
     {
-        let query_vectors =
-            loaders::load_csr_vecs(Dataset::NeurIps2023Queries.download().unwrap()).unwrap();
+        let query_vectors = Csr::open(Dataset::NeurIps2023Queries.download().unwrap())
+            .unwrap()
+            .iter()
+            .unwrap()
+            .collect::<Vec<_>>();
 
         let index_1m = load_csr_index(Dataset::NeurIps2023_1M.download().unwrap(), 1.0).unwrap();
         run_bench(c, "neurips2023-1M", index_1m, &query_vectors);
@@ -220,12 +223,8 @@ fn load_csr_index(path: impl AsRef<Path>, ratio: f32) -> io::Result<InvertedInde
     let count = (csr.len() as f32 * ratio) as usize;
     let bar =
         ProgressBar::with_draw_target(Some(count as u64), ProgressDrawTarget::stderr_with_hz(12));
-    for (row, vec) in bar.wrap_iter(csr.iter().take(count).enumerate()) {
-        builder.add(
-            row as u32,
-            vec.map(|v| v.into_remapped())
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-        );
+    for (row, vec) in bar.wrap_iter(csr.iter()?.take(count).enumerate()) {
+        builder.add(row as u32, vec.into_remapped());
     }
     bar.finish_and_clear();
     Ok(builder.build())

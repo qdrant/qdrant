@@ -48,12 +48,12 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let query_vectors = Csr::open(Dataset::NeurIps2023Queries.download().unwrap())
         .unwrap()
         .iter()
-        .map(|v| v.unwrap())
+        .unwrap()
         .collect_vec();
     sparse_vector_index_search_benchmark_impl(
         c,
         "neurips2023-1M",
-        dataset_vectors.iter().map(|v| v.unwrap()),
+        dataset_vectors.iter().unwrap(),
         &query_vectors,
     );
 }
