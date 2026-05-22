@@ -27,8 +27,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::{
-    MultiVectorStorage, VectorOffset, VectorOffsetType, VectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -41,16 +40,6 @@ pub struct MultivectorMmapOffset {
     pub offset: u32,
     pub count: u32,
     pub capacity: u32,
-}
-
-impl VectorOffset for MultivectorMmapOffset {
-    fn offset(self) -> VectorOffsetType {
-        self.offset as _
-    }
-
-    fn multi_vector_count(self) -> usize {
-        self.count as _
-    }
 }
 
 pub(crate) fn flattened_to_multi_vector<T: PrimitiveVectorElement>(
@@ -86,12 +75,18 @@ where
     P: AccessPattern,
     S: UniversalRead,
 {
-    let mmap_offset = *offsets
-        .get::<P>(key as VectorOffsetType)?
-        .first()
-        .expect("mmap_offset must not be empty");
-    let flattened =
-        vectors.get_many::<P>(mmap_offset.offset(), mmap_offset.multi_vector_count())?;
+    let &[multi_offset] = offsets.get::<P>(key as VectorOffsetType)?.as_ref() else {
+        unreachable!("multi-vector offsets are stored as vectors of length 1");
+    };
+
+    let MultivectorMmapOffset {
+        offset,
+        count,
+        capacity: _,
+    } = multi_offset;
+
+    let flattened = vectors.get_many::<P>(offset as _, count as _)?;
+
     Some(flattened_to_multi_vector(flattened, vectors.dim()))
 }
 
