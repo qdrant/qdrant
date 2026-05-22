@@ -7567,6 +7567,7 @@ dependencies = [
  "sparse",
  "tempfile",
  "validator",
+ "zerocopy",
 ]
 
 [[package]]
