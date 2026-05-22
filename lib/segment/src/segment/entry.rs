@@ -599,8 +599,7 @@ impl NonAppendableSegmentEntry for Segment {
                 // Incompatible via the normal flow).
                 SchemaTransition::Identical | SchemaTransition::Incompatible => Ok(false),
                 SchemaTransition::OnlyOnDiskFlipped { new_on_disk } => {
-                    let swapped =
-                        payload_index.try_swap_on_disk(key, new_on_disk, field_schema)?;
+                    let swapped = payload_index.try_swap_on_disk(key, new_on_disk, field_schema)?;
                     if swapped {
                         drop(payload_index);
                         segment
