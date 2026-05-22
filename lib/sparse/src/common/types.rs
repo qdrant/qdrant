@@ -12,6 +12,9 @@ pub type DimWeight = f32;
 pub trait Weight: PartialEq + Copy + Debug + FromBytes + Immutable + KnownLayout + 'static {
     type QuantizationParams: Copy + PartialEq + Debug + FromBytes + Immutable + KnownLayout;
 
+    #[cfg(feature = "testing")]
+    const NAME: &'static str;
+
     fn quantization_params_for(
         values: impl ExactSizeIterator<Item = DimWeight> + Clone,
     ) -> Self::QuantizationParams;
@@ -29,6 +32,9 @@ pub trait Weight: PartialEq + Copy + Debug + FromBytes + Immutable + KnownLayout
 
 impl Weight for f32 {
     type QuantizationParams = ();
+
+    #[cfg(feature = "testing")]
+    const NAME: &'static str = "f32";
 
     #[inline]
     fn quantization_params_for(_values: impl ExactSizeIterator<Item = DimWeight> + Clone) {}
@@ -53,6 +59,9 @@ impl Weight for f32 {
 impl Weight for half::f16 {
     type QuantizationParams = ();
 
+    #[cfg(feature = "testing")]
+    const NAME: &'static str = "f16";
+
     #[inline]
     fn quantization_params_for(_values: impl ExactSizeIterator<Item = DimWeight> + Clone) {}
 
@@ -75,6 +84,8 @@ impl Weight for half::f16 {
 #[cfg(feature = "testing")]
 impl Weight for u8 {
     type QuantizationParams = ();
+
+    const NAME: &'static str = "u8";
 
     #[inline]
     fn quantization_params_for(_values: impl ExactSizeIterator<Item = DimWeight> + Clone) {}
@@ -119,6 +130,9 @@ pub struct QuantizedU8Params {
 
 impl Weight for QuantizedU8 {
     type QuantizationParams = QuantizedU8Params;
+
+    #[cfg(feature = "testing")]
+    const NAME: &'static str = "u8";
 
     #[inline]
     fn quantization_params_for(
