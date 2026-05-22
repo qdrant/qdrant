@@ -723,6 +723,10 @@ impl SegmentBuilder {
             // Clear cache for payload index to avoid cache pollution
             payload_index_arc.borrow().clear_cache_if_on_disk()?;
 
+            // The id tracker is loaded into RAM but its on-disk files are written
+            // during the build; drop their page cache to avoid cache pollution.
+            id_tracker_arc.borrow().clear_cache_if_on_disk()?;
+
             // We're done with CPU-intensive tasks, release CPU permit
             debug_assert_eq!(
                 Arc::strong_count(&permit),

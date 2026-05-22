@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use common::bitvec::BitSlice;
+use common::fs::clear_disk_cache;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use fs_err::File;
@@ -381,5 +382,23 @@ impl IdTracker for MutableIdTracker {
     #[inline]
     fn files(&self) -> Vec<PathBuf> {
         Self::segment_files(&self.segment_path)
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            segment_path,
+            internal_to_version: _, // kept in RAM
+            mappings: _,            // kept in RAM
+            pending_versions: _,
+            pending_mappings: _,
+            is_alive_lock: _,
+            mappings_expected_len: _,
+        } = self;
+        // Mappings and versions live in RAM; the on-disk files are append-only
+        // logs that aren't mmap-backed, so drop their page cache with `fadvise`.
+        for file in Self::segment_files(segment_path) {
+            clear_disk_cache(&file)?;
+        }
+        Ok(())
     }
 }
