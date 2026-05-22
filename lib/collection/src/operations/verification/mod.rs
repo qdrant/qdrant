@@ -340,6 +340,15 @@ impl StrictModeVerification for SearchParams {
             "oversampling",
         )?;
 
+        // Validate hnsw_ef lower bound
+        if let Some(hnsw_ef) = self.hnsw_ef {
+            if hnsw_ef < 1 {
+                return Err(CollectionError::bad_request(
+                    "hnsw_ef must be at least 1",
+                ));
+            }
+        }
+
         check_limit_opt(
             self.hnsw_ef,
             strict_mode_config.search_max_hnsw_ef,
@@ -436,6 +445,7 @@ mod test {
         test_request_exact(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
+        test_hnsw_ef_validation(&collection).await;
     }
 
     async fn test_query_limit(collection: &Collection) {
@@ -660,6 +670,30 @@ mod test {
             update_mode: None,
         });
         assert_strict_mode_success(request, collection).await;
+    }
+
+    async fn test_hnsw_ef_validation(collection: &Collection) {
+        // Test that hnsw_ef=0 is rejected
+        let invalid_params = SearchParams {
+            hnsw_ef: Some(0),
+            ..SearchParams::default()
+        };
+        assert_strict_mode_error(
+            discover_fixture(None, None, Some(invalid_params)),
+            collection,
+        )
+        .await;
+
+        // Test that hnsw_ef=1 is accepted
+        let valid_params = SearchParams {
+            hnsw_ef: Some(1),
+            ..SearchParams::default()
+        };
+        assert_strict_mode_success(
+            discover_fixture(None, None, Some(valid_params)),
+            collection,
+        )
+        .await;
     }
 
     async fn assert_strict_mode_error<R: StrictModeVerification>(
