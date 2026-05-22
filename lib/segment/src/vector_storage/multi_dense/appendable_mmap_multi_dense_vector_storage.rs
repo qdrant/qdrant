@@ -209,34 +209,12 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
-        // Collect multi-vector offsets
-        let mut point_indexes = Vec::with_capacity(keys.len());
-        let mut offsets = Vec::with_capacity(keys.len());
+        let point_offsets = keys.iter().copied().enumerate();
 
-        let point_offsets = keys
-            .iter()
-            .enumerate()
-            .map(|(index, &point_offset)| (index, point_offset, 1));
-
-        for (point_index, offset) in self.offsets.iter_vectors::<Random, _>(point_offsets) {
-            // `PointOffsetType::multi_vector_count` is always 1, and `self.offsets` is `ChunkedVectors`
-            // with vector dimension set to 1, so we expect to get an `offset` "vector" of exactly 1 value
-            let &[offset] = offset.as_ref() else {
-                unreachable!();
-            };
-
-            point_indexes.push(point_index);
-            offsets.push(offset);
+        for (index, flattened) in self.iter_vectors::<Sequential, _>(point_offsets) {
+            let vector = TypedMultiDenseVectorRef::new(&flattened, self.vector_dim());
+            callback(index, vector)
         }
-
-        // Fetch multi-vectors
-        self.vectors
-            .for_each_in_batch(&offsets, |offset_index, vectors| {
-                let point_index = point_indexes[offset_index];
-                let vector = TypedMultiDenseVectorRef::new(vectors, self.vector_dim());
-
-                callback(point_index, vector);
-            });
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
