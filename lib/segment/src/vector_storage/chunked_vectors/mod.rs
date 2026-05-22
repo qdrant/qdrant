@@ -46,7 +46,8 @@ mod tests {
             let random_offset = 666;
             let batch_size = 10;
 
-            let batch_ids = (random_offset..random_offset + batch_size).collect::<Vec<_>>();
+            let batch_ids = (random_offset as u32..random_offset as u32 + batch_size as u32)
+                .collect::<Vec<_>>();
             let mut vectors_buffer = Vec::with_capacity(batch_size);
             chunked_mmap.for_each_in_batch(&batch_ids, |i, vec| {
                 assert_eq!(i, vectors_buffer.len());
