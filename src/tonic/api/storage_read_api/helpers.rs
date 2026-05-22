@@ -264,7 +264,7 @@ pub fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::ZerocopySize(e) => Status::internal(e),
         UniversalIoError::QueueIsFull => Status::internal(e.to_string()),
         UniversalIoError::S3(_)
-        | UniversalIoError::S3RuntimeShutDown
-        | UniversalIoError::S3Config { .. } => Status::internal(e.to_string()),
+        | UniversalIoError::S3Config { .. }
+        | UniversalIoError::TaskPanicked(_) => Status::internal(e.to_string()),
     }
 }

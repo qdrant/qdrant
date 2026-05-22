@@ -43,11 +43,11 @@ pub enum UniversalIoError {
     #[error("S3 object store error: {0}")]
     S3(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("S3 runtime worker has shut down")]
-    S3RuntimeShutDown,
-
     #[error("S3 configuration missing or invalid: {description}")]
     S3Config { description: String },
+
+    #[error("Background read task panicked: {0}")]
+    TaskPanicked(String),
 }
 
 impl UniversalIoError {
@@ -105,9 +105,6 @@ mod tests {
 
     #[test]
     fn s3_error_variants_format() {
-        let e = UniversalIoError::S3RuntimeShutDown;
-        assert_eq!(e.to_string(), "S3 runtime worker has shut down");
-
         let e = UniversalIoError::S3Config {
             description: "missing bucket".into(),
         };
