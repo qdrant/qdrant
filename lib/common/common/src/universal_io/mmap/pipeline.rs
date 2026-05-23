@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use super::{MmapFile, read};
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::{
-    BorrowedReadPipeline, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UserData,
+    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UserData,
 };
 
 pub struct BorrowedMmapReadPipeline<'file, T, U> {
@@ -12,7 +12,7 @@ pub struct BorrowedMmapReadPipeline<'file, T, U> {
 
 impl<'file, T, U> BorrowedReadPipeline<'file, T, U> for BorrowedMmapReadPipeline<'file, T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = MmapFile;
@@ -51,7 +51,7 @@ pub struct OwnedMmapReadPipeline<T, U> {
 
 impl<T, U> OwnedReadPipeline<T, U> for OwnedMmapReadPipeline<T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = MmapFile;

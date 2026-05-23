@@ -15,8 +15,8 @@ pub use self::error::UniversalIoError;
 pub use self::io_uring::IoUringFile;
 pub use self::mmap::MmapFile;
 pub use self::traits::{
-    BorrowedReadPipeline, OwnedReadPipeline, UniversalRead, UniversalReadFileOps, UniversalWrite,
-    UserData,
+    BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalRead, UniversalReadFileOps,
+    UniversalWrite, UserData,
 };
 pub use self::types::{
     ByteOffset, FileIndex, Flusher, OpenOptions, OpenOptionsExtra, Populate, ReadRange, Result,

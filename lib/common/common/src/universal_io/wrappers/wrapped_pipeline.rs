@@ -4,7 +4,9 @@ use std::marker::PhantomData;
 use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{BorrowedReadPipeline, OwnedReadPipeline, ReadRange, Result, UserData};
+use crate::universal_io::{
+    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UserData,
+};
 
 /// Default implementation of [`BorrowedReadPipeline`] for wrappers.
 pub struct BorrowedWrappedReadPipeline<'a, File, Inner> {
@@ -17,7 +19,7 @@ impl<'a, File, Inner, T, U> BorrowedReadPipeline<'a, T, U>
 where
     File: TransparentWrapper<Inner::File>,
     Inner: BorrowedReadPipeline<'a, T, U>,
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = File;
@@ -62,7 +64,7 @@ impl<File, Inner, T, U> OwnedReadPipeline<T, U> for OwnedWrappedReadPipeline<Fil
 where
     File: TransparentWrapper<Inner::File>,
     Inner: OwnedReadPipeline<T, U>,
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = File;

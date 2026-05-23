@@ -10,7 +10,7 @@ use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
 use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
-use super::traits::UniversalReadFileOps;
+use super::traits::{Item, UniversalReadFileOps};
 use super::*;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
@@ -59,13 +59,13 @@ impl UniversalRead for MmapFile {
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedMmapReadPipeline<'a, T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     type OwnedReadPipeline<T, U>
         = OwnedMmapReadPipeline<T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -196,7 +196,7 @@ impl UniversalRead for MmapFile {
         Ok(())
     }
 
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         let mmap = self.as_bytes::<P>();
         let items = read(mmap, range)?;
         Ok(Cow::Borrowed(items))
