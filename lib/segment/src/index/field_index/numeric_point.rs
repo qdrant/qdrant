@@ -75,7 +75,7 @@ const fn derive_point_padding<T: bytemuck::Pod>() -> usize {
 
 /// A trait that should represent common properties of integer and floating point types.
 /// In particular, i64 and f64.
-pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
+pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod + Send {
     /// This is to be able to derive [`bytemuck::Pod`] for [`Point<T>`], which is required for safe de/serialization.
     ///
     /// Since we need ['Point<T>`] to be repr(packed), this padding must be picked to be the next multiple of the largest
@@ -86,7 +86,8 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
         + PartialEq
         + PartialOrd
         + Serialize
-        + for<'de> serde::Deserialize<'de>;
+        + for<'de> serde::Deserialize<'de>
+        + Send;
 
     fn min_value() -> Self;
     fn max_value() -> Self;

@@ -20,7 +20,7 @@ use self::error::*;
 use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
 use self::runtime::*;
-use super::traits::UniversalReadFileOps;
+use super::traits::{Item, UniversalReadFileOps};
 use super::*;
 use crate::generic_consts::AccessPattern;
 
@@ -55,13 +55,13 @@ impl UniversalRead for IoUringFile {
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedIoUringPipeline<'a, T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     type OwnedReadPipeline<T, U>
         = OwnedIoUringPipeline<T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -99,7 +99,7 @@ impl UniversalRead for IoUringFile {
         Ok(())
     }
 
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         if self.direct_io {
             // direct_io needs special handling
             return self

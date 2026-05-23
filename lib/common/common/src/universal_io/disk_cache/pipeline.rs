@@ -3,13 +3,13 @@ use std::borrow::Cow;
 use super::CachedSlice;
 use crate::generic_consts::{AccessPattern, Random};
 use crate::universal_io::{
-    BorrowedReadPipeline, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead,
-    UserData,
+    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError,
+    UniversalRead, UserData,
 };
 
 pub struct BorrowedDiskCacheReadPipeline<'file, T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     result: Option<(U, Cow<'file, [T]>)>,
@@ -17,7 +17,7 @@ where
 
 impl<'file, T, U> BorrowedReadPipeline<'file, T, U> for BorrowedDiskCacheReadPipeline<'file, T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = CachedSlice;
@@ -61,7 +61,7 @@ pub struct OwnedDiskCacheReadPipeline<T, U> {
 
 impl<T, U> OwnedReadPipeline<T, U> for OwnedDiskCacheReadPipeline<T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = CachedSlice;

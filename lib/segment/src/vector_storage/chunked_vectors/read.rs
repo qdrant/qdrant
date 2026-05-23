@@ -25,7 +25,7 @@ use crate::vector_storage::{VectorOffset, VectorOffsetType};
 /// not refreshed afterwards. Mutating storage uses [`super::ChunkedVectors`]
 /// which wraps this and adds a writable status mmap.
 #[derive(Debug)]
-pub struct ChunkedVectorsRead<T: bytemuck::Pod, S: UniversalRead> {
+pub struct ChunkedVectorsRead<T: bytemuck::Pod + Send, S: UniversalRead> {
     pub(super) config: ChunkedVectorsConfig,
     /// Number of vectors currently stored. Snapshot for read-only mode; for
     /// [`super::ChunkedVectors`] this is kept in sync with the writable status
@@ -35,7 +35,7 @@ pub struct ChunkedVectorsRead<T: bytemuck::Pod, S: UniversalRead> {
     pub(super) directory: PathBuf,
 }
 
-impl<T: bytemuck::Pod, S: UniversalRead> ChunkedVectorsRead<T, S> {
+impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     pub(super) fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
     }

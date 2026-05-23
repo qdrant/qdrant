@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use super::{BorrowedReadPipeline, OwnedReadPipeline, UniversalReadFileOps, UserData};
+use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalReadFileOps, UserData};
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{OpenOptions, ReadRange, Result, UniversalKind};
 
@@ -12,12 +12,12 @@ pub trait UniversalRead: UniversalReadFileOps {
     type BorrowedReadPipeline<'file, T, U>: BorrowedReadPipeline<'file, T, U, File = Self>
     where
         Self: 'file,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     type OwnedReadPipeline<T, U>: OwnedReadPipeline<T, U, File = Self>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
@@ -29,13 +29,13 @@ pub trait UniversalRead: UniversalReadFileOps {
     fn reopen(&mut self) -> Result<()>;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
+    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
 
     /// Read the entire file in one logical access.
     ///
     /// Implementations may override this to avoid the two accesses that would result from
     /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
-    fn read_whole<T: bytemuck::Pod>(&self) -> Result<Cow<'_, [T]>> {
+    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
         let range = ReadRange {
             byte_offset: 0,
             length: self.len::<T>()?,
@@ -51,7 +51,7 @@ pub trait UniversalRead: UniversalReadFileOps {
     ) -> Result<()>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
     {
         for record in self.read_iter::<P, T, U>(ranges)? {
@@ -70,7 +70,7 @@ pub trait UniversalRead: UniversalReadFileOps {
     ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
     {
         let reads = ranges
@@ -99,7 +99,7 @@ pub trait UniversalRead: UniversalReadFileOps {
     ) -> Result<()>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
         Self: 'a,
     {
@@ -118,7 +118,7 @@ pub trait UniversalRead: UniversalReadFileOps {
     ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
         Self: 'a,
     {

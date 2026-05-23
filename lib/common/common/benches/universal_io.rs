@@ -62,7 +62,7 @@ fn benches(c: &mut Criterion) {
     }
 }
 
-fn read_benches<T: bytemuck::Pod, C: UniversalRead>(
+fn read_benches<T: bytemuck::Pod + Send, C: UniversalRead>(
     c: &mut Criterion,
     impl_name: &str, // Corresponds to `C`
     elem_size: &str, // Corresponds to `T`

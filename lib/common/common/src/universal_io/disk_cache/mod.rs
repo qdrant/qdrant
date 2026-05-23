@@ -6,7 +6,7 @@ use fs_err as fs;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    OpenOptions, OpenOptionsExtra, ReadRange, Result, UniversalIoError, UniversalRead,
+    Item, OpenOptions, OpenOptionsExtra, ReadRange, Result, UniversalIoError, UniversalRead,
     UniversalReadFileOps, UserData, local_file_ops,
 };
 
@@ -72,13 +72,13 @@ impl UniversalRead for CachedSlice {
         = BorrowedDiskCacheReadPipeline<'a, T, U>
     where
         Self: 'a,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     type OwnedReadPipeline<T, U>
         = OwnedDiskCacheReadPipeline<T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -111,7 +111,7 @@ impl UniversalRead for CachedSlice {
         Ok(())
     }
 
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
             / size_of::<T>();
         let elem_length = usize::try_from(range.length).expect("range.length is within usize");

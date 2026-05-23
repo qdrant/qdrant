@@ -20,12 +20,13 @@
 
 use std::borrow::Cow;
 
+use super::Item;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{ReadRange, Result, UserData};
 
 pub trait BorrowedReadPipeline<'file, T, U>: Sized
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File: 'file;
