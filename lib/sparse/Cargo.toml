@@ -40,7 +40,9 @@ dataset = { path = "../common/dataset" }
 fs-err = { workspace = true, features = ["debug"] }
 generic-tests = { workspace = true }
 indicatif = { workspace = true }
+sha2 = { workspace = true }
 sparse = { path = ".", features = ["testing"] }
+zerocopy = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }

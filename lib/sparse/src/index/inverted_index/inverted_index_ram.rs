@@ -1,10 +1,16 @@
 use std::borrow::Cow;
+#[cfg(feature = "testing")]
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::Result;
+#[cfg(feature = "testing")]
+use fs_err as fs;
+#[cfg(feature = "testing")]
+use zerocopy::{FromBytes, IntoBytes};
 
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset};
@@ -194,6 +200,72 @@ impl InvertedIndexRam {
             .iter()
             .map(|posting| posting.elements.len() * size_of::<PostingElementEx>())
             .sum()
+    }
+}
+
+#[cfg(feature = "testing")]
+/// Load/save methods to speed up benchmark setup.
+impl InvertedIndexRam {
+    const TEST_MAGIC: &'static [u8] = b"InvertedIndexRam for benchmarks.";
+
+    pub fn test_save(&self, path: &Path) -> std::io::Result<()> {
+        let InvertedIndexRam {
+            postings,
+            vector_count,
+            total_sparse_size,
+        } = self;
+
+        let mut f = BufWriter::new(fs::File::create(path)?);
+        f.write_all(Self::TEST_MAGIC)?;
+        f.write_all(postings.len().as_bytes())?;
+        for posting in postings {
+            f.write_all(posting.elements.len().as_bytes())?;
+            let bytes = posting.elements.as_bytes();
+            f.write_all(bytes)?;
+            // padding
+            f.write_all(&0usize.to_ne_bytes()[..bytes.len() % size_of::<usize>()])?;
+        }
+        f.write_all(vector_count.as_bytes())?;
+        f.write_all(total_sparse_size.as_bytes())?;
+
+        Ok(())
+    }
+
+    pub fn test_load(path: &Path) -> std::io::Result<Self> {
+        let f = fs::File::open(path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&f)? };
+        let bytes = &mmap[..];
+
+        let (magic, bytes) =
+            <[u8]>::ref_from_prefix_with_elems(bytes, Self::TEST_MAGIC.len()).unwrap();
+        if magic != Self::TEST_MAGIC {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid magic",
+            ));
+        }
+
+        let (postings_len, bytes) = usize::ref_from_prefix(bytes).unwrap();
+        let mut postings = Vec::with_capacity(*postings_len);
+        let mut bytes_cursor = bytes;
+        for _ in 0..*postings_len {
+            let (elements_len, bytes) = usize::ref_from_prefix(bytes_cursor).unwrap();
+            let (elements, bytes) =
+                <[PostingElementEx]>::ref_from_prefix_with_elems(bytes, *elements_len).unwrap();
+            let elements = elements.to_vec();
+            postings.push(PostingList { elements });
+            bytes_cursor = &bytes[bytes.as_ptr().align_offset(size_of::<usize>())..];
+        }
+        let bytes = bytes_cursor;
+
+        let (&vector_count, bytes) = usize::ref_from_prefix(bytes).unwrap();
+        let (&total_sparse_size, _bytes) = usize::ref_from_prefix(bytes).unwrap();
+
+        Ok(InvertedIndexRam {
+            postings,
+            vector_count,
+            total_sparse_size,
+        })
     }
 }
 

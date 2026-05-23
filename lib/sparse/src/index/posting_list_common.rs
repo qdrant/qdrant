@@ -1,5 +1,5 @@
 use common::types::PointOffsetType;
-use zerocopy::{FromBytes, Immutable, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::types::DimWeight;
 
@@ -23,7 +23,7 @@ pub struct PostingElement {
     pub weight: DimWeight,
 }
 
-#[derive(Debug, Clone, PartialEq, FromBytes, Immutable, KnownLayout)]
+#[derive(Debug, Clone, PartialEq, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 pub struct PostingElementEx {
     /// Record ID
