@@ -6,8 +6,8 @@ use bytemuck::TransparentWrapper;
 use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps,
-    UserData,
+    Item, OpenOptions, ReadRange, Result, ShardStorageContext, UniversalKind, UniversalRead,
+    UniversalReadFileOps, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -46,10 +46,28 @@ where
         T: Item,
         U: UserData;
 
+    type OpenExtras = S::OpenExtras;
+
+    #[inline]
+    fn extras_from_context(ctx: &ShardStorageContext) -> Result<Self::OpenExtras> {
+        S::extras_from_context(ctx)
+    }
+
     #[inline]
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         debug_assert!(!options.writeable);
         let io = S::open(path, options)?;
+        Ok(Self(io))
+    }
+
+    #[inline]
+    fn open_with_extras(
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extras: Self::OpenExtras,
+    ) -> Result<Self> {
+        debug_assert!(!options.writeable);
+        let io = S::open_with_extras(path, options, extras)?;
         Ok(Self(io))
     }
 

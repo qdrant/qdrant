@@ -81,6 +81,12 @@ impl UniversalRead for CachedSlice {
         T: Item,
         U: UserData;
 
+    type OpenExtras = ();
+
+    fn extras_from_context(_: &super::ShardStorageContext) -> Result<()> {
+        Ok(())
+    }
+
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let Some(controller) = CacheController::global() else {
             return Err(UniversalIoError::uninitialized(

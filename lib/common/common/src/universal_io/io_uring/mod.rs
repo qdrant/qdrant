@@ -64,6 +64,12 @@ impl UniversalRead for IoUringFile {
         T: Item,
         U: UserData;
 
+    type OpenExtras = ();
+
+    fn extras_from_context(_: &super::ShardStorageContext) -> Result<()> {
+        Ok(())
+    }
+
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         // Check that io_uring is supported on this system.
         pool::check_io_uring_support()?;

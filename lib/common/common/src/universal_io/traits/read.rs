@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalReadFileOps, UserData};
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{OpenOptions, ReadRange, Result, UniversalKind};
+use crate::universal_io::{OpenOptions, ReadRange, Result, ShardStorageContext, UniversalKind};
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
@@ -20,7 +20,39 @@ pub trait UniversalRead: UniversalReadFileOps {
         T: Item,
         U: UserData;
 
+    /// Backend-specific per-`open` extras derived from a
+    /// [`ShardStorageContext`].
+    ///
+    /// Today most backends use `()` while the migration is in progress.
+    /// As each backend grows per-shard configuration (cache controllers,
+    /// io_uring runtime, mirror dirs, default mmap advice), its `OpenExtras`
+    /// becomes a real struct holding that state.
+    type OpenExtras: Clone + Send + Sync;
+
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
+
+    /// Derive this backend's [`OpenExtras`](Self::OpenExtras) from a
+    /// shard-wide context.
+    ///
+    /// Different components in the same shard pick different `S`; each calls
+    /// `S::extras_from_context(&ctx)` to obtain the right per-backend config
+    /// from the shared shard context.
+    fn extras_from_context(ctx: &ShardStorageContext) -> Result<Self::OpenExtras>;
+
+    /// Open with backend-specific extras.
+    ///
+    /// Default impl ignores `extras` and delegates to [`open`](Self::open).
+    /// Backends override this method once their `OpenExtras` carries real
+    /// state. Wrappers (`ReadOnly<S>`, ...) override it to forward extras
+    /// to the inner backend.
+    fn open_with_extras(
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extras: Self::OpenExtras,
+    ) -> Result<Self> {
+        let _ = extras;
+        Self::open(path, options)
+    }
 
     /// Enables live-reloading of files. Append-only files can make the underlying file larger,
     /// so reopening can account for this growth.
