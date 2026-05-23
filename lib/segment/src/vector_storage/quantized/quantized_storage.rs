@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
-use common::mmap::{AdviceSetting, MmapFlusher, advice};
+use common::mmap::{MmapFlusher, advice};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{
+    AccessHint, OpenOptions, OpenOptionsExtra, Populate, ReadOnly, ReadRange, UniversalRead,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 
@@ -51,10 +53,10 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
-            need_sequential: false,
             populate: Populate::No,
-            advice: AdviceSetting::Global,
-            extra: Default::default(),
+            access_hint: AccessHint::Default,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         }
     }
 

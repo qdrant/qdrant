@@ -8,10 +8,11 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
+
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange, TypedStorage,
-    UniversalRead,
+    AccessHint, MmapFile, OpenOptions as UniversalOpenOptions, OpenOptionsExtra, Populate,
+    ReadOnly, ReadRange, TypedStorage, UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
@@ -58,10 +59,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
 
         let options = UniversalOpenOptions {
             writeable: false,
-            need_sequential: true,
             populate: Populate::from(populate),
-            advice: AdviceSetting::Global,
-            extra: Default::default(),
+            access_hint: AccessHint::Default,
+            need_sequential: true,
+            extra: OpenOptionsExtra::default(),
         };
         let storage = TypedStorage::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(

@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::bitvec::BitSlice;
-use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
+use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{MmapFile, OpenOptions, Populate, UniversalWrite};
+use common::universal_io::{
+    AccessHint, MmapFile, OpenOptions, OpenOptionsExtra, Populate, UniversalWrite,
+};
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 
@@ -21,10 +23,10 @@ const BITMASK_NAME: &str = "bitmask.dat";
 fn open_options() -> OpenOptions {
     OpenOptions {
         writeable: true,
-        need_sequential: false,
         populate: Populate::No,
-        advice: AdviceSetting::Advice(Advice::Random),
-        extra: Default::default(),
+        access_hint: AccessHint::Random,
+        need_sequential: false,
+        extra: OpenOptionsExtra::default(),
     }
 }
 
@@ -132,10 +134,10 @@ impl<S: UniversalWrite> Bitmask<S> {
             &path,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::Auto,
-                advice: AdviceSetting::Advice(Advice::Random),
-                extra: Default::default(),
+                access_hint: AccessHint::Random,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
         let regions_gaps = BitmaskGaps::open(dir, config.clone())?;

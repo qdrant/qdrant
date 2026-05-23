@@ -2,9 +2,10 @@ use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
-use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
+use common::mmap::create_and_ensure_length;
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalWrite,
+    AccessHint, OpenOptions, OpenOptionsExtra, Populate, ReadRange, UniversalIoError,
+    UniversalRead, UniversalWrite,
 };
 use smallvec::SmallVec;
 
@@ -19,10 +20,10 @@ pub type PageId = u32;
 fn tracker_open_options() -> OpenOptions {
     OpenOptions {
         writeable: true,
-        need_sequential: false,
         populate: Populate::No,
-        advice: AdviceSetting::Advice(Advice::Random),
-        extra: Default::default(),
+        access_hint: AccessHint::Random,
+        need_sequential: false,
+        extra: OpenOptionsExtra::default(),
     }
 }
 

@@ -167,10 +167,10 @@ where
 
         let open_options = common::universal_io::OpenOptions {
             writeable: false,
-            need_sequential: false,
             populate: Populate::from(populate),
-            advice: AdviceSetting::Global,
-            extra: Default::default(),
+            access_hint: common::universal_io::AccessHint::Default,
+            need_sequential: false,
+            extra: common::universal_io::OpenOptionsExtra::default(),
         };
 
         let store = ReadOnly::open(&file_name, open_options)?;

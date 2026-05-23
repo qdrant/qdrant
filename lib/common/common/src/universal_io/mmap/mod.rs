@@ -77,13 +77,10 @@ impl UniversalRead for MmapFile {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
             writeable,
-            need_sequential,
             populate,
-            advice,
-            extra:
-                OpenOptionsExtra {
-                    prevent_caching: _, // Whole point of mmap is to cache
-                },
+            access_hint,
+            need_sequential,
+            extra: OpenOptionsExtra { cache_hint: _ }, // mmap can't bypass the page cache
         } = options;
 
         let populate = match populate {
@@ -92,6 +89,7 @@ impl UniversalRead for MmapFile {
             Populate::Blocking => true,
         };
 
+        let advice = access_hint_to_advice(access_hint);
         let mmap = open_mmap(path.as_ref(), writeable, populate, advice)?;
         let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
@@ -267,6 +265,15 @@ impl UniversalWrite for MmapFile {
     }
 }
 
+fn access_hint_to_advice(hint: AccessHint) -> AdviceSetting {
+    match hint {
+        AccessHint::Default => AdviceSetting::Global,
+        AccessHint::Normal => AdviceSetting::Advice(Advice::Normal),
+        AccessHint::Sequential => AdviceSetting::Advice(Advice::Sequential),
+        AccessHint::Random => AdviceSetting::Advice(Advice::Random),
+    }
+}
+
 fn open_mmap(path: &Path, write: bool, populate: bool, advice: AdviceSetting) -> Result<MmapRaw> {
     // TODO: `fs_err` can cause panic when run on a single-threaded Tokio runtime
     #[expect(clippy::disallowed_types)]
@@ -341,10 +348,10 @@ impl MmapFile {
             path,
             OpenOptions {
                 writeable: false,
-                need_sequential: false,
                 populate: Populate::No,
-                advice: AdviceSetting::Advice(Advice::Normal),
-                extra: Default::default(),
+                access_hint: AccessHint::Normal,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;

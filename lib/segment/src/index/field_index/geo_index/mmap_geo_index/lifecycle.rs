@@ -10,11 +10,12 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
-use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
+use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    AccessHint, MmapFile, OpenOptions, OpenOptionsExtra, Populate, ReadRange, TypedStorage,
+    UniversalRead,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -127,10 +128,10 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: false,
                     populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                    extra: Default::default(),
+                    access_hint: AccessHint::Default,
+                    need_sequential: false,
+                    extra: OpenOptionsExtra::default(),
                 },
             )?;
             deleted.set_ascending_bits_batch(
@@ -178,10 +179,10 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
 
         let open_options = OpenOptions {
             writeable: false,
-            need_sequential: false,
             populate: Populate::from(populate),
-            advice: AdviceSetting::Global,
-            extra: Default::default(),
+            access_hint: AccessHint::Default,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         };
 
         let counts_per_hash = TypedStorage::open(&counts_per_hash_path, open_options)?;
@@ -195,10 +196,10 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             &deleted_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::from(populate),
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;

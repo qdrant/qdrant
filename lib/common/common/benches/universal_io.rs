@@ -4,10 +4,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use common::generic_consts::{Random, Sequential};
-use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
-use common::universal_io::{MmapFile, OpenOptions, Populate, ReadRange, UniversalRead};
+use common::universal_io::{
+    AccessHint, MmapFile, OpenOptions, OpenOptionsExtra, Populate, ReadRange, UniversalRead,
+};
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use rand::rngs::StdRng;
@@ -70,10 +71,10 @@ fn read_benches<T: bytemuck::Pod + Send, C: UniversalRead>(
 ) {
     let options = OpenOptions {
         writeable: false,
-        need_sequential: true,
         populate: Populate::No,
-        advice: AdviceSetting::Global,
-        extra: Default::default(),
+        access_hint: AccessHint::Default,
+        need_sequential: true,
+        extra: OpenOptionsExtra::default(),
     };
     let storage = C::open(path, options).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;

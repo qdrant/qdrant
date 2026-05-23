@@ -2,8 +2,10 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
-use common::universal_io::{Flusher, OpenOptions, Populate, TypedStorage, UniversalWrite};
+use common::mmap::create_and_ensure_length;
+use common::universal_io::{
+    AccessHint, Flusher, OpenOptions, OpenOptionsExtra, Populate, TypedStorage, UniversalWrite,
+};
 use itertools::Itertools;
 
 use super::{RegionId, StorageConfig};
@@ -104,10 +106,10 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
         let options = OpenOptions {
             writeable: true,
-            need_sequential: false,
             populate: Populate::Blocking,
-            advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
+            access_hint: AccessHint::Normal,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         };
         let mut slice_store = TypedStorage::open(&path, options)?;
 
@@ -126,10 +128,10 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let path = gaps_file_path(dir);
         let options = OpenOptions {
             writeable: true,
-            need_sequential: false,
             populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
+            access_hint: AccessHint::Normal,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         };
         let slice_store = TypedStorage::open(&path, options)?;
 
@@ -160,10 +162,10 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
         let options = OpenOptions {
             writeable: true,
-            need_sequential: false,
             populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
+            access_hint: AccessHint::Normal,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         };
         self.slice_store = TypedStorage::open(&self.path, options)?;
 

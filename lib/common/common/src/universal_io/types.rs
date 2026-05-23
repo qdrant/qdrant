@@ -36,28 +36,83 @@ impl From<bool> for Populate {
     }
 }
 
+/// Universal access-pattern hint passed at open time. Each backend honors or
+/// ignores it independently (mmap maps to `madvise`; io_uring ignores).
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum AccessHint {
+    /// Backend picks a default (mmap: process-global `madvise` setting).
+    #[default]
+    Default,
+    /// Standard access; no specific pattern (mmap: `MADV_NORMAL`).
+    Normal,
+    /// Sequential access (mmap: `MADV_SEQUENTIAL`).
+    Sequential,
+    /// Random access (mmap: `MADV_RANDOM`).
+    Random,
+}
+
+impl From<AdviceSetting> for AccessHint {
+    fn from(advice: AdviceSetting) -> Self {
+        match advice {
+            AdviceSetting::Global => AccessHint::Default,
+            AdviceSetting::Advice(Advice::Normal) => AccessHint::Normal,
+            AdviceSetting::Advice(Advice::Sequential) => AccessHint::Sequential,
+            AdviceSetting::Advice(Advice::Random) => AccessHint::Random,
+        }
+    }
+}
+
+/// Universal page-cache hint passed at open time. Each backend honors or
+/// ignores it independently (io_uring uses `O_DIRECT` for `Bypass`; mmap
+/// can't bypass the page cache and ignores).
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum CacheHint {
+    /// Use the backend's default caching behavior.
+    #[default]
+    Default,
+    /// Bypass the OS page cache where possible (io_uring: `O_DIRECT`).
+    Bypass,
+}
+
 /// Options for [`UniversalRead::open`].
 ///
-/// No `#[derive(Default)]`. Prefer specifying all options explicitly. (except
-/// for tests and [`OpenOptions::extra`]).
+/// No `#[derive(Default)]`. Callers must explicitly decide
+/// [`writeable`](Self::writeable), [`populate`](Self::populate),
+/// [`access_hint`](Self::access_hint), and
+/// [`need_sequential`](Self::need_sequential) at every call site —
+/// these are the load-shape decisions an opener has to think about.
+/// Rarely-tweaked knobs live in [`extra`](Self::extra) and can be
+/// defaulted via [`OpenOptionsExtra::default()`] or constructed with
+/// builder methods.
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
     pub writeable: bool,
-    pub need_sequential: bool,
-    /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Populate,
-    /// Use specific mmap advice.
-    pub advice: AdviceSetting,
-    /// Rarely used options.
+    pub access_hint: AccessHint,
+    /// Request a secondary sequential read path *in addition to* the primary.
+    ///
+    /// Mmap honors by creating a second mmap with `MADV_SEQUENTIAL` for bulk
+    /// reads while the primary serves the access pattern in `access_hint`.
+    /// Other backends ignore.
+    pub need_sequential: bool,
+    /// Rarely-tweaked knobs. `OpenOptionsExtra::default()` for the common case.
     pub extra: OpenOptionsExtra,
 }
 
-/// Rarely used options.
-/// Usually [`Default::default()`] is fine.
-#[derive(Copy, Clone, Debug)]
+/// Rarely-tweaked open-time knobs.
+///
+/// Defaults are correct for the vast majority of opens; tweak via builder
+/// methods (`.with_*`) when a specific backend behavior is required.
+#[derive(Copy, Clone, Debug, Default)]
 pub struct OpenOptionsExtra {
-    /// Whether to try to prevent caching for reads.
-    pub prevent_caching: bool,
+    pub cache_hint: CacheHint,
+}
+
+impl OpenOptionsExtra {
+    pub fn with_cache_hint(mut self, cache_hint: CacheHint) -> Self {
+        self.cache_hint = cache_hint;
+        self
+    }
 }
 
 impl OpenOptions {
@@ -66,19 +121,10 @@ impl OpenOptions {
     pub fn new_for_test() -> Self {
         Self {
             writeable: true,
-            need_sequential: true,
             populate: Populate::Auto,
-            advice: AdviceSetting::Global,
-            extra: Default::default(),
-        }
-    }
-}
-
-#[expect(clippy::derivable_impls, reason = "be explicit")]
-impl Default for OpenOptionsExtra {
-    fn default() -> Self {
-        OpenOptionsExtra {
-            prevent_caching: false,
+            access_hint: AccessHint::Default,
+            need_sequential: true,
+            extra: OpenOptionsExtra::default(),
         }
     }
 }
@@ -154,12 +200,11 @@ where
 {
     let options = OpenOptions {
         writeable: false,
-        need_sequential: false,
         populate: Populate::No,
-        advice: AdviceSetting::Advice(Advice::Sequential),
-        extra: Default::default(),
+        access_hint: AccessHint::Sequential,
+        need_sequential: false,
+        extra: OpenOptionsExtra::default(),
     };
-
     let storage = S::open(path, options)?;
     let bytes = storage.read_whole::<u8>()?;
     serde_json::from_slice(&bytes).map_err(UniversalIoError::from)

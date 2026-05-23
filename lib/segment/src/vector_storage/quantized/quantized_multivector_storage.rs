@@ -6,7 +6,9 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::{MmapFile, OpenOptions, Populate, ReadRange, TypedStorage};
+use common::universal_io::{
+    AccessHint, MmapFile, OpenOptions, OpenOptionsExtra, Populate, ReadRange, TypedStorage,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
@@ -172,10 +174,10 @@ impl MultivectorOffsetsStorageMmap {
             path,
             OpenOptions {
                 writeable: false,
-                need_sequential: false,
                 populate: Populate::No,
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 

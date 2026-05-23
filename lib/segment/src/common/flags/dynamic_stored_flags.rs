@@ -4,10 +4,12 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::mmap::{AdviceSetting, create_and_ensure_length};
+use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalWrite};
+use common::universal_io::{
+    AccessHint, OpenOptions, OpenOptionsExtra, Populate, StoredStruct, UniversalWrite,
+};
 use fs_err as fs;
 use itertools::Either;
 
@@ -114,10 +116,10 @@ where
             &status_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::No,
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 
@@ -159,10 +161,10 @@ where
 
         let options = OpenOptions {
             writeable: true,
-            need_sequential: false,
             populate: Populate::from(populate),
-            advice: AdviceSetting::Global,
-            extra: Default::default(),
+            access_hint: AccessHint::Default,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         };
         let flags = StoredBitSlice::open(&path, options)?;
         Ok(flags)

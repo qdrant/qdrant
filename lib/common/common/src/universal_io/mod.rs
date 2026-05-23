@@ -21,7 +21,7 @@ pub use self::traits::{
     UniversalWrite, UserData,
 };
 pub use self::types::{
-    ByteOffset, FileIndex, Flusher, OpenOptions, OpenOptionsExtra, Populate, ReadRange, Result,
-    UniversalKind, read_json_via,
+    AccessHint, ByteOffset, CacheHint, FileIndex, Flusher, OpenOptions, OpenOptionsExtra, Populate,
+    ReadRange, Result, UniversalKind, read_json_via,
 };
 pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};

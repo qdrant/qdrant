@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitSliceExt};
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
+use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, Populate, TypedStorage};
+use common::universal_io::{
+    AccessHint, MmapFile, OpenOptions, OpenOptionsExtra, Populate, TypedStorage,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -82,10 +84,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: false,
                     populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                    extra: Default::default(),
+                    access_hint: AccessHint::Default,
+                    need_sequential: false,
+                    extra: OpenOptionsExtra::default(),
                 },
             )?;
             deleted.set_ascending_bits_batch(
@@ -125,10 +127,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
 
         let pairs_options = OpenOptions {
             writeable: false,
-            need_sequential: false,
             populate: Populate::from(do_populate),
-            advice: AdviceSetting::Global,
-            extra: Default::default(),
+            access_hint: AccessHint::Default,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         };
         let pairs = TypedStorage::open(pairs_path, pairs_options)?;
 
@@ -139,10 +141,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             &deleted_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::Auto,
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;

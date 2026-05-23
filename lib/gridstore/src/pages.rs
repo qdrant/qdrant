@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use ahash::{AHashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
-use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalWrite,
+    AccessHint, FileIndex, Flusher, OpenOptions, OpenOptionsExtra, Populate, ReadRange,
+    UniversalRead, UniversalWrite,
 };
 use itertools::Either;
 
@@ -59,10 +59,10 @@ impl<S: UniversalRead> Pages<S> {
     pub fn attach_page(&mut self, path: &Path) -> Result<()> {
         let options = OpenOptions {
             writeable: true,
-            need_sequential: true,
             populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Random),
-            extra: Default::default(),
+            access_hint: AccessHint::Random,
+            need_sequential: true,
+            extra: OpenOptionsExtra::default(),
         };
 
         let page = S::open(path, options)?;

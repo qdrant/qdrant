@@ -15,7 +15,8 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
 use common::fs::clear_disk_cache;
-use common::mmap::{AdviceSetting, create_and_ensure_length};
+use common::mmap::create_and_ensure_length;
+use common::universal_io::{AccessHint, OpenOptionsExtra};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -87,10 +88,10 @@ where
             deleted_path(segment_path),
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::Blocking,
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 
@@ -103,10 +104,10 @@ where
             version_mapping_path(segment_path),
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::Blocking,
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 
@@ -150,10 +151,10 @@ where
             &deleted_filepath,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::Auto,
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 
@@ -188,10 +189,10 @@ where
             &version_filepath,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::No,
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
         internal_to_version_file.write(0, internal_to_version)?;

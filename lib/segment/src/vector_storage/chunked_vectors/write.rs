@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::mmap::AdviceSetting;
-use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalWrite};
+use common::universal_io::{
+    AccessHint, OpenOptions, OpenOptionsExtra, Populate, StoredStruct, UniversalWrite,
+};
+
 use fs_err as fs;
 use num_traits::AsPrimitive;
 
@@ -121,10 +124,10 @@ where
             status_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: populate.map(Populate::from).unwrap_or_default(),
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 

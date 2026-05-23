@@ -97,13 +97,10 @@ impl UniversalRead for CachedSlice {
         // Disk-cache is backed by a single file
         let OpenOptions {
             writeable,
-            need_sequential: _,
             populate: _,
-            advice: _,
-            extra:
-                OpenOptionsExtra {
-                    prevent_caching: _, // This is cached in disk, backed by a mmap
-                },
+            access_hint: _,
+            need_sequential: _,
+            extra: OpenOptionsExtra { cache_hint: _ }, // This is cached in disk, backed by a mmap
         } = options;
 
         debug_assert!(!writeable);

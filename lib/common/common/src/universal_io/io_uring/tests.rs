@@ -21,9 +21,11 @@ fn test_io_uring_file_for_u64(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path, bytes).unwrap();
 
     let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
+        extra: OpenOptionsExtra::default().with_cache_hint(if o_direct {
+            CacheHint::Bypass
+        } else {
+            CacheHint::Default
+        }),
         ..OpenOptions::new_for_test()
     };
 
@@ -62,9 +64,11 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
     let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
+        extra: OpenOptionsExtra::default().with_cache_hint(if o_direct {
+            CacheHint::Bypass
+        } else {
+            CacheHint::Default
+        }),
         ..OpenOptions::new_for_test()
     };
 
@@ -163,9 +167,11 @@ fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
     let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
+        extra: OpenOptionsExtra::default().with_cache_hint(if o_direct {
+            CacheHint::Bypass
+        } else {
+            CacheHint::Default
+        }),
         ..OpenOptions::new_for_test()
     };
     let file_a = TypedStorage::<IoUringFile, u64>::open(&path_a, opts)?;
@@ -230,9 +236,11 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path_1, bytemuck::cast_slice(&data_1)).unwrap();
 
     let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
+        extra: OpenOptionsExtra::default().with_cache_hint(if o_direct {
+            CacheHint::Bypass
+        } else {
+            CacheHint::Default
+        }),
         ..OpenOptions::new_for_test()
     };
     let file_0 = IoUringFile::open(&path_0, opts)?;
@@ -284,9 +292,11 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
     let mut files: Vec<IoUringFile> = Vec::new();
 
     let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
+        extra: OpenOptionsExtra::default().with_cache_hint(if o_direct {
+            CacheHint::Bypass
+        } else {
+            CacheHint::Default
+        }),
         ..OpenOptions::new_for_test()
     };
 

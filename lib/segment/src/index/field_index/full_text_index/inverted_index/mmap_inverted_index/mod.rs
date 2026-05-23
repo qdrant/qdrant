@@ -6,12 +6,13 @@ use common::bitvec::{BitSlice, BitSliceExt, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
-use common::mmap::{Advice, AdviceSetting, MmapSlice, create_and_ensure_length};
+use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UserData,
+    AccessHint, MmapFile, OpenOptions, OpenOptionsExtra, Populate, ReadRange, TypedStorage,
+    UniversalRead, UserData,
 };
 use types::ZerocopyPostingValue;
 use uio_postings::UniversalPostings;
@@ -132,10 +133,10 @@ impl MmapInvertedIndex<MmapFile> {
                 &deleted_points_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: false,
                     populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                    extra: Default::default(),
+                    access_hint: AccessHint::Default,
+                    need_sequential: false,
+                    extra: OpenOptionsExtra::default(),
                 },
             )?;
             deleted_storage.write_bitslice(&deleted_bitslice)?;
@@ -170,10 +171,10 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
 
         let postings_open_options = OpenOptions {
             writeable: false,
-            need_sequential: false,
             populate: Populate::from(populate),
-            advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
+            access_hint: AccessHint::Normal,
+            need_sequential: false,
+            extra: OpenOptionsExtra::default(),
         };
         let postings = match has_positions {
             false => MmapPostingsEnum::Ids(UniversalPostings::<(), S>::open(
@@ -189,10 +190,10 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &vocab_path,
             OpenOptions {
                 writeable: false,
-                need_sequential: false,
                 populate: Populate::from(populate),
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 
@@ -200,10 +201,10 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &point_to_tokens_count_path,
             OpenOptions {
                 writeable: false,
-                need_sequential: false,
                 populate: Populate::from(populate),
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
 
@@ -211,10 +212,10 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &deleted_points_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::from(populate),
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;

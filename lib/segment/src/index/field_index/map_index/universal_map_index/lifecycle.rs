@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 use ahash::HashMap;
 use common::bitvec::{BitSlice, BitSliceExt};
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::{AdviceSetting, create_and_ensure_length};
+use common::mmap::create_and_ensure_length;
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, Populate};
+use common::universal_io::{AccessHint, MmapFile, OpenOptions, OpenOptionsExtra, Populate};
 use fs_err as fs;
 
 use super::super::MapIndexKey;
@@ -44,10 +44,10 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             &hashmap_path,
             OpenOptions {
                 writeable: false,
-                need_sequential: false,
                 populate: Populate::from(do_populate),
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
@@ -58,10 +58,10 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             &deleted_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: false,
                 populate: Populate::from(do_populate),
-                advice: AdviceSetting::Global,
-                extra: Default::default(),
+                access_hint: AccessHint::Default,
+                need_sequential: false,
+                extra: OpenOptionsExtra::default(),
             },
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
@@ -139,10 +139,10 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: false,
                     populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                    extra: Default::default(),
+                    access_hint: AccessHint::Default,
+                    need_sequential: false,
+                    extra: OpenOptionsExtra::default(),
                 },
             )?;
             deleted.set_ascending_bits_batch(
