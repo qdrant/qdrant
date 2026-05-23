@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, OnceLock};
 
 use fs_err as fs;
 use fs_err::os::unix::fs::FileExt;
@@ -253,23 +253,6 @@ pub(super) enum CacheRead<'a, O> {
     Hit(&'a [u8]),
     /// Cache miss: caller-produced owned value from the `on_miss` closure.
     Miss(O),
-}
-
-/// Global cache controller. Will be used in production.
-static GLOBAL: OnceLock<Arc<CacheController>> = OnceLock::new();
-
-impl CacheController {
-    pub fn initialize_global(path: &Path, size_bytes: u64) {
-        assert!(GLOBAL.get().is_none(), "disk cacher is already initialized");
-        let cacher = Self::new(path, size_bytes).expect("failed to initialize disk cacher");
-        GLOBAL
-            .set(cacher)
-            .expect("disk cacher is already initialized");
-    }
-
-    pub fn global() -> Option<&'static Arc<CacheController>> {
-        GLOBAL.get()
-    }
 }
 
 #[derive(Clone, Debug)]

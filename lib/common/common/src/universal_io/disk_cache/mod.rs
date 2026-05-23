@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 
 use fs_err as fs;
 
+use std::sync::Arc;
+
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    Item, OpenOptions, OpenOptionsExtra, ReadRange, Result, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UserData, local_file_ops,
+    Item, OpenOptions, OpenOptionsExtra, ReadRange, Result, ShardStorageContext, UniversalIoError,
+    UniversalRead, UniversalReadFileOps, UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -17,7 +19,8 @@ mod pipeline;
 mod tests;
 
 pub use cached_slice::CachedSlice;
-use controller::{CacheController, CacheRead};
+pub use controller::CacheController;
+use controller::CacheRead;
 use pipeline::{BorrowedDiskCacheReadPipeline, OwnedDiskCacheReadPipeline};
 
 use super::UniversalKind;
@@ -57,6 +60,13 @@ struct BlockRequest {
     range: Range<usize>,
 }
 
+/// Per-shard configuration consumed by [`CachedSlice::open_with_extras`].
+#[derive(Debug, Clone)]
+pub struct BlockCacheExtras {
+    /// Controller owning the cache file and block lifecycle.
+    pub controller: Arc<CacheController>,
+}
+
 impl UniversalReadFileOps for CachedSlice {
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_file_ops::local_list_files(prefix_path)
@@ -81,20 +91,31 @@ impl UniversalRead for CachedSlice {
         T: Item,
         U: UserData;
 
-    type OpenExtras = ();
+    type OpenExtras = BlockCacheExtras;
 
-    fn extras_from_context(_: &super::ShardStorageContext) -> Result<()> {
-        Ok(())
+    fn extras_from_context(ctx: &ShardStorageContext) -> Result<BlockCacheExtras> {
+        let cfg = ctx.block_cache.as_ref().ok_or_else(|| {
+            UniversalIoError::uninitialized(
+                "ShardStorageContext::block_cache is not configured for this shard",
+            )
+        })?;
+        Ok(BlockCacheExtras {
+            controller: Arc::clone(&cfg.controller),
+        })
     }
 
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        let Some(controller) = CacheController::global() else {
-            return Err(UniversalIoError::uninitialized(
-                "Disk cache was not initialized when trying to register a file",
-            ));
-        };
+    fn open(_path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self> {
+        Err(UniversalIoError::uninitialized(
+            "block-cache backend requires per-shard configuration; \
+             open via `UniversalRead::open_with_extras` with extras from the shard context",
+        ))
+    }
 
-        // Disk-cache is backed by a single file
+    fn open_with_extras(
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extras: BlockCacheExtras,
+    ) -> Result<Self> {
         let OpenOptions {
             writeable,
             populate: _,
@@ -102,10 +123,9 @@ impl UniversalRead for CachedSlice {
             need_sequential: _,
             extra: OpenOptionsExtra { cache_hint: _ }, // This is cached in disk, backed by a mmap
         } = options;
-
         debug_assert!(!writeable);
 
-        Ok(CachedSlice::open(controller, path.as_ref())?)
+        Ok(CachedSlice::open(&extras.controller, path.as_ref())?)
     }
 
     fn reopen(&mut self) -> Result<()> {

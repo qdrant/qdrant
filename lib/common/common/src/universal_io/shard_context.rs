@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use crate::mmap::AdviceSetting;
+use crate::universal_io::disk_cache::CacheController;
 
 /// Per-shard context bundling all backend-instance state needed to open files
 /// through any [`UniversalRead`](super::UniversalRead) implementation.
@@ -11,6 +14,10 @@ use crate::mmap::AdviceSetting;
 #[non_exhaustive]
 pub struct ShardStorageContext {
     pub mmap: MmapBackendConfig,
+    /// Block-based disk cache controller. `None` when this shard does not use
+    /// the block cache backend; opening a [`CachedSlice`](super::CachedSlice)
+    /// in that case returns `Uninitialized`.
+    pub block_cache: Option<BlockCacheBackendConfig>,
 }
 
 impl ShardStorageContext {
@@ -35,4 +42,13 @@ impl Default for MmapBackendConfig {
             default_advice: AdviceSetting::Global,
         }
     }
+}
+
+/// Per-shard configuration for the block-based
+/// [`CachedSlice`](super::CachedSlice) backend.
+#[derive(Debug, Clone)]
+pub struct BlockCacheBackendConfig {
+    /// Controller owning the cache file and block lifecycle. Cloned `Arc` is
+    /// cheap; multiple files on the same shard share one controller.
+    pub controller: Arc<CacheController>,
 }
