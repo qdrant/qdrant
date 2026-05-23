@@ -15,6 +15,22 @@ use super::*;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
+/// Per-shard configuration consumed by [`MmapFile::open_with_extras`].
+#[derive(Debug, Clone, Copy)]
+pub struct MmapExtras {
+    /// Advice applied when the caller passes
+    /// [`AccessHint::Default`](super::AccessHint::Default).
+    pub default_advice: AdviceSetting,
+}
+
+impl Default for MmapExtras {
+    fn default() -> Self {
+        Self {
+            default_advice: AdviceSetting::Global,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct MmapFile {
     path: PathBuf,
@@ -68,65 +84,24 @@ impl UniversalRead for MmapFile {
         T: Item,
         U: UserData;
 
-    type OpenExtras = ();
+    type OpenExtras = MmapExtras;
 
-    fn extras_from_context(_: &super::ShardStorageContext) -> Result<()> {
-        Ok(())
+    fn extras_from_context(ctx: &super::ShardStorageContext) -> Result<MmapExtras> {
+        Ok(MmapExtras {
+            default_advice: ctx.mmap.default_advice,
+        })
     }
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        let OpenOptions {
-            writeable,
-            populate,
-            access_hint,
-            need_sequential,
-            extra: OpenOptionsExtra { cache_hint: _ }, // mmap can't bypass the page cache
-        } = options;
+        Self::open_inner(path, options, MmapExtras::default())
+    }
 
-        let populate = match populate {
-            Populate::Auto | Populate::No => false, // don't populate by default
-            Populate::PreferBackground | // mmap does not yet implement background populate
-            Populate::Blocking => true,
-        };
-
-        let advice = access_hint_to_advice(access_hint);
-        let mmap = open_mmap(path.as_ref(), writeable, populate, advice)?;
-        let ptr = SendSyncPtr(mmap.as_mut_ptr());
-
-        let mmap_seq;
-        let len;
-        let ptr_seq;
-
-        if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
-            let mmap_seq_ = open_mmap(
-                path.as_ref(),
-                false,
-                false,
-                AdviceSetting::Advice(Advice::Sequential),
-            )?;
-
-            len = std::cmp::min(mmap.len(), mmap_seq_.len());
-            ptr_seq = SendSyncPtr(mmap_seq_.as_mut_ptr());
-            mmap_seq = Some(mmap_seq_);
-        } else {
-            len = mmap.len();
-            ptr_seq = ptr;
-            mmap_seq = None;
-        };
-
-        let mmap = Self {
-            path: path.as_ref().into(),
-            writeable,
-            populate,
-            advice,
-            mmap: Arc::new(Mutex::new(mmap)),
-            mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
-            len,
-            ptr,
-            ptr_seq,
-        };
-
-        Ok(mmap)
+    fn open_with_extras(
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extras: MmapExtras,
+    ) -> Result<Self> {
+        Self::open_inner(path, options, extras)
     }
 
     fn reopen(&mut self) -> Result<()> {
@@ -265,9 +240,71 @@ impl UniversalWrite for MmapFile {
     }
 }
 
-fn access_hint_to_advice(hint: AccessHint) -> AdviceSetting {
+impl MmapFile {
+    fn open_inner(
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extras: MmapExtras,
+    ) -> Result<Self> {
+        let OpenOptions {
+            writeable,
+            populate,
+            access_hint,
+            need_sequential,
+            extra: OpenOptionsExtra { cache_hint: _ }, // mmap can't bypass the page cache
+        } = options;
+        let MmapExtras { default_advice } = extras;
+
+        let populate = match populate {
+            Populate::Auto | Populate::No => false, // don't populate by default
+            Populate::PreferBackground | // mmap does not yet implement background populate
+            Populate::Blocking => true,
+        };
+
+        let advice = access_hint_to_advice(access_hint, default_advice);
+        let mmap = open_mmap(path.as_ref(), writeable, populate, advice)?;
+        let ptr = SendSyncPtr(mmap.as_mut_ptr());
+
+        let mmap_seq;
+        let len;
+        let ptr_seq;
+
+        if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
+            let mmap_seq_ = open_mmap(
+                path.as_ref(),
+                false,
+                false,
+                AdviceSetting::Advice(Advice::Sequential),
+            )?;
+
+            len = std::cmp::min(mmap.len(), mmap_seq_.len());
+            ptr_seq = SendSyncPtr(mmap_seq_.as_mut_ptr());
+            mmap_seq = Some(mmap_seq_);
+        } else {
+            len = mmap.len();
+            ptr_seq = ptr;
+            mmap_seq = None;
+        };
+
+        let mmap = Self {
+            path: path.as_ref().into(),
+            writeable,
+            populate,
+            advice,
+            mmap: Arc::new(Mutex::new(mmap)),
+            mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
+            len,
+            ptr,
+            ptr_seq,
+        };
+
+        Ok(mmap)
+    }
+}
+
+fn access_hint_to_advice(hint: AccessHint, default_advice: AdviceSetting) -> AdviceSetting {
     match hint {
-        AccessHint::Default => AdviceSetting::Global,
+        AccessHint::Default => default_advice,
         AccessHint::Normal => AdviceSetting::Advice(Advice::Normal),
         AccessHint::Sequential => AdviceSetting::Advice(Advice::Sequential),
         AccessHint::Random => AdviceSetting::Advice(Advice::Random),
