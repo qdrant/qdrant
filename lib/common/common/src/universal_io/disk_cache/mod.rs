@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use fs_err as fs;
-
-use std::sync::Arc;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{

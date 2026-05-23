@@ -8,7 +8,6 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
-
 use common::types::PointOffsetType;
 use common::universal_io::{
     AccessHint, MmapFile, OpenOptions as UniversalOpenOptions, OpenOptionsExtra, Populate,

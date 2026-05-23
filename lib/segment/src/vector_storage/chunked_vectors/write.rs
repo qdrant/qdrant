@@ -8,7 +8,6 @@ use common::mmap::AdviceSetting;
 use common::universal_io::{
     AccessHint, OpenOptions, OpenOptionsExtra, Populate, StoredStruct, UniversalWrite,
 };
-
 use fs_err as fs;
 use num_traits::AsPrimitive;
 

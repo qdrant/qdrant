@@ -16,11 +16,11 @@ use std::path::{Path, PathBuf};
 use common::bitvec::{BitSlice, BitVec};
 use common::fs::clear_disk_cache;
 use common::mmap::create_and_ensure_length;
-use common::universal_io::{AccessHint, OpenOptionsExtra};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalWrite,
+    AccessHint, OpenOptions, OpenOptionsExtra, Populate, SliceBufferedUpdateWrapper, TypedStorage,
+    UniversalWrite,
 };
 use fs_err::File;
 

@@ -1,5 +1,8 @@
 #[cfg(not(target_os = "windows"))]
-#[allow(dead_code, reason = "Block-cache backend is exposed but not yet wired into shards")]
+#[allow(
+    dead_code,
+    reason = "Block-cache backend is exposed but not yet wired into shards"
+)]
 pub mod disk_cache;
 mod error;
 #[cfg(target_os = "linux")]
