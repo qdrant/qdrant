@@ -106,6 +106,10 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
         })
     }
 
+    fn reopen(&mut self) -> Result<()> {
+        Ok(())
+    }
+
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         use futures::StreamExt;
 
