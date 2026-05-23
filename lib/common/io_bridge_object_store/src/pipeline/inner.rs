@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use super::BLOB_PIPELINE_CAPACITY;
 use super::slots::PendingSlots;
-use crate::runtime::{BridgeResponse, BridgeRuntime, SendableVec};
+use crate::runtime::{BridgeResponse, BridgeRuntime};
 
 /// Best-effort extraction of a human-readable message from a caught panic
 /// payload. `panic!` payloads are most commonly `&'static str` or `String`;
@@ -102,8 +102,8 @@ where
         future: F,
     ) -> Result<()>
     where
-        F: Future<Output = Result<SendableVec<T>>> + Send + 'static,
-        T: bytemuck::Pod,
+        F: Future<Output = Result<Vec<T>>> + Send + 'static,
+        T: Send + 'static,
     {
         if !self.can_schedule() {
             return Err(UniversalIoError::QueueIsFull);
@@ -146,7 +146,7 @@ where
             .slots
             .remove(response.slot)
             .expect("response slot must be in pending");
-        let buf = response.result?.into_inner();
+        let buf = response.result?;
         Ok(Some((user_data, buf)))
     }
 }
@@ -177,7 +177,7 @@ mod tests {
             inner.slots.insert(i as u32);
         }
         let err = inner
-            .schedule(&runtime, 999, async { Ok(SendableVec::new(vec![0u8; 1])) })
+            .schedule(&runtime, 999, async { Ok(vec![0u8; 1]) })
             .unwrap_err();
         assert!(matches!(err, UniversalIoError::QueueIsFull));
     }
@@ -188,9 +188,7 @@ mod tests {
         let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
         let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
         inner
-            .schedule(&runtime, 111, async {
-                Ok(SendableVec::new(b"hello".to_vec()))
-            })
+            .schedule(&runtime, 111, async { Ok(b"hello".to_vec()) })
             .expect("schedule");
         let (user, bytes) = inner.wait().expect("wait ok").expect("some");
         assert_eq!(user, 111);
@@ -208,9 +206,7 @@ mod tests {
         {
             let bytes = *bytes;
             inner
-                .schedule(&runtime, i as u32, async move {
-                    Ok(SendableVec::new(bytes.to_vec()))
-                })
+                .schedule(&runtime, i as u32, async move { Ok(bytes.to_vec()) })
                 .unwrap();
         }
         let mut seen = std::collections::HashSet::new();
@@ -233,7 +229,7 @@ mod tests {
         inner
             .schedule(&runtime, 7, async {
                 panic!("boom");
-                Ok(SendableVec::new(Vec::<u8>::new()))
+                Ok(Vec::<u8>::new())
             })
             .expect("schedule");
         let err = inner.wait().unwrap_err();
@@ -249,10 +245,10 @@ mod tests {
         let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
         let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
         inner
-            .schedule(&rt_a, 1, async { Ok(SendableVec::new(b"AAAA".to_vec())) })
+            .schedule(&rt_a, 1, async { Ok(b"AAAA".to_vec()) })
             .unwrap();
         inner
-            .schedule(&rt_b, 2, async { Ok(SendableVec::new(b"BB".to_vec())) })
+            .schedule(&rt_b, 2, async { Ok(b"BB".to_vec()) })
             .unwrap();
         let mut seen: AHashMap<u32, Vec<u8>> = AHashMap::new();
         for _ in 0..2 {

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use common::generic_consts::AccessPattern;
-use common::universal_io::{OwnedReadPipeline, ReadRange, Result, UserData};
+use common::universal_io::{Item, OwnedReadPipeline, ReadRange, Result, UserData};
 
 use super::buffer::read_into_buffer;
 use super::inner::PipelineInner;
@@ -22,7 +22,7 @@ pub struct OwnedBlobPipeline<A: AsyncRead, T, U> {
 impl<A, T, U> OwnedReadPipeline<T, U> for OwnedBlobPipeline<A, T, U>
 where
     A: AsyncRead,
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = BlobFile<A>;

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    OpenOptions, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
+    Item, OpenOptions, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
     UniversalReadFileOps, UserData,
 };
 use tokio::io::AsyncWriteExt;
@@ -89,13 +89,13 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedBlobPipeline<'a, A, T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     type OwnedReadPipeline<T, U>
         = OwnedBlobPipeline<A, T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     fn open(_path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self> {

@@ -89,10 +89,9 @@
 //! - **No `Bytes` aggregation in the pipeline.** The future allocates the
 //!   typed destination `Vec<T>` itself, streams stream chunks straight into it
 //!   through an `AlignedBufWriter`, and returns the buffer as its output. The
-//!   reply channel carries the buffer back (wrapped in a `SendableVec<T>` so
-//!   that the channel message is `Send` without forcing a `T: Send` bound on
-//!   the public trait surface). This removes the two redundant copies that an
-//!   "aggregate to `Bytes`, then cast to `Vec<T>`" path would do.
+//!   reply channel carries the buffer back as a plain `Vec<T>`. This removes
+//!   the two redundant copies that an "aggregate to `Bytes`, then cast to
+//!   `Vec<T>`" path would do.
 
 mod backend;
 pub mod backends;
