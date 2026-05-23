@@ -20,7 +20,7 @@ use crate::vector_storage::common::CHUNK_SIZE;
 #[derive(Debug)]
 pub struct ChunkedVectors<T, S>
 where
-    T: bytemuck::Pod,
+    T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
     inner: ChunkedVectorsRead<T, S>,
@@ -29,7 +29,7 @@ where
 
 impl<T, S> Deref for ChunkedVectors<T, S>
 where
-    T: bytemuck::Pod,
+    T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
     type Target = ChunkedVectorsRead<T, S>;
@@ -41,7 +41,7 @@ where
 
 impl<T, S> ChunkedVectors<T, S>
 where
-    T: bytemuck::Pod,
+    T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
     pub fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {

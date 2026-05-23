@@ -6,7 +6,8 @@ use bytemuck::TransparentWrapper;
 use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
+    Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps,
+    UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -36,13 +37,13 @@ where
         = BorrowedWrappedReadPipeline<'file, Self, S::BorrowedReadPipeline<'file, T, U>>
     where
         Self: 'file,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     type OwnedReadPipeline<T, U>
         = OwnedWrappedReadPipeline<Self, S::OwnedReadPipeline<T, U>>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     #[inline]
@@ -58,12 +59,12 @@ where
     }
 
     #[inline]
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         self.0.read::<P, T>(range)
     }
 
     #[inline]
-    fn read_whole<T: bytemuck::Pod>(&self) -> Result<Cow<'_, [T]>> {
+    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
         self.0.read_whole()
     }
 
@@ -75,7 +76,7 @@ where
     ) -> Result<()>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
     {
         self.0.read_batch::<P, T, U>(ranges, callback)
@@ -88,7 +89,7 @@ where
     ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
     {
         self.0.read_iter::<P, T, U>(ranges)
@@ -116,7 +117,7 @@ where
     ) -> Result<()>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
         Self: 'a,
     {
@@ -133,7 +134,7 @@ where
     ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData,
         Self: 'a,
     {

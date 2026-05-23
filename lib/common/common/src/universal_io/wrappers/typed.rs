@@ -7,8 +7,8 @@ use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ByteOffset, FileIndex, Flusher, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead,
-    UniversalReadFileOps, UniversalWrite, UserData,
+    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalKind,
+    UniversalRead, UniversalReadFileOps, UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -60,7 +60,7 @@ where
 impl<S, T> TypedStorage<S, T>
 where
     S: UniversalRead,
-    T: bytemuck::Pod,
+    T: Item,
 {
     #[inline]
     pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {

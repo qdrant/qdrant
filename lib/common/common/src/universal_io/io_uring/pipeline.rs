@@ -7,12 +7,12 @@ use super::pool::IO_URING_QUEUE_LENGTH;
 use super::{IoUringFile, IoUringRuntime};
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    BorrowedReadPipeline, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UserData,
+    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UserData,
 };
 
 pub struct BorrowedIoUringPipeline<'file, T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     inner: IoUringPipelineInner<'file, T, U>,
@@ -20,7 +20,7 @@ where
 
 impl<'file, T, U> BorrowedReadPipeline<'file, T, U> for BorrowedIoUringPipeline<'file, T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = IoUringFile;
@@ -56,7 +56,7 @@ where
 
 pub struct OwnedIoUringPipeline<T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     file: ManuallyDrop<IoUringFile>,
@@ -65,7 +65,7 @@ where
 
 impl<T, U> OwnedReadPipeline<T, U> for OwnedIoUringPipeline<T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     type File = IoUringFile;
@@ -101,7 +101,7 @@ where
 
 impl<T, U> Drop for OwnedIoUringPipeline<T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     fn drop(&mut self) {
@@ -116,7 +116,7 @@ where
 
 struct IoUringPipelineInner<'file, T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     runtime: IoUringRuntime<'file, T, U>,
@@ -124,7 +124,7 @@ where
 
 impl<'file, T, U> IoUringPipelineInner<'file, T, U>
 where
-    T: bytemuck::Pod,
+    T: Item,
     U: UserData,
 {
     fn new() -> Result<Self> {
