@@ -7,10 +7,9 @@ use rand::{RngExt, SeedableRng};
 
 use super::fixtures::{Group, TestKey, TestReport, TestValue};
 use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
-use crate::universal_io::{self, IoUringOpenExtra, MmapFile, MmapFs, OpenOptions, UniversalRead};
+use crate::universal_io::{self, MmapFile, MmapFs, OpenOptions, UniversalRead};
 #[cfg(target_os = "linux")]
-#[cfg(target_os = "linux")]
-use crate::universal_io::{IoUringFile, IoUringFs};
+use crate::universal_io::{IoUringFile, IoUringFs, IoUringOpenExtra};
 
 #[rustfmt::skip] #[test] fn test_k_str_v_i64()   { run_checks::<str,  i64 >(); }
 #[rustfmt::skip] #[test] fn test_k_str_v_u128()  { run_checks::<str,  u128>(); }
