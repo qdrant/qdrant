@@ -414,6 +414,7 @@ mod tests {
 
     use common::bitvec::{BitSliceExt, BitVec};
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::universal_io::MmapFs;
     use rand::RngExt;
     use rand::seq::SliceRandom;
     use rstest::rstest;
@@ -562,6 +563,7 @@ mod tests {
         MmapInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: MmapInvertedIndex = MmapInvertedIndex::open(
+            &MmapFs,
             mmap_dir.path().into(),
             false,
             phrase_matching,
@@ -642,6 +644,7 @@ mod tests {
         MmapInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
         let mut mmap_index = MmapInvertedIndex::open(
+            &MmapFs,
             mmap_dir.path().into(),
             false,
             phrase_matching,

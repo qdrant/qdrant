@@ -7,7 +7,7 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, Populate, TypedStorage};
+use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate, TypedStorage};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -49,6 +49,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
         in_memory_index.histogram.save(path)?;
 
         StoredPointToValues::<T, MmapFile>::from_iter(
+            &MmapFs,
             path,
             in_memory_index
                 .point_to_values
@@ -79,6 +80,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             )?;
 
             let mut deleted = MmapBitSlice::open(
+                &MmapFs,
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
@@ -86,7 +88,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
-                Default::default(),
             )?;
             deleted.set_ascending_bits_batch(
                 in_memory_index
@@ -129,12 +130,13 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             populate: Populate::from(do_populate),
             advice: AdviceSetting::Global,
         };
-        let pairs = TypedStorage::open(pairs_path, pairs_options, Default::default())?;
+        let pairs = TypedStorage::open(&MmapFs, pairs_path, pairs_options)?;
 
-        let point_to_values = StoredPointToValues::open(path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(&MmapFs, path, do_populate)?;
         let mut deleted = deleted_points.to_owned();
 
         let deleted_payload_mmap = MmapBitSlice::open(
+            &MmapFs,
             &deleted_path,
             OpenOptions {
                 writeable: true,
@@ -142,7 +144,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

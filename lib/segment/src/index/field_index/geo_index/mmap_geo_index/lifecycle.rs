@@ -11,10 +11,11 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
-use common::stored_bitslice::MmapBitSlice;
+use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -31,12 +32,16 @@ use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 use crate::types::GeoPoint;
 
 impl<S: UniversalRead> StoredGeoMapIndex<S> {
-    pub fn build(
+    pub fn build<Fs>(
+        fs: &Fs,
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         fs::create_dir_all(path)?;
 
         let deleted_path = path.join(DELETED_PATH);
@@ -47,6 +52,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
 
         // Create the point-to-value mapping and persist in the file
         StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
+            &MmapFs,
             path,
             dynamic_index
                 .point_to_values
@@ -124,6 +130,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                     .next_multiple_of(size_of::<u64>()),
             )?;
             let mut deleted = MmapBitSlice::open(
+                &MmapFs,
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
@@ -131,7 +138,6 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
-                Default::default(),
             )?;
             deleted.set_ascending_bits_batch(
                 dynamic_index
@@ -152,16 +158,20 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             },
         )?;
 
-        Self::open(path, is_on_disk, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, is_on_disk, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open StoredGeoMapIndex after building it")
         })
     }
 
-    pub fn open(
+    pub fn open<Fs>(
+        fs: &Fs,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Option<Self>> {
+    ) -> OperationResult<Option<Self>>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let deleted_path = path.join(DELETED_PATH);
         let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
@@ -183,16 +193,15 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             advice: AdviceSetting::Global,
         };
 
-        let counts_per_hash =
-            TypedStorage::open(&counts_per_hash_path, open_options, Default::default())?;
-        let points_map = TypedStorage::open(&points_map_path, open_options, Default::default())?;
-        let points_map_ids =
-            TypedStorage::open(&points_map_ids_path, open_options, Default::default())?;
-        let point_to_values = StoredPointToValues::open(path, true)?;
+        let counts_per_hash = TypedStorage::open(fs, &counts_per_hash_path, open_options)?;
+        let points_map = TypedStorage::open(fs, &points_map_path, open_options)?;
+        let points_map_ids = TypedStorage::open(fs, &points_map_ids_path, open_options)?;
+        let point_to_values = StoredPointToValues::open(fs, path, true)?;
 
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = MmapBitSlice::open(
+        let deleted_payload_mmap = StoredBitSlice::<S>::open(
+            fs,
             &deleted_path,
             OpenOptions {
                 writeable: true,
@@ -200,7 +209,6 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

@@ -9,7 +9,7 @@ use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, Populate};
+use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate};
 use fs_err as fs;
 
 use super::super::MapIndexKey;
@@ -41,6 +41,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
         let do_populate = !is_on_disk;
 
         let value_to_points = UniversalHashMap::open(
+            &MmapFs,
             &hashmap_path,
             OpenOptions {
                 writeable: false,
@@ -48,13 +49,13 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
         )?;
-        let point_to_values = StoredPointToValues::open(path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(&MmapFs, path, do_populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
         let deleted_payload_mmap = MmapBitSlice::open(
+            &MmapFs,
             &deleted_path,
             OpenOptions {
                 writeable: true,
@@ -62,7 +63,6 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
@@ -117,6 +117,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
         )?;
 
         StoredPointToValues::<N, MmapFile>::from_iter(
+            &MmapFs,
             path,
             point_to_values.iter().enumerate().map(|(idx, values)| {
                 (
@@ -136,6 +137,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             )?;
 
             let mut deleted = MmapBitSlice::open(
+                &MmapFs,
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
@@ -143,7 +145,6 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
-                Default::default(),
             )?;
             deleted.set_ascending_bits_batch(
                 point_to_values

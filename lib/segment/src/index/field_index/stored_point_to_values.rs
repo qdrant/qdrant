@@ -8,7 +8,7 @@ use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs};
 use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -97,12 +97,14 @@ where
     T: StoredValue + ?Sized,
     S: UniversalRead,
 {
-    pub fn from_iter<'a>(
+    pub fn from_iter<'a, Fs>(
+        fs: &Fs,
         path: &Path,
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = &'a T>)> + Clone,
     ) -> OperationResult<Self>
     where
         T: 'a,
+        Fs: UniversalReadFs<File = S>,
     {
         // calculate file size
         let mut points_count: usize = 0;
@@ -159,10 +161,13 @@ where
         mmap.flush()?;
         drop(mmap);
 
-        Self::open(path, true)
+        Self::open(fs, path, true)
     }
 
-    pub fn open(path: &Path, populate: bool) -> OperationResult<Self> {
+    pub fn open<Fs>(fs: &Fs, path: &Path, populate: bool) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let file_name = path.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
@@ -172,7 +177,7 @@ where
             advice: AdviceSetting::Global,
         };
 
-        let store = ReadOnly::open(&file_name, open_options, Default::default())?;
+        let store = ReadOnly::open(fs, &file_name, open_options)?;
 
         let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
 
@@ -379,7 +384,7 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::MmapFile;
+    use common::universal_io::{MmapFile, MmapFs};
     use itertools::Itertools;
     use tempfile::Builder;
 
@@ -432,6 +437,7 @@ mod tests {
             .tempdir()
             .unwrap();
         StoredPointToValues::<str, MmapFile>::from_iter(
+            &MmapFs,
             dir.path(),
             values
                 .iter()
@@ -440,7 +446,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<str, MmapFile>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
@@ -492,6 +498,7 @@ mod tests {
             .tempdir()
             .unwrap();
         StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
+            &MmapFs,
             dir.path(),
             values
                 .iter()
@@ -500,7 +507,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<GeoPoint, MmapFile>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values
