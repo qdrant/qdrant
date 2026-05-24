@@ -510,11 +510,8 @@ mod swap_tests {
             IndexType::MutableGridstore,
             |v| Value::from(*v),
         );
-        let mut index = load_map_index::<IntPayloadType>(
-            &data,
-            temp_dir.path(),
-            IndexType::MutableGridstore,
-        );
+        let mut index =
+            load_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::MutableGridstore);
 
         assert!(matches!(index, MapIndex::Mutable(_)));
         assert!(!index.swap_on_disk(true).unwrap());

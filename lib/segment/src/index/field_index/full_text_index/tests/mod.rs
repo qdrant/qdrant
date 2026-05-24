@@ -628,10 +628,9 @@ mod swap_tests {
     fn mutable_gridstore_reports_swap_not_applicable() {
         let temp_dir = Builder::new().prefix("ft_swap_mut").tempdir().unwrap();
         let config = basic_config();
-        let mut index =
-            FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
-                .unwrap()
-                .unwrap();
+        let mut index = FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
+            .unwrap()
+            .unwrap();
 
         assert!(matches!(index, FullTextIndex::Mutable(_)));
         assert!(!index.swap_on_disk(true).unwrap());

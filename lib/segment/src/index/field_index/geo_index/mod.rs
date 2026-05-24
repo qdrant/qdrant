@@ -123,9 +123,7 @@ impl GeoMapIndex {
                 let mut mmap = imm.into_inner_mmap();
                 mmap.is_on_disk = true;
                 if let Err(err) = mmap.clear_cache() {
-                    log::warn!(
-                        "Failed to clear mmap cache during geo swap to on-disk: {err}",
-                    );
+                    log::warn!("Failed to clear mmap cache during geo swap to on-disk: {err}",);
                 }
                 (GeoMapIndex::Storage(Box::new(mmap)), Ok(true))
             }
