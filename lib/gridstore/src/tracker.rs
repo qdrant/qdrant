@@ -4,7 +4,8 @@ use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalWrite,
+    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+    UniversalWrite,
 };
 use smallvec::SmallVec;
 
@@ -264,9 +265,12 @@ impl<S> Tracker<S> {
 impl<S: UniversalRead> Tracker<S> {
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open<Fs>(fs: &Fs, path: &Path) -> Result<Self>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let path = Self::tracker_file_name(path);
-        let storage = Self::open_storage(&path)?;
+        let storage = Self::open_storage(fs, &path)?;
         let header: TrackerHeader = Self::read_header(&storage)?;
         let pending_updates = AHashMap::new();
         Ok(Self {
@@ -309,7 +313,10 @@ impl<S: UniversalRead> Tracker<S> {
     /// - Partial writes are possible, but ignored. Header is a source of truth.
     ///
     /// Returns `true` if there are new changes, `false` if the tracker is already up to date.
-    pub fn live_reload(&mut self) -> Result<bool> {
+    pub fn live_reload<Fs>(&mut self, fs: &Fs) -> Result<bool>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let new_header = Self::read_header(&self.storage)?;
 
         if new_header.next_pointer_offset < self.next_pointer_offset {
@@ -323,7 +330,7 @@ impl<S: UniversalRead> Tracker<S> {
         } else {
             // reopen storage to make new data visible
             // For some storages it should be a no-op.
-            self.storage = Self::open_storage(&self.path)?;
+            self.storage = Self::open_storage(fs, &self.path)?;
 
             // Update in-memory state to reflect new pointers
             self.header = new_header;
@@ -502,10 +509,14 @@ where
     ///
     /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
     #[must_use = "The old pointers need to be freed in the bitmask"]
-    pub fn write_pending(
+    pub fn write_pending<Fs>(
         &mut self,
+        fs: &Fs,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
-    ) -> Result<Vec<ValuePointer>> {
+    ) -> Result<Vec<ValuePointer>>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let mut old_pointers = Vec::new();
 
         for (point_offset, updates) in pending_updates {
@@ -517,10 +528,10 @@ where
                         old_pointers.push(old_pointer);
                     }
 
-                    self.persist_pointer(point_offset, Some(new_pointer))?;
+                    self.persist_pointer(fs, point_offset, Some(new_pointer))?;
                 }
                 // Write to empty the pointer
-                None => self.persist_pointer(point_offset, None)?,
+                None => self.persist_pointer(fs, point_offset, None)?,
             }
 
             // Mark all old pointers for removal to free its blocks
@@ -553,9 +564,12 @@ where
     }
 
     #[cfg(test)]
-    pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
+    pub fn write_pending_and_flush_internal<Fs>(&mut self, fs: &Fs) -> Result<Vec<ValuePointer>>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let pending_updates = std::mem::take(&mut self.pending_updates);
-        let res = self.write_pending(pending_updates)?;
+        let res = self.write_pending(fs, pending_updates)?;
         self.storage.flusher()()?;
         Ok(res)
     }
@@ -568,11 +582,15 @@ where
 
     /// Save the mapping at the given offset
     /// The file is resized if necessary
-    fn persist_pointer(
+    fn persist_pointer<Fs>(
         &mut self,
+        fs: &Fs,
         point_offset: PointOffset,
         pointer: Option<ValuePointer>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let storage_len = self.storage.len::<u8>()? as usize;
         if pointer.is_none() && point_offset as usize >= storage_len {
             return Ok(());
@@ -587,7 +605,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage = S::open(&self.path, tracker_open_options(), Default::default())?;
+            self.storage = fs.open(&self.path, tracker_open_options())?;
         }
 
         let pointer = OptionalPointer::from(pointer);
@@ -628,7 +646,7 @@ where
 mod tests {
     use std::path::PathBuf;
 
-    use common::universal_io::MmapFile;
+    use common::universal_io::{MmapFile, MmapFs};
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -648,7 +666,7 @@ mod tests {
     fn test_page_tracker_files() {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
-        let tracker = TestTracker::new(path, None).unwrap();
+        let tracker = TestTracker::new(&MmapFs, path, None).unwrap();
         let files = tracker.files();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0], path.join(TestTracker::FILE_NAME));
@@ -658,7 +676,7 @@ mod tests {
     fn test_new_tracker() {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
-        let tracker = TestTracker::new(path, None).unwrap();
+        let tracker = TestTracker::new(&MmapFs, path, None).unwrap();
         assert!(tracker.is_empty());
         assert_eq!(tracker.mapping_len().unwrap(), 0);
         assert_eq!(tracker.pointer_count(), 0);
@@ -671,18 +689,18 @@ mod tests {
     fn test_mapping_len_tracker(#[case] initial_tracker_size: usize) {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
-        let mut tracker = TestTracker::new(path, Some(initial_tracker_size)).unwrap();
+        let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
         assert!(tracker.is_empty());
         tracker.set(0, ValuePointer::new(1, 1, 1));
 
-        tracker.write_pending_and_flush_internal().unwrap();
+        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
 
         assert!(!tracker.is_empty());
         assert_eq!(tracker.mapping_len().unwrap(), 1);
 
         tracker.set(100, ValuePointer::new(2, 2, 2));
 
-        tracker.write_pending_and_flush_internal().unwrap();
+        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
 
         assert_eq!(tracker.pointer_count(), 101);
         assert_eq!(tracker.mapping_len().unwrap(), 2);
@@ -695,13 +713,13 @@ mod tests {
     fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
-        let mut tracker = TestTracker::new(path, Some(initial_tracker_size)).unwrap();
+        let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
         tracker.set(0, ValuePointer::new(1, 1, 1));
         tracker.set(1, ValuePointer::new(2, 2, 2));
         tracker.set(2, ValuePointer::new(3, 3, 3));
         tracker.set(10, ValuePointer::new(10, 10, 10));
 
-        tracker.write_pending_and_flush_internal().unwrap();
+        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
         assert!(!tracker.is_empty());
         assert_eq!(tracker.mapping_len().unwrap(), 4);
         assert_eq!(tracker.pointer_count(), 11); // accounts for empty slots
@@ -727,7 +745,7 @@ mod tests {
 
         tracker.unset(1).unwrap();
 
-        tracker.write_pending_and_flush_internal().unwrap();
+        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
 
         // the value has been cleared but the entry is still there
         assert_eq!(tracker.get_raw(1).unwrap(), None);
@@ -740,7 +758,7 @@ mod tests {
         tracker.set(0, ValuePointer::new(10, 10, 10));
         tracker.set(2, ValuePointer::new(30, 30, 30));
 
-        tracker.write_pending_and_flush_internal().unwrap();
+        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
 
         assert_eq!(tracker.get(0).unwrap(), Some(ValuePointer::new(10, 10, 10)));
         assert_eq!(tracker.get(2).unwrap(), Some(ValuePointer::new(30, 30, 30)));
@@ -756,7 +774,7 @@ mod tests {
 
         let value_count: usize = 1000;
 
-        let mut tracker = TestTracker::new(path, Some(initial_tracker_size)).unwrap();
+        let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
 
         for i in 0..value_count {
             // save only half of the values
@@ -764,7 +782,7 @@ mod tests {
                 tracker.set(i as u32, ValuePointer::new(i as u32, i as u32, i as u32));
             }
         }
-        tracker.write_pending_and_flush_internal().unwrap();
+        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
 
         assert_eq!(tracker.mapping_len().unwrap(), value_count / 2);
         assert_eq!(tracker.pointer_count(), value_count as u32 - 1);
@@ -773,7 +791,7 @@ mod tests {
         drop(tracker);
 
         // reopen the tracker
-        let tracker = TestTracker::open(path).unwrap();
+        let tracker = TestTracker::open(&MmapFs, path).unwrap();
         assert_eq!(tracker.mapping_len().unwrap(), value_count / 2);
         assert_eq!(tracker.pointer_count(), value_count as u32 - 1);
 
@@ -802,7 +820,7 @@ mod tests {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
 
-        let mut tracker = TestTracker::new(path, Some(desired_tracker_size)).unwrap();
+        let mut tracker = TestTracker::new(&MmapFs, path, Some(desired_tracker_size)).unwrap();
         assert_eq!(tracker.mapping_len().unwrap(), 0);
         assert_eq!(tracker.mmap_file_size().unwrap(), actual_tracker_size);
 
@@ -810,7 +828,7 @@ mod tests {
             tracker.set(i, ValuePointer::new(i, i, i));
         }
 
-        tracker.write_pending_and_flush_internal().unwrap();
+        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
 
         assert_eq!(tracker.mapping_len().unwrap(), 100_000);
         assert!(tracker.mmap_file_size().unwrap() > actual_tracker_size);
@@ -821,7 +839,7 @@ mod tests {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
 
-        let mut tracker = TestTracker::new(path, None).unwrap();
+        let mut tracker = TestTracker::new(&MmapFs, path, None).unwrap();
         assert_eq!(tracker.mapping_len().unwrap(), 0);
 
         let page_pointer = ValuePointer::new(1, 1, 1);

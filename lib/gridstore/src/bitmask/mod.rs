@@ -585,6 +585,7 @@ mod tests {
 
     use bitvec::bits;
     use common::bitvec::BitVec;
+    use common::universal_io::MmapFs;
     use proptest::prelude::*;
     use rand::{RngExt, rng};
 
@@ -617,8 +618,8 @@ mod tests {
         };
 
         let mut bitmask: MmapBitmask =
-            super::Bitmask::create(dir.path(), options.try_into().unwrap()).unwrap();
-        bitmask.cover_new_page().unwrap();
+            super::Bitmask::create(&MmapFs, dir.path(), options.try_into().unwrap()).unwrap();
+        bitmask.cover_new_page(&MmapFs).unwrap();
 
         assert_eq!(bitmask.bitslice.bit_len() as u32, blocks_per_page * 2);
 

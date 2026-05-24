@@ -136,7 +136,7 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = reader::read_config_and_tracker(&base_path)?;
+        let (config, tracker) = reader::read_config_and_tracker(&MmapFs, &base_path)?;
         let bitmask = MmapBitmask::open(&MmapFs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
@@ -487,7 +487,7 @@ impl<V> Gridstore<V> {
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
-            let old_pointers = guard.write_pending(pending_updates)?;
+            let old_pointers = guard.write_pending(&MmapFs, pending_updates)?;
             let flusher = guard.flusher();
             (old_pointers, flusher)
         };

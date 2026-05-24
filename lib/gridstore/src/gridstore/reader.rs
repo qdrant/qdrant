@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{UniversalRead, read_json_via};
+use common::universal_io::{UniversalRead, UniversalReadFs, read_json_via};
 
 use super::view::GridstoreView;
 use crate::Result;
@@ -58,10 +58,13 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Open an existing read-only storage at the given path.
     ///
     /// Infers page count by scanning for page files on disk.
-    pub fn open(base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = read_config_and_tracker(&base_path)?;
+    pub fn open<Fs>(fs: &Fs, base_path: PathBuf) -> Result<Self>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
+        let (config, tracker) = read_config_and_tracker(fs, &base_path)?;
 
-        let pages = Pages::<S>::open(&base_path)?;
+        let pages = Pages::<S>::open(fs, &base_path)?;
 
         Ok(Self {
             tracker,
@@ -119,14 +122,17 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     ///
-    pub fn live_reload(&mut self) -> Result<()> {
-        let has_new_data = self.tracker.live_reload()?;
+    pub fn live_reload<Fs>(&mut self, fs: &Fs) -> Result<()>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
+        let has_new_data = self.tracker.live_reload(fs)?;
 
         if !has_new_data {
             return Ok(());
         }
 
-        self.pages.live_reload()?;
+        self.pages.live_reload(fs)?;
 
         Ok(())
     }
@@ -157,17 +163,23 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
 /// Read config and open tracker from the base path.
 ///
 /// Shared helper used by both [`GridstoreReader::open`] and [`super::Gridstore::open`].
-pub(super) fn read_config_and_tracker<S: UniversalRead>(
+pub(super) fn read_config_and_tracker<Fs, S>(
+    fs: &Fs,
     base_path: &std::path::Path,
-) -> Result<(StorageConfig, Tracker<S>)> {
+) -> Result<(StorageConfig, Tracker<S>)>
+where
+    Fs: UniversalReadFs<File = S>,
+    S: UniversalRead,
+{
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageConfig = read_json_via::<S, StorageConfig>(&config_path).map_err(|err| {
-        GridstoreError::service_error(format!(
-            "Failed to read config from '{config_path:?}': {err}"
-        ))
-    })?;
+    let config: StorageConfig =
+        read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to read config from '{config_path:?}': {err}"
+            ))
+        })?;
 
-    let tracker = Tracker::<S>::open(base_path)?;
+    let tracker = Tracker::<S>::open(fs, base_path)?;
 
     Ok((config, tracker))
 }
