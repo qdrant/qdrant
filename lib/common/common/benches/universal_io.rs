@@ -6,8 +6,10 @@ use std::time::{Duration, Instant};
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
-use common::universal_io::IoUringFile;
-use common::universal_io::{MmapFile, OpenOptions, Populate, ReadRange, UniversalRead};
+use common::universal_io::IoUringFs;
+use common::universal_io::{
+    MmapFs, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+};
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use rand::rngs::StdRng;
@@ -50,11 +52,11 @@ fn benches(c: &mut Criterion) {
     }
 
     #[cfg(target_os = "linux")]
-    read_benches::<u64, IoUringFile>(c, "io_uring", "8bytes", &path);
-    read_benches::<u64, MmapFile>(c, "mmap", "8bytes", &path);
+    read_benches::<u64, IoUringFs>(&IoUringFs::default(), c, "io_uring", "8bytes", &path);
+    read_benches::<u64, MmapFs>(&MmapFs, c, "mmap", "8bytes", &path);
     #[cfg(target_os = "linux")]
-    read_benches::<[u64; 128], IoUringFile>(c, "io_uring", "1KiB", &path);
-    read_benches::<[u64; 128], MmapFile>(c, "mmap", "1KiB", &path);
+    read_benches::<[u64; 128], IoUringFs>(&IoUringFs::default(), c, "io_uring", "1KiB", &path);
+    read_benches::<[u64; 128], MmapFs>(&MmapFs, c, "mmap", "1KiB", &path);
 
     #[cfg(target_os = "linux")]
     if std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_none() {
@@ -62,9 +64,10 @@ fn benches(c: &mut Criterion) {
     }
 }
 
-fn read_benches<T: bytemuck::Pod + Send, C: UniversalRead>(
+fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
+    fs: &Fs,
     c: &mut Criterion,
-    impl_name: &str, // Corresponds to `C`
+    impl_name: &str, // Corresponds to `Fs`
     elem_size: &str, // Corresponds to `T`
     path: &Path,
 ) {
@@ -74,7 +77,7 @@ fn read_benches<T: bytemuck::Pod + Send, C: UniversalRead>(
         populate: Populate::No,
         advice: AdviceSetting::Global,
     };
-    let storage = C::open(path, options, Default::default()).unwrap();
+    let storage = fs.open(path, options).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
     let mut rng = rand::rng();
     assert_eq!(storage.len::<T>().unwrap(), len);
