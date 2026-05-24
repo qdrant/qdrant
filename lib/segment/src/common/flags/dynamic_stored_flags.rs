@@ -117,8 +117,8 @@ where
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         if status.current_file_id != 0 {
@@ -162,9 +162,8 @@ where
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         };
-        let flags = StoredBitSlice::open(&path, options)?;
+        let flags = StoredBitSlice::open(&path, options, Default::default())?;
         Ok(flags)
     }
 

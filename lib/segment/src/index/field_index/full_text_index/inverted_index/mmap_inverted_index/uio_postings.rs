@@ -44,7 +44,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> UniversalPostings<V, S> {
     /// Open the postings file at `path` via the `S` storage backend.
     pub fn open(path: impl Into<PathBuf>, options: OpenOptions) -> OperationResult<Self> {
         let path = path.into();
-        let storage = S::open(&path, options)?;
+        let storage = S::open(&path, options, Default::default())?;
 
         let header = storage.read::<Sequential, PostingsHeader>(ReadRange::one(0))?[0];
 

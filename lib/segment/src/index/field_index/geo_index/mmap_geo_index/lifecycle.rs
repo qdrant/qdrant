@@ -130,8 +130,8 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                     need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
-                    extra: Default::default(),
                 },
+                Default::default(),
             )?;
             deleted.set_ascending_bits_batch(
                 dynamic_index
@@ -181,12 +181,13 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         };
 
-        let counts_per_hash = TypedStorage::open(&counts_per_hash_path, open_options)?;
-        let points_map = TypedStorage::open(&points_map_path, open_options)?;
-        let points_map_ids = TypedStorage::open(&points_map_ids_path, open_options)?;
+        let counts_per_hash =
+            TypedStorage::open(&counts_per_hash_path, open_options, Default::default())?;
+        let points_map = TypedStorage::open(&points_map_path, open_options, Default::default())?;
+        let points_map_ids =
+            TypedStorage::open(&points_map_ids_path, open_options, Default::default())?;
         let point_to_values = StoredPointToValues::open(path, true)?;
 
         let mut deleted = deleted_points.to_owned();
@@ -198,8 +199,8 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

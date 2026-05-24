@@ -54,7 +54,6 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         }
     }
 
@@ -62,7 +61,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
-        let storage = ReadOnly::open(path, Self::open_options())?;
+        let storage = ReadOnly::open(path, Self::open_options(), Default::default())?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -151,7 +150,11 @@ impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedStorageB
     fn build(self) -> OperationResult<QuantizedStorage<S>> {
         self.mmap.flush()?;
 
-        let storage = ReadOnly::open(&self.path, Self::Storage::open_options())?;
+        let storage = ReadOnly::open(
+            &self.path,
+            Self::Storage::open_options(),
+            Default::default(),
+        )?;
 
         Ok(QuantizedStorage {
             storage,

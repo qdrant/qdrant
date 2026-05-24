@@ -90,8 +90,8 @@ where
                 need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let mut deleted_bitvec = BitVec::new();
@@ -106,8 +106,8 @@ where
                 need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let internal_to_version_slice = internal_to_version_file.read_whole()?;
@@ -153,8 +153,8 @@ where
                 need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         // Set bits for deleted points from the mappings,
@@ -191,8 +191,8 @@ where
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
         internal_to_version_file.write(0, internal_to_version)?;
 

@@ -22,7 +22,6 @@ fn tracker_open_options() -> OpenOptions {
         need_sequential: false,
         populate: Populate::No,
         advice: AdviceSetting::Advice(Advice::Random),
-        extra: Default::default(),
     }
 }
 
@@ -284,8 +283,11 @@ impl<S: UniversalRead> Tracker<S> {
         Ok(header)
     }
 
-    fn open_storage(path: &Path) -> Result<S> {
-        let storage = match S::open(path, tracker_open_options()) {
+    fn open_storage<Fs>(fs: &Fs, path: &Path) -> Result<S>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
+        let storage = match fs.open(path, tracker_open_options()) {
             Err(UniversalIoError::NotFound { .. }) => {
                 return Err(GridstoreError::service_error(format!(
                     "Tracker file does not exist: {}",
@@ -465,7 +467,10 @@ where
 
     /// Create a new PageTracker at the given dir path
     /// The file is created with the default size if no size hint is given
-    pub fn new(path: &Path, size_hint: Option<usize>) -> Result<Self> {
+    pub fn new<Fs>(fs: &Fs, path: &Path, size_hint: Option<usize>) -> Result<Self>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let path = Self::tracker_file_name(path);
         let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
         assert!(
@@ -473,7 +478,7 @@ where
             "Size hint is too small"
         );
         create_and_ensure_length(&path, size)?;
-        let storage = S::open(&path, tracker_open_options())?;
+        let storage = fs.open(&path, tracker_open_options())?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
@@ -582,7 +587,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage = S::open(&self.path, tracker_open_options())?;
+            self.storage = S::open(&self.path, tracker_open_options(), Default::default())?;
         }
 
         let pointer = OptionalPointer::from(pointer);

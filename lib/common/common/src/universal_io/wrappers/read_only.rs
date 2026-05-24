@@ -23,11 +23,7 @@ where
     /// `OpenOptions`); the wrapper itself does not enforce write protection
     /// beyond not exposing `UniversalWrite`.
     #[inline]
-    pub fn open<Fs>(
-        fs: &Fs,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-    ) -> Result<Self>
+    pub fn open<Fs>(fs: &Fs, path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
     where
         Fs: UniversalReadFs<File = S>,
     {

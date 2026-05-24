@@ -57,8 +57,8 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
                 populate: Populate::from(populate),
                 advice,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         result.push(chunk);
@@ -87,7 +87,7 @@ pub fn create_chunk<T: bytemuck::Pod + Send, S: UniversalWrite>(
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
             populate: Populate::No, // don't populate newly created chunk, as it's empty and will be filled later
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         },
+        Default::default(),
     )
 }

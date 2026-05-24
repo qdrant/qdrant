@@ -11,8 +11,8 @@ use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Sequential;
 use crate::iterator_ext::ordering_iterator::OrderingIterator;
 use crate::universal_io::{
-    OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
-    UniversalReadFs, UserData,
+    OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
+    UserData,
 };
 
 mod random_reader;
@@ -43,11 +43,7 @@ where
     S: UniversalRead,
 {
     /// Load the hash map from file.
-    pub fn open<Fs>(
-        fs: &Fs,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-    ) -> Result<Self>
+    pub fn open<Fs>(fs: &Fs, path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
     where
         Fs: UniversalReadFs<File = S>,
     {

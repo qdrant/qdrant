@@ -170,10 +170,9 @@ where
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         };
 
-        let store = ReadOnly::open(&file_name, open_options)?;
+        let store = ReadOnly::open(&file_name, open_options, Default::default())?;
 
         let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
 

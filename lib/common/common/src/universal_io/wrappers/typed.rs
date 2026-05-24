@@ -49,11 +49,7 @@ where
 {
     /// Open through the provided filesystem handle and wrap the result.
     #[inline]
-    pub fn open<Fs>(
-        fs: &Fs,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-    ) -> Result<Self>
+    pub fn open<Fs>(fs: &Fs, path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
     where
         Fs: UniversalReadFs<File = S>,
     {

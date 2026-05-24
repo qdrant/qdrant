@@ -178,8 +178,8 @@ impl MultivectorOffsetsStorageMmap {
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         Ok(Self {

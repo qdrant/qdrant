@@ -128,8 +128,8 @@ where
                 need_sequential: false,
                 populate: populate.map(Populate::from).unwrap_or_default(),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let config = Self::ensure_config(directory, dim, populate)?;

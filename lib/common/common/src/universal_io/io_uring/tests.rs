@@ -415,8 +415,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
     fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
     let fs = IoUringFs::default();
-    let file =
-        TypedStorage::<IoUringFile, u64>::open(&fs, &path, OpenOptions::new_for_test())?;
+    let file = TypedStorage::<IoUringFile, u64>::open(&fs, &path, OpenOptions::new_for_test())?;
 
     let stop = Arc::new(AtomicBool::new(false));
     let signals_sent = Arc::new(AtomicU64::new(0));

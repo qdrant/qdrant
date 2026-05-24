@@ -47,8 +47,8 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 need_sequential: false,
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
 
@@ -61,8 +61,8 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 need_sequential: false,
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
@@ -142,8 +142,8 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                     need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
-                    extra: Default::default(),
                 },
+                Default::default(),
             )?;
             deleted.set_ascending_bits_batch(
                 point_to_values

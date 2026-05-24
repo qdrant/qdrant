@@ -50,9 +50,5 @@ pub trait UniversalReadFs: UniversalReadFileOps {
     ///
     /// `path` is interpreted relative to whatever the backend instance
     /// considers its root (a local directory, an S3 bucket, etc.).
-    fn open(
-        &self,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-    ) -> Result<Self::File>;
+    fn open(&self, path: impl AsRef<Path>, options: OpenOptions) -> Result<Self::File>;
 }

@@ -135,8 +135,8 @@ impl MmapInvertedIndex<MmapFile> {
                     need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
-                    extra: Default::default(),
                 },
+                Default::default(),
             )?;
             deleted_storage.write_bitslice(&deleted_bitslice)?;
             deleted_storage.flusher()()?;
@@ -173,7 +173,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
         };
         let postings = match has_positions {
             false => MmapPostingsEnum::Ids(UniversalPostings::<(), S>::open(
@@ -192,8 +191,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let point_to_tokens_count = TypedStorage::<S, usize>::open(
@@ -203,8 +202,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let deleted_payload_mmap = MmapBitSlice::open(
@@ -214,8 +213,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
