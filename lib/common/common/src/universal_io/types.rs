@@ -37,12 +37,13 @@ impl From<bool> for Populate {
     }
 }
 
-/// Options for [`UniversalRead::open`].
+/// Options for [`UniversalReadFs::open`].
 ///
 /// No `#[derive(Default)]`. Prefer specifying all options explicitly (except
-/// for tests). Backend-specific knobs live in
-/// [`UniversalReadFileOps::ContextConfig`](super::UniversalReadFileOps::ContextConfig)
-/// (the third argument of `open`), not here.
+/// for tests). Knobs in this struct are universal across backends —
+/// backend-specific per-open knobs (e.g. `io_uring`'s `prevent_caching`)
+/// live on [`UniversalReadFs::OpenExtra`](super::UniversalReadFs::OpenExtra)
+/// passed alongside this struct.
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
     pub writeable: bool,
@@ -160,7 +161,7 @@ where
         advice: AdviceSetting::Advice(Advice::Sequential),
     };
 
-    let storage = fs.open(path, options)?;
+    let storage = fs.open(path, options, Default::default())?;
     let bytes = storage.read_whole::<u8>()?;
     serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
 }

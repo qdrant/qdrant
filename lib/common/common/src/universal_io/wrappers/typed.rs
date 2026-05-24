@@ -49,11 +49,13 @@ where
 {
     /// Open through the provided filesystem handle and wrap the result.
     #[inline]
-    pub fn open<Fs>(fs: &Fs, path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
-        fs.open(path, options).map(|inner| TypedStorage {
+    pub fn open(
+        fs: &S::Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+    ) -> Result<Self> {
+        fs.open(path, options, extra).map(|inner| TypedStorage {
             inner,
             _phantom: PhantomData,
         })

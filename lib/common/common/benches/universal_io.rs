@@ -51,12 +51,17 @@ fn benches(c: &mut Criterion) {
         std::process::exit(rc.code().unwrap_or(1));
     }
 
+    #[allow(clippy::default_constructed_unit_structs)]
+    let uring_context = IoUringFs::default();
+    #[allow(clippy::default_constructed_unit_structs)]
+    let mmap_context = MmapFs::default();
+
     #[cfg(target_os = "linux")]
-    read_benches::<u64, IoUringFs>(&IoUringFs::default(), c, "io_uring", "8bytes", &path);
-    read_benches::<u64, MmapFs>(&MmapFs, c, "mmap", "8bytes", &path);
+    read_benches::<u64, IoUringFs>(&uring_context, c, "io_uring", "8bytes", &path);
+    read_benches::<u64, MmapFs>(&mmap_context, c, "mmap", "8bytes", &path);
     #[cfg(target_os = "linux")]
-    read_benches::<[u64; 128], IoUringFs>(&IoUringFs::default(), c, "io_uring", "1KiB", &path);
-    read_benches::<[u64; 128], MmapFs>(&MmapFs, c, "mmap", "1KiB", &path);
+    read_benches::<[u64; 128], IoUringFs>(&uring_context, c, "io_uring", "1KiB", &path);
+    read_benches::<[u64; 128], MmapFs>(&mmap_context, c, "mmap", "1KiB", &path);
 
     #[cfg(target_os = "linux")]
     if std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_none() {
@@ -77,7 +82,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
         populate: Populate::No,
         advice: AdviceSetting::Global,
     };
-    let storage = fs.open(path, options).unwrap();
+    let storage = fs.open(path, options, Default::default()).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
     let mut rng = rand::rng();
     assert_eq!(storage.len::<T>().unwrap(), len);

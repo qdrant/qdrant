@@ -58,10 +58,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Open an existing read-only storage at the given path.
     ///
     /// Infers page count by scanning for page files on disk.
-    pub fn open<Fs>(fs: &Fs, base_path: PathBuf) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn open(fs: &S::Fs, base_path: PathBuf) -> Result<Self> {
         let (config, tracker) = read_config_and_tracker(fs, &base_path)?;
 
         let pages = Pages::<S>::open(fs, &base_path)?;
@@ -122,10 +119,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     ///
-    pub fn live_reload<Fs>(&mut self, fs: &Fs) -> Result<()>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         let has_new_data = self.tracker.live_reload(fs)?;
 
         if !has_new_data {
@@ -169,7 +163,7 @@ pub(super) fn read_config_and_tracker<Fs, S>(
 ) -> Result<(StorageConfig, Tracker<S>)>
 where
     Fs: UniversalReadFs<File = S>,
-    S: UniversalRead,
+    S: UniversalRead<Fs = Fs>,
 {
     let config_path = base_path.join(CONFIG_FILENAME);
     let config: StorageConfig =

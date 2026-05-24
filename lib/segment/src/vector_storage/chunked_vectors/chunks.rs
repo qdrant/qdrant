@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
-    UniversalWrite,
+    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalWrite,
 };
 use fs_err as fs;
 
@@ -19,16 +18,13 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead, Fs>(
-    fs: &Fs,
+pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
+    fs: &S::Fs,
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
     writeable: bool,
-) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError>
-where
-    Fs: UniversalReadFs<File = S>,
-{
+) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -64,6 +60,7 @@ where
                 populate: Populate::from(populate),
                 advice,
             },
+            Default::default(),
         )?;
 
         result.push(chunk);
@@ -77,15 +74,12 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     ))
 }
 
-pub fn create_chunk<T: bytemuck::Pod + Send, S: UniversalWrite, Fs>(
-    fs: &Fs,
+pub fn create_chunk<T: bytemuck::Pod + Send, S: UniversalWrite>(
+    fs: &S::Fs,
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> Result<TypedStorage<S, T>, UniversalIoError>
-where
-    Fs: UniversalReadFs<File = S>,
-{
+) -> Result<TypedStorage<S, T>, UniversalIoError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
 
@@ -98,5 +92,6 @@ where
             populate: Populate::No, // don't populate newly created chunk, as it's empty and will be filled later
             advice: AdviceSetting::Global,
         },
+        Default::default(),
     )
 }

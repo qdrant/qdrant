@@ -6,7 +6,7 @@ mod read_ops;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, UniversalRead};
+use common::universal_io::{MmapFile, UniversalRead};
 pub use immutable_bool_index::ImmutableBoolIndex;
 pub use mutable_bool_index::MutableBoolIndex;
 pub use read_only_bool_index::ReadOnlyBoolIndex;
@@ -73,7 +73,7 @@ impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
 }
 
 impl BoolIndexRead for BoolIndex {
-    type Flags = RoaringFlags<MmapFile, MmapFs>;
+    type Flags = RoaringFlags<MmapFile>;
 
     fn trues_flags(&self) -> &Self::Flags {
         match self {

@@ -7,7 +7,7 @@ use rand::{RngExt, SeedableRng};
 
 use super::fixtures::{Group, TestKey, TestReport, TestValue};
 use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
-use crate::universal_io::{self, MmapFile, MmapFs, OpenOptions, UniversalRead};
+use crate::universal_io::{self, IoUringOpenExtra, MmapFile, MmapFs, OpenOptions, UniversalRead};
 #[cfg(target_os = "linux")]
 #[cfg(target_os = "linux")]
 use crate::universal_io::{IoUringFile, IoUringFs};
@@ -78,7 +78,7 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     run_uio_checks(
         r.group("uio:mmap"),
         &mut rng,
-        &UniversalHashMap::<K, V, MmapFile>::open(&MmapFs, &path, OpenOptions::new_for_test())
+        &UniversalHashMap::<K, V, MmapFile>::open(&MmapFs, &path, OpenOptions::new_for_test(), ())
             .unwrap(),
         &orig,
         &non_existing_keys,
@@ -88,9 +88,11 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
         r.group("uio:io_uring"),
         &mut rng,
         &UniversalHashMap::<K, V, IoUringFile>::open(
+            #[allow(clippy::default_constructed_unit_structs)]
             &IoUringFs::default(),
             &path,
             OpenOptions::new_for_test(),
+            IoUringOpenExtra::default(),
         )
         .unwrap(),
         &orig,

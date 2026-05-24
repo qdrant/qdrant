@@ -6,7 +6,7 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs, read_json_via,
+    ReadRange, TypedStorage, UniversalIoError, UniversalRead, read_json_via,
 };
 use fs_err as fs;
 use num_traits::AsPrimitive;
@@ -44,14 +44,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         directory.join(STATUS_FILE_NAME)
     }
 
-    pub(super) fn load_config<Fs>(
-        fs: &Fs,
+    pub(super) fn load_config(
+        fs: &S::Fs,
         config_file: &Path,
-    ) -> OperationResult<Option<ChunkedVectorsConfig>>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
-        match read_json_via::<Fs, ChunkedVectorsConfig>(fs, config_file) {
+    ) -> OperationResult<Option<ChunkedVectorsConfig>> {
+        match read_json_via::<S::Fs, ChunkedVectorsConfig>(fs, config_file) {
             Ok(config) => Ok(Some(config)),
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
@@ -63,16 +60,13 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     /// Both `config.json` and `status.dat` must already exist; this function
     /// will not create them.
     #[allow(dead_code)] // pending: read-only vector storage enum will use this
-    pub fn open<Fs>(
-        fs: &Fs,
+    pub fn open(
+        fs: &S::Fs,
         directory: &Path,
         dim: usize,
         advice: AdviceSetting,
         populate: Option<bool>,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Self> {
         let config_file = Self::config_file(directory);
         let config = Self::load_config(fs, &config_file)?.ok_or_else(|| {
             OperationError::service_error(format!(

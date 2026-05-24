@@ -33,7 +33,7 @@ pub struct MmapSparseVectorStorage {
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
     /// depend on its length.
-    deleted: BitvecFlags<MmapFile, MmapFs>,
+    deleted: BitvecFlags<MmapFile>,
     /// Current number of deleted vectors.
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets

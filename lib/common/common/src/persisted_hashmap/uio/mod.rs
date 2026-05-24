@@ -43,11 +43,13 @@ where
     S: UniversalRead,
 {
     /// Load the hash map from file.
-    pub fn open<Fs>(fs: &Fs, path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
-        let storage = TypedStorage::<S, u8>::open(fs, path, options)?;
+    pub fn open(
+        fs: &S::Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+    ) -> Result<Self> {
+        let storage = TypedStorage::<S, u8>::open(fs, path, options, extra)?;
 
         // 1. Read header.
         let header_bytes = storage.read::<Sequential>(ReadRange {

@@ -12,7 +12,7 @@ use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
     MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange, TypedStorage,
-    UniversalRead, UniversalReadFs,
+    UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
@@ -44,16 +44,13 @@ where
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
-    pub fn open<Fs>(
-        fs: &Fs,
+    pub fn open(
+        fs: &S::Fs,
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
         populate: bool,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Self> {
         // Allocate/open vectors file
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
@@ -67,12 +64,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
         };
-        let read_only = ReadOnly::open(fs, vectors_path, options).map_err(|e| {
-            crate::common::operation_error::OperationError::service_error(format!(
-                "Failed to open vector mmap at {}: {e}",
-                vectors_path.display()
-            ))
-        })?;
+        let read_only =
+            ReadOnly::open(fs, vectors_path, options, Default::default()).map_err(|e| {
+                crate::common::operation_error::OperationError::service_error(format!(
+                    "Failed to open vector mmap at {}: {e}",
+                    vectors_path.display()
+                ))
+            })?;
         let storage = TypedStorage::<ReadOnly<S>, T>::wrap(read_only);
 
         // Allocate/open deleted mmap

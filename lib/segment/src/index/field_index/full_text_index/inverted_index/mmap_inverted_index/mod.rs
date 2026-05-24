@@ -11,8 +11,7 @@ use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs, UserData,
+    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UserData,
 };
 use types::ZerocopyPostingValue;
 use uio_postings::UniversalPostings;
@@ -138,6 +137,7 @@ impl MmapInvertedIndex<MmapFile> {
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
+                (),
             )?;
             deleted_storage.write_bitslice(&deleted_bitslice)?;
             deleted_storage.flusher()()?;
@@ -153,16 +153,13 @@ impl MmapInvertedIndex<MmapFile> {
 }
 
 impl<S: UniversalRead> MmapInvertedIndex<S> {
-    pub fn open<Fs>(
-        fs: &Fs,
+    pub fn open(
+        fs: &S::Fs,
         path: PathBuf,
         populate: bool,
         has_positions: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Option<Self>>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Option<Self>> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
@@ -184,11 +181,13 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 fs,
                 &postings_path,
                 postings_open_options,
+                Default::default(),
             )?),
             true => MmapPostingsEnum::WithPositions(UniversalPostings::<Positions, S>::open(
                 fs,
                 &postings_path,
                 postings_open_options,
+                Default::default(),
             )?),
         };
         let vocab = UniversalHashMap::<str, TokenId, S>::open(
@@ -200,6 +199,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
 
         let point_to_tokens_count = TypedStorage::<S, usize>::open(
@@ -211,6 +211,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
 
         let deleted_payload_mmap = StoredBitSlice::<S>::open(
@@ -222,6 +223,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

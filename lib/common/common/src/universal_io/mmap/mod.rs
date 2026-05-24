@@ -37,8 +37,9 @@ impl UniversalReadFileOps for MmapFs {
 
 impl UniversalReadFs for MmapFs {
     type File = MmapFile;
+    type OpenExtra = ();
 
-    fn open(&self, path: impl AsRef<Path>, options: OpenOptions) -> Result<MmapFile> {
+    fn open(&self, path: impl AsRef<Path>, options: OpenOptions, _extra: ()) -> Result<MmapFile> {
         MmapFile::open_inner(path, options)
     }
 }
@@ -130,6 +131,8 @@ impl MmapFile {
 }
 
 impl UniversalRead for MmapFile {
+    type Fs = MmapFs;
+
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedMmapReadPipeline<'a, T, U>
     where
@@ -358,6 +361,7 @@ impl MmapFile {
                     populate: Populate::No,
                     advice: AdviceSetting::Advice(Advice::Normal),
                 },
+                (),
             )
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         let disk_bytes = file.disk_bytes()?;

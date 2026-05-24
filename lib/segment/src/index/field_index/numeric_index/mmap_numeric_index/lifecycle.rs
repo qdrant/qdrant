@@ -88,6 +88,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
+                (),
             )?;
             deleted.set_ascending_bits_batch(
                 in_memory_index
@@ -130,7 +131,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             populate: Populate::from(do_populate),
             advice: AdviceSetting::Global,
         };
-        let pairs = TypedStorage::open(&MmapFs, pairs_path, pairs_options)?;
+        let pairs = TypedStorage::open(&MmapFs, pairs_path, pairs_options, ())?;
 
         let point_to_values = StoredPointToValues::open(&MmapFs, path, do_populate)?;
         let mut deleted = deleted_points.to_owned();
@@ -144,6 +145,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
             },
+            (),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

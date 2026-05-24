@@ -77,12 +77,7 @@ impl Default for BlockCacheConfigContext {
     }
 }
 
-impl TConfigContext for BlockCacheConfigContext {
-    fn with_prevent_caching(self, _prevent_caching: bool) -> Self {
-        // Block cache is, by definition, cached. No-op.
-        self
-    }
-}
+impl TConfigContext for BlockCacheConfigContext {}
 
 /// Filesystem handle for the block-based disk cache.
 #[derive(Debug, Clone)]
@@ -110,8 +105,14 @@ impl UniversalReadFileOps for BlockCacheFs {
 
 impl UniversalReadFs for BlockCacheFs {
     type File = CachedSlice;
+    type OpenExtra = ();
 
-    fn open(&self, path: impl AsRef<Path>, options: OpenOptions) -> Result<CachedSlice> {
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        _extra: (),
+    ) -> Result<CachedSlice> {
         let OpenOptions {
             writeable,
             need_sequential: _,
@@ -125,6 +126,8 @@ impl UniversalReadFs for BlockCacheFs {
 }
 
 impl UniversalRead for CachedSlice {
+    type Fs = BlockCacheFs;
+
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedDiskCacheReadPipeline<'a, T, U>
     where

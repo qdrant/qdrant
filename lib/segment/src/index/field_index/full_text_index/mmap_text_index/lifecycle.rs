@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, UniversalRead, UniversalReadFs};
+use common::universal_io::{MmapFs, UniversalRead};
 use fs_err as fs;
 use serde_json::Value;
 
@@ -21,16 +21,13 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 impl<S: UniversalRead> MmapFullTextIndex<S> {
-    pub fn open<Fs>(
-        fs: &Fs,
+    pub fn open(
+        fs: &S::Fs,
         path: PathBuf,
         config: TextIndexParams,
         is_on_disk: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Option<Self>>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Option<Self>> {
         let populate = !is_on_disk;
 
         let has_positions = config.phrase_matching == Some(true);

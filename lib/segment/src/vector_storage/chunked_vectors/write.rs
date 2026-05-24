@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFs, UniversalWrite,
+    OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFileOps, UniversalWrite,
 };
 use num_traits::AsPrimitive;
 
@@ -19,17 +19,17 @@ use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
 
 #[derive(Debug)]
-pub struct ChunkedVectors<T, S, Fs = common::universal_io::MmapFs>
+pub struct ChunkedVectors<T, S>
 where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
     inner: ChunkedVectorsRead<T, S>,
     status: StoredStruct<S, Status>,
-    fs: Fs,
+    fs: S::Fs,
 }
 
-impl<T, S, Fs> Deref for ChunkedVectors<T, S, Fs>
+impl<T, S> Deref for ChunkedVectors<T, S>
 where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
@@ -41,17 +41,16 @@ where
     }
 }
 
-impl<T, S, Fs> ChunkedVectors<T, S, Fs>
+impl<T, S> ChunkedVectors<T, S>
 where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
-    Fs: UniversalReadFs<File = S>,
 {
     pub fn storage_kind() -> UniversalKind {
         S::kind()
     }
 
-    pub fn ensure_status_file(fs: &Fs, directory: &Path) -> OperationResult<PathBuf> {
+    pub fn ensure_status_file(fs: &S::Fs, directory: &Path) -> OperationResult<PathBuf> {
         let status_file = ChunkedVectorsRead::<T, S>::status_file(directory);
         if !fs.exists(&status_file)? {
             {
@@ -64,7 +63,7 @@ where
     }
 
     fn ensure_config(
-        fs: &Fs,
+        fs: &S::Fs,
         directory: &Path,
         dim: usize,
         populate: Option<bool>,
@@ -117,7 +116,7 @@ where
     }
 
     pub fn open(
-        fs: Fs,
+        fs: S::Fs,
         directory: &Path,
         dim: usize,
         advice: AdviceSetting,
@@ -135,6 +134,7 @@ where
                 populate: populate.map(Populate::from).unwrap_or_default(),
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
 
         let config = Self::ensure_config(&fs, directory, dim, populate)?;

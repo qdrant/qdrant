@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, UniversalWrite};
+use common::universal_io::{UniversalRead, UniversalWrite};
 use roaring::RoaringBitmap;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
@@ -73,9 +73,9 @@ pub trait RoaringFlagsRead {
 /// Changes are buffered until explicitly flushed.
 ///
 /// [1]: super::bitvec_flags::BitvecFlags
-pub struct RoaringFlags<S, Fs> {
+pub struct RoaringFlags<S: UniversalRead> {
     /// Buffered persisted flags.
-    storage: BufferedDynamicFlags<S, Fs>,
+    storage: BufferedDynamicFlags<S>,
 
     /// In-memory bitmap of true flags.
     // Potential optimization: add a secondary bitmap for false values for faster iter_falses implementation.
@@ -85,10 +85,10 @@ pub struct RoaringFlags<S, Fs> {
     len: usize,
 }
 
-impl<S, Fs> RoaringFlagsRead for RoaringFlags<S, Fs>
+impl<S> RoaringFlagsRead for RoaringFlags<S>
 where
     S: UniversalWrite + Send + 'static,
-    Fs: UniversalReadFs<File = S> + Send + Sync + 'static,
+    S::Fs: Send + Sync + 'static,
 {
     fn len(&self) -> usize {
         self.len
@@ -113,12 +113,12 @@ where
     }
 }
 
-impl<S, Fs> RoaringFlags<S, Fs>
+impl<S> RoaringFlags<S>
 where
     S: UniversalWrite + Send + 'static,
-    Fs: UniversalReadFs<File = S> + Send + Sync + 'static,
+    S::Fs: Send + Sync + 'static,
 {
-    pub fn new(fs: Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
+    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory
         let bitmap = RoaringBitmap::from_sorted_iter(dynamic_flags.iter_trues()?)
             .expect("iter_trues iterates in sorted order");
@@ -176,6 +176,7 @@ where
     }
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
 #[duplicate::duplicate_item(
     tests_mod       S               Fs              cfg_predicate;
     [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];

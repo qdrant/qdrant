@@ -15,7 +15,6 @@ use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
     MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -32,16 +31,13 @@ use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 use crate::types::GeoPoint;
 
 impl<S: UniversalRead> StoredGeoMapIndex<S> {
-    pub fn build<Fs>(
-        fs: &Fs,
+    pub fn build(
+        fs: &S::Fs,
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
         let deleted_path = path.join(DELETED_PATH);
@@ -138,6 +134,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
+                (),
             )?;
             deleted.set_ascending_bits_batch(
                 dynamic_index
@@ -163,15 +160,12 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
         })
     }
 
-    pub fn open<Fs>(
-        fs: &Fs,
+    pub fn open(
+        fs: &S::Fs,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Option<Self>>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Option<Self>> {
         let deleted_path = path.join(DELETED_PATH);
         let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
@@ -193,9 +187,12 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             advice: AdviceSetting::Global,
         };
 
-        let counts_per_hash = TypedStorage::open(fs, &counts_per_hash_path, open_options)?;
-        let points_map = TypedStorage::open(fs, &points_map_path, open_options)?;
-        let points_map_ids = TypedStorage::open(fs, &points_map_ids_path, open_options)?;
+        let counts_per_hash =
+            TypedStorage::open(fs, &counts_per_hash_path, open_options, Default::default())?;
+        let points_map =
+            TypedStorage::open(fs, &points_map_path, open_options, Default::default())?;
+        let points_map_ids =
+            TypedStorage::open(fs, &points_map_ids_path, open_options, Default::default())?;
         let point_to_values = StoredPointToValues::open(fs, path, true)?;
 
         let mut deleted = deleted_points.to_owned();
@@ -209,6 +206,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

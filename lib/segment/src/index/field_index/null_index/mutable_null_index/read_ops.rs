@@ -1,7 +1,7 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::MmapFile;
 
 use super::super::read_ops::{self, NullIndexRead};
 use super::MutableNullIndex;
@@ -14,7 +14,7 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl NullIndexRead for MutableNullIndex {
-    type Flags = RoaringFlags<MmapFile, MmapFs>;
+    type Flags = RoaringFlags<MmapFile>;
 
     fn has_values_flags(&self) -> &Self::Flags {
         &self.storage.has_values_flags

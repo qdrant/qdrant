@@ -13,7 +13,7 @@ mod wrappers;
 
 pub use self::error::UniversalIoError;
 #[cfg(target_os = "linux")]
-pub use self::io_uring::{IoUringConfigContext, IoUringFile, IoUringFs};
+pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra};
 pub use self::mmap::{MmapFile, MmapFs};
 pub use self::simple_disk_cache::{DiskCache, DiskCacheConfig};
 pub use self::traits::{

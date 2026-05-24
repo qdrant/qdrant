@@ -3,9 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
-use common::universal_io::{
-    Flusher, OpenOptions, Populate, TypedStorage, UniversalReadFs, UniversalWrite,
-};
+use common::universal_io::{Flusher, OpenOptions, Populate, TypedStorage, UniversalWrite};
 use itertools::Itertools;
 
 use super::{RegionId, StorageConfig};
@@ -93,15 +91,12 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         self.path.clone()
     }
 
-    pub fn create<Fs>(
-        fs: &Fs,
+    pub fn create(
+        fs: &S::Fs,
         dir: &Path,
         iter: impl ExactSizeIterator<Item = RegionGaps>,
         config: StorageConfig,
-    ) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> Result<Self> {
         let path = gaps_file_path(dir);
 
         let data: Vec<RegionGaps> = iter.collect();
@@ -114,7 +109,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             populate: Populate::Blocking,
             advice: AdviceSetting::Advice(Advice::Normal),
         };
-        let mut slice_store = TypedStorage::open(fs, &path, options)?;
+        let mut slice_store = TypedStorage::open(fs, &path, options, Default::default())?;
 
         debug_assert_eq!(slice_store.len()? as usize, data.len());
 
@@ -127,10 +122,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         })
     }
 
-    pub fn open<Fs>(fs: &Fs, dir: &Path, config: StorageConfig) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn open(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
         let path = gaps_file_path(dir);
         let options = OpenOptions {
             writeable: true,
@@ -138,7 +130,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
         };
-        let slice_store = TypedStorage::open(fs, &path, options)?;
+        let slice_store = TypedStorage::open(fs, &path, options, Default::default())?;
 
         Ok(Self {
             path,
@@ -152,14 +144,11 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
     }
 
     /// Extends the file to fit the new regions
-    pub fn extend<Fs>(
+    pub fn extend(
         &mut self,
-        fs: &Fs,
+        fs: &S::Fs,
         iter: impl ExactSizeIterator<Item = RegionGaps>,
-    ) -> Result<()>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> Result<()> {
         let data: Vec<RegionGaps> = iter.collect();
         if data.is_empty() {
             return Ok(());
@@ -178,7 +167,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
         };
-        self.slice_store = TypedStorage::open(fs, &self.path, options)?;
+        self.slice_store = TypedStorage::open(fs, &self.path, options, Default::default())?;
 
         debug_assert_eq!(self.len()? - prev_len, data.len());
 

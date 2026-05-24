@@ -7,7 +7,9 @@ use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalReadFs, UniversalWrite};
+use common::universal_io::{
+    OpenOptions, Populate, StoredStruct, UniversalReadFileOps, UniversalWrite,
+};
 use fs_err as fs;
 use itertools::Either;
 
@@ -96,10 +98,7 @@ where
         self.status.len == 0
     }
 
-    fn ensure_status_file<Fs>(fs: &Fs, directory: &Path) -> OperationResult<PathBuf>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    fn ensure_status_file(fs: &S::Fs, directory: &Path) -> OperationResult<PathBuf> {
         let status_file = status_file(directory);
         if !fs.exists(&status_file)? {
             let length = std::mem::size_of::<DynamicFlagsStatus>();
@@ -109,10 +108,7 @@ where
         Ok(status_file)
     }
 
-    pub fn open<Fs>(fs: &Fs, directory: &Path, populate: bool) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn open(fs: &S::Fs, directory: &Path, populate: bool) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_path = Self::ensure_status_file(fs, directory)?;
 
@@ -125,6 +121,7 @@ where
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
 
         if status.current_file_id != 0 {
@@ -146,15 +143,12 @@ where
         })
     }
 
-    fn open_storage<Fs>(
-        fs: &Fs,
+    fn open_storage(
+        fs: &S::Fs,
         num_flags: usize,
         directory: &Path,
         populate: bool,
-    ) -> OperationResult<StoredBitSlice<S>>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<StoredBitSlice<S>> {
         let capacity_bytes = file_size_for(num_flags);
         let path = directory.join(FLAGS_FILE);
 
@@ -173,7 +167,7 @@ where
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
         };
-        let flags = StoredBitSlice::open(fs, &path, options)?;
+        let flags = StoredBitSlice::open(fs, &path, options, Default::default())?;
         Ok(flags)
     }
 
@@ -183,10 +177,7 @@ where
     /// NOTE: capacity can be up to 2x the current length.
     ///
     /// Errors if the vector is shrunk.
-    pub fn set_len<Fs>(&mut self, fs: &Fs, new_len: usize) -> OperationResult<()>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn set_len(&mut self, fs: &S::Fs, new_len: usize) -> OperationResult<()> {
         debug_assert!(new_len >= self.status.len);
         if new_len == self.status.len {
             return Ok(());
@@ -324,6 +315,7 @@ where
     }
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
 #[duplicate::duplicate_item(
     tests_mod       S               Fs              cfg_predicate;
     [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];

@@ -26,7 +26,8 @@ fn buffered_update_bitslice(c: &mut Criterion) {
     )
     .unwrap();
 
-    let bitslice_storage = MmapBitSlice::open(&MmapFs, &path, OpenOptions::new_for_test()).unwrap();
+    let bitslice_storage =
+        MmapBitSlice::open(&MmapFs, &path, OpenOptions::new_for_test(), ()).unwrap();
     let buffered_update_bitslice = BufferedUpdateBitSlice::new(bitslice_storage);
 
     // Set random flags and persist

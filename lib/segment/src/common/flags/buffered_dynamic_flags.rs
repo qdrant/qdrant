@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, UniversalWrite};
+use common::universal_io::{UniversalRead, UniversalWrite};
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 
@@ -16,7 +16,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 ///
 /// Changes are buffered until explicitly flushed.
 #[derive(Debug)]
-pub(crate) struct BufferedDynamicFlags<S, Fs> {
+pub(crate) struct BufferedDynamicFlags<S: UniversalRead> {
     /// Persisted flags.
     storage: Arc<Mutex<DynamicStoredFlags<S>>>,
 
@@ -24,18 +24,18 @@ pub(crate) struct BufferedDynamicFlags<S, Fs> {
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
 
     /// Filesystem handle used to reopen storage on resize.
-    fs: Arc<Fs>,
+    fs: Arc<S::Fs>,
 
     /// Lock to prevent concurrent flush and drop
     is_alive_flush_lock: IsAliveLock,
 }
 
-impl<S, Fs> BufferedDynamicFlags<S, Fs>
+impl<S> BufferedDynamicFlags<S>
 where
     S: UniversalWrite + Send + 'static,
-    Fs: UniversalReadFs<File = S> + Send + Sync + 'static,
+    S::Fs: Send + Sync + 'static,
 {
-    pub fn new(fs: Fs, dynamic_flags: DynamicStoredFlags<S>) -> Self {
+    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
         let is_alive_flush_lock = IsAliveLock::new();
         Self {
@@ -136,6 +136,7 @@ fn reconcile_persisted_buffer(
         .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
 #[duplicate::duplicate_item(
     tests_mod       S               Fs              cfg_predicate;
     [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];

@@ -63,6 +63,7 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
             writeable: false,
             ..OpenOptions::new_for_test()
         },
+        Default::default(),
     )
     .unwrap();
     if !low_mem {

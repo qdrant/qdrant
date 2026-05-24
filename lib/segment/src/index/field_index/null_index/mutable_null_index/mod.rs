@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::MmapFile;
 
 use crate::common::flags::roaring_flags::RoaringFlags;
 
@@ -16,15 +16,15 @@ pub(super) const IS_NULL_DIRNAME: &str = "is_null";
 /// and buffers updates before persisting them to DynamicMmapFlags.
 pub struct MutableNullIndex {
     pub(super) base_dir: PathBuf,
-    pub(super) storage: Storage<MmapFile, MmapFs>,
+    pub(super) storage: Storage<MmapFile>,
     pub(super) total_point_count: usize,
 }
 
-pub(super) struct Storage<S, Fs> {
+pub(super) struct Storage<S: common::universal_io::UniversalRead> {
     /// Points which have at least one value
-    pub(super) has_values_flags: RoaringFlags<S, Fs>,
+    pub(super) has_values_flags: RoaringFlags<S>,
     /// Points which have null values
-    pub(super) is_null_flags: RoaringFlags<S, Fs>,
+    pub(super) is_null_flags: RoaringFlags<S>,
 }
 
 #[cfg(test)]

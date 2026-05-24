@@ -44,11 +44,24 @@ pub trait UniversalReadFileOps: Sized + Debug {
 /// a single file handle implementing [`UniversalRead`].
 pub trait UniversalReadFs: UniversalReadFileOps {
     /// File handle type produced by [`Self::open`].
-    type File: UniversalRead;
+    type File: UniversalRead<Fs = Self>;
+
+    /// Backend-specific per-open knobs.
+    ///
+    /// Universal options live on [`OpenOptions`]; backend-specific per-call
+    /// switches (e.g. `io_uring`'s `prevent_caching` → `O_DIRECT`) live
+    /// here. Generic callers pass `Default::default()`; callers who want
+    /// the backend-specific behavior construct the concrete type.
+    type OpenExtra: Default;
 
     /// Open a file for reading.
     ///
     /// `path` is interpreted relative to whatever the backend instance
     /// considers its root (a local directory, an S3 bucket, etc.).
-    fn open(&self, path: impl AsRef<Path>, options: OpenOptions) -> Result<Self::File>;
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> Result<Self::File>;
 }

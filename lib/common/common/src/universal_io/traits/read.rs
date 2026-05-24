@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 
-use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UserData};
+use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalReadFs, UserData};
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{ReadRange, Result, UniversalKind};
 
@@ -15,9 +15,22 @@ use crate::universal_io::{ReadRange, Result, UniversalKind};
 /// This trait deliberately does *not* extend
 /// [`UniversalReadFileOps`](super::UniversalReadFileOps): a file handle is
 /// not a filesystem, and not every filesystem-level backend produces
-/// `UniversalRead` handles (e.g. a metadata-only listing service).
+/// `UniversalRead` handles (e.g. a metadata-only listing service). The
+/// link to the producing filesystem is exposed via the [`Self::Fs`]
+/// associated type so generic-over-`<S: UniversalRead>` code can refer
+/// to the matching filesystem handle as `S::Fs` without an extra generic
+/// parameter.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead: Sized + Debug + Send + Sync {
+    /// Filesystem handle type that opens `Self`-typed file handles via
+    /// [`UniversalReadFs::open`](UniversalReadFs::open).
+    ///
+    /// Bidirectionally pinned: `Self::Fs::File = Self`. Wrappers such as
+    /// `ReadOnly<S>` declare a phantom `ReadOnlyFs<S::Fs>` to satisfy this
+    /// constraint at the type level, while their inherent `open`
+    /// constructor still accepts the unwrapped inner `S::Fs`.
+    type Fs: UniversalReadFs<File = Self>;
+
     type BorrowedReadPipeline<'file, T, U>: BorrowedReadPipeline<'file, T, U, File = Self>
     where
         Self: 'file,

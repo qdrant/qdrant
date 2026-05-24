@@ -44,16 +44,14 @@ struct HeadersBatch<'a> {
 
 impl<V: ZerocopyPostingValue, S: UniversalRead> UniversalPostings<V, S> {
     /// Open the postings file at `path` via the `S` storage backend.
-    pub fn open<Fs>(
-        fs: &Fs,
+    pub fn open(
+        fs: &S::Fs,
         path: impl Into<PathBuf>,
         options: OpenOptions,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+    ) -> OperationResult<Self> {
         let path = path.into();
-        let storage = fs.open(&path, options)?;
+        let storage = fs.open(&path, options, extra)?;
 
         let header = storage.read::<Sequential, PostingsHeader>(ReadRange::one(0))?[0];
 

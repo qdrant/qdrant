@@ -49,6 +49,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
             },
+            (),
         )?;
         let point_to_values = StoredPointToValues::open(&MmapFs, path, do_populate)?;
 
@@ -63,6 +64,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
             },
+            (),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
@@ -145,6 +147,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
+                (),
             )?;
             deleted.set_ascending_bits_batch(
                 point_to_values

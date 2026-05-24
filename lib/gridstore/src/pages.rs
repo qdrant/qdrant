@@ -7,8 +7,8 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
-    UniversalWrite,
+    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs, UniversalWrite,
 };
 use itertools::Either;
 
@@ -41,10 +41,7 @@ impl<S: UniversalRead> Pages<S> {
         }
     }
 
-    pub fn open<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn open(fs: &S::Fs, dir: &Path) -> Result<Self> {
         let mut pages = Self::new(dir.to_path_buf());
 
         let page_files: HashSet<_> = fs.list_files(&dir.join("page_"))?.into_iter().collect();
@@ -60,10 +57,7 @@ impl<S: UniversalRead> Pages<S> {
         Ok(pages)
     }
 
-    pub fn attach_page<Fs>(&mut self, fs: &Fs, path: &Path) -> Result<()>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn attach_page(&mut self, fs: &S::Fs, path: &Path) -> Result<()> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: true,
@@ -71,7 +65,7 @@ impl<S: UniversalRead> Pages<S> {
             advice: AdviceSetting::Advice(Advice::Random),
         };
 
-        let page = fs.open(path, options)?;
+        let page = fs.open(path, options, Default::default())?;
         self.pages.push(page);
 
         Ok(())
@@ -367,10 +361,7 @@ impl<S: UniversalRead> Pages<S> {
     /// - Should only be called on read-only instances of the Pages.
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
-    pub fn live_reload<Fs>(&mut self, fs: &Fs) -> Result<()>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         let num_pages = self.pages.len();
         let next_page_id = num_pages as PageId;
 

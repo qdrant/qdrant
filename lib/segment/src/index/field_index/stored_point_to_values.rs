@@ -8,7 +8,7 @@ use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs};
+use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead};
 use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -97,14 +97,13 @@ where
     T: StoredValue + ?Sized,
     S: UniversalRead,
 {
-    pub fn from_iter<'a, Fs>(
-        fs: &Fs,
+    pub fn from_iter<'a>(
+        fs: &S::Fs,
         path: &Path,
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = &'a T>)> + Clone,
     ) -> OperationResult<Self>
     where
         T: 'a,
-        Fs: UniversalReadFs<File = S>,
     {
         // calculate file size
         let mut points_count: usize = 0;
@@ -164,10 +163,7 @@ where
         Self::open(fs, path, true)
     }
 
-    pub fn open<Fs>(fs: &Fs, path: &Path, populate: bool) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn open(fs: &S::Fs, path: &Path, populate: bool) -> OperationResult<Self> {
         let file_name = path.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
@@ -177,7 +173,7 @@ where
             advice: AdviceSetting::Global,
         };
 
-        let store = ReadOnly::open(fs, &file_name, open_options)?;
+        let store = ReadOnly::open(fs, &file_name, open_options, Default::default())?;
 
         let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
 

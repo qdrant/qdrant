@@ -19,8 +19,7 @@ use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalReadFs,
-    UniversalWrite,
+    OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalWrite,
 };
 use fs_err::File;
 
@@ -72,14 +71,11 @@ where
         internal_to_version.ram_usage_bytes() + mappings.ram_usage_bytes()
     }
 
-    pub fn from_in_memory_tracker<Fs>(
-        fs: &Fs,
+    pub fn from_in_memory_tracker(
+        fs: &S::Fs,
         in_memory_tracker: InMemoryIdTracker,
         path: &Path,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Self> {
         let (internal_to_version, mappings) = in_memory_tracker.into_internal();
         let compressed_mappings = CompressedPointMappings::from_mappings(mappings);
         let id_tracker = Self::new(fs, path, &internal_to_version, compressed_mappings)?;
@@ -87,10 +83,7 @@ where
         Ok(id_tracker)
     }
 
-    pub fn open<Fs>(fs: &Fs, segment_path: &Path) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
@@ -100,6 +93,7 @@ where
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
 
         let mut deleted_bitvec = BitVec::new();
@@ -116,6 +110,7 @@ where
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
 
         let internal_to_version_slice = internal_to_version_file.read_whole()?;
@@ -136,15 +131,12 @@ where
         })
     }
 
-    pub fn new<Fs>(
-        fs: &Fs,
+    pub fn new(
+        fs: &S::Fs,
         path: &Path,
         internal_to_version: &[SeqNumberType],
         mappings: CompressedPointMappings,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
         let deleted_filepath = deleted_path(path);
 
@@ -167,6 +159,7 @@ where
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
 
         // Set bits for deleted points from the mappings,
@@ -205,6 +198,7 @@ where
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )?;
         internal_to_version_file.write(0, internal_to_version)?;
 

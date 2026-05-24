@@ -180,6 +180,7 @@ impl MultivectorOffsetsStorageMmap {
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
             },
+            (),
         )?;
 
         Ok(Self {

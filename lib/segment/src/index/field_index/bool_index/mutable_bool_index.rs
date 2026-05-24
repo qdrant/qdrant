@@ -27,12 +27,12 @@ pub struct MutableBoolIndex {
     indexed_count: usize,
     trues_count: usize,
     falses_count: usize,
-    storage: Storage<MmapFile, MmapFs>,
+    storage: Storage<MmapFile>,
 }
 
-struct Storage<S, Fs> {
-    trues_flags: RoaringFlags<S, Fs>,
-    falses_flags: RoaringFlags<S, Fs>,
+struct Storage<S: common::universal_io::UniversalRead> {
+    trues_flags: RoaringFlags<S>,
+    falses_flags: RoaringFlags<S>,
 }
 
 impl MutableBoolIndex {
@@ -198,7 +198,7 @@ impl MutableBoolIndex {
 }
 
 impl BoolIndexRead for MutableBoolIndex {
-    type Flags = RoaringFlags<MmapFile, MmapFs>;
+    type Flags = RoaringFlags<MmapFile>;
 
     fn trues_flags(&self) -> &Self::Flags {
         &self.storage.trues_flags

@@ -7,7 +7,7 @@ use ahash::AHashSet;
 use common::bitvec::BitSlice;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{MmapFile, OpenOptions, Populate, UniversalReadFs, UniversalWrite};
+use common::universal_io::{MmapFile, OpenOptions, Populate, UniversalWrite};
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 
@@ -80,10 +80,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Create a bitmask for one page
-    pub(crate) fn create<Fs>(fs: &Fs, dir: &Path, config: StorageConfig) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub(crate) fn create(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
         debug_assert!(
             config.page_size_bytes % config.block_size_bytes * config.region_size_blocks == 0,
             "Page size must be a multiple of block size * region size"
@@ -95,7 +92,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let path = Self::bitmask_path(dir);
         create_and_ensure_length(&path, length)?;
 
-        let bitslice = StoredBitSlice::open(fs, &path, open_options())?;
+        let bitslice = StoredBitSlice::open(fs, &path, open_options(), Default::default())?;
 
         let bit_len = bitslice.bit_len() as usize;
         assert_eq!(bit_len, length * 8, "Bitmask length mismatch");
@@ -114,10 +111,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         })
     }
 
-    pub(crate) fn open<Fs>(fs: &Fs, dir: &Path, config: StorageConfig) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub(crate) fn open(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
         debug_assert!(
             config
                 .page_size_bytes
@@ -142,6 +136,7 @@ impl<S: UniversalWrite> Bitmask<S> {
                 populate: Populate::Auto,
                 advice: AdviceSetting::Advice(Advice::Random),
             },
+            Default::default(),
         )?;
         let regions_gaps = BitmaskGaps::open(fs, dir, config.clone())?;
 
@@ -202,10 +197,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Extend the bitslice to cover another page
-    pub fn cover_new_page<Fs>(&mut self, fs: &Fs) -> Result<()>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn cover_new_page(&mut self, fs: &S::Fs) -> Result<()> {
         let extra_length = Self::length_for_page(&self.config);
 
         // flush outstanding changes
@@ -216,7 +208,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let new_length = (previous_bit_len / u8::BITS as usize) + extra_length;
         create_and_ensure_length(&self.path, new_length)?;
 
-        self.bitslice = StoredBitSlice::open(fs, &self.path, open_options())?;
+        self.bitslice = StoredBitSlice::open(fs, &self.path, open_options(), Default::default())?;
 
         let current_bit_len = self.bitslice.bit_len() as usize;
 

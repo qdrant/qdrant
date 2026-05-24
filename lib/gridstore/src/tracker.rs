@@ -265,10 +265,7 @@ impl<S> Tracker<S> {
 impl<S: UniversalRead> Tracker<S> {
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
-    pub fn open<Fs>(fs: &Fs, path: &Path) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn open(fs: &S::Fs, path: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         let storage = Self::open_storage(fs, &path)?;
         let header: TrackerHeader = Self::read_header(&storage)?;
@@ -287,11 +284,8 @@ impl<S: UniversalRead> Tracker<S> {
         Ok(header)
     }
 
-    fn open_storage<Fs>(fs: &Fs, path: &Path) -> Result<S>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
-        let storage = match fs.open(path, tracker_open_options()) {
+    fn open_storage(fs: &S::Fs, path: &Path) -> Result<S> {
+        let storage = match fs.open(path, tracker_open_options(), Default::default()) {
             Err(UniversalIoError::NotFound { .. }) => {
                 return Err(GridstoreError::service_error(format!(
                     "Tracker file does not exist: {}",
@@ -313,10 +307,7 @@ impl<S: UniversalRead> Tracker<S> {
     /// - Partial writes are possible, but ignored. Header is a source of truth.
     ///
     /// Returns `true` if there are new changes, `false` if the tracker is already up to date.
-    pub fn live_reload<Fs>(&mut self, fs: &Fs) -> Result<bool>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn live_reload(&mut self, fs: &S::Fs) -> Result<bool> {
         let new_header = Self::read_header(&self.storage)?;
 
         if new_header.next_pointer_offset < self.next_pointer_offset {
@@ -474,10 +465,7 @@ where
 
     /// Create a new PageTracker at the given dir path
     /// The file is created with the default size if no size hint is given
-    pub fn new<Fs>(fs: &Fs, path: &Path, size_hint: Option<usize>) -> Result<Self>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn new(fs: &S::Fs, path: &Path, size_hint: Option<usize>) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
         assert!(
@@ -485,7 +473,7 @@ where
             "Size hint is too small"
         );
         create_and_ensure_length(&path, size)?;
-        let storage = fs.open(&path, tracker_open_options())?;
+        let storage = fs.open(&path, tracker_open_options(), Default::default())?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
@@ -509,14 +497,11 @@ where
     ///
     /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
     #[must_use = "The old pointers need to be freed in the bitmask"]
-    pub fn write_pending<Fs>(
+    pub fn write_pending(
         &mut self,
-        fs: &Fs,
+        fs: &S::Fs,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
-    ) -> Result<Vec<ValuePointer>>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> Result<Vec<ValuePointer>> {
         let mut old_pointers = Vec::new();
 
         for (point_offset, updates) in pending_updates {
@@ -564,10 +549,7 @@ where
     }
 
     #[cfg(test)]
-    pub fn write_pending_and_flush_internal<Fs>(&mut self, fs: &Fs) -> Result<Vec<ValuePointer>>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    pub fn write_pending_and_flush_internal(&mut self, fs: &S::Fs) -> Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
         let res = self.write_pending(fs, pending_updates)?;
         self.storage.flusher()()?;
@@ -582,15 +564,12 @@ where
 
     /// Save the mapping at the given offset
     /// The file is resized if necessary
-    fn persist_pointer<Fs>(
+    fn persist_pointer(
         &mut self,
-        fs: &Fs,
+        fs: &S::Fs,
         point_offset: PointOffset,
         pointer: Option<ValuePointer>,
-    ) -> Result<()>
-    where
-        Fs: UniversalReadFs<File = S>,
-    {
+    ) -> Result<()> {
         let storage_len = self.storage.len::<u8>()? as usize;
         if pointer.is_none() && point_offset as usize >= storage_len {
             return Ok(());
@@ -605,7 +584,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage = fs.open(&self.path, tracker_open_options())?;
+            self.storage = fs.open(&self.path, tracker_open_options(), Default::default())?;
         }
 
         let pointer = OptionalPointer::from(pointer);

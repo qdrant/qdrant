@@ -20,7 +20,7 @@ use self::error::*;
 use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{Item, TConfigContext, UniversalReadFileOps, UniversalReadFs};
+use super::traits::{Item, UniversalReadFileOps, UniversalReadFs};
 use super::*;
 use crate::generic_consts::AccessPattern;
 
@@ -35,48 +35,28 @@ pub struct IoUringFile {
     pub(super) direct_io: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct IoUringConfigContext {
-    pub prevent_caching: bool,
-}
-
-#[expect(clippy::derivable_impls, reason = "be explicit")]
-impl Default for IoUringConfigContext {
-    fn default() -> Self {
-        IoUringConfigContext {
-            prevent_caching: false,
-        }
-    }
-}
-
-impl TConfigContext for IoUringConfigContext {
-    fn with_prevent_caching(mut self, prevent_caching: bool) -> Self {
-        self.prevent_caching = prevent_caching;
-        self
-    }
-}
-
 impl IoUringFile {
     pub(super) fn fd(&self) -> Fd {
         Fd(self.file.as_raw_fd())
     }
 }
 
-/// Filesystem handle for `io_uring`-backed files. Carries the
-/// `prevent_caching` knob (and future runtime handle); applied to every
-/// file opened through this handle.
+/// Filesystem handle for `io_uring`-backed files. No per-instance state
+/// today; the per-call `prevent_caching` knob lives on
+/// [`OpenOptions`](super::OpenOptions).
 #[derive(Debug, Clone, Copy, Default)]
-pub struct IoUringFs {
-    prevent_caching: bool,
-}
+pub struct IoUringFs;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringContextConfig;
+
+impl TConfigContext for IoUringContextConfig {}
 
 impl UniversalReadFileOps for IoUringFs {
-    type ContextConfig = IoUringConfigContext;
+    type ContextConfig = IoUringContextConfig;
 
-    fn from_context(ctx: IoUringConfigContext) -> Result<Self> {
-        Ok(Self {
-            prevent_caching: ctx.prevent_caching,
-        })
+    fn from_context(_ctx: Self::ContextConfig) -> Result<Self> {
+        Ok(Self)
     }
 
     fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
@@ -88,10 +68,24 @@ impl UniversalReadFileOps for IoUringFs {
     }
 }
 
+/// Per-open backend extras for [`IoUringFs::open`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringOpenExtra {
+    /// Open with `O_DIRECT` to bypass the OS page cache. Requires
+    /// block-aligned reads at runtime.
+    pub prevent_caching: bool,
+}
+
 impl UniversalReadFs for IoUringFs {
     type File = IoUringFile;
+    type OpenExtra = IoUringOpenExtra;
 
-    fn open(&self, path: impl AsRef<Path>, options: OpenOptions) -> Result<IoUringFile> {
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: IoUringOpenExtra,
+    ) -> Result<IoUringFile> {
         // Check that io_uring is supported on this system.
         pool::check_io_uring_support()?;
 
@@ -101,8 +95,9 @@ impl UniversalReadFs for IoUringFs {
             populate: _,
             advice: _,
         } = options;
+        let IoUringOpenExtra { prevent_caching } = extra;
 
-        let direct_io = self.prevent_caching;
+        let direct_io = prevent_caching;
         let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
 
         let file = fs::OpenOptions::new()
@@ -121,6 +116,8 @@ impl UniversalReadFs for IoUringFs {
 }
 
 impl UniversalRead for IoUringFile {
+    type Fs = IoUringFs;
+
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedIoUringPipeline<'a, T, U>
     where
