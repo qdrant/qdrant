@@ -15,6 +15,7 @@ use common::mmap::{Advice, AdviceSetting};
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use fs_err as fs;
 use fs_err::File;
 use log::info;
@@ -609,7 +610,7 @@ fn create_segment_id_tracker(
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     if !mutable_id_tracker {
         return Ok(sp(IdTrackerEnum::ImmutableIdTracker(
-            ImmutableIdTracker::open(segment_path)?,
+            ImmutableIdTracker::open(&MmapFs, segment_path)?,
         )));
     }
 

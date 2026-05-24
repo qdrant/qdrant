@@ -9,8 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalRead};
-use fs_err as fs;
+use common::universal_io::{MmapFile, MmapFs, UniversalRead, UniversalReadFs};
 use fs_err::{File, OpenOptions};
 
 use crate::common::Flusher;
@@ -36,7 +35,7 @@ const DELETED_PATH: &str = "deleted.dat";
 ///
 /// Mem-mapped storage can only be constructed from another storage
 #[derive(Debug)]
-pub struct DenseVectorStorageImpl<T, S = MmapFile>
+pub struct DenseVectorStorageImpl<T, S = MmapFile, Fs = MmapFs>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead,
@@ -46,9 +45,10 @@ where
     vectors: Option<ImmutableDenseVectors<T, S>>,
     distance: Distance,
     populated: bool,
+    fs: Fs,
 }
 
-impl<T, S> DenseVectorStorageImpl<T, S>
+impl<T, S, Fs> DenseVectorStorageImpl<T, S, Fs>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead,
@@ -69,6 +69,7 @@ where
             vectors,
             distance: _,
             populated: _,
+            fs: _,
         } = self;
         if let Some(vectors) = vectors {
             vectors.clear_cache()?;
@@ -104,7 +105,13 @@ pub fn open_dense_vector_storage_with_uring(
 
     #[cfg(target_os = "linux")]
     if with_uring {
-        match open_dense_vector_storage_impl(path, dim, distance, populate) {
+        match open_dense_vector_storage_impl(
+            common::universal_io::IoUringFs::default(),
+            path,
+            dim,
+            distance,
+            populate,
+        ) {
             Ok(uring_storage) => {
                 return Ok(VectorStorageEnum::DenseUring(Box::new(uring_storage)));
             }
@@ -114,7 +121,7 @@ pub fn open_dense_vector_storage_with_uring(
         }
     }
 
-    let mmap_storage = open_dense_vector_storage_impl(path, dim, distance, populate)?;
+    let mmap_storage = open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate)?;
     Ok(VectorStorageEnum::DenseMemmap(Box::new(mmap_storage)))
 }
 
@@ -126,7 +133,13 @@ pub fn open_dense_vector_storage_half(
 ) -> OperationResult<VectorStorageEnum> {
     #[cfg(target_os = "linux")]
     if get_async_scorer() {
-        match open_dense_vector_storage_impl(path, dim, distance, populate) {
+        match open_dense_vector_storage_impl(
+            common::universal_io::IoUringFs::default(),
+            path,
+            dim,
+            distance,
+            populate,
+        ) {
             Ok(uring_storage) => {
                 return Ok(VectorStorageEnum::DenseUringHalf(Box::new(uring_storage)));
             }
@@ -136,7 +149,7 @@ pub fn open_dense_vector_storage_half(
         }
     }
 
-    let mmap_storage = open_dense_vector_storage_impl(path, dim, distance, populate)?;
+    let mmap_storage = open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate)?;
     Ok(VectorStorageEnum::DenseMemmapHalf(Box::new(mmap_storage)))
 }
 
@@ -148,7 +161,13 @@ pub fn open_dense_vector_storage_byte(
 ) -> OperationResult<VectorStorageEnum> {
     #[cfg(target_os = "linux")]
     if get_async_scorer() {
-        match open_dense_vector_storage_impl(path, dim, distance, populate) {
+        match open_dense_vector_storage_impl(
+            common::universal_io::IoUringFs::default(),
+            path,
+            dim,
+            distance,
+            populate,
+        ) {
             Ok(uring_storage) => {
                 return Ok(VectorStorageEnum::DenseUringByte(Box::new(uring_storage)));
             }
@@ -158,38 +177,41 @@ pub fn open_dense_vector_storage_byte(
         }
     }
 
-    let mmap_storage = open_dense_vector_storage_impl(path, dim, distance, populate)?;
+    let mmap_storage = open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate)?;
     Ok(VectorStorageEnum::DenseMemmapByte(Box::new(mmap_storage)))
 }
 
-fn open_dense_vector_storage_impl<T, S>(
+fn open_dense_vector_storage_impl<T, S, Fs>(
+    fs: Fs,
     path: &Path,
     dim: usize,
     distance: Distance,
     populate: bool,
-) -> OperationResult<DenseVectorStorageImpl<T, S>>
+) -> OperationResult<DenseVectorStorageImpl<T, S, Fs>>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead,
+    Fs: UniversalReadFs<File = S>,
 {
-    fs::create_dir_all(path)?;
+    fs_err::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
 
-    let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, populate)?;
+    let vectors = ImmutableDenseVectors::open(&fs, &vectors_path, &deleted_path, dim, populate)?;
     let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
         vectors: Some(vectors),
         distance,
         populated: populate,
+        fs,
     };
 
     Ok(storage)
 }
 
-impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
+impl<T, S, Fs> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S, Fs>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead,
@@ -212,7 +234,7 @@ where
     }
 }
 
-impl<T, S> VectorStorageRead for DenseVectorStorageImpl<T, S>
+impl<T, S, Fs> VectorStorageRead for DenseVectorStorageImpl<T, S, Fs>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead,
@@ -282,10 +304,11 @@ where
     }
 }
 
-impl<T, S> VectorStorage for DenseVectorStorageImpl<T, S>
+impl<T, S, Fs> VectorStorage for DenseVectorStorageImpl<T, S, Fs>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead,
+    Fs: UniversalReadFs<File = S>,
 {
     fn insert_vector(
         &mut self,
@@ -332,6 +355,7 @@ where
 
         // Load store with updated files
         self.vectors.replace(ImmutableDenseVectors::open(
+            &self.fs,
             &self.vectors_path,
             &self.deleted_path,
             dim,

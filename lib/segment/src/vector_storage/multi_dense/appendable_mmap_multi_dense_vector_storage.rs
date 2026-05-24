@@ -529,8 +529,8 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
-    let offsets = ChunkedVectors::open(&offsets_path, 1, madvise, Some(populate))?;
+    let vectors = ChunkedVectors::open(MmapFs, &vectors_path, dim, madvise, Some(populate))?;
+    let offsets = ChunkedVectors::open(MmapFs, &offsets_path, 1, madvise, Some(populate))?;
 
     let deleted = BitvecFlags::new(
         MmapFs,

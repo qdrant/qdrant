@@ -17,6 +17,7 @@ use common::progress_tracker::ProgressTracker;
 use common::small_uint::U24;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use fs_err as fs;
 use itertools::Itertools;
 use rand::Rng;
@@ -548,8 +549,12 @@ impl SegmentBuilder {
                 IdTrackerEnum::InMemoryIdTracker(in_memory_id_tracker) => {
                     let (versions, mappings) = in_memory_id_tracker.into_internal();
                     let compressed_mapping = CompressedPointMappings::from_mappings(mappings);
-                    let immutable_id_tracker =
-                        ImmutableIdTracker::new(temp_dir.path(), &versions, compressed_mapping)?;
+                    let immutable_id_tracker = ImmutableIdTracker::new(
+                        &MmapFs,
+                        temp_dir.path(),
+                        &versions,
+                        compressed_mapping,
+                    )?;
                     IdTrackerEnum::ImmutableIdTracker(immutable_id_tracker)
                 }
                 IdTrackerEnum::MutableIdTracker(_) => id_tracker,

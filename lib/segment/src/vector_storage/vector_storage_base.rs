@@ -10,7 +10,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
-use common::universal_io::IoUringFile;
+use common::universal_io::{IoUringFile, IoUringFs};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::dense_vector_storage::DenseVectorStorageImpl;
@@ -265,11 +265,11 @@ pub enum VectorStorageEnum {
     DenseMemmapHalf(Box<DenseVectorStorageImpl<VectorElementTypeHalf>>),
 
     #[cfg(target_os = "linux")]
-    DenseUring(Box<DenseVectorStorageImpl<VectorElementType, IoUringFile>>),
+    DenseUring(Box<DenseVectorStorageImpl<VectorElementType, IoUringFile, IoUringFs>>),
     #[cfg(target_os = "linux")]
-    DenseUringByte(Box<DenseVectorStorageImpl<VectorElementTypeByte, IoUringFile>>),
+    DenseUringByte(Box<DenseVectorStorageImpl<VectorElementTypeByte, IoUringFile, IoUringFs>>),
     #[cfg(target_os = "linux")]
-    DenseUringHalf(Box<DenseVectorStorageImpl<VectorElementTypeHalf, IoUringFile>>),
+    DenseUringHalf(Box<DenseVectorStorageImpl<VectorElementTypeHalf, IoUringFile, IoUringFs>>),
 
     DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     DenseAppendableMemmapByte(Box<AppendableMmapDenseVectorStorage<VectorElementTypeByte>>),

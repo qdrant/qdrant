@@ -7,7 +7,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{
+    OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 
@@ -57,11 +59,15 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         }
     }
 
-    pub fn from_file(
+    pub fn from_file<Fs>(
+        fs: &Fs,
         path: &Path,
         quantized_vector_size: usize,
-    ) -> OperationResult<QuantizedStorage<S>> {
-        let storage = ReadOnly::open(path, Self::open_options(), Default::default())?;
+    ) -> OperationResult<QuantizedStorage<S>>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
+        let storage = ReadOnly::open(fs, path, Self::open_options())?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -143,7 +149,10 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     }
 }
 
-impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedStorageBuilder<S> {
+impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedStorageBuilder<S>
+where
+    common::universal_io::MmapFs: UniversalReadFs<File = S>,
+{
     type Storage = QuantizedStorage<S>;
     type Error = OperationError;
 
@@ -151,9 +160,9 @@ impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedStorageB
         self.mmap.flush()?;
 
         let storage = ReadOnly::open(
+            &common::universal_io::MmapFs,
             &self.path,
             Self::Storage::open_options(),
-            Default::default(),
         )?;
 
         Ok(QuantizedStorage {
