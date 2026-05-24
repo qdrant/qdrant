@@ -467,7 +467,7 @@ mod swap_tests {
             .into_iter()
             .filter(|p| p.exists())
             .map(|p| {
-                let bytes = std::fs::read(&p).unwrap();
+                let bytes = fs_err::read(&p).unwrap();
                 (p, bytes)
             })
             .collect()
