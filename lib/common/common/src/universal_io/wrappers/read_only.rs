@@ -1,31 +1,39 @@
 use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bytemuck::TransparentWrapper;
 
 use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps,
-    UserData,
+    Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
 #[repr(transparent)]
 pub struct ReadOnly<S>(S);
 
-impl<S> UniversalReadFileOps for ReadOnly<S>
+impl<S> ReadOnly<S>
 where
-    S: UniversalReadFileOps,
+    S: UniversalRead,
 {
+    /// Open a read-only file through the given filesystem handle.
+    ///
+    /// Asserts the request is read-only (panics in debug builds on a writeable
+    /// `OpenOptions`); the wrapper itself does not enforce write protection
+    /// beyond not exposing `UniversalWrite`.
     #[inline]
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        S::list_files(prefix_path)
-    }
-
-    #[inline]
-    fn exists(path: &Path) -> Result<bool> {
-        S::exists(path)
+    pub fn open<Fs>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+    ) -> Result<Self>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
+        debug_assert!(!options.writeable);
+        let io = fs.open(path, options)?;
+        Ok(Self(io))
     }
 }
 
@@ -45,13 +53,6 @@ where
     where
         T: Item,
         U: UserData;
-
-    #[inline]
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        debug_assert!(!options.writeable);
-        let io = S::open(path, options)?;
-        Ok(Self(io))
-    }
 
     #[inline]
     fn reopen(&mut self) -> Result<()> {

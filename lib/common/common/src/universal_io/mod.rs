@@ -13,15 +13,15 @@ mod wrappers;
 
 pub use self::error::UniversalIoError;
 #[cfg(target_os = "linux")]
-pub use self::io_uring::IoUringFile;
-pub use self::mmap::MmapFile;
+pub use self::io_uring::{IoUringConfigContext, IoUringFile, IoUringFs};
+pub use self::mmap::{MmapFile, MmapFs};
 pub use self::simple_disk_cache::{DiskCache, DiskCacheConfig};
 pub use self::traits::{
-    BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalRead, UniversalReadFileOps,
-    UniversalWrite, UserData,
+    BorrowedReadPipeline, Item, OwnedReadPipeline, TConfigContext, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
 };
 pub use self::types::{
-    ByteOffset, FileIndex, Flusher, OpenOptions, OpenOptionsExtra, Populate, ReadRange, Result,
-    UniversalKind, read_json_via,
+    ByteOffset, FileIndex, Flusher, OpenOptions, Populate, ReadRange, Result, UniversalKind,
+    read_json_via,
 };
 pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};

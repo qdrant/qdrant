@@ -20,7 +20,7 @@ use self::error::*;
 use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{Item, UniversalReadFileOps};
+use super::traits::{Item, TConfigContext, UniversalReadFileOps, UniversalReadFs};
 use super::*;
 use crate::generic_consts::AccessPattern;
 
@@ -35,19 +35,88 @@ pub struct IoUringFile {
     pub(super) direct_io: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct IoUringConfigContext {
+    pub prevent_caching: bool,
+}
+
+#[expect(clippy::derivable_impls, reason = "be explicit")]
+impl Default for IoUringConfigContext {
+    fn default() -> Self {
+        IoUringConfigContext {
+            prevent_caching: false,
+        }
+    }
+}
+
+impl TConfigContext for IoUringConfigContext {
+    fn with_prevent_caching(mut self, prevent_caching: bool) -> Self {
+        self.prevent_caching = prevent_caching;
+        self
+    }
+}
+
 impl IoUringFile {
     pub(super) fn fd(&self) -> Fd {
         Fd(self.file.as_raw_fd())
     }
 }
 
-impl UniversalReadFileOps for IoUringFile {
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
+/// Filesystem handle for `io_uring`-backed files. Carries the
+/// `prevent_caching` knob (and future runtime handle); applied to every
+/// file opened through this handle.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringFs {
+    prevent_caching: bool,
+}
+
+impl UniversalReadFileOps for IoUringFs {
+    type ContextConfig = IoUringConfigContext;
+
+    fn from_context(ctx: IoUringConfigContext) -> Result<Self> {
+        Ok(Self {
+            prevent_caching: ctx.prevent_caching,
+        })
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
+    }
+}
+
+impl UniversalReadFs for IoUringFs {
+    type File = IoUringFile;
+
+    fn open(&self, path: impl AsRef<Path>, options: OpenOptions) -> Result<IoUringFile> {
+        // Check that io_uring is supported on this system.
+        pool::check_io_uring_support()?;
+
+        let OpenOptions {
+            writeable,
+            need_sequential: _,
+            populate: _,
+            advice: _,
+        } = options;
+
+        let direct_io = self.prevent_caching;
+        let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(writeable)
+            .create(false)
+            .custom_flags(direct_io_flags)
+            .open(path.as_ref())
+            .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
+
+        Ok(IoUringFile {
+            file: Arc::new(file),
+            direct_io,
+        })
     }
 }
 
@@ -63,37 +132,6 @@ impl UniversalRead for IoUringFile {
     where
         T: Item,
         U: UserData;
-
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        // Check that io_uring is supported on this system.
-        pool::check_io_uring_support()?;
-
-        let OpenOptions {
-            writeable,
-            need_sequential: _,
-            populate: _,
-            advice: _,
-            extra: OpenOptionsExtra { prevent_caching },
-        } = options;
-
-        let direct_io = prevent_caching;
-        let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
-
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(writeable)
-            .create(false)
-            .custom_flags(direct_io_flags)
-            .open(path.as_ref())
-            .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
-
-        let file = Self {
-            file: Arc::new(file),
-            direct_io,
-        };
-
-        Ok(file)
-    }
 
     fn reopen(&mut self) -> Result<()> {
         Ok(())

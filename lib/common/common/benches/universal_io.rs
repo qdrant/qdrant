@@ -73,9 +73,8 @@ fn read_benches<T: bytemuck::Pod + Send, C: UniversalRead>(
         need_sequential: true,
         populate: Populate::No,
         advice: AdviceSetting::Global,
-        extra: Default::default(),
     };
-    let storage = C::open(path, options).unwrap();
+    let storage = C::open(path, options, Default::default()).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
     let mut rng = rand::rng();
     assert_eq!(storage.len::<T>().unwrap(), len);

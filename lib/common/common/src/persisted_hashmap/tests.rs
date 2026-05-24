@@ -8,8 +8,9 @@ use rand::{RngExt, SeedableRng};
 use super::fixtures::{Group, TestKey, TestReport, TestValue};
 use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
 #[cfg(target_os = "linux")]
-use crate::universal_io::IoUringFile;
-use crate::universal_io::{self, MmapFile, OpenOptions, UniversalRead};
+#[cfg(target_os = "linux")]
+use crate::universal_io::{IoUringFile, IoUringFs};
+use crate::universal_io::{self, MmapFile, MmapFs, OpenOptions, UniversalRead};
 
 #[rustfmt::skip] #[test] fn test_k_str_v_i64()   { run_checks::<str,  i64 >(); }
 #[rustfmt::skip] #[test] fn test_k_str_v_u128()  { run_checks::<str,  u128>(); }
@@ -77,7 +78,8 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     run_uio_checks(
         r.group("uio:mmap"),
         &mut rng,
-        &UniversalHashMap::<K, V, MmapFile>::open(&path, OpenOptions::new_for_test()).unwrap(),
+        &UniversalHashMap::<K, V, MmapFile>::open(&MmapFs, &path, OpenOptions::new_for_test())
+            .unwrap(),
         &orig,
         &non_existing_keys,
     );
@@ -85,7 +87,12 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     run_uio_checks(
         r.group("uio:io_uring"),
         &mut rng,
-        &UniversalHashMap::<K, V, IoUringFile>::open(&path, OpenOptions::new_for_test()).unwrap(),
+        &UniversalHashMap::<K, V, IoUringFile>::open(
+            &IoUringFs::default(),
+            &path,
+            OpenOptions::new_for_test(),
+        )
+        .unwrap(),
         &orig,
         &non_existing_keys,
     );

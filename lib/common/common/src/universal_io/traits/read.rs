@@ -1,14 +1,23 @@
 use std::borrow::Cow;
-use std::path::Path;
+use std::fmt::Debug;
 
-use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalReadFileOps, UserData};
+use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UserData};
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{OpenOptions, ReadRange, Result, UniversalKind};
+use crate::universal_io::{ReadRange, Result, UniversalKind};
 
-/// Interface for accessing files in a universal way, abstracting away possible
-/// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
+/// Per-file handle for universal read access.
+///
+/// Concrete file handles (`MmapFile`, `IoUringFile`, `CachedSlice`, ...)
+/// implement this trait. Instances are produced by a corresponding
+/// [`UniversalReadFs`](super::UniversalReadFs) backend via
+/// [`UniversalReadFs::open`](super::UniversalReadFs::open).
+///
+/// This trait deliberately does *not* extend
+/// [`UniversalReadFileOps`](super::UniversalReadFileOps): a file handle is
+/// not a filesystem, and not every filesystem-level backend produces
+/// `UniversalRead` handles (e.g. a metadata-only listing service).
 #[expect(clippy::len_without_is_empty)]
-pub trait UniversalRead: UniversalReadFileOps {
+pub trait UniversalRead: Sized + Debug + Send + Sync {
     type BorrowedReadPipeline<'file, T, U>: BorrowedReadPipeline<'file, T, U, File = Self>
     where
         Self: 'file,
@@ -20,10 +29,8 @@ pub trait UniversalRead: UniversalReadFileOps {
         T: Item,
         U: UserData;
 
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
-
-    /// Enables live-reloading of files. Append-only files can make the underlying file larger,
-    /// so reopening can account for this growth.
+    /// Enables live-reloading of files. Append-only files can make the
+    /// underlying file larger, so reopening can account for this growth.
     ///
     /// This may be a no-op in some implementations.
     fn reopen(&mut self) -> Result<()>;
@@ -33,8 +40,9 @@ pub trait UniversalRead: UniversalReadFileOps {
 
     /// Read the entire file in one logical access.
     ///
-    /// Implementations may override this to avoid the two accesses that would result from
-    /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
+    /// Implementations may override this to avoid the two accesses that would
+    /// result from `len()` followed by `read(0..len())`. Default implementation
+    /// does exactly that.
     fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
         let range = ReadRange {
             byte_offset: 0,
@@ -62,8 +70,8 @@ pub trait UniversalRead: UniversalReadFileOps {
         Ok(())
     }
 
-    /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator instead of
-    /// accepting a callback.
+    /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator
+    /// instead of accepting a callback.
     fn read_iter<P, T, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
@@ -111,8 +119,8 @@ pub trait UniversalRead: UniversalReadFileOps {
         Ok(())
     }
 
-    /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator instead of
-    /// accepting a callback.
+    /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator
+    /// instead of accepting a callback.
     fn read_multi_iter<'a, P, T, U>(
         reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>

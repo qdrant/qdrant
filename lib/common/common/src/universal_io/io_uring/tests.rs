@@ -20,15 +20,13 @@ fn test_io_uring_file_for_u64(#[case] o_direct: bool) -> Result<()> {
     let bytes = bytemuck::cast_slice(&data);
     fs_err::write(&path, bytes).unwrap();
 
-    let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
-        ..OpenOptions::new_for_test()
-    };
+    let opts = OpenOptions::new_for_test();
+    let fs = IoUringFs::from_context(IoUringConfigContext {
+        prevent_caching: o_direct,
+    })?;
 
     // 2. Read data back using `IoUringFile` and verify it matches what was written
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, opts)?;
+    let file = TypedStorage::<IoUringFile, u64>::open(&fs, &path, opts)?;
 
     // Read all elements
     let read_back = file.read::<Sequential>(ReadRange {
@@ -61,14 +59,12 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
     let data: Vec<u64> = (0..256).collect();
     fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-    let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
-        ..OpenOptions::new_for_test()
-    };
+    let opts = OpenOptions::new_for_test();
+    let fs = IoUringFs::from_context(IoUringConfigContext {
+        prevent_caching: o_direct,
+    })?;
 
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, opts)?;
+    let file = TypedStorage::<IoUringFile, u64>::open(&fs, &path, opts)?;
     let elem = size_of::<u64>() as u64;
 
     // Non-contiguous ranges across the file.
@@ -162,14 +158,12 @@ fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
     let data_b: Vec<u64> = (1_000_000..1_000_000 + NUM_ELEMENTS).collect();
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
-    let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
-        ..OpenOptions::new_for_test()
-    };
-    let file_a = TypedStorage::<IoUringFile, u64>::open(&path_a, opts)?;
-    let file_b = TypedStorage::<IoUringFile, u64>::open(&path_b, opts)?;
+    let opts = OpenOptions::new_for_test();
+    let fs = IoUringFs::from_context(IoUringConfigContext {
+        prevent_caching: o_direct,
+    })?;
+    let file_a = TypedStorage::<IoUringFile, u64>::open(&fs, &path_a, opts)?;
+    let file_b = TypedStorage::<IoUringFile, u64>::open(&fs, &path_b, opts)?;
 
     // NUM_RANGES ranges, each reading CHUNK elements — well over the queue depth.
     let ranges_a = (0..NUM_RANGES).map(|i| ReadRange {
@@ -229,14 +223,12 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
     let data_1: Vec<u64> = (1000..1128).collect();
     fs_err::write(&path_1, bytemuck::cast_slice(&data_1)).unwrap();
 
-    let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
-        ..OpenOptions::new_for_test()
-    };
-    let file_0 = IoUringFile::open(&path_0, opts)?;
-    let file_1 = IoUringFile::open(&path_1, opts)?;
+    let opts = OpenOptions::new_for_test();
+    let fs = IoUringFs::from_context(IoUringConfigContext {
+        prevent_caching: o_direct,
+    })?;
+    let file_0 = fs.open(&path_0, opts)?;
+    let file_1 = fs.open(&path_1, opts)?;
     let files = [file_0, file_1];
 
     // Interleaved reads across both files.
@@ -283,12 +275,10 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
     let mut all_data: Vec<Vec<u64>> = Vec::new();
     let mut files: Vec<IoUringFile> = Vec::new();
 
-    let opts = OpenOptions {
-        extra: OpenOptionsExtra {
-            prevent_caching: o_direct,
-        },
-        ..OpenOptions::new_for_test()
-    };
+    let opts = OpenOptions::new_for_test();
+    let fs = IoUringFs::from_context(IoUringConfigContext {
+        prevent_caching: o_direct,
+    })?;
 
     for i in 0..NUM_FILES {
         let base = (i as u64) * 10_000;
@@ -296,7 +286,7 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
         let path = dir.path().join(format!("f{i}.bin"));
         fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-        let file = IoUringFile::open(&path, opts)?;
+        let file = fs.open(&path, opts)?;
         files.push(file);
         all_data.push(data);
     }
@@ -355,8 +345,9 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
     let opts = OpenOptions::new_for_test();
-    let file_a = IoUringFile::open(&path_a, opts)?;
-    let file_b = IoUringFile::open(&path_b, opts)?;
+    let fs = IoUringFs::default();
+    let file_a = fs.open(&path_a, opts)?;
+    let file_b = fs.open(&path_b, opts)?;
     let files = [file_a, file_b];
 
     #[rustfmt::skip]
@@ -423,7 +414,9 @@ fn test_io_uring_eintr_handling() -> Result<()> {
     let data: Vec<u64> = (0..NUM_ELEMENTS).collect();
     fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, OpenOptions::new_for_test())?;
+    let fs = IoUringFs::default();
+    let file =
+        TypedStorage::<IoUringFile, u64>::open(&fs, &path, OpenOptions::new_for_test())?;
 
     let stop = Arc::new(AtomicBool::new(false));
     let signals_sent = Arc::new(AtomicU64::new(0));

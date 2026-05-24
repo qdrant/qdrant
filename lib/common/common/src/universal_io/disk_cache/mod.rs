@@ -1,13 +1,15 @@
 use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use fs_err as fs;
 
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::traits::TConfigContext;
 use crate::universal_io::{
-    Item, OpenOptions, OpenOptionsExtra, ReadRange, Result, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UserData, local_file_ops,
+    Item, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs, UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -57,13 +59,68 @@ struct BlockRequest {
     range: Range<usize>,
 }
 
-impl UniversalReadFileOps for CachedSlice {
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
+/// Construction context for [`BlockCacheFs`]: carries the shared cache
+/// controller. Defaults to the global controller when one has been
+/// installed via `CacheController::initialize_global`; for tests and
+/// multi-tenant code, pass an explicit `Arc<CacheController>`.
+#[derive(Debug, Clone)]
+pub struct BlockCacheConfigContext {
+    pub controller: Arc<CacheController>,
+}
+
+impl Default for BlockCacheConfigContext {
+    fn default() -> Self {
+        let controller = CacheController::global()
+            .expect("CacheController::initialize_global must be called before BlockCacheConfigContext::default()")
+            .clone();
+        BlockCacheConfigContext { controller }
+    }
+}
+
+impl TConfigContext for BlockCacheConfigContext {
+    fn with_prevent_caching(self, _prevent_caching: bool) -> Self {
+        // Block cache is, by definition, cached. No-op.
+        self
+    }
+}
+
+/// Filesystem handle for the block-based disk cache.
+#[derive(Debug, Clone)]
+pub struct BlockCacheFs {
+    controller: Arc<CacheController>,
+}
+
+impl UniversalReadFileOps for BlockCacheFs {
+    type ContextConfig = BlockCacheConfigContext;
+
+    fn from_context(ctx: BlockCacheConfigContext) -> Result<Self> {
+        Ok(Self {
+            controller: ctx.controller,
+        })
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
+    }
+}
+
+impl UniversalReadFs for BlockCacheFs {
+    type File = CachedSlice;
+
+    fn open(&self, path: impl AsRef<Path>, options: OpenOptions) -> Result<CachedSlice> {
+        let OpenOptions {
+            writeable,
+            need_sequential: _,
+            populate: _,
+            advice: _,
+        } = options;
+        debug_assert!(!writeable);
+
+        Ok(CachedSlice::open(&self.controller, path.as_ref())?)
     }
 }
 
@@ -80,30 +137,6 @@ impl UniversalRead for CachedSlice {
     where
         T: Item,
         U: UserData;
-
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        let Some(controller) = CacheController::global() else {
-            return Err(UniversalIoError::uninitialized(
-                "Disk cache was not initialized when trying to register a file",
-            ));
-        };
-
-        // Disk-cache is backed by a single file
-        let OpenOptions {
-            writeable,
-            need_sequential: _,
-            populate: _,
-            advice: _,
-            extra:
-                OpenOptionsExtra {
-                    prevent_caching: _, // This is cached in disk, backed by a mmap
-                },
-        } = options;
-
-        debug_assert!(!writeable);
-
-        Ok(CachedSlice::open(controller, path.as_ref())?)
-    }
 
     fn reopen(&mut self) -> Result<()> {
         // TODO: revise if this is the best way to reopen
