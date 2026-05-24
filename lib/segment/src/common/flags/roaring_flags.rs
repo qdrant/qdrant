@@ -200,7 +200,8 @@ mod tests_mod {
 
         // Create and update flags
         {
-            let dynamic_flags = DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            let dynamic_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
             let mut roaring_flags = RoaringFlags::new(Fs::default(), dynamic_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
@@ -220,7 +221,8 @@ mod tests_mod {
 
         // Verify bitmap consistency after reload
         {
-            let mmap_flags = DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
             let roaring_flags = RoaringFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Verify iteration consistency after reload

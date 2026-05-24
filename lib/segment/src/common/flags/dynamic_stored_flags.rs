@@ -360,7 +360,9 @@ mod tests_mod {
                 .filter(|(_, flag)| **flag)
                 .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true).unwrap()));
 
-            dynamic_flags.set_len(&Fs::default(), num_flags * 2).unwrap();
+            dynamic_flags
+                .set_len(&Fs::default(), num_flags * 2)
+                .unwrap();
             random_flags
                 .iter()
                 .enumerate()

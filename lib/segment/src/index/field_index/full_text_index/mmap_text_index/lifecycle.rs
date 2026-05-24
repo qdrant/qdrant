@@ -198,13 +198,11 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let has_positions = config.phrase_matching.unwrap_or_default();
         let inverted_index =
             MmapInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
-                .ok_or_else(
-                || {
+                .ok_or_else(|| {
                     OperationError::service_error(
                         "Failed to open MmapInvertedIndex that was just created",
                     )
-                },
-            )?;
+                })?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,

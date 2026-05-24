@@ -3,13 +3,13 @@ use std::io::Write;
 use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
+use bytemuck::TransparentWrapper;
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
-use bytemuck::TransparentWrapper;
 use common::universal_io::{
     MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange, TypedStorage,
     UniversalRead, UniversalReadFs,
