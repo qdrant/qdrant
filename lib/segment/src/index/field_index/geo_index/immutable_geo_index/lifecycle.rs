@@ -159,6 +159,15 @@ impl ImmutableGeoMapIndex {
         self.storage.wipe()
     }
 
+    /// Surrender the backing mmap and drop the derived in-RAM structures.
+    ///
+    /// Inverse of [`Self::open_mmap`]: lets callers swap the wrapper back
+    /// into [`super::super::GeoMapIndex::Storage`] without touching the
+    /// persisted files.
+    pub fn into_inner_mmap(self) -> StoredGeoMapIndex<MmapFile> {
+        *self.storage
+    }
+
     pub fn flusher(&self) -> Flusher {
         self.storage.flusher()
     }

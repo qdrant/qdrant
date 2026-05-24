@@ -451,3 +451,73 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     hits.sort();
     assert_eq!(hits, vec![3]);
 }
+
+mod swap_tests {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn snapshot_files<N: MapIndexKey + ?Sized>(index: &MapIndex<N>) -> BTreeMap<PathBuf, Vec<u8>>
+    where
+        Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    {
+        index
+            .files()
+            .into_iter()
+            .filter(|p| p.exists())
+            .map(|p| {
+                let bytes = std::fs::read(&p).unwrap();
+                (p, bytes)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn int_map_immutable_to_mmap_round_trip_preserves_files() {
+        let temp_dir = Builder::new().prefix("map_swap").tempdir().unwrap();
+        let data: Vec<Vec<IntPayloadType>> =
+            vec![vec![1, 2, 3], vec![4, 5], vec![1, 4], vec![6, 7, 8, 9, 10]];
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| {
+            Value::from(*v)
+        });
+        let mut index =
+            load_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::RamMmap);
+
+        assert!(matches!(index, MapIndex::Immutable(_)));
+        let files_before = snapshot_files(&index);
+        assert!(!files_before.is_empty());
+
+        assert!(index.swap_on_disk(true).unwrap());
+        assert!(matches!(index, MapIndex::Mmap(_)));
+        assert_eq!(snapshot_files(&index), files_before);
+
+        // No-op
+        assert!(index.swap_on_disk(true).unwrap());
+
+        assert!(index.swap_on_disk(false).unwrap());
+        assert!(matches!(index, MapIndex::Immutable(_)));
+        assert_eq!(snapshot_files(&index), files_before);
+    }
+
+    #[test]
+    fn mutable_gridstore_reports_swap_not_applicable() {
+        let temp_dir = Builder::new().prefix("map_swap_mut").tempdir().unwrap();
+        let data: Vec<Vec<IntPayloadType>> = vec![vec![1, 2], vec![3]];
+        save_map_index::<IntPayloadType>(
+            &data,
+            temp_dir.path(),
+            IndexType::MutableGridstore,
+            |v| Value::from(*v),
+        );
+        let mut index = load_map_index::<IntPayloadType>(
+            &data,
+            temp_dir.path(),
+            IndexType::MutableGridstore,
+        );
+
+        assert!(matches!(index, MapIndex::Mutable(_)));
+        assert!(!index.swap_on_disk(true).unwrap());
+        assert!(matches!(index, MapIndex::Mutable(_)));
+    }
+}

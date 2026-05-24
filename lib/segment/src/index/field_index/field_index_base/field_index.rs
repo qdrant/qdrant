@@ -250,19 +250,18 @@ impl FieldIndex {
     /// in place but the fast path never fires. Each family's real
     /// implementation will replace its arm in later phases (numeric → map →
     /// geo → full-text).
-    pub fn swap_on_disk(&mut self, _new_on_disk: bool) -> OperationResult<bool> {
+    pub fn swap_on_disk(&mut self, new_on_disk: bool) -> OperationResult<bool> {
         match self {
-            FieldIndex::IntIndex(_)
-            | FieldIndex::DatetimeIndex(_)
-            | FieldIndex::FloatIndex(_)
-            | FieldIndex::UuidIndex(_)
-            | FieldIndex::IntMapIndex(_)
-            | FieldIndex::KeywordIndex(_)
-            | FieldIndex::UuidMapIndex(_)
-            | FieldIndex::GeoIndex(_)
-            | FieldIndex::FullTextIndex(_)
-            | FieldIndex::BoolIndex(_)
-            | FieldIndex::NullIndex(_) => Ok(false),
+            FieldIndex::IntIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::DatetimeIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::FloatIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::UuidIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::IntMapIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::KeywordIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::UuidMapIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::GeoIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::FullTextIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::BoolIndex(_) | FieldIndex::NullIndex(_) => Ok(false),
         }
     }
 

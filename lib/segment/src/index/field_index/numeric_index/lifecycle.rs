@@ -136,4 +136,8 @@ where
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.inner.clear_cache()
     }
+
+    pub fn swap_on_disk(&mut self, new_on_disk: bool) -> OperationResult<bool> {
+        self.inner.swap_on_disk(new_on_disk)
+    }
 }

@@ -151,6 +151,60 @@ impl FullTextIndex {
             Self::Mmap(index) => index.immutable_files(),
         }
     }
+
+    /// Try to swap the in-memory wrapper variant in place when only the
+    /// `on_disk` flag changed.
+    ///
+    /// Returns:
+    /// - `Ok(true)`: swap completed (or was already a no-op).
+    /// - `Ok(false)`: variant is `Mutable` (Gridstore); on_disk is not a
+    ///   storage-layer concern there and the caller falls back to a
+    ///   config-only update.
+    ///
+    /// Failure modes:
+    /// - `Immutable → Mmap` is infallible.
+    /// - `Mmap → Immutable` calls [`ImmutableFullTextIndex::open_mmap`],
+    ///   which consumes the mmap and may fail on file corruption. Because
+    ///   the mmap is consumed before the failure is observed, recovery in
+    ///   place is impossible; this path aborts the process. In practice
+    ///   such failures only occur when the underlying files are corrupt,
+    ///   which would also poison the rest of the segment.
+    pub fn swap_on_disk(&mut self, new_on_disk: bool) -> OperationResult<bool> {
+        let current_is_on_disk = match self {
+            Self::Mutable(_) => return Ok(false),
+            Self::Immutable(_) => false,
+            Self::Mmap(mmap) => mmap.inverted_index.is_on_disk(),
+        };
+
+        if current_is_on_disk == new_on_disk {
+            return Ok(true);
+        }
+
+        crate::index::field_index::swap_in_place::try_replace(self, |inner| match inner {
+            FullTextIndex::Immutable(imm) => {
+                let mut mmap = imm.into_inner_mmap();
+                mmap.inverted_index.is_on_disk = true;
+                if let Err(err) = mmap.clear_cache() {
+                    log::warn!(
+                        "Failed to clear mmap cache during full-text swap to on-disk: {err}",
+                    );
+                }
+                (FullTextIndex::Mmap(Box::new(mmap)), Ok(true))
+            }
+            FullTextIndex::Mmap(mut mmap_box) => {
+                mmap_box.inverted_index.is_on_disk = false;
+                match ImmutableFullTextIndex::open_mmap(*mmap_box) {
+                    Ok(imm) => (FullTextIndex::Immutable(imm), Ok(true)),
+                    Err(err) => {
+                        panic!("full-text index swap to RAM failed (open_mmap): {err}")
+                    }
+                }
+            }
+            FullTextIndex::Mutable(_) => {
+                unreachable!("Mutable variant short-circuited in fast-path above")
+            }
+        })
+    }
 }
 
 impl ValueIndexer for FullTextIndex {

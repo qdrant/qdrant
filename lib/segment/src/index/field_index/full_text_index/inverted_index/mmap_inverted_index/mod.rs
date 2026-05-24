@@ -60,7 +60,7 @@ pub struct MmapInvertedIndex<S: UniversalRead = MmapFile> {
     pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
     /// Number of points which are not deleted
     pub(in crate::index::field_index::full_text_index) active_points_count: usize,
-    is_on_disk: bool,
+    pub(in crate::index::field_index::full_text_index) is_on_disk: bool,
 }
 
 pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRead = MmapFile> {

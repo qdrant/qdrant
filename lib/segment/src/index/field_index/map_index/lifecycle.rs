@@ -132,4 +132,62 @@ where
         }
         Ok(())
     }
+
+    /// Try to swap the in-memory wrapper variant in place when only the
+    /// `on_disk` flag changed.
+    ///
+    /// Returns:
+    /// - `Ok(true)`: swap completed (or was already a no-op).
+    /// - `Ok(false)`: variant is `Mutable` (Gridstore); on_disk is not a
+    ///   storage-layer concern there and the caller falls back to a
+    ///   config-only update.
+    ///
+    /// Failure modes:
+    /// - `Immutable → Mmap` is infallible (just moves the mmap handle and
+    ///   drops derived structures).
+    /// - `Mmap → Immutable` calls [`ImmutableMapIndex::open_mmap`], which
+    ///   consumes the mmap and may fail on file corruption. Because the
+    ///   mmap is consumed before the failure is observed, recovery in
+    ///   place is impossible; this path aborts the process. In practice
+    ///   such failures only occur when the underlying files are corrupt,
+    ///   which would also poison the rest of the segment.
+    pub fn swap_on_disk(&mut self, new_on_disk: bool) -> OperationResult<bool> {
+        let current_is_on_disk = match self {
+            MapIndex::Mutable(_) => return Ok(false),
+            MapIndex::Immutable(_) => false,
+            MapIndex::Mmap(mmap) => mmap.is_on_disk(),
+        };
+
+        if current_is_on_disk == new_on_disk {
+            return Ok(true);
+        }
+
+        crate::index::field_index::swap_in_place::try_replace(self, |inner| match inner {
+            MapIndex::Immutable(imm) => {
+                let mut mmap = imm.into_inner_mmap();
+                mmap.is_on_disk = true;
+                if let Err(err) = mmap.clear_cache() {
+                    log::warn!(
+                        "Failed to clear mmap cache during map swap to on-disk: {err}",
+                    );
+                }
+                (MapIndex::Mmap(Box::new(mmap)), Ok(true))
+            }
+            MapIndex::Mmap(mut mmap_box) => {
+                mmap_box.is_on_disk = false;
+                match ImmutableMapIndex::open_mmap(*mmap_box) {
+                    Ok(imm) => (MapIndex::Immutable(imm), Ok(true)),
+                    Err(err) => {
+                        // Mmap was consumed by `open_mmap` before the
+                        // failure surfaced; the slot has no defined
+                        // value to restore. Abort.
+                        panic!("map index swap to RAM failed (open_mmap): {err}")
+                    }
+                }
+            }
+            MapIndex::Mutable(_) => {
+                unreachable!("Mutable variant short-circuited in fast-path above")
+            }
+        })
+    }
 }

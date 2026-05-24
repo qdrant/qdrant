@@ -21,6 +21,7 @@ pub mod numeric_index;
 mod numeric_point;
 pub mod schema_transition;
 mod stat_tools;
+mod swap_in_place;
 mod stored_point_to_values;
 #[cfg(test)]
 mod tests;
