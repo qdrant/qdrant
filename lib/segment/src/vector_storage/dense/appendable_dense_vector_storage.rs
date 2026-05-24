@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -34,7 +34,7 @@ pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
     /// depend on its length.
-    deleted: BitvecFlags<MmapFile>,
+    deleted: BitvecFlags<MmapFile, MmapFs>,
     distance: Distance,
     deleted_count: usize,
     _phantom: std::marker::PhantomData<T>,
@@ -254,7 +254,10 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
 
-    let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
+    let deleted = BitvecFlags::new(
+        MmapFs,
+        DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+    )?;
     let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapDenseVectorStorage {

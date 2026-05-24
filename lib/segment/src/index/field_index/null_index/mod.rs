@@ -6,7 +6,7 @@ mod read_ops;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 pub use immutable_null_index::ImmutableNullIndex;
 pub use mutable_null_index::MutableNullIndex;
 pub use read_only_null_index::ReadOnlyNullIndex;
@@ -68,7 +68,7 @@ impl NullIndex {
 }
 
 impl NullIndexRead for NullIndex {
-    type Flags = RoaringFlags<MmapFile>;
+    type Flags = RoaringFlags<MmapFile, MmapFs>;
 
     fn has_values_flags(&self) -> &Self::Flags {
         match self {

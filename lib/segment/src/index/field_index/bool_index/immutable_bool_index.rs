@@ -4,7 +4,7 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 
 use super::mutable_bool_index::MutableBoolIndex;
 use super::read_ops::{self, BoolIndexRead};
@@ -45,7 +45,7 @@ impl ImmutableBoolIndex {
 }
 
 impl BoolIndexRead for ImmutableBoolIndex {
-    type Flags = RoaringFlags<MmapFile>;
+    type Flags = RoaringFlags<MmapFile, MmapFs>;
 
     fn trues_flags(&self) -> &Self::Flags {
         self.0.trues_flags()

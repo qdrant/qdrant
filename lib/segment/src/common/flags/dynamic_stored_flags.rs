@@ -183,7 +183,10 @@ where
     /// NOTE: capacity can be up to 2x the current length.
     ///
     /// Errors if the vector is shrunk.
-    pub fn set_len(&mut self, new_len: usize) -> OperationResult<()> {
+    pub fn set_len<Fs>(&mut self, fs: &Fs, new_len: usize) -> OperationResult<()>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         debug_assert!(new_len >= self.status.len);
         if new_len == self.status.len {
             return Ok(());
@@ -205,7 +208,7 @@ where
 
             // Don't read the whole file on resize
             let populate = false;
-            let flags = Self::open_storage(new_len, &self.directory, populate)?;
+            let flags = Self::open_storage(fs, new_len, &self.directory, populate)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
             self.flags = flags;
@@ -322,9 +325,9 @@ where
 }
 
 #[duplicate::duplicate_item(
-    tests_mod       S               cfg_predicate;
-    [tests_mmap]    [MmapFile]      [cfg(all())];
-    [tests_uring]   [IoUringFile]   [cfg(target_os = "linux")];
+    tests_mod       S               Fs              cfg_predicate;
+    [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];
+    [tests_uring]   [IoUringFile]   [IoUringFs]     [cfg(target_os = "linux")];
 )]
 #[cfg_predicate]
 #[cfg(test)]
@@ -332,7 +335,7 @@ mod tests_mod {
     use std::iter;
 
     #[cfg_predicate]
-    use common::universal_io::S;
+    use common::universal_io::{Fs, S};
     use rand::prelude::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -348,15 +351,16 @@ mod tests_mod {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         {
-            let mut dynamic_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
-            dynamic_flags.set_len(num_flags).unwrap();
+            let mut dynamic_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
             random_flags
                 .iter()
                 .enumerate()
                 .filter(|(_, flag)| **flag)
                 .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true).unwrap()));
 
-            dynamic_flags.set_len(num_flags * 2).unwrap();
+            dynamic_flags.set_len(&Fs::default(), num_flags * 2).unwrap();
             random_flags
                 .iter()
                 .enumerate()
@@ -367,7 +371,8 @@ mod tests_mod {
         }
 
         {
-            let dynamic_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
+            let dynamic_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i).unwrap(), *flag);
@@ -383,8 +388,9 @@ mod tests_mod {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Create randomized dynamic mmap flags to test counting
-        let mut dynamic_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
-        dynamic_flags.set_len(num_flags).unwrap();
+        let mut dynamic_flags =
+            DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+        dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags
             .iter()
