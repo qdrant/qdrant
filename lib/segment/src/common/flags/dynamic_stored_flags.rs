@@ -7,7 +7,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalWrite};
+use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalReadFs, UniversalWrite};
 use fs_err as fs;
 use itertools::Either;
 
@@ -96,9 +96,12 @@ where
         self.status.len == 0
     }
 
-    fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
+    fn ensure_status_file<Fs>(fs: &Fs, directory: &Path) -> OperationResult<PathBuf>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let status_file = status_file(directory);
-        if !S::exists(&status_file)? {
+        if !fs.exists(&status_file)? {
             let length = std::mem::size_of::<DynamicFlagsStatus>();
             //TODO(uio): migrate when UniversalWriteFileOps is available
             create_and_ensure_length(&status_file, length)?;
@@ -106,11 +109,15 @@ where
         Ok(status_file)
     }
 
-    pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
+    pub fn open<Fs>(fs: &Fs, directory: &Path, populate: bool) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         fs::create_dir_all(directory)?;
-        let status_path = Self::ensure_status_file(directory)?;
+        let status_path = Self::ensure_status_file(fs, directory)?;
 
         let mut status: StoredStruct<S, DynamicFlagsStatus> = StoredStruct::open(
+            fs,
             &status_path,
             OpenOptions {
                 writeable: true,
@@ -118,7 +125,6 @@ where
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
         )?;
 
         if status.current_file_id != 0 {
@@ -132,7 +138,7 @@ where
         }
 
         // Open storage
-        let flags = Self::open_storage(status.len, directory, populate)?;
+        let flags = Self::open_storage(fs, status.len, directory, populate)?;
         Ok(Self {
             flags,
             status,
@@ -140,11 +146,15 @@ where
         })
     }
 
-    fn open_storage(
+    fn open_storage<Fs>(
+        fs: &Fs,
         num_flags: usize,
         directory: &Path,
         populate: bool,
-    ) -> OperationResult<StoredBitSlice<S>> {
+    ) -> OperationResult<StoredBitSlice<S>>
+    where
+        Fs: UniversalReadFs<File = S>,
+    {
         let capacity_bytes = file_size_for(num_flags);
         let path = directory.join(FLAGS_FILE);
 
@@ -163,7 +173,7 @@ where
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
         };
-        let flags = StoredBitSlice::open(&path, options, Default::default())?;
+        let flags = StoredBitSlice::open(fs, &path, options)?;
         Ok(flags)
     }
 
