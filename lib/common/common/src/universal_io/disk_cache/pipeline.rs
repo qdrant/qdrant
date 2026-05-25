@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use super::CachedSlice;
-use crate::generic_consts::{AccessPattern, Random};
+use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::{
     BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError,
     UniversalRead, UserData,
@@ -89,6 +89,17 @@ where
         // FIXME: This is a temporary stub implementation.
         self.pending = Some((user_data, range));
         Ok(())
+    }
+
+    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
+        let length = self.file.len::<T>() as u64;
+        self.schedule::<Sequential>(
+            user_data,
+            ReadRange {
+                byte_offset: 0,
+                length,
+            },
+        )
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
