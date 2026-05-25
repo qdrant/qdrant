@@ -61,6 +61,10 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         Ok(())
     }
 
+    fn is_in_ram_or_mmap() -> bool {
+        true
+    }
+
     fn is_on_disk(&self) -> bool {
         false
     }
