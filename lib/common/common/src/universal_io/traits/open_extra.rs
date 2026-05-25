@@ -2,7 +2,7 @@
 ///
 /// Marker trait for the value passed to
 /// [`UniversalReadFs::open`](super::UniversalReadFs::open) as `extra`.
-/// Implementors expose typed setters so generic-over-`Fs` callers can opt
+/// Implementers expose typed setters so generic-over-`Fs` callers can opt
 /// into backend-specific knobs without naming the concrete extras type.
 ///
 /// `Default` is required so callers can construct a neutral extras value
