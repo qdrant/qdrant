@@ -120,8 +120,10 @@ where
         let mut service = self.service.clone();
 
         Box::pin(async move {
-            let request = check(auth_keys, request).await.unwrap();
-            service.call(request).await
+            match check(auth_keys, request).await {
+                Ok(req) => service.call(req).await,
+                Err(e) => Ok(e.into_http()),
+            }
         })
     }
 }
