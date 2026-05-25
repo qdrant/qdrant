@@ -6,7 +6,7 @@ use bytemuck::TransparentWrapper;
 
 use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::traits::{TConfigContext, UniversalReadFileOps};
+use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
     Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
@@ -66,8 +66,6 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
 /// context.
 #[derive(Debug, Clone, Default)]
 pub struct ReadOnlyConfigContext<C>(pub C);
-
-impl<C: TConfigContext> TConfigContext for ReadOnlyConfigContext<C> {}
 
 impl<S> ReadOnly<S>
 where

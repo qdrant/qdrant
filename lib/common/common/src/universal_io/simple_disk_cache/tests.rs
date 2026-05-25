@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use fs_err as fs;
 
-use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig};
+use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext};
 use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
@@ -18,7 +19,7 @@ struct Scenario {
     _tmp: tempfile::TempDir,
     remote_path: PathBuf,
     data: Vec<u8>,
-    config: DiskCacheConfig,
+    config: Arc<DiskCacheConfig>,
 }
 
 impl Scenario {
@@ -40,7 +41,7 @@ impl Scenario {
             _tmp: tmp,
             remote_path,
             data,
-            config: DiskCacheConfig::new(remote_dir, local_dir).unwrap(),
+            config: Arc::new(DiskCacheConfig::new(remote_dir, local_dir).unwrap()),
         }
     }
 
@@ -52,6 +53,7 @@ impl Scenario {
     where
         R: UniversalRead + Clone,
         R::Fs: Clone + Send + Sync,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
         <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
         R::OwnedReadPipeline<u8, std::ops::Range<u32>>: Send,
     {
@@ -61,11 +63,12 @@ impl Scenario {
             Populate::No
         };
 
-        let remote_fs = R::Fs::from_context(Default::default()).unwrap();
-        DiskCache::open_with_config(
-            &self.config,
-            remote_fs,
-            Default::default(),
+        let fs = DiskCacheFs::<R>::from_context(DiskCacheFsContext {
+            config: self.config.clone(),
+            remote: Default::default(),
+        })
+        .unwrap();
+        fs.open(
             &self.remote_path,
             OpenOptions {
                 writeable: false,
@@ -73,6 +76,7 @@ impl Scenario {
                 need_sequential: false,
                 advice: AdviceSetting::Global,
             },
+            Default::default(),
         )
         .unwrap()
     }

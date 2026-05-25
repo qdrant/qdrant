@@ -15,9 +15,9 @@ pub use self::error::UniversalIoError;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra};
 pub use self::mmap::{MmapFile, MmapFs};
-pub use self::simple_disk_cache::{DiskCache, DiskCacheConfig, DiskCacheFs};
+pub use self::simple_disk_cache::{DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext};
 pub use self::traits::{
-    BorrowedReadPipeline, Item, OwnedReadPipeline, TConfigContext, UniversalRead,
+    BorrowedReadPipeline, Item, OpenExtra, OwnedReadPipeline, UniversalRead,
     UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
 };
 pub use self::types::{

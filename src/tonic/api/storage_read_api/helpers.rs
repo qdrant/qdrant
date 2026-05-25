@@ -23,7 +23,9 @@ where
             fs: Arc::new(fs),
         }
     }
+}
 
+impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S> {
     /// Verify read access to the collection, confirm the requested shard has
     /// a local replica on this peer that is currently readable, and resolve
     /// the on-disk shard directory.

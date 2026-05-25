@@ -6,7 +6,6 @@ use std::sync::Arc;
 use fs_err as fs;
 
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::traits::TConfigContext;
 use crate::universal_io::{
     Item, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
     UniversalReadFs, UserData, local_file_ops,
@@ -76,8 +75,6 @@ impl Default for BlockCacheConfigContext {
         BlockCacheConfigContext { controller }
     }
 }
-
-impl TConfigContext for BlockCacheConfigContext {}
 
 /// Filesystem handle for the block-based disk cache.
 #[derive(Debug, Clone)]

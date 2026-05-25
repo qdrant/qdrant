@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
-use crate::universal_io::traits::TConfigContext;
+use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
 use crate::universal_io::{OpenOptions, Result};
 
@@ -17,8 +17,11 @@ use crate::universal_io::{OpenOptions, Result};
 /// without ever opening file handles. The "open files" capability lives on
 /// the [`UniversalReadFs`] subtrait.
 pub trait UniversalReadFileOps: Sized + Debug {
-    /// Implementation-specific construction config.
-    type ContextConfig: TConfigContext;
+    /// Implementation-specific construction config. Backends are free to
+    /// require explicit construction; callers that want to opt into the
+    /// `<Fs::ContextConfig>::default()` pattern must constrain
+    /// `Self::ContextConfig: Default` at their own call sites.
+    type ContextConfig;
 
     /// Build a filesystem handle from its context.
     fn from_context(context: Self::ContextConfig) -> Result<Self>;
@@ -50,9 +53,10 @@ pub trait UniversalReadFs: UniversalReadFileOps {
     ///
     /// Universal options live on [`OpenOptions`]; backend-specific per-call
     /// switches (e.g. `io_uring`'s `prevent_caching` → `O_DIRECT`) live
-    /// here. Generic callers pass `Default::default()`; callers who want
-    /// the backend-specific behavior construct the concrete type.
-    type OpenExtra: Default;
+    /// here. Generic callers pass `Default::default()` and chain
+    /// [`OpenExtra`] setters (e.g. [`OpenExtra::with_prevent_caching`]) for
+    /// behaviors that have universal meaning across backends.
+    type OpenExtra: OpenExtra;
 
     /// Open a file for reading.
     ///

@@ -20,7 +20,7 @@ use self::error::*;
 use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{Item, UniversalReadFileOps, UniversalReadFs};
+use super::traits::{Item, OpenExtra, UniversalReadFileOps, UniversalReadFs};
 use super::*;
 use crate::generic_consts::AccessPattern;
 
@@ -50,8 +50,6 @@ pub struct IoUringFs;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoUringContextConfig;
 
-impl TConfigContext for IoUringContextConfig {}
-
 impl UniversalReadFileOps for IoUringFs {
     type ContextConfig = IoUringContextConfig;
 
@@ -74,6 +72,15 @@ pub struct IoUringOpenExtra {
     /// Open with `O_DIRECT` to bypass the OS page cache. Requires
     /// block-aligned reads at runtime.
     pub prevent_caching: bool,
+}
+
+impl OpenExtra for IoUringOpenExtra {
+    fn with_prevent_caching(self, prevent_caching: bool) -> Self {
+        let Self {
+            prevent_caching: _,
+        } = self;
+        Self { prevent_caching }
+    }
 }
 
 impl UniversalReadFs for IoUringFs {
