@@ -13,7 +13,10 @@ use crate::mmap::{AdviceSetting, Madviseable};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::simple_disk_cache::to_block_range;
-use crate::universal_io::{Item, OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData};
+use crate::universal_io::{
+    Item, OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result,
+    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
+};
 
 /// A lazily-populated local mirror of an immutable remote file.
 ///
