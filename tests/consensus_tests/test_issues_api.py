@@ -2,7 +2,7 @@ import pytest
 import requests
 
 from .fixtures import create_collection, drop_collection, upsert_random_points
-from .utils import *
+from .utils import kill_all_processes, start_cluster
 
 COLL_NAME = "test_collection"
 
