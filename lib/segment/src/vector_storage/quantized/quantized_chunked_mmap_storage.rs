@@ -79,6 +79,7 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
             UniversalKind::Mmap => true,
             UniversalKind::IoUring => false,
             UniversalKind::DiskCache => false,
+            UniversalKind::SimpleDiskCache => false,
         }
     }
 
