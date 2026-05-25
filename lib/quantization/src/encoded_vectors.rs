@@ -46,6 +46,9 @@ pub trait EncodedVectors: Sized {
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
+    /// This function is expected to:
+    /// - be implemented by non-multivector storages
+    /// - be used by multivector storages
     fn iter_batch(
         &self,
         offsets: &[PointOffsetType],

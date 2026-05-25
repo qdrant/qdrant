@@ -435,14 +435,18 @@ where
         debug_assert_eq!(point_ids.len(), scores.len());
 
         if QuantizedStorage::is_in_ram_or_mmap() {
-            self.score_points_batch_mmap(point_ids, scorer, scores, hw_counter);
+            // This function is optimized of in-ram access
+            // it doesn't do extra mem copies and assume reference access
+            self.score_points_batch_in_mem_like(point_ids, scorer, scores, hw_counter);
         } else {
-            self.score_points_batch_uring(point_ids, scorer, scores, hw_counter);
+            // Optimized for remote access from external storage,
+            // does memory copy, but minimizes assessed to external storage
+            self.score_points_batch_uring_like(point_ids, scorer, scores, hw_counter);
         }
     }
 
     #[inline]
-    fn score_points_batch_mmap<F>(
+    fn score_points_batch_in_mem_like<F>(
         &self,
         point_ids: &[PointOffsetType],
         scorer: F,
@@ -463,7 +467,7 @@ where
     }
 
     #[inline]
-    fn score_points_batch_uring<F>(
+    fn score_points_batch_uring_like<F>(
         &self,
         point_ids: &[PointOffsetType],
         scorer: F,
