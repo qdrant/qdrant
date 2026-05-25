@@ -6,9 +6,7 @@ use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache, to_block_range};
 use crate::universal_io::traits::BorrowedReadPipeline;
-use crate::universal_io::{
-    self, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead, UserData,
-};
+use crate::universal_io::{self, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead, UserData};
 
 struct RemoteMeta<File, U> {
     file: File,
@@ -33,7 +31,7 @@ enum Source {
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<'a, T>(local_state: &'a LocalState, range: ReadRange) -> Result<Source>
+fn pick_source<T>(local_state: &LocalState, range: ReadRange) -> Result<Source>
 where
     T: bytemuck::Pod,
 {
@@ -155,7 +153,7 @@ where
 impl<'file, R, T, U> BorrowedReadPipeline<'file, T, U> for DiskCachePipeline<'file, R, T, U>
 where
     R: UniversalRead + 'file,
-    T: bytemuck::Pod,
+    T: Item,
 {
     type File = DiskCache<R>;
 

@@ -13,10 +13,7 @@ use crate::mmap::{AdviceSetting, Madviseable};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::simple_disk_cache::to_block_range;
-use crate::universal_io::{
-    OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result,
-    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
-};
+use crate::universal_io::{Item, OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData};
 
 /// A lazily-populated local mirror of an immutable remote file.
 ///
@@ -270,13 +267,13 @@ where
         = DiskCachePipeline<'a, R, T, U>
     where
         R: 'a,
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     type OwnedReadPipeline<T, U>
         = OwnedDiskCachePipeline<R, T, U>
     where
-        T: bytemuck::Pod,
+        T: Item,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -297,7 +294,7 @@ where
     fn read<P, T>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>
     where
         P: AccessPattern,
-        T: bytemuck::Pod,
+        T: Item,
     {
         let (_, read) = self
             .read_iter::<P, T, _>(std::iter::once(((), range)))?
