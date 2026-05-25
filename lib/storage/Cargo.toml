@@ -34,6 +34,7 @@ schemars = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 tonic = { workspace = true }
+http = { workspace = true }
 parking_lot = { workspace = true }
 strum = { workspace = true }
 tap = { workspace = true }
