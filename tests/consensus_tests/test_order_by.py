@@ -2,7 +2,7 @@ import requests
 
 from .assertions import assert_http_ok
 from .fixtures import create_collection
-from .utils import every_test, start_cluster
+from .utils import *
 
 COLL_NAME = "test_collection"
 
