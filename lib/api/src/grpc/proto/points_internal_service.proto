@@ -458,6 +458,11 @@ message FacetCountsInternal {
   bool exact = 5;
   uint32 shard_id = 6;
   optional uint64 timeout = 7;
+  // Internal cap on the number of hits returned per shard, used by the
+  // coordinator to over-fetch for accurate top-k aggregation across shards
+  // while keeping the per-shard response bounded.
+  // When unset, the shard returns all hits (legacy behavior).
+  optional uint64 top_k = 8;
 }
 
 message FacetValueInternal {

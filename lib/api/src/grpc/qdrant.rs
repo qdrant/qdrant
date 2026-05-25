@@ -11094,6 +11094,12 @@ pub struct FacetCountsInternal {
     #[prost(uint64, optional, tag = "7")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    /// Internal cap on the number of hits returned per shard, used by the
+    /// coordinator to over-fetch for accurate top-k aggregation across shards
+    /// while keeping the per-shard response bounded.
+    /// When unset, the shard returns all hits (legacy behavior).
+    #[prost(uint64, optional, tag = "8")]
+    pub top_k: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

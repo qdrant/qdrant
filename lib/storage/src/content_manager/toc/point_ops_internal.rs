@@ -35,6 +35,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: FacetParams,
+        output_limit: Option<usize>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -42,7 +43,14 @@ impl TableOfContent {
         let collection = self.get_collection_unchecked(collection_name).await?;
 
         let res = collection
-            .facet(request, shard_selection, None, timeout, hw_measurement_acc)
+            .facet_with_output_limit(
+                request,
+                output_limit,
+                shard_selection,
+                None,
+                timeout,
+                hw_measurement_acc,
+            )
             .await?;
 
         Ok(res)

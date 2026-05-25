@@ -502,6 +502,7 @@ impl ShardOperation for LocalShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
+        output_limit: Option<usize>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -519,6 +520,7 @@ impl ShardOperation for LocalShard {
         let timeout = self.timeout_or_default_search_timeout(timeout);
         let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let result = if request.exact {
+            // Exact path must return every value; `output_limit` is ignored.
             self.exact_facet(
                 request.clone(),
                 search_runtime_handle,
@@ -529,6 +531,7 @@ impl ShardOperation for LocalShard {
         } else {
             self.approx_facet(
                 request.clone(),
+                output_limit,
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,

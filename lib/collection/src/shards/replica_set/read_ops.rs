@@ -263,6 +263,7 @@ impl ShardReplicaSet {
     pub async fn facet(
         &self,
         request: Arc<FacetParams>,
+        output_limit: Option<usize>,
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         timeout: Option<Duration>,
@@ -274,7 +275,12 @@ impl ShardReplicaSet {
                 let search_runtime = self.search_runtime.clone();
 
                 let hw_acc = hw_measurement_acc.clone();
-                async move { shard.facet(request, &search_runtime, timeout, hw_acc).await }.boxed()
+                async move {
+                    shard
+                        .facet(request, output_limit, &search_runtime, timeout, hw_acc)
+                        .await
+                }
+                .boxed()
             },
             read_consistency,
             local_only,

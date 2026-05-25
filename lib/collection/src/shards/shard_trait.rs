@@ -158,9 +158,18 @@ pub trait ShardOperation {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>>;
 
+    /// Compute facet counts on this shard.
+    ///
+    /// `output_limit` caps the number of hits returned by the shard. It is
+    /// used by the coordinator to over-fetch hits across shards (typically
+    /// `request.limit * OVER_FETCH_FACTOR`) so that aggregation across shards
+    /// stays accurate while bounding the per-shard payload and in-process
+    /// work. When `None`, the shard returns all hits (legacy behavior),
+    /// required for `exact = true` and during rolling upgrades.
     async fn facet(
         &self,
         request: Arc<FacetParams>,
+        output_limit: Option<usize>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,

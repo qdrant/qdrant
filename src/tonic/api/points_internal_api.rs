@@ -467,6 +467,7 @@ async fn facet_counts_internal(
         exact,
         shard_id,
         timeout,
+        top_k,
     } = request;
 
     let shard_selection = ShardSelectorInternal::ShardId(shard_id);
@@ -479,10 +480,17 @@ async fn facet_counts_internal(
         exact,
     };
 
+    // `top_k` is set by newer coordinators that want a bounded per-shard
+    // response for high-cardinality approximate facet queries. Older
+    // coordinators leave it unset, in which case we fall back to the legacy
+    // behavior (return all hits, truncated only by `limit` in the aggregator).
+    let output_limit = top_k.map(|k| k as usize);
+
     let response = toc
         .facet_internal(
             &collection_name,
             request,
+            output_limit,
             shard_selection,
             timeout.map(Duration::from_secs),
             request_hw_data.get_counter(),

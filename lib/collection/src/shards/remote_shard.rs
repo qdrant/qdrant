@@ -1503,6 +1503,7 @@ impl ShardOperation for RemoteShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
+        output_limit: Option<usize>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -1528,6 +1529,7 @@ impl ShardOperation for RemoteShard {
                     exact: *exact,
                     shard_id: self.id,
                     timeout: processed_timeout.map(|t| t.as_secs()),
+                    top_k: output_limit.map(|k| k as u64),
                 };
 
                 let mut request = tonic::Request::new(request.clone());

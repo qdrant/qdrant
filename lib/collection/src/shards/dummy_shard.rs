@@ -203,6 +203,7 @@ impl ShardOperation for DummyShard {
     async fn facet(
         &self,
         _: Arc<FacetParams>,
+        _output_limit: Option<usize>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         _: Option<Duration>,
         _: HwMeasurementAcc,

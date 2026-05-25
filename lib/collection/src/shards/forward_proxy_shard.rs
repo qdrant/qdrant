@@ -729,13 +729,20 @@ impl ShardOperation for ForwardProxyShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
+        output_limit: Option<usize>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .facet(
+                request,
+                output_limit,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 
