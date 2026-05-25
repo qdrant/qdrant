@@ -144,13 +144,20 @@ def test_dirty_shard_survives_update_collection(tmp_path: pathlib.Path):
     assert r.status_code == 200, f"UpdateCollection failed: {r.text}"
 
     # Restart target briefly (no dirty flag) so it syncs the UpdateCollection entry
+    sync_log = f"peer_sync_{target_idx}.log"
     sync_uri = start_peer(
         peer_dirs[target_idx],
-        f"peer_sync_{target_idx}.log",
+        sync_log,
         bootstrap_uri,
         port=restart_port,
     )
-    wait_for_peer_online(sync_uri)
+    online, exit_code = wait_for_peer_online_or_crash(sync_uri, processes[-1])
+    if not online:
+        log_content = read_log(sync_log)
+        pytest.fail(
+            f"Sync restart failed to come online (exit code {exit_code}).\n"
+            f"Log tail:\n{log_content[-1000:]}"
+        )
 
     # Kill again — the UpdateCollection entry is now committed in its WAL
     p = processes.pop()
