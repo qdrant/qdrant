@@ -32,14 +32,7 @@ os.environ.setdefault(
     "PYTEST_CURRENT_TEST", "test_collection_update_not_blocked_by_busy_worker"
 )
 
-from .utils import (
-    assert_http_ok,
-    assert_project_root,
-    check_collection_green,
-    skip_if_no_feature,
-    start_cluster,
-    wait_for,
-)
+from .utils import *
 
 COLLECTION = "update_not_blocked"
 DIM = 4

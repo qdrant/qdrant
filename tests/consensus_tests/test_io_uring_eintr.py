@@ -20,15 +20,8 @@ import time
 
 import requests
 
-from .utils import (
-    assert_project_root,
-    make_peer_folders,
-    start_first_peer,
-    wait_peer_added,
-    wait_collection_green,
-    processes,
-)
 from .assertions import assert_http_ok
+from .utils import *
 
 COLLECTION_NAME = "test_io_uring_eintr"
 NUM_POINTS = 5000
