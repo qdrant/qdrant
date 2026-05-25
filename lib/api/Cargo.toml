@@ -41,5 +41,4 @@ tracing = { workspace = true, optional = true }
 
 [build-dependencies]
 tonic-prost-build = { workspace = true }
-prost-build = { workspace = true }
 common = { path = "../common/common" }
