@@ -76,9 +76,7 @@ pub struct IoUringOpenExtra {
 
 impl OpenExtra for IoUringOpenExtra {
     fn with_prevent_caching(self, prevent_caching: bool) -> Self {
-        let Self {
-            prevent_caching: _,
-        } = self;
+        let Self { prevent_caching: _ } = self;
         Self { prevent_caching }
     }
 }
