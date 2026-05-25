@@ -76,9 +76,10 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
         }
 
         match StorageType::storage_kind() {
-            UniversalKind::Mmap => true,
-            UniversalKind::IoUring => false,
+            UniversalKind::IoUring |
             UniversalKind::DiskCache => false,
+            UniversalKind::SimpleDiskCache | // FIXME: only `true` if it was entirely prefilled
+            UniversalKind::Mmap => true,
         }
     }
 
