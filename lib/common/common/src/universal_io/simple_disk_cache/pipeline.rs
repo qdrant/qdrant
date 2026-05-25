@@ -327,6 +327,18 @@ where
         Ok(())
     }
 
+    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
+        // todo: check if we have the entire file already local, if not, call schedule_whole on self.remote_pipeline
+        let length = self.file.len::<T>()?;
+        self.schedule::<Sequential>(
+            user_data,
+            ReadRange {
+                byte_offset: 0,
+                length,
+            },
+        )
+    }
+
     fn wait(&mut self) -> universal_io::Result<Option<(U, Cow<'_, [T]>)>> {
         if let Some((user_data, range, is_sequential)) = self.ready.take() {
             // SAFETY: being in `pending` confirms the range is local (or empty).
