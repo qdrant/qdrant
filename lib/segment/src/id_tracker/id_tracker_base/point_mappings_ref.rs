@@ -106,14 +106,20 @@ impl<'a> PointMappingsRefEnum<'a> {
         }
     }
 
-    /// Wrap an iterator of internal IDs so that points at or above the
-    /// mapping's deferred threshold are excluded.
+    /// Wrap an iterator of internal IDs so that soft-deleted points and (when
+    /// requested) points at or above the mapping's deferred threshold are
+    /// excluded.
+    ///
+    /// Intended for iterators sourced outside the mapping (e.g. field-index
+    /// outputs) where neither the deleted bitslice nor the deferred threshold
+    /// are applied implicitly. The bitslice check guards against stale
+    /// postings for tombstoned internal IDs (a single bit test per element,
+    /// negligible overhead).
     ///
     /// For [`DeferredBehavior::IncludeAll`] — or when the mapping has no
-    /// deferred threshold — the iterator is returned unchanged. Intended for
-    /// iterators sourced outside the mapping (e.g., field-index outputs) where
-    /// the threshold isn't applied implicitly.
-    pub fn filter_deferred<I>(
+    /// deferred threshold — the threshold cutoff is skipped, but the
+    /// deleted-bitslice filter is always applied.
+    pub fn filter_deferred_and_deleted<I>(
         self,
         iter: I,
         deferred_behavior: DeferredBehavior,
@@ -121,9 +127,16 @@ impl<'a> PointMappingsRefEnum<'a> {
     where
         I: Iterator<Item = PointOffsetType>,
     {
+        let deleted = self.deleted();
         match deferred_behavior.apply(self.deferred_internal_id()) {
-            None => Either::Left(iter),
-            Some(cutoff) => Either::Right(iter.filter(move |&id| id < cutoff)),
+            None => {
+                Either::Left(iter.filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false)))
+            }
+            Some(cutoff) => {
+                Either::Right(iter.filter(move |&id| {
+                    id < cutoff && !deleted.get_bit(id as usize).unwrap_or(false)
+                }))
+            }
         }
     }
 
@@ -170,6 +183,14 @@ impl<'a> PointMappingsRefEnum<'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.deferred_internal_id(),
             PointMappingsRefEnum::Compressed(_) => None,
+        }
+    }
+
+    /// Soft-deleted point bitslice for this mapping.
+    fn deleted(self) -> &'a BitSlice {
+        match self {
+            PointMappingsRefEnum::Plain(m) => m.deleted(),
+            PointMappingsRefEnum::Compressed(m) => m.deleted(),
         }
     }
 }
