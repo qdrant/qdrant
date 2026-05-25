@@ -129,12 +129,14 @@ impl<'a> PointMappingsRefEnum<'a> {
     {
         let deleted = self.deleted();
         match deferred_behavior.apply(self.deferred_internal_id()) {
-            None => Either::Left(
-                iter.filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false)),
-            ),
-            Some(cutoff) => Either::Right(iter.filter(move |&id| {
-                id < cutoff && !deleted.get_bit(id as usize).unwrap_or(false)
-            })),
+            None => {
+                Either::Left(iter.filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false)))
+            }
+            Some(cutoff) => {
+                Either::Right(iter.filter(move |&id| {
+                    id < cutoff && !deleted.get_bit(id as usize).unwrap_or(false)
+                }))
+            }
         }
     }
 

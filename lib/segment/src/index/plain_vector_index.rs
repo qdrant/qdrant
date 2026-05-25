@@ -146,12 +146,10 @@ impl VectorIndexRead for PlainVectorIndex {
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => {
-                let iter = id_tracker
-                    .point_mappings()
-                    .filter_deferred_and_deleted(
-                        batch_searcher.iter_not_deleted(),
-                        DeferredBehavior::Exclude,
-                    );
+                let iter = id_tracker.point_mappings().filter_deferred_and_deleted(
+                    batch_searcher.iter_not_deleted(),
+                    DeferredBehavior::Exclude,
+                );
                 batch_searcher.peek_top_iter(iter, &is_stopped)?
             }
         };
