@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::process::Command;
-use std::{env, str};
+use std::{env, fs, str};
 
 use common::defaults;
-use tonic_build::Builder;
+use tonic_prost_build::Builder;
 
 fn main() -> std::io::Result<()> {
     // Ensure Qdrant version is configured correctly
@@ -13,10 +13,33 @@ fn main() -> std::io::Result<()> {
         "crate version does not match with defaults.rs",
     );
 
+    // Since `tonic` 0.14 (when `tonic-build` was refactored into `tonic-prost-build`),
+    // `tonic_prost_build` *does not* emit `cargo:rerun-if-changed=` directives, which forces Cargo
+    // to recompile `api` (and any other crate that *uses* `api`; which is most crates in Qdrant)
+    // on every `cargo check`/`cargo build`/`cargo run`.
+    //
+    // As a workaround, we emit `cargo:rerun-if-changed=` explicitly. 🤷‍♀️
+    //
+    // See:
+    // - https://github.com/grpc/grpc-rust/issues/2415
+    // - https://github.com/grpc/grpc-rust/issues/2511
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "std::fs is allowed in build-script"
+    )]
+    for result in fs::read_dir("src/grpc/proto").unwrap() {
+        let proto = result.unwrap();
+
+        if proto.path().extension().and_then(|str| str.to_str()) == Some("proto") {
+            println!("cargo:rerun-if-changed={}", proto.path().display());
+        }
+    }
+
     let build_out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // Build gRPC bits from proto file
-    tonic_build::configure()
+    tonic_prost_build::configure()
         // Because we want to attach all validation rules to the generated gRPC types, we must do
         // so by extending the builder. This is ugly, but better than manually implementing
         // `Validation` for all these types and seems to be the best approach. The line below
@@ -24,7 +47,7 @@ fn main() -> std::io::Result<()> {
         .configure_validation()
         .file_descriptor_set_path(build_out_dir.join("qdrant_descriptor.bin"))
         .out_dir("src/grpc/") // saves generated structures at this location
-        .compile(
+        .compile_protos(
             &["src/grpc/proto/qdrant.proto"], // proto entry point
             &["src/grpc/proto"], // specify the root location to search proto dependencies
         )?;

@@ -16,6 +16,7 @@ use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
+use http::uri::InvalidUri;
 use issues::IssueRecord;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -43,7 +44,6 @@ use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
-use tonic::codegen::http::uri::InvalidUri;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
