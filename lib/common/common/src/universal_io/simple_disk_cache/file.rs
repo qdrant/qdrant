@@ -284,9 +284,9 @@ where
             advice: AdviceSetting::Global,
         };
 
-        let opened = self
-            .remote_fs
-            .open(&self.remote_path, remote_options, self.remote_extra.clone())?;
+        let opened =
+            self.remote_fs
+                .open(&self.remote_path, remote_options, self.remote_extra.clone())?;
         // If another thread set this concurrently, let our R be dropped.
         //
         // OnceLock::get_or_try_init would be better but it is not available on stable
