@@ -33,10 +33,7 @@ enum Source {
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<'a, T>(
-    get_local_state: impl Fn() -> Result<&'a LocalState>,
-    range: ReadRange,
-) -> Result<Source>
+fn pick_source<'a, T>(local_state: &'a LocalState, range: ReadRange) -> Result<Source>
 where
     T: bytemuck::Pod,
 {
@@ -45,9 +42,7 @@ where
         return Ok(Source::Local { byte_range });
     }
 
-    let local = get_local_state()?;
-
-    if byte_range.end > local.mmap.len() as u64 {
+    if byte_range.end > local_state.mmap.len() as u64 {
         // TODO: Grow local file if remote file has grown, or OOB.
         //       When growing, we need to remember to set `fully_populated` to false
         return Err(UniversalIoError::OutOfBounds {
@@ -60,14 +55,14 @@ where
     let blocks_range = to_block_range(byte_range.clone());
 
     // Fast path skips the bitmap mutex once the file is fully populated.
-    if local.contains(blocks_range.clone()) {
+    if local_state.contains(blocks_range.clone()) {
         return Ok(Source::Local { byte_range });
     }
 
     // BLOCK_SIZE aligned, clamped to EOF.
     let byte_offset = blocks_range.start as usize * BLOCK_SIZE;
     let fetch_length = blocks_range.len() * BLOCK_SIZE;
-    let max_length = local.mmap.len().saturating_sub(byte_offset);
+    let max_length = local_state.mmap.len().saturating_sub(byte_offset);
     let blocks_byte_range = ReadRange {
         byte_offset: byte_offset as u64,
         length: fetch_length.min(max_length) as u64,
@@ -185,7 +180,7 @@ where
         file: &'file DiskCache<R>,
         range: ReadRange,
     ) -> universal_io::Result<()> {
-        match pick_source::<T>(|| file.local_state(), range)? {
+        match pick_source::<T>(file.local_state()?, range)? {
             Source::Local { byte_range } => {
                 // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R, T>(file, byte_range)? };
@@ -294,7 +289,7 @@ where
     where
         P: AccessPattern,
     {
-        match pick_source::<T>(|| self.file.local_state(), range)? {
+        match pick_source::<T>(self.file.local_state()?, range)? {
             Source::Local { byte_range } => {
                 self.ready = Some((user_data, byte_range));
             }
