@@ -15,7 +15,7 @@ use super::*;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MmapFile {
     path: PathBuf,
 
