@@ -19,16 +19,8 @@ import time
 import pytest
 import requests
 
-from consensus_tests.fixtures import create_collection, upsert_random_points
-from consensus_tests.utils import (
-    get_collection_cluster_info,
-    get_pytest_current_test_name,
-    processes,
-    start_cluster,
-    start_peer,
-    wait_collection_exists_and_active_on_all_peers,
-    wait_for_peer_online,
-)
+from .fixtures import create_collection, upsert_random_points
+from .utils import *
 
 COLLECTION_NAME = "test_dirty_shard"
 N_PEERS = 3
