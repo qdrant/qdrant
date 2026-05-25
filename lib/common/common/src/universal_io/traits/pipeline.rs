@@ -74,6 +74,10 @@ where
     where
         P: AccessPattern;
 
+    /// Like `Self::schedule`, but doesn't need to know file length upfront.
+    /// Reads the entire file.
+    fn schedule_whole(&mut self, user_data: U) -> Result<()>;
+
     /// See [`BorrowedReadPipeline::wait()`].
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>>;
 }

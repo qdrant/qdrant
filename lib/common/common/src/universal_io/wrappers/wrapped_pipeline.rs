@@ -93,6 +93,11 @@ where
     }
 
     #[inline]
+    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
+        self.inner.schedule_whole(user_data)
+    }
+
+    #[inline]
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
         self.inner.wait()
     }
