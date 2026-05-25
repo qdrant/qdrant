@@ -24,7 +24,7 @@ use super::traits::{Item, UniversalReadFileOps};
 use super::*;
 use crate::generic_consts::AccessPattern;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IoUringFile {
     file: Arc<fs::File>,
     /// Whether the file was opened with `O_DIRECT` flag. This allows reads to be shorter
