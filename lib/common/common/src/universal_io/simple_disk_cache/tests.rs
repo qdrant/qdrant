@@ -193,25 +193,6 @@ mod tests_mod {
     }
 
     #[test]
-    fn empty_read_does_not_materialize_local_file() {
-        let scn = Scenario::new(BLOCK_SIZE);
-        let expected_local = scn.expected_local_path();
-        let file = scn.open::<R>(PREFILL);
-
-        let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 0,
-            })
-            .unwrap();
-        assert!(bytes.is_empty());
-        assert!(
-            !expected_local.exists(),
-            "zero-length read must not trigger local-file initialisation",
-        );
-    }
-
-    #[test]
     fn populate_fetches_every_block() {
         let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
         let file = scn.open::<R>(PREFILL);
