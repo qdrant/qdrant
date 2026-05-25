@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::process::Command;
-use std::{env, str};
+use std::{env, fs, str};
 
 use common::defaults;
 use tonic_prost_build::Builder;
@@ -12,6 +12,29 @@ fn main() -> std::io::Result<()> {
         env!("CARGO_PKG_VERSION"),
         "crate version does not match with defaults.rs",
     );
+
+    // Since `tonic` 0.14 (when `tonic-build` was refactored into `tonic-prost-build`),
+    // `tonic_prost_build` *does not* emit `cargo:rerun-if-changed=` directives, which forces Cargo
+    // to recompile `api` (and any other crate that *uses* `api`; which is most crates in Qdrant)
+    // on every `cargo check`/`cargo build`/`cargo run`.
+    //
+    // As a workaround, we emit `cargo:rerun-if-changed=` explicitly. 🤷‍♀️
+    //
+    // See:
+    // - https://github.com/grpc/grpc-rust/issues/2415
+    // - https://github.com/grpc/grpc-rust/issues/2511
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "std::fs is allowed in build-script"
+    )]
+    for result in fs::read_dir("src/grpc/proto").unwrap() {
+        let proto = result.unwrap();
+
+        if proto.path().extension().and_then(|str| str.to_str()) == Some("proto") {
+            println!("cargo:rerun-if-changed={}", proto.path().display());
+        }
+    }
 
     let build_out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
