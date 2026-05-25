@@ -6,7 +6,9 @@ use fs_err as fs;
 use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig};
 use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
-use crate::universal_io::{OpenOptions, Populate, ReadRange, UniversalRead};
+use crate::universal_io::{
+    OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps, UniversalReadFs,
+};
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
     (0..n_bytes).map(|i| (i % 251) as u8).collect()
@@ -49,6 +51,9 @@ impl Scenario {
     fn open<R>(&self, prefill: bool) -> DiskCache<R>
     where
         R: UniversalRead + Clone,
+        R::Fs: Clone + Send + Sync,
+        <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+        R::OwnedReadPipeline<u8, std::ops::Range<u32>>: Send,
     {
         let populate = if prefill {
             Populate::PreferBackground
@@ -56,15 +61,17 @@ impl Scenario {
             Populate::No
         };
 
+        let remote_fs = R::Fs::from_context(Default::default()).unwrap();
         DiskCache::open_with_config(
             &self.config,
+            remote_fs,
+            Default::default(),
             &self.remote_path,
             OpenOptions {
                 writeable: false,
                 populate,
                 need_sequential: false,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
         )
         .unwrap()
