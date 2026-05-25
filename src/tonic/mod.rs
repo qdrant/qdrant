@@ -129,16 +129,8 @@ pub fn init(
 
         // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET
         // will be advertised, so explicitly list the services to be included.
-        let reflection_service = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(QDRANT_DESCRIPTOR_SET)
-            .with_service_name("qdrant.Collections")
-            .with_service_name("qdrant.Points")
-            .with_service_name("qdrant.Snapshots")
-            .with_service_name("qdrant.Qdrant")
-            .with_service_name("grpc.health.v1.Health")
-            .with_service_name("qdrant.StorageRead")
-            .build()
-            .unwrap();
+        let reflection_service_v1 = reflection_service().build_v1().unwrap();
+        let reflection_service_v1alpha = reflection_service().build_v1alpha().unwrap();
 
         log::info!("Qdrant gRPC listening on {grpc_port}");
 
@@ -177,7 +169,8 @@ pub fn init(
 
         server
             .layer(middleware_layer)
-            .add_service(reflection_service)
+            .add_service(reflection_service_v1)
+            .add_service(reflection_service_v1alpha)
             .add_service(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)
@@ -222,6 +215,17 @@ pub fn init(
     })?;
 
     Ok(())
+}
+
+fn reflection_service() -> tonic_reflection::server::Builder<'static> {
+    tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(QDRANT_DESCRIPTOR_SET)
+        .with_service_name("qdrant.Collections")
+        .with_service_name("qdrant.Points")
+        .with_service_name("qdrant.Snapshots")
+        .with_service_name("qdrant.Qdrant")
+        .with_service_name("grpc.health.v1.Health")
+        .with_service_name("qdrant.StorageRead")
 }
 
 #[allow(clippy::too_many_arguments)]
