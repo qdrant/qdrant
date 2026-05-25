@@ -217,13 +217,12 @@ impl Segment {
                 // Recover error state
                 match &self.error_status {
                     None => {} // all good
-                    Some(error) => {
-                        if error.point_id == Some(point_id) {
-                            // Fixed
-                            log::info!("Recovered from error: {}", error.error);
-                            self.error_status = None;
-                        }
+                    Some(error) if error.point_id == Some(point_id) => {
+                        // Fixed
+                        log::info!("Recovered from error: {}", error.error);
+                        self.error_status = None;
                     }
+                    Some(_) => {}
                 }
             }
             Some(error) => {
