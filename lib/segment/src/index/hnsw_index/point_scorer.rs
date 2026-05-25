@@ -351,7 +351,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// searcher's `point_deleted` bitslice.
     ///
     /// Does not apply deferred-point filtering — wrap with
-    /// `PointMappingsRefEnum::filter_deferred` (or compose otherwise) before
+    /// `PointMappingsRefEnum::filter_deferred_and_deleted` (or compose otherwise) before
     /// passing to [`Self::peek_top_iter`] when deferred awareness is needed.
     ///
     /// The returned iterator borrows the underlying bitslice (lifetime `'a`),
@@ -367,7 +367,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// Score every non-deleted point without deferred filtering.
     ///
     /// Production paths compose `iter_not_deleted` with
-    /// `PointMappingsRefEnum::filter_deferred` and call
+    /// `PointMappingsRefEnum::filter_deferred_and_deleted` and call
     /// [`Self::peek_top_iter`] directly.
     #[cfg(feature = "testing")]
     pub fn peek_top_all(

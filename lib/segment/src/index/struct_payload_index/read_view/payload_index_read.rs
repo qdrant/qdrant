@@ -181,7 +181,10 @@ where
                 // Each primary iterator (and the flattened stream) can yield items in
                 // non-sorted order depending on the field-index type and primary condition.
                 let joined_primary_iterator = point_mappings
-                    .filter_deferred(primary_iterators.into_iter().flatten(), deferred_behavior)
+                    .filter_deferred_and_deleted(
+                        primary_iterators.into_iter().flatten(),
+                        deferred_behavior,
+                    )
                     .stop_if(is_stopped);
 
                 return Ok(if all_conditions_are_primary {

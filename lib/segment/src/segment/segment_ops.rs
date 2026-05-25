@@ -177,6 +177,7 @@ impl Segment {
     /// # Arguments
     ///
     /// * `op_num` - sequential operation of the current operation
+    /// * `point_id` - external id of the point the operation targets; used for error correlation.
     /// * `op_point_offset` - If point offset is specified, handler will use point version for comparison.
     ///   Otherwise, it will be applied without version checks.
     /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside) and optionally new offset of the changed point.
@@ -187,6 +188,7 @@ impl Segment {
     pub(super) fn handle_point_version_and_failure<F>(
         &mut self,
         op_num: SeqNumberType,
+        point_id: PointIdType,
         op_point_offset: Option<PointOffsetType>,
         operation: F,
     ) -> OperationResult<bool>
@@ -215,16 +217,12 @@ impl Segment {
                 // Recover error state
                 match &self.error_status {
                     None => {} // all good
-                    Some(error) => {
-                        let point_id = op_point_offset.and_then(|point_offset| {
-                            self.id_tracker.borrow().external_id(point_offset)
-                        });
-                        if error.point_id == point_id {
-                            // Fixed
-                            log::info!("Recovered from error: {}", error.error);
-                            self.error_status = None;
-                        }
+                    Some(error) if error.point_id == Some(point_id) => {
+                        // Fixed
+                        log::info!("Recovered from error: {}", error.error);
+                        self.error_status = None;
                     }
+                    Some(_) => {}
                 }
             }
             Some(error) => {
@@ -233,11 +231,9 @@ impl Segment {
                     "Segment {:?} operation error: {error}",
                     self.segment_path.as_path(),
                 );
-                let point_id = op_point_offset
-                    .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
                 self.error_status = Some(SegmentFailedState {
                     version: op_num,
-                    point_id,
+                    point_id: Some(point_id),
                     error,
                 });
             }
