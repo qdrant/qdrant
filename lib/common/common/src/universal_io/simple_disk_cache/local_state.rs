@@ -1,25 +1,33 @@
+use std::cell::UnsafeCell;
+use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use fs_err as fs;
-use memmap2::MmapRaw;
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
 
-use crate::mmap::Madviseable;
+use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
-use crate::universal_io::{OpenOptions, Result};
+use crate::universal_io::{
+    MmapFile, OpenOptions, OpenOptionsExtra, Populate, ReadRange, Result, UniversalIoError,
+    UniversalRead, UniversalWrite, mmap as mmap_file,
+};
 
 #[derive(Debug)]
 pub(super) struct LocalState {
-    pub mmap: MmapRaw,
+    /// UnsafeCell so that we can write to it under non-mut reference.
+    /// Such as when the pipeline reads from remote first.
+    pub mmap: UnsafeCell<MmapFile>,
     /// Bitmask to know which blocks have been fetched so far.
     pub fetched: Mutex<RoaringBitmap>,
     /// Fast-path flag: when true, the mmap is fully populated and the
     /// `fetched` bitmap can be skipped on the read hot path.
     pub fully_populated: AtomicBool,
 }
+
+unsafe impl Sync for LocalState {}
 
 impl LocalState {
     pub(super) fn new(
@@ -32,9 +40,9 @@ impl LocalState {
         }
 
         let OpenOptions {
-            writeable: _,       // always needs to be writeable
-            need_sequential: _, // TODO: add sequential mmap
-            populate: _,        // this is handled externally to LocalState
+            writeable: _, // always needs to be writeable
+            need_sequential,
+            populate: _, // this is handled externally to LocalState
             advice,
             extra: _, // unsupported
         } = options;
@@ -47,15 +55,64 @@ impl LocalState {
             .open(local_path.as_ref())?;
 
         file.set_len(len)?;
-        let mmap = MmapRaw::map_raw(&file)?;
-
-        mmap.madvise(advice.resolve())?;
+        let mmap = MmapFile::open(
+            local_path.as_ref(),
+            OpenOptions {
+                writeable: true,
+                need_sequential,
+                populate: Populate::No,
+                advice,
+                extra: OpenOptionsExtra::default(),
+            },
+        )?;
 
         Ok(LocalState {
-            mmap,
+            mmap: UnsafeCell::new(mmap),
             fetched: Mutex::new(RoaringBitmap::new()),
             fully_populated: AtomicBool::new(false),
         })
+    }
+
+    pub(super) fn resize(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> Result<()> {
+        let mmap = self.mmap.get_mut();
+        let current_len = mmap.len::<u8>()?;
+        if current_len == new_len {
+            return Ok(());
+        }
+        if current_len > new_len {
+            return Err(UniversalIoError::Io(std::io::Error::new(
+                ErrorKind::Unsupported,
+                "Shrinking the file is not supported",
+            )));
+        }
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(false)
+            .open(local_path.as_ref())?;
+
+        file.set_len(new_len)?;
+
+        mmap.reopen()?;
+
+        self.fully_populated.store(false, Ordering::Release);
+
+        // The previous tail block may have been only partially populated (its
+        // fetch was clamped to the old EOF). `set_len` zero-filled the bytes
+        // between the old EOF and the next block boundary, so the block is no
+        // longer accurate. Drop it from `fetched` to force a re-fetch on the
+        // next read.
+        if current_len % BLOCK_SIZE as u64 != 0 {
+            let partial_tail_block = (current_len / BLOCK_SIZE as u64) as u32;
+            self.fetched.lock().remove(partial_tail_block);
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn mmap(&self) -> &MmapFile {
+        // SAFETY: we have `&self` reference
+        unsafe { self.mmap.get().as_ref_unchecked() }
     }
 
     /// Whether `blocks_range` is already cached locally.
@@ -69,18 +126,15 @@ impl LocalState {
         self.fetched.lock().contains_range(blocks_range)
     }
 
-    /// Mark the local mirror as fully populated. Subsequent reads can skip
-    /// the `fetched` bitmap check.
-    pub(super) fn mark_fully_populated(&self) {
-        self.fully_populated.store(true, Ordering::Release);
-    }
-
     /// # Safety
     /// `byte_range` must have been populated first, caller must ensure `self.fetched` references the
     /// blocks for the byte range.
-    pub(super) unsafe fn read_mmap_bytes(&self, byte_range: Range<u64>) -> &[u8] {
-        let bytes = unsafe { std::slice::from_raw_parts(self.mmap.as_ptr(), self.mmap.len()) };
-        &bytes[byte_range.start as usize..byte_range.end as usize]
+    pub(super) unsafe fn read_mmap_bytes<P: AccessPattern, T: bytemuck::Pod>(
+        &self,
+        range: ReadRange,
+    ) -> Result<&[T]> {
+        let mmap_bytes = self.mmap().as_bytes::<P>();
+        mmap_file::read::<T>(mmap_bytes, range)
     }
 
     /// # Safety
@@ -90,6 +144,10 @@ impl LocalState {
     ///
     /// Assumes the bytes slice covers the entirety of `blocks_range`.
     pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
+        // SAFETY:
+        // 1. The remote file is immutable, so worst case, same data is overwritten.
+        // 2. The `fetched` bitmap should track which blocks are already present.
+        let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
         if self.fully_populated.load(Ordering::Acquire) {
             return;
         }
@@ -99,18 +157,29 @@ impl LocalState {
             return;
         }
 
-        let byte_offset = blocks_range.start as usize * BLOCK_SIZE;
+        let byte_offset = (blocks_range.start as usize * BLOCK_SIZE) as u64;
 
-        let max_len = self.mmap.len().saturating_sub(byte_offset);
-        assert!(bytes.len() == max_len.min(blocks_range.len() * BLOCK_SIZE));
+        let max_len = mmap
+            .len::<u8>()
+            .expect("MmapFile::len is infallible")
+            .saturating_sub(byte_offset);
+        assert_eq!(
+            bytes.len() as u64,
+            max_len.min((blocks_range.len() * BLOCK_SIZE) as u64)
+        );
 
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                bytes.as_ptr(),
-                self.mmap.as_mut_ptr().add(byte_offset),
-                bytes.len(),
-            );
-        }
+        mmap.write(byte_offset, bytes)
+            .expect("MmapFile::write is infallible");
+
         fetched.insert_range(blocks_range);
+
+        // If every block is now populated, turn `fully_populated` on.
+        let total_blocks = mmap
+            .len::<u8>()
+            .expect("MmapFile::len is infallible")
+            .div_ceil(BLOCK_SIZE as u64);
+        if fetched.len() == total_blocks {
+            self.fully_populated.store(true, Ordering::Release);
+        }
     }
 }

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::io::{self, ErrorKind};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -9,7 +10,7 @@ use parking_lot::Mutex;
 use super::BLOCK_SIZE;
 use super::config::DiskCacheConfig;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::mmap::{AdviceSetting, Madviseable};
+use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::simple_disk_cache::to_block_range;
@@ -27,9 +28,7 @@ use crate::universal_io::{
 /// blocks on demand from the remote) or eagerly if populate is set.
 ///
 /// WARN: There should be only a single instance of DiskCache per path.
-/// Initializing multiple instances will try to re-read from remote. Cloning is
-/// safe because of Arcs, though.
-#[derive(Clone)]
+/// Initializing multiple instances will try to re-read from remote.
 pub struct DiskCache<R>
 where
     R: UniversalRead,
@@ -42,11 +41,11 @@ where
     // We could switch to LazyLock, but there is no fallible initialization
     remote: OnceLock<R>,
     /// Open options for when the local mmap is initialized.
-    open_options: OpenOptions,
+    pub(super) open_options: OpenOptions,
     /// Path to the local mmap file.
-    local_path: PathBuf,
+    pub(super) local_path: PathBuf,
     /// Lazily-initialized local mirror.
-    pub(super) local: Arc<OnceLock<LocalState>>,
+    pub(super) local: OnceLock<LocalState>,
     /// Guards initialization of `local` and carries the source of init.
     init_lock: Arc<Mutex<InitSource<R>>>,
 }
@@ -76,7 +75,7 @@ enum InitSource<R: UniversalRead> {
 
 impl<R> DiskCache<R>
 where
-    R: UniversalRead,
+    R: UniversalRead + Clone,
 {
     /// Open a [`DiskCache`] with an explicit configuration.
     pub fn open_with_config(
@@ -141,7 +140,7 @@ where
                 remote: OnceLock::new(),
                 open_options: options,
                 local_path,
-                local: Arc::new(OnceLock::new()),
+                local: OnceLock::new(),
                 init_lock: Arc::new(Mutex::new(init_source)),
             }
         };
@@ -154,18 +153,14 @@ where
         Ok(cache)
     }
 
-    pub(super) fn new(
-        remote_path: impl AsRef<Path>,
-        local_path: PathBuf,
-        options: OpenOptions,
-    ) -> Self {
+    fn new(remote_path: impl AsRef<Path>, local_path: PathBuf, options: OpenOptions) -> Self {
         {
             Self {
                 remote_path: remote_path.as_ref().to_owned(),
                 remote: OnceLock::new(),
                 open_options: options,
                 local_path,
-                local: Arc::new(OnceLock::new()),
+                local: OnceLock::new(),
                 init_lock: Arc::new(Mutex::new(InitSource::FromScratch)),
             }
         }
@@ -202,14 +197,29 @@ where
             return Ok(state);
         }
 
+        self.init_local_state(true)?;
+
+        Ok(self.local.get().expect("just initialized"))
+    }
+
+    /// Initialize the local state depending on `InitSource`
+    ///
+    /// If `allow_from_scratch` is false, this method will avoid initializing if `InitSource::FromScratch` is set.
+    /// This is helpful for [`Self::reopen`] scenario where we can avoid work if no reads have taken place.
+    fn init_local_state(&self, allow_from_scratch: bool) -> Result<()> {
         // Only the first thread is able to initialize.
         let mut guard = self.init_lock.lock();
-        if let Some(state) = self.local.get() {
-            return Ok(state);
+        if self.local.get().is_some() {
+            return Ok(());
         }
 
         let local = match std::mem::replace(&mut *guard, InitSource::FromScratch) {
-            InitSource::FromScratch => self.init_local_state_from_scratch()?,
+            InitSource::FromScratch => {
+                if !allow_from_scratch {
+                    return Ok(());
+                }
+                self.new_local_state_from_scratch()?
+            }
             InitSource::FromPrefiller(mut pipe) => {
                 match pipe.wait()? {
                     Some((blocks_range, bytes)) => {
@@ -221,7 +231,6 @@ where
                             self.open_options,
                         )?;
                         unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
-                        local.mark_fully_populated();
                         local
                     }
                     None => {
@@ -229,8 +238,11 @@ where
                             false,
                             "Looks like the request for prefill bytes was incorrect"
                         );
+                        if !allow_from_scratch {
+                            return Ok(());
+                        }
                         // init from scratch
-                        self.init_local_state_from_scratch()?
+                        self.new_local_state_from_scratch()?
                     }
                 }
             }
@@ -240,12 +252,34 @@ where
             .set(local)
             .expect("OnceLock::set must succeed while holding init_lock");
 
-        Ok(self.local.get().expect("just initialized"))
+        Ok(())
     }
 
-    fn init_local_state_from_scratch(&self) -> Result<LocalState> {
+    fn new_local_state_from_scratch(&self) -> Result<LocalState> {
         let len = self.remote()?.len::<u8>()?;
         LocalState::new(&self.local_path, len, self.open_options)
+    }
+
+    /// Make sure every byte in the range `byte_start..remote_len` is present on the local file
+    fn populate_from(&self, byte_start: u64) -> std::result::Result<(), UniversalIoError> {
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return Ok(());
+        }
+
+        let remote_len = self.remote()?.len::<u8>()?;
+        if remote_len == 0 {
+            return Ok(());
+        }
+
+        let one_byte_per_block = (byte_start..remote_len)
+            .step_by(BLOCK_SIZE)
+            .map(|byte_offset| ((), ReadRange::one(byte_offset)));
+
+        for result in self.read_iter::<Sequential, u8, ()>(one_byte_per_block)? {
+            result?;
+        }
+
+        Ok(())
     }
 }
 
@@ -291,7 +325,48 @@ where
     }
 
     fn reopen(&mut self) -> Result<()> {
-        todo!();
+        // Wait for InitSource::Prefill, if set.
+        self.init_local_state(false)?;
+
+        if self.local.get().is_none() {
+            return Ok(());
+        }
+
+        // Reopen the remote so `len()` reflects the current file size
+        if let Some(remote) = self.remote.get_mut() {
+            remote.reopen()?;
+        }
+        let remote_len = self.remote()?.len::<u8>()?;
+
+        let local = self
+            .local
+            .get_mut()
+            .expect("We just ruled out `is_none` above, and we are holding &mut self");
+
+        let local_len = local.mmap().len::<u8>()?;
+        if local_len > remote_len {
+            return Err(UniversalIoError::Io(io::Error::new(
+                ErrorKind::UnexpectedEof,
+                format!(
+                    "Reopen encountered a smaller file than expected; old_len: {local_len}, new_len: {remote_len}"
+                ),
+            )));
+        }
+        if local_len == remote_len {
+            return Ok(());
+        }
+
+        local.resize(self.local_path.clone(), remote_len)?;
+
+        match self.open_options.populate {
+            Populate::Auto | Populate::No => {}
+            Populate::Blocking => self.populate_from(local_len)?,
+            Populate::PreferBackground => {
+                // TODO: prefill old_len..new_len on background
+            }
+        }
+
+        Ok(())
     }
 
     fn read<P, T>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>
@@ -308,46 +383,22 @@ where
     }
 
     fn len<T>(&self) -> Result<u64> {
-        let t_size = size_of::<T>();
-        debug_assert!(t_size > 0, "zero-sized types are not supported");
-
-        let bytes_len = if let Some(local) = self.local.get() {
-            local.mmap.len() as u64
+        let len = if let Some(local) = self.local.get() {
+            local.mmap().len::<T>()?
         } else {
-            self.remote()?.len::<u8>()?
+            self.remote()?.len::<T>()?
         };
 
-        Ok(bytes_len / t_size as u64)
+        Ok(len)
     }
 
     fn populate(&self) -> Result<()> {
-        if crate::low_memory::low_memory_mode().skip_populate() {
-            return Ok(());
-        }
-
-        let remote_len = self.remote()?.len::<u8>()?;
-        if remote_len == 0 {
-            return Ok(());
-        }
-
-        let one_byte_per_block = (0..remote_len as usize)
-            .step_by(BLOCK_SIZE)
-            .map(|byte_offset| ((), ReadRange::one(byte_offset as u64)));
-
-        for result in self.read_iter::<Sequential, u8, ()>(one_byte_per_block)? {
-            result?;
-        }
-
-        if let Some(local) = self.local.get() {
-            local.mark_fully_populated();
-        }
-
-        Ok(())
+        self.populate_from(0)
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
         if let Some(state) = self.local.get() {
-            state.mmap.clear_cache();
+            state.mmap().clear_ram_cache()?;
         }
         Ok(())
     }
