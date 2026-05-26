@@ -8,7 +8,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::named_vectors::CowMultiVector;
 use super::vectors::TypedMultiDenseVector;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::data_types::vectors::{TypedDenseVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 pub trait PrimitiveVectorElement
@@ -18,11 +18,13 @@ where
     Self: FromBytes + Immutable + IntoBytes + KnownLayout,
     Self: Pod,
 {
-    type QueryType: ?Sized;
+    type QueryType;
 
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]>;
 
     fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]>;
+
+    fn query_from_float_cow(vector: Cow<[VectorElementType]>) -> Self::QueryType;
 
     fn quantization_preprocess<'a>(
         quantization_config: &QuantizationConfig,
@@ -42,7 +44,7 @@ where
 }
 
 impl PrimitiveVectorElement for VectorElementType {
-    type QueryType = [Self];
+    type QueryType = TypedDenseVector<Self>;
 
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
         vector
@@ -50,6 +52,10 @@ impl PrimitiveVectorElement for VectorElementType {
 
     fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]> {
         vector
+    }
+
+    fn query_from_float_cow(vector: Cow<[VectorElementType]>) -> Self::QueryType {
+        TypedDenseVector::from(vector)
     }
 
     fn quantization_preprocess<'a>(
@@ -78,7 +84,7 @@ impl PrimitiveVectorElement for VectorElementType {
 }
 
 impl PrimitiveVectorElement for VectorElementTypeHalf {
-    type QueryType = [Self];
+    type QueryType = TypedDenseVector<Self>;
 
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
         Cow::Owned(vector.iter().map(|&x| f16::from_f32(x)).collect())
@@ -86,6 +92,10 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
 
     fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]> {
         Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
+    }
+
+    fn query_from_float_cow(vector: Cow<[VectorElementType]>) -> Self::QueryType {
+        TypedDenseVector::from(vector.iter().map(|&x| f16::from_f32(x)).collect::<Vec<_>>())
     }
 
     fn quantization_preprocess<'a>(
@@ -130,7 +140,7 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
 }
 
 impl PrimitiveVectorElement for VectorElementTypeByte {
-    type QueryType = [Self];
+    type QueryType = TypedDenseVector<Self>;
 
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
         Cow::Owned(vector.iter().map(|&x| x as u8).collect())
@@ -143,6 +153,10 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
                 .map(|&x| VectorElementType::from(x))
                 .collect_vec(),
         )
+    }
+
+    fn query_from_float_cow(vector: Cow<[VectorElementType]>) -> Self::QueryType {
+        TypedDenseVector::from(vector.iter().map(|&x| x as u8).collect::<Vec<_>>())
     }
 
     fn quantization_preprocess<'a>(

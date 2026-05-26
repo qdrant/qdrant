@@ -1,7 +1,7 @@
 use common::types::ScoreType;
 
 use super::simple_dot::dot_similarity_half;
-use crate::data_types::vectors::{DenseVector, VectorElementTypeHalf};
+use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_f16::avx::dot::avx_dot_similarity_half;
@@ -57,7 +57,7 @@ impl Metric<VectorElementTypeHalf> for CosineMetric {
         dot_similarity_half(v1, v2)
     }
 
-    fn query_similarity(query: &[VectorElementTypeHalf], vector: &[VectorElementTypeHalf]) -> ScoreType {
+    fn query_similarity(query: &TypedDenseVector<VectorElementTypeHalf>, vector: &[VectorElementTypeHalf]) -> ScoreType {
         Self::similarity(query, vector)
     }
 

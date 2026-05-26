@@ -8,7 +8,7 @@ use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::simple_sse::*;
 use super::tools::is_length_zero_or_normalized;
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementType};
 use crate::types::Distance;
 
 #[cfg(target_arch = "x86_64")]
@@ -66,7 +66,7 @@ impl Metric<VectorElementType> for EuclidMetric {
         euclid_similarity(v1, v2)
     }
 
-    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+    fn query_similarity(query: &TypedDenseVector<VectorElementType>, vector: &[VectorElementType]) -> ScoreType {
         Self::similarity(query, vector)
     }
 
@@ -114,7 +114,7 @@ impl Metric<VectorElementType> for ManhattanMetric {
         manhattan_similarity(v1, v2)
     }
 
-    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+    fn query_similarity(query: &TypedDenseVector<VectorElementType>, vector: &[VectorElementType]) -> ScoreType {
         Self::similarity(query, vector)
     }
 
@@ -162,7 +162,7 @@ impl Metric<VectorElementType> for DotProductMetric {
         dot_similarity(v1, v2)
     }
 
-    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+    fn query_similarity(query: &TypedDenseVector<VectorElementType>, vector: &[VectorElementType]) -> ScoreType {
         Self::similarity(query, vector)
     }
 
@@ -187,7 +187,7 @@ impl Metric<VectorElementType> for CosineMetric {
         DotProductMetric::similarity(v1, v2)
     }
 
-    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+    fn query_similarity(query: &TypedDenseVector<VectorElementType>, vector: &[VectorElementType]) -> ScoreType {
         Self::similarity(query, vector)
     }
 
