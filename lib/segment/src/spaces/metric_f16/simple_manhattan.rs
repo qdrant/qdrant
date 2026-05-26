@@ -52,6 +52,10 @@ impl Metric<VectorElementTypeHalf> for ManhattanMetric {
         manhattan_similarity_half(v1, v2)
     }
 
+    fn query_similarity(query: &[VectorElementTypeHalf], vector: &[VectorElementTypeHalf]) -> ScoreType {
+        Self::similarity(query, vector)
+    }
+
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }

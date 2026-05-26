@@ -18,6 +18,8 @@ where
     Self: FromBytes + Immutable + IntoBytes + KnownLayout,
     Self: Pod,
 {
+    type QueryType: ?Sized;
+
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]>;
 
     fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]>;
@@ -40,6 +42,8 @@ where
 }
 
 impl PrimitiveVectorElement for VectorElementType {
+    type QueryType = [Self];
+
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
         vector
     }
@@ -74,6 +78,8 @@ impl PrimitiveVectorElement for VectorElementType {
 }
 
 impl PrimitiveVectorElement for VectorElementTypeHalf {
+    type QueryType = [Self];
+
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
         Cow::Owned(vector.iter().map(|&x| f16::from_f32(x)).collect())
     }
@@ -124,6 +130,8 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
 }
 
 impl PrimitiveVectorElement for VectorElementTypeByte {
+    type QueryType = [Self];
+
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
         Cow::Owned(vector.iter().map(|&x| x as u8).collect())
     }

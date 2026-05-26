@@ -66,6 +66,10 @@ impl Metric<VectorElementType> for EuclidMetric {
         euclid_similarity(v1, v2)
     }
 
+    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+        Self::similarity(query, vector)
+    }
+
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
@@ -108,6 +112,10 @@ impl Metric<VectorElementType> for ManhattanMetric {
         }
 
         manhattan_similarity(v1, v2)
+    }
+
+    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+        Self::similarity(query, vector)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
@@ -154,6 +162,10 @@ impl Metric<VectorElementType> for DotProductMetric {
         dot_similarity(v1, v2)
     }
 
+    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+        Self::similarity(query, vector)
+    }
+
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
@@ -173,6 +185,10 @@ impl Metric<VectorElementType> for CosineMetric {
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         DotProductMetric::similarity(v1, v2)
+    }
+
+    fn query_similarity(query: &[VectorElementType], vector: &[VectorElementType]) -> ScoreType {
+        Self::similarity(query, vector)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {

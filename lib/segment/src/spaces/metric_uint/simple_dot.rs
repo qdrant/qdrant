@@ -50,6 +50,10 @@ impl Metric<VectorElementTypeByte> for DotProductMetric {
         dot_similarity_bytes(v1, v2)
     }
 
+    fn query_similarity(query: &[VectorElementTypeByte], vector: &[VectorElementTypeByte]) -> ScoreType {
+        Self::similarity(query, vector)
+    }
+
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
