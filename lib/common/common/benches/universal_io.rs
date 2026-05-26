@@ -51,6 +51,7 @@ fn benches(c: &mut Criterion) {
         std::process::exit(rc.code().unwrap_or(1));
     }
 
+    #[cfg(target_os = "linux")]
     #[allow(clippy::default_constructed_unit_structs)]
     let uring_context = IoUringFs::default();
     #[allow(clippy::default_constructed_unit_structs)]
