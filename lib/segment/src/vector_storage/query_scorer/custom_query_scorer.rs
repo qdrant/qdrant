@@ -42,17 +42,17 @@ impl<
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
-        TInputQuery: Query<DenseVector>
-            + TransformInto<TStoredQuery, DenseVector, TElement::QueryType>,
+        TInputQuery:
+            Query<DenseVector> + TransformInto<TStoredQuery, DenseVector, TElement::QueryType>,
     {
         let mut dim = 0;
         let query = query
             .transform(|vector| {
                 dim = vector.len();
                 let preprocessed_vector = TMetric::preprocess(vector);
-                Ok(TElement::query_from_float_cow(
-                    Cow::from(preprocessed_vector),
-                ))
+                Ok(TElement::query_from_float_cow(Cow::from(
+                    preprocessed_vector,
+                )))
             })
             .unwrap();
 

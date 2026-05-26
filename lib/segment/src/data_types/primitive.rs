@@ -8,7 +8,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::named_vectors::CowMultiVector;
 use super::vectors::TypedMultiDenseVector;
-use crate::data_types::vectors::{TypedDenseVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::data_types::vectors::{
+    TypedDenseVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
+};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 pub trait PrimitiveVectorElement

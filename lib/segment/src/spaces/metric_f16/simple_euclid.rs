@@ -52,7 +52,10 @@ impl Metric<VectorElementTypeHalf> for EuclidMetric {
         euclid_similarity_half(v1, v2)
     }
 
-    fn query_similarity(query: &TypedDenseVector<VectorElementTypeHalf>, vector: &[VectorElementTypeHalf]) -> ScoreType {
+    fn query_similarity(
+        query: &TypedDenseVector<VectorElementTypeHalf>,
+        vector: &[VectorElementTypeHalf],
+    ) -> ScoreType {
         Self::similarity(query, vector)
     }
 
