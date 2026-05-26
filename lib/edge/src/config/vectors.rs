@@ -39,10 +39,7 @@ pub struct EdgeVectorParams {
 impl EdgeVectorParams {
     /// Start building [`EdgeVectorParams`] with a fluent API. The two
     /// required fields (`size`, `distance`) are supplied here.
-    pub fn builder(
-        size: usize,
-        distance: Distance,
-    ) -> crate::builders::EdgeVectorParamsBuilder {
+    pub fn builder(size: usize, distance: Distance) -> crate::builders::EdgeVectorParamsBuilder {
         crate::builders::EdgeVectorParamsBuilder::new(size, distance)
     }
 

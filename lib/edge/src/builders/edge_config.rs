@@ -36,11 +36,7 @@ impl EdgeConfigBuilder {
 
     /// Insert a single dense vector by name. Overwrites any prior entry with
     /// the same name.
-    pub fn vector(
-        mut self,
-        name: impl Into<VectorNameBuf>,
-        params: EdgeVectorParams,
-    ) -> Self {
+    pub fn vector(mut self, name: impl Into<VectorNameBuf>, params: EdgeVectorParams) -> Self {
         self.vectors.insert(name.into(), params);
         self
     }

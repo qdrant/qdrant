@@ -66,7 +66,12 @@ fn create_with_custom_wal_capacity_persists() {
     // No config passed: persisted wal_options (small) must be picked up.
     let shard = EdgeShard::load(dir.path(), None).unwrap();
     assert_eq!(
-        shard.config().wal_options.as_ref().unwrap().segment_capacity,
+        shard
+            .config()
+            .wal_options
+            .as_ref()
+            .unwrap()
+            .segment_capacity,
         4 * 1024 * 1024,
     );
     drop(shard);
