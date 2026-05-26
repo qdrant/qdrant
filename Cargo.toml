@@ -102,7 +102,7 @@ prometheus = { version = "0.14.0", default-features = false }
 validator = { workspace = true }
 jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
 
-murmur3 = { git = "https://github.com/qdrant/murmur3", rev = "2c39087" }
+murmur3 = { workspace = true }
 
 tempfile = { workspace = true }
 
@@ -126,6 +126,7 @@ shard = { path = "lib/shard", default-features = false }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
+bm25 = { path = "lib/bm25" }
 gpu = { path = "lib/gpu" }
 wal = { path = "lib/wal" }
 
@@ -246,6 +247,7 @@ itertools = "0.14.0"
 log = "0.4.30"
 memmap2 = "0.9.10"
 mockito = "1.7"
+murmur3 = { git = "https://github.com/qdrant/murmur3", rev = "2c39087" }
 nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
 num_cpus = "1.17"
@@ -345,7 +347,7 @@ required-features = ["service_debug"]
 
 [workspace]
 members = [
-    "lib/api",
+    "lib/api", "lib/bm25",
     "lib/collection",
     "lib/common/*",
     "lib/edge",
