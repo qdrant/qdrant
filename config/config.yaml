@@ -22,13 +22,23 @@ storage:
   snapshots_path: ./snapshots
 
   snapshots_config:
-    # "local" or "s3" - where to store snapshots
+    # Snapshot storage backend. Use "local" for filesystem storage (default),
+    # or provide a cloud backend as a nested object:
+    #
+    # Amazon S3:
+    # snapshots_storage:
+    #   s3:
+    #     bucket: ""
+    #     region: ""
+    #     access_key: ""
+    #     secret_key: ""
+    #
+    # Google Cloud Storage:
+    # snapshots_storage:
+    #   gcs:
+    #     bucket: ""
+    #     service_account_key: ""  # omit to use Application Default Credentials (ADC)
     snapshots_storage: local
-    # s3_config:
-    #   bucket: ""
-    #   region: ""
-    #   access_key: ""
-    #   secret_key: ""
 
   # Where to store temporary files
   # If null, temporary snapshots are stored in: storage/snapshots_temp/
