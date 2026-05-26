@@ -758,6 +758,10 @@ mod test {
 
     /// Check that entries appended to the write ahead log can be read back.
     #[test]
+    // Skipped on Windows: the test is OS-agnostic (WAL is portable),
+    // but Windows IO is 3-5x slower and even with reduced QC_TESTS it dominates
+    // Windows CI time. Coverage is preserved by Linux and macOS jobs.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     fn check_wal() {
         init_logger();
         fn wal(entry_count: u8) -> TestResult {
@@ -795,6 +799,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     fn check_last_index() {
         init_logger();
         fn check(entry_count: u8) -> TestResult {
@@ -837,6 +842,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     fn check_clear() {
         init_logger();
         fn check(entry_count: u8) -> TestResult {
@@ -868,6 +874,7 @@ mod test {
 
     /// Check that the Wal will read previously written entries.
     #[test]
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     fn check_reopen() {
         init_logger();
         fn wal(entry_count: u8) -> TestResult {
@@ -929,6 +936,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     fn check_truncate() {
         init_logger();
         fn truncate(entry_count: u8, truncate: u8) -> TestResult {
@@ -974,6 +982,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     fn check_prefix_truncate() {
         init_logger();
         fn prefix_truncate(entry_count: u8, until: u8, retain_closed: NonZeroU8) -> TestResult {
@@ -1131,6 +1140,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     fn test_prefix_truncate_parametric() {
         run_test_with_retain_closed(1);
         run_test_with_retain_closed(2);

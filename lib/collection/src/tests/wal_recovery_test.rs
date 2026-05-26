@@ -23,6 +23,7 @@ use crate::tests::fixtures::*;
 use crate::update_workers::applied_seq::{APPLIED_SEQ_SAVE_INTERVAL, AppliedSeqHandler};
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_delete_from_indexed_payload() {
     //  Init the logger
     let _ = env_logger::builder().is_test(true).try_init();
@@ -428,6 +429,7 @@ async fn test_truncate_unapplied_wal() {
 
 /// Test that verifies the WAL recovery process correctly loads pending updates into the update queue.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_wal_replay_loads_pending_to_queue() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -584,6 +586,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
 
 /// Test that verifies the WAL recovery process correctly loads pending updates into the update queue.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_wal_replay_with_smaller_queue_size() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

@@ -1017,6 +1017,7 @@ fn test_dense_deferred_points() {
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_dense_deferred_point_segment_combinations() {
     init_logger();
 
@@ -1085,6 +1086,7 @@ fn test_deferred_point_estimation_with_filter() {
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_read_operations() {
     init_logger();
     let hw_counter = HardwareCounterCell::new();
@@ -1196,6 +1198,7 @@ fn test_deferred_point_read_operations() {
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_sparse() {
     init_logger();
 
@@ -1277,6 +1280,7 @@ fn test_deferred_point_sparse() {
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_facets() {
     init_logger();
     let hw_counter = HardwareCounterCell::new();

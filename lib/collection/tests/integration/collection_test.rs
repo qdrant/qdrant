@@ -500,6 +500,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_ordered_read_api() {
     test_ordered_scroll_api_with_shards(1).await;
     test_ordered_scroll_api_with_shards(N_SHARDS).await;

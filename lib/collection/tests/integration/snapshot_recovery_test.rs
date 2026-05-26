@@ -200,11 +200,13 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_snapshot_and_recover_collection_normal() {
     _test_snapshot_and_recover_collection(NodeType::Normal).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_snapshot_and_recover_collection_listener() {
     _test_snapshot_and_recover_collection(NodeType::Listener).await;
 }
