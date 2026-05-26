@@ -121,6 +121,9 @@ fn open_mmap_vector_storage(
                 vector_config.distance,
                 populate,
             ),
+            VectorStorageDatatype::Turbo => {
+                unimplemented!("turbo datatype storage not yet wired up")
+            }
         }
     }
 }
@@ -368,6 +371,9 @@ pub(crate) fn create_sparse_vector_index(
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
             VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
+        }
+        (_, VectorStorageDatatype::Turbo) => {
+            unimplemented!("turbo datatype storage not yet wired up")
         }
     };
 

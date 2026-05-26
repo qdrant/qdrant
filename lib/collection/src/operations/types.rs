@@ -1,4 +1,5 @@
 use std::backtrace::Backtrace;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
@@ -1319,6 +1320,7 @@ pub enum Datatype {
     Float32,
     Uint8,
     Float16,
+    Turbo,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1327,6 +1329,7 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
+            Datatype::Turbo => VectorStorageDatatype::Turbo,
         }
     }
 }
@@ -1383,6 +1386,21 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
     validate_range_generic(value.get(), Some(1), Some(65536))
 }
 
+/// Reject the `Turbo` datatype on sparse vector configs.
+/// TurboQuant is a dense-vector rotation + 4-bit codebook scheme and has no
+/// meaningful interpretation on sparse data.
+/// `validator` unwraps `Option<Datatype>` before calling, so we receive `&Datatype`.
+fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> {
+    if matches!(datatype, Datatype::Turbo) {
+        let mut err = ValidationError::new("unsupported_sparse_datatype");
+        err.message = Some(Cow::Borrowed(
+            "sparse vectors do not support the `turbo` datatype",
+        ));
+        return Err(err);
+    }
+    Ok(())
+}
+
 /// Is considered empty if `None` or if diff has no field specified
 fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
     hnsw_config.is_none() || *hnsw_config == Some(HnswConfigDiff::default())
@@ -1396,6 +1414,7 @@ fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
 pub struct SparseVectorParams {
     /// Custom params for index. If none - values from collection configuration are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
     pub index: Option<SparseIndexParams>,
 
     /// Configures addition value modifications for sparse vectors.
@@ -1412,7 +1431,18 @@ impl SparseVectorParams {
 
 /// Configuration for sparse inverted index.
 #[derive(
-    Debug, Hash, Deserialize, Serialize, JsonSchema, Anonymize, Copy, Clone, PartialEq, Eq, Default,
+    Debug,
+    Hash,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Anonymize,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
 )]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexParams {
@@ -1436,6 +1466,7 @@ pub struct SparseIndexParams {
     ///   Quantization to fit byte range `[0, 255]` happens during indexing automatically, so the
     ///   actual vector data does not need to conform to this range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_sparse_datatype"))]
     pub datatype: Option<Datatype>,
 }
 

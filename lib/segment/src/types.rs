@@ -1610,6 +1610,8 @@ pub enum VectorStorageDatatype {
     Float16,
     // Unsigned 8-bit integer
     Uint8,
+    // TurboQuant 4-bit compressed storage
+    Turbo,
 }
 
 #[derive(

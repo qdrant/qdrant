@@ -195,6 +195,9 @@ impl CollectionParams {
                 let element_bytes = match params.datatype {
                     Some(Datatype::Float16) => 2,
                     Some(Datatype::Uint8) => 1,
+                    // Placeholder: Turbo is ~0.5 byte/dim + per-row scale.
+                    // Mirroring Uint8 (1 byte) until accurate accounting is implemented.
+                    Some(Datatype::Turbo) => 1,
                     Some(Datatype::Float32) | None => 4,
                 };
 
