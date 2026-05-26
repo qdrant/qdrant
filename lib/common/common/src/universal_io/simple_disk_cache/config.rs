@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use fs_err as fs;
 
@@ -19,8 +18,6 @@ pub struct DiskCacheConfig {
     local_dir: PathBuf,
 }
 
-static GLOBAL: OnceLock<DiskCacheConfig> = OnceLock::new();
-
 impl DiskCacheConfig {
     pub fn new(remote_dir: PathBuf, local_dir: PathBuf) -> Result<Self> {
         let remote_dir = fs::canonicalize(&remote_dir)
@@ -31,18 +28,6 @@ impl DiskCacheConfig {
             remote_dir,
             local_dir,
         })
-    }
-
-    /// Panics on construction failure or if called more than once.
-    pub fn initialize_global(remote_dir: PathBuf, local_dir: PathBuf) {
-        let cfg = Self::new(remote_dir, local_dir).expect("failed to initialise DiskCacheConfig");
-        GLOBAL
-            .set(cfg)
-            .expect("DiskCacheConfig is already initialized");
-    }
-
-    pub fn global() -> Option<&'static DiskCacheConfig> {
-        GLOBAL.get()
     }
 
     pub fn local_dir(&self) -> &Path {

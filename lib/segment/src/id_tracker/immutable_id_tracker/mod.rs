@@ -72,26 +72,28 @@ where
     }
 
     pub fn from_in_memory_tracker(
+        fs: &S::Fs,
         in_memory_tracker: InMemoryIdTracker,
         path: &Path,
     ) -> OperationResult<Self> {
         let (internal_to_version, mappings) = in_memory_tracker.into_internal();
         let compressed_mappings = CompressedPointMappings::from_mappings(mappings);
-        let id_tracker = Self::new(path, &internal_to_version, compressed_mappings)?;
+        let id_tracker = Self::new(fs, path, &internal_to_version, compressed_mappings)?;
 
         Ok(id_tracker)
     }
 
-    pub fn open(segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
+            fs,
             deleted_path(segment_path),
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let mut deleted_bitvec = BitVec::new();
@@ -100,14 +102,15 @@ where
         let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
+            fs,
             version_mapping_path(segment_path),
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let internal_to_version_slice = internal_to_version_file.read_whole()?;
@@ -129,6 +132,7 @@ where
     }
 
     pub fn new(
+        fs: &S::Fs,
         path: &Path,
         internal_to_version: &[SeqNumberType],
         mappings: CompressedPointMappings,
@@ -147,14 +151,15 @@ where
         )?;
 
         let mut deleted_storage = StoredBitSlice::open(
+            fs,
             &deleted_filepath,
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         // Set bits for deleted points from the mappings,
@@ -185,14 +190,15 @@ where
         }
 
         let mut internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
+            fs,
             &version_filepath,
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
         internal_to_version_file.write(0, internal_to_version)?;
 

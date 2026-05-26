@@ -14,7 +14,7 @@ use common::fs::atomic_save_json;
 use common::generic_consts::{AccessPattern, Random};
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::create_and_ensure_length;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -109,10 +109,10 @@ impl<V: Blob> Gridstore<V> {
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let bitmask = MmapBitmask::create(&base_path, config.clone())?;
+        let bitmask = MmapBitmask::create(&MmapFs, &base_path, config.clone())?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(TrackerMmap::new(&base_path, None)?)),
+            tracker: Arc::new(RwLock::new(TrackerMmap::new(&MmapFs, &base_path, None)?)),
             pages: Arc::new(RwLock::new(Pages::new(base_path.clone()))),
             base_path,
             config,
@@ -124,7 +124,7 @@ impl<V: Blob> Gridstore<V> {
         let new_page_id = storage.next_page_id();
         let path = page_path(&storage.base_path, new_page_id);
         create_and_ensure_length(&path, storage.config.page_size_bytes)?;
-        storage.pages.write().attach_page(&path)?;
+        storage.pages.write().attach_page(&MmapFs, &path)?;
 
         atomic_save_json(&config_path, &storage.config)
             .map_err(|err| GridstoreError::service_error(err.to_string()))?;
@@ -136,11 +136,11 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = reader::read_config_and_tracker(&base_path)?;
-        let bitmask = MmapBitmask::open(&base_path, config.clone())?;
+        let (config, tracker) = reader::read_config_and_tracker(&MmapFs, &base_path)?;
+        let bitmask = MmapBitmask::open(&MmapFs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let pages = Pages::open(&base_path)?;
+        let pages = Pages::open(&MmapFs, &base_path)?;
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {
@@ -166,9 +166,9 @@ impl<V: Blob> Gridstore<V> {
         let new_page_id = self.next_page_id();
         let path = page_path(&self.base_path, new_page_id);
         create_and_ensure_length(&path, self.config.page_size_bytes)?;
-        self.pages.write().attach_page(&path)?;
+        self.pages.write().attach_page(&MmapFs, &path)?;
 
-        self.bitmask.write().cover_new_page()?;
+        self.bitmask.write().cover_new_page(&MmapFs)?;
 
         Ok(new_page_id)
     }
@@ -487,7 +487,7 @@ impl<V> Gridstore<V> {
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
-            let old_pointers = guard.write_pending(pending_updates)?;
+            let old_pointers = guard.write_pending(&MmapFs, pending_updates)?;
             let flusher = guard.flusher();
             (old_pointers, flusher)
         };

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -15,6 +14,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     FileIndex, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
 };
 use futures::Stream;
 use storage::dispatcher::Dispatcher;
@@ -32,12 +32,15 @@ mod tests;
 const STREAM_CHUNK_SIZE: u64 = 1024 * 1024;
 
 pub struct StorageReadService<S: UniversalRead + Send + Sync + 'static = MmapFile> {
-    dispatcher: Arc<Dispatcher>,
-    _marker: PhantomData<S>,
+    pub(super) dispatcher: Arc<Dispatcher>,
+    pub(super) fs: Arc<S::Fs>,
 }
 
 #[async_trait]
-impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadService<S> {
+impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadService<S>
+where
+    S::Fs: Send + Sync + 'static,
+{
     // Check if a file exists via UniversalRead::open(), catch NotFound → false.
     async fn file_exists(
         &self,
@@ -55,7 +58,8 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
 
-        let exists = tokio::task::spawn_blocking(move || match S::exists(&path) {
+        let fs = Arc::clone(&self.fs);
+        let exists = tokio::task::spawn_blocking(move || match fs.exists(&path) {
             Ok(exists) => Ok(exists),
             Err(UniversalIoError::NotFound { .. }) => Ok(false),
             Err(UniversalIoError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -85,7 +89,8 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .await?;
         let prefix_path = Self::resolve_path(&base, &collections_root, &prefix_path)?;
 
-        let paths = tokio::task::spawn_blocking(move || S::list_files(&prefix_path))
+        let fs = Arc::clone(&self.fs);
+        let paths = tokio::task::spawn_blocking(move || fs.list_files(&prefix_path))
             .await
             .map_err(|e| Status::internal(format!("Task join error: {e}")))?
             .map_err(io_error_to_status)?;
@@ -131,10 +136,12 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
         };
+        let fs = Arc::clone(&self.fs);
         let length = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
             storage.len::<u8>().map_err(io_error_to_status)
         })
         .await
@@ -167,11 +174,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
         };
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
             let cow = storage
                 .read::<Random, u8>(ReadRange::new(byte_offset, length))
                 .map_err(io_error_to_status)?;
@@ -211,11 +220,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Sequential),
-            extra: Default::default(),
         };
         let range = ReadRange::new(byte_offset, length);
+        let fs = Arc::clone(&self.fs);
         let (storage, range) = tokio::task::spawn_blocking(move || {
-            let s = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let s = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
             let file_len = s.len::<u8>().map_err(io_error_to_status)?;
             validate_range(range, file_len).map_err(io_error_to_status)?;
             Ok::<_, Status>((s, range))
@@ -275,11 +286,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Sequential),
-            extra: Default::default(),
         };
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
             let cow = storage.read_whole::<u8>().map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
@@ -312,15 +325,17 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
         };
         let ranges = ranges
             .iter()
             .map(|r| ReadRange::new(r.byte_offset, r.length))
             .collect::<Vec<_>>();
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
             let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             storage
                 .read_batch::<Random, u8, _>(ranges.into_iter().enumerate(), |idx, chunk| {
@@ -358,7 +373,6 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
         };
 
         // Resolve all paths and deduplicate into a file index.
@@ -376,10 +390,11 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             reads_.push((file_index, ReadRange::new(entry.byte_offset, entry.length)));
         }
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
             let files = unique_paths
                 .iter()
-                .map(|p| S::open(p, open_options))
+                .map(|p| fs.open(p, open_options, Default::default()))
                 .collect::<common::universal_io::Result<Vec<_>>>()
                 .map_err(io_error_to_status)?;
 

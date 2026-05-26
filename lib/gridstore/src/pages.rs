@@ -7,7 +7,8 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalWrite,
+    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs, UniversalWrite,
 };
 use itertools::Either;
 
@@ -40,32 +41,31 @@ impl<S: UniversalRead> Pages<S> {
         }
     }
 
-    pub fn open(dir: &Path) -> Result<Self> {
+    pub fn open(fs: &S::Fs, dir: &Path) -> Result<Self> {
         let mut pages = Self::new(dir.to_path_buf());
 
-        let page_files: HashSet<_> = S::list_files(&dir.join("page_"))?.into_iter().collect();
+        let page_files: HashSet<_> = fs.list_files(&dir.join("page_"))?.into_iter().collect();
 
         for page_id in 0.. {
             let page_path = pages.page_path(page_id);
             if !page_files.contains(&page_path) {
                 break;
             }
-            pages.attach_page(&page_path)?;
+            pages.attach_page(fs, &page_path)?;
         }
 
         Ok(pages)
     }
 
-    pub fn attach_page(&mut self, path: &Path) -> Result<()> {
+    pub fn attach_page(&mut self, fs: &S::Fs, path: &Path) -> Result<()> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: true,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Random),
-            extra: Default::default(),
         };
 
-        let page = S::open(path, options)?;
+        let page = fs.open(path, options, Default::default())?;
         self.pages.push(page);
 
         Ok(())
@@ -361,7 +361,7 @@ impl<S: UniversalRead> Pages<S> {
     /// - Should only be called on read-only instances of the Pages.
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
-    pub fn live_reload(&mut self) -> Result<()> {
+    pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         let num_pages = self.pages.len();
         let next_page_id = num_pages as PageId;
 
@@ -369,15 +369,15 @@ impl<S: UniversalRead> Pages<S> {
             // Re-attach the last page, which should have the latest data.
             self.pages.pop();
             let page_path = self.page_path((num_pages - 1) as PageId);
-            self.attach_page(&page_path)?;
+            self.attach_page(fs, &page_path)?;
         }
 
         for page_id in next_page_id.. {
             let page_path = self.page_path(page_id);
-            if !S::exists(&page_path)? {
+            if !fs.exists(&page_path)? {
                 break;
             }
-            self.attach_page(&page_path)?;
+            self.attach_page(fs, &page_path)?;
         }
 
         Ok(())

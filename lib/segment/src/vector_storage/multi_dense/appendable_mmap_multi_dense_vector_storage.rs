@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalRead};
+use common::universal_io::{MmapFile, MmapFs, UniversalRead};
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -529,10 +529,13 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
-    let offsets = ChunkedVectors::open(&offsets_path, 1, madvise, Some(populate))?;
+    let vectors = ChunkedVectors::open(MmapFs, &vectors_path, dim, madvise, Some(populate))?;
+    let offsets = ChunkedVectors::open(MmapFs, &offsets_path, 1, madvise, Some(populate))?;
 
-    let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
+    let deleted = BitvecFlags::new(
+        MmapFs,
+        DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+    )?;
     let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapMultiDenseVectorStorage {

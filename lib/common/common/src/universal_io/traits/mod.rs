@@ -1,9 +1,11 @@
 mod file_ops;
+mod open_extra;
 mod pipeline;
 mod read;
 mod write;
 
-pub use file_ops::UniversalReadFileOps;
+pub use file_ops::{UniversalReadFileOps, UniversalReadFs};
+pub use open_extra::OpenExtra;
 pub use pipeline::{BorrowedReadPipeline, OwnedReadPipeline};
 pub use read::UniversalRead;
 pub use write::UniversalWrite;

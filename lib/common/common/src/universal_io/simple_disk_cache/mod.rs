@@ -1,5 +1,6 @@
 mod config;
 mod file;
+mod fs;
 
 mod local_state;
 pub mod pipeline;
@@ -10,6 +11,7 @@ use std::ops::Range;
 
 pub use config::DiskCacheConfig;
 pub use file::DiskCache;
+pub use fs::{DiskCacheFs, DiskCacheFsContext};
 
 /// Files are logically split into fixed-size blocks; the roaring bitmap
 /// tracks population on a per-block basis.

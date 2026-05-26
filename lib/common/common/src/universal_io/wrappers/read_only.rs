@@ -1,31 +1,91 @@
 use std::borrow::Cow;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use bytemuck::TransparentWrapper;
 
 use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps,
-    UserData,
+    Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
 #[repr(transparent)]
 pub struct ReadOnly<S>(S);
 
-impl<S> UniversalReadFileOps for ReadOnly<S>
-where
-    S: UniversalReadFileOps,
-{
-    #[inline]
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        S::list_files(prefix_path)
+/// Phantom filesystem handle whose `File` type is `ReadOnly<F::File>`.
+///
+/// Exists purely to satisfy the bidirectional
+/// `UniversalReadFs<File = Self>` constraint on `UniversalRead::Fs` for
+/// the `ReadOnly<S>` wrapper. It wraps an inner `F: UniversalReadFs`
+/// and asserts read-only semantics on `open`. In practice this Fs is
+/// rarely instantiated; callers use [`ReadOnly::open`] with the
+/// underlying `&S::Fs` directly.
+pub struct ReadOnlyFs<F>(F);
+
+impl<F: fmt::Debug> fmt::Debug for ReadOnlyFs<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ReadOnlyFs").field(&self.0).finish()
+    }
+}
+
+impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
+    type ContextConfig = ReadOnlyConfigContext<F::ContextConfig>;
+
+    fn from_context(ctx: Self::ContextConfig) -> Result<Self> {
+        Ok(ReadOnlyFs(F::from_context(ctx.0)?))
     }
 
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+        self.0.list_files(prefix_path)
+    }
+
+    fn exists(&self, path: &Path) -> Result<bool> {
+        self.0.exists(path)
+    }
+}
+
+impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
+    type File = ReadOnly<F::File>;
+    type OpenExtra = F::OpenExtra;
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: F::OpenExtra,
+    ) -> Result<Self::File> {
+        debug_assert!(!options.writeable);
+        Ok(ReadOnly(self.0.open(path, options, extra)?))
+    }
+}
+
+/// Construction context for [`ReadOnlyFs`], forwarding to the inner Fs's
+/// context.
+#[derive(Debug, Clone, Default)]
+pub struct ReadOnlyConfigContext<C>(pub C);
+
+impl<S> ReadOnly<S>
+where
+    S: UniversalRead,
+{
+    /// Open a read-only file through the given filesystem handle.
+    ///
+    /// Asserts the request is read-only (panics in debug builds on a writeable
+    /// `OpenOptions`); the wrapper itself does not enforce write protection
+    /// beyond not exposing `UniversalWrite`.
     #[inline]
-    fn exists(path: &Path) -> Result<bool> {
-        S::exists(path)
+    pub fn open(
+        fs: &S::Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+    ) -> Result<Self> {
+        debug_assert!(!options.writeable);
+        let io = fs.open(path, options, extra)?;
+        Ok(Self(io))
     }
 }
 
@@ -33,6 +93,8 @@ impl<S> UniversalRead for ReadOnly<S>
 where
     S: UniversalRead,
 {
+    type Fs = ReadOnlyFs<S::Fs>;
+
     type BorrowedReadPipeline<'file, T, U>
         = BorrowedWrappedReadPipeline<'file, Self, S::BorrowedReadPipeline<'file, T, U>>
     where
@@ -45,13 +107,6 @@ where
     where
         T: Item,
         U: UserData;
-
-    #[inline]
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        debug_assert!(!options.writeable);
-        let io = S::open(path, options)?;
-        Ok(Self(io))
-    }
 
     #[inline]
     fn reopen(&mut self) -> Result<()> {

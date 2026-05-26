@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use mutable_geo_index::InMemoryGeoMapIndex;
 
 pub use self::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
@@ -46,7 +46,8 @@ impl GeoMapIndex {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(mmap_index) = StoredGeoMapIndex::open(path, effective_is_on_disk, deleted_points)?
+        let Some(mmap_index) =
+            StoredGeoMapIndex::open(&MmapFs, path, effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };

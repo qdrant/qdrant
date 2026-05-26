@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalKind,
-    UniversalRead, UniversalReadFileOps, UniversalWrite, UserData,
+    UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -41,30 +41,21 @@ impl<S, T> TypedStorage<S, T> {
     }
 }
 
-impl<S, T> UniversalReadFileOps for TypedStorage<S, T>
-where
-    S: UniversalReadFileOps,
-{
-    #[inline]
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        S::list_files(prefix_path)
-    }
-
-    #[inline]
-    fn exists(path: &Path) -> Result<bool> {
-        S::exists(path)
-    }
-}
-
 #[expect(clippy::len_without_is_empty)]
 impl<S, T> TypedStorage<S, T>
 where
     S: UniversalRead,
     T: Item,
 {
+    /// Open through the provided filesystem handle and wrap the result.
     #[inline]
-    pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        S::open(path, options).map(|inner| TypedStorage {
+    pub fn open(
+        fs: &S::Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+    ) -> Result<Self> {
+        fs.open(path, options, extra).map(|inner| TypedStorage {
             inner,
             _phantom: PhantomData,
         })

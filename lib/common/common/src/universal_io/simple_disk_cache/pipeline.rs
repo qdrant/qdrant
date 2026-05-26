@@ -7,7 +7,8 @@ use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache, to_block_range};
 use crate::universal_io::traits::BorrowedReadPipeline;
 use crate::universal_io::{
-    self, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead, UserData,
+    self, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead,
+    UniversalReadFs, UserData,
 };
 
 struct RemoteMeta<File, U> {
@@ -96,6 +97,9 @@ unsafe fn read_local<R, T>(
 ) -> universal_io::Result<&[T]>
 where
     R: UniversalRead + Clone,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<u8, Range<u32>>: Send,
     T: bytemuck::Pod,
 {
     if range.length == 0 {
@@ -121,6 +125,9 @@ unsafe fn commit_and_read<'a, R, T>(
 ) -> universal_io::Result<&'a [T]>
 where
     R: UniversalRead + Clone,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<u8, Range<u32>>: Send,
     T: bytemuck::Pod,
 {
     let local = file.local_state()?;
@@ -166,6 +173,9 @@ where
 impl<'file, R, T, U> BorrowedReadPipeline<'file, T, U> for DiskCachePipeline<'file, R, T, U>
 where
     R: UniversalRead + Clone + 'file,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<u8, Range<u32>>: Send,
     T: Item,
 {
     type File = DiskCache<R>;
@@ -260,6 +270,9 @@ where
 impl<R, T, U> OwnedDiskCachePipeline<R, T, U>
 where
     R: UniversalRead + Clone,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<u8, Range<u32>>: Send,
     T: bytemuck::Pod,
     U: UserData,
 {
@@ -278,6 +291,9 @@ where
 impl<R, T, U> OwnedReadPipeline<T, U> for OwnedDiskCachePipeline<R, T, U>
 where
     R: UniversalRead + Clone,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<u8, Range<u32>>: Send,
     T: bytemuck::Pod,
 {
     type File = DiskCache<R>;

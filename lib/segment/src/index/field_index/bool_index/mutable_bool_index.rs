@@ -4,7 +4,7 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
 
 use super::read_ops::{self, BoolIndexRead};
@@ -30,7 +30,7 @@ pub struct MutableBoolIndex {
     storage: Storage<MmapFile>,
 }
 
-struct Storage<S> {
+struct Storage<S: common::universal_io::UniversalRead> {
     trues_flags: RoaringFlags<S>,
     falses_flags: RoaringFlags<S>,
 }
@@ -70,13 +70,13 @@ impl MutableBoolIndex {
 
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicStoredFlags::open(&trues_path, false)?;
-        let trues_flags = RoaringFlags::new(trues_slice)?;
+        let trues_slice = DynamicStoredFlags::open(&MmapFs, &trues_path, false)?;
+        let trues_flags = RoaringFlags::new(MmapFs, trues_slice)?;
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicStoredFlags::open(&falses_path, false)?;
-        let falses_flags = RoaringFlags::new(falses_slice)?;
+        let falses_slice = DynamicStoredFlags::open(&MmapFs, &falses_path, false)?;
+        let falses_flags = RoaringFlags::new(MmapFs, falses_slice)?;
 
         let trues_count = trues_flags.count_trues();
         let falses_count = falses_flags.count_trues();

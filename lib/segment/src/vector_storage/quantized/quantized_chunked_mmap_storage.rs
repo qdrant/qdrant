@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalKind};
+use common::universal_io::{MmapFile, MmapFs, UniversalKind};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -23,6 +23,7 @@ impl QuantizedChunkedMmapStorage {
             AdviceSetting::Global
         };
         let data = ChunkedVectors::open(
+            MmapFs,
             path,
             quantized_vector_size,
             advice,
@@ -127,6 +128,7 @@ impl QuantizedChunkedMmapStorageBuilder {
             AdviceSetting::Global
         };
         let data = ChunkedVectors::open(
+            MmapFs,
             path,
             quantized_vector_size,
             advice,

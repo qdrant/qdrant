@@ -3,7 +3,9 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
-use common::universal_io::{OpenOptions, ReadRange, UniversalIoError, UniversalRead};
+use common::universal_io::{
+    OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+};
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
 
@@ -42,9 +44,14 @@ struct HeadersBatch<'a> {
 
 impl<V: ZerocopyPostingValue, S: UniversalRead> UniversalPostings<V, S> {
     /// Open the postings file at `path` via the `S` storage backend.
-    pub fn open(path: impl Into<PathBuf>, options: OpenOptions) -> OperationResult<Self> {
+    pub fn open(
+        fs: &S::Fs,
+        path: impl Into<PathBuf>,
+        options: OpenOptions,
+        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+    ) -> OperationResult<Self> {
         let path = path.into();
-        let storage = S::open(&path, options)?;
+        let storage = fs.open(&path, options, extra)?;
 
         let header = storage.read::<Sequential, PostingsHeader>(ReadRange::one(0))?[0];
 
