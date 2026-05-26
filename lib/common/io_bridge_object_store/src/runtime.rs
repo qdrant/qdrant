@@ -21,9 +21,7 @@ impl<T> BridgeResponse<T> {
     }
 }
 
-pub(crate) struct BridgeRuntimeInner {
-    runtime: tokio::runtime::Runtime,
-}
+pub(crate) struct BridgeRuntimeInner(tokio::runtime::Runtime);
 
 /// Cheap-to-clone owner of a dedicated Tokio runtime. Construct one explicitly
 /// with [`Self::new`] for an isolated execution domain, or call [`Self::global`]
@@ -57,7 +55,7 @@ impl BridgeRuntime {
                 description: format!("build tokio runtime: {err}"),
             })?;
 
-        Ok(Self(Arc::new(BridgeRuntimeInner { runtime })))
+        Ok(Self(Arc::new(BridgeRuntimeInner(runtime))))
     }
 
     pub fn global() -> Self {
@@ -68,12 +66,12 @@ impl BridgeRuntime {
     /// the reactor/executor. Used for the synchronous single-read and metadata
     /// paths. Must not be called from within the runtime's own worker threads.
     pub(crate) fn block_on<F: Future>(&self, fut: F) -> F::Output {
-        self.0.runtime.block_on(fut)
+        self.0.0.block_on(fut)
     }
 
     /// Runtime handle for spawning detached tasks (the batched-read path).
     pub(crate) fn handle(&self) -> &tokio::runtime::Handle {
-        self.0.runtime.handle()
+        self.0.0.handle()
     }
 }
 

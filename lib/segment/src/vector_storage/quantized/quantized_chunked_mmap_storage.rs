@@ -81,6 +81,9 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
             UniversalKind::DiskCache => false,
             UniversalKind::SimpleDiskCache | // FIXME: only `true` if it was entirely prefilled
             UniversalKind::Mmap => true,
+            UniversalKind::S3 |
+            UniversalKind::Gcs |
+            UniversalKind::Azure => todo!(),
         }
     }
 

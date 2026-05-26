@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    Item, OpenOptions, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
-    UniversalReadFileOps, UserData,
+    Item, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UserData,
 };
 use tokio::io::AsyncWriteExt;
 
+use crate::fs::BlobFs;
 use crate::pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
@@ -67,25 +67,9 @@ impl<A: AsyncRead> BlobFile<A> {
     }
 }
 
-impl<A: AsyncRead> UniversalReadFileOps for BlobFile<A> {
-    fn list_files(_prefix_path: &Path) -> Result<Vec<std::path::PathBuf>> {
-        Err(UniversalIoError::S3Config {
-            description: "BlobFile does not expose static list_files via UniversalReadFileOps; \
-                          call A::list_files(prefix) on the backend handle"
-                .into(),
-        })
-    }
+impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
+    type Fs = BlobFs<A>;
 
-    fn exists(_path: &Path) -> Result<bool> {
-        Err(UniversalIoError::S3Config {
-            description: "BlobFile does not expose static exists via UniversalReadFileOps; \
-                          call A::exists(path) on the backend handle"
-                .into(),
-        })
-    }
-}
-
-impl<A: AsyncRead> UniversalRead for BlobFile<A> {
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedBlobPipeline<'a, A, T, U>
     where
@@ -97,14 +81,6 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
     where
         T: Item,
         U: UserData;
-
-    fn open(_path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self> {
-        Err(UniversalIoError::S3Config {
-            description: "BlobFile cannot be opened through UniversalRead::open; \
-                          call BlobFile::open(config, runtime, path) instead"
-                .into(),
-        })
-    }
 
     fn reopen(&mut self) -> Result<()> {
         Ok(())
@@ -166,6 +142,7 @@ mod tests {
     use std::ops::Range;
 
     use bytes::Bytes;
+    use common::universal_io::{OpenOptions, UniversalReadFs};
     use futures::stream::{BoxStream, StreamExt};
 
     use super::*;
@@ -224,13 +201,15 @@ mod tests {
     }
 
     #[test]
-    fn open_via_universal_read_trait_errors() {
-        let result =
-            <BlobFile<MockSource> as UniversalRead>::open("k", OpenOptions::new_for_test());
-        assert!(matches!(
-            result.unwrap_err(),
-            UniversalIoError::S3Config { .. }
-        ));
+    fn blob_fs_opens_readable_file() {
+        let fs = BlobFs::new(MockSource::new(b"hello world"), BridgeRuntime::global());
+        let file = fs
+            .open("obj", OpenOptions::new_for_test(), ())
+            .expect("open");
+        let cow = file
+            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
+            .expect("read");
+        assert_eq!(&cow[..], b"hello world");
     }
 
     #[test]

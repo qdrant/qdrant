@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use common::generic_consts::AccessPattern;
-use common::universal_io::{Item, OwnedReadPipeline, ReadRange, Result, UserData};
+use common::generic_consts::{AccessPattern, Sequential};
+use common::universal_io::{Item, OwnedReadPipeline, ReadRange, Result, UniversalRead, UserData};
 
 use super::buffer::read_into_buffer;
 use super::inner::PipelineInner;
@@ -21,7 +21,7 @@ pub struct OwnedBlobPipeline<A: AsyncRead, T, U> {
 
 impl<A, T, U> OwnedReadPipeline<T, U> for OwnedBlobPipeline<A, T, U>
 where
-    A: AsyncRead,
+    A: AsyncRead + Clone,
     T: Item,
     U: UserData,
 {
@@ -42,6 +42,11 @@ where
     fn schedule<P: AccessPattern>(&mut self, user_data: U, range: ReadRange) -> Result<()> {
         let future = read_into_buffer::<A, T>(&self.file, range);
         self.inner.schedule(&self.file.runtime, user_data, future)
+    }
+
+    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
+        let length = self.file.len::<T>()?;
+        self.schedule::<Sequential>(user_data, ReadRange::new(0, length))
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
