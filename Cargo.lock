@@ -3724,6 +3724,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "io_bridge_object_store"
+version = "0.0.0"
+dependencies = [
+ "ahash",
+ "bytemuck",
+ "bytes",
+ "common",
+ "futures",
+ "log",
+ "num_cpus",
+ "object_store",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4681,6 +4698,7 @@ dependencies = [
  "futures-util",
  "http 1.4.1",
  "http-body-util",
+ "httparse",
  "humantime",
  "hyper",
  "itertools 0.14.0",
@@ -4691,6 +4709,7 @@ dependencies = [
  "rand 0.10.1",
  "reqwest 0.12.28",
  "ring",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_urlencoded",

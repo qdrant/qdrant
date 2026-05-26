@@ -12,6 +12,9 @@ pub enum UniversalKind {
     IoUring,
     DiskCache,
     SimpleDiskCache,
+    S3,
+    Gcs,
+    Azure,
 }
 
 #[derive(Copy, Clone, Debug, Default)]

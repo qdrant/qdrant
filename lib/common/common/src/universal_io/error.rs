@@ -39,6 +39,15 @@ pub enum UniversalIoError {
 
     #[error("Request queue is full")]
     QueueIsFull,
+
+    #[error("S3 object store error: {0}")]
+    S3(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("S3 configuration missing or invalid: {description}")]
+    S3Config { description: String },
+
+    #[error("Background read task panicked: {0}")]
+    TaskPanicked(String),
 }
 
 impl UniversalIoError {
@@ -53,6 +62,13 @@ impl UniversalIoError {
         Self::Uninitialized {
             description: description.into(),
         }
+    }
+
+    pub fn s3<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::S3(Box::new(err))
     }
 }
 
@@ -71,5 +87,27 @@ impl From<bytemuck::PodCastError> for UniversalIoError {
 impl<Src, Dst: ?Sized> From<zerocopy::SizeError<Src, Dst>> for UniversalIoError {
     fn from(err: zerocopy::SizeError<Src, Dst>) -> Self {
         Self::ZerocopySize(format!("{err:?}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::universal_io::UniversalKind;
+
+    #[test]
+    fn s3_kind_variant_exists() {
+        let k = UniversalKind::S3;
+        assert_ne!(k, UniversalKind::Mmap);
+        assert_ne!(k, UniversalKind::IoUring);
+        assert_ne!(k, UniversalKind::DiskCache);
+    }
+
+    #[test]
+    fn s3_error_variants_format() {
+        let e = UniversalIoError::S3Config {
+            description: "missing bucket".into(),
+        };
+        assert!(e.to_string().contains("missing bucket"));
     }
 }
