@@ -307,7 +307,7 @@ impl<S: UniversalRead> Tracker<S> {
     /// - Partial writes are possible, but ignored. Header is a source of truth.
     ///
     /// Returns `true` if there are new changes, `false` if the tracker is already up to date.
-    pub fn live_reload(&mut self, fs: &S::Fs) -> Result<bool> {
+    pub fn live_reload(&mut self) -> Result<bool> {
         let new_header = Self::read_header(&self.storage)?;
 
         if new_header.next_pointer_offset < self.next_pointer_offset {
@@ -321,7 +321,7 @@ impl<S: UniversalRead> Tracker<S> {
         } else {
             // reopen storage to make new data visible
             // For some storages it should be a no-op.
-            self.storage = Self::open_storage(fs, &self.path)?;
+            self.storage.reopen()?;
 
             // Update in-memory state to reflect new pointers
             self.header = new_header;
@@ -499,7 +499,6 @@ where
     #[must_use = "The old pointers need to be freed in the bitmask"]
     pub fn write_pending(
         &mut self,
-        fs: &S::Fs,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> Result<Vec<ValuePointer>> {
         let mut old_pointers = Vec::new();
@@ -513,10 +512,10 @@ where
                         old_pointers.push(old_pointer);
                     }
 
-                    self.persist_pointer(fs, point_offset, Some(new_pointer))?;
+                    self.persist_pointer(point_offset, Some(new_pointer))?;
                 }
                 // Write to empty the pointer
-                None => self.persist_pointer(fs, point_offset, None)?,
+                None => self.persist_pointer(point_offset, None)?,
             }
 
             // Mark all old pointers for removal to free its blocks
@@ -549,9 +548,9 @@ where
     }
 
     #[cfg(test)]
-    pub fn write_pending_and_flush_internal(&mut self, fs: &S::Fs) -> Result<Vec<ValuePointer>> {
+    pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
-        let res = self.write_pending(fs, pending_updates)?;
+        let res = self.write_pending(pending_updates)?;
         self.storage.flusher()()?;
         Ok(res)
     }
@@ -566,7 +565,6 @@ where
     /// The file is resized if necessary
     fn persist_pointer(
         &mut self,
-        fs: &S::Fs,
         point_offset: PointOffset,
         pointer: Option<ValuePointer>,
     ) -> Result<()> {
@@ -584,7 +582,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage = fs.open(&self.path, tracker_open_options(), Default::default())?;
+            self.storage.reopen()?;
         }
 
         let pointer = OptionalPointer::from(pointer);
@@ -672,14 +670,14 @@ mod tests {
         assert!(tracker.is_empty());
         tracker.set(0, ValuePointer::new(1, 1, 1));
 
-        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
+        tracker.write_pending_and_flush_internal().unwrap();
 
         assert!(!tracker.is_empty());
         assert_eq!(tracker.mapping_len().unwrap(), 1);
 
         tracker.set(100, ValuePointer::new(2, 2, 2));
 
-        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
+        tracker.write_pending_and_flush_internal().unwrap();
 
         assert_eq!(tracker.pointer_count(), 101);
         assert_eq!(tracker.mapping_len().unwrap(), 2);
@@ -698,7 +696,7 @@ mod tests {
         tracker.set(2, ValuePointer::new(3, 3, 3));
         tracker.set(10, ValuePointer::new(10, 10, 10));
 
-        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
+        tracker.write_pending_and_flush_internal().unwrap();
         assert!(!tracker.is_empty());
         assert_eq!(tracker.mapping_len().unwrap(), 4);
         assert_eq!(tracker.pointer_count(), 11); // accounts for empty slots
@@ -724,7 +722,7 @@ mod tests {
 
         tracker.unset(1).unwrap();
 
-        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
+        tracker.write_pending_and_flush_internal().unwrap();
 
         // the value has been cleared but the entry is still there
         assert_eq!(tracker.get_raw(1).unwrap(), None);
@@ -737,7 +735,7 @@ mod tests {
         tracker.set(0, ValuePointer::new(10, 10, 10));
         tracker.set(2, ValuePointer::new(30, 30, 30));
 
-        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
+        tracker.write_pending_and_flush_internal().unwrap();
 
         assert_eq!(tracker.get(0).unwrap(), Some(ValuePointer::new(10, 10, 10)));
         assert_eq!(tracker.get(2).unwrap(), Some(ValuePointer::new(30, 30, 30)));
@@ -761,7 +759,7 @@ mod tests {
                 tracker.set(i as u32, ValuePointer::new(i as u32, i as u32, i as u32));
             }
         }
-        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
+        tracker.write_pending_and_flush_internal().unwrap();
 
         assert_eq!(tracker.mapping_len().unwrap(), value_count / 2);
         assert_eq!(tracker.pointer_count(), value_count as u32 - 1);
@@ -807,7 +805,7 @@ mod tests {
             tracker.set(i, ValuePointer::new(i, i, i));
         }
 
-        tracker.write_pending_and_flush_internal(&MmapFs).unwrap();
+        tracker.write_pending_and_flush_internal().unwrap();
 
         assert_eq!(tracker.mapping_len().unwrap(), 100_000);
         assert!(tracker.mmap_file_size().unwrap() > actual_tracker_size);

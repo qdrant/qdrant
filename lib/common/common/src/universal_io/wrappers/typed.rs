@@ -61,6 +61,10 @@ where
         })
     }
 
+    pub fn reopen(&mut self) -> Result<()> {
+        self.inner.reopen()
+    }
+
     #[inline]
     pub fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         self.inner.read::<P, T>(range)
