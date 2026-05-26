@@ -139,7 +139,7 @@ where
             return Ok(state);
         }
 
-        self.init_local_state(true)?;
+        self.init_local_state(true, None)?;
 
         Ok(self.local.get().expect("just initialized"))
     }
@@ -148,7 +148,7 @@ where
     ///
     /// If `allow_from_scratch` is false, this method will avoid initializing if `InitSource::FromScratch` is set.
     /// This is helpful for [`Self::reopen`] scenario where we can avoid work if no reads have taken place.
-    fn init_local_state(&self, allow_from_scratch: bool) -> Result<()> {
+    pub(super) fn init_local_state(&self, allow_from_scratch: bool, known_length: Option<u64>) -> Result<()> {
         // Only the first thread is able to initialize.
         let mut guard = self.init_lock.lock();
         if self.local.get().is_some() {
@@ -160,7 +160,7 @@ where
                 if !allow_from_scratch {
                     return Ok(());
                 }
-                self.new_local_state_from_scratch()?
+                self.new_local_state_from_scratch(known_length)?
             }
             InitSource::FromPrefiller(mut pipe) => {
                 match pipe.wait()? {
@@ -184,7 +184,7 @@ where
                             return Ok(());
                         }
                         // init from scratch
-                        self.new_local_state_from_scratch()?
+                        self.new_local_state_from_scratch(known_length)?
                     }
                 }
             }
@@ -197,8 +197,11 @@ where
         Ok(())
     }
 
-    fn new_local_state_from_scratch(&self) -> Result<LocalState> {
-        let len = self.remote()?.len::<u8>()?;
+    fn new_local_state_from_scratch(&self, known_length: Option<u64>) -> Result<LocalState> {
+        let len = match known_length {
+            Some(len) => len,
+            None => self.remote()?.len::<u8>()?
+        };
         LocalState::new(&self.local_path, len, self.open_options)
     }
 
@@ -248,7 +251,7 @@ where
 
     fn reopen(&mut self) -> Result<()> {
         // Wait for InitSource::Prefill, if set.
-        self.init_local_state(false)?;
+        self.init_local_state(false, None)?;
 
         if self.local.get().is_none() {
             return Ok(());

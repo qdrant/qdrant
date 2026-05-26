@@ -12,9 +12,16 @@ use crate::universal_io::{
 
 struct RemoteMeta<File, U> {
     file: File,
-    blocks_range: Range<u32>,
-    read_range: Range<u64>,
+    scheduled_read: ScheduledRead,
     user_data: U,
+}
+
+enum ScheduledRead {
+    Range {
+        blocks_range: Range<u32>,
+        read_range: Range<u64>,
+    },
+    Whole,
 }
 
 /// Outcome of [`plan_schedule`]: either the requested range is already available
@@ -112,8 +119,7 @@ where
 unsafe fn commit_and_read<'a, R>(
     file: &'a DiskCache<R>,
     bytes: &[u8],
-    blocks_range: Range<u32>,
-    read_range: Range<u64>,
+    scheduled_read: ScheduledRead,
 ) -> universal_io::Result<&'a [u8]>
 where
     R: UniversalRead + Clone,
@@ -121,7 +127,28 @@ where
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
     R::OwnedReadPipeline<Range<u32>>: Send,
 {
-    let local = file.local_state()?;
+    let mut known_len = None;
+    let (blocks_range, read_range) = match scheduled_read {
+        ScheduledRead::Range {
+            blocks_range,
+            read_range,
+        } => (blocks_range, read_range),
+        ScheduledRead::Whole => {
+            // derive whole ranges from the actual bytes returned.
+            let byte_len = bytes.len() as u64;
+            known_len = Some(byte_len);
+            let blocks_range = to_block_range(0..byte_len);
+            (blocks_range, 0..byte_len)
+        }
+    };
+
+    let local = if let Some(state) = file.local.get() {
+        state
+    } else {
+        file.init_local_state(true, known_len)?;
+        file.local.get().expect("just initialized")
+    };
+
     unsafe {
         local.write_mmap_bytes(bytes, blocks_range);
         local.read_mmap_bytes::<Random>(read_range)
@@ -206,8 +233,10 @@ where
             } => {
                 let remote_meta = RemoteMeta {
                     file,
-                    blocks_range,
-                    read_range: range,
+                    scheduled_read: ScheduledRead::Range {
+                        blocks_range,
+                        read_range: range,
+                    },
                     user_data,
                 };
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
@@ -236,13 +265,12 @@ where
 
         let RemoteMeta {
             file,
-            blocks_range,
-            read_range,
+            scheduled_read,
             user_data,
         } = remote_meta;
 
         // SAFETY: `blocks_range` and `read_range` match what was scheduled.
-        let items = unsafe { commit_and_read::<R>(file, &bytes, blocks_range, read_range)? };
+        let items = unsafe { commit_and_read::<R>(file, &bytes, scheduled_read)? };
         Ok(Some((user_data, ACow::Borrowed(items))))
     }
 }
@@ -325,8 +353,10 @@ where
             } => {
                 let remote_meta = RemoteMeta {
                     file: (),
-                    blocks_range,
-                    read_range: range,
+                    scheduled_read: ScheduledRead::Range {
+                        blocks_range,
+                        read_range: range,
+                    },
                     user_data,
                 };
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
@@ -337,9 +367,24 @@ where
     }
 
     fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        // todo: check if we have the entire file already local, if not, call schedule_whole on self.remote_pipeline
-        let length = self.file.len::<u8>()?;
-        self.schedule::<Sequential>(user_data, 0..length, 1)
+        // If local has already been initialized, use the mmap length
+        if let Some(local) = self.file.local.get() {
+            let length = local.mmap().len::<u8>()?;
+            return self.schedule::<Sequential>(
+                user_data,
+                0..length,
+                1
+            );
+        }
+
+        // Use schedule_whole on the remote pipeline directly
+        let remote_meta = RemoteMeta {
+            file: (),
+            scheduled_read: ScheduledRead::Whole,
+            user_data,
+        };
+        let remote_pipeline = self.get_or_init_remote_pipeline()?;
+        remote_pipeline.schedule_whole(remote_meta)
     }
 
     fn wait(&mut self) -> universal_io::Result<Option<(U, ACow<'_>)>> {
@@ -358,12 +403,13 @@ where
 
         let RemoteMeta {
             file: _,
-            blocks_range,
-            read_range,
+            scheduled_read,
             user_data,
         } = remote_meta;
 
-        let items = unsafe { commit_and_read::<R>(&self.file, &bytes, blocks_range, read_range)? };
+        let items =
+            // TODO: if schedule_whole is used other than during `open`, `commit_and_read` will call `remote.len()` regardless.
+            unsafe { commit_and_read::<R>(&self.file, &bytes, scheduled_read)? };
         Ok(Some((user_data, ACow::Borrowed(items))))
     }
 }
