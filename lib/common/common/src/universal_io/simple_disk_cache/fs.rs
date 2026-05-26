@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, InitSource};
 use crate::mmap::AdviceSetting;
@@ -87,10 +88,7 @@ where
 
 impl<R> UniversalReadFs for DiskCacheFs<R>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
+    R: DiskCacheRemote,
 {
     type File = DiskCache<R>;
     type OpenExtra = <R::Fs as UniversalReadFs>::OpenExtra;

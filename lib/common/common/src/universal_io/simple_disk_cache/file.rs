@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::io::{self, ErrorKind};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -12,7 +13,7 @@ use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
-use crate::universal_io::simple_disk_cache::to_block_range;
+use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
 use crate::universal_io::{
     BorrowedReadPipeline, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result,
     UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs, UserData,
@@ -78,10 +79,7 @@ pub(super) enum InitSource<R: UniversalRead> {
 
 impl<R> DiskCache<R>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
+    R: DiskCacheRemote,
 {
     pub(super) fn new(
         remote_fs: R::Fs,
@@ -229,10 +227,7 @@ where
 
 impl<R> UniversalRead for DiskCache<R>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
+    R: DiskCacheRemote,
 {
     type Fs = DiskCacheFs<R>;
 

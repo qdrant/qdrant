@@ -13,6 +13,26 @@ pub use config::DiskCacheConfig;
 pub use file::DiskCache;
 pub use fs::{DiskCacheFs, DiskCacheFsContext};
 
+use crate::universal_io::{UniversalRead, UniversalReadFs};
+
+/// Trait bundle for remote backends that can be cached by [`DiskCache`].
+pub trait DiskCacheRemote:
+    UniversalRead<
+        Fs: Clone + Send + Sync + UniversalReadFs<OpenExtra: Clone + Send + Sync>,
+        OwnedReadPipeline<()>: Send,
+    > + Clone
+{
+}
+
+impl<R> DiskCacheRemote for R
+where
+    R: UniversalRead + Clone,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<()>: Send,
+{
+}
+
 /// Files are logically split into fixed-size blocks; the roaring bitmap
 /// tracks population on a per-block basis.
 ///

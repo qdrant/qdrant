@@ -4,10 +4,12 @@ use std::ops::Range;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
-use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache, to_block_range};
+use crate::universal_io::simple_disk_cache::{
+    BLOCK_SIZE, DiskCache, DiskCacheRemote, to_block_range,
+};
 use crate::universal_io::traits::BorrowedReadPipeline;
 use crate::universal_io::{
-    self, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
+    self, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UserData,
 };
 
 struct RemoteMeta<File, U> {
@@ -96,11 +98,7 @@ unsafe fn read_local<R>(
     is_sequential: bool,
 ) -> universal_io::Result<&[u8]>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
-    T: bytemuck::Pod,
+    R: DiskCacheRemote,
 {
     if range.is_empty() {
         return Ok(&[]);
@@ -123,11 +121,7 @@ unsafe fn commit_and_read<'a, R>(
     scheduled_read: ScheduledRead,
 ) -> universal_io::Result<&'a [u8]>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
-    T: bytemuck::Pod,
+    R: DiskCacheRemote,
 {
     let mut known_len = None;
     let (blocks_range, read_range) = match scheduled_read {
@@ -190,11 +184,7 @@ where
 
 impl<'file, R, U> BorrowedReadPipeline<'file, U> for DiskCachePipeline<'file, R, U>
 where
-    R: UniversalRead + Clone + 'file,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
-    T: Item,
+    R: DiskCacheRemote + 'file,
 {
     type File = DiskCache<R>;
 
@@ -292,11 +282,7 @@ where
 
 impl<R, U> OwnedDiskCachePipeline<R, U>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
-    T: bytemuck::Pod,
+    R: DiskCacheRemote,
     U: UserData,
 {
     fn get_or_init_remote_pipeline(
@@ -313,11 +299,7 @@ where
 
 impl<R, U> OwnedReadPipeline<U> for OwnedDiskCachePipeline<R, U>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
-    T: bytemuck::Pod,
+    R: DiskCacheRemote,
 {
     type File = DiskCache<R>;
 

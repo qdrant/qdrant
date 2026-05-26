@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use fs_err as fs;
 
-use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext};
+use super::{
+    BLOCK_SIZE, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
+};
 use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
@@ -51,11 +53,8 @@ impl Scenario {
 
     fn open<R>(&self, prefill: bool) -> DiskCache<R>
     where
-        R: UniversalRead + Clone,
-        R::Fs: Clone + Send + Sync,
+        R: DiskCacheRemote,
         <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
-        <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-        R::OwnedReadPipeline<()>: Send,
     {
         let populate = if prefill {
             Populate::PreferBackground
