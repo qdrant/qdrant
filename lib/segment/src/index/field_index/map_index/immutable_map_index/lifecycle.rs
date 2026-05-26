@@ -12,7 +12,7 @@ use super::super::read_ops::MapIndexRead;
 use super::super::universal_map_index::UniversalMapIndex;
 use super::{ContainerSegment, ImmutableMapIndex, Storage};
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
 impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
@@ -21,6 +21,15 @@ where
 {
     /// Open and load immutable map index from mmap storage
     pub(in super::super) fn open_mmap(index: UniversalMapIndex<N>) -> OperationResult<Self> {
+        Self::try_open_mmap(Box::new(index)).map_err(|(_, err)| err)
+    }
+
+    /// Like [`Self::open_mmap`] but returns the (unconsumed) mmap alongside
+    /// the error on failure, so an in-place swap can restore it instead of
+    /// aborting.
+    pub(in super::super) fn try_open_mmap(
+        index: Box<UniversalMapIndex<N>>,
+    ) -> Result<Self, (Box<UniversalMapIndex<N>>, OperationError)> {
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 
         let mut indexed_points = 0;
@@ -36,7 +45,7 @@ where
         // `remove_idx_from_value_list`: `value_to_points` only ever contains
         // entries with `count > 0`.
         let mut value_to_points_container = Vec::with_capacity(index.get_values_count());
-        index.for_each_value_map(&hw_counter, |value, ids| {
+        let scan = index.for_each_value_map(&hw_counter, |value, ids| {
             let range_start = value_to_points_container.len() as u32;
             for idx in ids {
                 if point_to_values.len() <= idx as usize {
@@ -63,7 +72,10 @@ where
                 );
             }
             Ok(())
-        })?;
+        });
+        if let Err(err) = scan {
+            return Err((index, err));
+        }
         let point_to_values = ImmutablePointToValues::new(point_to_values);
         value_to_points.shrink_to_fit();
 
@@ -96,7 +108,7 @@ where
             point_to_values,
             indexed_points,
             values_count,
-            storage: Storage::Mmap(Box::new(index)),
+            storage: Storage::Mmap(index),
             cached_ram_usage_bytes: 0,
         };
         result.cached_ram_usage_bytes = result.compute_ram_usage_bytes();

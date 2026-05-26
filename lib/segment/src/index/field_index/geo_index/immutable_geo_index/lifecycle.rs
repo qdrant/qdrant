@@ -18,23 +18,31 @@ use crate::types::GeoPoint;
 impl ImmutableGeoMapIndex {
     /// Open and load immutable geo index from mmap storage
     pub fn open_mmap(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
-        let counts_per_hash = index
-            .storage
-            .counts_per_hash
-            .read_whole()?
-            .iter()
-            .copied()
-            .map(Counts::from)
-            .collect();
+        Self::try_open_mmap(Box::new(index)).map_err(|(_, err)| err)
+    }
+
+    /// Like [`Self::open_mmap`] but returns the (unconsumed) mmap alongside
+    /// the error on failure, so an in-place swap can restore it instead of
+    /// aborting.
+    pub fn try_open_mmap(
+        index: Box<StoredGeoMapIndex<MmapFile>>,
+    ) -> Result<Self, (Box<StoredGeoMapIndex<MmapFile>>, OperationError)> {
+        let counts_per_hash = match index.storage.counts_per_hash.read_whole() {
+            Ok(raw) => raw.iter().copied().map(Counts::from).collect(),
+            Err(err) => return Err((index, err.into())),
+        };
 
         // Build flat parallel arrays from on-disk points_map + points_map_ids
-        let points_map_entries = index.storage.points_map.read_whole()?;
+        let points_map_entries = match index.storage.points_map.read_whole() {
+            Ok(entries) => entries,
+            Err(err) => return Err((index, err.into())),
+        };
         let num_entries = points_map_entries.len();
         let mut points_map_hashes = Vec::with_capacity(num_entries);
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
         let mut points_map_ids = Vec::new();
 
-        index.storage.points_map_ids.read_batch::<Random, _>(
+        let scan = index.storage.points_map_ids.read_batch::<Random, _>(
             points_map_entries
                 .iter()
                 .map(|item| ReadRange {
@@ -57,7 +65,10 @@ impl ImmutableGeoMapIndex {
                 }
                 Ok(())
             },
-        )?;
+        );
+        if let Err(err) = scan {
+            return Err((index, err.into()));
+        }
         points_map_offsets.push(points_map_ids.len() as u32);
         drop(points_map_entries);
 
@@ -65,35 +76,37 @@ impl ImmutableGeoMapIndex {
         // Track deleted points to adjust point and value counts after loading
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
             Vec::with_capacity(index.deleted_count);
-        let point_to_values = ImmutablePointToValues::new(
-            index
-                .storage
-                .point_to_values
-                .iter()
-                .map(|id_values| {
-                    let (id, values) = id_values?;
-                    let is_deleted = index
-                        .storage
-                        .deleted
-                        .get_bit(id as usize)
-                        .unwrap_or_default();
-                    let values = match (is_deleted, values) {
-                        (false, Some(values)) => values.map(Cow::into_owned).collect(),
-                        (false, None) => vec![],
-                        (true, Some(values)) => {
-                            let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
-                            deleted_points.push((id, geo_points));
-                            vec![]
-                        }
-                        (true, None) => {
-                            deleted_points.push((id, vec![]));
-                            vec![]
-                        }
-                    };
-                    Ok(values)
-                })
-                .collect::<OperationResult<_>>()?,
-        );
+        let collected = index
+            .storage
+            .point_to_values
+            .iter()
+            .map(|id_values| {
+                let (id, values) = id_values?;
+                let is_deleted = index
+                    .storage
+                    .deleted
+                    .get_bit(id as usize)
+                    .unwrap_or_default();
+                let values = match (is_deleted, values) {
+                    (false, Some(values)) => values.map(Cow::into_owned).collect(),
+                    (false, None) => vec![],
+                    (true, Some(values)) => {
+                        let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
+                        deleted_points.push((id, geo_points));
+                        vec![]
+                    }
+                    (true, None) => {
+                        deleted_points.push((id, vec![]));
+                        vec![]
+                    }
+                };
+                Ok(values)
+            })
+            .collect();
+        let point_to_values = match collected {
+            Ok(values) => ImmutablePointToValues::new(values),
+            Err(err) => return Err((index, err)),
+        };
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
@@ -111,7 +124,7 @@ impl ImmutableGeoMapIndex {
             points_count: index.points_count(),
             points_values_count: index.points_values_count(),
             max_values_per_point: index.max_values_per_point(),
-            storage: Box::new(index),
+            storage: index,
             cached_ram_usage_bytes: 0,
         };
 
@@ -123,7 +136,12 @@ impl ImmutableGeoMapIndex {
 
             let mut removed_geo_hashes = Vec::with_capacity(removed_geo_points.len());
             for geo_point in removed_geo_points {
-                removed_geo_hashes.push(encode_max_precision(geo_point.lon.0, geo_point.lat.0)?);
+                match encode_max_precision(geo_point.lon.0, geo_point.lat.0) {
+                    Ok(hash) => removed_geo_hashes.push(hash),
+                    // Derived structures only; the mmap files are intact.
+                    // Hand the backing mmap back so the swap can restore it.
+                    Err(err) => return Err((index.storage, err.into())),
+                }
             }
             for &removed_geo_hash in &removed_geo_hashes {
                 index.decrement_hash_value_counts(removed_geo_hash);

@@ -101,12 +101,11 @@ impl GeoMapIndex {
     ///
     /// Failure modes:
     /// - `Immutable → Storage` is infallible.
-    /// - `Storage → Immutable` calls [`ImmutableGeoMapIndex::open_mmap`],
-    ///   which consumes the mmap and may fail on file corruption. Because
-    ///   the mmap is consumed before the failure is observed, recovery in
-    ///   place is impossible; this path aborts the process. In practice
-    ///   such failures only occur when the underlying files are corrupt,
-    ///   which would also poison the rest of the segment.
+    /// - `Storage → Immutable` calls [`ImmutableGeoMapIndex::try_open_mmap`],
+    ///   which rebuilds derived structures by scanning the mmap and may
+    ///   fail on file corruption. On failure the mmap is handed back and
+    ///   restored into the `Storage` variant, and the error is returned to
+    ///   the caller (which rolls back any already-swapped siblings).
     pub fn swap_on_disk(&mut self, new_on_disk: bool) -> OperationResult<bool> {
         let current_is_on_disk = match self {
             GeoMapIndex::Mutable(_) => return Ok(false),
@@ -129,11 +128,9 @@ impl GeoMapIndex {
             }
             GeoMapIndex::Storage(mut mmap_box) => {
                 mmap_box.is_on_disk = false;
-                match ImmutableGeoMapIndex::open_mmap(*mmap_box) {
+                match ImmutableGeoMapIndex::try_open_mmap(mmap_box) {
                     Ok(imm) => (GeoMapIndex::Immutable(imm), Ok(true)),
-                    Err(err) => {
-                        panic!("geo index swap to RAM failed (open_mmap): {err}")
-                    }
+                    Err((mmap_box, err)) => (GeoMapIndex::Storage(mmap_box), Err(err)),
                 }
             }
             GeoMapIndex::Mutable(_) => {
