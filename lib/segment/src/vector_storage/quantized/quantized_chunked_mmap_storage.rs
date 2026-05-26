@@ -78,12 +78,11 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
 
         match StorageType::storage_kind() {
             UniversalKind::IoUring |
-            UniversalKind::DiskCache => false,
+            UniversalKind::DiskCache | UniversalKind::S3 |
+            UniversalKind::Gcs |
+            UniversalKind::Azure => false,
             UniversalKind::SimpleDiskCache | // FIXME: only `true` if it was entirely prefilled
             UniversalKind::Mmap => true,
-            UniversalKind::S3 |
-            UniversalKind::Gcs |
-            UniversalKind::Azure => todo!(),
         }
     }
 
