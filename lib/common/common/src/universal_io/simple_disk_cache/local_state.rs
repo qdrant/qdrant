@@ -11,8 +11,8 @@ use roaring::RoaringBitmap;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::{
-    MmapFile, OpenOptions, OpenOptionsExtra, Populate, ReadRange, Result, UniversalIoError,
-    UniversalRead, UniversalWrite, mmap as mmap_file,
+    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, Result, UniversalIoError, UniversalRead,
+    UniversalReadFs, UniversalWrite, mmap as mmap_file,
 };
 
 #[derive(Debug)]
@@ -44,7 +44,6 @@ impl LocalState {
             need_sequential,
             populate: _, // this is handled externally to LocalState
             advice,
-            extra: _, // unsupported
         } = options;
 
         let file = fs::OpenOptions::new()
@@ -55,15 +54,15 @@ impl LocalState {
             .open(local_path.as_ref())?;
 
         file.set_len(len)?;
-        let mmap = MmapFile::open(
+        let mmap = MmapFs.open(
             local_path.as_ref(),
             OpenOptions {
                 writeable: true,
                 need_sequential,
                 populate: Populate::No,
                 advice,
-                extra: OpenOptionsExtra::default(),
             },
+            (),
         )?;
 
         Ok(LocalState {

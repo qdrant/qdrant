@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
-use common::universal_io::UniversalWrite;
+use common::universal_io::{UniversalRead, UniversalWrite};
 use roaring::RoaringBitmap;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
@@ -73,7 +73,7 @@ pub trait RoaringFlagsRead {
 /// Changes are buffered until explicitly flushed.
 ///
 /// [1]: super::bitvec_flags::BitvecFlags
-pub struct RoaringFlags<S> {
+pub struct RoaringFlags<S: UniversalRead> {
     /// Buffered persisted flags.
     storage: BufferedDynamicFlags<S>,
 
@@ -88,6 +88,7 @@ pub struct RoaringFlags<S> {
 impl<S> RoaringFlagsRead for RoaringFlags<S>
 where
     S: UniversalWrite + Send + 'static,
+    S::Fs: Send + Sync + 'static,
 {
     fn len(&self) -> usize {
         self.len
@@ -115,8 +116,9 @@ where
 impl<S> RoaringFlags<S>
 where
     S: UniversalWrite + Send + 'static,
+    S::Fs: Send + Sync + 'static,
 {
-    pub fn new(dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
+    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory
         let bitmap = RoaringBitmap::from_sorted_iter(dynamic_flags.iter_trues()?)
             .expect("iter_trues iterates in sorted order");
@@ -127,7 +129,7 @@ where
 
         Ok(Self {
             len: dynamic_flags.len(),
-            storage: BufferedDynamicFlags::new(dynamic_flags),
+            storage: BufferedDynamicFlags::new(fs, dynamic_flags),
             bitmap,
         })
     }
@@ -174,17 +176,18 @@ where
     }
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
 #[duplicate::duplicate_item(
-    tests_mod       S               cfg_predicate;
-    [tests_mmap]    [MmapFile]      [cfg(all())];
-    [tests_uring]   [IoUringFile]   [cfg(target_os = "linux")];
+    tests_mod       S               Fs              cfg_predicate;
+    [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];
+    [tests_uring]   [IoUringFile]   [IoUringFs]     [cfg(target_os = "linux")];
 )]
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
     use common::types::PointOffsetType;
     #[cfg_predicate]
-    use common::universal_io::S;
+    use common::universal_io::{Fs, S};
 
     use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
     use crate::common::flags::roaring_flags::{RoaringFlags, RoaringFlagsRead};
@@ -198,8 +201,9 @@ mod tests_mod {
 
         // Create and update flags
         {
-            let dynamic_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
-            let mut roaring_flags = RoaringFlags::new(dynamic_flags).unwrap();
+            let dynamic_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            let mut roaring_flags = RoaringFlags::new(Fs::default(), dynamic_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
             for i in 16..20 {
@@ -218,8 +222,9 @@ mod tests_mod {
 
         // Verify bitmap consistency after reload
         {
-            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
-            let roaring_flags = RoaringFlags::new(mmap_flags).unwrap();
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let roaring_flags = RoaringFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Verify iteration consistency after reload
             let iter_trues: Vec<_> = roaring_flags.iter_trues().collect();

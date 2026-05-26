@@ -19,6 +19,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
 }
 
 pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
+    fs: &S::Fs,
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
@@ -51,14 +52,15 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
         })?;
 
         let chunk = TypedStorage::open(
+            fs,
             &chunk_path,
             OpenOptions {
                 writeable,
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
                 populate: Populate::from(populate),
                 advice,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         result.push(chunk);
@@ -73,6 +75,7 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
 }
 
 pub fn create_chunk<T: bytemuck::Pod + Send, S: UniversalWrite>(
+    fs: &S::Fs,
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
@@ -81,13 +84,14 @@ pub fn create_chunk<T: bytemuck::Pod + Send, S: UniversalWrite>(
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
 
     TypedStorage::open(
+        fs,
         &chunk_file_path,
         OpenOptions {
             writeable: true,
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
             populate: Populate::No, // don't populate newly created chunk, as it's empty and will be filled later
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         },
+        Default::default(),
     )
 }

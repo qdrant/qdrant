@@ -3,6 +3,7 @@ use std::io::Write;
 use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
+use bytemuck::TransparentWrapper;
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
@@ -44,6 +45,7 @@ where
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
     pub fn open(
+        fs: &S::Fs,
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
@@ -61,14 +63,15 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
             need_sequential: true,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         };
-        let storage = TypedStorage::open(vectors_path, options).map_err(|e| {
-            crate::common::operation_error::OperationError::service_error(format!(
-                "Failed to open vector mmap at {}: {e}",
-                vectors_path.display()
-            ))
-        })?;
+        let read_only =
+            ReadOnly::open(fs, vectors_path, options, Default::default()).map_err(|e| {
+                crate::common::operation_error::OperationError::service_error(format!(
+                    "Failed to open vector mmap at {}: {e}",
+                    vectors_path.display()
+                ))
+            })?;
+        let storage = TypedStorage::<ReadOnly<S>, T>::wrap(read_only);
 
         // Allocate/open deleted mmap
         let deleted_mmap_size = deleted_mmap_size(num_vectors);

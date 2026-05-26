@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use serde_json::Value;
 
 use super::GeoMapIndex;
@@ -41,6 +42,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         Ok(GeoMapIndex::Storage(Box::new(StoredGeoMapIndex::build(
+            &MmapFs,
             self.in_memory_index,
             &self.path,
             self.is_on_disk,

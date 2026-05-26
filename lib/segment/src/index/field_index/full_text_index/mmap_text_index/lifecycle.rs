@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{MmapFs, UniversalRead};
 use fs_err as fs;
 use serde_json::Value;
 
@@ -22,6 +22,7 @@ use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 impl<S: UniversalRead> MmapFullTextIndex<S> {
     pub fn open(
+        fs: &S::Fs,
         path: PathBuf,
         config: TextIndexParams,
         is_on_disk: bool,
@@ -33,7 +34,7 @@ impl<S: UniversalRead> MmapFullTextIndex<S> {
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
         let inverted_index =
-            MmapInvertedIndex::<S>::open(path, populate, has_positions, deleted_points)?;
+            MmapInvertedIndex::<S>::open(fs, path, populate, has_positions, deleted_points)?;
         Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,
@@ -193,13 +194,12 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let populate = !is_on_disk;
         let has_positions = config.phrase_matching.unwrap_or_default();
         let inverted_index =
-            MmapInvertedIndex::open(path, populate, has_positions, &deleted_points)?.ok_or_else(
-                || {
+            MmapInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
+                .ok_or_else(|| {
                     OperationError::service_error(
                         "Failed to open MmapInvertedIndex that was just created",
                     )
-                },
-            )?;
+                })?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,

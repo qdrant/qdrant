@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::mmap::AdviceSetting;
-use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalKind, UniversalWrite};
-use fs_err as fs;
+use common::universal_io::{
+    OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFileOps, UniversalWrite,
+};
 use num_traits::AsPrimitive;
 
 use super::chunks::{create_chunk, read_chunks};
@@ -25,6 +26,7 @@ where
 {
     inner: ChunkedVectorsRead<T, S>,
     status: StoredStruct<S, Status>,
+    fs: S::Fs,
 }
 
 impl<T, S> Deref for ChunkedVectors<T, S>
@@ -48,9 +50,9 @@ where
         S::kind()
     }
 
-    pub fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
+    pub fn ensure_status_file(fs: &S::Fs, directory: &Path) -> OperationResult<PathBuf> {
         let status_file = ChunkedVectorsRead::<T, S>::status_file(directory);
-        if !S::exists(&status_file)? {
+        if !fs.exists(&status_file)? {
             {
                 let length = std::mem::size_of::<Status>();
                 // TODO(uio): migrate when UniversalWriteFileOps is available
@@ -61,12 +63,13 @@ where
     }
 
     fn ensure_config(
+        fs: &S::Fs,
         directory: &Path,
         dim: usize,
         populate: Option<bool>,
     ) -> OperationResult<ChunkedVectorsConfig> {
         let config_file = ChunkedVectorsRead::<T, S>::config_file(directory);
-        match ChunkedVectorsRead::<T, S>::load_config(&config_file) {
+        match ChunkedVectorsRead::<T, S>::load_config(fs, &config_file) {
             Ok(Some(config)) => {
                 if config.dim == dim {
                     Ok(config)
@@ -113,38 +116,41 @@ where
     }
 
     pub fn open(
+        fs: S::Fs,
         directory: &Path,
         dim: usize,
         advice: AdviceSetting,
         populate: Option<bool>,
     ) -> OperationResult<Self> {
-        fs::create_dir_all(directory)?;
-        let status_path = Self::ensure_status_file(directory)?;
+        fs_err::create_dir_all(directory)?;
+        let status_path = Self::ensure_status_file(&fs, directory)?;
 
         let status: StoredStruct<S, Status> = StoredStruct::open(
+            &fs,
             status_path,
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: populate.map(Populate::from).unwrap_or_default(),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
-        let config = Self::ensure_config(directory, dim, populate)?;
-        let chunks = read_chunks(directory, advice, populate.unwrap_or_default(), true)?;
+        let config = Self::ensure_config(&fs, directory, dim, populate)?;
+        let chunks = read_chunks(&fs, directory, advice, populate.unwrap_or_default(), true)?;
         let inner = ChunkedVectorsRead {
             config,
             len: status.len,
             chunks,
             directory: directory.to_owned(),
         };
-        Ok(Self { inner, status })
+        Ok(Self { inner, status, fs })
     }
 
     fn add_chunk(&mut self) -> OperationResult<()> {
         let chunk = create_chunk(
+            &self.fs,
             &self.inner.directory,
             self.inner.chunks.len(),
             self.inner.config.chunk_size_bytes,

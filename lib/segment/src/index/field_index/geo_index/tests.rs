@@ -5,7 +5,7 @@ use common::bitvec::BitVec;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::SeedableRng;
@@ -616,7 +616,7 @@ fn load_from_disk(#[case] index_type: IndexType) {
             .unwrap(),
         IndexType::RamMmap => GeoMapIndex::Immutable(
             ImmutableGeoMapIndex::open_mmap(
-                StoredGeoMapIndex::open(temp_dir.path(), false, &empty_deleted())
+                StoredGeoMapIndex::open(&MmapFs, temp_dir.path(), false, &empty_deleted())
                     .unwrap()
                     .unwrap(),
             )
@@ -696,7 +696,7 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
             .unwrap(),
         IndexType::RamMmap => GeoMapIndex::Immutable(
             ImmutableGeoMapIndex::open_mmap(
-                StoredGeoMapIndex::open(temp_dir.path(), false, &deleted_with(&[1]))
+                StoredGeoMapIndex::open(&MmapFs, temp_dir.path(), false, &deleted_with(&[1]))
                     .unwrap()
                     .unwrap(),
             )
@@ -1277,7 +1277,7 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
             .unwrap(),
         IndexType::RamMmap => GeoMapIndex::Immutable(
             ImmutableGeoMapIndex::open_mmap(
-                StoredGeoMapIndex::open(temp_dir.path(), false, &deleted)
+                StoredGeoMapIndex::open(&MmapFs, temp_dir.path(), false, &deleted)
                     .unwrap()
                     .unwrap(),
             )
@@ -1364,7 +1364,7 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
             .unwrap(),
         IndexType::RamMmap => GeoMapIndex::Immutable(
             ImmutableGeoMapIndex::open_mmap(
-                StoredGeoMapIndex::open(temp_dir.path(), false, &short_deleted)
+                StoredGeoMapIndex::open(&MmapFs, temp_dir.path(), false, &short_deleted)
                     .unwrap()
                     .unwrap(),
             )

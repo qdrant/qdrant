@@ -54,15 +54,15 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Global,
-            extra: Default::default(),
         }
     }
 
     pub fn from_file(
+        fs: &S::Fs,
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
-        let storage = ReadOnly::open(path, Self::open_options())?;
+        let storage = ReadOnly::open(fs, path, Self::open_options(), Default::default())?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -144,14 +144,21 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     }
 }
 
-impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedStorageBuilder<S> {
+impl<S: UniversalRead<Fs = common::universal_io::MmapFs>> quantization::EncodedStorageBuilder
+    for QuantizedStorageBuilder<S>
+{
     type Storage = QuantizedStorage<S>;
     type Error = OperationError;
 
     fn build(self) -> OperationResult<QuantizedStorage<S>> {
         self.mmap.flush()?;
 
-        let storage = ReadOnly::open(&self.path, Self::Storage::open_options())?;
+        let storage = ReadOnly::open(
+            &common::universal_io::MmapFs,
+            &self.path,
+            Self::Storage::open_options(),
+            (),
+        )?;
 
         Ok(QuantizedStorage {
             storage,

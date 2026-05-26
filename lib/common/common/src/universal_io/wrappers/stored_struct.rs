@@ -4,7 +4,9 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::is_alive_lock::IsAliveLock;
-use crate::universal_io::{self, Flusher, OpenOptions, TypedStorage, UniversalWrite};
+use crate::universal_io::{
+    self, Flusher, OpenOptions, TypedStorage, UniversalReadFs, UniversalWrite,
+};
 
 /// A generic-storage wrapper for a type that should be possible to `read_whole` fairly cheaply.
 ///
@@ -22,8 +24,13 @@ where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
-    pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> universal_io::Result<Self> {
-        let storage = TypedStorage::<S, T>::open(path, options)?;
+    pub fn open(
+        fs: &S::Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+    ) -> universal_io::Result<Self> {
+        let storage = TypedStorage::<S, T>::open(fs, path, options, extra)?;
         let inner = storage.read_whole()?[0];
         Ok(Self {
             inner,

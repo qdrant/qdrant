@@ -20,7 +20,7 @@ pub struct MutableNullIndex {
     pub(super) total_point_count: usize,
 }
 
-pub(super) struct Storage<S> {
+pub(super) struct Storage<S: common::universal_io::UniversalRead> {
     /// Points which have at least one value
     pub(super) has_values_flags: RoaringFlags<S>,
     /// Points which have null values

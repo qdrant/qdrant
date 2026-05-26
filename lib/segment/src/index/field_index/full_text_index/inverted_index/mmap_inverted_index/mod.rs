@@ -8,10 +8,10 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
-use common::stored_bitslice::MmapBitSlice;
+use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UserData,
+    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UserData,
 };
 use types::ZerocopyPostingValue;
 use uio_postings::UniversalPostings;
@@ -129,14 +129,15 @@ impl MmapInvertedIndex<MmapFile> {
             )?;
 
             let mut deleted_storage = MmapBitSlice::open(
+                &MmapFs,
                 &deleted_points_path,
                 OpenOptions {
                     writeable: true,
                     need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
-                    extra: Default::default(),
                 },
+                (),
             )?;
             deleted_storage.write_bitslice(&deleted_bitslice)?;
             deleted_storage.flusher()()?;
@@ -153,6 +154,7 @@ impl MmapInvertedIndex<MmapFile> {
 
 impl<S: UniversalRead> MmapInvertedIndex<S> {
     pub fn open(
+        fs: &S::Fs,
         path: PathBuf,
         populate: bool,
         has_positions: bool,
@@ -173,49 +175,55 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Advice(Advice::Normal),
-            extra: Default::default(),
         };
         let postings = match has_positions {
             false => MmapPostingsEnum::Ids(UniversalPostings::<(), S>::open(
+                fs,
                 &postings_path,
                 postings_open_options,
+                Default::default(),
             )?),
             true => MmapPostingsEnum::WithPositions(UniversalPostings::<Positions, S>::open(
+                fs,
                 &postings_path,
                 postings_open_options,
+                Default::default(),
             )?),
         };
         let vocab = UniversalHashMap::<str, TokenId, S>::open(
+            fs,
             &vocab_path,
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
         let point_to_tokens_count = TypedStorage::<S, usize>::open(
+            fs,
             &point_to_tokens_count_path,
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
 
-        let deleted_payload_mmap = MmapBitSlice::open(
+        let deleted_payload_mmap = StoredBitSlice::<S>::open(
+            fs,
             &deleted_points_path,
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

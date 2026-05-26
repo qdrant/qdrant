@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use itertools::Itertools;
 use rand::prelude::*;
 use tempfile::Builder;
@@ -35,7 +35,8 @@ fn test_iterator() {
     id_tracker.set_link(118.into(), 9).unwrap();
 
     let id_tracker =
-        ImmutableIdTracker::<MmapFile>::from_in_memory_tracker(id_tracker, dir.path()).unwrap();
+        ImmutableIdTracker::<MmapFile>::from_in_memory_tracker(&MmapFs, id_tracker, dir.path())
+            .unwrap();
 
     let first_four = id_tracker
         .point_mappings()
@@ -94,7 +95,7 @@ fn test_load_store() {
         (id_tracker.mappings, id_tracker.internal_to_version)
     };
 
-    let mut loaded_id_tracker = ImmutableIdTracker::<MmapFile>::open(dir.path()).unwrap();
+    let mut loaded_id_tracker = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
 
     // We may extend the length of deleted bitvec as memory maps need to be aligned to
     // a multiple of `usize-width`.
@@ -154,7 +155,7 @@ fn test_store_load_mutated() {
         (dropped_points, custom_version)
     };
 
-    let id_tracker = ImmutableIdTracker::<MmapFile>::open(dir.path()).unwrap();
+    let id_tracker = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
     for (index, point) in TEST_POINTS.iter().enumerate() {
         let internal_id = index as PointOffsetType;
 
@@ -250,7 +251,7 @@ fn test_point_deletion_persists_reload() {
     };
 
     // Point should still be gone
-    let id_tracker = ImmutableIdTracker::<MmapFile>::open(dir.path()).unwrap();
+    let id_tracker = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
     assert_eq!(id_tracker.internal_id(point_to_delete), None);
 
     old_mappings
@@ -355,7 +356,7 @@ fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
 
 fn make_immutable_tracker(path: &Path) -> ImmutableIdTracker<MmapFile> {
     let id_tracker = make_in_memory_tracker_from_memory();
-    ImmutableIdTracker::from_in_memory_tracker(id_tracker, path).unwrap()
+    ImmutableIdTracker::from_in_memory_tracker(&MmapFs, id_tracker, path).unwrap()
 }
 
 #[test]

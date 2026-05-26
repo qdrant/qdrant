@@ -1,12 +1,15 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use fs_err as fs;
 
-use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig};
+use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext};
 use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
-use crate::universal_io::{OpenOptions, Populate, ReadRange, UniversalRead};
+use crate::universal_io::{
+    OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps, UniversalReadFs,
+};
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
     (0..n_bytes).map(|i| (i % 251) as u8).collect()
@@ -16,7 +19,7 @@ struct Scenario {
     _tmp: tempfile::TempDir,
     remote_path: PathBuf,
     data: Vec<u8>,
-    config: DiskCacheConfig,
+    config: Arc<DiskCacheConfig>,
 }
 
 impl Scenario {
@@ -38,7 +41,7 @@ impl Scenario {
             _tmp: tmp,
             remote_path,
             data,
-            config: DiskCacheConfig::new(remote_dir, local_dir).unwrap(),
+            config: Arc::new(DiskCacheConfig::new(remote_dir, local_dir).unwrap()),
         }
     }
 
@@ -49,6 +52,10 @@ impl Scenario {
     fn open<R>(&self, prefill: bool) -> DiskCache<R>
     where
         R: UniversalRead + Clone,
+        R::Fs: Clone + Send + Sync,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+        <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+        R::OwnedReadPipeline<u8, std::ops::Range<u32>>: Send,
     {
         let populate = if prefill {
             Populate::PreferBackground
@@ -56,16 +63,20 @@ impl Scenario {
             Populate::No
         };
 
-        DiskCache::open_with_config(
-            &self.config,
+        let fs = DiskCacheFs::<R>::from_context(DiskCacheFsContext {
+            config: self.config.clone(),
+            remote: Default::default(),
+        })
+        .unwrap();
+        fs.open(
             &self.remote_path,
             OpenOptions {
                 writeable: false,
                 populate,
                 need_sequential: false,
                 advice: AdviceSetting::Global,
-                extra: Default::default(),
             },
+            Default::default(),
         )
         .unwrap()
     }

@@ -20,7 +20,7 @@ use self::error::*;
 use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{Item, UniversalReadFileOps};
+use super::traits::{Item, OpenExtra, UniversalReadFileOps, UniversalReadFs};
 use super::*;
 use crate::generic_consts::AccessPattern;
 
@@ -41,30 +41,56 @@ impl IoUringFile {
     }
 }
 
-impl UniversalReadFileOps for IoUringFile {
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
+/// Filesystem handle for `io_uring`-backed files. No per-instance state
+/// today; the per-call `prevent_caching` knob lives on
+/// [`OpenOptions`](super::OpenOptions).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringFs;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringContextConfig;
+
+impl UniversalReadFileOps for IoUringFs {
+    type ContextConfig = IoUringContextConfig;
+
+    fn from_context(_ctx: Self::ContextConfig) -> Result<Self> {
+        Ok(Self)
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
 }
 
-impl UniversalRead for IoUringFile {
-    type BorrowedReadPipeline<'a, T, U>
-        = BorrowedIoUringPipeline<'a, T, U>
-    where
-        T: Item,
-        U: UserData;
+/// Per-open backend extras for [`IoUringFs::open`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringOpenExtra {
+    /// Open with `O_DIRECT` to bypass the OS page cache. Requires
+    /// block-aligned reads at runtime.
+    pub prevent_caching: bool,
+}
 
-    type OwnedReadPipeline<T, U>
-        = OwnedIoUringPipeline<T, U>
-    where
-        T: Item,
-        U: UserData;
+impl OpenExtra for IoUringOpenExtra {
+    fn with_prevent_caching(self, prevent_caching: bool) -> Self {
+        let Self { prevent_caching: _ } = self;
+        Self { prevent_caching }
+    }
+}
 
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
+impl UniversalReadFs for IoUringFs {
+    type File = IoUringFile;
+    type OpenExtra = IoUringOpenExtra;
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: IoUringOpenExtra,
+    ) -> Result<IoUringFile> {
         // Check that io_uring is supported on this system.
         pool::check_io_uring_support()?;
 
@@ -73,8 +99,8 @@ impl UniversalRead for IoUringFile {
             need_sequential: _,
             populate: _,
             advice: _,
-            extra: OpenOptionsExtra { prevent_caching },
         } = options;
+        let IoUringOpenExtra { prevent_caching } = extra;
 
         let direct_io = prevent_caching;
         let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
@@ -87,13 +113,27 @@ impl UniversalRead for IoUringFile {
             .open(path.as_ref())
             .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
 
-        let file = Self {
+        Ok(IoUringFile {
             file: Arc::new(file),
             direct_io,
-        };
-
-        Ok(file)
+        })
     }
+}
+
+impl UniversalRead for IoUringFile {
+    type Fs = IoUringFs;
+
+    type BorrowedReadPipeline<'a, T, U>
+        = BorrowedIoUringPipeline<'a, T, U>
+    where
+        T: Item,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedIoUringPipeline<T, U>
+    where
+        T: Item,
+        U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
         Ok(())

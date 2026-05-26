@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use fs_err as fs;
 use serde_json::Value;
 
@@ -76,12 +77,12 @@ impl MutableNullIndex {
         })?;
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
-        let has_values_mmap = DynamicStoredFlags::open(&has_values_path, false)?;
-        let has_values_flags = RoaringFlags::new(has_values_mmap)?;
+        let has_values_mmap = DynamicStoredFlags::open(&MmapFs, &has_values_path, false)?;
+        let has_values_flags = RoaringFlags::new(MmapFs, has_values_mmap)?;
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
-        let is_null_mmap = DynamicStoredFlags::open(&is_null_path, false)?;
-        let is_null_flags = RoaringFlags::new(is_null_mmap)?;
+        let is_null_mmap = DynamicStoredFlags::open(&MmapFs, &is_null_path, false)?;
+        let is_null_flags = RoaringFlags::new(MmapFs, is_null_mmap)?;
 
         let storage = Storage {
             has_values_flags,

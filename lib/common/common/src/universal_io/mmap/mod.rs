@@ -10,10 +10,39 @@ use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
 use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
-use super::traits::{Item, UniversalReadFileOps};
+use super::traits::{Item, UniversalReadFileOps, UniversalReadFs};
 use super::*;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
+
+/// Filesystem handle for local mmap-backed files. Stateless.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MmapFs;
+
+impl UniversalReadFileOps for MmapFs {
+    type ContextConfig = ();
+
+    fn from_context(_: ()) -> Result<Self> {
+        Ok(MmapFs)
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+        local_file_ops::local_list_files(prefix_path)
+    }
+
+    fn exists(&self, path: &Path) -> Result<bool> {
+        fs_err::exists(path).map_err(UniversalIoError::from)
+    }
+}
+
+impl UniversalReadFs for MmapFs {
+    type File = MmapFile;
+    type OpenExtra = ();
+
+    fn open(&self, path: impl AsRef<Path>, options: OpenOptions, _extra: ()) -> Result<MmapFile> {
+        MmapFile::open_inner(path, options)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MmapFile {
@@ -45,39 +74,14 @@ struct SendSyncPtr(*mut u8);
 unsafe impl Send for SendSyncPtr {}
 unsafe impl Sync for SendSyncPtr {}
 
-impl UniversalReadFileOps for MmapFile {
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        local_file_ops::local_list_files(prefix_path)
-    }
-
-    fn exists(path: &Path) -> crate::universal_io::Result<bool> {
-        fs_err::exists(path).map_err(UniversalIoError::from)
-    }
-}
-
-impl UniversalRead for MmapFile {
-    type BorrowedReadPipeline<'a, T, U>
-        = BorrowedMmapReadPipeline<'a, T, U>
-    where
-        T: Item,
-        U: UserData;
-
-    type OwnedReadPipeline<T, U>
-        = OwnedMmapReadPipeline<T, U>
-    where
-        T: Item,
-        U: UserData;
-
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
+impl MmapFile {
+    /// Internal open helper, used by `MmapFs::open`.
+    pub(super) fn open_inner(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
             writeable,
             need_sequential,
             populate,
             advice,
-            extra:
-                OpenOptionsExtra {
-                    prevent_caching: _, // Whole point of mmap is to cache
-                },
         } = options;
 
         let populate = match populate {
@@ -124,6 +128,22 @@ impl UniversalRead for MmapFile {
 
         Ok(mmap)
     }
+}
+
+impl UniversalRead for MmapFile {
+    type Fs = MmapFs;
+
+    type BorrowedReadPipeline<'a, T, U>
+        = BorrowedMmapReadPipeline<'a, T, U>
+    where
+        T: Item,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedMmapReadPipeline<T, U>
+    where
+        T: Item,
+        U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
         let old_len = self.len as u64;
@@ -331,17 +351,19 @@ impl MmapFile {
     /// ensuring all measurements go through the same mmap path.
     #[cfg(unix)]
     pub fn probe_memory_stats(path: impl AsRef<Path>) -> std::io::Result<(u64, u64)> {
-        let file: Self = MmapFile::open(
-            path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::No,
-                advice: AdviceSetting::Advice(Advice::Normal),
-                extra: Default::default(),
-            },
-        )
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let fs = MmapFs;
+        let file = fs
+            .open(
+                path,
+                OpenOptions {
+                    writeable: false,
+                    need_sequential: false,
+                    populate: Populate::No,
+                    advice: AdviceSetting::Advice(Advice::Normal),
+                },
+                (),
+            )
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let disk_bytes = file.disk_bytes()?;
         let resident_bytes = file.resident_bytes()?;
         Ok((disk_bytes, resident_bytes))

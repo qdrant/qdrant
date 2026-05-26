@@ -1,10 +1,9 @@
-use std::marker::PhantomData;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::shard::ShardId;
-use common::universal_io::{ReadRange, UniversalIoError, UniversalRead};
+use common::universal_io::{ReadRange, UniversalIoError, UniversalRead, UniversalReadFileOps};
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
@@ -12,14 +11,20 @@ use tonic::Status;
 
 use crate::tonic::api::storage_read_api::StorageReadService;
 
-impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S> {
-    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
-        Self {
+impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S>
+where
+    <S::Fs as UniversalReadFileOps>::ContextConfig: Default,
+{
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Result<Self, UniversalIoError> {
+        let fs = S::Fs::from_context(Default::default())?;
+        Ok(Self {
             dispatcher,
-            _marker: PhantomData,
-        }
+            fs: Arc::new(fs),
+        })
     }
+}
 
+impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S> {
     /// Verify read access to the collection, confirm the requested shard has
     /// a local replica on this peer that is currently readable, and resolve
     /// the on-disk shard directory.

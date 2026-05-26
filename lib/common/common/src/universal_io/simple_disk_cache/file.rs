@@ -8,15 +8,14 @@ use std::sync::{Arc, OnceLock};
 use parking_lot::Mutex;
 
 use super::BLOCK_SIZE;
-use super::config::DiskCacheConfig;
+use super::fs::DiskCacheFs;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
-use crate::universal_io::simple_disk_cache::to_block_range;
 use crate::universal_io::{
-    Item, OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result,
-    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
+    Item, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 /// A lazily-populated local mirror of an immutable remote file.
@@ -33,6 +32,10 @@ pub struct DiskCache<R>
 where
     R: UniversalRead,
 {
+    /// Clone of the remote filesystem handle, used to lazily open `remote`.
+    remote_fs: R::Fs,
+    /// Backend-specific per-open extras for the remote.
+    remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
     /// Path to the remote file. Used to lazily open `remote`.
     remote_path: PathBuf,
     /// Lazily-opened remote handle. Only initialized when needed (cache miss
@@ -66,103 +69,43 @@ where
 }
 
 /// Where the [`LocalState`] comes from on first init.
-enum InitSource<R: UniversalRead> {
+pub(super) enum InitSource<R: UniversalRead> {
     /// Build an empty local mmap and let reads fill blocks on demand.
     FromScratch,
     /// Wait for the prefill pipeline.
     FromPrefiller(R::OwnedReadPipeline<u8, Range<u32>>),
 }
 
+impl<R: UniversalRead> InitSource<R> {
+    pub(super) fn from_prefiller(pipe: R::OwnedReadPipeline<u8, Range<u32>>) -> Self {
+        Self::FromPrefiller(pipe)
+    }
+}
+
 impl<R> DiskCache<R>
 where
     R: UniversalRead + Clone,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<u8, Range<u32>>: Send,
 {
-    /// Open a [`DiskCache`] with an explicit configuration.
-    pub fn open_with_config(
-        config: &DiskCacheConfig,
+    pub(super) fn new(
+        remote_fs: R::Fs,
+        remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
         remote_path: impl AsRef<Path>,
+        local_path: PathBuf,
         options: OpenOptions,
-    ) -> Result<Self> {
-        if options.writeable {
-            return Err(UniversalIoError::Uninitialized {
-                description:
-                    "DiskCache only supports immutable files, writeable option is not allowed"
-                        .to_string(),
-            });
-        }
-
-        let local_path = config.local_path_for(remote_path.as_ref())?;
-
-        let populate = if crate::low_memory::low_memory_mode().skip_populate() {
-            Populate::No
-        } else {
-            options.populate
-        };
-
-        let init_source = match populate {
-            Populate::Auto | Populate::No => InitSource::FromScratch,
-            Populate::Blocking | Populate::PreferBackground => {
-                let remote = R::open(
-                    &remote_path,
-                    OpenOptions {
-                        writeable: false,
-                        need_sequential: true,
-                        populate: Populate::No,
-                        advice: AdviceSetting::Global,
-                        extra: OpenOptionsExtra {
-                            prevent_caching: true,
-                        },
-                    },
-                )?;
-
-                let remote_len = remote.len::<u8>()?;
-
-                let range = ReadRange {
-                    byte_offset: 0,
-                    length: remote_len,
-                };
-
-                let blocks_range = to_block_range(0..remote_len);
-
-                let mut pipeline = R::OwnedReadPipeline::new(remote)?;
-
-                // FIXME: check `can_schedule` in a loop first
-                pipeline.schedule::<Sequential>(blocks_range, range)?;
-
-                InitSource::FromPrefiller(pipeline)
-            }
-        };
-
-        let cache = {
-            let remote_path = remote_path.as_ref().to_owned();
-            Self {
-                remote_path,
-                remote: OnceLock::new(),
-                open_options: options,
-                local_path,
-                local: OnceLock::new(),
-                init_lock: Arc::new(Mutex::new(init_source)),
-            }
-        };
-
-        if matches!(populate, Populate::Blocking) {
-            // Force the prefill to resolve before returning.
-            cache.local_state()?;
-        }
-
-        Ok(cache)
-    }
-
-    fn new(remote_path: impl AsRef<Path>, local_path: PathBuf, options: OpenOptions) -> Self {
-        {
-            Self {
-                remote_path: remote_path.as_ref().to_owned(),
-                remote: OnceLock::new(),
-                open_options: options,
-                local_path,
-                local: OnceLock::new(),
-                init_lock: Arc::new(Mutex::new(InitSource::FromScratch)),
-            }
+        init_source: InitSource<R>,
+    ) -> Self {
+        Self {
+            remote_fs,
+            remote_extra,
+            remote_path: remote_path.as_ref().to_owned(),
+            remote: OnceLock::new(),
+            open_options: options,
+            local_path,
+            local: OnceLock::new(),
+            init_lock: Arc::new(Mutex::new(init_source)),
         }
     }
 
@@ -175,15 +118,14 @@ where
 
         let remote_options = OpenOptions {
             writeable: false,
-            extra: OpenOptionsExtra {
-                prevent_caching: true,
-            },
             populate: Populate::No,
             need_sequential: false,
             advice: AdviceSetting::Global,
         };
 
-        let opened = R::open(&self.remote_path, remote_options)?;
+        let opened =
+            self.remote_fs
+                .open(&self.remote_path, remote_options, self.remote_extra.clone())?;
         // If another thread set this concurrently, let our R be dropped.
         //
         // OnceLock::get_or_try_init would be better but it is not available on stable
@@ -283,23 +225,15 @@ where
     }
 }
 
-impl<R> UniversalReadFileOps for DiskCache<R>
-where
-    R: UniversalRead,
-{
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        R::list_files(prefix_path)
-    }
-
-    fn exists(path: &Path) -> Result<bool> {
-        R::exists(path)
-    }
-}
-
 impl<R> UniversalRead for DiskCache<R>
 where
     R: UniversalRead + Clone,
+    R::Fs: Clone + Send + Sync,
+    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
+    R::OwnedReadPipeline<u8, Range<u32>>: Send,
 {
+    type Fs = DiskCacheFs<R>;
+
     type BorrowedReadPipeline<'a, T, U>
         = DiskCachePipeline<'a, R, T, U>
     where
@@ -312,17 +246,6 @@ where
     where
         T: Item,
         U: UserData;
-
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        let config = DiskCacheConfig::global().ok_or_else(|| {
-            UniversalIoError::uninitialized(
-                "DiskCacheConfig must be initialized via `DiskCacheConfig::initialize_global` \
-                 before opening an DiskCache",
-            )
-        })?;
-        let local_path = config.local_path_for(path.as_ref())?;
-        Ok(Self::new(path.as_ref(), local_path, options))
-    }
 
     fn reopen(&mut self) -> Result<()> {
         // Wait for InitSource::Prefill, if set.
