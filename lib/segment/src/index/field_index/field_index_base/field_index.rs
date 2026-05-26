@@ -261,7 +261,8 @@ impl FieldIndex {
             FieldIndex::UuidMapIndex(i) => i.swap_on_disk(new_on_disk),
             FieldIndex::GeoIndex(i) => i.swap_on_disk(new_on_disk),
             FieldIndex::FullTextIndex(i) => i.swap_on_disk(new_on_disk),
-            FieldIndex::BoolIndex(_) | FieldIndex::NullIndex(_) => Ok(false),
+            FieldIndex::BoolIndex(i) => i.swap_on_disk(new_on_disk),
+            FieldIndex::NullIndex(i) => i.swap_on_disk(new_on_disk),
         }
     }
 
