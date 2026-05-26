@@ -65,7 +65,7 @@ memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
 geo = "0.33.1"
-geohash = "0.13.1"
+geohash = "0.13.2"
 num-traits = { workspace = true }
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
