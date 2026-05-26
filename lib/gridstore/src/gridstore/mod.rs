@@ -168,7 +168,7 @@ impl<V: Blob> Gridstore<V> {
         create_and_ensure_length(&path, self.config.page_size_bytes)?;
         self.pages.write().attach_page(&MmapFs, &path)?;
 
-        self.bitmask.write().cover_new_page(&MmapFs)?;
+        self.bitmask.write().cover_new_page()?;
 
         Ok(new_page_id)
     }
@@ -487,7 +487,7 @@ impl<V> Gridstore<V> {
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
-            let old_pointers = guard.write_pending(&MmapFs, pending_updates)?;
+            let old_pointers = guard.write_pending(pending_updates)?;
             let flusher = guard.flusher();
             (old_pointers, flusher)
         };
