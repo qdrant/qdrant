@@ -1,3 +1,4 @@
+mod builders;
 mod config;
 mod count;
 mod facet;
@@ -13,12 +14,12 @@ mod types;
 pub use types::*;
 mod update;
 
-use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+pub use builders::{EdgeConfigBuilder, EdgeSparseVectorParamsBuilder, EdgeVectorParamsBuilder};
 use common::save_on_disk::SaveOnDisk;
 pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;
@@ -34,7 +35,6 @@ use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
-use wal::WalOptions;
 
 use crate::config::shard::EDGE_CONFIG_FILE;
 
@@ -51,7 +51,9 @@ impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
     ///
     /// Fails if the shard already exists (i.e. the segments directory contains any segment).
-    /// Configuration is required and is persisted to `edge_config.json`.
+    /// Configuration is required and is persisted to `edge_config.json`. WAL
+    /// behavior follows `config.wal_options` (defaults to 32 MiB segments
+    /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
@@ -59,7 +61,8 @@ impl EdgeShard {
             ));
         }
 
-        let (wal, segments_path) = ensure_dirs_and_open_wal(path)?;
+        let wal_options = config.wal_options.clone().unwrap_or_default();
+        let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
         config.save(path)?;
 
         let mut segments = SegmentHolder::default();
@@ -85,10 +88,19 @@ impl EdgeShard {
     ///   check compatibility, then persist so future loads have it.
     ///
     /// Fails if no segments exist and no config can be loaded or inferred.
+    ///
+    /// To override WAL options (e.g. for embedded/mobile deployments where
+    /// the default 32 MiB segment capacity is too large), set
+    /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
-        let (wal, segments_path) = ensure_dirs_and_open_wal(path)?;
-
         let mut config = resolve_initial_config(path, config)?;
+
+        let wal_options = config
+            .as_ref()
+            .and_then(|c| c.wal_options.clone())
+            .unwrap_or_default();
+        let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
+
         let mut segments = load_segments(path, &segments_path, &mut config)?;
 
         ensure_appendable_segment(
@@ -175,14 +187,6 @@ impl Drop for EdgeShard {
     }
 }
 
-fn default_wal_options() -> WalOptions {
-    WalOptions {
-        segment_capacity: 32 * 1024 * 1024,
-        segment_queue_len: 0,
-        retain_closed: NonZero::new(1).unwrap(),
-    }
-}
-
 fn has_existing_segments(path: &Path) -> bool {
     let segments_path = path.join(SEGMENTS_PATH);
     let Ok(entries) = fs::read_dir(&segments_path) else {
@@ -208,6 +212,7 @@ fn has_existing_segments(path: &Path) -> bool {
 
 fn ensure_dirs_and_open_wal(
     path: &Path,
+    wal_options: WalOptions,
 ) -> OperationResult<(SerdeWal<CollectionUpdateOperations>, PathBuf)> {
     let wal_path = path.join(WAL_PATH);
     if !wal_path.exists() {
@@ -216,7 +221,7 @@ fn ensure_dirs_and_open_wal(
         })?;
     }
 
-    let wal = SerdeWal::new(&wal_path, default_wal_options()).map_err(|err| {
+    let wal = SerdeWal::new(&wal_path, wal_options).map_err(|err| {
         OperationError::service_error(format!("failed to open WAL {}: {err}", wal_path.display(),))
     })?;
 

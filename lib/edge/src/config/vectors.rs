@@ -37,6 +37,12 @@ pub struct EdgeVectorParams {
 }
 
 impl EdgeVectorParams {
+    /// Start building [`EdgeVectorParams`] with a fluent API. The two
+    /// required fields (`size`, `distance`) are supplied here.
+    pub fn builder(size: usize, distance: Distance) -> crate::builders::EdgeVectorParamsBuilder {
+        crate::builders::EdgeVectorParamsBuilder::new(size, distance)
+    }
+
     /// Build `VectorDataConfig` for segment/optimizer use, using global quantization.
     pub fn to_plain_vector_data_config(
         &self,
@@ -117,7 +123,7 @@ impl EdgeVectorParams {
 /// User-facing sparse vector parameters.
 ///
 /// Uses `on_disk: bool` instead of internal storage/index type enums.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct EdgeSparseVectorParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -132,6 +138,11 @@ pub struct EdgeSparseVectorParams {
 }
 
 impl EdgeSparseVectorParams {
+    /// Start building [`EdgeSparseVectorParams`] with a fluent API.
+    pub fn builder() -> crate::builders::EdgeSparseVectorParamsBuilder {
+        crate::builders::EdgeSparseVectorParamsBuilder::new()
+    }
+
     pub fn to_plain_sparse_vector_data_config(&self) -> SparseVectorDataConfig {
         let EdgeSparseVectorParams {
             full_scan_threshold,
