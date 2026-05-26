@@ -305,6 +305,10 @@ mod tests_mod {
             })
             .unwrap();
 
+        // The read above may have mapped the remote. Windows cannot shrink a
+        // file with an active mapping, so drop the cache's remote handle before
+        // shrinking the remote on disk. `reopen` re-opens it lazily afterward.
+        cache.release_remote();
         scn.truncate_remote(BLOCK_SIZE * 2);
 
         let err = cache.reopen().unwrap_err();
