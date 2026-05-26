@@ -120,7 +120,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     ///
     pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
-        let has_new_data = self.tracker.live_reload(fs)?;
+        let has_new_data = self.tracker.live_reload()?;
 
         if !has_new_data {
             return Ok(());

@@ -197,7 +197,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Extend the bitslice to cover another page
-    pub fn cover_new_page(&mut self, fs: &S::Fs) -> Result<()> {
+    pub fn cover_new_page(&mut self) -> Result<()> {
         let extra_length = Self::length_for_page(&self.config);
 
         // flush outstanding changes
@@ -208,7 +208,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let new_length = (previous_bit_len / u8::BITS as usize) + extra_length;
         create_and_ensure_length(&self.path, new_length)?;
 
-        self.bitslice = StoredBitSlice::open(fs, &self.path, open_options(), Default::default())?;
+        self.bitslice.reopen()?;
 
         let current_bit_len = self.bitslice.bit_len() as usize;
 
@@ -223,7 +223,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let new_regions = expected_total_full_regions.saturating_sub(current_total_regions);
         let new_gaps =
             vec![RegionGaps::all_free(self.config.region_size_blocks as u16); new_regions];
-        self.regions_gaps.extend(fs, new_gaps.into_iter())?;
+        self.regions_gaps.extend(new_gaps.into_iter())?;
 
         assert_eq!(
             self.regions_gaps.len()? * self.config.region_size_blocks,
@@ -611,7 +611,7 @@ mod tests {
 
         let mut bitmask: MmapBitmask =
             super::Bitmask::create(&MmapFs, dir.path(), options.try_into().unwrap()).unwrap();
-        bitmask.cover_new_page(&MmapFs).unwrap();
+        bitmask.cover_new_page().unwrap();
 
         assert_eq!(bitmask.bitslice.bit_len() as u32, blocks_per_page * 2);
 

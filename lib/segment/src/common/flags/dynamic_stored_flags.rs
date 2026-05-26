@@ -199,6 +199,7 @@ where
 
             // Don't read the whole file on resize
             let populate = false;
+            // TODO: consider using UniversalRead::reopen
             let flags = Self::open_storage(fs, new_len, &self.directory, populate)?;
 
             // Swap operation. It is important this section is not interrupted by errors.

@@ -144,11 +144,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
     }
 
     /// Extends the file to fit the new regions
-    pub fn extend(
-        &mut self,
-        fs: &S::Fs,
-        iter: impl ExactSizeIterator<Item = RegionGaps>,
-    ) -> Result<()> {
+    pub fn extend(&mut self, iter: impl ExactSizeIterator<Item = RegionGaps>) -> Result<()> {
         let data: Vec<RegionGaps> = iter.collect();
         if data.is_empty() {
             return Ok(());
@@ -161,13 +157,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
         create_and_ensure_length(&self.path, new_length_in_bytes)?;
 
-        let options = OpenOptions {
-            writeable: true,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-        };
-        self.slice_store = TypedStorage::open(fs, &self.path, options, Default::default())?;
+        self.slice_store.reopen()?;
 
         debug_assert_eq!(self.len()? - prev_len, data.len());
 
@@ -715,9 +705,7 @@ mod tests {
             let config = StorageOptions::default().try_into().unwrap();
             let mut region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
-            region_gaps
-                .extend(&MmapFs, more_gaps.clone().into_iter())
-                .unwrap();
+            region_gaps.extend(more_gaps.clone().into_iter()).unwrap();
             assert_eq!(region_gaps.len().unwrap(), gaps.len() + more_gaps.len());
             for (i, gap) in gaps.iter().chain(more_gaps.iter()).enumerate() {
                 assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
