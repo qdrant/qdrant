@@ -55,7 +55,7 @@ impl Scenario {
         R::Fs: Clone + Send + Sync,
         <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
         <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-        R::OwnedReadPipeline<std::ops::Range<u32>>: Send,
+        R::OwnedReadPipeline<()>: Send,
     {
         let populate = if prefill {
             Populate::PreferBackground

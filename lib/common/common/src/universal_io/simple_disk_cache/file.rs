@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::io::{self, ErrorKind};
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -13,6 +12,7 @@ use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
+use crate::universal_io::simple_disk_cache::to_block_range;
 use crate::universal_io::{
     BorrowedReadPipeline, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result,
     UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs, UserData,
@@ -73,13 +73,7 @@ pub(super) enum InitSource<R: UniversalRead> {
     /// Build an empty local mmap and let reads fill blocks on demand.
     FromScratch,
     /// Wait for the prefill pipeline.
-    FromPrefiller(R::OwnedReadPipeline<Range<u32>>),
-}
-
-impl<R: UniversalRead> InitSource<R> {
-    pub(super) fn from_prefiller(pipe: R::OwnedReadPipeline<Range<u32>>) -> Self {
-        Self::FromPrefiller(pipe)
-    }
+    FromPrefiller(R::OwnedReadPipeline<()>),
 }
 
 impl<R> DiskCache<R>
@@ -87,7 +81,7 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
+    R::OwnedReadPipeline<()>: Send,
 {
     pub(super) fn new(
         remote_fs: R::Fs,
@@ -148,7 +142,11 @@ where
     ///
     /// If `allow_from_scratch` is false, this method will avoid initializing if `InitSource::FromScratch` is set.
     /// This is helpful for [`Self::reopen`] scenario where we can avoid work if no reads have taken place.
-    pub(super) fn init_local_state(&self, allow_from_scratch: bool, known_length: Option<u64>) -> Result<()> {
+    pub(super) fn init_local_state(
+        &self,
+        allow_from_scratch: bool,
+        known_length: Option<u64>,
+    ) -> Result<()> {
         // Only the first thread is able to initialize.
         let mut guard = self.init_lock.lock();
         if self.local.get().is_some() {
@@ -164,7 +162,7 @@ where
             }
             InitSource::FromPrefiller(mut pipe) => {
                 match pipe.wait()? {
-                    Some((blocks_range, bytes)) => {
+                    Some((_, bytes)) => {
                         let local = LocalState::new(
                             &self.local_path,
                             // TODO: if we want partial prefill, we should still create local state with
@@ -172,6 +170,7 @@ where
                             bytes.len() as u64,
                             self.open_options,
                         )?;
+                        let blocks_range = to_block_range(0..bytes.len() as u64);
                         unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
                         local
                     }
@@ -200,7 +199,7 @@ where
     fn new_local_state_from_scratch(&self, known_length: Option<u64>) -> Result<LocalState> {
         let len = match known_length {
             Some(len) => len,
-            None => self.remote()?.len::<u8>()?
+            None => self.remote()?.len::<u8>()?,
         };
         LocalState::new(&self.local_path, len, self.open_options)
     }
@@ -233,7 +232,7 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
+    R::OwnedReadPipeline<()>: Send,
 {
     type Fs = DiskCacheFs<R>;
 

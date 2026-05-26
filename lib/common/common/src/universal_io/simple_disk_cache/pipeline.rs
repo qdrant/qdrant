@@ -99,7 +99,8 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
+    R::OwnedReadPipeline<()>: Send,
+    T: bytemuck::Pod,
 {
     if range.is_empty() {
         return Ok(&[]);
@@ -125,7 +126,8 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
+    R::OwnedReadPipeline<()>: Send,
+    T: bytemuck::Pod,
 {
     let mut known_len = None;
     let (blocks_range, read_range) = match scheduled_read {
@@ -191,8 +193,8 @@ where
     R: UniversalRead + Clone + 'file,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
-    U: UserData,
+    R::OwnedReadPipeline<()>: Send,
+    T: Item,
 {
     type File = DiskCache<R>;
 
@@ -293,7 +295,8 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
+    R::OwnedReadPipeline<()>: Send,
+    T: bytemuck::Pod,
     U: UserData,
 {
     fn get_or_init_remote_pipeline(
@@ -313,8 +316,8 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
-    U: UserData,
+    R::OwnedReadPipeline<()>: Send,
+    T: bytemuck::Pod,
 {
     type File = DiskCache<R>;
 
@@ -370,11 +373,7 @@ where
         // If local has already been initialized, use the mmap length
         if let Some(local) = self.file.local.get() {
             let length = local.mmap().len::<u8>()?;
-            return self.schedule::<Sequential>(
-                user_data,
-                0..length,
-                1
-            );
+            return self.schedule::<Sequential>(user_data, 0..length, 1);
         }
 
         // Use schedule_whole on the remote pipeline directly
