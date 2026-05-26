@@ -240,7 +240,6 @@ mod tests_mod {
 
     /// Reopen with no prior reads leaves the local mirror untouched.
     #[test]
-    #[cfg_attr(target_os = "windows", ignore)] // FIXME: don't ignore, fix reopen on windows
     fn reopen_without_prior_reads_keeps_local_uninitialized() {
         let scn = Scenario::new(BLOCK_SIZE * 2);
         let mut cache = scn.open::<R>(PREFILL);
@@ -262,7 +261,6 @@ mod tests_mod {
     /// Reopen on an unchanged remote must not resize, repopulate, or mutate
     /// the fetched bitmap.
     #[test]
-    #[cfg_attr(target_os = "windows", ignore)] // FIXME: don't ignore, fix reopen on windows
     fn reopen_no_growth_does_not_repopulate() {
         let scn = Scenario::new(BLOCK_SIZE * 3);
         let mut cache = scn.open::<R>(PREFILL);
@@ -296,7 +294,6 @@ mod tests_mod {
 
     /// Reopening over a shrunk remote must fail with `UnexpectedEof`.
     #[test]
-    #[cfg_attr(target_os = "windows", ignore)] // FIXME: don't ignore, fix reopen on windows
     fn reopen_with_smaller_remote_fails() {
         let mut scn = Scenario::new(BLOCK_SIZE * 4);
         let mut cache = scn.open::<R>(PREFILL);
@@ -324,7 +321,6 @@ mod tests_mod {
     /// Reads into the new section must fail before reopen (local mirror is at
     /// the old length) and succeed after reopen.
     #[test]
-    #[cfg_attr(target_os = "windows", ignore)] // FIXME: don't ignore, fix reopen on windows
     fn reopen_growth_visible_after_reopen() {
         let mut scn = Scenario::new(BLOCK_SIZE * 2);
         let mut cache = scn.open::<R>(PREFILL);
@@ -369,7 +365,6 @@ mod tests_mod {
     /// populated, reopen must invalidate that block so the next read re-fetches
     /// it instead of returning the zero-filled bytes left by `set_len`.
     #[test]
-    #[cfg_attr(target_os = "windows", ignore)] // FIXME: don't ignore, fix reopen on windows
     fn reopen_growth_refetches_partial_tail_block() {
         // Non-block-aligned remote: block 1 holds only 100 real bytes.
         let mut scn = Scenario::new(BLOCK_SIZE + 100);
