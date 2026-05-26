@@ -1,3 +1,4 @@
+pub mod bm25;
 pub mod config;
 pub mod count;
 pub mod facet;
@@ -34,6 +35,8 @@ use self::update::*;
 mod qdrant_edge {
     #[pymodule_export]
     use super::PyEdgeShard;
+    #[pymodule_export]
+    use super::bm25::{PyBm25, PyBm25Config};
     #[pymodule_export]
     use super::config::quantization::{
         PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,

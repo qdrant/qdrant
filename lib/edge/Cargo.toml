@@ -12,6 +12,7 @@ workspace = true
 staging = ["shard/staging"]
 
 [dependencies]
+bm25 = { path = "../bm25" }
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false }
