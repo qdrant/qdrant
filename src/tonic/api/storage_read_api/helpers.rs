@@ -15,13 +15,12 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S>
 where
     <S::Fs as UniversalReadFileOps>::ContextConfig: Default,
 {
-    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
-        let fs =
-            S::Fs::from_context(Default::default()).expect("default Fs::from_context must succeed");
-        Self {
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Result<Self, UniversalIoError> {
+        let fs = S::Fs::from_context(Default::default())?;
+        Ok(Self {
             dispatcher,
             fs: Arc::new(fs),
-        }
+        })
     }
 }
 

@@ -113,7 +113,7 @@ fn create_service() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
     fs_err::create_dir_all(&shard_dir).unwrap();
 
     let dispatcher = Arc::new(Dispatcher::new(toc));
-    let service = StorageReadService::new(dispatcher);
+    let service = StorageReadService::new(dispatcher).unwrap();
 
     (service, storage_dir, shard_dir)
 }

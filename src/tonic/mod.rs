@@ -125,7 +125,8 @@ pub fn init(
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.clone(), settings.service.clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
-        let storage_read_service = StorageReadService::<StorageBackend>::new(dispatcher.clone());
+        let storage_read_service = StorageReadService::<StorageBackend>::new(dispatcher.clone())
+            .map_err(io::Error::other)?;
 
         // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET
         // will be advertised, so explicitly list the services to be included.
