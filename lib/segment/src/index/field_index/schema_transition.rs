@@ -6,14 +6,10 @@
 //! lets us swap the in-memory wrapper variant in place instead of dropping
 //! and rebuilding the entire field index from payload storage.
 //!
-//! Each per-kind arm destructures every field of the parameter struct
-//! explicitly (no `..` rest pattern), so adding a new field to any of the
-//! `*IndexParams` structs forces an update here at compile time.
+//! Each per-kind arm normalizes `on_disk` on a clone and compares the rest
+//! via the derived `PartialEq`, so a newly added field is accounted for
+//! automatically: any difference outside `on_disk` yields `Incompatible`.
 
-use crate::data_types::index::{
-    BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
-    KeywordIndexParams, TextIndexParams, UuidIndexParams,
-};
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,168 +46,32 @@ pub fn classify(old: &PayloadFieldSchema, new: &PayloadFieldSchema) -> SchemaTra
 
 fn only_on_disk_differs(old: &PayloadSchemaParams, new: &PayloadSchemaParams) -> bool {
     use PayloadSchemaParams as P;
+
+    // Compare `on_disk` at the `Option<bool>` level: `None` vs `Some(false)`
+    // both mean "false" yet the persisted value differs, so it still counts as
+    // a flip. Every other field goes through the derived `PartialEq` after
+    // normalizing `on_disk` on a clone — a newly added field is therefore
+    // accounted for automatically (any difference makes this `false`, i.e.
+    // `Incompatible`, the safe default).
+    macro_rules! only_on_disk {
+        ($a:expr, $b:expr) => {{
+            $a.on_disk != $b.on_disk && {
+                let mut normalized = $a.clone();
+                normalized.on_disk = $b.on_disk;
+                normalized == *$b
+            }
+        }};
+    }
+
     match (old, new) {
-        (P::Keyword(a), P::Keyword(b)) => {
-            let KeywordIndexParams {
-                r#type: a_type,
-                is_tenant: a_is_tenant,
-                on_disk: a_on_disk,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let KeywordIndexParams {
-                r#type: b_type,
-                is_tenant: b_is_tenant,
-                on_disk: b_on_disk,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type
-                && a_is_tenant == b_is_tenant
-                && a_enable_hnsw == b_enable_hnsw
-                && a_on_disk != b_on_disk
-        }
-        (P::Integer(a), P::Integer(b)) => {
-            let IntegerIndexParams {
-                r#type: a_type,
-                lookup: a_lookup,
-                range: a_range,
-                is_principal: a_is_principal,
-                on_disk: a_on_disk,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let IntegerIndexParams {
-                r#type: b_type,
-                lookup: b_lookup,
-                range: b_range,
-                is_principal: b_is_principal,
-                on_disk: b_on_disk,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type
-                && a_lookup == b_lookup
-                && a_range == b_range
-                && a_is_principal == b_is_principal
-                && a_enable_hnsw == b_enable_hnsw
-                && a_on_disk != b_on_disk
-        }
-        (P::Float(a), P::Float(b)) => {
-            let FloatIndexParams {
-                r#type: a_type,
-                is_principal: a_is_principal,
-                on_disk: a_on_disk,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let FloatIndexParams {
-                r#type: b_type,
-                is_principal: b_is_principal,
-                on_disk: b_on_disk,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type
-                && a_is_principal == b_is_principal
-                && a_enable_hnsw == b_enable_hnsw
-                && a_on_disk != b_on_disk
-        }
-        (P::Geo(a), P::Geo(b)) => {
-            let GeoIndexParams {
-                r#type: a_type,
-                on_disk: a_on_disk,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let GeoIndexParams {
-                r#type: b_type,
-                on_disk: b_on_disk,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type && a_enable_hnsw == b_enable_hnsw && a_on_disk != b_on_disk
-        }
-        (P::Text(a), P::Text(b)) => {
-            let TextIndexParams {
-                r#type: a_type,
-                tokenizer: a_tokenizer,
-                min_token_len: a_min_token_len,
-                max_token_len: a_max_token_len,
-                lowercase: a_lowercase,
-                ascii_folding: a_ascii_folding,
-                phrase_matching: a_phrase_matching,
-                stopwords: a_stopwords,
-                on_disk: a_on_disk,
-                stemmer: a_stemmer,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let TextIndexParams {
-                r#type: b_type,
-                tokenizer: b_tokenizer,
-                min_token_len: b_min_token_len,
-                max_token_len: b_max_token_len,
-                lowercase: b_lowercase,
-                ascii_folding: b_ascii_folding,
-                phrase_matching: b_phrase_matching,
-                stopwords: b_stopwords,
-                on_disk: b_on_disk,
-                stemmer: b_stemmer,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type
-                && a_tokenizer == b_tokenizer
-                && a_min_token_len == b_min_token_len
-                && a_max_token_len == b_max_token_len
-                && a_lowercase == b_lowercase
-                && a_ascii_folding == b_ascii_folding
-                && a_phrase_matching == b_phrase_matching
-                && a_stopwords == b_stopwords
-                && a_stemmer == b_stemmer
-                && a_enable_hnsw == b_enable_hnsw
-                && a_on_disk != b_on_disk
-        }
-        (P::Bool(a), P::Bool(b)) => {
-            let BoolIndexParams {
-                r#type: a_type,
-                on_disk: a_on_disk,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let BoolIndexParams {
-                r#type: b_type,
-                on_disk: b_on_disk,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type && a_enable_hnsw == b_enable_hnsw && a_on_disk != b_on_disk
-        }
-        (P::Datetime(a), P::Datetime(b)) => {
-            let DatetimeIndexParams {
-                r#type: a_type,
-                is_principal: a_is_principal,
-                on_disk: a_on_disk,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let DatetimeIndexParams {
-                r#type: b_type,
-                is_principal: b_is_principal,
-                on_disk: b_on_disk,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type
-                && a_is_principal == b_is_principal
-                && a_enable_hnsw == b_enable_hnsw
-                && a_on_disk != b_on_disk
-        }
-        (P::Uuid(a), P::Uuid(b)) => {
-            let UuidIndexParams {
-                r#type: a_type,
-                is_tenant: a_is_tenant,
-                on_disk: a_on_disk,
-                enable_hnsw: a_enable_hnsw,
-            } = a;
-            let UuidIndexParams {
-                r#type: b_type,
-                is_tenant: b_is_tenant,
-                on_disk: b_on_disk,
-                enable_hnsw: b_enable_hnsw,
-            } = b;
-            a_type == b_type
-                && a_is_tenant == b_is_tenant
-                && a_enable_hnsw == b_enable_hnsw
-                && a_on_disk != b_on_disk
-        }
+        (P::Keyword(a), P::Keyword(b)) => only_on_disk!(a, b),
+        (P::Integer(a), P::Integer(b)) => only_on_disk!(a, b),
+        (P::Float(a), P::Float(b)) => only_on_disk!(a, b),
+        (P::Geo(a), P::Geo(b)) => only_on_disk!(a, b),
+        (P::Text(a), P::Text(b)) => only_on_disk!(a, b),
+        (P::Bool(a), P::Bool(b)) => only_on_disk!(a, b),
+        (P::Datetime(a), P::Datetime(b)) => only_on_disk!(a, b),
+        (P::Uuid(a), P::Uuid(b)) => only_on_disk!(a, b),
         // Cross-kind pairs cannot be "only on_disk differs". Listed
         // exhaustively (rather than `_ =>`) so a new `PayloadSchemaParams`
         // variant triggers a compile error here.
@@ -230,8 +90,10 @@ fn only_on_disk_differs(old: &PayloadSchemaParams, new: &PayloadSchemaParams) ->
 mod tests {
     use super::*;
     use crate::data_types::index::{
-        BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
-        KeywordIndexType, TextIndexType, TokenizerType, UuidIndexType,
+        BoolIndexParams, BoolIndexType, DatetimeIndexParams, DatetimeIndexType, FloatIndexParams,
+        FloatIndexType, GeoIndexParams, GeoIndexType, IntegerIndexParams, IntegerIndexType,
+        KeywordIndexParams, KeywordIndexType, TextIndexParams, TextIndexType, TokenizerType,
+        UuidIndexParams, UuidIndexType,
     };
     use crate::types::PayloadSchemaType;
 
