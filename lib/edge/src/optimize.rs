@@ -721,6 +721,7 @@ mod tests {
             hnsw_config: Default::default(),
             quantization_config: None,
             optimizers: Default::default(),
+            wal_options: None,
         }
     }
 

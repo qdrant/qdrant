@@ -54,6 +54,7 @@ impl PyEdgeConfig {
             hnsw_config: hnsw_config.map(|h| h.0).unwrap_or_default(),
             quantization_config: quantization_config.map(QuantizationConfig::from),
             optimizers: optimizers.map(|o| o.0).unwrap_or_default(),
+            wal_options: None,
         }))
     }
 
@@ -101,6 +102,7 @@ impl PyEdgeConfig {
             hnsw_config: _,
             quantization_config: _,
             optimizers: _,
+            wal_options: _,
         } = self.0;
     }
 }

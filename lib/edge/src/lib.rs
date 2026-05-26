@@ -1,3 +1,4 @@
+mod builders;
 mod config;
 mod count;
 mod facet;
@@ -13,12 +14,12 @@ mod types;
 pub use types::*;
 mod update;
 
-use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+pub use builders::{EdgeConfigBuilder, EdgeSparseVectorParamsBuilder, EdgeVectorParamsBuilder};
 use common::save_on_disk::SaveOnDisk;
 pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;
@@ -45,37 +46,14 @@ pub struct EdgeShard {
     segments: LockedSegmentHolder,
 }
 
-/// Runtime options for opening an [`EdgeShard`]. Use the builder methods to
-/// set individual options; missing fields fall back to internal defaults.
-///
-/// These options are *runtime hints*, not persisted shard state — different
-/// processes may legitimately open the same shard with different options.
-/// Anything that must round-trip with the shard belongs in [`EdgeConfig`]
-/// instead.
-#[derive(Default, Debug)]
-pub struct EdgeShardOptions {
-    wal_options: Option<WalOptions>,
-}
-
-impl EdgeShardOptions {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Override the default WAL options. Useful for embedded/mobile
-    /// deployments where the default 32 MiB segment capacity is too large.
-    pub fn with_wal_options(mut self, opts: WalOptions) -> Self {
-        self.wal_options = Some(opts);
-        self
-    }
-}
-
 const WAL_PATH: &str = "wal";
 impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
     ///
     /// Fails if the shard already exists (i.e. the segments directory contains any segment).
-    /// Configuration is required and is persisted to `edge_config.json`.
+    /// Configuration is required and is persisted to `edge_config.json`. WAL
+    /// behavior follows `config.wal_options` (defaults to 32 MiB segments
+    /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
@@ -83,7 +61,8 @@ impl EdgeShard {
             ));
         }
 
-        let (wal, segments_path) = ensure_dirs_and_open_wal(path, default_wal_options())?;
+        let wal_options = config.wal_options.clone().unwrap_or_default();
+        let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
         config.save(path)?;
 
         let mut segments = SegmentHolder::default();
@@ -110,33 +89,18 @@ impl EdgeShard {
     ///
     /// Fails if no segments exist and no config can be loaded or inferred.
     ///
-    /// Uses default runtime options (see [`EdgeShardOptions`]). To customize
-    /// any of them — including WAL segment capacity — use
-    /// [`Self::load_with_options`].
+    /// To override WAL options (e.g. for embedded/mobile deployments where
+    /// the default 32 MiB segment capacity is too large), set
+    /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
-        Self::load_with_options(path, config, EdgeShardOptions::default())
-    }
+        let mut config = resolve_initial_config(path, config)?;
 
-    /// Same as [`Self::load`], but with custom runtime [`EdgeShardOptions`].
-    ///
-    /// Currently the only field is WAL options, useful for embedded/mobile
-    /// deployments where the default 32 MiB segment capacity is too large
-    /// — e.g. a Flutter plugin on iOS/Android where the WAL file's visible
-    /// size (not its physical sparse-file size) is surfaced to OS-level
-    /// backup/size pickers.
-    ///
-    /// `EdgeShardOptions` are a runtime hint, not persisted shard state —
-    /// different processes may legitimately open the same shard with
-    /// different options.
-    pub fn load_with_options(
-        path: &Path,
-        config: Option<EdgeConfig>,
-        options: EdgeShardOptions,
-    ) -> OperationResult<Self> {
-        let wal_options = options.wal_options.unwrap_or_else(default_wal_options);
+        let wal_options = config
+            .as_ref()
+            .and_then(|c| c.wal_options.clone())
+            .unwrap_or_default();
         let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
 
-        let mut config = resolve_initial_config(path, config)?;
         let mut segments = load_segments(path, &segments_path, &mut config)?;
 
         ensure_appendable_segment(
@@ -220,14 +184,6 @@ impl EdgeShard {
 impl Drop for EdgeShard {
     fn drop(&mut self) {
         self.flush();
-    }
-}
-
-fn default_wal_options() -> WalOptions {
-    WalOptions {
-        segment_capacity: 32 * 1024 * 1024,
-        segment_queue_len: 0,
-        retain_closed: NonZero::new(1).unwrap(),
     }
 }
 

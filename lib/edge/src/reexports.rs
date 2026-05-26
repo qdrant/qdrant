@@ -75,8 +75,10 @@ pub mod internal {
 
 /// Re-export WAL configuration for advanced/embedded use cases.
 ///
-/// See [`crate::EdgeShard::load_with_options`] and
-/// [`crate::EdgeShardOptions::with_wal_options`].
+/// Set it on [`crate::EdgeConfig`] via
+/// [`crate::EdgeConfigBuilder::wal_options`] (or by assigning the
+/// `wal_options` field directly) when the default 32 MiB segment capacity
+/// is too large — e.g. embedded/mobile deployments.
 pub use ::wal::WalOptions;
 
 /// Re-export from external crates used by Qdrant.

@@ -21,7 +21,7 @@ pub mod test_utils;
 #[cfg(test)]
 mod test_segment_recovery;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WalOptions {
     /// The segment capacity. Defaults to 32MiB.
     pub segment_capacity: usize,
