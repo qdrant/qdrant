@@ -6,13 +6,14 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 
-use std::borrow::Cow;
 use std::io::{self, Read as _, Seek as _};
+use std::ops::Range;
 use std::os::fd::AsRawFd as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
+use aligned_vec::avec_rt;
 use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt as _, OpenOptionsExt as _};
 
@@ -20,8 +21,9 @@ use self::error::*;
 use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{Item, OpenExtra, UniversalReadFileOps, UniversalReadFs};
+use super::traits::{OpenExtra, UniversalReadFileOps, UniversalReadFs};
 use super::*;
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 
 #[derive(Debug, Clone)]
@@ -32,11 +34,11 @@ pub struct IoUringFile {
     ///
     /// This is because `O_DIRECT` can only read in aligned blocks of data, so reads at EOF might not
     /// be aligned with O_DIRECT alignment, but it is not possible to request less than one block.
-    pub(super) direct_io: bool,
+    direct_io: bool,
 }
 
 impl IoUringFile {
-    pub(super) fn fd(&self) -> Fd {
+    fn fd(&self) -> Fd {
         Fd(self.file.as_raw_fd())
     }
 }
@@ -123,36 +125,34 @@ impl UniversalReadFs for IoUringFs {
 impl UniversalRead for IoUringFile {
     type Fs = IoUringFs;
 
-    type BorrowedReadPipeline<'a, T, U>
-        = BorrowedIoUringPipeline<'a, T, U>
+    type BorrowedReadPipeline<'a, U>
+        = BorrowedIoUringPipeline<'a, U>
     where
-        T: Item,
+        Self: 'a,
         U: UserData;
 
-    type OwnedReadPipeline<T, U>
-        = OwnedIoUringPipeline<T, U>
+    type OwnedReadPipeline<U>
+        = OwnedIoUringPipeline<U>
     where
-        T: Item,
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
         if self.direct_io {
             // direct_io needs special handling
-            return self
-                .read_iter::<P, T, _>([((), range)])?
-                .next()
-                .expect("there's exactly one read")
-                .map(|(_, data)| data);
+            let mut pipeline = BorrowedIoUringPipeline::<()>::new()?;
+            pipeline.schedule::<P>((), self, range, align)?;
+            let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
+            return Ok(bytes);
         }
 
-        let mut items = vec![T::zeroed(); range.length as usize];
-        let bytes = bytemuck::cast_slice_mut(&mut items);
-        self.file.read_exact_at(bytes, range.byte_offset)?;
-        Ok(Cow::Owned(items))
+        let len = (range.end - range.start) as usize;
+        let mut bytes = avec_rt!([align] | 0u8; len);
+        self.file.read_exact_at(&mut bytes, range.start)?;
+        Ok(ACow::Owned(bytes))
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -193,7 +193,6 @@ impl UniversalRead for IoUringFile {
         UniversalKind::IoUring
     }
 }
-
 impl UniversalWrite for IoUringFile {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let bytes = bytemuck::cast_slice(items);
@@ -214,7 +213,7 @@ impl UniversalWrite for IoUringFile {
                     return Ok(None);
                 };
 
-                let entry = state.write((), self.fd(), byte_offset, items);
+                let entry = state.write((), self.fd(), byte_offset, bytemuck::cast_slice(items));
                 Ok(Some(entry))
             })?;
 
@@ -249,7 +248,7 @@ impl UniversalWrite for IoUringFile {
                     }
                 })?;
 
-                let entry = state.write((), file.fd(), byte_offset, items);
+                let entry = state.write((), file.fd(), byte_offset, bytemuck::cast_slice(items));
                 Ok(Some(entry))
             })?;
 

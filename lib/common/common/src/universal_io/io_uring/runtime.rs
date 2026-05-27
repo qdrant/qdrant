@@ -1,43 +1,25 @@
 use std::io;
-use std::mem::MaybeUninit;
+use std::ops::Range;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{opcode, squeue};
+use aligned_vec::{AVec, ConstAlign, RuntimeAlign};
 use slab::Slab;
 
 use super::*;
-use crate::maybe_uninit;
+use crate::universal_io::UserData;
 
-const KERNEL_PAGE_SIZE: u64 = 4096; // 4 kB
+/// Required alignment for `O_DIRECT` reads (both file offset and buffer).
+const KERNEL_PAGE_SIZE: usize = 4096; // 4 kB
 
-#[derive(Debug, Clone)]
-#[repr(C, align(4096))]
-pub struct PageAlignedBytes([MaybeUninit<u8>; KERNEL_PAGE_SIZE as usize]);
-
-impl PageAlignedBytes {
-    const fn uninit() -> Self {
-        Self([MaybeUninit::uninit(); KERNEL_PAGE_SIZE as usize])
-    }
-
-    fn as_maybe_bytes(slice: &[Self]) -> &[MaybeUninit<u8>] {
-        unsafe {
-            std::slice::from_raw_parts(
-                slice.as_ptr().cast::<MaybeUninit<u8>>(),
-                slice.len() * KERNEL_PAGE_SIZE as usize,
-            )
-        }
-    }
-}
-
-pub struct IoUringRuntime<'data, T: bytemuck::Pod, U: UserData = u64> {
+pub struct IoUringRuntime<'data, U: UserData> {
     pub io_uring: IoUringGuard,
-    pub state: IoUringState<'data, T, U>,
+    pub state: IoUringState<'data, U>,
     pub in_progress: usize,
 }
 
-impl<'data, T, U> IoUringRuntime<'data, T, U>
+impl<'data, U> IoUringRuntime<'data, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     pub fn new() -> Result<Self> {
@@ -56,7 +38,7 @@ where
     /// or the queue is full.
     pub fn enqueue_while<F>(&mut self, mut entries: F) -> Result<()>
     where
-        F: FnMut(&mut IoUringState<'data, T, U>) -> Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<'data, U>) -> Result<Option<squeue::Entry>>,
     {
         let mut squeue = self.io_uring.submission();
 
@@ -122,7 +104,7 @@ where
         Ok(())
     }
 
-    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(U, IoUringResponse<T>)>> {
+    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(U, IoUringResponse)>> {
         self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
@@ -145,9 +127,8 @@ where
     }
 }
 
-impl<'data, T, U> Drop for IoUringRuntime<'data, T, U>
+impl<'data, U> Drop for IoUringRuntime<'data, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     fn drop(&mut self) {
@@ -169,19 +150,18 @@ where
 }
 
 #[derive(Debug)]
-pub struct IoUringState<'data, T, U> {
-    requests: Slab<PendingRequest<'data, T, U>>,
+pub struct IoUringState<'data, U> {
+    requests: Slab<PendingRequest<'data, U>>,
 }
 
 #[derive(Debug)]
-struct PendingRequest<'data, T, U> {
+struct PendingRequest<'data, U> {
     user_data: U,
-    request: IoUringRequest<'data, T>,
+    request: IoUringRequest<'data>,
 }
 
-impl<'data, T, U> IoUringState<'data, T, U>
+impl<'data, U> IoUringState<'data, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     pub fn with_capacity(capacity: usize) -> Self {
@@ -195,72 +175,70 @@ where
         &mut self,
         user_data: U,
         fd: Fd,
-        range: ReadRange,
+        range: Range<u64>,
+        align: usize,
         o_direct: bool,
     ) -> squeue::Entry {
         if o_direct {
-            self.read_o_direct(user_data, fd, range)
+            self.read_o_direct(user_data, fd, range, align)
         } else {
-            self.read_exact(user_data, fd, range)
+            self.read_exact(user_data, fd, range, align)
         }
     }
 
-    /// Allocates `Vec<MaybeUninit<T>>`, reinterprets it as `Vec<MaybeUninit<u8>>`, and stores the byte buffer
-    /// so the kernel writes into correctly aligned memory for `T`.
-    fn read_exact(&mut self, user_data: U, fd: Fd, range: ReadRange) -> squeue::Entry {
-        let ReadRange {
-            byte_offset,
-            length,
-        } = range;
+    /// Allocates an `align`-aligned [`AlignedBuf`] sized exactly to the request,
+    /// so the kernel writes into a buffer that is already correctly aligned for
+    /// the caller's downstream cast.
+    fn read_exact(
+        &mut self,
+        user_data: U,
+        fd: Fd,
+        range: Range<u64>,
+        align: usize,
+    ) -> squeue::Entry {
+        let size =
+            u32::try_from(range.end - range.start).expect("read buffer length fit within u32");
+        let buffer = AVec::with_capacity(align, size as usize);
+        let (slot, req) = self.init(user_data, IoUringRequest::Read { buffer });
 
-        // Size the buffer exactly to the number of items to read
-        let items: Vec<MaybeUninit<T>> = vec![MaybeUninit::uninit(); length as _];
-        let (slot, req) = self.init(user_data, IoUringRequest::Read { items });
-        let items = req.expect_read();
-
-        let bytes_ptr = items.as_mut_ptr().cast();
-        let byte_length = length * size_of::<T>() as u64;
-        let byte_length = u32::try_from(byte_length).expect("read buffer length fit within u32");
-
-        opcode::Read::new(fd, bytes_ptr, byte_length)
-            .offset(byte_offset)
+        opcode::Read::new(fd, req.expect_read().as_mut_ptr(), size)
+            .offset(range.start)
             .build()
             .user_data(slot as u64)
     }
 
-    /// Allocates a `Vec<MaybeUninit<u8>>` aligned to 4kB.
-    fn read_o_direct(&mut self, user_data: U, fd: Fd, range: ReadRange) -> squeue::Entry {
-        let ReadRange {
-            byte_offset,
-            length,
-        } = range;
-
+    /// Allocates a page-aligned scratch byte buffer rounded up to whole pages.
+    fn read_o_direct(
+        &mut self,
+        user_data: U,
+        fd: Fd,
+        range: Range<u64>,
+        align: usize,
+    ) -> squeue::Entry {
         // Make sure read buffer is kernel-page aligned
-        let page_byte_offset = byte_offset & !(KERNEL_PAGE_SIZE - 1); // page-aligned byte offset
-        let inner_byte_offset = byte_offset - page_byte_offset; // offset within buffer where the request starts
+        let pages_start = range.start & !(KERNEL_PAGE_SIZE as u64 - 1);
+        let pages_end = range.end.next_multiple_of(KERNEL_PAGE_SIZE as u64);
 
-        let bytes_len =
-            (inner_byte_offset + length * size_of::<T>() as u64).next_multiple_of(KERNEL_PAGE_SIZE);
+        let buffer = AVec::with_capacity(KERNEL_PAGE_SIZE, (pages_end - pages_start) as usize);
 
-        let num_pages = bytes_len / KERNEL_PAGE_SIZE;
-
-        let buffer: Vec<PageAlignedBytes> = vec![PageAlignedBytes::uninit(); num_pages as _];
+        // Range within the page-aligned buffer
+        let inner_range = (range.start - pages_start) as usize..(range.end - pages_start) as usize;
 
         let (slot, req) = self.init(
             user_data,
             IoUringRequest::ODirectRead {
                 buffer,
-                inner_byte_offset: inner_byte_offset as usize,
-                items_len: length as usize,
+                inner_range,
+                align,
             },
         );
         let buffer = req.expect_o_direct_read();
 
-        let bytes_len = u32::try_from(bytes_len).expect("read buffer length fit within u32");
-        let bytes_ptr = buffer.as_mut_ptr().cast();
+        let pages_len_bytes =
+            u32::try_from(pages_end - pages_start).expect("read buffer length fit within u32");
 
-        opcode::Read::new(fd, bytes_ptr, bytes_len)
-            .offset(page_byte_offset)
+        opcode::Read::new(fd, buffer.as_mut_ptr(), pages_len_bytes)
+            .offset(pages_start)
             .build()
             .user_data(slot as u64)
     }
@@ -270,12 +248,10 @@ where
         user_data: U,
         fd: Fd,
         byte_offset: u64,
-        items: &'data [T],
+        bytes: &'data [u8],
     ) -> squeue::Entry {
-        let (slot, req) = self.init(user_data, IoUringRequest::Write(items));
-        let items = req.expect_write();
+        let (slot, _) = self.init(user_data, IoUringRequest::Write(bytes));
 
-        let bytes: &[u8] = bytemuck::cast_slice(items);
         let byte_length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
         opcode::Write::new(fd, bytes.as_ptr(), byte_length)
             .offset(byte_offset)
@@ -286,19 +262,15 @@ where
     fn init(
         &mut self,
         user_data: U,
-        request: IoUringRequest<'data, T>,
-    ) -> (usize, &mut IoUringRequest<'data, T>) {
+        request: IoUringRequest<'data>,
+    ) -> (usize, &mut IoUringRequest<'data>) {
         let entry = self.requests.vacant_entry();
         let slot = entry.key();
         let pending = entry.insert(PendingRequest { user_data, request });
         (slot, &mut pending.request)
     }
 
-    pub fn finalize(
-        &mut self,
-        slot: usize,
-        byte_length: u32,
-    ) -> io::Result<(U, IoUringResponse<T>)> {
+    pub fn finalize(&mut self, slot: usize, byte_length: u32) -> io::Result<(U, IoUringResponse)> {
         let PendingRequest { user_data, request } = self
             .requests
             .try_remove(slot)
@@ -307,22 +279,23 @@ where
         let byte_length = byte_length as usize;
 
         let resp = match request {
-            IoUringRequest::Read { items } => {
-                assert_eq!(size_of_val(items.as_slice()), byte_length);
-
-                let items: Vec<T> = unsafe { maybe_uninit::assume_init_vec(items) };
-                IoUringResponse::Read(items)
+            IoUringRequest::Read { mut buffer } => {
+                assert!(buffer.capacity() >= byte_length);
+                // SAFETY: the kernel wrote `byte_length` into the buffer.
+                unsafe { buffer.set_len(byte_length) };
+                IoUringResponse::Read(buffer)
             }
             IoUringRequest::ODirectRead {
-                buffer,
-                inner_byte_offset,
-                items_len,
+                mut buffer,
+                inner_range,
+                align,
             } => {
-                let buffer_bytes = PageAlignedBytes::as_maybe_bytes(&buffer);
+                // SAFETY: the kernel wrote `byte_length` into the buffer.
+                unsafe { buffer.set_len(byte_length) };
 
-                // We need to return a `T`-aligned Vec
+                // We need to return an `align`-aligned buffer
 
-                // TODO(perf): Currently, we are allocating 2 Vecs: a page-aligned vec, and then the `T`-aligned one.
+                // TODO(perf): Currently, we are allocating 2 Vecs: a page-aligned vec, and then the `align`-aligned one.
                 //             In theory we can use `opcode::ReadFixed` to use preregistered buffers so that we only
                 //             allocate one extra buffer per read. Not done for now since it complicates implementation.
 
@@ -332,30 +305,14 @@ where
                 // ├─────┤ 1  │ 2  │ 3  │ 4  │ 5  ├───────────>|────────┤
                 // │     └────┴────┴────┴────┴────┘                     │
                 //       ^
-                //   inner_byte_offset
+                //   inner_range.start
 
-                let initialized_bytes = unsafe { buffer_bytes[..byte_length].assume_init_ref() };
-
-                // Make sure there are at least the requested num of items
-                let avail_items = byte_length.saturating_sub(inner_byte_offset) / size_of::<T>();
-                assert!(
-                    items_len <= avail_items,
-                    "expected at least {items_len} items, got {avail_items}"
-                );
-
-                // Cast requested range into &[T]
-                let items_range = inner_byte_offset..inner_byte_offset + items_len * size_of::<T>();
-                let items_bytes = &initialized_bytes[items_range];
-                let items_slice = bytemuck::cast_slice(items_bytes);
-
-                // Copy into new Vec
-                let items: Vec<T> = items_slice.to_vec();
-
-                IoUringResponse::Read(items)
+                let result = AVec::from_slice(align, &buffer[inner_range]);
+                IoUringResponse::Read(result)
             }
 
-            IoUringRequest::Write(items) => {
-                assert_eq!(size_of_val(items), byte_length);
+            IoUringRequest::Write(bytes) => {
+                assert_eq!(bytes.len(), byte_length);
                 IoUringResponse::Write
             }
         };
@@ -368,69 +325,58 @@ where
     }
 }
 
-impl<'data, T, U> Drop for IoUringState<'data, T, U> {
+impl<'data, U> Drop for IoUringState<'data, U> {
     fn drop(&mut self) {
         debug_assert!(self.requests.is_empty());
     }
 }
 
 #[derive(Debug)]
-pub enum IoUringRequest<'data, T> {
+pub enum IoUringRequest<'data> {
     Read {
-        items: Vec<MaybeUninit<T>>,
+        buffer: AVec<u8, RuntimeAlign>,
     },
 
     ODirectRead {
-        buffer: Vec<PageAlignedBytes>,
-        inner_byte_offset: usize,
-        items_len: usize,
+        buffer: AVec<u8, ConstAlign<KERNEL_PAGE_SIZE>>,
+        inner_range: Range<usize>,
+        align: usize,
     },
 
-    Write(&'data [T]),
+    Write(&'data [u8]),
 }
 
 #[expect(
     clippy::wildcard_enum_match_arm,
     reason = "matchers for individual variants"
 )]
-impl<'data, T> IoUringRequest<'data, T> {
-    pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
+impl<'data> IoUringRequest<'data> {
+    pub fn expect_read(&mut self) -> &mut AVec<u8, RuntimeAlign> {
         match self {
-            IoUringRequest::Read { items } => items,
+            IoUringRequest::Read { buffer } => buffer,
             _ => panic!(),
         }
     }
 
-    pub fn expect_o_direct_read(&mut self) -> &mut Vec<PageAlignedBytes> {
+    pub fn expect_o_direct_read(&mut self) -> &mut AVec<u8, ConstAlign<KERNEL_PAGE_SIZE>> {
         match self {
-            IoUringRequest::ODirectRead {
-                buffer,
-                inner_byte_offset: _,
-                items_len: _,
-            } => buffer,
-            _ => panic!(),
-        }
-    }
-
-    pub fn expect_write(&self) -> &'data [T] {
-        match self {
-            IoUringRequest::Write(items) => items,
+            IoUringRequest::ODirectRead { buffer, .. } => buffer,
             _ => panic!(),
         }
     }
 }
 
 #[derive(Debug)]
-pub enum IoUringResponse<T> {
-    Read(Vec<T>),
+pub enum IoUringResponse {
+    Read(AVec<u8, RuntimeAlign>),
     Write,
 }
 
-impl<T> IoUringResponse<T> {
-    pub fn expect_read(self) -> Vec<T> {
+impl IoUringResponse {
+    pub fn expect_read(self) -> AVec<u8, RuntimeAlign> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            Self::Read(items) => items,
+            Self::Read(buffer) => buffer,
             _ => panic!(),
         }
     }

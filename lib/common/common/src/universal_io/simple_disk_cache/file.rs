@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::{self, ErrorKind};
 use std::ops::Range;
@@ -9,13 +8,14 @@ use parking_lot::Mutex;
 
 use super::BLOCK_SIZE;
 use super::fs::DiskCacheFs;
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::{
-    Item, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError,
-    UniversalKind, UniversalRead, UniversalReadFs, UserData,
+    BorrowedReadPipeline, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result,
+    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 /// A lazily-populated local mirror of an immutable remote file.
@@ -73,11 +73,11 @@ pub(super) enum InitSource<R: UniversalRead> {
     /// Build an empty local mmap and let reads fill blocks on demand.
     FromScratch,
     /// Wait for the prefill pipeline.
-    FromPrefiller(R::OwnedReadPipeline<u8, Range<u32>>),
+    FromPrefiller(R::OwnedReadPipeline<Range<u32>>),
 }
 
 impl<R: UniversalRead> InitSource<R> {
-    pub(super) fn from_prefiller(pipe: R::OwnedReadPipeline<u8, Range<u32>>) -> Self {
+    pub(super) fn from_prefiller(pipe: R::OwnedReadPipeline<Range<u32>>) -> Self {
         Self::FromPrefiller(pipe)
     }
 }
@@ -87,7 +87,7 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
+    R::OwnedReadPipeline<Range<u32>>: Send,
 {
     pub(super) fn new(
         remote_fs: R::Fs,
@@ -230,21 +230,20 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
+    R::OwnedReadPipeline<Range<u32>>: Send,
 {
     type Fs = DiskCacheFs<R>;
 
-    type BorrowedReadPipeline<'a, T, U>
-        = DiskCachePipeline<'a, R, T, U>
+    type BorrowedReadPipeline<'a, U>
+        = DiskCachePipeline<'a, R, U>
     where
         R: 'a,
-        T: Item,
+        Self: 'a,
         U: UserData;
 
-    type OwnedReadPipeline<T, U>
-        = OwnedDiskCachePipeline<R, T, U>
+    type OwnedReadPipeline<U>
+        = OwnedDiskCachePipeline<R, U>
     where
-        T: Item,
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
@@ -292,17 +291,11 @@ where
         Ok(())
     }
 
-    fn read<P, T>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>
-    where
-        P: AccessPattern,
-        T: Item,
-    {
-        let (_, read) = self
-            .read_iter::<P, T, _>(std::iter::once(((), range)))?
-            .next()
-            .expect("there's exactly one read")?;
-
-        Ok(read)
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+        let mut pipeline = DiskCachePipeline::<R, ()>::new()?;
+        pipeline.schedule::<P>((), self, range, align)?;
+        let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
+        Ok(bytes)
     }
 
     fn len<T>(&self) -> Result<u64> {

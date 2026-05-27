@@ -1,49 +1,51 @@
 use std::future::Future;
+use std::ops::Range;
 
-use common::universal_io::{Item, ReadRange, Result, UniversalIoError};
+use aligned_vec::{AVec, RuntimeAlign, avec_rt};
+use common::universal_io::{Result, UniversalIoError};
 use futures::StreamExt as _;
-use tokio::io::AsyncWriteExt as _;
 
 use crate::file::BlobFile;
 use crate::read::AsyncRead;
-use crate::writer::AlignedBufWriter;
 
-/// Build the future that allocates an exact-size destination buffer, streams
-/// the backend read for `range` into it, and returns it as the future's output.
+/// Build the future that allocates an exact-size, `align`-aligned destination
+/// byte buffer, streams the backend read for `range` into it, and returns it as
+/// the future's output.
 ///
 /// Shared by the borrowed and owned pipeline `schedule` impls. The buffer lives
 /// inside the future for the duration of the read — no shared mutable state
 /// between the pipeline thread and the worker task, so no raw-pointer unsafe is
 /// needed to cross threads. The buffer arrives back at the pipeline as a
 /// normal move through the reply channel.
-pub(super) fn read_into_buffer<A: AsyncRead, T: Item>(
+pub(crate) fn read_into_byte_buffer<A: AsyncRead>(
     file: &BlobFile<A>,
-    range: ReadRange,
-) -> impl Future<Output = Result<Vec<T>>> + Send + 'static {
-    let item_size = size_of::<T>() as u64;
-    let start = range.byte_offset;
-    let end = start + range.length * item_size;
-    let stream_fut = file.inner.read_range(&file.path, start..end);
+    range: Range<u64>,
+    align: usize,
+) -> impl Future<Output = Result<AVec<u8, RuntimeAlign>>> + Send + 'static {
+    let len = (range.end - range.start) as usize;
+    let stream_fut = file.inner.read_range(&file.path, range);
     async move {
         let mut stream = stream_fut.await?;
-        let mut buf = vec![T::zeroed(); range.length as usize];
-        {
-            let mut writer = AlignedBufWriter::new(&mut buf);
-            while let Some(chunk) = stream.next().await {
-                writer
-                    .write_all(&chunk?)
-                    .await
-                    .map_err(UniversalIoError::s3)?;
-            }
-            if writer.written() != writer.capacity() {
+        let mut buf = avec_rt!([align] | 0u8; len);
+        let mut off = 0;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            let end = off + chunk.len();
+            if end > buf.len() {
                 return Err(UniversalIoError::S3Config {
                     description: format!(
-                        "short read: expected {} bytes, got {}",
-                        writer.capacity(),
-                        writer.written(),
+                        "over-read: tried to write {end} bytes into a buffer of size {}",
+                        buf.len(),
                     ),
                 });
             }
+            buf[off..end].copy_from_slice(&chunk);
+            off = end;
+        }
+        if off != buf.len() {
+            return Err(UniversalIoError::S3Config {
+                description: format!("short read: expected {} bytes, got {off}", buf.len()),
+            });
         }
         Ok(buf)
     }

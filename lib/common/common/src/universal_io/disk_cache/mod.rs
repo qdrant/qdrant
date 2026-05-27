@@ -1,14 +1,14 @@
-use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fs_err as fs;
 
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    Item, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UserData, local_file_ops,
+    OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs,
+    UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -125,17 +125,15 @@ impl UniversalReadFs for BlockCacheFs {
 impl UniversalRead for CachedSlice {
     type Fs = BlockCacheFs;
 
-    type BorrowedReadPipeline<'a, T, U>
-        = BorrowedDiskCacheReadPipeline<'a, T, U>
+    type BorrowedReadPipeline<'a, U>
+        = BorrowedDiskCacheReadPipeline<'a, U>
     where
         Self: 'a,
-        T: Item,
         U: UserData;
 
-    type OwnedReadPipeline<T, U>
-        = OwnedDiskCacheReadPipeline<T, U>
+    type OwnedReadPipeline<U>
+        = OwnedDiskCacheReadPipeline<U>
     where
-        T: Item,
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
@@ -144,14 +142,10 @@ impl UniversalRead for CachedSlice {
         Ok(())
     }
 
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
-            / size_of::<T>();
-        let elem_length = usize::try_from(range.length).expect("range.length is within usize");
-
-        let range = elem_start..elem_start + elem_length;
-
-        Ok(self.get_range(range)?)
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+        let start = usize::try_from(range.start).expect("range.start is within usize");
+        let end = usize::try_from(range.end).expect("range.end is within usize");
+        Ok(self.get_range_bytes(start..end, align)?)
     }
 
     fn len<T>(&self) -> Result<u64> {
