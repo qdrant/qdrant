@@ -963,7 +963,7 @@ dependencies = [
 name = "bm25"
 version = "0.1.0"
 dependencies = [
- "murmur3",
+ "murmur3_32",
  "serde",
 ]
 
@@ -4388,9 +4388,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
-name = "murmur3"
-version = "0.5.2"
-source = "git+https://github.com/qdrant/murmur3?rev=2c39087#2c39087f094ae982a463e1cda9cf4d483a09192b"
+name = "murmur3_32"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3e7c60ee0b5e809b81d443bab6a735f9c80fe2138ebc5d758cda7b4faa2cdbd"
 
 [[package]]
 name = "ndarray"
@@ -5796,7 +5797,7 @@ dependencies = [
  "jsonwebtoken",
  "log",
  "mockito",
- "murmur3",
+ "murmur3_32",
  "nix 0.31.3",
  "ordered-float 5.3.0",
  "parking_lot",
