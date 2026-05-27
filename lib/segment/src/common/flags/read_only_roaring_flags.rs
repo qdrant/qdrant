@@ -1,10 +1,12 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::UniversalRead;
+use common::types::PointOffsetType;
+use common::universal_io::{OpenOptions, Populate, TypedStorage, UniversalRead};
 use roaring::RoaringBitmap;
 
-use super::dynamic_stored_flags::{FLAGS_FILE, status_file};
+use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
 use super::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
 
@@ -35,6 +37,62 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     flags_storage: StoredBitSlice<S>,
 
     directory: PathBuf,
+}
+
+impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
+    /// Open persisted flags read-only and materialize them into an in-memory
+    /// roaring bitmap.
+    ///
+    /// Read-only counterpart of [`RoaringFlags::new`][1]: every file is opened
+    /// through `fs` non-writable, nothing is created and nothing is written.
+    /// The logical length comes from the status file (the flags file is padded
+    /// past it), and the set positions from the flags file — shared with the
+    /// writable path via [`StoredBitSlice::iter_set_bits`].
+    ///
+    /// [1]: super::roaring_flags::RoaringFlags::new
+    pub fn open(fs: &S::Fs, directory: &Path, populate: bool) -> OperationResult<Self> {
+        // Logical length: read the status struct directly. `StoredStruct` is
+        // write-bound, so go through the read-only `TypedStorage`.
+        let status_path = status_file(directory);
+        let status = TypedStorage::<S, DynamicFlagsStatus>::open(
+            fs,
+            &status_path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                populate: Populate::No,
+                advice: AdviceSetting::Global,
+            },
+            Default::default(),
+        )?;
+        let len = status.read_whole()?[0].len();
+
+        // Set positions: open the flags file and build the bitmap.
+        let flags_path = directory.join(FLAGS_FILE);
+        let flags_storage = StoredBitSlice::open(
+            fs,
+            &flags_path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                populate: Populate::from(populate),
+                advice: AdviceSetting::Global,
+            },
+            Default::default(),
+        )?;
+
+        let bitmap = RoaringBitmap::from_sorted_iter(
+            flags_storage.iter_set_bits()?.map(|i| i as PointOffsetType),
+        )
+        .expect("iter_set_bits iterates in sorted order");
+
+        Ok(Self {
+            bitmap,
+            len,
+            flags_storage,
+            directory: directory.to_path_buf(),
+        })
+    }
 }
 
 impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {

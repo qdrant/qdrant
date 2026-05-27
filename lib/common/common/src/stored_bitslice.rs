@@ -10,7 +10,7 @@ use std::path::Path;
 
 use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use crate::bitvec::BitVec;
 use crate::generic_consts::Random;
@@ -144,6 +144,25 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// Count the number of set bits in the entire storage.
     pub fn count_ones(&self) -> Result<usize> {
         Ok(self.read_all()?.count_ones())
+    }
+
+    /// Iterate the bit indices of all set bits, in ascending order.
+    ///
+    /// Zero-copy on backends that support it (mmap): the iterator borrows the
+    /// mapped pages. Other backends materialize the set positions into a `Vec`
+    /// first. Reads the whole storage including any trailing capacity, so
+    /// callers that keep unused capacity cleared get back exactly their set
+    /// positions.
+    pub fn iter_set_bits(&self) -> Result<impl Iterator<Item = u64> + '_> {
+        Ok(match self.read_all()? {
+            Cow::Borrowed(bitslice) => Either::Left(bitslice.iter_ones().map(|i| i as u64)),
+            Cow::Owned(bitvec) => {
+                // Owned path: backend doesn't support zero-copy; materialize
+                // into a Vec so we don't return a reference to a local.
+                let indices: Vec<u64> = bitvec.iter_ones().map(|i| i as u64).collect();
+                Either::Right(indices.into_iter())
+            }
+        })
     }
 
     /// Get a single bit at the given bit index.

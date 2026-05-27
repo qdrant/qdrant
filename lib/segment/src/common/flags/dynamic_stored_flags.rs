@@ -11,7 +11,6 @@ use common::universal_io::{
     OpenOptions, Populate, StoredStruct, UniversalReadFileOps, UniversalWrite,
 };
 use fs_err as fs;
-use itertools::Either;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -283,18 +282,9 @@ where
 
     /// Iterate over all "true" flags
     pub fn iter_trues(&self) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
-        Ok(match self.flags.read_all()? {
-            Cow::Borrowed(bitslice) => {
-                Either::Left(bitslice.iter_ones().map(|x| x as PointOffsetType))
-            }
-            Cow::Owned(bitvec) => {
-                // Owned path: backend doesn't support zero-copy; materialize into Vec
-                // so we don't return a reference to a local
-                let indices: Vec<PointOffsetType> =
-                    bitvec.iter_ones().map(|x| x as PointOffsetType).collect();
-                Either::Right(indices.into_iter())
-            }
-        })
+        // Unused capacity past `len` is always cleared, so iterating set bits
+        // over the whole storage yields exactly the "true" positions.
+        Ok(self.flags.iter_set_bits()?.map(|i| i as PointOffsetType))
     }
 
     /// Populate all pages in the mmap.
