@@ -107,6 +107,19 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         Ok(())
     }
 
+    pub fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        E: From<GridstoreError>,
+    {
+        // TODO: Track HW usage!?
+        self.view().read_values::<P, _, _>(point_offsets, callback)
+    }
+
     /// Return the storage size in bytes (approximate: total page capacity).
     ///
     /// For the precise used-space calculation, use [`super::Gridstore::get_storage_size_bytes`].
