@@ -1,17 +1,14 @@
-use std::borrow::Cow;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{
-    Item, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UserData,
-};
-use tokio::io::AsyncWriteExt;
+use common::universal_io::{Result, UniversalKind, UniversalRead, UserData};
 
 use crate::fs::BlobFs;
-use crate::pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
+use crate::pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline, read_into_byte_buffer};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
-use crate::writer::AlignedBufWriter;
 
 /// Sync wrapper around a [`AsyncRead`] backend that implements [`UniversalRead`].
 ///
@@ -70,50 +67,26 @@ impl<A: AsyncRead> BlobFile<A> {
 impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
     type Fs = BlobFs<A>;
 
-    type BorrowedReadPipeline<'a, T, U>
-        = BorrowedBlobPipeline<'a, A, T, U>
+    type BorrowedReadPipeline<'a, U>
+        = BorrowedBlobPipeline<'a, A, U>
     where
-        T: Item,
+        Self: 'a,
         U: UserData;
 
-    type OwnedReadPipeline<T, U>
-        = OwnedBlobPipeline<A, T, U>
+    type OwnedReadPipeline<U>
+        = OwnedBlobPipeline<A, U>
     where
-        T: Item,
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        use futures::StreamExt;
-
-        let item_size = size_of::<T>() as u64;
-        let item_count = range.length as usize;
-        let start = range.byte_offset;
-        let end = start + range.length * item_size;
-        self.runtime.block_on(async move {
-            let mut buf = vec![T::zeroed(); item_count];
-            let mut writer = AlignedBufWriter::new(&mut buf);
-            let mut stream = self.inner.read_range(&self.path, start..end).await?;
-
-            while let Some(chunk) = stream.next().await {
-                writer.write_all(&chunk?).await?;
-            }
-
-            if writer.written() != writer.capacity() {
-                return Err(UniversalIoError::S3Config {
-                    description: format!(
-                        "short read: expected {} bytes, got {}",
-                        writer.capacity(),
-                        writer.written()
-                    ),
-                });
-            }
-
-            Ok::<_, UniversalIoError>(Cow::Owned(buf))
-        })
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+        let buf = self
+            .runtime
+            .block_on(read_into_byte_buffer::<A>(self, range, align))?;
+        Ok(ACow::Owned(buf))
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -142,7 +115,7 @@ mod tests {
     use std::ops::Range;
 
     use bytes::Bytes;
-    use common::universal_io::{OpenOptions, UniversalReadFs};
+    use common::universal_io::{OpenOptions, ReadRange, UniversalIoError, UniversalReadFs};
     use futures::stream::{BoxStream, StreamExt};
 
     use super::*;

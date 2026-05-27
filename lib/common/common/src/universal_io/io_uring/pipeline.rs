@@ -1,27 +1,25 @@
-use std::borrow::Cow;
 use std::mem::ManuallyDrop;
+use std::ops::Range;
 
 use ::io_uring::types::Fd;
 
 use super::pool::IO_URING_QUEUE_LENGTH;
 use super::{IoUringFile, IoUringRuntime};
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{
-    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError,
-    UniversalRead, UserData,
+    BorrowedReadPipeline, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UserData,
 };
 
-pub struct BorrowedIoUringPipeline<'file, T, U>
+pub struct BorrowedIoUringPipeline<'file, U>
 where
-    T: Item,
     U: UserData,
 {
-    inner: IoUringPipelineInner<'file, T, U>,
+    inner: IoUringPipelineInner<'file, U>,
 }
 
-impl<'file, T, U> BorrowedReadPipeline<'file, T, U> for BorrowedIoUringPipeline<'file, T, U>
+impl<'file, U> BorrowedReadPipeline<'file, U> for BorrowedIoUringPipeline<'file, U>
 where
-    T: Item,
     U: UserData,
 {
     type File = IoUringFile;
@@ -40,33 +38,32 @@ where
         &mut self,
         user_data: U,
         file: &'file IoUringFile,
-        range: ReadRange,
+        range: Range<u64>,
+        align: usize,
     ) -> Result<()> {
         // Safety: `file.fd()` doesn't outlive the inner pipeline because of
         // `'file` lifetime.
         unsafe {
             self.inner
-                .schedule(user_data, file.fd(), file.direct_io, range)
+                .schedule(user_data, file.fd(), file.direct_io, range, align)
         }
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
         self.inner.wait()
     }
 }
 
-pub struct OwnedIoUringPipeline<T, U>
+pub struct OwnedIoUringPipeline<U>
 where
-    T: Item,
     U: UserData,
 {
     file: ManuallyDrop<IoUringFile>,
-    inner: ManuallyDrop<IoUringPipelineInner<'static, T, U>>,
+    inner: ManuallyDrop<IoUringPipelineInner<'static, U>>,
 }
 
-impl<T, U> OwnedReadPipeline<T, U> for OwnedIoUringPipeline<T, U>
+impl<U> OwnedReadPipeline<U> for OwnedIoUringPipeline<U>
 where
-    T: Item,
     U: UserData,
 {
     type File = IoUringFile;
@@ -83,61 +80,53 @@ where
         self.inner.can_schedule()
     }
 
-    fn schedule<P>(&mut self, user_data: U, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern,
-    {
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<()> {
         // Safety: `self.file.fd()` doesn't outlive the inner pipeline because
         // of explicit drop order in `impl Drop`.
         unsafe {
             self.inner
-                .schedule(user_data, self.file.fd(), self.file.direct_io, range)
+                .schedule(user_data, self.file.fd(), self.file.direct_io, range, align)
         }
     }
 
     fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        let length = self.file.len::<T>()?;
-
-        self.schedule::<Sequential>(
-            user_data,
-            ReadRange {
-                byte_offset: 0,
-                length,
-            },
-        )
+        let length = self.file.len::<u8>()?;
+        self.schedule::<Sequential>(user_data, 0..length, 1)
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         self.inner.wait()
     }
 }
 
-impl<T, U> Drop for OwnedIoUringPipeline<T, U>
+impl<U> Drop for OwnedIoUringPipeline<U>
 where
-    T: Item,
     U: UserData,
 {
     fn drop(&mut self) {
         // Drop `inner` before `file`.
         let Self { file, inner } = self;
         let file: IoUringFile = unsafe { ManuallyDrop::take(file) };
-        let inner: IoUringPipelineInner<_, _> = unsafe { ManuallyDrop::take(inner) };
+        let inner: IoUringPipelineInner<_> = unsafe { ManuallyDrop::take(inner) };
         drop(inner);
         drop(file);
     }
 }
 
-struct IoUringPipelineInner<'file, T, U>
+struct IoUringPipelineInner<'file, U>
 where
-    T: Item,
     U: UserData,
 {
-    runtime: IoUringRuntime<'file, T, U>,
+    runtime: IoUringRuntime<'file, U>,
 }
 
-impl<'file, T, U> IoUringPipelineInner<'file, T, U>
+impl<'file, U> IoUringPipelineInner<'file, U>
 where
-    T: Item,
     U: UserData,
 {
     fn new() -> Result<Self> {
@@ -159,7 +148,8 @@ where
         user_data: U,
         fd: Fd,
         direct_io: bool,
-        range: ReadRange,
+        range: Range<u64>,
+        align: usize,
     ) -> Result<()> {
         let mut squeue = self.runtime.io_uring.submission();
 
@@ -167,7 +157,10 @@ where
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        let entry = self.runtime.state.read(user_data, fd, range, direct_io);
+        let entry = self
+            .runtime
+            .state
+            .read(user_data, fd, range, align, direct_io);
 
         unsafe {
             squeue.push(&entry).expect("submission queue is not full");
@@ -176,7 +169,7 @@ where
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();
@@ -192,6 +185,6 @@ where
         };
 
         let (user_data, resp) = result?;
-        Ok(Some((user_data, Cow::Owned(resp.expect_read()))))
+        Ok(Some((user_data, ACow::Owned(resp.expect_read()))))
     }
 }

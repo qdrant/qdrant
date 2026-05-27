@@ -1,6 +1,6 @@
 use std::ops::{Deref, RangeTo};
 
-use aligned_vec::{AVec, ConstAlign};
+use aligned_vec::{AVec, RuntimeAlign};
 
 use crate::zeros::ZEROS;
 
@@ -33,21 +33,18 @@ use crate::zeros::ZEROS;
 /// 4096 bytes (usually), which is more than enough. This structure mimics that
 /// fraction of mmap's power.
 pub struct AlignedBuf {
-    buf: AVec<u8, ConstAlign<ALIGN>>,
+    buf: AVec<u8, RuntimeAlign>,
     offset: usize,
 }
 
-/// Large enough for our use-cases; we can extend it if needed.
-/// [`u128`] is largest entry in persisted_hashmap.
-const ALIGN: usize = size_of::<u128>();
-
 impl AlignedBuf {
-    /// Creates [`AlignedBuf`]. It will hold the alignment invariant, assuming
-    /// we will read starting from `file_offset`.
-    pub fn new_for_offset(file_offset: u64) -> Self {
+    /// Creates [`AlignedBuf`]. It will hold the alignment invariant for `align`,
+    /// assuming we will read starting from `file_offset`.
+    pub fn new_for_offset(file_offset: u64, align: usize) -> Self {
+        assert!(align.is_power_of_two(), "Alignment must be a power of two");
         Self {
-            buf: AVec::new(ALIGN),
-            offset: (file_offset % ALIGN as u64) as usize,
+            buf: AVec::new(align),
+            offset: (file_offset & (align as u64 - 1)) as usize,
         }
     }
 
@@ -67,8 +64,8 @@ impl AlignedBuf {
     pub fn remove_prefix(&mut self, range: RangeTo<usize>) {
         let RangeTo { end: count } = range;
         self.offset += count;
-        let to_drop = self.offset - self.offset % ALIGN;
-        self.offset %= ALIGN;
+        let to_drop = self.offset & !(self.buf.alignment() - 1);
+        self.offset &= self.buf.alignment() - 1;
         if to_drop > 0 {
             self.buf.copy_within(to_drop.., 0);
             self.buf.truncate(self.buf.len() - to_drop);
@@ -97,7 +94,7 @@ mod tests {
         let digits = (0..123).collect::<Vec<u8>>();
         let ptr_of = |x: &u8| x as *const _ as usize;
 
-        let mut buf = AlignedBuf::new_for_offset(0xABC3);
+        let mut buf = AlignedBuf::new_for_offset(0xABC3, align_of::<u128>());
         assert_eq!(buf.buf.capacity(), 0, "The constructor shouldn't allocate");
         assert_eq!(&buf[..], [] as [u8; 0]);
 

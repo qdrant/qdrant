@@ -1,22 +1,26 @@
 use std::future::Future;
 use std::sync::{Arc, LazyLock};
 
+use aligned_vec::{AVec, RuntimeAlign};
 use common::universal_io::UniversalIoError;
 
 /// Reply produced by a spawned read task and shipped back to the originating
 /// pipeline over its reply channel. The slot is the correlation id; the
 /// destination buffer is the future's output, moved into the response so the
 /// pipeline doesn't need to share mutable buffer state with the worker thread.
-pub(crate) struct BridgeResponse<T> {
+pub(crate) struct BridgeResponse {
     pub slot: usize,
-    pub result: Result<Vec<T>, UniversalIoError>,
+    pub result: Result<AVec<u8, RuntimeAlign>, UniversalIoError>,
 }
 
-impl<T> BridgeResponse<T> {
+impl BridgeResponse {
     /// Build a reply for the given slot with the future's output. Provided so
     /// the spawned task doesn't have to reach into the struct layout when
     /// constructing the response.
-    pub(crate) fn new(slot: usize, result: Result<Vec<T>, UniversalIoError>) -> Self {
+    pub(crate) fn new(
+        slot: usize,
+        result: Result<AVec<u8, RuntimeAlign>, UniversalIoError>,
+    ) -> Self {
         Self { slot, result }
     }
 }

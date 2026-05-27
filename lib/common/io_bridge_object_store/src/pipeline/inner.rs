@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 
+use aligned_vec::{AVec, RuntimeAlign};
 use common::universal_io::{Result, UniversalIoError, UserData};
 use futures::FutureExt as _;
 use slab::Slab;
@@ -27,25 +28,25 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
 /// Owns the reply channel and — via a [`Slab`] — the caller-side `user_data`
 /// for every in-flight request, keyed by the slot assigned at schedule time so
 /// out-of-order replies still reunite with the right caller context. The
-/// destination `Vec<T>` lives inside the future itself and comes back through
-/// the reply channel as the future's output, so the pipeline never shares
-/// mutable buffer state with the worker task.
+/// destination aligned byte buffer lives inside the future itself and comes
+/// back through the reply channel as the future's output, so the pipeline
+/// never shares mutable buffer state with the worker task.
 ///
 /// The [`BridgeRuntime`] is intentionally not stored here — callers supply it
 /// on every `schedule` call. This keeps the pipeline cheap (one channel +
 /// a slab) and lets the same pipeline collect replies from multiple runtimes
 /// if desired.
-pub(crate) struct PipelineInner<T, U> {
+pub(crate) struct PipelineInner<U> {
     /// Sender for the reply channel. Cloned into every spawned read task as
     /// its return address.
-    tx: mpsc::Sender<BridgeResponse<T>>,
+    tx: mpsc::Sender<BridgeResponse>,
     /// Receiver for the reply channel. `wait` blocks on this.
-    rx: mpsc::Receiver<BridgeResponse<T>>,
+    rx: mpsc::Receiver<BridgeResponse>,
     /// In-flight reads awaiting a reply, tagged by slot.
     slots: Slab<U>,
 }
 
-impl<T, U> PipelineInner<T, U>
+impl<U> PipelineInner<U>
 where
     U: UserData,
 {
@@ -54,8 +55,8 @@ where
     /// across pipelines or sized independently of [`BLOB_PIPELINE_CAPACITY`].
     /// Use [`PipelineInner::default_channel`] to get the standard pair.
     pub(crate) fn new(
-        tx: mpsc::Sender<BridgeResponse<T>>,
-        rx: mpsc::Receiver<BridgeResponse<T>>,
+        tx: mpsc::Sender<BridgeResponse>,
+        rx: mpsc::Receiver<BridgeResponse>,
     ) -> Self {
         Self {
             tx,
@@ -66,10 +67,8 @@ where
 
     /// Standard `(tx, rx)` pair sized to [`BLOB_PIPELINE_CAPACITY`]. Most
     /// pipelines should use this and feed it directly into [`Self::new`].
-    pub(crate) fn default_channel() -> (
-        mpsc::Sender<BridgeResponse<T>>,
-        mpsc::Receiver<BridgeResponse<T>>,
-    ) {
+    pub(crate) fn default_channel() -> (mpsc::Sender<BridgeResponse>, mpsc::Receiver<BridgeResponse>)
+    {
         mpsc::channel(BLOB_PIPELINE_CAPACITY)
     }
 
@@ -89,9 +88,10 @@ where
     /// - `user_data`: opaque caller context (e.g. a request id, point id)
     ///   stored under the freshly assigned slot. Returned alongside the
     ///   destination buffer from [`Self::wait`].
-    /// - `future`: the async work to perform. Must resolve to `Result<Vec<T>>`,
-    ///   be `Send + 'static`, and own all of its captured state — it is
-    ///   spawned onto `runtime` and `.await`-ed on a runtime worker thread.
+    /// - `future`: the async work to perform. Must resolve to a
+    ///   `Result<AVec<u8, RuntimeAlign>>`, be `Send + 'static`, and own all
+    ///   of its captured state — it is spawned onto `runtime` and `.await`-ed
+    ///   on a runtime worker thread.
     ///
     /// # Errors
     /// - [`UniversalIoError::QueueIsFull`] if the pipeline already has
@@ -103,8 +103,7 @@ where
         future: F,
     ) -> Result<()>
     where
-        F: Future<Output = Result<Vec<T>>> + Send + 'static,
-        T: Send + 'static,
+        F: Future<Output = Result<AVec<u8, RuntimeAlign>>> + Send + 'static,
     {
         if !self.can_schedule() {
             return Err(UniversalIoError::QueueIsFull);
@@ -112,11 +111,11 @@ where
         let slot = self.slots.insert(user_data);
 
         // Spawn the read directly onto the runtime; the task ships its output
-        // (the destination Vec<T>) back over the pipeline's reply channel,
-        // tagged with `slot`. The reply channel is sized to the pipeline
-        // capacity, so the send never blocks on backpressure — the only `send`
-        // error is the pipeline being dropped before collecting, in which case
-        // discarding the buffer is correct.
+        // (the destination aligned byte buffer) back over the pipeline's reply
+        // channel, tagged with `slot`. The reply channel is sized to the
+        // pipeline capacity, so the send never blocks on backpressure — the
+        // only `send` error is the pipeline being dropped before collecting,
+        // in which case discarding the buffer is correct.
         let reply_tx = self.tx.clone();
         runtime.handle().spawn(async move {
             // Catch a panic in the read future and turn it into an error reply,
@@ -135,7 +134,7 @@ where
         Ok(())
     }
 
-    pub(crate) fn wait(&mut self) -> Result<Option<(U, Vec<T>)>> {
+    pub(crate) fn wait(&mut self) -> Result<Option<(U, AVec<u8, RuntimeAlign>)>> {
         if self.slots.is_empty() {
             return Ok(None);
         }
@@ -158,10 +157,14 @@ mod tests {
 
     use super::*;
 
+    fn avec(bytes: &[u8]) -> AVec<u8, RuntimeAlign> {
+        AVec::from_slice(1, bytes)
+    }
+
     #[test]
     fn pipeline_can_schedule_starts_true_and_blocks_when_full() {
-        let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
-        let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         assert!(inner.can_schedule());
         for i in 0..BLOB_PIPELINE_CAPACITY {
             inner.slots.insert(i as u32);
@@ -172,13 +175,13 @@ mod tests {
     #[test]
     fn pipeline_schedule_returns_queue_full_when_capacity_reached() {
         let runtime = BridgeRuntime::global();
-        let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
-        let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         for i in 0..BLOB_PIPELINE_CAPACITY {
             inner.slots.insert(i as u32);
         }
         let err = inner
-            .schedule(&runtime, 999, async { Ok(vec![0u8; 1]) })
+            .schedule(&runtime, 999, async { Ok(avec(&[0])) })
             .unwrap_err();
         assert!(matches!(err, UniversalIoError::QueueIsFull));
     }
@@ -186,10 +189,10 @@ mod tests {
     #[test]
     fn pipeline_schedule_and_wait_round_trip() {
         let runtime = BridgeRuntime::global();
-        let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
-        let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         inner
-            .schedule(&runtime, 111, async { Ok(b"hello".to_vec()) })
+            .schedule(&runtime, 111, async { Ok(avec(b"hello")) })
             .expect("schedule");
         let (user, bytes) = inner.wait().expect("wait ok").expect("some");
         assert_eq!(user, 111);
@@ -199,15 +202,15 @@ mod tests {
     #[test]
     fn pipeline_out_of_order_completion_preserves_user_data() {
         let runtime = BridgeRuntime::global();
-        let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
-        let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         for (i, bytes) in [b"aaaa".as_slice(), b"bb".as_slice(), b"cccccc".as_slice()]
             .iter()
             .enumerate()
         {
             let bytes = *bytes;
             inner
-                .schedule(&runtime, i as u32, async move { Ok(bytes.to_vec()) })
+                .schedule(&runtime, i as u32, async move { Ok(avec(bytes)) })
                 .unwrap();
         }
         let mut seen = std::collections::HashSet::new();
@@ -225,12 +228,12 @@ mod tests {
     #[expect(unreachable_code, reason = "panic diverges before the typed tail")]
     fn pipeline_panicking_future_yields_error_not_hang() {
         let runtime = BridgeRuntime::global();
-        let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
-        let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         inner
             .schedule(&runtime, 7, async {
                 panic!("boom");
-                Ok(Vec::<u8>::new())
+                Ok(avec(&[]))
             })
             .expect("schedule");
         let err = inner.wait().unwrap_err();
@@ -243,18 +246,16 @@ mod tests {
     fn pipeline_collects_replies_from_multiple_runtimes() {
         let rt_a = BridgeRuntime::new().expect("rt_a");
         let rt_b = BridgeRuntime::new().expect("rt_b");
-        let (tx, rx) = PipelineInner::<u8, u32>::default_channel();
-        let mut inner: PipelineInner<u8, u32> = PipelineInner::new(tx, rx);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         inner
-            .schedule(&rt_a, 1, async { Ok(b"AAAA".to_vec()) })
+            .schedule(&rt_a, 1, async { Ok(avec(b"AAAA")) })
             .unwrap();
-        inner
-            .schedule(&rt_b, 2, async { Ok(b"BB".to_vec()) })
-            .unwrap();
+        inner.schedule(&rt_b, 2, async { Ok(avec(b"BB")) }).unwrap();
         let mut seen: AHashMap<u32, Vec<u8>> = AHashMap::new();
         for _ in 0..2 {
             let (user, bytes) = inner.wait().unwrap().unwrap();
-            seen.insert(user, bytes);
+            seen.insert(user, bytes.to_vec());
         }
         assert_eq!(seen[&1], b"AAAA");
         assert_eq!(seen[&2], b"BB");

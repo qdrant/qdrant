@@ -19,14 +19,15 @@
 //! can be adjusted later if needed.
 
 use std::borrow::Cow;
+use std::ops::Range;
 
 use super::Item;
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{ReadRange, Result, UserData};
+use crate::universal_io::{Result, UserData};
 
-pub trait BorrowedReadPipeline<'file, T, U>: Sized
+pub trait BorrowedReadPipeline<'file, U>: Sized
 where
-    T: Item,
     U: UserData,
 {
     type File: 'file;
@@ -42,25 +43,29 @@ where
     ///
     /// Should be called only when [`UniversalReadPipeline::can_schedule()`] is
     /// `true`. Returns [`UniversalIoError::QueueIsFull`] otherwise.
-    ///
-    /// [`UniversalIoError::QueueIsFull`]: crate::universal_io::UniversalIoError::QueueIsFull
-    fn schedule<P>(
+    fn schedule<P: AccessPattern>(
         &mut self,
         user_data: U,
         file: &'file Self::File,
-        range: ReadRange,
-    ) -> Result<()>
-    where
-        P: AccessPattern;
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<()>;
 
     /// Block until any of the scheduled operations is completed and consume its
     /// result.
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>>;
+    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>>;
+
+    #[inline]
+    fn wait_bytemuck<T: Item>(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+        let Some((user_data, bytes)) = self.wait()? else {
+            return Ok(None);
+        };
+        Ok(Some((user_data, bytes.try_cast_bytemuck().unwrap())))
+    }
 }
 
-pub trait OwnedReadPipeline<T, U>: Sized
+pub trait OwnedReadPipeline<U>: Sized
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     type File;
@@ -70,14 +75,25 @@ where
     fn can_schedule(&mut self) -> bool;
 
     /// See [`BorrowedReadPipeline::schedule()`].
-    fn schedule<P>(&mut self, user_data: U, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern;
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<()>;
 
     /// Like `Self::schedule`, but doesn't need to know file length upfront.
-    /// Reads the entire file.
+    /// Reads the entire file, byte-aligned (align = 1).
     fn schedule_whole(&mut self, user_data: U) -> Result<()>;
 
     /// See [`BorrowedReadPipeline::wait()`].
-    fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>>;
+    fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>>;
+
+    #[inline]
+    fn wait_bytemuck<T: Item>(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
+        let Some((user_data, bytes)) = self.wait()? else {
+            return Ok(None);
+        };
+        Ok(Some((user_data, bytes.try_cast_bytemuck().unwrap())))
+    }
 }

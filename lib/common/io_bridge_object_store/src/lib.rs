@@ -38,7 +38,7 @@
 //!                  │
 //!                  ▼
 //!   ┌──────────────────────────────────────────┐
-//!   │ PipelineInner<T, U>                      │
+//!   │ PipelineInner<B, U>                      │
 //!   │   tx, rx : reply channel                 │
 //!   │   slots  : Slab<U>                       │
 //!   │           (slot -> user_data)            │
@@ -48,8 +48,8 @@
 //!                  ▼                                      ┌────────────────────────────────┐
 //!   ┌────────────────────────────────┐  rt.handle()       │ spawned task:                  │
 //!   │ reply_tx = tx.clone()          │  .spawn(task)      │   // future allocates the      │
-//!   │ slots.insert(user)  -> slot    │ ─────────────────► │   // destination Vec<T>,       │
-//!   └────────────────────────────────┘                    │   // streams chunks into it,   │
+//!   │ slots.insert(user)  -> slot    │ ─────────────────► │   // destination aligned buf,  │
+//!   └────────────────────────────────┘                    │   // copies chunks into it,    │
 //!                                                         │   // and returns it as output  │
 //!                                                         │   buf = future.await           │
 //!                                                         │   reply_tx.send(               │
@@ -87,11 +87,10 @@
 //!   no boxing or type erasure is needed at the dispatch boundary either.
 //!
 //! - **No `Bytes` aggregation in the pipeline.** The future allocates the
-//!   typed destination `Vec<T>` itself, streams stream chunks straight into it
-//!   through an `AlignedBufWriter`, and returns the buffer as its output. The
-//!   reply channel carries the buffer back as a plain `Vec<T>`. This removes
-//!   the two redundant copies that an "aggregate to `Bytes`, then cast to
-//!   `Vec<T>`" path would do.
+//!   destination aligned byte buffer itself, copies stream chunks straight
+//!   into it, and returns the buffer as its output. The reply channel carries
+//!   the buffer back as a plain `AVec<u8>`. This removes the two redundant
+//!   copies that an "aggregate to `Bytes`, then copy out" path would do.
 
 mod backend;
 pub mod backends;
@@ -101,7 +100,6 @@ mod pipeline;
 mod read;
 mod runtime;
 mod source;
-mod writer;
 
 #[cfg(test)]
 mod tests;

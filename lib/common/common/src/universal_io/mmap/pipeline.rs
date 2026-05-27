@@ -1,19 +1,18 @@
-use std::borrow::Cow;
+use std::ops::Range;
 
-use super::{MmapFile, read};
+use super::{MmapFile, read_bytes};
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::{
-    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError,
-    UniversalRead, UserData,
+    BorrowedReadPipeline, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UserData,
 };
 
-pub struct BorrowedMmapReadPipeline<'file, T, U> {
-    result: Option<(U, &'file [T])>,
+pub struct BorrowedMmapReadPipeline<'file, U> {
+    result: Option<(U, &'file [u8])>,
 }
 
-impl<'file, T, U> BorrowedReadPipeline<'file, T, U> for BorrowedMmapReadPipeline<'file, T, U>
+impl<'file, U> BorrowedReadPipeline<'file, U> for BorrowedMmapReadPipeline<'file, U>
 where
-    T: Item,
     U: UserData,
 {
     type File = MmapFile;
@@ -26,34 +25,35 @@ where
         self.result.is_none()
     }
 
-    fn schedule<P>(&mut self, user_data: U, file: &'file MmapFile, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern,
-    {
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        file: &'file MmapFile,
+        range: Range<u64>,
+        _align: usize,
+    ) -> Result<()> {
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((user_data, read(file.as_bytes::<P>(), range)?));
+        self.result = Some((user_data, read_bytes(file.as_bytes::<P>(), range)?));
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
         let result = self.result.take();
-        Ok(result.map(|(user_data, items)| (user_data, Cow::Borrowed(items))))
+        Ok(result.map(|(user_data, bytes)| (user_data, ACow::Borrowed(bytes))))
     }
 }
 
 #[derive(Debug)]
-pub struct OwnedMmapReadPipeline<T, U> {
+pub struct OwnedMmapReadPipeline<U> {
     file: MmapFile,
-    pending: Option<(U, ReadRange, bool)>,
-    _phantom: std::marker::PhantomData<T>,
+    pending: Option<(U, Range<u64>, bool)>,
 }
 
-impl<T, U> OwnedReadPipeline<T, U> for OwnedMmapReadPipeline<T, U>
+impl<U> OwnedReadPipeline<U> for OwnedMmapReadPipeline<U>
 where
-    T: Item,
     U: UserData,
 {
     type File = MmapFile;
@@ -62,7 +62,6 @@ where
         Ok(Self {
             file,
             pending: None,
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -70,10 +69,12 @@ where
         self.pending.is_none()
     }
 
-    fn schedule<P>(&mut self, user_data: U, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern,
-    {
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        range: Range<u64>,
+        _align: usize,
+    ) -> Result<()> {
         if self.pending.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
@@ -82,17 +83,11 @@ where
     }
 
     fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        let length = self.file.len::<T>()?;
-        self.schedule::<Sequential>(
-            user_data,
-            ReadRange {
-                byte_offset: 0,
-                length,
-            },
-        )
+        let length = self.file.len::<u8>()?;
+        self.schedule::<Sequential>(user_data, 0..length, 1)
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         let Some((user_data, range, is_sequential)) = self.pending.take() else {
             return Ok(None);
         };
@@ -101,6 +96,7 @@ where
         } else {
             self.file.as_bytes::<Random>()
         };
-        Ok(Some((user_data, Cow::Borrowed(read::<T>(bytes, range)?))))
+        let slice = read_bytes(bytes, range)?;
+        Ok(Some((user_data, ACow::Borrowed(slice))))
     }
 }

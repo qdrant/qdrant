@@ -9,8 +9,8 @@ use super::to_block_range;
 use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenExtra, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs,
+    OpenExtra, OpenOptions, OwnedReadPipeline, Populate, Result, UniversalIoError, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -93,7 +93,7 @@ where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
+    R::OwnedReadPipeline<Range<u32>>: Send,
 {
     type File = DiskCache<R>;
     type OpenExtra = <R::Fs as UniversalReadFs>::OpenExtra;
@@ -136,15 +136,11 @@ where
                 )?;
 
                 let remote_len = remote.len::<u8>()?;
-                let range = ReadRange {
-                    byte_offset: 0,
-                    length: remote_len,
-                };
                 let blocks_range = to_block_range(0..remote_len);
 
                 let mut pipeline = R::OwnedReadPipeline::new(remote)?;
                 // FIXME: check `can_schedule` in a loop first
-                pipeline.schedule::<Sequential>(blocks_range, range)?;
+                pipeline.schedule::<Sequential>(blocks_range, 0..remote_len, 1)?;
 
                 InitSource::from_prefiller(pipeline)
             }

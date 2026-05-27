@@ -2,6 +2,7 @@ mod pipeline;
 
 use std::borrow::Cow;
 use std::io::ErrorKind;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fs, io, slice};
@@ -10,8 +11,9 @@ use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
 use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
-use super::traits::{Item, UniversalReadFileOps, UniversalReadFs};
+use super::traits::{UniversalReadFileOps, UniversalReadFs};
 use super::*;
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
@@ -133,16 +135,15 @@ impl MmapFile {
 impl UniversalRead for MmapFile {
     type Fs = MmapFs;
 
-    type BorrowedReadPipeline<'a, T, U>
-        = BorrowedMmapReadPipeline<'a, T, U>
+    type BorrowedReadPipeline<'a, U>
+        = BorrowedMmapReadPipeline<'a, U>
     where
-        T: Item,
+        Self: 'a,
         U: UserData;
 
-    type OwnedReadPipeline<T, U>
-        = OwnedMmapReadPipeline<T, U>
+    type OwnedReadPipeline<U>
+        = OwnedMmapReadPipeline<U>
     where
-        T: Item,
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
@@ -216,10 +217,36 @@ impl UniversalRead for MmapFile {
         Ok(())
     }
 
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, _align: usize) -> Result<ACow<'_>> {
         let mmap = self.as_bytes::<P>();
-        let items = read(mmap, range)?;
-        Ok(Cow::Borrowed(items))
+        let bytes = read_bytes(mmap, range)?;
+        Ok(ACow::Borrowed(bytes))
+    }
+
+    /// Override the default pipeline-based for better performance.
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
+        &self,
+        ranges: impl IntoIterator<Item = (U, ReadRange)>,
+    ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>> {
+        let bytes = self.as_bytes::<P>();
+        Ok(ranges.into_iter().map(move |(user_data, range)| {
+            let items = read_bytemuck::<T>(bytes, range)?;
+            Ok((user_data, Cow::Borrowed(items)))
+        }))
+    }
+
+    /// Override the default pipeline-based for better performance.
+    fn read_multi_iter<'a, P: AccessPattern, T: Item, U: UserData>(
+        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
+    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
+    where
+        Self: 'a,
+    {
+        Ok(reads.into_iter().map(|(user_data, file, range)| {
+            let bytes = file.as_bytes::<P>();
+            let items = read_bytemuck::<T>(bytes, range)?;
+            Ok((user_data, Cow::Borrowed(items)))
+        }))
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -244,7 +271,6 @@ impl UniversalRead for MmapFile {
         UniversalKind::Mmap
     }
 }
-
 impl UniversalWrite for MmapFile {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let mmap = self.as_bytes_mut();
@@ -386,10 +412,18 @@ impl MmapFile {
 }
 
 #[inline]
-pub(crate) fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
-where
-    T: bytemuck::Pod,
-{
+pub(crate) fn read_bytes(bytes: &[u8], range: Range<u64>) -> Result<&[u8]> {
+    bytes
+        .get(range.start as usize..range.end as usize)
+        .ok_or_else(|| UniversalIoError::OutOfBounds {
+            start: range.start,
+            end: range.end,
+            elements: bytes.len(),
+        })
+}
+
+#[inline]
+pub(crate) fn read_bytemuck<T: Item>(bytes: &[u8], range: ReadRange) -> Result<&[T]> {
     let ReadRange {
         byte_offset,
         length: items,

@@ -3737,6 +3737,7 @@ name = "io_bridge_object_store"
 version = "0.0.0"
 dependencies = [
  "ahash",
+ "aligned-vec",
  "bytemuck",
  "bytes",
  "common",

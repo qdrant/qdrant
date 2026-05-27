@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::ops::Range;
 
 use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalReadFs, UserData};
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{ReadRange, Result, UniversalKind};
 
@@ -20,6 +22,15 @@ use crate::universal_io::{ReadRange, Result, UniversalKind};
 /// associated type so generic-over-`<S: UniversalRead>` code can refer
 /// to the matching filesystem handle as `S::Fs` without an extra generic
 /// parameter.
+///
+/// # Alignment
+///
+/// Some methods accept an `align` parameter.
+/// - When returning [`ACow::Owned`], an implementation should honor that
+///   alignment, meaning that the result can be casted to [`Vec<T>`].
+/// - When returning [`ACow::Borrowed`], an implementation will ignore the
+///   alignment. Practically mmaps are aligned by 4 KiB, which is more than
+///   enough for the majority of types.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// Filesystem handle type that opens `Self`-typed file handles via
@@ -31,15 +42,13 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// constructor still accepts the unwrapped inner `S::Fs`.
     type Fs: UniversalReadFs<File = Self>;
 
-    type BorrowedReadPipeline<'file, T, U>: BorrowedReadPipeline<'file, T, U, File = Self>
+    type BorrowedReadPipeline<'file, U>: BorrowedReadPipeline<'file, U, File = Self>
     where
         Self: 'file,
-        T: Item,
         U: UserData;
 
-    type OwnedReadPipeline<T, U>: OwnedReadPipeline<T, U, File = Self>
+    type OwnedReadPipeline<U>: OwnedReadPipeline<U, File = Self>
     where
-        T: Item,
         U: UserData;
 
     /// Enables live-reloading of files. Append-only files can make the
@@ -49,7 +58,13 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn reopen(&mut self) -> Result<()>;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
+    #[inline]
+    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+        let bytes = self.read_bytes::<P>(range.into_byte_range::<T>(), align_of::<T>())?;
+        Ok(bytes.try_cast_bytemuck().unwrap())
+    }
+
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>>;
 
     /// Read the entire file in one logical access.
     ///
@@ -143,7 +158,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         U: UserData,
         Self: 'a,
     {
-        let mut pipeline = Self::BorrowedReadPipeline::<'a, T, U>::new()?;
+        let mut pipeline = Self::BorrowedReadPipeline::<'a, U>::new()?;
         let mut reads = reads.into_iter();
 
         let iter = std::iter::from_fn(move || {
@@ -151,13 +166,13 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
                 && let Some(read) = reads.next()
             {
                 let (user_data, file, range) = read;
-
-                if let Err(err) = pipeline.schedule::<P>(user_data, file, range) {
+                let range = range.into_byte_range::<T>();
+                if let Err(err) = pipeline.schedule::<P>(user_data, file, range, align_of::<T>()) {
                     return Some(Err(err));
                 }
             }
 
-            pipeline.wait().transpose()
+            pipeline.wait_bytemuck().transpose()
         });
 
         Ok(iter)
