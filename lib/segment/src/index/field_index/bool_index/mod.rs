@@ -6,7 +6,7 @@ mod read_ops;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalRead};
+use common::universal_io::MmapFile;
 pub use immutable_bool_index::ImmutableBoolIndex;
 pub use mutable_bool_index::MutableBoolIndex;
 pub use read_only_bool_index::ReadOnlyBoolIndex;
@@ -53,17 +53,6 @@ impl BoolIndex {
 
     /// Produce a closure that maps a point id to its indexed bool
     /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        read_ops::value_retriever(self, hw_counter)
-    }
-}
-
-impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
-    /// Produce a closure that maps a point id to its indexed bool
-    /// values as JSON `Value`s. Used by `ReadOnlyFieldIndex::value_retriever`.
     pub fn value_retriever<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
@@ -185,57 +174,6 @@ impl PayloadFieldIndex for BoolIndex {
 }
 
 impl FacetIndex for BoolIndex {
-    fn for_points_values(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
-    ) -> OperationResult<()> {
-        points.for_each(|point_id| {
-            let values = self.get_point_values(point_id);
-            f(point_id, &mut values.into_iter().map(FacetValueRef::Bool));
-        });
-        Ok(())
-    }
-
-    fn for_each_value(
-        &self,
-        mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        BoolIndexRead::iter_values(self).try_for_each(|v| f(FacetValueRef::Bool(v)))
-    }
-
-    fn for_each_value_map(
-        &self,
-        hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(
-            FacetValueRef<'_>,
-            &mut dyn Iterator<Item = PointOffsetType>,
-        ) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
-            f(FacetValueRef::Bool(value), iter)
-        })
-    }
-
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        BoolIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
-            f(FacetHit {
-                value: FacetValueRef::Bool(value),
-                count,
-            })
-        })
-    }
-}
-
-/// Faceting over the read-only bool index mirrors [`FacetIndex for BoolIndex`]:
-/// every method delegates to a [`BoolIndexRead`] default, so the body is
-/// identical — only the `Self` type differs.
-impl<S: UniversalRead> FacetIndex for ReadOnlyBoolIndex<S> {
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
