@@ -8,6 +8,7 @@ pub mod kmeans;
 pub mod p_square;
 pub mod quantile;
 pub mod turboquant;
+pub mod vector_stats;
 
 use std::fmt::Display;
 use std::sync::{Arc, Condvar, Mutex};

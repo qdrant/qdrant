@@ -186,7 +186,7 @@ mod test {
     /// reducing distortion in vectors where energy is concentrated.
     #[test]
     fn hadamard_reduces_distortion() {
-        use common::vector_stats::VectorStats;
+        use crate::vector_stats::VectorStats;
 
         for dim in [100, 101, 300, 384, 512, 1024, 1025, 1586] {
             let n_vectors = 200;

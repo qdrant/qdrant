@@ -50,5 +50,4 @@ pub mod typelevel;
 pub mod types;
 pub mod universal_io;
 pub mod validation;
-pub mod vector_stats;
 pub mod zeros;
