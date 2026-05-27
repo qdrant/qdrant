@@ -108,39 +108,38 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
         Ok(Some(value))
     }
 
-    pub fn for_each_in_batch<P, F, E>(
+    pub fn read_values<P, U, E>(
         &self,
-        point_offsets: &[PointOffset],
-        mut callback: impl FnMut(usize, Option<V>) -> Result<(), E>,
-        hw_counter: &HardwareCounterCell,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
         E: From<GridstoreError>,
     {
-        // TODO: `hw_counter`!?
+        // TODO: Track HW usage!?
 
-        let point_offsets = point_offsets.iter().cloned().enumerate();
-        let pointers = self.tracker.get_batch(point_offsets)?;
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
         let ValuePointersBatch {
             valid,
             empty,
             out_of_range,
-        } = pointers;
+        } = self.tracker.get_batch(point_offsets)?;
 
         self.pages.read_batch_from_pages::<P, _, _>(
             self.config,
             valid.into_iter(),
-            |value_idx, bytes| {
+            |(user_data, point_offset), bytes| {
                 let decompressed = self.decompress(bytes);
                 let value = V::from_bytes(&decompressed);
-                callback(value_idx, Some(value))
+                callback(user_data, point_offset, Some(value))
             },
         )?;
 
-        for value_idx in empty.into_iter().chain(out_of_range) {
-            callback(value_idx, None)?;
+        for (user_data, point_offset) in empty.into_iter().chain(out_of_range) {
+            callback(user_data, point_offset, None)?;
         }
 
         Ok(())
