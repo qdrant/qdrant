@@ -12,7 +12,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PointOffset, Tracker, ValuePointer};
+use crate::tracker::{PointOffset, Tracker, ValuePointer, ValuePointersBatch};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -111,30 +111,39 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
     pub fn for_each_in_batch<P, F, E>(
         &self,
         point_offsets: &[PointOffset],
-        mut callback: F,
+        mut callback: impl FnMut(usize, Option<V>) -> Result<(), E>,
         hw_counter: &HardwareCounterCell,
-    ) -> std::result::Result<(), E>
+    ) -> Result<(), E>
     where
         P: AccessPattern,
-        F: FnMut(usize, Option<V>) -> std::result::Result<(), E>,
         E: From<GridstoreError>,
     {
-        // Resolve all pointers in a single batched tracker read so async backends
-        // (e.g. io_uring) can fetch them in parallel.
+        // TODO: `hw_counter`!?
+
+        let point_offsets = point_offsets.iter().cloned().enumerate();
         let pointers = self.tracker.get_batch(point_offsets)?;
 
-        // Stream decoded values straight to the caller — no intermediate buffer.
-        // The callback `idx` maps 1-to-1 to `point_offsets`; missing offsets are
-        // delivered as `None`.
-        self.pages
-            .read_batch_from_pages::<P, _, E>(pointers, self.config, |idx, raw_opt| {
-                let value = raw_opt.map(|raw| {
-                    hw_counter.payload_io_read_counter().incr_delta(raw.len());
-                    let decompressed = self.decompress(raw);
-                    V::from_bytes(&decompressed)
-                });
-                callback(idx, value)
-            })
+        let ValuePointersBatch {
+            valid,
+            empty,
+            out_of_range,
+        } = pointers;
+
+        self.pages.read_batch_from_pages::<P, _, _>(
+            self.config,
+            valid.into_iter(),
+            |value_idx, bytes| {
+                let decompressed = self.decompress(bytes);
+                let value = V::from_bytes(&decompressed);
+                callback(value_idx, Some(value))
+            },
+        )?;
+
+        for value_idx in empty.into_iter().chain(out_of_range) {
+            callback(value_idx, None)?;
+        }
+
+        Ok(())
     }
 
     /// Iterate over all the values in the storage.

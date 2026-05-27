@@ -237,7 +237,8 @@ impl<S: UniversalRead> Pages<S> {
         Ok(Cow::Owned(unsafe { assume_init_vec(buffer) }))
     }
 
-    pub fn read_batch_from_pages_wip<P, U, E>(
+    /// Batch-read values and execute callback for each value
+    pub fn read_batch_from_pages<P, U, E>(
         &self,
         config: &StorageConfig,
         pointers: impl Iterator<Item = (U, ValuePointer)>,
@@ -343,112 +344,6 @@ impl<S: UniversalRead> Pages<S> {
             pending.borrow().is_empty(),
             "all multi-page values have been read"
         );
-
-        Ok(())
-    }
-
-    /// Batch-read values pointed to by `pointers`, invoking `callback` for each
-    /// input slot.
-    ///
-    /// The callback is invoked once per slot in `pointers`, receiving the slot
-    /// index and `Some(bytes)` for set pointers (in arbitrary order — io_uring
-    /// completions may interleave) or `None` for empty slots (after all data
-    /// arrives). The callback's error type `E` flows back through the function
-    /// so callers don't have to bridge it themselves.
-    pub fn read_batch_from_pages<P, F, E>(
-        &self,
-        pointers: Vec<Option<ValuePointer>>,
-        config: &StorageConfig,
-        mut callback: F,
-    ) -> std::result::Result<(), E>
-    where
-        P: AccessPattern,
-        F: FnMut(usize, Option<Cow<'_, [u8]>>) -> std::result::Result<(), E>,
-        E: From<GridstoreError>,
-    {
-        struct ReadMeta {
-            value_idx: usize,
-            buffer_offset: usize,
-            len_bytes: usize,
-            len_pages: usize,
-        }
-
-        let mut empty_values = Vec::new(); // expect (almost) no values
-
-        let reads = pointers
-            .iter()
-            .copied()
-            .enumerate()
-            .flat_map(|(value_idx, pointer_opt)| {
-                if pointer_opt.is_none() {
-                    empty_values.push(value_idx);
-                }
-                pointer_opt.into_iter().flat_map(move |pointer| {
-                    let len_bytes = pointer.length as usize;
-                    let len_pages = Self::value_len_pages(pointer, config);
-
-                    Self::get_page_value_ranges(pointer, config).map(
-                        move |(buffer_offset, page_idx, range)| {
-                            let meta = ReadMeta {
-                                value_idx,
-                                buffer_offset,
-                                len_bytes,
-                                len_pages,
-                            };
-
-                            let page = &self.pages[page_idx as usize];
-                            (meta, page, range)
-                        },
-                    )
-                })
-            });
-
-        let chunks = S::read_multi_iter::<P, u8, _>(reads).map_err(GridstoreError::from)?;
-
-        // Multi-page values need buffering since chunks for the same value may
-        // arrive interleaved with chunks for other values. Single-page reads
-        // (the common case, including zero-length) bypass this map entirely.
-        let mut pending: AHashMap<usize, (Vec<MaybeUninit<u8>>, usize)> = AHashMap::new();
-
-        for result in chunks {
-            let (meta, bytes) = result.map_err(GridstoreError::from)?;
-
-            let ReadMeta {
-                value_idx,
-                buffer_offset,
-                len_bytes,
-                len_pages,
-            } = meta;
-
-            if len_pages <= 1 {
-                callback(value_idx, Some(bytes))?;
-                continue;
-            }
-
-            let (value_buffer, pages_read) = pending
-                .entry(value_idx)
-                .or_insert_with(|| (vec![MaybeUninit::uninit(); len_bytes], 0));
-
-            value_buffer[buffer_offset..buffer_offset + bytes.len()].write_copy_of_slice(&bytes);
-
-            *pages_read += 1;
-
-            if *pages_read >= len_pages {
-                let (value_buffer, _) = pending.remove(&value_idx).expect("value exists");
-                let value_buffer = unsafe { assume_init_vec(value_buffer) };
-
-                callback(value_idx, Some(Cow::Owned(value_buffer)))?;
-            }
-        }
-
-        debug_assert!(
-            pending.is_empty(),
-            "all valid pointers should have been delivered",
-        );
-
-        for idx in empty_values {
-            callback(idx, None)?;
-        }
 
         Ok(())
     }
