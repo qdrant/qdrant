@@ -295,6 +295,16 @@ impl Collection {
         // Abort all resharding transfer related to this specific resharding operation
         let resharding_transfers =
             shard_holder.get_transfers(|t| t.is_related_to_resharding(&resharding_key));
+
+        // Staging-only: pause after clearing resharding state but before aborting the transfer, so a test can kill this peer mid-abort.
+        #[cfg(feature = "staging")]
+        if !resharding_transfers.is_empty()
+            && let Ok(secs) = std::env::var("QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC")
+            && let Ok(secs) = secs.parse::<f64>()
+        {
+            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
+        }
+
         for transfer in resharding_transfers {
             self.abort_shard_transfer(transfer, &shard_holder).await?;
         }
