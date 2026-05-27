@@ -59,9 +59,12 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     ///
     /// Infers page count by scanning for page files on disk.
     pub fn open(fs: &S::Fs, base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = read_config_and_tracker(fs, &base_path)?;
+        // A reader only reads, so open pages and tracker non-writable. This
+        // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
+        // writable `Gridstore` opens these same files writable instead.
+        let (config, tracker) = read_config_and_tracker(fs, &base_path, false)?;
 
-        let pages = Pages::<S>::open(fs, &base_path)?;
+        let pages = Pages::<S>::open(fs, &base_path, false)?;
 
         Ok(Self {
             tracker,
@@ -160,6 +163,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
 pub(super) fn read_config_and_tracker<Fs, S>(
     fs: &Fs,
     base_path: &std::path::Path,
+    writeable: bool,
 ) -> Result<(StorageConfig, Tracker<S>)>
 where
     Fs: UniversalReadFs<File = S>,
@@ -173,7 +177,7 @@ where
             ))
         })?;
 
-    let tracker = Tracker::<S>::open(fs, base_path)?;
+    let tracker = Tracker::<S>::open(fs, base_path, writeable)?;
 
     Ok((config, tracker))
 }
