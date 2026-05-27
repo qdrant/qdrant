@@ -281,11 +281,32 @@ impl Collection {
         // Abort all resharding transfer related to this specific resharding operation
         let resharding_transfers =
             shard_holder.get_transfers(|t| t.is_related_to_resharding(&resharding_key));
+        #[cfg(feature = "staging")]
+        let aborted_transfer = !resharding_transfers.is_empty();
         for transfer in resharding_transfers {
             self.abort_shard_transfer(transfer, &shard_holder).await?;
         }
 
         drop(shard_holder); // drop the read lock before acquiring write lock
+
+        // Staging-only: widen the window between aborting the transfer above and
+        // clearing the resharding state below, so tests can kill a peer here and
+        // exercise the non-idempotent replay path. Only when a transfer was actually
+        // aborted, so idempotent no-op aborts don't stall the consensus thread.
+        #[cfg(feature = "staging")]
+        if aborted_transfer
+            && let Some(delay) = std::env::var("QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC")
+                .ok()
+                .map(|val| {
+                    std::time::Duration::from_secs_f64(
+                        val.parse::<f64>()
+                            .expect("invalid QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC value"),
+                    )
+                })
+        {
+            tokio::time::sleep(delay).await;
+        }
+
         let mut shard_holder = self.shards_holder.write().await;
 
         shard_holder

@@ -1,6 +1,6 @@
 """Aborting a resharding transfer is not crash-idempotent: it aborts+persists the
 transfer before clearing resharding_state. A peer killed in that window (widened by
-a debug sleep in abort_resharding) replays the abort, finds no transfer, and would
+a staging delay in abort_resharding) replays the abort, finds no transfer, and would
 stay resharding=Some unless the abort is replicated through consensus. Asserts every
 peer converges on no resharding_operations.
 """
@@ -23,7 +23,12 @@ def _resharding_transfer_source(info) -> int | None:
 
 
 def test_resharding_down_abort_converges_when_killed_mid_abort(tmp_path: pathlib.Path):
-    peer_uris, peer_dirs, _ = start_cluster(tmp_path, 3)
+    # Staging delay widens the window inside abort_resharding so we can kill a peer
+    # between the transfer abort and the resharding-state clear.
+    env = {"QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC": "12"}
+
+    peer_uris, peer_dirs, _ = start_cluster(tmp_path, 3, extra_env=env)
+    skip_if_no_feature(peer_uris[0], "staging")
     wait_for(all_peers_are_voters, peer_uris)
     peer_ids = [get_cluster_info(uri)["peer_id"] for uri in peer_uris]
     peer_procs = list(processes)  # aligned to peer index; `processes` is mutated below
@@ -102,6 +107,7 @@ def test_resharding_down_abort_converges_when_killed_mid_abort(tmp_path: pathlib
     # applies the consensus-replicated Resharding::Abort.
     peer_uris[victim_idx] = start_peer(
         peer_dirs[victim_idx], f"peer_restart_{victim_idx}.log", alive_uri, port=victim_port,
+        extra_env=env,
     )
     wait_for_peer_online(peer_uris[victim_idx], path="/healthz", wait_for_timeout=60)
 
