@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
-use murmur3::murmur3_32_of_slice;
+use murmur3_32::Murmur3;
 
 #[cfg(feature = "basic-tokenizer")]
 pub mod basic_tokenizer;
@@ -168,7 +168,7 @@ impl Bm25 {
 /// Stable token → `u32` mapping used by [`Bm25`]. Wire-compatible with qdrant's
 /// existing BM25 sparse vectors: murmur3 32-bit, then `|i32|` to make it positive.
 pub fn token_id(token: &str) -> u32 {
-    (murmur3_32_of_slice(token.as_bytes(), 0) as i32).unsigned_abs()
+    (Murmur3::hash(0, token.as_bytes()) as i32).unsigned_abs()
 }
 
 #[cfg(test)]

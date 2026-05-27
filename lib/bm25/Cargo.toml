@@ -9,7 +9,7 @@ basic-tokenizer = []
 serde = ["dep:serde"]
 
 [dependencies]
-murmur3 = { workspace = true }
+murmur3_32 = { workspace = true }
 serde = { workspace = true, optional = true }
 
 [lints]
