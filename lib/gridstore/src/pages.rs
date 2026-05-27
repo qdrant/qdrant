@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
@@ -234,6 +235,116 @@ impl<S: UniversalRead> Pages<S> {
         }
 
         Ok(Cow::Owned(unsafe { assume_init_vec(buffer) }))
+    }
+
+    pub fn read_batch_from_pages_wip<P, U, E>(
+        &self,
+        config: &StorageConfig,
+        pointers: impl Iterator<Item = (U, ValuePointer)>,
+        mut callback: impl FnMut(U, Cow<'_, [u8]>) -> Result<(), E>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        E: From<GridstoreError>,
+    {
+        struct Progress<U> {
+            buffer: Vec<MaybeUninit<u8>>,
+            pages_read: usize,
+            pages_len: usize,
+            user_data: U,
+        }
+
+        struct ReadMeta<U> {
+            value_idx: usize,
+            buffer_offset: usize,
+            user_data: Option<U>,
+        }
+
+        // Multi-page values need buffering, because chunks for the same value may arrive out-of-order
+        // or interleaved with chunks for other values.
+        //
+        // Single-page reads (common case) bypass this map entirely.
+        let pending = RefCell::new(AHashMap::new());
+
+        let reads = pointers
+            .enumerate()
+            .flat_map(|(value_idx, (user_data, pointer))| {
+                let ranges = Self::get_page_value_ranges(pointer, config);
+
+                let bytes_len = pointer.length as usize;
+                let pages_len = Self::value_len_pages(pointer, config);
+
+                let mut user_data = if pages_len <= 1 {
+                    Some(user_data)
+                } else {
+                    pending.borrow_mut().insert(
+                        value_idx,
+                        Progress {
+                            buffer: vec![MaybeUninit::uninit(); bytes_len],
+                            pages_read: 0,
+                            pages_len,
+                            user_data,
+                        },
+                    );
+
+                    None
+                };
+
+                ranges.map(move |(buffer_offset, page_idx, range)| {
+                    let meta = ReadMeta {
+                        value_idx,
+                        buffer_offset,
+                        user_data: user_data.take(),
+                    };
+
+                    let page = &self.pages[page_idx as usize];
+                    (meta, page, range)
+                })
+            });
+
+        for result in S::read_multi_iter::<P, _, _>(reads).map_err(GridstoreError::from)? {
+            let (meta, bytes) = result.map_err(GridstoreError::from)?;
+
+            let ReadMeta {
+                value_idx,
+                buffer_offset,
+                user_data,
+            } = meta;
+
+            if let Some(user_data) = user_data {
+                debug_assert!(
+                    !pending.borrow().contains_key(&value_idx),
+                    "single-page value"
+                );
+
+                callback(user_data, bytes)?;
+                continue;
+            }
+
+            let mut pending = pending.borrow_mut();
+
+            let progress = pending.get_mut(&value_idx).expect("multi-page value");
+            progress.buffer[buffer_offset..buffer_offset + bytes.len()].write_copy_of_slice(&bytes);
+            progress.pages_read += 1;
+
+            if progress.pages_read >= progress.pages_len {
+                let progress = pending.remove(&value_idx).expect("multi-page value");
+
+                let Progress {
+                    buffer, user_data, ..
+                } = progress;
+
+                let buffer = unsafe { assume_init_vec(buffer) };
+                callback(user_data, Cow::Owned(buffer))?;
+            }
+        }
+
+        debug_assert!(
+            pending.borrow().is_empty(),
+            "all multi-page values have been read"
+        );
+
+        Ok(())
     }
 
     /// Batch-read values pointed to by `pointers`, invoking `callback` for each
