@@ -102,6 +102,8 @@ pub enum OperationError {
         "All appendable segments reached the maximum segment size of {max_segment_size_bytes} bytes"
     )]
     OutOfAppendableCapacity { max_segment_size_bytes: usize },
+    #[error("Vector contains an invalid value: {reason}")]
+    InvalidVectorValue { reason: String },
 }
 
 impl OperationError {
@@ -189,7 +191,8 @@ impl IsNotFound for OperationError {
             | Self::MissingMapIndexForFacet { .. }
             | Self::VariableTypeError { .. }
             | Self::NonFiniteNumber { .. }
-            | Self::OutOfAppendableCapacity { .. } => false,
+            | Self::OutOfAppendableCapacity { .. }
+            | Self::InvalidVectorValue { .. } => false,
         }
     }
 }

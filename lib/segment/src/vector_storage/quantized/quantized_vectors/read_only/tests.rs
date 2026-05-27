@@ -352,6 +352,8 @@ fn preopen_and_unlink(
         quantization_config: Some(quantization_config.clone()),
         multivector_config: multivector.then(crate::types::MultiVectorConfig::default),
         datatype: None,
+        data_integrity_check: false,
+        magnitude_bound: None,
     };
 
     let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
