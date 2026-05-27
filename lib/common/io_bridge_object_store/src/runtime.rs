@@ -8,7 +8,7 @@ use common::universal_io::UniversalIoError;
 /// destination buffer is the future's output, moved into the response so the
 /// pipeline doesn't need to share mutable buffer state with the worker thread.
 pub(crate) struct BridgeResponse<T> {
-    pub slot: u64,
+    pub slot: usize,
     pub result: Result<Vec<T>, UniversalIoError>,
 }
 
@@ -16,7 +16,7 @@ impl<T> BridgeResponse<T> {
     /// Build a reply for the given slot with the future's output. Provided so
     /// the spawned task doesn't have to reach into the struct layout when
     /// constructing the response.
-    pub(crate) fn new(slot: u64, result: Result<Vec<T>, UniversalIoError>) -> Self {
+    pub(crate) fn new(slot: usize, result: Result<Vec<T>, UniversalIoError>) -> Self {
         Self { slot, result }
     }
 }

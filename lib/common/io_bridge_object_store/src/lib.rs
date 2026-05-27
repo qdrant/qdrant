@@ -10,7 +10,7 @@
 //! | `Arc<S>`         | The [`AsyncRead`] handle; any [`BlobBackend`] `S`.        |
 //! | [`BlobFile<A>`]  | Sync `UniversalRead` wrapper over an `AsyncRead` + path.  |
 //! | [`BridgeRuntime`]| Cheap-to-clone owner of a Tokio runtime.                  |
-//! | `PipelineInner`  | Reply channel + slot-keyed caller `user_data` map.        |
+//! | `PipelineInner`  | Reply channel + slot-keyed caller `user_data` slab.       |
 //!
 //! Concrete backends live under [`backends`]: [`backends::aws`],
 //! [`backends::gcp`], and [`backends::azure`]. Each module declares its own
@@ -40,7 +40,7 @@
 //!   ┌──────────────────────────────────────────┐
 //!   │ PipelineInner<T, U>                      │
 //!   │   tx, rx : reply channel                 │
-//!   │   slots  : PendingSlots<U>               │
+//!   │   slots  : Slab<U>                       │
 //!   │           (slot -> user_data)            │
 //!   └──────────────────────────────────────────┘
 //!                  │ schedule(rt, user_data, future)
@@ -58,7 +58,7 @@
 //!   │   response =                   │  spawned task uses └────────────────────────────────┘
 //!   │     reply_rx.blocking_recv()   │  reply_tx (clone of pipeline reply_tx)
 //!   │   user_data =                  │
-//!   │     slots.remove(&slot)        │
+//!   │     slots.remove(slot)         │
 //!   │   buf = response.result?       │
 //!   │   return Some((user_data, buf))│
 //!   └────────────────────────────────┘
@@ -77,8 +77,8 @@
 //!   The runtime is supplied per `schedule` call, allowing one pipeline to
 //!   dispatch to multiple runtimes and one runtime to serve many pipelines.
 //!
-//! - **Slot correlation.** Every scheduled request is tagged with a monotonic
-//!   `u64` slot. The pipeline keeps an `AHashMap<slot, user_data>` so that
+//! - **Slot correlation.** Every scheduled request is tagged with a slot id
+//!   assigned by a [`Slab`](slab::Slab) holding the caller `user_data`, so
 //!   responses arriving out of order can still be paired with their caller
 //!   context.
 //!

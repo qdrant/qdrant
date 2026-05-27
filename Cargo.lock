@@ -3744,6 +3744,7 @@ dependencies = [
  "log",
  "num_cpus",
  "object_store",
+ "slab",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

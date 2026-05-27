@@ -3,10 +3,10 @@ use std::panic::AssertUnwindSafe;
 
 use common::universal_io::{Result, UniversalIoError, UserData};
 use futures::FutureExt as _;
+use slab::Slab;
 use tokio::sync::mpsc;
 
 use super::BLOB_PIPELINE_CAPACITY;
-use super::slots::PendingSlots;
 use crate::runtime::{BridgeResponse, BridgeRuntime};
 
 /// Best-effort extraction of a human-readable message from a caught panic
@@ -24,15 +24,16 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
 
 /// Pipeline-side bookkeeping.
 ///
-/// Owns the reply channel and — via [`PendingSlots`] — the caller-side
-/// `user_data` for every in-flight request. The destination `Vec<T>` lives
-/// inside the future itself and comes back through the reply channel as the
-/// future's output, so the pipeline never shares mutable buffer state with the
-/// worker task.
+/// Owns the reply channel and — via a [`Slab`] — the caller-side `user_data`
+/// for every in-flight request, keyed by the slot assigned at schedule time so
+/// out-of-order replies still reunite with the right caller context. The
+/// destination `Vec<T>` lives inside the future itself and comes back through
+/// the reply channel as the future's output, so the pipeline never shares
+/// mutable buffer state with the worker task.
 ///
 /// The [`BridgeRuntime`] is intentionally not stored here — callers supply it
 /// on every `schedule` call. This keeps the pipeline cheap (one channel +
-/// a map) and lets the same pipeline collect replies from multiple runtimes
+/// a slab) and lets the same pipeline collect replies from multiple runtimes
 /// if desired.
 pub(crate) struct PipelineInner<T, U> {
     /// Sender for the reply channel. Cloned into every spawned read task as
@@ -41,7 +42,7 @@ pub(crate) struct PipelineInner<T, U> {
     /// Receiver for the reply channel. `wait` blocks on this.
     rx: mpsc::Receiver<BridgeResponse<T>>,
     /// In-flight reads awaiting a reply, tagged by slot.
-    slots: PendingSlots<U>,
+    slots: Slab<U>,
 }
 
 impl<T, U> PipelineInner<T, U>
@@ -59,7 +60,7 @@ where
         Self {
             tx,
             rx,
-            slots: PendingSlots::new(),
+            slots: Slab::with_capacity(BLOB_PIPELINE_CAPACITY),
         }
     }
 
@@ -144,7 +145,7 @@ where
             .expect("tx held by self; cannot disconnect");
         let user_data = self
             .slots
-            .remove(response.slot)
+            .try_remove(response.slot)
             .expect("response slot must be in pending");
         let buf = response.result?;
         Ok(Some((user_data, buf)))

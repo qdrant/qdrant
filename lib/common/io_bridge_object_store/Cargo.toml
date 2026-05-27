@@ -16,6 +16,7 @@ futures = { workspace = true }
 log = { workspace = true }
 num_cpus = { workspace = true }
 object_store = { workspace = true }
+slab = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 
