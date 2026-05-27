@@ -110,10 +110,11 @@ impl AuthKeys {
     ///
     /// Returns None if no scheme is specified.
     pub fn try_create(service_config: &ServiceConfig, toc: Arc<TableOfContent>) -> Option<Self> {
+        let non_empty = |k: Option<String>| k.filter(|k| !k.is_empty());
         match (
-            service_config.api_key.clone(),
-            service_config.alt_api_key.clone(),
-            service_config.read_only_api_key.clone(),
+            non_empty(service_config.api_key.clone()),
+            non_empty(service_config.alt_api_key.clone()),
+            non_empty(service_config.read_only_api_key.clone()),
         ) {
             (None, None, None) => None,
             (read_write, alt_read_write, read_only) => {
