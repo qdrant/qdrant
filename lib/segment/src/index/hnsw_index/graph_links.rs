@@ -7,10 +7,12 @@ use std::sync::Arc;
 use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting, Madviseable, open_read_mmap};
 use common::types::PointOffsetType;
+use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
 use memmap2::Mmap;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::HnswM;
+use crate::index::hnsw_index::graph_layers::LoadOption;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
@@ -215,16 +217,56 @@ impl GraphLinksEnum {
 }
 
 impl GraphLinks {
-    pub fn load_from_file(
+    pub fn load_from_universal_file<F>(
+        fs: &F,
+        open_extra: F::OpenExtra,
         path: &Path,
-        on_disk: bool,
         format: GraphLinksFormat,
-    ) -> OperationResult<Self> {
-        let populate = !on_disk;
-        let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
-        Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
+    ) -> OperationResult<Self>
+    where
+        F: UniversalReadFs,
+    {
+        let file = fs.open(
+            path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                populate: Populate::PreferBackground,
+                advice: AdviceSetting::Advice(Advice::Sequential),
+            },
+            open_extra,
+        )?;
+
+        let bytes = file.read_whole::<u8>()?.into_owned();
+
+        // Now that we've loaded into an owned Vec we can clear RAM from file.
+        file.clear_ram_cache()?;
+
+        Self::try_new(GraphLinksEnum::Ram(bytes), |x| {
             GraphLinksView::load(x.as_bytes(), format)
         })
+    }
+
+    pub fn load_from_file<Fs>(
+        path: &Path,
+        load_option: LoadOption<Fs>,
+        format: GraphLinksFormat,
+    ) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs,
+    {
+        match load_option {
+            LoadOption::OnDiskMmap => {
+                let populate = false;
+                let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
+                Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
+                    GraphLinksView::load(x.as_bytes(), format)
+                })
+            }
+            LoadOption::RamFromUniversal { fs, open_extra } => {
+                Self::load_from_universal_file(&fs, open_extra, path, format)
+            }
+        }
     }
 
     pub fn new_from_edges(
@@ -499,7 +541,8 @@ mod tests {
         })
         .unwrap();
 
-        let cmp_links = GraphLinks::load_from_file(&links_file, true, format).unwrap();
+        let cmp_links =
+            GraphLinks::load_from_file(&links_file, LoadOption::on_disk_mmap(), format).unwrap();
         check_links(links, &cmp_links, &vectors);
     }
 

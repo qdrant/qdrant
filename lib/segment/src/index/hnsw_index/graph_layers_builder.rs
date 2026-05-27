@@ -22,7 +22,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 #[cfg(test)]
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
-use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase};
+use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LoadOption};
 use crate::index::hnsw_index::graph_links::serialize_graph_links;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -225,7 +225,11 @@ impl GraphLayersBuilder {
             atomic_save(&links_path, |writer| {
                 serialize_graph_links(edges, format_param, self.hnsw_m, writer)
             })?;
-            links = GraphLinks::load_from_file(&links_path, true, format_param.as_format())?;
+            links = GraphLinks::load_from_file(
+                &links_path,
+                LoadOption::on_disk_mmap(),
+                format_param.as_format(),
+            )?;
         } else {
             // Since we'll keep it in the RAM anyway, we can afford to build in the RAM too.
             links = GraphLinks::new_from_edges(edges, format_param, self.hnsw_m)?;

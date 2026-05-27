@@ -8,7 +8,7 @@ use rand::rngs::StdRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use segment::fixtures::index_fixtures::TestRawScorerProducer;
 use segment::index::hnsw_index::HnswM;
-use segment::index::hnsw_index::graph_layers::GraphLayers;
+use segment::index::hnsw_index::graph_layers::{GraphLayers, LoadOption};
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksFormatParam;
 use segment::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
@@ -54,7 +54,7 @@ where
         let updated_ago = updated_ago(&graph_layers_path).unwrap_or_else(|_| "???".to_string());
         eprintln!("Loading cached links (built {updated_ago} ago) from {graph_layers_path:?}.");
         eprintln!("Delete the directory above if code related to HNSW graph building is changed");
-        GraphLayers::load(&path, false, false).unwrap()
+        GraphLayers::load(&path, LoadOption::ram_from_mmap(), false).unwrap()
     } else {
         let mut graph_layers_builder =
             GraphLayersBuilder::new(num_vectors, HnswM::new2(m), ef_construct, 10, use_heuristic);

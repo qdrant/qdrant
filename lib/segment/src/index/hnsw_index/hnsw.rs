@@ -8,7 +8,7 @@ use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_layers::{GraphLayers, LoadOption};
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::HnswConfig;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -98,7 +98,13 @@ impl HNSWIndex {
 
         let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
 
-        let graph = GraphLayers::load(path, is_on_disk, do_convert)?;
+        let load_option = if is_on_disk {
+            LoadOption::on_disk_mmap()
+        } else {
+            LoadOption::ram_from_mmap()
+        };
+
+        let graph = GraphLayers::load(path, load_option, do_convert)?;
 
         Ok(HNSWIndex {
             id_tracker,

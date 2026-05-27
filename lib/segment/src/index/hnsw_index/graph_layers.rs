@@ -33,6 +33,7 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, read_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
+use common::universal_io::{MmapFs, UniversalReadFs};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -621,8 +622,35 @@ impl GraphLayers {
     }
 }
 
+pub enum LoadOption<Fs: UniversalReadFs> {
+    /// Open as a mmap without populating it.
+    OnDiskMmap,
+    /// Load whole file into RAM using a generic backend.
+    RamFromUniversal { fs: Fs, open_extra: Fs::OpenExtra },
+}
+
+impl LoadOption<MmapFs> {
+    pub fn on_disk_mmap() -> Self {
+        Self::OnDiskMmap
+    }
+
+    pub fn ram_from_mmap() -> Self {
+        Self::RamFromUniversal {
+            fs: MmapFs,
+            open_extra: (),
+        }
+    }
+}
+
 impl GraphLayers {
-    pub fn load(dir: &Path, on_disk: bool, compress: bool) -> OperationResult<Self> {
+    pub fn load<Fs>(
+        dir: &Path,
+        load_option: LoadOption<Fs>,
+        compress: bool,
+    ) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs,
+    {
         let graph_data: GraphLayerData = read_bin(&GraphLayers::get_path(dir))?;
 
         if compress {
@@ -631,13 +659,16 @@ impl GraphLayers {
 
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: Self::load_links(dir, on_disk)?,
+            links: Self::load_links(dir, load_option)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
     }
 
-    fn load_links(dir: &Path, on_disk: bool) -> OperationResult<GraphLinks> {
+    fn load_links<Fs>(dir: &Path, load_option: LoadOption<Fs>) -> OperationResult<GraphLinks>
+    where
+        Fs: UniversalReadFs,
+    {
         for format in [
             GraphLinksFormat::CompressedWithVectors,
             GraphLinksFormat::Compressed,
@@ -645,7 +676,7 @@ impl GraphLayers {
         ] {
             let path = GraphLayers::get_links_path(dir, format);
             if path.exists() {
-                return GraphLinks::load_from_file(&path, on_disk, format);
+                return GraphLinks::load_from_file(&path, load_option, format);
             }
         }
         Err(OperationError::service_error("No links file found"))
@@ -668,7 +699,11 @@ impl GraphLayers {
 
         let start = std::time::Instant::now();
 
-        let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
+        let links = GraphLinks::load_from_file(
+            &plain_path,
+            LoadOption::ram_from_mmap(),
+            GraphLinksFormat::Plain,
+        )?;
         let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
             let edges = links.to_edges();
@@ -862,7 +897,7 @@ mod tests {
         let res1 = search_in_graph(&query, top, &vector_holder, &graph1);
         drop(graph1);
 
-        let graph2 = GraphLayers::load(dir.path(), false, compress).unwrap();
+        let graph2 = GraphLayers::load(dir.path(), LoadOption::ram_from_mmap(), compress).unwrap();
         if compress {
             assert_eq!(graph2.links.format(), GraphLinksFormat::Compressed);
         } else {
