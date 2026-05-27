@@ -376,23 +376,17 @@ impl<V: Blob> Gridstore<V> {
         self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
     }
 
-    pub fn for_each_in_batch<P, F, E>(
+    pub fn read_values<P, U, E>(
         &self,
-        offsets: &[PointOffset],
-        mut callback: F,
-        hw_counter: &HardwareCounterCell,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
-        F: FnMut(usize, Option<V>) -> Result<(), E>,
         E: From<GridstoreError>,
     {
-        // TODO: `hw_counter`!?
-
-        self.with_view(|view| {
-            let offsets = offsets.iter().copied().enumerate();
-            view.read_values::<P, _, _>(offsets, |value_idx, _, value| callback(value_idx, value))
-        })
+        // TODO: Track HW usage!?
+        self.with_view(|view| view.read_values::<P, _, _>(point_offsets, callback))
     }
 
     #[cfg(test)]
