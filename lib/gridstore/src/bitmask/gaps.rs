@@ -150,6 +150,9 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             return Ok(());
         }
 
+        // flush outstanding changes
+        self.slice_store.flusher()()?;
+
         // reopen the file with a larger size
         let prev_len = self.len()?;
         let new_slice_len = prev_len + data.len();
