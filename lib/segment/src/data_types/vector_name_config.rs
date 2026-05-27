@@ -128,6 +128,8 @@ impl DenseVectorConfig {
             quantization_config: None,
             multivector_config: *multivector_config,
             datatype: *datatype,
+            data_integrity_check: false,
+            magnitude_bound: None,
         }
     }
 }
@@ -144,6 +146,8 @@ impl SparseVectorConfig {
             },
             storage_type: Default::default(),
             modifier: *modifier,
+            data_integrity_check: false,
+            magnitude_bound: None,
         }
     }
 }

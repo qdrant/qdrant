@@ -786,6 +786,8 @@ fn create_deferred_segment(
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+                    data_integrity_check: false,
+                    magnitude_bound: None,
                 },
             )]),
             sparse_vector_data: HashMap::from_iter([
@@ -796,6 +798,8 @@ fn create_deferred_segment(
                         index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
                         storage_type: SparseVectorStorageType::Mmap,
                         modifier: None,
+                        data_integrity_check: false,
+                        magnitude_bound: None,
                     },
                 ),
                 (
@@ -808,6 +812,8 @@ fn create_deferred_segment(
                         ),
                         storage_type: SparseVectorStorageType::Mmap,
                         modifier: None,
+                        data_integrity_check: false,
+                        magnitude_bound: None,
                     },
                 ),
             ]),
