@@ -76,17 +76,16 @@ impl LocalShard {
             })
         })?;
 
-        // We can't just select top values, because we need to aggregate across segments,
-        // which we can't assume to select the same best top.
-        //
-        // We need all values to be able to aggregate correctly across segments
+        // Per-segment top-k selection is unsafe (same value can rank
+        // differently across segments), so we must merge the full per-segment
+        // maps. Once merged, we can safely keep only `limit` hits — the
+        // coordinator oversamples enough to keep cross-shard aggregation
+        // accurate.
         let top_hits = merged_hits
             .map(|map| {
-                map.iter()
-                    .map(|(value, count)| FacetValueHit {
-                        value: value.to_owned(),
-                        count: *count,
-                    })
+                map.into_iter()
+                    .map(|(value, count)| FacetValueHit { value, count })
+                    .k_largest(request.limit)
                     .collect_vec()
             })
             .unwrap_or_default();
