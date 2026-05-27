@@ -5,14 +5,13 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+    use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ, ErrorCorrectionMetadata};
     use quantization::turboquant::simd::{
         CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, score_1bit_internal_scalar,
         score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
         score_4bit_internal_scalar, score_4bit_internal_weighted_scalar,
     };
-    use quantization::turboquant::{
-        self as encoded_vectors_tq, EncodedVectorsTQ, ErrorCorrectionMetadata, TQBits, TQMode,
-    };
+    use quantization::turboquant::{TQBits, TQMode};
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
