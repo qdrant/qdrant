@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -10,7 +9,6 @@ use super::MutableGeoMapIndex;
 use super::inner::InMemoryGeoMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::geo_hash::encode_max_precision;
 use crate::types::{GeoPoint, RawGeoPoint};
 
 /// Default options for Gridstore storage
@@ -55,43 +53,7 @@ impl MutableGeoMapIndex {
         store
             .iter::<_, OperationError>(
                 |idx, values: Vec<RawGeoPoint>| {
-                    let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
-                    let geo_hashes = geo_points
-                        .iter()
-                        .map(|geo_point| {
-                            encode_max_precision(geo_point.lon.0, geo_point.lat.0).map_err(|e| {
-                                OperationError::service_error(format!("Malformed geo points: {e}"))
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-
-                    for geo_point in geo_points {
-                        if in_memory_index.point_to_values.len() <= idx as usize {
-                            in_memory_index
-                                .point_to_values
-                                .resize_with(idx as usize + 1, Vec::new);
-                        }
-
-                        if in_memory_index.point_to_values[idx as usize].is_empty() {
-                            in_memory_index.points_count += 1;
-                        }
-
-                        in_memory_index.point_to_values[idx as usize].push(geo_point);
-                        in_memory_index.points_values_count += 1;
-                    }
-
-                    in_memory_index.max_values_per_point =
-                        max(in_memory_index.max_values_per_point, geo_hashes.len());
-                    in_memory_index.increment_hash_point_counts(&geo_hashes);
-                    for geo_hash in geo_hashes {
-                        in_memory_index.increment_hash_value_counts(geo_hash);
-                        in_memory_index
-                            .points_map
-                            .entry(geo_hash)
-                            .or_default()
-                            .insert(idx);
-                    }
-
+                    in_memory_index.ingest_raw_points(idx, values)?;
                     Ok(true)
                 },
                 hw_counter_ref,
