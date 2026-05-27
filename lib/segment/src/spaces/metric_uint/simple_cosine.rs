@@ -1,6 +1,6 @@
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{DenseVector, VectorElementTypeByte};
+use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeByte};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_uint::avx2::cosine::avx_cosine_similarity_bytes;
@@ -48,6 +48,13 @@ impl Metric<VectorElementTypeByte> for CosineMetric {
         }
 
         cosine_similarity_bytes(v1, v2)
+    }
+
+    fn query_similarity(
+        query: &TypedDenseVector<VectorElementTypeByte>,
+        vector: &[VectorElementTypeByte],
+    ) -> ScoreType {
+        Self::similarity(query, vector)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {

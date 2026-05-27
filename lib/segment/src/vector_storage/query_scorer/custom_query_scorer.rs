@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, ScoreType};
 use zerocopy::FromBytes;
 
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{DenseVector, TypedDenseVector};
+use crate::data_types::vectors::DenseVector;
 use crate::spaces::metric::Metric;
 use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::query::{Query, TransformInto};
@@ -19,7 +19,7 @@ pub struct CustomQueryScorer<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
-    TStoredQuery: Query<TypedDenseVector<TElement>>,
+    TStoredQuery: Query<TElement::QueryType>,
 > {
     vector_storage: &'a TVectorStorage,
     query: TStoredQuery,
@@ -33,7 +33,7 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
-    TStoredQuery: Query<TypedDenseVector<TElement>>,
+    TStoredQuery: Query<TElement::QueryType>,
 > CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
     pub fn new<TInputQuery>(
@@ -42,16 +42,16 @@ impl<
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
-        TInputQuery: Query<DenseVector>
-            + TransformInto<TStoredQuery, DenseVector, TypedDenseVector<TElement>>,
+        TInputQuery:
+            Query<DenseVector> + TransformInto<TStoredQuery, DenseVector, TElement::QueryType>,
     {
         let mut dim = 0;
         let query = query
             .transform(|vector| {
                 dim = vector.len();
                 let preprocessed_vector = TMetric::preprocess(vector);
-                Ok(TypedDenseVector::from(TElement::slice_from_float_cow(
-                    Cow::from(preprocessed_vector),
+                Ok(TElement::query_from_float_cow(Cow::from(
+                    preprocessed_vector,
                 )))
             })
             .unwrap();
@@ -77,7 +77,7 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
-    TStoredQuery: Query<TypedDenseVector<TElement>>,
+    TStoredQuery: Query<TElement::QueryType>,
 > QueryScorer for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
     type TVector = [TElement];
@@ -106,7 +106,7 @@ impl<
 
         self.query.score_by(|example| {
             cpu_counter.incr();
-            TMetric::similarity(example, against)
+            TMetric::query_similarity(example, against)
         })
     }
 
