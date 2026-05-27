@@ -125,6 +125,16 @@ where
         Ok(self.remote.get().expect("just set or already set"))
     }
 
+    /// Drop the cached remote handle, releasing any mapping it holds on the
+    /// remote file. The next access re-opens it lazily via [`Self::remote`].
+    ///
+    /// Test-only: required so tests can shrink the remote on Windows, where a
+    /// file with an active memory mapping cannot be resized.
+    #[cfg(test)]
+    pub(super) fn release_remote(&mut self) {
+        self.remote = OnceLock::new();
+    }
+
     /// Return the cached [`LocalState`], initializing it on first call.
     pub(super) fn local_state(&self) -> Result<&LocalState> {
         if let Some(state) = self.local.get() {
