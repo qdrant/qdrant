@@ -96,7 +96,7 @@ mod shared {
     }
 
     /// Pack `indices` into bytes with `bits` bits per code, LSB-first — same
-    /// layout [`crate::turboquant::encoding::TurboQuantizer::pack_vector`]
+    /// layout [`crate::turboquant::quantization::TurboQuantizer::pack_vector`]
     /// produces (both go through [`BitWriter`]).  Caller guarantees every
     /// index fits in `bits` bits and `indices.len() * bits` is a multiple of 8.
     pub fn pack_codes(indices: &[u8], bits: u8) -> Vec<u8> {

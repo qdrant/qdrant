@@ -205,7 +205,7 @@ impl Query2bitSimd {
     /// Number of `vector` bytes the encoded query expects: 4 bytes per full
     /// 16-dim chunk plus the packed tail (four 2-bit codes per byte).
     #[inline]
-    pub(super) fn expected_vector_bytes(&self) -> usize {
+    pub(crate) fn expected_vector_bytes(&self) -> usize {
         self.query_data.len() * 4 + (self.tail_dims as usize).div_ceil(4)
     }
 
@@ -283,7 +283,7 @@ impl Query2bitSimd {
     /// Shared by every SIMD backend so they only implement the full-chunk
     /// loop and forward the tail here.
     #[inline]
-    pub(super) fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
+    pub(crate) fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
         if self.tail_dims == 0 {
             return 0;
         }
@@ -352,7 +352,7 @@ pub fn score_2bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
 /// didn't fit a full SIMD chunk, and by [`score_2bit_internal_scalar`] as its
 /// inner loop.
 #[inline]
-pub(super) fn score_2bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
+pub(crate) fn score_2bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
     let mut acc: i64 = 0;
     for (&byte_a, &byte_b) in a.iter().zip(b.iter()) {
         for k in 0..4 {
@@ -456,7 +456,7 @@ pub use x64::{
 /// `sample_normal_vec`, `encode_to_nearest_centroid`) live in
 /// [`super::super::shared`].
 #[cfg(test)]
-pub(super) mod shared {
+pub mod shared {
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
 
