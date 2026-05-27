@@ -1114,6 +1114,7 @@ fn test_struct_payload_geo_polygon_index(test_segments: &TestSegments) -> Result
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_struct_payload_index_nested_fields() {
     // Compare search with plain and struct indexes
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();

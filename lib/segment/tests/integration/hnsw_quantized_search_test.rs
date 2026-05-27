@@ -352,6 +352,7 @@ fn check_rescoring(
     }
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_quantized_search_cosine_test() {
     hnsw_quantized_search_test(
@@ -369,6 +370,7 @@ fn hnsw_quantized_search_cosine_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_quantized_search_euclid_test() {
     hnsw_quantized_search_test(
@@ -386,6 +388,7 @@ fn hnsw_quantized_search_euclid_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_quantized_search_manhattan_test() {
     hnsw_quantized_search_test(
@@ -403,6 +406,7 @@ fn hnsw_quantized_search_manhattan_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_product_quantization_cosine_test() {
     hnsw_quantized_search_test(
@@ -419,6 +423,7 @@ fn hnsw_product_quantization_cosine_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_product_quantization_euclid_test() {
     hnsw_quantized_search_test(
@@ -435,6 +440,7 @@ fn hnsw_product_quantization_euclid_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_product_quantization_manhattan_test() {
     hnsw_quantized_search_test(
@@ -451,6 +457,7 @@ fn hnsw_product_quantization_manhattan_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_cosine_test() {
     // Bits4 has enough headroom to use the standard helper (40% recall floor),
@@ -471,6 +478,7 @@ fn hnsw_turbo_quantization_cosine_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_dot_test() {
     // See `hnsw_turbo_quantization_cosine_test` for rationale.
@@ -489,6 +497,7 @@ fn hnsw_turbo_quantization_dot_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_cosine_larger_test() {
     // See `hnsw_turbo_quantization_cosine_test` for rationale.
@@ -507,6 +516,7 @@ fn hnsw_turbo_quantization_cosine_larger_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_cosine_bits2_test() {
     // Bits2 clears the 40% recall floor but with thin margin — `deterministic`
@@ -527,6 +537,7 @@ fn hnsw_turbo_quantization_cosine_bits2_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_dot_bits2_test() {
     // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
@@ -545,6 +556,7 @@ fn hnsw_turbo_quantization_dot_bits2_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
     // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
@@ -568,6 +580,7 @@ fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
 // they don't reliably clear the standard helper's 40% recall floor
 // and would be flaky-to-failing under this shape.
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_euclid_test() {
     hnsw_quantized_search_test(
@@ -585,6 +598,7 @@ fn hnsw_turbo_quantization_euclid_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_manhattan_test() {
     hnsw_quantized_search_test(
@@ -602,6 +616,7 @@ fn hnsw_turbo_quantization_manhattan_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_euclid_bits2_test() {
     // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
@@ -620,6 +635,7 @@ fn hnsw_turbo_quantization_euclid_bits2_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_manhattan_bits2_test() {
     // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
@@ -887,6 +903,7 @@ fn build_quantized_hnsw_for_compare(
     (segment, hnsw_index, (segment_dir, hnsw_dir, quantized_dir))
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_cosine_bits1_test() {
     hnsw_quantized_low_bit_compare_test(
@@ -898,6 +915,7 @@ fn hnsw_turbo_quantization_cosine_bits1_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_dot_bits1_test() {
     hnsw_quantized_low_bit_compare_test(
@@ -909,6 +927,7 @@ fn hnsw_turbo_quantization_dot_bits1_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_euclid_bits1_test() {
     hnsw_quantized_low_bit_compare_test(
@@ -920,6 +939,7 @@ fn hnsw_turbo_quantization_euclid_bits1_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_manhattan_bits1_test() {
     hnsw_quantized_low_bit_compare_test(
@@ -931,6 +951,7 @@ fn hnsw_turbo_quantization_manhattan_bits1_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_cosine_bits1_5_test() {
     hnsw_quantized_low_bit_compare_test(
@@ -942,6 +963,7 @@ fn hnsw_turbo_quantization_cosine_bits1_5_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_dot_bits1_5_test() {
     hnsw_quantized_low_bit_compare_test(
@@ -953,6 +975,7 @@ fn hnsw_turbo_quantization_dot_bits1_5_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_euclid_bits1_5_test() {
     hnsw_quantized_low_bit_compare_test(
@@ -964,6 +987,7 @@ fn hnsw_turbo_quantization_euclid_bits1_5_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_manhattan_bits1_5_test() {
     // See `hnsw_turbo_quantization_manhattan_bits1_test` for rationale.
@@ -976,6 +1000,7 @@ fn hnsw_turbo_quantization_manhattan_bits1_5_test() {
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn test_build_hnsw_using_quantization() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
