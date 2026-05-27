@@ -59,7 +59,7 @@ impl InvertedIndex for InvertedIndexRam {
     fn get<'a>(
         &'a self,
         id: DimOffset,
-        _bump: &'a bumpalo::Bump,
+        _arena: &'a crate::SearchScratchArena,
         _hw_counter: &'a HardwareCounterCell,
     ) -> Result<PostingListIterator<'a>> {
         Ok(self.get(id)?.iter())

@@ -41,7 +41,6 @@ anyhow = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
-bumpalo = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 fs-err = { workspace = true }

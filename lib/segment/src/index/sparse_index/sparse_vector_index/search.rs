@@ -132,7 +132,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         .collect_vec();
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
-        let mut memory_handle = self.scores_memory_pool.get();
+        let mut scratch = self.search_scratch_pool.get();
         let mut hw_counter = vector_query_context.hardware_counter();
         let is_index_on_disk = self.config.index_type.is_on_disk();
         if is_index_on_disk {
@@ -145,7 +145,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             sparse_vector,
             top,
             &self.inverted_index,
-            &mut memory_handle,
+            &mut scratch,
             &is_stopped,
             &hw_counter,
         )?;
@@ -175,7 +175,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let is_stopped = vector_query_context.is_stopped();
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
-        let mut memory_handle = self.scores_memory_pool.get();
+        let mut scratch = self.search_scratch_pool.get();
         let mut hw_counter = vector_query_context.hardware_counter();
         let is_index_on_disk = self.config.index_type.is_on_disk();
         if is_index_on_disk {
@@ -188,7 +188,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             sparse_vector,
             top,
             &self.inverted_index,
-            &mut memory_handle,
+            &mut scratch,
             &is_stopped,
             &hw_counter,
         )?;

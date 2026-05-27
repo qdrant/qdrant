@@ -170,10 +170,10 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
             .iter()
             .zip(remapped_vector.values.iter())
         {
-            let bump = bumpalo::Bump::new();
+            let arena = sparse::SearchScratchArena::new_slow();
             let posting_list = sparse_vector_index
                 .inverted_index()
-                .get(*dim_id, &bump, &hw_counter)
+                .get(*dim_id, &arena, &hw_counter)
                 .unwrap();
             // assert posting list sorted by record id
             assert!(

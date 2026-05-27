@@ -17,7 +17,7 @@ use crate::common::types::{DimWeight, Weight};
 type BitPackerImpl = bitpacking::BitPacker4x;
 
 /// How many elements are packed in a single chunk.
-const CHUNK_SIZE: usize = BitPackerImpl::BLOCK_LEN;
+pub(super) const CHUNK_SIZE: usize = BitPackerImpl::BLOCK_LEN;
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CompressedPostingList<W: Weight> {

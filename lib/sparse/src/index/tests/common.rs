@@ -1,25 +1,15 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
 
 use common::types::PointOffsetType;
 use rand::{RngExt, SeedableRng};
 use tempfile::TempDir;
 
-use crate::common::scores_memory_pool::{PooledScoresHandle, ScoresMemoryPool};
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimOffset, Weight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-
-static TEST_SCORES_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
-
-pub fn get_pooled_scores() -> PooledScoresHandle<'static> {
-    TEST_SCORES_POOL
-        .get_or_init(ScoresMemoryPool::default)
-        .get()
-}
 
 pub struct TestIndex<I: InvertedIndex> {
     pub index: I,

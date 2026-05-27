@@ -13,7 +13,7 @@ use itertools::Itertools;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use sha2::Digest;
-use sparse::common::scores_memory_pool::ScoresMemoryPool;
+use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
 use sparse::common::types::{QuantizedU8, Weight};
@@ -181,7 +181,7 @@ fn run_bench2(
     query_vectors: &[SparseVector],
     hottest_query_vectors: &[RemappedSparseVector],
 ) {
-    let pool = ScoresMemoryPool::new();
+    let pool = SearchScratchPool::new();
     let stopped = AtomicBool::new(false);
 
     let mut it = query_vectors.iter().cycle();
@@ -192,8 +192,8 @@ fn run_bench2(
         b.iter_batched(
             || it.next().unwrap().clone().into_remapped(),
             |vec| {
-                let mut handle = pool.get();
-                SearchContext::new(vec, TOP, index, &mut handle, &stopped, &hardware_counter)
+                let mut scratch = pool.get();
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
                     .unwrap()
                     .search(&|_| true)
             },
@@ -208,8 +208,8 @@ fn run_bench2(
         b.iter_batched(
             || it.next().unwrap().clone(),
             |vec| {
-                let mut handle = pool.get();
-                SearchContext::new(vec, TOP, index, &mut handle, &stopped, &hardware_counter)
+                let mut scratch = pool.get();
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
                     .unwrap()
                     .search(&|_| true)
             },

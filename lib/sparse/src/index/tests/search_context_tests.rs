@@ -3,7 +3,6 @@
 mod tests {
     use std::any::TypeId;
     use std::borrow::Cow;
-    use std::sync::OnceLock;
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -11,7 +10,7 @@ mod tests {
     use common::types::{PointOffsetType, ScoredPointOffset};
     use tempfile::TempDir;
 
-    use crate::common::scores_memory_pool::{PooledScoresHandle, ScoresMemoryPool};
+    use crate::SearchScratch;
     use crate::common::sparse_vector::RemappedSparseVector;
     use crate::common::types::QuantizedU8;
     use crate::index::inverted_index::InvertedIndex;
@@ -51,14 +50,6 @@ mod tests {
     mod mmap_q8 {}
 
     // --- End of test instantiations ---
-
-    static TEST_SCORES_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
-
-    fn get_pooled_scores() -> PooledScoresHandle<'static> {
-        TEST_SCORES_POOL
-            .get_or_init(ScoresMemoryPool::default)
-            .get()
-    }
 
     /// Match all filter condition for testing
     fn match_all(_p: PointOffsetType) -> bool {
@@ -108,12 +99,12 @@ mod tests {
         let hw_counter = HardwareCounterCell::disposable();
 
         let is_stopped = AtomicBool::new(false);
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector::default(), // empty query vector
             10,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hw_counter,
         )
@@ -134,7 +125,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -142,7 +133,7 @@ mod tests {
             },
             10,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -194,7 +185,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -202,7 +193,7 @@ mod tests {
             },
             10,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -238,7 +229,7 @@ mod tests {
             None,
         );
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -246,7 +237,7 @@ mod tests {
             },
             10,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -294,7 +285,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -302,7 +293,7 @@ mod tests {
             },
             3,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -337,7 +328,7 @@ mod tests {
 
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -345,7 +336,7 @@ mod tests {
             },
             4,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -391,7 +382,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1],
@@ -399,7 +390,7 @@ mod tests {
             },
             1,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -427,7 +418,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -435,7 +426,7 @@ mod tests {
             },
             1,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -468,7 +459,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -476,7 +467,7 @@ mod tests {
             },
             1,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -507,7 +498,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -515,7 +506,7 @@ mod tests {
             },
             3,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -541,7 +532,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -549,7 +540,7 @@ mod tests {
             },
             3,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )
@@ -597,7 +588,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
-        let mut handle = get_pooled_scores();
+        let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 3],
@@ -605,7 +596,7 @@ mod tests {
             },
             3,
             &index.index,
-            &mut handle,
+            &mut scratch,
             &is_stopped,
             &hardware_counter,
         )

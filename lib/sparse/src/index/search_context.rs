@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 
 use super::posting_list_common::PostingListIter;
-use crate::common::scores_memory_pool::PooledScoresHandle;
+use crate::SearchScratch;
 use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
@@ -32,7 +32,8 @@ pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     top_results: TopK,
     min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
-    scores: &'a mut Vec<ScoreType>,         // borrowed scores buffer from a pooled handle
+    /// Scores buffer from [`SearchScratch`].
+    scores: &'a mut Vec<ScoreType>,
     use_pruning: bool,
     hardware_counter: &'a HardwareCounterCell,
 }
@@ -42,7 +43,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         query: RemappedSparseVector,
         top: usize,
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
-        pooled: &'a mut PooledScoresHandle<'_>,
+        scratch: &'a mut SearchScratch<'_>,
         is_stopped: &'a AtomicBool,
         hardware_counter: &'a HardwareCounterCell,
     ) -> Result<SearchContext<'a, T>> {
@@ -52,7 +53,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            let mut it = inverted_index.get(*id, &pooled.entry.bump, hardware_counter)?;
+            let mut it = inverted_index.get(*id, &scratch.arena, hardware_counter)?;
             if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                 // check if new min
                 let min_record_id_posting = first.record_id;
@@ -87,7 +88,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             top_results,
             min_record_id,
             max_record_id,
-            scores: &mut pooled.entry.scores,
+            scores: &mut scratch.scores,
             use_pruning,
             hardware_counter,
         })

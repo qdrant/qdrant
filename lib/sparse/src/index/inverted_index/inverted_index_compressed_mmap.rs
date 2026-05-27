@@ -5,7 +5,6 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
-use bumpalo::Bump;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::aligned_vec::ACow;
 use common::fs::{atomic_save_json, read_json};
@@ -23,10 +22,11 @@ use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use super::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use super::{INDEX_FILE_NAME, corrupted_index, out_of_bounds};
+use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
-    CompressedPostingChunk, CompressedPostingListIterator, CompressedPostingListView,
+    CHUNK_SIZE, CompressedPostingChunk, CompressedPostingListIterator, CompressedPostingListView,
 };
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -77,6 +77,20 @@ struct PostingListFileHeader<W: Weight> {
     pub quantization_params: W::QuantizationParams,
 }
 
+impl<W: Weight> PostingListFileHeader<W> {
+    fn postings_count(&self, remainders_end: u64) -> Option<usize> {
+        let chunks_bytes = self.chunks_count as usize * size_of::<CompressedPostingChunk<W>>();
+        let data_len = remainders_end.checked_sub(self.ids_start)? as usize;
+        let remainders_bytes = data_len.checked_sub(self.ids_len as usize + chunks_bytes)?;
+        let elem_size = size_of::<GenericPostingElement<W>>();
+        if !remainders_bytes.is_multiple_of(elem_size) {
+            return None;
+        }
+        let remainders_count = remainders_bytes / elem_size;
+        Some(self.chunks_count as usize * CHUNK_SIZE + remainders_count)
+    }
+}
+
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompressedMmap<W, S>
 where
     S::Fs: Default,
@@ -109,10 +123,10 @@ where
     fn get<'a>(
         &'a self,
         id: DimOffset,
-        bump: &'a Bump,
+        arena: &'a SearchScratchArena,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<CompressedPostingListIterator<'a, W>> {
-        Ok(self.get(id, bump, hw_counter)?.iter())
+        Ok(self.get(id, arena, hw_counter)?.iter())
     }
 
     fn len(&self) -> usize {
@@ -120,7 +134,10 @@ where
     }
 
     fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize> {
-        Ok(self.get(id, &Bump::new(), hw_counter)?.len())
+        let (header, remainders_end) = self.read_posting_header(id, hw_counter)?;
+        header
+            .postings_count(remainders_end)
+            .ok_or_else(corrupted_index)
     }
 
     fn files(path: &Path) -> Vec<PathBuf> {
@@ -187,33 +204,10 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     pub fn get<'a>(
         &'a self,
         id: DimId,
-        bump: &'a Bump,
+        arena: &'a SearchScratchArena,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<CompressedPostingListView<'a, W>> {
-        // check that the id is not out of bounds (posting_count includes the empty zeroth entry)
-        if id >= self.file_header.posting_count as DimId {
-            return Err(out_of_bounds(id, self.file_header.posting_count));
-        }
-
-        // Also read the next header's `ids_start` (its first field) in the same I/O
-        // when there is a next entry: it doubles as this entry's remainders end.
-        let header_start = u64::from(id) * Self::HEADER_SIZE as u64;
-        let has_next = id + 1 < self.file_header.posting_count as DimId;
-        let read_size = Self::HEADER_SIZE + if has_next { size_of::<u64>() } else { 0 };
-        let header_bytes = self.storage.read_bytes::<Random>(
-            header_start..header_start + read_size as u64,
-            align_of::<PostingListFileHeader<W>>(),
-        )?;
-        let (&header, rest) = PostingListFileHeader::<W>::ref_from_prefix(&header_bytes)
-            .map_err(|_| corrupted_index())?;
-        let remainders_end = if has_next {
-            *u64::ref_from_bytes(rest).map_err(|_| corrupted_index())?
-        } else {
-            self.storage.len::<u8>()?
-        };
-        drop(header_bytes);
-
-        hw_counter.vector_io_read().incr_delta(read_size);
+        let (header, remainders_end) = self.read_posting_header(id, hw_counter)?;
 
         let data_bytes = self.storage.read_bytes::<Random>(
             header.ids_start..remainders_end,
@@ -221,7 +215,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         )?;
         let data = match data_bytes {
             ACow::Borrowed(b) => b,
-            ACow::Owned(avec) => bump.alloc(avec).as_slice(),
+            ACow::Owned(avec) => arena.alloc(avec),
         };
 
         let ids_len = header.ids_len as usize;
@@ -246,6 +240,37 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
             header.quantization_params,
             hw_counter,
         ))
+    }
+
+    /// Read the header for `id`, plus the next header's `ids_start`
+    /// (which doubles as this entry's remainders end).
+    fn read_posting_header(
+        &self,
+        id: DimId,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<(PostingListFileHeader<W>, u64)> {
+        if id >= self.file_header.posting_count as DimId {
+            return Err(out_of_bounds(id, self.file_header.posting_count));
+        }
+
+        let header_start = u64::from(id) * Self::HEADER_SIZE as u64;
+        let has_next = id + 1 < self.file_header.posting_count as DimId;
+        let read_size = Self::HEADER_SIZE + if has_next { size_of::<u64>() } else { 0 };
+        let header_bytes = self.storage.read_bytes::<Random>(
+            header_start..header_start + read_size as u64,
+            align_of::<PostingListFileHeader<W>>(),
+        )?;
+        let (&header, rest) = PostingListFileHeader::<W>::ref_from_prefix(&header_bytes)
+            .map_err(|_| corrupted_index())?;
+        let remainders_end = if has_next {
+            *u64::ref_from_bytes(rest).map_err(|_| corrupted_index())?
+        } else {
+            self.storage.len::<u8>()?
+        };
+
+        hw_counter.vector_io_read().incr_delta(read_size);
+
+        Ok((header, remainders_end))
     }
 
     pub fn convert_and_save<P: AsRef<Path>>(
@@ -372,9 +397,10 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
     fn calculate_total_sparse_size(&self, hw_counter: &HardwareCounterCell) -> Result<usize> {
         let mut total = 0;
-        let bump = Bump::new();
+        let mut arena = SearchScratchArena::new_slow();
         for id in 0..self.file_header.posting_count as DimId {
-            total += self.get(id, &bump, hw_counter)?.store_size().total;
+            total += self.get(id, &arena, hw_counter)?.store_size().total;
+            arena.gc();
         }
         Ok(total)
     }
@@ -403,14 +429,14 @@ mod tests {
         inverted_index_mmap: &InvertedIndexCompressedMmap<W, S>,
     ) {
         let hw_counter = HardwareCounterCell::new();
-        let bump = Bump::new();
+        let arena = SearchScratchArena::new_slow();
         for id in 0..inverted_index_ram.postings.len() as DimId {
             let posting_list_ram = inverted_index_ram
                 .postings
                 .get(id as usize)
                 .unwrap()
                 .view(&hw_counter);
-            let posting_list_mmap = inverted_index_mmap.get(id, &bump, &hw_counter).unwrap();
+            let posting_list_mmap = inverted_index_mmap.get(id, &arena, &hw_counter).unwrap();
 
             let mmap_parts = posting_list_mmap.parts();
             let ram_parts = posting_list_ram.parts();
@@ -481,16 +507,16 @@ mod tests {
 
         compare_indexes(&inverted_index_ram, &index);
 
-        let b = Bump::new();
-        assert!(index.get(0, &b, &hw_counter).unwrap().is_empty()); // the first entry is always empty as dimension ids start at 1
-        assert_eq!(index.get(1, &b, &hw_counter).unwrap().len(), 9);
-        assert_eq!(index.get(2, &b, &hw_counter).unwrap().len(), 4);
-        assert_eq!(index.get(3, &b, &hw_counter).unwrap().len(), 3);
-        assert!(index.get(4, &b, &hw_counter).unwrap().is_empty()); // return empty posting list info for intermediary empty ids
-        assert_eq!(index.get(5, &b, &hw_counter).unwrap().len(), 2);
+        let arena = SearchScratchArena::new_slow();
+        assert!(index.get(0, &arena, &hw_counter).unwrap().is_empty()); // the first entry is always empty as dimension ids start at 1
+        assert_eq!(index.get(1, &arena, &hw_counter).unwrap().len(), 9);
+        assert_eq!(index.get(2, &arena, &hw_counter).unwrap().len(), 4);
+        assert_eq!(index.get(3, &arena, &hw_counter).unwrap().len(), 3);
+        assert!(index.get(4, &arena, &hw_counter).unwrap().is_empty()); // return empty posting list info for intermediary empty ids
+        assert_eq!(index.get(5, &arena, &hw_counter).unwrap().len(), 2);
         // index after the last values are errors (out of bounds)
-        assert!(index.get(6, &b, &hw_counter).is_err());
-        assert!(index.get(7, &b, &hw_counter).is_err());
-        assert!(index.get(100, &b, &hw_counter).is_err());
+        assert!(index.get(6, &arena, &hw_counter).is_err());
+        assert!(index.get(7, &arena, &hw_counter).is_err());
+        assert!(index.get(100, &arena, &hw_counter).is_err());
     }
 }

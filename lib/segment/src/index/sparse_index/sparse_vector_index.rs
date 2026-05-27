@@ -9,7 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::StorageVersion as _;
 use fs_err as fs;
-use sparse::common::scores_memory_pool::ScoresMemoryPool;
+use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
@@ -35,7 +35,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
-    scores_memory_pool: ScoresMemoryPool,
+    search_scratch_pool: SearchScratchPool,
 }
 
 /// Getters for internals, used for testing.
@@ -130,7 +130,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let searches_telemetry = SparseSearchesTelemetry::new();
         let path = path.to_path_buf();
-        let scores_memory_pool = ScoresMemoryPool::new();
+        let search_scratch_pool = SearchScratchPool::new();
         Ok(Self {
             config,
             id_tracker,
@@ -140,7 +140,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             inverted_index,
             searches_telemetry,
             indices_tracker,
-            scores_memory_pool,
+            search_scratch_pool,
         })
     }
 
@@ -227,14 +227,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let hw_counter = HardwareCounterCell::disposable();
 
         let mut unique_record_ids = std::collections::HashSet::new();
-        let mut bump = bumpalo::Bump::new();
+        let mut arena = sparse::SearchScratchArena::new_slow();
         for dim_id in &query_vector.indices {
             if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                bump.reset();
-                let posting_list_iter = self.inverted_index.get(dim_id, &bump, &hw_counter)?;
+                let posting_list_iter = self.inverted_index.get(dim_id, &arena, &hw_counter)?;
                 for element in posting_list_iter.into_std_iter() {
                     unique_record_ids.insert(element.record_id);
                 }
+                arena.gc();
             }
         }
         Ok(unique_record_ids.len())

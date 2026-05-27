@@ -2,13 +2,13 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
-use bumpalo::Bump;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{Result, UniversalIoError};
 
 use super::posting_list_common::PostingListIter;
+use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::DimOffset;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -43,7 +43,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn get<'a>(
         &'a self,
         id: DimOffset,
-        bump: &'a Bump,
+        arena: &'a SearchScratchArena,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<Self::Iter<'a>>;
 

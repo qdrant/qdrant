@@ -2,22 +2,23 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 
+use crate::SearchScratch;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::search_context::SearchContext;
-use crate::index::tests::common::{build_index, get_pooled_scores, match_all};
+use crate::index::tests::common::{build_index, match_all};
 
 fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
     let is_stopped = AtomicBool::new(false);
     let accumulator = HwMeasurementAcc::new();
     let hardware_counter = accumulator.get_counter_cell();
     let top = 10;
-    let mut handle = get_pooled_scores();
+    let mut scratch = SearchScratch::new_for_test();
     let mut search_context = SearchContext::new(
         query.clone(),
         top,
         index,
-        &mut handle,
+        &mut scratch,
         &is_stopped,
         &hardware_counter,
     )
@@ -31,7 +32,7 @@ fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
         query,
         top,
         index,
-        &mut handle,
+        &mut scratch,
         &is_stopped,
         &hardware_counter,
     )

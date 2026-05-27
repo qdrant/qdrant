@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use bumpalo::Bump;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Result};
@@ -9,12 +8,13 @@ use common::universal_io::{MmapFs, Result};
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
 use super::{InvertedIndex, out_of_bounds};
+use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
     CompressedPostingBuilder, CompressedPostingList, CompressedPostingListIterator,
+    CompressedPostingListView,
 };
-use crate::index::posting_list_common::PostingListIter as _;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InvertedIndexCompressedImmutableRam<W: Weight> {
@@ -40,13 +40,13 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
             total_sparse_size: mmap_inverted_index.total_sparse_vectors_size(),
         };
 
-        let mut bump = Bump::new();
         let hw_counter = HardwareCounterCell::disposable();
 
+        let mut arena = SearchScratchArena::new_slow();
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
-            let posting_list = mmap_inverted_index.get(i, &bump, &hw_counter)?;
+            let posting_list = mmap_inverted_index.get(i, &arena, &hw_counter)?;
             inverted_index.postings.push(posting_list.to_owned());
-            bump.reset();
+            arena.gc();
         }
 
         mmap_inverted_index.clear_cache()?;
@@ -62,14 +62,10 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     fn get<'a>(
         &'a self,
         id: DimOffset,
-        _bump: &'a Bump,
+        _arena: &'a SearchScratchArena,
         hw_counter: &'a HardwareCounterCell, // Ignored for in-ram index
     ) -> Result<Self::Iter<'a>> {
-        let posting = self
-            .postings
-            .get(id as usize)
-            .ok_or(out_of_bounds(id, self.len()))?;
-        Ok(posting.iter(hw_counter))
+        Ok(self.get(id, hw_counter)?.iter())
     }
 
     fn len(&self) -> usize {
@@ -77,7 +73,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     }
 
     fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize> {
-        Ok(self.get(id, &Bump::new(), hw_counter)?.len_to_end())
+        Ok(self.get(id, hw_counter)?.len())
     }
 
     fn files(path: &Path) -> Vec<std::path::PathBuf> {
@@ -139,6 +135,20 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
             .len()
             .checked_sub(1)
             .map(|len| len as DimOffset)
+    }
+}
+
+impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
+    #[inline]
+    fn get<'a>(
+        &'a self,
+        id: DimOffset,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Result<CompressedPostingListView<'a, W>> {
+        let Some(posting) = self.postings.get(id as usize) else {
+            return Err(out_of_bounds(id, self.len()));
+        };
+        Ok(posting.view(hw_counter))
     }
 }
 
