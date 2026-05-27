@@ -335,7 +335,7 @@ mod tests {
 
     use super::super::shared::random_bytes;
     use super::*;
-    use crate::TQBits;
+    use crate::turboquant::TQBits;
 
     /// `CENTROID_ABS` must match the magnitude in `CENTROIDS_1BIT`.
     #[test]

@@ -25,17 +25,6 @@ pub enum DistanceType {
     L2,
 }
 
-impl From<DistanceType> for turboquant::DistanceType {
-    fn from(d: DistanceType) -> Self {
-        match d {
-            DistanceType::Cosine => turboquant::DistanceType::Cosine,
-            DistanceType::Dot => turboquant::DistanceType::Dot,
-            DistanceType::L1 => turboquant::DistanceType::L1,
-            DistanceType::L2 => turboquant::DistanceType::L2,
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct VectorParameters {
     pub dim: usize,

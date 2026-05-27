@@ -491,7 +491,7 @@ mod tests {
 
     use super::super::shared::{encode_to_nearest_centroid, pack_codes, sample_normal_vec};
     use super::{CODEBOOK_ABS_MAX, Query2bitSimd, score_2bit_internal_scalar};
-    use crate::TQBits;
+    use crate::turboquant::TQBits;
 
     #[test]
     fn test_codebook_matches_lloyd_max() {

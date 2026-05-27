@@ -101,7 +101,6 @@ charabia = { version = "0.9.9", default-features = false, features = [
 
 gridstore = { path = "../gridstore" }
 
-turboquant = { path = "../common/turboquant" }
 common = { path = "../common/common" }
 macros = { path = "../macros" }
 posting_list = { path = "../posting_list" }

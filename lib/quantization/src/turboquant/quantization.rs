@@ -1,20 +1,21 @@
-use crate::encoding::TqVectorExtras;
-use crate::rotation::HadamardRotation;
-use crate::simd::{
+use crate::DistanceType;
+use crate::turboquant::encoding::TqVectorExtras;
+use crate::turboquant::rotation::HadamardRotation;
+use crate::turboquant::simd::{
     CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query2bitSimd, Query4bitSimd,
     score_1bit_internal, score_2bit_internal, score_2bit_internal_weighted, score_4bit_internal,
     score_4bit_internal_weighted,
 };
-use crate::{DistanceType, EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode};
+use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode};
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
-    pub rotation: HadamardRotation,
-    pub bits: TQBits,
-    pub mode: TQMode,
-    pub distance: DistanceType,
-    pub padded_dim: usize,
-    pub error_correction: Option<ErrorCorrection>,
+    pub(super) rotation: HadamardRotation,
+    pub(super) bits: TQBits,
+    pub(super) mode: TQMode,
+    pub(super) distance: DistanceType,
+    pub(crate) padded_dim: usize,
+    pub(super) error_correction: Option<ErrorCorrection>,
 }
 
 /// TQ+ per-coordinate shift+scale: pulls each rotated, length-rescaled
@@ -23,8 +24,8 @@ pub struct TurboQuantizer {
 /// `apply` maps `x → (x + shift) · scale = (x − M) / D'` where `M = -shift`
 /// and `D' = 1 / scale`. `revert` is the exact inverse.
 pub struct ErrorCorrection {
-    pub shift: Vec<f32>,
-    pub scale: Vec<f32>,
+    pub(crate) shift: Vec<f32>,
+    pub(crate) scale: Vec<f32>,
     /// Signed 16-bit quantized `D'_i² = 1 / scale_i²` per coordinate, used
     /// by the SIMD weighted-dot path of `score_symmetric_ec` for Bits2/Bits4.
     /// `D'²_f32 ≈ d_prime_sq_i16[i] / weight_scale`. Values are non-negative
@@ -32,19 +33,19 @@ pub struct ErrorCorrection {
     /// `_mm256_madd_epi16` / `vmlal_s16` directly — the `i16` element type
     /// makes that contract a type-system invariant. Recomputed from `scale`
     /// rather than persisted — `scale` is the single source of truth.
-    pub d_prime_sq_i16: Vec<i16>,
+    pub(super) d_prime_sq_i16: Vec<i16>,
     /// `(i16::MAX − 1) / max(D'²)` — quantization scale. The 1-bit cap
     /// (vs. full u16) costs ~3e-5 relative precision but lets SIMD use
     /// signed `i16` multiply-adds. `1.0` if all `D'²` are effectively zero
     /// (degenerate quantizer).
-    pub weight_scale: f32,
+    pub(super) weight_scale: f32,
     /// `⟨M, M⟩ = Σ shift²` global constant. Used in symmetric TQ+ scoring to
     /// cancel the double-counted `⟨M, M⟩` from `xm_a + xm_b`.
-    pub mm_const: f32,
+    pub(super) mm_const: f32,
 }
 
 impl ErrorCorrection {
-    pub fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
+    pub(crate) fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
         debug_assert_eq!(
             shift.len(),
             scale.len(),
@@ -96,7 +97,7 @@ impl TurboQuantizer {
     /// Heap memory owned by the quantizer: the rotation tables and, in TQ+
     /// mode, the per-coordinate error-correction vectors. Resident in RAM
     /// regardless of whether the encoded vectors are stored in RAM or mmap.
-    pub fn heap_size_bytes(&self) -> usize {
+    pub(crate) fn heap_size_bytes(&self) -> usize {
         let Self {
             rotation,
             bits: _,
@@ -149,7 +150,7 @@ impl TurboQuantizer {
     /// Used both by [`Self::quantize`] and by the TQ+ first pass in
     /// `EncodedVectorsTQ::encode` (in the `quantization` crate) when computing
     /// per-coordinate stats over rescaled rotated samples.
-    pub fn preprocess_into(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
+    pub(crate) fn preprocess_into(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
         debug_assert!(vec.len() <= self.padded_dim);
         debug_assert_eq!(buf.len(), self.padded_dim);
 

@@ -4,10 +4,10 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quantization::DistanceType;
 use quantization::encoded_vectors::VectorParameters;
 use quantization::encoded_vectors_tq::{Metadata, new_turbo_quantizer_from_metadata};
+use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::turboquant::{TQBits, TQMode};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
-use turboquant::quantization::TurboQuantizer;
-use turboquant::{TQBits, TQMode};
 
 const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
 

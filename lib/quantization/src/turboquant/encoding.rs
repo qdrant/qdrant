@@ -1,7 +1,8 @@
 use common::bitpacking::{BitReader, BitWriter};
 
-use crate::quantization::TurboQuantizer;
-use crate::{DistanceType, TQBits, TQMode};
+use crate::DistanceType;
+use crate::turboquant::quantization::TurboQuantizer;
+use crate::turboquant::{TQBits, TQMode};
 
 /// Lazy view over the encoded extra-data attached to a TurboQuant-quantized
 /// vector. Holds nothing but the underlying byte slice; the metadata required
@@ -175,7 +176,7 @@ impl TurboQuantizer {
 
     /// Total size in bytes of a quantized vector, including both the packed
     /// dimensions and any extras..
-    pub fn quantized_size_for(
+    pub(crate) fn quantized_size_for(
         dim: usize,
         bits: TQBits,
         distance: DistanceType,
@@ -188,7 +189,7 @@ impl TurboQuantizer {
     }
 
     // Padded dimension for the vector
-    pub fn padded_dim(dim: usize, bits: TQBits) -> usize {
+    pub(crate) fn padded_dim(dim: usize, bits: TQBits) -> usize {
         match bits {
             TQBits::Bits1 => dim.next_multiple_of(8), // 8 elements per byte
             TQBits::Bits1_5 => (dim * 3 / 2).next_multiple_of(8), // // 16 elements per 3 bytes
@@ -246,7 +247,7 @@ impl TurboQuantizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quantization::TurboQuantizer;
+    use crate::turboquant::quantization::TurboQuantizer;
 
     /// Bit widths exercised by the extras tests. `Bits1_5` is excluded: its
     /// `bit_size` is not yet implemented and panics.

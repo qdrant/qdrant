@@ -1,5 +1,5 @@
-use crate::permutation::Permutation;
-use crate::simd;
+use crate::turboquant::permutation::Permutation;
+use crate::turboquant::simd;
 
 const N_PERMUTATIONS: usize = 3;
 

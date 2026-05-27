@@ -1,7 +1,7 @@
 //! SIMD Fast Walsh–Hadamard Transform on `f64`.
 //!
 //! Bit-equal to the scalar reference at
-//! [`crate::rotation::in_place_walsh_hadamard_transform`] — same
+//! [`crate::turboquant::rotation::in_place_walsh_hadamard_transform`] — same
 //! pair order, single add/sub ops per butterfly, no FMA, no associativity
 //! reordering. Verified by [`tests`] across multiple seeds at every size in
 //! `[4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]`.
@@ -578,7 +578,7 @@ pub(crate) fn scalar_wht(x: &mut [f64]) {
 /// available. Length must be a power of two.
 ///
 /// Output is bit-equal to
-/// [`crate::rotation::in_place_walsh_hadamard_transform`] on every
+/// [`crate::turboquant::rotation::in_place_walsh_hadamard_transform`] on every
 /// path — no FMA, same pair order, single add/sub per butterfly.
 #[inline]
 pub fn wht_dispatch(x: &mut [f64]) {
@@ -610,7 +610,7 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use super::*;
-    use crate::rotation::in_place_walsh_hadamard_transform;
+    use crate::turboquant::rotation::in_place_walsh_hadamard_transform;
 
     /// Power-of-2 sizes from the smallest (n=1, identity) up through the
     /// largest benched size. Covers every distinct path on every backend:

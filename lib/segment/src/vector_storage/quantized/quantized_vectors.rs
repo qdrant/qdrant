@@ -13,9 +13,9 @@ use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
 use quantization::encoded_vectors_u8::{self, ScalarQuantizationMethod};
+use quantization::turboquant::{TQBits, TQMode};
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8, encoded_vectors_pq};
 use serde::{Deserialize, Serialize};
-use turboquant::{TQBits, TQMode};
 
 use super::quantized_multivector_storage::{
     MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageMmap,

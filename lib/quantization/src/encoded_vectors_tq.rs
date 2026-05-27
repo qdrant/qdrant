@@ -10,14 +10,14 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use turboquant::math::std_normal_cdf;
-use turboquant::quantization::{ErrorCorrection, TurboQuantizer};
-use turboquant::{EncodedQueryTQ, TQBits, TQMode};
 
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
+use crate::turboquant::math::std_normal_cdf;
+use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
+use crate::turboquant::{EncodedQueryTQ, TQBits, TQMode};
 
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
@@ -51,7 +51,7 @@ pub fn new_turbo_quantizer_from_metadata(metadata: &Metadata) -> std::io::Result
         metadata.vector_parameters.dim,
         metadata.bits,
         metadata.mode,
-        turboquant::DistanceType::from(metadata.vector_parameters.distance_type),
+        metadata.vector_parameters.distance_type,
         error_correction,
     ))
 }
@@ -322,7 +322,7 @@ pub fn get_quantized_vector_size(
     TurboQuantizer::quantized_size_for(
         vector_parameters.dim,
         bits,
-        turboquant::DistanceType::from(vector_parameters.distance_type),
+        vector_parameters.distance_type,
         mode,
     )
 }

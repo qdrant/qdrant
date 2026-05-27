@@ -42,7 +42,6 @@ PACKAGES_TO_INCLUDE = [
     "segment",
     "shard",
     "sparse",
-    "turboquant",
     "wal",
 ]
 

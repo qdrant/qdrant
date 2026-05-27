@@ -574,7 +574,7 @@ mod tests {
 
     use super::super::shared::{encode_to_nearest_centroid, pack_codes, sample_normal_vec};
     use super::{CODEBOOK_ABS_MAX, Query4bitSimd};
-    use crate::TQBits;
+    use crate::turboquant::TQBits;
 
     /// Whichever codebook representation the current arch uses (signed i8 on
     /// aarch64, shifted u8 on x86_64), it must match what the runtime recipe

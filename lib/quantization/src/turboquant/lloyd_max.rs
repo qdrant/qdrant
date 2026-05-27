@@ -1,4 +1,4 @@
-use crate::TQBits;
+use crate::turboquant::TQBits;
 
 /// 1-bit (2 centroids): Lloyd-Max for N(0,1)
 const CENTROIDS_1BIT: [f32; 2] = [-0.797_884_6, 0.797_884_6];
@@ -58,7 +58,7 @@ impl TQBits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::std_normal_cdf;
+    use crate::turboquant::math::std_normal_cdf;
 
     /// Standard normal PDF: φ(x) = exp(-x²/2) / √(2π).
     fn std_normal_pdf(x: f64) -> f64 {

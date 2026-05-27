@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
+use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
 
-mod distance;
 pub mod encoding;
 pub mod lloyd_max;
 pub mod math;
@@ -10,8 +9,6 @@ mod permutation;
 pub mod quantization;
 pub mod rotation;
 pub mod simd;
-
-pub use distance::DistanceType;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -62,7 +59,7 @@ impl TQBits {
     /// `padded_dim = 1536`, **independent of `R`**. Wall-time scales
     /// roughly linearly in `R`.
     #[inline]
-    pub fn sample_size(&self) -> usize {
+    pub(crate) fn sample_size(&self) -> usize {
         match self {
             TQBits::Bits1 | TQBits::Bits1_5 => 2_048,
             TQBits::Bits2 => 4_096,
