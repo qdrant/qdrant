@@ -1,3 +1,4 @@
+#![cfg_attr(not(target_os = "linux"), expect(clippy::unit_arg))]
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

@@ -1,12 +1,10 @@
 use std::fmt::Debug;
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, InitSource};
-use super::to_block_range;
-use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
     OpenExtra, OpenOptions, OwnedReadPipeline, Populate, Result, UniversalIoError, UniversalRead,
@@ -90,10 +88,7 @@ where
 
 impl<R> UniversalReadFs for DiskCacheFs<R>
 where
-    R: UniversalRead + Clone,
-    R::Fs: Clone + Send + Sync,
-    <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<Range<u32>>: Send,
+    R: DiskCacheRemote,
 {
     type File = DiskCache<R>;
     type OpenExtra = <R::Fs as UniversalReadFs>::OpenExtra;
@@ -135,14 +130,12 @@ where
                     extra.clone(),
                 )?;
 
-                let remote_len = remote.len::<u8>()?;
-                let blocks_range = to_block_range(0..remote_len);
-
                 let mut pipeline = R::OwnedReadPipeline::new(remote)?;
-                // FIXME: check `can_schedule` in a loop first
-                pipeline.schedule::<Sequential>(blocks_range, 0..remote_len, 1)?;
 
-                InitSource::from_prefiller(pipeline)
+                // FIXME: check `can_schedule` in a loop first
+                pipeline.schedule_whole(())?;
+
+                InitSource::FromPrefiller(pipeline)
             }
         };
 
