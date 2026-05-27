@@ -2,7 +2,7 @@ use common::types::ScoreType;
 use half::f16;
 use num_traits::Float;
 
-use crate::data_types::vectors::{DenseVector, VectorElementTypeHalf};
+use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_f16::avx::manhattan::avx_manhattan_similarity_half;
@@ -50,6 +50,13 @@ impl Metric<VectorElementTypeHalf> for ManhattanMetric {
         }
 
         manhattan_similarity_half(v1, v2)
+    }
+
+    fn query_similarity(
+        query: &TypedDenseVector<VectorElementTypeHalf>,
+        vector: &[VectorElementTypeHalf],
+    ) -> ScoreType {
+        Self::similarity(query, vector)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
