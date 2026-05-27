@@ -247,6 +247,26 @@ impl VectorStorageRead for MmapSparseVectorStorage {
             .unwrap_or_else(CowVector::default_sparse)
     }
 
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
+            let Some(sparse_vector) = sparse_vector else {
+                return Ok(());
+            };
+
+            let sparse_vector = SparseVector::try_from(sparse_vector)?;
+            callback(user_data, point_offset, CowVector::from(sparse_vector));
+            Ok(())
+        };
+
+        self.storage
+            .read_values::<P, _, _>(keys.into_iter(), callback)
+            .expect("sparse vectors read")
+    }
+
     /// Get vector by key, if it exists.
     ///
     /// Ignore any error
