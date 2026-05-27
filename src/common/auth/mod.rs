@@ -95,10 +95,12 @@ impl AuthKeys {
                 service_config
                     .api_key
                     .as_ref()
+                    .filter(|s| !s.is_empty())
                     .map(|secret| JwtParser::new(secret)),
                 service_config
                     .alt_api_key
                     .as_ref()
+                    .filter(|s| !s.is_empty())
                     .map(|secret| JwtParser::new(secret)),
             )
         } else {
