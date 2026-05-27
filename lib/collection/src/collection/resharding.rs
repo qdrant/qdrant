@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use futures::Future;
+use tokio::sync::RwLockWriteGuard;
 
 use super::Collection;
 use crate::config::ShardingMethod;
@@ -278,19 +279,26 @@ impl Collection {
             }
         }
 
+        drop(shard_holder); // drop the read lock before acquiring write lock
+        let mut shard_holder = self.shards_holder.write().await;
+
+        // Abort resharding before the related transfers to keep this
+        // idempotent on replay: if we aborted a transfer first and crashed,
+        // on restart the transfer would be gone and we'd no longer detect
+        // it as resharding-related, leaving resharding running.
+        shard_holder
+            .abort_resharding(resharding_key.clone(), force)
+            .await?;
+
+        let shard_holder = RwLockWriteGuard::downgrade(shard_holder);
+
         // Abort all resharding transfer related to this specific resharding operation
         let resharding_transfers =
             shard_holder.get_transfers(|t| t.is_related_to_resharding(&resharding_key));
         for transfer in resharding_transfers {
             self.abort_shard_transfer(transfer, &shard_holder).await?;
         }
-
-        drop(shard_holder); // drop the read lock before acquiring write lock
-        let mut shard_holder = self.shards_holder.write().await;
-
-        shard_holder
-            .abort_resharding(resharding_key.clone(), force)
-            .await?;
+        drop(shard_holder);
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
         if resharding_key.direction == ReshardingDirection::Up {
