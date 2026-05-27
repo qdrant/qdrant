@@ -27,7 +27,7 @@ pub struct ReadOnlyAppendableGeoMapIndex<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
     use tempfile::TempDir;
 
     use super::super::MutableGeoMapIndex;
@@ -69,13 +69,14 @@ mod tests {
             mutable.flusher()().unwrap();
         }
 
-        // NOTE: backed by plain `MmapFile`, not the write-enforced
-        // `ReadOnly<MmapFile>`, because `GridstoreReader::open` opens its pages
-        // and tracker with `writeable: true` (see `gridstore`
-        // `Pages::open` / `tracker_open_options`). Switching to the enforced
-        // wrapper needs a read-only open mode in the gridstore crate.
-        let index: ReadOnlyAppendableGeoMapIndex<MmapFile> =
-            ReadOnlyAppendableGeoMapIndex::open(&MmapFs, dir.path().to_path_buf()).unwrap();
+        // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, the
+        // write-enforced backend: every open is asserted non-writable, so this
+        // only succeeds because `GridstoreReader::open` opens its pages and
+        // tracker read-only.
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+        let index: ReadOnlyAppendableGeoMapIndex<ReadOnly<MmapFile>> =
+            ReadOnlyAppendableGeoMapIndex::open(&fs, dir.path().to_path_buf()).unwrap();
 
         // Counts reconstructed from the Gridstore on open.
         assert_eq!(index.points_count(), 3);
