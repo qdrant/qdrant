@@ -449,6 +449,9 @@ message StrictModeConfig {
   // Reject memory-consuming update operations when process resident memory exceeds this percentage of total RAM (cgroup-aware, 1-100).
   // Delete-style operations are still allowed so memory can be freed.
   optional uint32 max_resident_memory_percent = 21;
+  // Reject disk-consuming update operations when the filesystem hosting Qdrant storage exceeds this percentage of total capacity (1-100).
+  // Free space is sampled with a small TTL cache so the gate may take a few seconds to react. Delete-style operations are still allowed so disk can be freed.
+  optional uint32 max_disk_usage_percent = 22;
 }
 
 message StrictModeSparseConfig {
