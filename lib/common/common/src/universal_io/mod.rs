@@ -24,6 +24,6 @@ pub use self::traits::{
 };
 pub use self::types::{
     ByteOffset, FileIndex, Flusher, OpenOptions, Populate, ReadRange, Result, UniversalKind,
-    read_json_via,
+    read_bin_via, read_json_via, read_whole_via,
 };
 pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};

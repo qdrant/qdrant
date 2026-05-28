@@ -7,7 +7,7 @@
 ///
 /// `Default` is required so callers can construct a neutral extras value
 /// (e.g. `<Fs::OpenExtra>::default()`) and then chain typed setters.
-pub trait OpenExtra: Default + Clone {
+pub trait OpenExtra: Default {
     /// Hint that the open should bypass the OS page cache. Backends that
     /// support it (e.g. `io_uring` via `O_DIRECT`) honor the flag; backends
     /// where it's meaningless (mmap, block-cache) treat this as a no-op.

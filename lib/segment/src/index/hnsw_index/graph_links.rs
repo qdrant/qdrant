@@ -7,7 +7,7 @@ use std::sync::Arc;
 use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting, Madviseable, open_read_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{UniversalReadFs, read_whole_via};
 use memmap2::Mmap;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -218,28 +218,13 @@ impl GraphLinksEnum {
 impl GraphLinks {
     pub fn load_from_universal_file<F>(
         fs: &F,
-        open_extra: F::OpenExtra,
         path: &Path,
         format: GraphLinksFormat,
     ) -> OperationResult<Self>
     where
         F: UniversalReadFs,
     {
-        let file = fs.open(
-            path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::No, // We are about to read everything blockingly anyway
-                advice: AdviceSetting::Advice(Advice::Sequential),
-            },
-            open_extra,
-        )?;
-
-        let bytes = file.read_whole::<u8>()?.into_owned();
-
-        // Now that we've loaded into an owned Vec we can clear RAM from file.
-        file.clear_ram_cache()?;
+        let bytes = read_whole_via(fs, path, |bytes| Ok(bytes.into_owned()))?;
 
         Self::try_new(GraphLinksEnum::Ram(bytes), |x| {
             GraphLinksView::load(x.as_bytes(), format)

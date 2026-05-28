@@ -33,7 +33,7 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, read_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{MmapFs, UniversalReadFs};
+use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -626,7 +626,7 @@ pub enum LoadOption<Fs: UniversalReadFs> {
     /// Open as a mmap without populating it.
     OnDiskMmap,
     /// Load whole file into RAM using a generic backend.
-    RamFromUniversal { fs: Fs, open_extra: Fs::OpenExtra },
+    RamFromUniversal { fs: Fs },
 }
 
 impl LoadOption<MmapFs> {
@@ -635,10 +635,7 @@ impl LoadOption<MmapFs> {
     }
 
     pub fn ram_from_mmap() -> Self {
-        Self::RamFromUniversal {
-            fs: MmapFs,
-            open_extra: (),
-        }
+        Self::RamFromUniversal { fs: MmapFs }
     }
 }
 
@@ -651,9 +648,14 @@ impl GraphLayers {
     where
         Fs: UniversalReadFs,
     {
-        let graph_data: GraphLayerData = read_bin(&GraphLayers::get_path(dir))?;
+        let graph_data_path = GraphLayers::get_path(dir);
+        let graph_data: GraphLayerData = match &load_option {
+            LoadOption::OnDiskMmap => read_bin(&graph_data_path)?,
+            LoadOption::RamFromUniversal { fs } => read_bin_via(fs, &graph_data_path)?,
+        };
 
         if compress {
+            // TODO: use `Fs` within this function?
             Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0))?;
         }
 
@@ -681,9 +683,9 @@ impl GraphLayers {
                         return GraphLinks::load_from_mmap(&path, format);
                     }
                 }
-                LoadOption::RamFromUniversal { fs, open_extra } => {
+                LoadOption::RamFromUniversal { fs } => {
                     if fs.exists(&path)? {
-                        return GraphLinks::load_from_universal_file(fs, open_extra.clone(), &path, format);
+                        return GraphLinks::load_from_universal_file(fs, &path, format);
                     }
                 }
             }
@@ -708,12 +710,8 @@ impl GraphLayers {
 
         let start = std::time::Instant::now();
 
-        let links = GraphLinks::load_from_universal_file(
-            &MmapFs,
-            (),
-            &plain_path,
-            GraphLinksFormat::Plain,
-        )?;
+        let links =
+            GraphLinks::load_from_universal_file(&MmapFs, &plain_path, GraphLinksFormat::Plain)?;
         let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
             let edges = links.to_edges();

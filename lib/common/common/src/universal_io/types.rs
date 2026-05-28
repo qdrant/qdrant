@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -147,6 +148,26 @@ pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
 
+pub fn read_whole_via<Fs, T>(
+    fs: &Fs,
+    path: impl AsRef<Path>,
+    callback: impl FnOnce(Cow<'_, [u8]>) -> Result<T, UniversalIoError>,
+) -> Result<T, UniversalIoError>
+where
+    Fs: UniversalReadFs,
+{
+    use super::UniversalRead;
+    let options = OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::No,
+        advice: AdviceSetting::Advice(Advice::Sequential),
+    };
+    let storage = fs.open(path, options, Default::default())?;
+    let bytes = storage.read_whole::<u8>()?;
+    callback(bytes)
+}
+
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
 ///
 /// Uses a single logical read when the backend overrides
@@ -156,15 +177,21 @@ where
     Fs: UniversalReadFs,
     T: DeserializeOwned,
 {
-    use super::UniversalRead;
-    let options = OpenOptions {
-        writeable: false,
-        need_sequential: false,
-        populate: Populate::No,
-        advice: AdviceSetting::Advice(Advice::Sequential),
-    };
+    read_whole_via(fs, path, |bytes| {
+        serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
+    })
+}
 
-    let storage = fs.open(path, options, Default::default())?;
-    let bytes = storage.read_whole::<u8>()?;
-    serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
+/// Open a file via universal io, read it as a whole, and deserialize as bincode.
+///
+/// Uses a single logical read when the backend overrides
+/// [`UniversalRead::read_whole`](super::UniversalRead::read_whole).
+pub fn read_bin_via<Fs, T>(fs: &Fs, path: impl AsRef<Path>) -> Result<T>
+where
+    Fs: UniversalReadFs,
+    T: DeserializeOwned,
+{
+    read_whole_via(fs, path, |bytes| {
+        bincode::deserialize(&bytes).map_err(UniversalIoError::from)
+    })
 }
