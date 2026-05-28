@@ -28,9 +28,16 @@ from qdrant_client.http.exceptions import UnexpectedResponse
 from e2e_tests.client_utils import ClientUtils
 from e2e_tests.models import QdrantContainerConfig
 
-TMPFS_BYTES = 50 * 1024 * 1024
+# 200 MB tmpfs: needs to comfortably fit Qdrant's default WAL buffer
+# (which is multiple tens of MB) plus the segment data we'll write, while
+# being small enough that ~50% trips after a moderate amount of data.
+TMPFS_BYTES = 200 * 1024 * 1024
 
-DISK_PERCENT_THRESHOLD = 30
+# Shrink WAL so it doesn't dominate the small tmpfs (Qdrant's default WAL
+# buffer alone would fill a sub-100 MB tmpfs at collection-creation time).
+WAL_CAPACITY_MB = 1
+
+DISK_PERCENT_THRESHOLD = 50
 
 VECTOR_DIM = 128
 BATCH_SIZE = 200
@@ -115,6 +122,7 @@ class TestStrictModeDisk:
             vectors_config=models.VectorParams(
                 size=VECTOR_DIM, distance=models.Distance.COSINE
             ),
+            wal_config=models.WalConfigDiff(wal_capacity_mb=WAL_CAPACITY_MB),
         )
 
         _set_strict_mode_via_rest(
@@ -167,6 +175,7 @@ class TestStrictModeDisk:
             vectors_config=models.VectorParams(
                 size=VECTOR_DIM, distance=models.Distance.COSINE
             ),
+            wal_config=models.WalConfigDiff(wal_capacity_mb=WAL_CAPACITY_MB),
         )
         _set_strict_mode_via_rest(
             container_info.host,

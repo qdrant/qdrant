@@ -107,8 +107,16 @@ mod tests {
     }
 
     #[test]
-    fn missing_path_returns_none() {
+    fn missing_path_does_not_panic() {
+        // We intentionally don't assert `is_none()` here: on Windows
+        // `GetDiskFreeSpaceEx` succeeds for non-existent paths by resolving
+        // up to the containing drive, while on Unix `statvfs` returns
+        // ENOENT. Both behaviours are fine — what matters is that the
+        // reader never panics and the result is well-formed when present.
         let missing = Path::new("/this/path/should/not/exist/qdrant-disk-usage-test");
-        assert!(read_disk_usage(missing).is_none());
+        if let Some(usage) = read_disk_usage(missing) {
+            assert!(usage.total > 0);
+            assert!(usage.available <= usage.total);
+        }
     }
 }
