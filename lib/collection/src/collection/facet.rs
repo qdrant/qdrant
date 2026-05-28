@@ -33,6 +33,9 @@ impl Collection {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let response_limit = request.limit;
+        if response_limit == 0 {
+            return Ok(FacetResponse::default());
+        }
         if !request.exact {
             // Approximate facet sends only the established limit between shards.
             //
