@@ -131,12 +131,19 @@ struct Args {
     /// When enabled, the service will assume the consensus should be reinitialized.
     /// The exact behavior depends on if this current node has bootstrap URI or not.
     /// If it has - it'll remove current consensus state and consensus WAL (while keeping peer ID)
-    ///             and will try to receive state from the bootstrap peer.
+    ///             and it'll try to receive state from the bootstrap peer.
     /// If it doesn't have - it'll remove other peers from voters promote
     ///             the current peer to the leader and the single member of the cluster.
     ///             It'll also compact consensus WAL to force snapshot
     #[arg(long, action, default_value_t = false)]
     reinit: bool,
+
+    /// Run in read-only mode.
+    /// When enabled, all write/mutation API requests (PUT, POST, DELETE) will be rejected
+    /// with 403 Forbidden. Read operations (GET, search, scroll, retrieve) work normally.
+    /// Distributed deployment can't be read-only.
+    #[arg(long, action, default_value_t = false, env = "QDRANT_READ_ONLY")]
+    read_only: bool,
 }
 
 //
@@ -370,7 +377,24 @@ fn main() -> anyhow::Result<()> {
     // Settings & global state
     //
 
-    let settings = Settings::new(args.config_path)?;
+    let mut settings = Settings::new(args.config_path)?;
+
+    // CLI --read-only flag overrides config file setting
+    if args.read_only {
+        settings.service.read_only = Some(true);
+    }
+
+    // Reject read-only mode with distributed deployment (consensus requires writes)
+    if settings.service.read_only.unwrap_or(false) && settings.cluster.enabled {
+        return Err(anyhow::anyhow!(
+            "Read-only mode is not compatible with distributed deployment. \
+             Disable consensus or remove --read-only flag."
+        ));
+    }
+
+    if settings.service.read_only.unwrap_or(false) {
+        log::info!("Running in read-only mode. Write operations are disabled.");
+    }
 
     // Set global feature flags, sourced from configuration
     init_feature_flags(settings.feature_flags);

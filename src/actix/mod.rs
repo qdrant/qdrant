@@ -5,6 +5,7 @@ mod certificate_helpers;
 mod forwarded;
 pub mod helpers;
 pub mod metrics_service;
+mod read_only;
 pub mod web_ui;
 
 use std::io;
@@ -44,6 +45,7 @@ use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::api::vector_name_api::config_vector_name_api;
 use crate::actix::auth::{AuthTransform, WhitelistItem};
+use crate::actix::read_only::ReadOnlyTransform;
 use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
 use crate::common::debugger::DebuggerState;
@@ -117,6 +119,10 @@ pub fn init(
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
                     |auth_keys| AuthTransform::new(auth_keys.clone(), api_key_whitelist.clone()),
                 )))
+                // Read-only mode: block write operations with 403 Forbidden
+                .wrap(ReadOnlyTransform::new(
+                    settings.service.read_only.unwrap_or(false),
+                ))
                 // Normalize path
                 .wrap(NormalizePath::trim())
                 .wrap(Condition::new(settings.service.enable_cors, cors))

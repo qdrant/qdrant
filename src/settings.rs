@@ -104,6 +104,13 @@ pub struct ServiceConfig {
     /// has access to internal resources that should not be reachable by users.
     #[serde(default = "default_snapshot_url_recovery")]
     pub enable_snapshot_url_recovery: bool,
+
+    /// Run in read-only mode. When enabled, all write/mutation API requests
+    /// (PUT, POST, DELETE, PATCH) are rejected with 403 Forbidden.
+    /// Read operations (GET, search, scroll, retrieve) work normally.
+    /// Can also be set via `--read-only` CLI flag or `QDRANT_READ_ONLY` env var.
+    #[serde(default)]
+    pub read_only: Option<bool>,
 }
 
 impl ServiceConfig {
