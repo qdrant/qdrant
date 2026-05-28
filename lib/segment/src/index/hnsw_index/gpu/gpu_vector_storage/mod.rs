@@ -96,8 +96,8 @@ impl ShaderBuilderParameters for GpuVectorStorage {
             VectorStorageDatatype::Uint8 => {
                 defines.insert("VECTOR_STORAGE_ELEMENT_UINT8".to_owned(), None);
             }
-            VectorStorageDatatype::Turbo => {
-                unimplemented!("turbo datatype storage not yet wired up")
+            VectorStorageDatatype::Turbo4 => {
+                unimplemented!("turbo4 datatype storage not yet wired up")
             }
         }
 

@@ -85,8 +85,8 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     self.build_with_metric::<VectorElementTypeHalf, ManhattanMetric>()
                 }
             },
-            VectorStorageDatatype::Turbo => {
-                unimplemented!("turbo datatype storage not yet wired up")
+            VectorStorageDatatype::Turbo4 => {
+                unimplemented!("turbo4 datatype storage not yet wired up")
             }
         }
     }

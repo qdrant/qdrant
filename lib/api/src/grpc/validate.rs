@@ -484,11 +484,11 @@ pub fn validate_geo_polygon_interiors(
     Ok(())
 }
 
-/// Reject the `Turbo` datatype on sparse vector configs.
+/// Reject the `Turbo4` datatype on sparse vector configs.
 /// `validator` unwraps `Option<i32>` before calling, so we receive `&i32`.
 pub fn validate_sparse_datatype(datatype: &i32) -> Result<(), ValidationError> {
-    if *datatype == grpc::Datatype::Turbo as i32 {
-        return Err(common::validation::sparse_turbo_unsupported_error());
+    if *datatype == grpc::Datatype::Turbo4 as i32 {
+        return Err(common::validation::sparse_turbo4_unsupported_error());
     }
     Ok(())
 }

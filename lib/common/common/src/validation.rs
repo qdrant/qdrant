@@ -66,11 +66,11 @@ where
 }
 
 /// Build the `ValidationError` for a sparse vector configured with the
-/// `Turbo` datatype. Shared between REST and gRPC validators.
-pub fn sparse_turbo_unsupported_error() -> ValidationError {
+/// `Turbo4` datatype. Shared between REST and gRPC validators.
+pub fn sparse_turbo4_unsupported_error() -> ValidationError {
     let mut err = ValidationError::new("unsupported_sparse_datatype");
     err.message = Some(Cow::Borrowed(
-        "sparse vectors do not support the `turbo` datatype",
+        "sparse vectors do not support the `turbo4` datatype",
     ));
     err
 }

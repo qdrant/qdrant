@@ -1319,7 +1319,7 @@ pub enum Datatype {
     Float32,
     Uint8,
     Float16,
-    Turbo,
+    Turbo4,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1328,7 +1328,7 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
-            Datatype::Turbo => VectorStorageDatatype::Turbo,
+            Datatype::Turbo4 => VectorStorageDatatype::Turbo4,
         }
     }
 }
@@ -1385,11 +1385,11 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
     validate_range_generic(value.get(), Some(1), Some(65536))
 }
 
-/// Reject the `Turbo` datatype on sparse vector configs.
+/// Reject the `Turbo4` datatype on sparse vector configs.
 /// `validator` unwraps `Option<Datatype>` before calling, so we receive `&Datatype`.
 fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> {
-    if matches!(datatype, Datatype::Turbo) {
-        return Err(common::validation::sparse_turbo_unsupported_error());
+    if matches!(datatype, Datatype::Turbo4) {
+        return Err(common::validation::sparse_turbo4_unsupported_error());
     }
     Ok(())
 }

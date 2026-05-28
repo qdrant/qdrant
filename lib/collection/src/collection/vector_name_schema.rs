@@ -243,6 +243,6 @@ fn storage_datatype_to_collection(
             crate::operations::types::Datatype::Float16
         }
         segment::types::VectorStorageDatatype::Uint8 => crate::operations::types::Datatype::Uint8,
-        segment::types::VectorStorageDatatype::Turbo => crate::operations::types::Datatype::Turbo,
+        segment::types::VectorStorageDatatype::Turbo4 => crate::operations::types::Datatype::Turbo4,
     }
 }

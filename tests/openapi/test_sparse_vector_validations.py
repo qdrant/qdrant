@@ -117,9 +117,9 @@ def test_sparse_vector_validations(collection_name):
     assert 'points[0].vector.?.indices: Validation error: must be unique [{}]' in response.json()["status"]["error"]
 
 
-def test_sparse_vector_turbo_datatype_rejected(collection_name):
+def test_sparse_vector_turbo4_datatype_rejected(collection_name):
     # Use a distinct name so the autouse setup's collection is untouched.
-    bad_collection = f"{collection_name}_turbo_rejected"
+    bad_collection = f"{collection_name}_turbo4_rejected"
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -127,7 +127,7 @@ def test_sparse_vector_turbo_datatype_rejected(collection_name):
         path_params={'collection_name': bad_collection},
         body={
             "sparse_vectors": {
-                "text": {"index": {"datatype": "turbo"}}
+                "text": {"index": {"datatype": "turbo4"}}
             }
         },
     )

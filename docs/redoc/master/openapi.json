@@ -7793,7 +7793,7 @@
           "float32",
           "uint8",
           "float16",
-          "turbo"
+          "turbo4"
         ]
       },
       "MultiVectorConfig": {
@@ -13471,7 +13471,7 @@
           "float32",
           "float16",
           "uint8",
-          "turbo"
+          "turbo4"
         ]
       },
       "SparseVectorDataConfig": {
