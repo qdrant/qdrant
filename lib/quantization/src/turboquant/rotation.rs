@@ -33,15 +33,7 @@ impl HadamardRotation {
 
     pub fn apply_inverse(&self, y: &mut [f64]) {
         debug_assert_eq!(y.len(), self.dim);
-
-        // WHT + normalize
-        wht_normalized_chunks(y);
-
-        // Apply inverse permutations backwards.
-        for permutation in self.permutations.iter().rev() {
-            permutation.unpermute(y);
-            wht_normalized_chunks(y);
-        }
+        apply_inverse_rotation_with_permutations(y, &self.permutations);
     }
 }
 
@@ -78,6 +70,19 @@ pub fn random_vector_rotation(x: &mut [f64]) {
         std::array::from_fn(|index| Permutation::new_one_way(PERMUTATION_SEEDS[index], dim));
 
     apply_rotation_with_permutations(x, &permutations);
+}
+
+/// Inverts the rotated `y` back. Produces bit-identical output to
+/// [`HadamardRotation::apply_inverse`].
+pub fn random_vector_rotation_inverse(y: &mut [f64]) {
+    let dim = y.len();
+
+    // `new_reversible` does an O(dim) LCG warm-up to record `end_state`, which
+    // `unpermute` needs. Cost is paid once per call; no heap allocation.
+    let permutations: [_; N_PERMUTATIONS] =
+        std::array::from_fn(|index| Permutation::new_reversible(PERMUTATION_SEEDS[index], dim));
+
+    apply_inverse_rotation_with_permutations(y, &permutations);
 }
 
 /// Decompose `dim` into a sequence of decreasing power-of-2 chunk sizes
@@ -118,6 +123,21 @@ fn apply_rotation_with_permutations(x: &mut [f64], permutations: &[Permutation; 
     for permutation in permutations {
         permutation.permute(x);
         wht_normalized_chunks(x);
+    }
+}
+
+/// Apply the inverse of a Hadamard rotation to `y` using the given `permutations`.
+fn apply_inverse_rotation_with_permutations(
+    y: &mut [f64],
+    permutations: &[Permutation; N_PERMUTATIONS],
+) {
+    // WHT + normalize
+    wht_normalized_chunks(y);
+
+    // Apply inverse permutations backwards.
+    for permutation in permutations.iter().rev() {
+        permutation.unpermute(y);
+        wht_normalized_chunks(y);
     }
 }
 
@@ -261,6 +281,43 @@ mod test {
                 "rotation didn't spread energy enough, stddev ratio {ratio_after} ({})",
                 ratio_after / ratio_before
             );
+        }
+    }
+
+    /// Verify the free-function API (`random_vector_rotation` /
+    /// `random_vector_rotation_inverse`) matches the struct API bit-for-bit
+    /// and is its own inverse. Without this, a wrong seed index, a forgotten
+    /// `.rev()`, or a swapped helper in either free function would slip past
+    /// `hadamard_roundtrip` (which only exercises the struct).
+    #[test]
+    fn static_rotation_matches_struct_and_roundtrips() {
+        for &dim in &[128, 300, 1024, 1536] {
+            let mut rng = StdRng::seed_from_u64(7);
+            let input: Vec<f64> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+
+            let rot = HadamardRotation::new(dim);
+
+            // Forward: free function must be bit-identical to struct.
+            let mut via_static = input.clone();
+            let mut via_struct = input.clone();
+            random_vector_rotation(&mut via_static);
+            rot.apply(&mut via_struct);
+            assert_eq!(via_static, via_struct, "dim={dim}: forward mismatch");
+
+            // Inverse: free function must be bit-identical to struct.
+            let mut inv_static = via_static.clone();
+            let mut inv_struct = via_struct.clone();
+            random_vector_rotation_inverse(&mut inv_static);
+            rot.apply_inverse(&mut inv_struct);
+            assert_eq!(inv_static, inv_struct, "dim={dim}: inverse mismatch");
+
+            // Forward-then-inverse via free functions recovers the input.
+            for (orig, recovered) in input.iter().zip(&inv_static) {
+                assert!(
+                    (orig - recovered).abs() < 1e-5,
+                    "dim={dim}: static roundtrip failed: {orig} vs {recovered}",
+                );
+            }
         }
     }
 

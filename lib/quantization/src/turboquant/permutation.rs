@@ -63,20 +63,27 @@ impl Permutation {
     /// Unlike [`Self::new_one_way`], the result supports [`Self::unpermute`].
     /// Both constructors produce identical output from [`Self::permute`] for the same seed.
     pub fn new_reversible(seed: u64, count: usize) -> Self {
-        let mut rng = ReversibleLcg::new(seed);
-        for _ in 1..count {
-            rng.next();
-        }
         Self {
             seed,
             count,
-            end_state: Some(rng.state),
+            end_state: Some(Self::calculate_end_state(seed, count)),
         }
     }
 
+    fn calculate_end_state(seed: u64, count: usize) -> u64 {
+        let mut rng = ReversibleLcg::new(seed);
+
+        for _ in 1..count {
+            rng.next();
+        }
+
+        rng.state
+    }
+
     /// Create a forward-only permutation. Skips the O(`count`) LCG warm-up
-    /// that [`Self::new_reversible`] does to record `end_state`. Can only be
-    /// used for [`Self::permute`]; calling [`Self::unpermute`] will panic.
+    /// that [`Self::new_reversible`] does to record `end_state`. Intended for
+    /// [`Self::permute`]; calling [`Self::unpermute`] still works but pays the
+    /// warm-up lazily (and trips a `debug_assert` to flag the mismatch).
     #[inline]
     pub fn new_one_way(seed: u64, count: usize) -> Self {
         Self {
@@ -98,14 +105,23 @@ impl Permutation {
 
     /// Apply the inverse permutation in-place (reversed Fisher-Yates).
     ///
-    /// # Panics
-    ///
-    /// Panics if this permutation was created with [`Self::new_one_way`].
+    /// If this permutation was created with [`Self::new_one_way`], the missing
+    /// `end_state` is recomputed on demand at O(`count`) extra cost. A
+    /// `debug_assert` flags the unexpected path in debug builds.
     pub fn unpermute(&self, arr: &mut [f64]) {
         debug_assert_eq!(arr.len(), self.count);
+
         let end_state = self
             .end_state
-            .expect("`unpermute` requires a `Permutation` built with `new_reversible`");
+            // Lazily calculate the end state when the `Permutation` was created with `new_one_way`.
+            // This path shouldn't normally be hit — but recomputing is cheaper than panicking.
+            .unwrap_or_else(|| {
+                debug_assert!(
+                    false,
+                    "unpermute was called on a `Permutation` created without `new_reversible`"
+                );
+                Self::calculate_end_state(self.seed, self.count)
+            });
 
         let rng = ReversibleLcg::new(end_state);
         for (i, rand) in (1..self.count).zip(rng.rev()) {
