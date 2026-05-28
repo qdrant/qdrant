@@ -165,7 +165,12 @@ where
     };
     let storage = fs.open(path, options, Default::default())?;
     let bytes = storage.read_whole::<u8>()?;
-    callback(bytes)
+
+    let callback_t = callback(bytes)?;
+
+    storage.clear_ram_cache()?;
+
+    Ok(callback_t)
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
