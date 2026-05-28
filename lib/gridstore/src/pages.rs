@@ -25,6 +25,15 @@ pub fn page_path(base_path: &Path, page_id: PageId) -> PathBuf {
 pub(crate) struct Pages<S> {
     base_path: PathBuf,
     pages: Vec<S>,
+    /// Whether attached pages are opened writable. The writable [`Gridstore`]
+    /// opens writable so it can append; a read-only [`GridstoreReader`] opens
+    /// non-writable so it can sit on a write-enforced backend (e.g.
+    /// `ReadOnly<MmapFile>`). Applied by [`Self::attach_page`] to every page,
+    /// including those attached later by grow / `live_reload`.
+    ///
+    /// [`Gridstore`]: crate::Gridstore
+    /// [`GridstoreReader`]: crate::GridstoreReader
+    writeable: bool,
 }
 
 impl<S> Pages<S> {
@@ -34,15 +43,16 @@ impl<S> Pages<S> {
 }
 
 impl<S: UniversalRead> Pages<S> {
-    pub fn new(base_path: PathBuf) -> Self {
+    pub fn new(base_path: PathBuf, writeable: bool) -> Self {
         Self {
             base_path,
             pages: Vec::new(),
+            writeable,
         }
     }
 
-    pub fn open(fs: &S::Fs, dir: &Path) -> Result<Self> {
-        let mut pages = Self::new(dir.to_path_buf());
+    pub fn open(fs: &S::Fs, dir: &Path, writeable: bool) -> Result<Self> {
+        let mut pages = Self::new(dir.to_path_buf(), writeable);
 
         let page_files: HashSet<_> = fs.list_files(&dir.join("page_"))?.into_iter().collect();
 
@@ -59,7 +69,7 @@ impl<S: UniversalRead> Pages<S> {
 
     pub fn attach_page(&mut self, fs: &S::Fs, path: &Path) -> Result<()> {
         let options = OpenOptions {
-            writeable: true,
+            writeable: self.writeable,
             need_sequential: true,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Random),
@@ -346,6 +356,7 @@ impl<S: UniversalRead> Pages<S> {
         let Self {
             base_path: _,
             pages,
+            writeable: _,
         } = self;
         for page in pages {
             page.clear_ram_cache()?;

@@ -1388,3 +1388,36 @@ fn test_for_each_in_batch_congruent_with_get_value() {
         assert_eq!(single, batch, "mismatch at idx {i} (offset {})", offsets[i]);
     }
 }
+
+/// Opening a [`GridstoreReader`] must not require a writable backend: a reader
+/// only reads. Backing it with the write-enforced `ReadOnly<MmapFile>` (which
+/// `debug_assert!`s every open is non-writable) only succeeds if the reader
+/// opens its pages and tracker read-only.
+#[test]
+fn read_only_reader_over_write_enforced_backend() {
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+
+    let hw_counter = HardwareCounterCell::new();
+
+    // Build a writable gridstore, write one value, flush, then drop it.
+    let (dir, mut storage) = empty_storage();
+    let mut payload = Payload::default();
+    payload
+        .0
+        .insert("k".to_string(), serde_json::Value::String("v".to_string()));
+    storage
+        .put_value(0, &payload, hw_counter.ref_payload_io_write_counter())
+        .unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Reopen read-only over the write-enforced backend.
+    type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let reader =
+        GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(&fs, dir.path().to_path_buf())
+            .unwrap();
+
+    let stored = reader.get_value::<Random>(0, &hw_counter).unwrap();
+    assert_eq!(stored, Some(payload));
+}
