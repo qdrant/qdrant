@@ -655,7 +655,8 @@ impl GraphLayers {
         };
 
         if compress {
-            // TODO: use `Fs` within this function?
+            // TODO: use `Fs` within this function? It writes data, and we don't have `UniversalWriteFs` yet.
+            //       It is not enabled as per `LINK_COMPRESSION_CONVERT_EXISTING` anyway.
             Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0))?;
         }
 
