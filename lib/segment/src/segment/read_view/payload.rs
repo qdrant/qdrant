@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
@@ -18,6 +19,16 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
+    pub fn read_payloads<P: AccessPattern, U>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Payload),
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.payload_index
+            .read_payloads::<P, _>(point_offsets, callback, hw_counter)
+    }
+
     /// Retrieve payload by internal ID.
     #[inline]
     pub fn payload_by_offset(
