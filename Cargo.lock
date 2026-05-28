@@ -5850,7 +5850,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant-edge-py"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "ahash",
  "bm25",
