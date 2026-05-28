@@ -65,7 +65,7 @@ pub struct DenseVectorConfig {
     /// Configuration for multi-vector points (e.g., ColBERT)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multivector_config: Option<MultiVectorConfig>,
-    /// Element storage type (Float32, Float16, Uint8)
+    /// Element storage type (Float32, Float16, Uint8, Turbo4)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
 }

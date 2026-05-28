@@ -362,7 +362,7 @@ message DenseVectorCreationConfig {
   Distance distance = 2;
   // Configuration for multi-vector search (e.g., ColBERT)
   optional MultiVectorConfig multivector_config = 3;
-  // Data type of the vectors (Float32, Float16, Uint8)
+  // Data type of the vectors (Float32, Float16, Uint8, Turbo4)
   optional Datatype datatype = 4;
 }
 

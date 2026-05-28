@@ -5392,7 +5392,7 @@ pub struct DenseVectorCreationConfig {
     /// Configuration for multi-vector search (e.g., ColBERT)
     #[prost(message, optional, tag = "3")]
     pub multivector_config: ::core::option::Option<MultiVectorConfig>,
-    /// Data type of the vectors (Float32, Float16, Uint8)
+    /// Data type of the vectors (Float32, Float16, Uint8, Turbo4)
     #[prost(enumeration = "Datatype", optional, tag = "4")]
     pub datatype: ::core::option::Option<i32>,
 }

@@ -1372,6 +1372,8 @@ pub struct VectorParams {
     ///   2 bytes.
     /// - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte.
     ///   It expects vector elements to be in range `[0, 255]`.
+    /// - For `turbo4` datatype - vectors are quantized to 4 bits per element using the
+    ///   TurboQuant algorithm.
     pub datatype: Option<Datatype>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
