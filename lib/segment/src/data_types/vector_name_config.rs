@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 use crate::data_types::modifier::Modifier;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -82,7 +82,17 @@ pub struct SparseVectorConfig {
     pub modifier: Option<Modifier>,
     /// Datatype used to store weights in the index
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_sparse_datatype"))]
     pub datatype: Option<VectorStorageDatatype>,
+}
+
+/// Reject the `Turbo4` datatype on sparse vector configs.
+/// `validator` unwraps `Option<VectorStorageDatatype>` before calling, so we receive `&VectorStorageDatatype`.
+fn validate_sparse_datatype(datatype: &VectorStorageDatatype) -> Result<(), ValidationError> {
+    if matches!(datatype, VectorStorageDatatype::Turbo4) {
+        return Err(common::validation::sparse_turbo4_unsupported_error());
+    }
+    Ok(())
 }
 
 impl Validate for VectorNameConfig {
