@@ -113,7 +113,7 @@ impl<V: Blob> Gridstore<V> {
 
         let storage = Self {
             tracker: Arc::new(RwLock::new(TrackerMmap::new(&MmapFs, &base_path, None)?)),
-            pages: Arc::new(RwLock::new(Pages::new(base_path.clone()))),
+            pages: Arc::new(RwLock::new(Pages::new(base_path.clone(), true))),
             base_path,
             config,
             _value_type: std::marker::PhantomData,
@@ -136,11 +136,12 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = reader::read_config_and_tracker(&MmapFs, &base_path)?;
+        // Writable store: open pages and tracker writable so it can append.
+        let (config, tracker) = reader::read_config_and_tracker(&MmapFs, &base_path, true)?;
         let bitmask = MmapBitmask::open(&MmapFs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let pages = Pages::open(&MmapFs, &base_path)?;
+        let pages = Pages::open(&MmapFs, &base_path, true)?;
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {

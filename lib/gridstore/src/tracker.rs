@@ -17,9 +17,13 @@ pub type BlockOffset = u32;
 pub type PageId = u32;
 
 /// OpenOptions for the tracker file (random access, no populate).
-fn tracker_open_options() -> OpenOptions {
+///
+/// `writeable` is `false` for read-only readers (so the backend may be
+/// write-enforced, e.g. `ReadOnly<MmapFile>`) and `true` for the writable
+/// tracker that appends pointers.
+fn tracker_open_options(writeable: bool) -> OpenOptions {
     OpenOptions {
-        writeable: true,
+        writeable,
         need_sequential: false,
         populate: Populate::No,
         advice: AdviceSetting::Advice(Advice::Random),
@@ -265,9 +269,9 @@ impl<S> Tracker<S> {
 impl<S: UniversalRead> Tracker<S> {
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
-    pub fn open(fs: &S::Fs, path: &Path) -> Result<Self> {
+    pub fn open(fs: &S::Fs, path: &Path, writeable: bool) -> Result<Self> {
         let path = Self::tracker_file_name(path);
-        let storage = Self::open_storage(fs, &path)?;
+        let storage = Self::open_storage(fs, &path, writeable)?;
         let header: TrackerHeader = Self::read_header(&storage)?;
         let pending_updates = AHashMap::new();
         Ok(Self {
@@ -284,8 +288,8 @@ impl<S: UniversalRead> Tracker<S> {
         Ok(header)
     }
 
-    fn open_storage(fs: &S::Fs, path: &Path) -> Result<S> {
-        let storage = match fs.open(path, tracker_open_options(), Default::default()) {
+    fn open_storage(fs: &S::Fs, path: &Path, writeable: bool) -> Result<S> {
+        let storage = match fs.open(path, tracker_open_options(writeable), Default::default()) {
             Err(UniversalIoError::NotFound { .. }) => {
                 return Err(GridstoreError::service_error(format!(
                     "Tracker file does not exist: {}",
@@ -473,7 +477,7 @@ where
             "Size hint is too small"
         );
         create_and_ensure_length(&path, size)?;
-        let storage = fs.open(&path, tracker_open_options(), Default::default())?;
+        let storage = fs.open(&path, tracker_open_options(true), Default::default())?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
@@ -768,7 +772,7 @@ mod tests {
         drop(tracker);
 
         // reopen the tracker
-        let tracker = TestTracker::open(&MmapFs, path).unwrap();
+        let tracker = TestTracker::open(&MmapFs, path, true).unwrap();
         assert_eq!(tracker.mapping_len().unwrap(), value_count / 2);
         assert_eq!(tracker.pointer_count(), value_count as u32 - 1);
 
