@@ -114,15 +114,16 @@ pub fn init(
 
             let mut app = App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
+                // Read-only mode: block write operations with 403 Forbidden
+                // Runs after auth (which is the last wrap and executes first)
+                .wrap(ReadOnlyTransform::new(
+                    settings.service.read_only.unwrap_or(false),
+                ))
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
                     |auth_keys| AuthTransform::new(auth_keys.clone(), api_key_whitelist.clone()),
                 )))
-                // Read-only mode: block write operations with 403 Forbidden
-                .wrap(ReadOnlyTransform::new(
-                    settings.service.read_only.unwrap_or(false),
-                ))
                 // Normalize path
                 .wrap(NormalizePath::trim())
                 .wrap(Condition::new(settings.service.enable_cors, cors))

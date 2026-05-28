@@ -139,7 +139,7 @@ struct Args {
     reinit: bool,
 
     /// Run in read-only mode.
-    /// When enabled, all write/mutation API requests (PUT, POST, DELETE) will be rejected
+    /// When enabled, all write/mutation API requests (PUT, POST, DELETE, PATCH) will be rejected
     /// with 403 Forbidden. Read operations (GET, search, scroll, retrieve) work normally.
     /// Distributed deployment can't be read-only.
     #[arg(long, action, default_value_t = false, env = "QDRANT_READ_ONLY")]

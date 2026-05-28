@@ -1,7 +1,6 @@
 use std::future::{Ready, ready};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 use actix_web::body::EitherBody;
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, forward_ready};
@@ -67,13 +66,11 @@ where
                 },
                 "time": 0.0,
             }));
-            let (http_req, _) = req.into_parts();
-            let resp = ServiceResponse::new(http_req, response);
-            return Box::pin(async move { Ok(resp.map_into_left_body()) });
+            return Box::pin(async move { Ok(req.into_response(response).map_into_right_body()) });
         }
 
         let fut = self.service.call(req);
-        Box::pin(async move { fut.await.map(|resp| resp.map_into_left_body()) })
+        Box::pin(async move { fut.await })
     }
 }
 
