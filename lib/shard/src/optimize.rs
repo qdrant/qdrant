@@ -13,6 +13,7 @@ use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
+use common::fs::safe_delete_with_suffix;
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
@@ -20,7 +21,7 @@ use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{OperationResult, check_process_stopped};
+use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -101,6 +102,26 @@ pub fn unwrap_proxy(
         }
     }
     Ok(())
+}
+
+/// Remove a partially-built optimized segment left on disk when optimization is cancelled.
+///
+/// `SegmentBuilder::build` already renamed the new segment into `segments_path`, and dropping the
+/// in-memory `Segment` only releases resources without deleting the directory (deletion is the
+/// explicit `drop_data`). A graceful cancellation always happens before the segment is swapped
+/// into the holder, so it is never live at this point and is safe to delete. Best-effort: failures
+/// are logged, not propagated, so they can't mask the original cancellation error.
+fn cleanup_cancelled_optimized_segment(segments_path: &Path, output_segment_uuid: Uuid) {
+    let orphan_path = segments_path.join(output_segment_uuid.to_string());
+    if !orphan_path.exists() {
+        return;
+    }
+    if let Err(err) = safe_delete_with_suffix(&orphan_path) {
+        log::warn!(
+            "Failed to remove cancelled optimized segment at {}: {err}",
+            orphan_path.display(),
+        );
+    }
 }
 
 /// Accumulates approximate set of points deleted in a given set of proxies
@@ -820,6 +841,13 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // Properly cancel optimization on all error kinds
             // Unwrap proxies and add temp segment to holder
             unwrap_proxy(&segment_holder, &proxy_ids)?;
+            // A graceful cancellation always happens before the optimized segment is swapped into
+            // the holder, so the segment `build` already moved into `segments_path` is now an
+            // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may
+            // occur after the swap, where the segment is live, so they are left untouched.
+            if matches!(err, OperationError::Cancelled { .. }) {
+                cleanup_cancelled_optimized_segment(&paths.segments_path, output_segment_uuid);
+            }
             return Err(err);
         }
     };
@@ -840,6 +868,13 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // Properly cancel optimization on all error kinds
             // Unwrap proxies and add temp segment to holder
             unwrap_proxy(&segment_holder, &proxy_ids)?;
+            // A graceful cancellation always happens before the optimized segment is swapped into
+            // the holder, so the segment `build` already moved into `segments_path` is now an
+            // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may
+            // occur after the swap, where the segment is live, so they are left untouched.
+            if matches!(err, OperationError::Cancelled { .. }) {
+                cleanup_cancelled_optimized_segment(&paths.segments_path, output_segment_uuid);
+            }
             return Err(err);
         }
     };
