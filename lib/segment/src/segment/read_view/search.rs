@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, ScoredPointOffset};
 
@@ -108,17 +109,24 @@ where
         // mirrors what a future batched payload fetcher would consume —
         // `&resolved_offsets` becomes its input directly.
         if with_payload.enable {
-            for (&id, &offset) in resolved_ids.iter().zip(&resolved_offsets) {
-                check_stopped(is_stopped)?;
-                let payload = self.payload_by_offset(offset, hw_counter)?;
-                let payload = match &with_payload.payload_selector {
-                    Some(selector) => selector.process(payload),
-                    None => payload,
-                };
-                if let Some(record) = records.get_mut(&id) {
-                    record.payload = Some(payload);
-                }
-            }
+            let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
+
+            self.read_payloads::<Random, _>(
+                point_offsets,
+                |point_id, payload| {
+                    // TODO: `check_stopped`!
+
+                    let payload = match &with_payload.payload_selector {
+                        Some(selector) => selector.process(payload),
+                        None => payload,
+                    };
+
+                    if let Some(record) = records.get_mut(&point_id) {
+                        record.payload = Some(payload);
+                    }
+                },
+                hw_counter,
+            )?;
         }
 
         Ok(records)
