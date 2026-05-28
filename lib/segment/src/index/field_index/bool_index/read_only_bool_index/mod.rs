@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use common::universal_io::UniversalRead;
 
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::index::payload_config::IndexMutability;
 
 mod lifecycle;
 mod read_ops;
@@ -30,6 +31,31 @@ pub(super) struct ReadOnlyStorage<S: UniversalRead> {
     pub(super) trues_flags: ReadOnlyRoaringFlags<S>,
     /// Points which have at least one `false` value
     pub(super) falses_flags: ReadOnlyRoaringFlags<S>,
+}
+
+impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
+    /// Reports the on-disk format's mutability, mirroring
+    /// [`BoolIndex::get_mutability_type`][1].
+    ///
+    /// [`MutableBoolIndex`][2] and [`ImmutableBoolIndex`][3] share the same
+    /// on-disk roaring-flags layout — the writable [`BoolIndex::Mmap`][1]
+    /// arm itself "can be both mutable and immutable, so we pick mutable",
+    /// per the writable enum's comment. The read path cannot distinguish
+    /// them from the files alone, and the read-only wrapper denies mutation
+    /// either way, so it conservatively reports
+    /// [`IndexMutability::Immutable`]. If a future caller needs to preserve
+    /// the writable-side label exactly (e.g. for round-tripping
+    /// [`FullPayloadIndexType`][4] against the persisted schema), the
+    /// mutability should be threaded through [`Self::open`] and stored on
+    /// the struct.
+    ///
+    /// [1]: super::super::BoolIndex::get_mutability_type
+    /// [2]: super::super::mutable_bool_index::MutableBoolIndex
+    /// [3]: super::super::immutable_bool_index::ImmutableBoolIndex
+    /// [4]: crate::index::payload_config::FullPayloadIndexType
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        IndexMutability::Immutable
+    }
 }
 
 #[cfg(test)]
