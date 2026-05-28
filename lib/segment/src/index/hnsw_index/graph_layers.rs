@@ -675,8 +675,17 @@ impl GraphLayers {
             GraphLinksFormat::Plain,
         ] {
             let path = GraphLayers::get_links_path(dir, format);
-            if path.exists() {
-                return GraphLinks::load_from_file(&path, load_option, format);
+            match &load_option {
+                LoadOption::OnDiskMmap => {
+                    if path.exists() {
+                        return GraphLinks::load_from_mmap(&path, format);
+                    }
+                }
+                LoadOption::RamFromUniversal { fs, open_extra } => {
+                    if fs.exists(&path)? {
+                        return GraphLinks::load_from_universal_file(fs, open_extra.clone(), &path, format);
+                    }
+                }
             }
         }
         Err(OperationError::service_error("No links file found"))
@@ -699,9 +708,10 @@ impl GraphLayers {
 
         let start = std::time::Instant::now();
 
-        let links = GraphLinks::load_from_file(
+        let links = GraphLinks::load_from_universal_file(
+            &MmapFs,
+            (),
             &plain_path,
-            LoadOption::ram_from_mmap(),
             GraphLinksFormat::Plain,
         )?;
         let original_size = fs::metadata(&plain_path)?.len();

@@ -12,7 +12,6 @@ use memmap2::Mmap;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::HnswM;
-use crate::index::hnsw_index::graph_layers::LoadOption;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
@@ -247,26 +246,12 @@ impl GraphLinks {
         })
     }
 
-    pub fn load_from_file<Fs>(
-        path: &Path,
-        load_option: LoadOption<Fs>,
-        format: GraphLinksFormat,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs,
-    {
-        match load_option {
-            LoadOption::OnDiskMmap => {
-                let populate = false;
-                let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
-                Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
-                    GraphLinksView::load(x.as_bytes(), format)
-                })
-            }
-            LoadOption::RamFromUniversal { fs, open_extra } => {
-                Self::load_from_universal_file(&fs, open_extra, path, format)
-            }
-        }
+    pub fn load_from_mmap(path: &Path, format: GraphLinksFormat) -> OperationResult<Self> {
+        let populate = false;
+        let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
+        Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
+            GraphLinksView::load(x.as_bytes(), format)
+        })
     }
 
     pub fn new_from_edges(
@@ -541,8 +526,7 @@ mod tests {
         })
         .unwrap();
 
-        let cmp_links =
-            GraphLinks::load_from_file(&links_file, LoadOption::on_disk_mmap(), format).unwrap();
+        let cmp_links = GraphLinks::load_from_mmap(&links_file, format).unwrap();
         check_links(links, &cmp_links, &vectors);
     }
 
