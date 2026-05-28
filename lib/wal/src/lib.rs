@@ -152,7 +152,16 @@ impl Wal {
             dir
         };
 
-        dir.try_lock()?;
+        // Use `fs4`'s `flock(2)`-based lock rather than `dir.try_lock()`.
+        //
+        // `dir.try_lock()` resolves to the inherent `fs_err`/`std` `File::try_lock`,
+        // which is gated to a fixed list of targets in stdlib and returns
+        // `ErrorKind::Unsupported` ("try_lock() not supported") on others — notably
+        // Android. `fs4::FileExt::try_lock` issues a direct `flock(LOCK_EX | LOCK_NB)`
+        // syscall, which Android supports. We call it via UFCS on the underlying
+        // `std::fs::File` because the trait method collides with the inherent one
+        // (which would otherwise win method resolution).
+        fs4::FileExt::try_lock(dir.file())?;
 
         // Holds open segments in the directory.
         let mut open_segments: Vec<OpenSegment> = Vec::new();
