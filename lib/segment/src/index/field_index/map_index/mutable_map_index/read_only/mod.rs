@@ -4,6 +4,7 @@ use gridstore::{Blob, GridstoreReader};
 use super::super::MapIndexKey;
 use super::inner::MutableMapIndexInner;
 
+mod lifecycle;
 mod read_ops;
 
 /// Read-only counterpart to [`super::MutableMapIndex`].
@@ -14,15 +15,18 @@ mod read_ops;
 /// [`super::super::read_ops::MapIndexRead`] by forwarding to the inner;
 /// provides no mutation surface.
 ///
-/// Loading / lifecycle (constructor, `files`, `populate`, `clear_cache`, …)
-/// will be added in a follow-up.
+/// Constructed via [`Self::open`] (see [`lifecycle`]); the parent
+/// [`super::super::read_only::ReadOnlyMapIndex`] dispatches into this type
+/// through [`super::super::read_only::ReadOnlyMapIndex::open_gridstore`].
 pub struct ReadOnlyAppendableMapIndex<N: MapIndexKey + ?Sized, S: UniversalRead>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     pub(super) inner: MutableMapIndexInner<N>,
-    // Read once the lifecycle layer lands; until then the field is held to
-    // pin the on-disk layout of the type.
+    /// Backing Gridstore reader, populated by [`Self::open`]. Held to keep the
+    /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
+    /// reads it lands with the parent dispatcher (it isn't part of the
+    /// [`MapIndexRead`](super::super::read_ops::MapIndexRead) surface).
     #[allow(dead_code)]
     pub(super) storage: GridstoreReader<Vec<<N as MapIndexKey>::Owned>, S>,
 }
