@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::{Random, Sequential};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use gridstore::config::StorageOptions;
@@ -115,6 +115,25 @@ impl PayloadStorageRead for MmapPayloadStorage {
     ) -> OperationResult<OwnedPayloadRef<'_>> {
         let payload = self.get(point_offset, hw_counter)?;
         Ok(OwnedPayloadRef::from(payload))
+    }
+
+    fn read_payloads<P: AccessPattern, U>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Payload),
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // TODO: `hw_counter`!?
+
+        self.storage
+            .read_values::<P, _, _>(point_offsets, |user_data, _, payload| {
+                let Some(payload) = payload else {
+                    return Ok(());
+                };
+
+                callback(user_data, payload);
+                Ok(())
+            })
     }
 
     fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
