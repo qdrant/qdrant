@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use common::universal_io::UniversalRead;
 
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::index::payload_config::IndexMutability;
 
 mod lifecycle;
 mod read_ops;
@@ -29,6 +30,28 @@ pub(super) struct ReadOnlyStorage<S: UniversalRead> {
     pub(super) has_values_flags: ReadOnlyRoaringFlags<S>,
     /// Points which have null values
     pub(super) is_null_flags: ReadOnlyRoaringFlags<S>,
+}
+
+impl<S: UniversalRead> ReadOnlyNullIndex<S> {
+    /// Reports the on-disk format's mutability, mirroring
+    /// [`NullIndex::get_mutability_type`][1].
+    ///
+    /// `MutableNullIndex` and `ImmutableNullIndex` share the same on-disk
+    /// layout (the latter is a newtype wrapper around the former — see
+    /// `ImmutableNullIndex(MutableNullIndex)`), so the read path cannot
+    /// distinguish them from the files alone. The read-only wrapper denies
+    /// mutation either way, so it conservatively reports
+    /// [`IndexMutability::Immutable`]. If a future caller needs to preserve
+    /// the writable-side label exactly (e.g. for round-tripping
+    /// [`FullPayloadIndexType`][2] against the persisted schema), the
+    /// mutability should be threaded through [`Self::open`] and stored on the
+    /// struct.
+    ///
+    /// [1]: super::super::NullIndex::get_mutability_type
+    /// [2]: crate::index::payload_config::FullPayloadIndexType
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        IndexMutability::Immutable
+    }
 }
 
 #[cfg(test)]
