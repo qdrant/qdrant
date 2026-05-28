@@ -5,6 +5,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::either_variant::EitherVariant;
+use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 
@@ -274,5 +275,16 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         self.payload.borrow().get_sequential(point_id, hw_counter)
+    }
+
+    fn read_payloads<AP: AccessPattern, U>(
+        &self,
+        point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Payload),
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.payload
+            .borrow()
+            .read_payloads::<AP, _>(point_ids, callback, hw_counter)
     }
 }

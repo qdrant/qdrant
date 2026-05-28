@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 use fs_err as fs;
@@ -161,6 +162,15 @@ impl PayloadIndexRead for PlainPayloadIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         unreachable!()
+    }
+
+    fn read_payloads<P: AccessPattern, U>(
+        &self,
+        _point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        _callback: impl FnMut(U, Payload),
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        unimplemented!()
     }
 
     fn numeric_index_for(&self, _key: &PayloadKeyType) -> Option<impl NumericFieldIndexRead + '_> {
