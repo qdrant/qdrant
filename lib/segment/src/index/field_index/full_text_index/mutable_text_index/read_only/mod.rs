@@ -3,6 +3,7 @@ use gridstore::GridstoreReader;
 
 use super::inner::MutableFullTextIndexInner;
 
+mod lifecycle;
 mod read_ops;
 
 /// Read-only counterpart to [`super::MutableFullTextIndex`].
@@ -13,12 +14,16 @@ mod read_ops;
 /// [`super::super::full_text_index_read::FullTextIndexRead`] by forwarding to
 /// the inner; provides no mutation surface.
 ///
-/// Loading / lifecycle (constructor, `files`, `populate`, `clear_cache`, …)
-/// will be added in a follow-up; until then the type is not yet constructed.
+/// Constructed via [`Self::open`] (see [`lifecycle`]); the parent
+/// [`super::super::read_only::ReadOnlyFullTextIndex`] dispatches into this
+/// type through [`super::super::read_only::ReadOnlyFullTextIndex::open_gridstore`].
 pub struct ReadOnlyAppendableFullTextIndex<S: UniversalRead> {
     pub(super) inner: MutableFullTextIndexInner,
-    // Read once the lifecycle layer lands; until then the field is held to
-    // pin the on-disk layout of the type.
+    /// Backing Gridstore reader, populated by [`Self::open`]. Held to keep the
+    /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
+    /// reads it lands with the parent dispatcher (it isn't part of the
+    /// [`FullTextIndexRead`](super::super::full_text_index_read::FullTextIndexRead)
+    /// surface).
     #[allow(dead_code)]
     pub(super) storage: GridstoreReader<Vec<u8>, S>,
 }
