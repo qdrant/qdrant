@@ -1,5 +1,4 @@
 use std::backtrace::Backtrace;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
@@ -1387,16 +1386,10 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
 }
 
 /// Reject the `Turbo` datatype on sparse vector configs.
-/// TurboQuant is a dense-vector rotation + 4-bit codebook scheme and has no
-/// meaningful interpretation on sparse data.
 /// `validator` unwraps `Option<Datatype>` before calling, so we receive `&Datatype`.
 fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> {
     if matches!(datatype, Datatype::Turbo) {
-        let mut err = ValidationError::new("unsupported_sparse_datatype");
-        err.message = Some(Cow::Borrowed(
-            "sparse vectors do not support the `turbo` datatype",
-        ));
-        return Err(err);
+        return Err(common::validation::sparse_turbo_unsupported_error());
     }
     Ok(())
 }

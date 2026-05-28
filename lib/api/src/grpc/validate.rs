@@ -485,16 +485,10 @@ pub fn validate_geo_polygon_interiors(
 }
 
 /// Reject the `Turbo` datatype on sparse vector configs.
-/// Mirror of `validate_sparse_datatype` in the REST/operations layer:
-/// TurboQuant is a dense-vector scheme and is not meaningful for sparse data.
 /// `validator` unwraps `Option<i32>` before calling, so we receive `&i32`.
 pub fn validate_sparse_datatype(datatype: &i32) -> Result<(), ValidationError> {
     if *datatype == grpc::Datatype::Turbo as i32 {
-        let mut err = ValidationError::new("unsupported_sparse_datatype");
-        err.message = Some(Cow::Borrowed(
-            "sparse vectors do not support the `turbo` datatype",
-        ));
-        return Err(err);
+        return Err(common::validation::sparse_turbo_unsupported_error());
     }
     Ok(())
 }
