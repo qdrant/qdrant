@@ -51,12 +51,17 @@ impl<T> ContextPair<T> {
     /// Simple 2D model:
     /// <https://www.desmos.com/calculator/lbxycyh2hs>
     pub fn loss_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
-        const MARGIN: ScoreType = ScoreType::EPSILON;
+        const EPSILON: ScoreType = ScoreType::EPSILON;
 
         let positive = similarity(&self.positive);
         let negative = similarity(&self.negative);
 
-        let difference = positive - negative - MARGIN;
+        // Use a scale-invariant margin proportional to the magnitude of similarities
+        // to preserve ranking order under uniform positive scaling
+        let scale = (positive.abs() + negative.abs()).max(1.0);
+        let margin = EPSILON * scale;
+
+        let difference = positive - negative - margin;
 
         fast_sigmoid(ScoreType::min(difference, 0.0))
     }
