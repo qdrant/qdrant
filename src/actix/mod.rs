@@ -115,11 +115,14 @@ pub fn init(
             let mut app = App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
                 // Read-only mode: block write operations with 403 Forbidden
-                // Runs after auth (which is the last wrap and executes first)
+                // NOTE: In actix-web, the LAST .wrap() call is the outermost middleware (executes first).
+                // ReadOnlyTransform is placed here so it runs AFTER AuthTransform (below),
+                // ensuring authentication is checked before rejecting write requests.
                 .wrap(ReadOnlyTransform::new(
                     settings.service.read_only.unwrap_or(false),
                 ))
                 // api_key middleware
+                // This is the outermost middleware — runs first on incoming requests.
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
                     |auth_keys| AuthTransform::new(auth_keys.clone(), api_key_whitelist.clone()),
