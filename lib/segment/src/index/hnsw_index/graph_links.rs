@@ -231,7 +231,7 @@ impl GraphLinks {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                populate: Populate::PreferBackground,
+                populate: Populate::No, // We are about to read everything blockingly anyway
                 advice: AdviceSetting::Advice(Advice::Sequential),
             },
             open_extra,
