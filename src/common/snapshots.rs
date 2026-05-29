@@ -312,6 +312,7 @@ pub async fn recover_shard_snapshot(
 /// # Cancel safety
 ///
 /// This function is *not* cancel safe.
+#[allow(clippy::too_many_arguments)]
 pub async fn recover_shard_snapshot_impl(
     toc: &TableOfContent,
     collection: &Collection,
