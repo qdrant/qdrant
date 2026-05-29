@@ -16,7 +16,7 @@ use common::tar_ext::BuilderExt;
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
-use futures::{Future, StreamExt, TryStreamExt as _, stream};
+use futures::{Future, StreamExt, stream};
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::json_path::JsonPath;
@@ -26,7 +26,7 @@ use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
-use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast, oneshot};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
@@ -1220,16 +1220,58 @@ impl ShardHolder {
             CollectionResult::Ok(())
         };
 
+        // Signals to the outgoing stream whether the snapshot was produced in full.
+        //
+        // The task below builds the snapshot and pipes it through
+        // `write_half` -> `read_half`. If it fails (broken pipe, I/O error, ...),
+        // it drops `write_half`, which `read_half` observes as a *clean* EOF -
+        // indistinguishable from a fully finished archive. Without an extra signal
+        // the remote would accept such a truncated snapshot as if it were complete.
+        //
+        // So the task sends `()` only on success. On failure it drops the sender
+        // without sending, and the stream below turns the trailing EOF into an
+        // error, aborting the response.
+        let (done_tx, done_rx) = oneshot::channel::<()>();
+
         tokio::spawn(async move {
-            if let Err(err) = future.await {
-                log::error!("Failed to stream shard snapshot: {err}");
+            match future.await {
+                // Snapshot finished: let the stream end cleanly.
+                Ok(()) => {
+                    let _ = done_tx.send(());
+                }
+                // Snapshot failed: drop the sender without signalling success, so
+                // the stream below aborts instead of ending cleanly.
+                Err(err) => {
+                    log::error!("Failed to stream shard snapshot: {err}");
+                    drop(done_tx);
+                }
             }
         });
 
-        Ok(SnapshotStream::new_stream(
-            FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()),
-            Some(snapshot_file_name),
-        ))
+        // Stream the snapshot bytes, then abort with an error if the producing
+        // task did not signal success, so a truncated snapshot is never streamed
+        // as if it were complete.
+        let framed = FramedRead::new(read_half, BytesCodec::new());
+        let stream = stream::unfold(Some((framed, done_rx)), |state| async move {
+            let (mut framed, done_rx) = state?;
+            match framed.next().await {
+                Some(Ok(bytes)) => Some((Ok(bytes.freeze()), Some((framed, done_rx)))),
+                Some(Err(err)) => Some((Err(err), None)),
+                // Producer closed `write_half`: end cleanly only if it signalled
+                // success, otherwise abort the stream with an error.
+                None => match done_rx.await {
+                    Ok(()) => None,
+                    Err(_) => Some((
+                        Err(std::io::Error::other(
+                            "shard snapshot streaming aborted before completion",
+                        )),
+                        None,
+                    )),
+                },
+            }
+        });
+
+        Ok(SnapshotStream::new_stream(stream, Some(snapshot_file_name)))
     }
 
     /// # Cancel safety
