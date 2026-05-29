@@ -51,6 +51,7 @@ smallvec = { workspace = true }
 count-min-sketch = "0.1.8"
 
 tokio = { workspace = true }
+tokio-io-timeout = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
 atomicwrites = { workspace = true}

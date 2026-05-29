@@ -1322,6 +1322,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tinyvec",
  "tokio",
+ "tokio-io-timeout",
  "tokio-util",
  "tonic",
  "tracing",
@@ -8008,6 +8009,16 @@ dependencies = [
  "tokio-macros",
  "tracing",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tokio-io-timeout"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bd86198d9ee903fedd2f9a2e72014287c0d9167e4ae43b5853007205dda1b76"
+dependencies = [
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]

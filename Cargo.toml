@@ -297,6 +297,7 @@ tar = "0.4.46"
 tempfile = "3.27.0"
 tinyvec = { version = "1.11.0", features = ["alloc", "latest_stable_rust"] }
 tokio = { version = "1.52.3", features = ["full"] }
+tokio-io-timeout = "1.2"
 tokio-util = { version = "0.7", features = ["io", "io-util", "rt"] }
 tonic = { version = "0.14.6", features = ["gzip", "tls-ring"] }
 tonic-prost = { version = "0.14.6" }

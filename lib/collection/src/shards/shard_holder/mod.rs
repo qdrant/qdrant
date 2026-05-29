@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
@@ -27,6 +28,7 @@ use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
+use tokio_io_timeout::{TimeoutReader, TimeoutWriter};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
@@ -1190,6 +1192,20 @@ impl ShardHolder {
 
         let (read_half, write_half) = tokio::io::duplex(4096);
 
+        // Idle timeout for a stalled transfer. The window is per-operation and
+        // resets on progress, so a large-but-progressing archive is never cut
+        // off; only a genuine stall trips it.
+        const SNAPSHOT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+        // Write side: catches a client that stops reading. Once the duplex
+        // buffer fills, writes block; after `SNAPSHOT_IDLE_TIMEOUT` the write
+        // fails, which unwinds the (otherwise un-cancellable) snapshot producer
+        // and releases the segment/WAL locks it holds.
+        let mut write_half = TimeoutWriter::new(write_half);
+        write_half.set_timeout(Some(SNAPSHOT_IDLE_TIMEOUT));
+        // `TimeoutWriter` is `!Unpin`; `SyncIoBridge` needs `Unpin`.
+        let write_half = Box::pin(write_half);
+
         let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
 
         let snapshot_creator = shard
@@ -1226,10 +1242,15 @@ impl ShardHolder {
             }
         });
 
-        Ok(SnapshotStream::new_stream(
-            FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()),
-            Some(snapshot_file_name),
-        ))
+        // Read side: catches a stalled producer. If no chunk is produced for
+        // `SNAPSHOT_IDLE_TIMEOUT`, the read fails and the stream ends with an
+        // error (whenever actix is polling it, i.e. the client is reading).
+        let mut read_half = TimeoutReader::new(read_half);
+        read_half.set_timeout(Some(SNAPSHOT_IDLE_TIMEOUT));
+
+        let stream = FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze());
+
+        Ok(SnapshotStream::new_stream(stream, Some(snapshot_file_name)))
     }
 
     /// # Cancel safety
@@ -1538,4 +1559,90 @@ pub(crate) enum ShardTransferChange {
 
 pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::not_found(format!("shard {shard_id}"))
+}
+
+#[cfg(test)]
+mod snapshot_stream_guard_tests {
+    use std::io::Write as _;
+
+    use futures::StreamExt as _;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    use super::*;
+
+    const TIMEOUT: Duration = Duration::from_millis(200);
+
+    /// The write-side timeout must fire even though the actual write happens via
+    /// `SyncIoBridge::block_on` on a `spawn_blocking` thread, under a
+    /// current-thread runtime (as the actix worker runtime is). This is the
+    /// fragile assumption the consumer-stall guard rests on, so we pin it down.
+    #[tokio::test(flavor = "current_thread")]
+    async fn write_timeout_fires_when_reader_never_reads() {
+        let (read_half, write_half) = tokio::io::duplex(8);
+        let mut write_half = TimeoutWriter::new(write_half);
+        write_half.set_timeout(Some(TIMEOUT));
+        // Constructed in async context so `SyncIoBridge` captures this runtime.
+        let mut bridge = SyncIoBridge::new(Box::pin(write_half));
+
+        let writer = tokio::task::spawn_blocking(move || {
+            // First write fills the 8-byte buffer; the next blocks forever
+            // because nobody reads, so it must fail with `TimedOut`.
+            loop {
+                bridge.write_all(&[0u8; 8])?;
+            }
+            #[expect(unreachable_code)]
+            std::io::Result::Ok(())
+        });
+
+        // Deliberately never read from `read_half`.
+        let err = writer.await.unwrap().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        drop(read_half);
+    }
+
+    /// A reader that keeps draining must never trip the write timeout.
+    #[tokio::test(flavor = "current_thread")]
+    async fn write_timeout_does_not_fire_while_draining() {
+        let (mut read_half, write_half) = tokio::io::duplex(8);
+        let mut write_half = TimeoutWriter::new(write_half);
+        write_half.set_timeout(Some(TIMEOUT));
+        let mut bridge = SyncIoBridge::new(Box::pin(write_half));
+
+        let writer = tokio::task::spawn_blocking(move || {
+            for _ in 0..64 {
+                bridge.write_all(&[0u8; 8])?;
+            }
+            std::io::Result::Ok(())
+        });
+
+        let mut buf = [0u8; 8];
+        let mut total = 0;
+        while total < 64 * 8 {
+            total += read_half.read(&mut buf).await.unwrap();
+        }
+        writer
+            .await
+            .unwrap()
+            .expect("draining writer should not time out");
+    }
+
+    /// The read side fails with `TimedOut` when the producer stalls, while
+    /// passing data through untouched as long as it flows.
+    #[tokio::test(flavor = "current_thread")]
+    async fn read_timeout_fires_when_producer_stalls() {
+        let (mut write_half, read_half) = tokio::io::duplex(64);
+        let mut read_half = TimeoutReader::new(read_half);
+        read_half.set_timeout(Some(TIMEOUT));
+        let mut framed = Box::pin(FramedRead::new(read_half, BytesCodec::new()));
+
+        write_half.write_all(b"chunk").await.unwrap();
+        let first = framed.next().await.unwrap().unwrap();
+        assert_eq!(first.as_ref(), b"chunk");
+
+        // No more writes (but the writer is kept open, so this is a stall, not
+        // EOF): the next read must time out.
+        let err = framed.next().await.unwrap().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        drop(write_half);
+    }
 }
