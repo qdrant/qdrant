@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use criterion::measurement::Measurement;
 use criterion::{Criterion, criterion_group, criterion_main};
 use dataset::Dataset;
@@ -13,7 +14,7 @@ use itertools::Itertools;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use sha2::Digest;
-use sparse::common::scores_memory_pool::ScoresMemoryPool;
+use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
 use sparse::common::types::{QuantizedU8, Weight};
@@ -162,7 +163,7 @@ pub fn run_bench(
 
             run_bench2(
                 c.benchmark_group(format!("search/mmap_{}/{name}", $name)),
-                &InvertedIndexCompressedMmap::<$type>::open(&index_path).unwrap(),
+                &InvertedIndexCompressedMmap::<$type, MmapFile>::open(&index_path).unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
@@ -181,7 +182,7 @@ fn run_bench2(
     query_vectors: &[SparseVector],
     hottest_query_vectors: &[RemappedSparseVector],
 ) {
-    let pool = ScoresMemoryPool::new();
+    let pool = SearchScratchPool::new();
     let stopped = AtomicBool::new(false);
 
     let mut it = query_vectors.iter().cycle();
@@ -192,7 +193,8 @@ fn run_bench2(
         b.iter_batched(
             || it.next().unwrap().clone().into_remapped(),
             |vec| {
-                SearchContext::new(vec, TOP, index, pool.get(), &stopped, &hardware_counter)
+                let mut scratch = pool.get();
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
                     .unwrap()
                     .search(&|_| true)
             },
@@ -207,7 +209,8 @@ fn run_bench2(
         b.iter_batched(
             || it.next().unwrap().clone(),
             |vec| {
-                SearchContext::new(vec, TOP, index, pool.get(), &stopped, &hardware_counter)
+                let mut scratch = pool.get();
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
                     .unwrap()
                     .search(&|_| true)
             },
@@ -267,7 +270,8 @@ fn cached_compressed_index<W: Weight>(index: &InvertedIndexRam, name: &str) -> P
             fs::remove_dir_all(&tmp_path).unwrap();
         }
         fs::create_dir_all(&tmp_path).unwrap();
-        InvertedIndexCompressedMmap::<W>::from_ram_index(Cow::Borrowed(index), &tmp_path).unwrap();
+        InvertedIndexCompressedMmap::<W, MmapFile>::from_ram_index(Cow::Borrowed(index), &tmp_path)
+            .unwrap();
         fs::rename(tmp_path, &path).unwrap();
     }
     eprintln!("Using cache: {path:?}");

@@ -3,17 +3,18 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::Result;
+use common::universal_io::{MmapFs, Result};
 
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
 use super::{InvertedIndex, out_of_bounds};
+use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
     CompressedPostingBuilder, CompressedPostingList, CompressedPostingListIterator,
+    CompressedPostingListView,
 };
-use crate::index::posting_list_common::PostingListIter as _;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InvertedIndexCompressedImmutableRam<W: Weight> {
@@ -22,17 +23,19 @@ pub struct InvertedIndexCompressedImmutableRam<W: Weight> {
     pub(super) total_sparse_size: usize,
 }
 
+type Storage = common::universal_io::MmapFile;
+
 impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     type Iter<'a> = CompressedPostingListIterator<'a, W>;
 
-    type Version = <InvertedIndexCompressedMmap<W> as InvertedIndex>::Version;
+    type Version = <InvertedIndexCompressedMmap<W, Storage> as InvertedIndex>::Version;
 
     fn is_on_disk(&self) -> bool {
         false
     }
 
     fn open(path: &Path) -> Result<Self> {
-        let mmap_inverted_index = InvertedIndexCompressedMmap::load(path)?;
+        let mmap_inverted_index = InvertedIndexCompressedMmap::<W, Storage>::load(&MmapFs, path)?;
         let mut inverted_index = InvertedIndexCompressedImmutableRam {
             postings: Vec::with_capacity(mmap_inverted_index.file_header.posting_count),
             vector_count: mmap_inverted_index.file_header.vector_count,
@@ -41,9 +44,11 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 
         let hw_counter = HardwareCounterCell::disposable();
 
+        let mut arena = SearchScratchArena::new_slow();
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
-            let posting_list = mmap_inverted_index.get(i, &hw_counter)?;
+            let posting_list = mmap_inverted_index.get(i, &arena, &hw_counter)?;
             inverted_index.postings.push(posting_list.to_owned());
+            arena.gc();
         }
 
         mmap_inverted_index.clear_cache()?;
@@ -51,21 +56,18 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         Ok(inverted_index)
     }
 
-    fn save(&self, path: &Path) -> std::io::Result<()> {
-        InvertedIndexCompressedMmap::convert_and_save(self, path)?;
+    fn save(&self, path: &Path) -> Result<()> {
+        InvertedIndexCompressedMmap::<W, Storage>::convert_and_save(&MmapFs, self, path)?;
         Ok(())
     }
 
     fn get<'a>(
         &'a self,
         id: DimOffset,
+        _arena: &'a SearchScratchArena,
         hw_counter: &'a HardwareCounterCell, // Ignored for in-ram index
     ) -> Result<Self::Iter<'a>> {
-        let posting = self
-            .postings
-            .get(id as usize)
-            .ok_or(out_of_bounds(id, self.len()))?;
-        Ok(posting.iter(hw_counter))
+        Ok(self.get(id, hw_counter)?.iter())
     }
 
     fn len(&self) -> usize {
@@ -73,16 +75,16 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     }
 
     fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize> {
-        Ok(self.get(id, hw_counter)?.len_to_end())
+        Ok(self.get(id, hw_counter)?.len())
     }
 
     fn files(path: &Path) -> Vec<std::path::PathBuf> {
-        InvertedIndexCompressedMmap::<W>::files(path)
+        InvertedIndexCompressedMmap::<W, Storage>::files(path)
     }
 
     fn immutable_files(path: &Path) -> Vec<std::path::PathBuf> {
         // `InvertedIndexCompressedImmutableRam` is always immutable
-        InvertedIndexCompressedMmap::<W>::immutable_files(path)
+        InvertedIndexCompressedMmap::<W, Storage>::immutable_files(path)
     }
 
     fn remove(&mut self, _id: PointOffsetType, _old_vector: RemappedSparseVector) {
@@ -98,10 +100,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         panic!("Cannot upsert into a read-only RAM inverted index")
     }
 
-    fn from_ram_index<P: AsRef<Path>>(
-        ram_index: Cow<InvertedIndexRam>,
-        _path: P,
-    ) -> std::io::Result<Self> {
+    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, _path: P) -> Result<Self> {
         let mut postings = Vec::with_capacity(ram_index.postings.len());
         for old_posting_list in &ram_index.postings {
             let mut new_posting_list = CompressedPostingBuilder::new();
@@ -138,6 +137,20 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
             .len()
             .checked_sub(1)
             .map(|len| len as DimOffset)
+    }
+}
+
+impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
+    #[inline]
+    fn get<'a>(
+        &'a self,
+        id: DimOffset,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Result<CompressedPostingListView<'a, W>> {
+        let Some(posting) = self.postings.get(id as usize) else {
+            return Err(out_of_bounds(id, self.len()));
+        };
+        Ok(posting.view(hw_counter))
     }
 }
 
