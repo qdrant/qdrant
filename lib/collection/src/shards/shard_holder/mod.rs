@@ -86,7 +86,40 @@ pub struct ShardHolder {
     sharding_method: ShardingMethod,
     /// Active snapshot recoveries on this peer (destination side of transfers).
     /// Tracks progress of downloading, unpacking, and restoring snapshots.
-    active_recoveries: Mutex<HashMap<ShardId, Arc<Mutex<RecoveryProgress>>>>,
+    /// Entries are added and removed via [`ShardRecoveryGuard`].
+    active_recoveries: Arc<Mutex<HashMap<ShardId, Arc<Mutex<RecoveryProgress>>>>>,
+}
+
+/// RAII guard for tracking an active snapshot recovery on the destination side.
+///
+/// While held, the recovery progress is registered in [`ShardHolder::active_recoveries`]
+/// so it can be reported in the transfer status. On drop - including early returns,
+/// errors, and cancellation - the entry is removed again, ensuring that stale recovery
+/// comments are never reported for subsequent transfers.
+pub struct ShardRecoveryGuard {
+    active_recoveries: Arc<Mutex<HashMap<ShardId, Arc<Mutex<RecoveryProgress>>>>>,
+    shard_id: ShardId,
+    progress: Arc<Mutex<RecoveryProgress>>,
+}
+
+impl ShardRecoveryGuard {
+    /// Shared recovery progress, used to update the current recovery stage.
+    pub fn progress(&self) -> &Arc<Mutex<RecoveryProgress>> {
+        &self.progress
+    }
+}
+
+impl Drop for ShardRecoveryGuard {
+    fn drop(&mut self) {
+        let mut active_recoveries = self.active_recoveries.lock();
+        // Only remove our own entry, in case a newer recovery for the same shard
+        // has already replaced it.
+        if let Some(current) = active_recoveries.get(&self.shard_id)
+            && Arc::ptr_eq(current, &self.progress)
+        {
+            active_recoveries.remove(&self.shard_id);
+        }
+    }
 }
 
 impl ShardHolder {
@@ -129,7 +162,7 @@ impl ShardHolder {
             key_mapping,
             shard_id_to_key_mapping,
             sharding_method,
-            active_recoveries: Mutex::new(HashMap::new()),
+            active_recoveries: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -476,18 +509,21 @@ impl ShardHolder {
         (incoming, outgoing)
     }
 
-    /// Start tracking recovery progress for a shard (destination side)
-    pub fn start_shard_recovery(&self, shard_id: ShardId) -> Arc<Mutex<RecoveryProgress>> {
+    /// Start tracking recovery progress for a shard (destination side).
+    ///
+    /// Returns a [`ShardRecoveryGuard`] that must be held for the duration of the
+    /// recovery. Dropping the guard - on success, error, or cancellation - stops
+    /// tracking and removes the progress entry.
+    pub fn start_shard_recovery(&self, shard_id: ShardId) -> ShardRecoveryGuard {
         let progress = Arc::new(Mutex::new(RecoveryProgress::new()));
         self.active_recoveries
             .lock()
             .insert(shard_id, Arc::clone(&progress));
-        progress
-    }
-
-    /// Stop tracking recovery progress for a shard
-    pub fn finish_shard_recovery(&self, shard_id: ShardId) {
-        self.active_recoveries.lock().remove(&shard_id);
+        ShardRecoveryGuard {
+            active_recoveries: Arc::clone(&self.active_recoveries),
+            shard_id,
+            progress,
+        }
     }
 
     pub fn get_shard_transfer_info(

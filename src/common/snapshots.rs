@@ -187,8 +187,9 @@ pub async fn recover_shard_snapshot(
         let (collection, download_dir) =
             cancel::future::cancel_on_token(cancel.clone(), pre_recovery_task).await??;
 
-        // Once recovery tracking starts, `finish_shard_recovery` must run on all paths
-        let recovery_progress = collection
+        // Guard tracks recovery progress and removes it on drop, on every exit path
+        // (success, error, or cancellation), so stale timings are never reported.
+        let recovery_guard = collection
             .shards_holder()
             .read()
             .await
@@ -220,7 +221,8 @@ pub async fn recover_shard_snapshot(
                         return Err(StorageError::bad_input(description));
                     }
 
-                    recovery_progress
+                    recovery_guard
+                        .progress()
                         .lock()
                         .set_stage(RecoveryStage::Downloading);
 
@@ -297,12 +299,9 @@ pub async fn recover_shard_snapshot(
         )
         .await;
 
-        // Finish tracking recovery progress
-        collection
-            .shards_holder()
-            .read()
-            .await
-            .finish_shard_recovery(shard_id);
+        // `recovery_guard` is dropped here (and on every early return above),
+        // which stops tracking recovery progress for this shard.
+        drop(recovery_guard);
 
         result
     })
