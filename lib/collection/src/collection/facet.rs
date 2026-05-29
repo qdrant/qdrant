@@ -24,6 +24,61 @@ const FACET_OVERSAMPLE_FACTOR: usize = 4;
 const FACET_MIN_OVERSAMPLE: usize = 128;
 
 impl Collection {
+    /// Entry point for a facet request. Applies oversampling (for approximate
+    /// queries) before fanning out to shards. This runs *once*, on the node
+    /// that received the client request; peer nodes enter through
+    /// [`Collection::facet_internal`] instead and never re-oversample.
+    ///
+    /// How `limit` flows through a distributed cluster for an approximate query.
+    /// `L` is the user limit (here `L = 10`); `N` is the oversampled per-shard
+    /// limit `N = max(L * 4, 128) = 128`:
+    ///
+    /// ```text
+    ///                            Client  (limit = L = 10)
+    ///                               │
+    ///                               ▼
+    ///   ┌── Node A: Collection::facet ───────────────────────────────────┐
+    ///   │     request.limit:   L  ──oversample──▶  N = 128               │
+    ///   │     response_limit:  L = 10  (kept for the final truncation)   │
+    ///   │                              │                                 │
+    ///   │                              ▼                                 │
+    ///   │     Collection::facet_internal(limit = N, response_limit = L)  │
+    ///   │              ┌───────────────┴────────────────┐                │
+    ///   │              ▼ local shard                    ▼ remote shard   │
+    ///   │     approx_facet(limit = N)          gRPC FacetCountsInternal  │
+    ///   │     returns ≤ N hits                       { limit = N }       │
+    ///   │              │                                 │               │
+    ///   └──────────────┼─────────────────────────────────┼───────────────┘
+    ///                  │                                 ▼
+    ///                  │     ┌── Node B: facet_counts_internal ──────────┐
+    ///                  │     │     toc.facet_internal: peer_limit = N    │
+    ///                  │     │     (NOT re-oversampled)                  │
+    ///                  │     │              │                            │
+    ///                  │     │              ▼                            │
+    ///                  │     │     Collection::facet_internal(           │
+    ///                  │     │         limit = N, response_limit = N)    │
+    ///                  │     │     approx_facet(limit = N)               │
+    ///                  │     │     top_hits(.., N)  ──▶  ≤ N hits        │
+    ///                  │     └──────────────┬────────────────────────────┘
+    ///                  │                    │
+    ///                  └─────────┬──────────┘
+    ///                            ▼
+    ///   Node A:  aggregate all shard hits (sum counts per value)
+    ///            top_hits(aggregated, response_limit = L)  ──▶  L = 10 hits
+    ///                            │
+    ///                            ▼
+    ///                          Client  (L = 10 results)
+    /// ```
+    ///
+    /// Key points:
+    /// - Oversampling (`L` → `N`) happens only here, on the entry node. Each
+    ///   shard — local or remote — returns up to `N` values, giving the final
+    ///   aggregation enough headroom to absorb cross-shard rank differences.
+    /// - Remote peers are reached via the internal gRPC path, which calls
+    ///   `facet_internal` directly with `peer_limit = N`, so the limit is *not*
+    ///   multiplied a second time.
+    /// - Only the final aggregation on the entry node truncates back to the
+    ///   user-facing `response_limit = L`.
     pub async fn facet(
         &self,
         mut request: FacetParams,
