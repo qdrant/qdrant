@@ -33,6 +33,7 @@ itertools = { workspace = true }
 parking_lot = { workspace = true }
 log = { workspace = true }
 zerocopy = { workspace = true }
+typed-arena = "2.0.2"
 
 [dev-dependencies]
 criterion = { workspace = true }

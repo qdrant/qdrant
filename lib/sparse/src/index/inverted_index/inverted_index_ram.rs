@@ -52,13 +52,14 @@ impl InvertedIndex for InvertedIndexRam {
         panic!("InvertedIndexRam is not supposed to be loaded");
     }
 
-    fn save(&self, _path: &Path) -> std::io::Result<()> {
+    fn save(&self, _path: &Path) -> Result<()> {
         panic!("InvertedIndexRam is not supposed to be saved");
     }
 
     fn get<'a>(
         &'a self,
         id: DimOffset,
+        _arena: &'a crate::SearchScratchArena,
         _hw_counter: &'a HardwareCounterCell,
     ) -> Result<PostingListIterator<'a>> {
         Ok(self.get(id)?.iter())
@@ -104,10 +105,7 @@ impl InvertedIndex for InvertedIndexRam {
         self.upsert(id, vector, old_vector);
     }
 
-    fn from_ram_index<P: AsRef<Path>>(
-        ram_index: Cow<InvertedIndexRam>,
-        _path: P,
-    ) -> std::io::Result<Self> {
+    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, _path: P) -> Result<Self> {
         Ok(ram_index.into_owned())
     }
 
