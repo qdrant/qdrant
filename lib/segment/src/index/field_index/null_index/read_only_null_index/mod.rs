@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use common::universal_io::UniversalRead;
 
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::index::payload_config::IndexMutability;
 
+mod lifecycle;
 mod read_ops;
 
 /// Read-only counterpart of [`MutableNullIndex`][1] / [`ImmutableNullIndex`][2].
@@ -28,4 +30,135 @@ pub(super) struct ReadOnlyStorage<S: UniversalRead> {
     pub(super) has_values_flags: ReadOnlyRoaringFlags<S>,
     /// Points which have null values
     pub(super) is_null_flags: ReadOnlyRoaringFlags<S>,
+}
+
+impl<S: UniversalRead> ReadOnlyNullIndex<S> {
+    /// Reports the on-disk format's mutability, mirroring
+    /// [`NullIndex::get_mutability_type`][1].
+    ///
+    /// `MutableNullIndex` and `ImmutableNullIndex` share the same on-disk
+    /// layout (the latter is a newtype wrapper around the former — see
+    /// `ImmutableNullIndex(MutableNullIndex)`), so the read path cannot
+    /// distinguish them from the files alone. The read-only wrapper denies
+    /// mutation either way, so it conservatively reports
+    /// [`IndexMutability::Immutable`]. If a future caller needs to preserve
+    /// the writable-side label exactly (e.g. for round-tripping
+    /// [`FullPayloadIndexType`][2] against the persisted schema), the
+    /// mutability should be threaded through [`Self::open`] and stored on the
+    /// struct.
+    ///
+    /// [1]: super::super::NullIndex::get_mutability_type
+    /// [2]: crate::index::payload_config::FullPayloadIndexType
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        IndexMutability::Immutable
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use itertools::Itertools as _;
+    use serde_json::{Value, json};
+    use tempfile::TempDir;
+
+    use super::super::mutable_null_index::MutableNullIndex;
+    use super::super::read_ops::NullIndexRead;
+    use super::ReadOnlyNullIndex;
+    use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndexRead};
+    use crate::json_path::JsonPath;
+    use crate::types::FieldCondition;
+
+    /// Build a writable null index on disk, then open it read-only through a
+    /// write-prevented `ReadOnlyFs<MmapFs>` backend and assert the read surface
+    /// (both bitmaps and the persisted length) matches what was written.
+    #[test]
+    fn read_only_null_index_round_trip() {
+        let dir = TempDir::with_prefix("read_only_null_index").unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
+        let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
+        builder.add_point(0, &[&Value::Null], &hw_counter).unwrap(); // null, no values
+        builder
+            .add_point(1, &[&null_in_array], &hw_counter)
+            .unwrap(); // null + values
+        builder.add_point(2, &[], &hw_counter).unwrap(); // empty
+        builder.add_point(3, &[&json!(true)], &hw_counter).unwrap(); // values, not null
+        let total = 4;
+        builder.finalize().unwrap();
+
+        // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, named via the
+        // associated-type projection since the wrapper type isn't exported.
+        // The read-only filesystem context is `Default`.
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        let index: ReadOnlyNullIndex<ReadOnly<MmapFile>> =
+            ReadOnlyNullIndex::open(&fs, dir.path(), total).unwrap();
+
+        let key = JsonPath::new("test");
+        let is_null = FieldCondition::new_is_null(key.clone(), true);
+        let is_not_empty = FieldCondition {
+            key: key.clone(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+            is_empty: Some(false),
+            is_null: None,
+        };
+        let is_empty = FieldCondition {
+            key: key.clone(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+            is_empty: Some(true),
+            is_null: None,
+        };
+
+        // Bitmap-driven branches: the set positions came back intact.
+        assert_eq!(
+            index
+                .filter(&is_null, &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec(),
+            vec![0, 1],
+        );
+        assert_eq!(
+            index
+                .filter(&is_not_empty, &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec(),
+            vec![1, 3],
+        );
+        // `len`-driven branch: iter_falses over [0, len) chained with [len, total).
+        // Wrong `len` (e.g. 0) would wrongly include points 1 and 3 here.
+        assert_eq!(
+            index
+                .filter(&is_empty, &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec(),
+            vec![0, 2],
+        );
+        // Length read straight from the status file.
+        assert_eq!(index.count_indexed_points(), 4);
+
+        assert!(index.values_is_empty(0));
+        assert!(!index.values_is_empty(1));
+        assert!(index.values_is_empty(2));
+        assert!(!index.values_is_empty(3));
+
+        assert!(index.values_is_null(0));
+        assert!(index.values_is_null(1));
+        assert!(!index.values_is_null(3));
+    }
 }

@@ -60,7 +60,12 @@ pub trait RoaringFlagsRead {
     }
 
     /// Drop disk cache for the backing file.
-    fn clear_cache(&self) -> OperationResult<()>;
+    ///
+    /// Default: no-op (mirrors [`populate`][Self::populate] — variants that
+    /// hold everything in memory after open have no on-disk cache to drop).
+    fn clear_cache(&self) -> OperationResult<()> {
+        Ok(())
+    }
 
     /// Paths of the on-disk files backing this storage.
     fn files(&self) -> Vec<PathBuf>;
