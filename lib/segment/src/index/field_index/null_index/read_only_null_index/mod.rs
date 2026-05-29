@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use common::universal_io::UniversalRead;
-
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::index::payload_config::IndexMutability;
 
@@ -11,28 +9,32 @@ mod read_ops;
 /// Read-only counterpart of [`MutableNullIndex`][1] / [`ImmutableNullIndex`][2].
 ///
 /// All flags are loaded into in-memory roaring bitmaps on open. The backing
-/// storage is bound to [`UniversalRead`] only — no buffer, no flusher,
+/// storage is bound to [`UniversalRead`][3] only — no buffer, no flusher,
 /// no write path. Query logic (filter / cardinality / condition checker) is
-/// shared with the writable variant via the [`NullIndexRead`][3] trait.
+/// shared with the writable variant via the [`NullIndexRead`][4] trait.
+///
+/// The backend type only appears on [`Self::open`]; once the bitmaps are in
+/// memory the struct is backend-agnostic.
 ///
 /// [1]: super::mutable_null_index::MutableNullIndex
 /// [2]: super::immutable_null_index::ImmutableNullIndex
-/// [3]: super::read_ops::NullIndexRead
-pub struct ReadOnlyNullIndex<S: UniversalRead> {
+/// [3]: common::universal_io::UniversalRead
+/// [4]: super::read_ops::NullIndexRead
+pub struct ReadOnlyNullIndex {
     #[allow(dead_code)]
     pub(super) _base_dir: PathBuf,
-    pub(super) storage: ReadOnlyStorage<S>,
+    pub(super) storage: ReadOnlyStorage,
     pub(super) total_point_count: usize,
 }
 
-pub(super) struct ReadOnlyStorage<S: UniversalRead> {
+pub(super) struct ReadOnlyStorage {
     /// Points which have at least one value
-    pub(super) has_values_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) has_values_flags: ReadOnlyRoaringFlags,
     /// Points which have null values
-    pub(super) is_null_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) is_null_flags: ReadOnlyRoaringFlags,
 }
 
-impl<S: UniversalRead> ReadOnlyNullIndex<S> {
+impl ReadOnlyNullIndex {
     /// Reports the on-disk format's mutability, mirroring
     /// [`NullIndex::get_mutability_type`][1].
     ///
@@ -94,8 +96,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index: ReadOnlyNullIndex<ReadOnly<MmapFile>> =
-            ReadOnlyNullIndex::open(&fs, dir.path(), total).unwrap();
+        let index = ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), total).unwrap();
 
         let key = JsonPath::new("test");
         let is_null = FieldCondition::new_is_null(key.clone(), true);

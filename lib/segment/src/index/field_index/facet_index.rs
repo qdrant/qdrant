@@ -73,9 +73,9 @@ pub trait FacetIndex {
 
 /// Borrowed view over any concrete index that can produce facet counts.
 ///
-/// The `S: UniversalRead` parameter is consumed only by the `*ReadOnly`
-/// variants, which carry a `ReadOnlyMapIndex<N, S>` or `ReadOnlyBoolIndex<S>`;
-/// appendable / in-memory variants (`Keyword`, `Int`, `Uuid`, `Bool`) ignore
+/// The `S: UniversalRead` parameter is consumed only by the map-based
+/// `*ReadOnly` variants (`ReadOnlyMapIndex<N, S>`); appendable / in-memory
+/// variants (`Keyword`, `Int`, `Uuid`, `Bool`) and `ReadOnlyBoolIndex` ignore
 /// it. The default `S = MmapFile` keeps the common construction path
 /// (`FieldIndex::as_facet_index`) free of turbofish.
 pub enum FacetIndexEnum<'a, S: UniversalRead = MmapFile> {
@@ -93,7 +93,7 @@ pub enum FacetIndexEnum<'a, S: UniversalRead = MmapFile> {
     #[allow(dead_code)]
     UuidReadOnly(&'a ReadOnlyMapIndex<UuidIntType, S>),
     #[allow(dead_code)]
-    BoolReadOnly(&'a ReadOnlyBoolIndex<S>),
+    BoolReadOnly(&'a ReadOnlyBoolIndex),
 }
 
 impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
