@@ -7,6 +7,14 @@ use crate::shards::shard::ShardId;
 use crate::shards::transfer::RecoveryStage;
 use crate::shards::transfer::transfer_tasks_pool::RecoveryProgress;
 
+/// Shared handle to a single recovery's progress.
+///
+/// Obtained from a [`ShardRecoveryGuard`] via [`ShardRecoveryGuard::progress_handle`]
+/// and threaded into the recovery sub-steps so they update *this* recovery's progress
+/// directly, rather than re-resolving the current map entry by shard id (which a newer
+/// recovery for the same shard may have already replaced).
+pub type RecoveryProgressHandle = Arc<Mutex<RecoveryProgress>>;
+
 /// Tracks active snapshot recoveries on a peer (destination side of transfers),
 /// keyed by shard id.
 ///
@@ -15,7 +23,7 @@ use crate::shards::transfer::transfer_tasks_pool::RecoveryProgress;
 /// removes the entry again on drop.
 #[derive(Clone, Default)]
 pub struct ActiveRecoveries {
-    recoveries: Arc<Mutex<HashMap<ShardId, Arc<Mutex<RecoveryProgress>>>>>,
+    recoveries: Arc<Mutex<HashMap<ShardId, RecoveryProgressHandle>>>,
 }
 
 impl ActiveRecoveries {
@@ -41,16 +49,9 @@ impl ActiveRecoveries {
             .and_then(|progress| progress.lock().format_comment())
     }
 
-    /// Update the recovery stage for `shard_id`, if a recovery is active.
-    pub fn set_stage(&self, shard_id: ShardId, stage: RecoveryStage) {
-        if let Some(progress) = self.recoveries.lock().get(&shard_id) {
-            progress.lock().set_stage(stage);
-        }
-    }
-
     /// Remove the entry for `shard_id`, but only if it still points at `progress`,
     /// so a newer recovery for the same shard is never clobbered.
-    fn remove(&self, shard_id: ShardId, progress: &Arc<Mutex<RecoveryProgress>>) {
+    fn remove(&self, shard_id: ShardId, progress: &RecoveryProgressHandle) {
         let mut recoveries = self.recoveries.lock();
         if let Some(current) = recoveries.get(&shard_id)
             && Arc::ptr_eq(current, progress)
@@ -69,13 +70,20 @@ impl ActiveRecoveries {
 pub struct ShardRecoveryGuard {
     active_recoveries: ActiveRecoveries,
     shard_id: ShardId,
-    progress: Arc<Mutex<RecoveryProgress>>,
+    progress: RecoveryProgressHandle,
 }
 
 impl ShardRecoveryGuard {
-    /// Shared recovery progress, used to update the current recovery stage.
-    pub fn progress(&self) -> &Arc<Mutex<RecoveryProgress>> {
-        &self.progress
+    /// Update the recovery stage of *this* recovery.
+    pub fn set_stage(&self, stage: RecoveryStage) {
+        self.progress.lock().set_stage(stage);
+    }
+
+    /// A shared handle to this recovery's progress, for threading into recovery
+    /// sub-steps that need to update the stage. Bound to this guard's own entry, so
+    /// updates never leak into a newer recovery for the same shard.
+    pub fn progress_handle(&self) -> RecoveryProgressHandle {
+        Arc::clone(&self.progress)
     }
 }
 

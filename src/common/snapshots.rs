@@ -9,6 +9,7 @@ use collection::operations::snapshot_ops::{
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
+use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use collection::shards::transfer::RecoveryStage;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
@@ -221,10 +222,7 @@ pub async fn recover_shard_snapshot(
                         return Err(StorageError::bad_input(description));
                     }
 
-                    recovery_guard
-                        .progress()
-                        .lock()
-                        .set_stage(RecoveryStage::Downloading);
+                    recovery_guard.set_stage(RecoveryStage::Downloading);
 
                     let client = client.client(api_key.as_deref())?;
                     snapshots::download::download_snapshot(
@@ -295,6 +293,7 @@ pub async fn recover_shard_snapshot(
             snapshot_data,
             snapshot_priority,
             RecoveryType::Full,
+            Some(recovery_guard.progress_handle()),
             cancel,
         )
         .await;
@@ -320,6 +319,7 @@ pub async fn recover_shard_snapshot_impl(
     snapshot_data: SnapshotData,
     priority: SnapshotPriority,
     recovery_type: RecoveryType,
+    recovery_progress: Option<RecoveryProgressHandle>,
     cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
     let _recover_tracker_guard = toc
@@ -342,6 +342,7 @@ pub async fn recover_shard_snapshot_impl(
             toc.is_distributed(),
             // Default temporary path to storage dir, to allow faster recovery within the same volume
             &toc.optional_temp_or_storage_temp_path()?,
+            recovery_progress,
             cancel,
         )
         .await?

@@ -55,7 +55,9 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_holder::recovery_guard::{ActiveRecoveries, ShardRecoveryGuard};
+use crate::shards::shard_holder::recovery_guard::{
+    ActiveRecoveries, RecoveryProgressHandle, ShardRecoveryGuard,
+};
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
@@ -1237,6 +1239,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
+        recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
         if !self.contains_shard(shard_id) {
@@ -1252,8 +1255,9 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         // Set unpacking stage
-        self.active_recoveries
-            .set_stage(shard_id, RecoveryStage::Unpacking);
+        if let Some(recovery_progress) = &recovery_progress {
+            recovery_progress.lock().set_stage(RecoveryStage::Unpacking);
+        }
 
         let extract = {
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
@@ -1293,8 +1297,9 @@ impl ShardHolder {
         extract.await??;
 
         // Set restoring stage
-        self.active_recoveries
-            .set_stage(shard_id, RecoveryStage::Restoring);
+        if let Some(recovery_progress) = &recovery_progress {
+            recovery_progress.lock().set_stage(RecoveryStage::Restoring);
+        }
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
