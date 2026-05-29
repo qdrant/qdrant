@@ -62,12 +62,21 @@ def test_resharding_down_abort_converges_when_killed_mid_abort(tmp_path: pathlib
     alive_uri = peer_uris[next(i for i in range(len(peer_uris)) if i != victim_idx)]
     victim_uri = peer_uris[victim_idx]
 
-    # Wait until the victim itself has the transfer, so a later "gone" means the
-    # abort window, not a peer that simply hasn't applied the transfer start yet.
-    wait_for(
-        lambda: _resharding_transfer_source(get_collection_cluster_info(victim_uri, COLLECTION)) == from_peer_id,
-        wait_for_interval=0.05,
-    )
+    # Wait until BOTH the abort target and the victim have applied the transfer
+    # start. alive_uri must have it: the abort_transfer request below checks
+    # `check_transfer_exists` against alive_uri's *local* state and returns 404 if
+    # the transfer-start hasn't replicated there yet — and the fire-and-forget
+    # thread swallows that 404, so the transfer would just complete naturally and
+    # the abort window would never open. The victim must have it so that a later
+    # "gone" means the abort window, not a peer that simply hasn't applied the
+    # transfer start yet.
+    def _both_have_transfer() -> bool:
+        return all(
+            _resharding_transfer_source(get_collection_cluster_info(uri, COLLECTION)) == from_peer_id
+            for uri in (alive_uri, victim_uri)
+        )
+
+    wait_for(_both_have_transfer, wait_for_interval=0.05)
 
     # Fire-and-forget: the debug sleep makes the synchronous abort wait time out, but
     # the op still commits and applies on every peer.
