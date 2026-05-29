@@ -31,7 +31,7 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
 
     directory: PathBuf,
 
-    _marker: std::marker::PhantomData<fn() -> S>,
+    _marker: std::marker::PhantomData<S>,
 }
 
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
