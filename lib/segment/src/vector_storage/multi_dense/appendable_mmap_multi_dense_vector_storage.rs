@@ -409,6 +409,9 @@ pub fn open_appendable_memmap_vector_storage(
             madvise,
             populate,
         ),
+        VectorStorageDatatype::Turbo4 => {
+            unimplemented!("turbo4 datatype storage not yet wired up")
+        }
     }
 }
 
@@ -446,6 +449,9 @@ pub fn open_appendable_memmap_multi_vector_storage(
             madvise,
             populate,
         ),
+        VectorStorageDatatype::Turbo4 => {
+            unimplemented!("turbo4 datatype storage not yet wired up")
+        }
     }
 }
 

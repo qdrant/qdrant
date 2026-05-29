@@ -65,6 +65,16 @@ where
     Err(err)
 }
 
+/// Build the `ValidationError` for a sparse vector configured with the
+/// `Turbo4` datatype. Shared between REST and gRPC validators.
+pub fn sparse_turbo4_unsupported_error() -> ValidationError {
+    let mut err = ValidationError::new("unsupported_sparse_datatype");
+    err.message = Some(Cow::Borrowed(
+        "sparse vectors do not support the `turbo4` datatype",
+    ));
+    err
+}
+
 /// Validate that `value` is a non-empty string.
 pub fn validate_not_empty(value: &str) -> Result<(), ValidationError> {
     if value.is_empty() {

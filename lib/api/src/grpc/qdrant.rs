@@ -700,6 +700,7 @@ pub struct HnswConfigDiff {
     #[prost(bool, optional, tag = "7")]
     pub inline_storage: ::core::option::Option<bool>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SparseIndexConfig {
@@ -712,6 +713,7 @@ pub struct SparseIndexConfig {
     pub on_disk: ::core::option::Option<bool>,
     /// Datatype used to store weights in the index.
     #[prost(enumeration = "Datatype", optional, tag = "3")]
+    #[validate(custom(function = "crate::grpc::validate::validate_sparse_datatype"))]
     pub datatype: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
@@ -2021,6 +2023,7 @@ pub enum Datatype {
     Float32 = 1,
     Uint8 = 2,
     Float16 = 3,
+    Turbo4 = 4,
 }
 impl Datatype {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2033,6 +2036,7 @@ impl Datatype {
             Self::Float32 => "Float32",
             Self::Uint8 => "Uint8",
             Self::Float16 => "Float16",
+            Self::Turbo4 => "Turbo4",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2042,6 +2046,7 @@ impl Datatype {
             "Float32" => Some(Self::Float32),
             "Uint8" => Some(Self::Uint8),
             "Float16" => Some(Self::Float16),
+            "Turbo4" => Some(Self::Turbo4),
             _ => None,
         }
     }
@@ -5387,7 +5392,7 @@ pub struct DenseVectorCreationConfig {
     /// Configuration for multi-vector search (e.g., ColBERT)
     #[prost(message, optional, tag = "3")]
     pub multivector_config: ::core::option::Option<MultiVectorConfig>,
-    /// Data type of the vectors (Float32, Float16, Uint8)
+    /// Data type of the vectors (Float32, Float16, Uint8, Turbo4)
     #[prost(enumeration = "Datatype", optional, tag = "4")]
     pub datatype: ::core::option::Option<i32>,
 }
@@ -5402,6 +5407,7 @@ pub struct SparseVectorCreationConfig {
     pub modifier: ::core::option::Option<i32>,
     /// Data type used to store weights in the index
     #[prost(enumeration = "Datatype", optional, tag = "2")]
+    #[validate(custom(function = "crate::grpc::validate::validate_sparse_datatype"))]
     pub datatype: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
