@@ -89,7 +89,7 @@ impl SearchScratchArena {
         }
 
         for vec in self.0.iter_mut() {
-            vec.clear();
+            *vec = AVec::new(1);
         }
     }
 }

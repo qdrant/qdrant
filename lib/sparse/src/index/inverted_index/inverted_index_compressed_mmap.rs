@@ -292,6 +292,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
                 .map(|p| p.view(&hw_counter).store_size().total)
                 .sum::<usize>();
         let file_path = Self::index_file_path(path.as_ref());
+        // TODO(uio): use UIO for writing as well.
         let file = create_and_ensure_length(file_path.as_ref(), file_length)?;
 
         let mut buf = BufWriter::new(file);

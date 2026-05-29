@@ -69,7 +69,7 @@ impl InvertedIndex for InvertedIndexRam {
         self.postings.len()
     }
 
-    fn posting_list_len(&self, id: DimId, _hw_counter: &HardwareCounterCell) -> Result<usize> {
+    fn posting_list_len(&self, id: DimOffset, _hw_counter: &HardwareCounterCell) -> Result<usize> {
         Ok(self.get(id)?.elements.len())
     }
 
