@@ -5,8 +5,8 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::Encodable;
-use super::super::mmap_numeric_index::UniversalNumericIndex;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
+use super::super::universal_numeric_index::UniversalNumericIndex;
 use super::{ImmutableNumericIndex, NumericKeySortedVec};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;

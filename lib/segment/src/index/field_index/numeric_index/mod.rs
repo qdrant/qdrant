@@ -2,7 +2,6 @@ mod builders;
 mod encodable;
 pub mod immutable_numeric_index;
 mod lifecycle;
-pub mod mmap_numeric_index;
 pub mod mutable_numeric_index;
 mod numeric_field_index;
 pub mod numeric_index_read;
@@ -10,6 +9,7 @@ mod query;
 mod read_only;
 mod read_ops;
 mod storage;
+pub mod universal_numeric_index;
 mod value_indexer;
 
 use std::marker::PhantomData;

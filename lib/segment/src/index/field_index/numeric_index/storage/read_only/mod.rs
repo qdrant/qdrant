@@ -2,8 +2,8 @@ use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use super::super::Encodable;
-use super::super::mmap_numeric_index::UniversalNumericIndex;
 use super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
+use super::super::universal_numeric_index::UniversalNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 
