@@ -4,12 +4,13 @@ use std::path::PathBuf;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use gridstore::Blob;
 use serde_json::Value;
 
-use super::universal_numeric_index::UniversalNumericIndex;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use super::storage::NumericIndexInner;
+use super::universal_numeric_index::UniversalNumericIndex;
 use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::numeric_point::Numericable;
@@ -123,6 +124,7 @@ where
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         let inner = UniversalNumericIndex::build(
+            &MmapFs,
             self.in_memory_index,
             &self.path,
             self.is_on_disk,

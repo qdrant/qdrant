@@ -9,8 +9,8 @@ use gridstore::{Blob, Gridstore};
 
 use super::super::Encodable;
 use super::super::lifecycle::{HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
-use super::super::universal_numeric_index::UniversalNumericIndex;
 use super::super::numeric_index_read::NumericIndexRead;
+use super::super::universal_numeric_index::UniversalNumericIndex;
 use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
