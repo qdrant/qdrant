@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::assert_matches;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -99,7 +100,7 @@ fn test_not_found() {
     let file = BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "does-not-exist")
         .expect("open builds the store without IO");
     let err = file.read_whole::<u8>().unwrap_err();
-    assert!(matches!(err, UniversalIoError::NotFound { .. }));
+    assert_matches!(err, UniversalIoError::NotFound { .. });
 }
 
 #[test]

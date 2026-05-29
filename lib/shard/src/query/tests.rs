@@ -1,3 +1,5 @@
+use std::assert_matches;
+
 use ahash::AHashSet;
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::OperationError;
@@ -495,10 +497,10 @@ fn test_detect_max_depth() {
     assert_eq!(request.prefetches_depth(), 65);
 
     // assert error
-    assert!(matches!(
+    assert_matches!(
         PlannedQuery::try_from(vec![request]),
         Err(OperationError::ValidationError { description }) if description == "prefetches depth 65 exceeds max depth 64",
-    ));
+    );
 }
 
 fn dummy_core_prefetch(limit: usize) -> ShardPrefetch {

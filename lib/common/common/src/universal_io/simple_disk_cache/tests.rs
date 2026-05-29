@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -165,7 +166,7 @@ mod tests_mod {
             .unwrap();
         let start = start as usize;
         let end = start + len as usize;
-        assert!(matches!(bytes, Cow::Borrowed(_)));
+        assert_matches!(bytes, Cow::Borrowed(_));
         assert_eq!(bytes.as_ref(), &scn.data[start..end]);
     }
 

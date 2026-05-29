@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::collections::Bound::{Excluded, Included, Unbounded};
@@ -125,7 +126,7 @@ pub fn test_range_by_cardinality(histogram: &Histogram<f64>) {
     let to = histogram.get_range_by_size(from, range_size);
     let estimation = histogram.estimate(from, to);
     eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-    assert!(matches!(to, Unbounded));
+    assert_matches!(to, Unbounded);
 }
 
 pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Point<f64>>) {

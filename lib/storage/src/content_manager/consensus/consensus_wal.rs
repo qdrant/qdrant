@@ -400,6 +400,8 @@ fn into_raft_result<T>(result: Result<Option<T>, StorageError>) -> raft::Result<
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use raft::eraftpb::Entry;
 
     use super::*;
@@ -484,10 +486,10 @@ mod tests {
         }];
 
         // Some errors can't be corrected
-        assert!(matches!(
+        assert_matches!(
             wal.append_entries(broken_entry),
             Err(StorageError::ServiceError { .. })
-        ));
+        );
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -97,10 +98,10 @@ async fn test_hw_metrics_cancellation() {
             .await;
 
         // Ensure we triggered a timeout and the search didn't exit too early.
-        assert!(matches!(
+        assert_matches!(
             search_res.unwrap_err(),
             CollectionError::Timeout { description: _ }
-        ));
+        );
     }
 
     // Cancellation and draining hardware counters is asynchronous on CI runners.

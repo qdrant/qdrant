@@ -763,6 +763,7 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Op
 mod tests {
     #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
+    use std::assert_matches;
     use std::sync::atomic::AtomicBool;
 
     use ahash::AHashSet;
@@ -995,7 +996,7 @@ mod tests {
             HwMeasurementAcc::new(),
             DeferredBehavior::Exclude,
         );
-        assert!(matches!(records, Err(OperationError::Timeout { .. })));
+        assert_matches!(records, Err(OperationError::Timeout { .. }));
     }
 
     #[test]
