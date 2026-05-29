@@ -99,26 +99,26 @@ impl TurboQuantizer {
     /// regardless of whether the encoded vectors are stored in RAM or mmap.
     pub(crate) fn heap_size_bytes(&self) -> usize {
         let Self {
-            rotation,
+            rotation: _,
             bits: _,
             mode: _,
             distance: _,
             padded_dim: _,
             error_correction,
         } = self;
-        rotation.heap_size_bytes()
-            + error_correction.as_ref().map_or(0, |ec| {
-                let ErrorCorrection {
-                    shift,
-                    scale,
-                    d_prime_sq_i16,
-                    weight_scale: _,
-                    mm_const: _,
-                } = ec;
-                shift.capacity() * size_of::<f32>()
-                    + scale.capacity() * size_of::<f32>()
-                    + d_prime_sq_i16.capacity() * size_of::<i16>()
-            })
+
+        error_correction.as_ref().map_or(0, |ec| {
+            let ErrorCorrection {
+                shift,
+                scale,
+                d_prime_sq_i16,
+                weight_scale: _,
+                mm_const: _,
+            } = ec;
+            shift.capacity() * size_of::<f32>()
+                + scale.capacity() * size_of::<f32>()
+                + d_prime_sq_i16.capacity() * size_of::<i16>()
+        })
     }
 
     /// Initialize a new TurboQuantizer.
