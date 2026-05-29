@@ -292,6 +292,7 @@ pub enum PyVectorStorageDatatype {
     Float32,
     Float16,
     Uint8,
+    Turbo4,
 }
 
 #[pymethods]
@@ -307,6 +308,7 @@ impl Repr for PyVectorStorageDatatype {
             Self::Float32 => "Float32",
             Self::Float16 => "Float16",
             Self::Uint8 => "Uint8",
+            Self::Turbo4 => "Turbo4",
         };
 
         f.simple_enum::<Self>(repr)
@@ -319,6 +321,7 @@ impl From<VectorStorageDatatype> for PyVectorStorageDatatype {
             VectorStorageDatatype::Float32 => PyVectorStorageDatatype::Float32,
             VectorStorageDatatype::Float16 => PyVectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8 => PyVectorStorageDatatype::Uint8,
+            VectorStorageDatatype::Turbo4 => PyVectorStorageDatatype::Turbo4,
         }
     }
 }
@@ -329,6 +332,7 @@ impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
             PyVectorStorageDatatype::Float32 => VectorStorageDatatype::Float32,
             PyVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
             PyVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
+            PyVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Turbo4,
         }
     }
 }
