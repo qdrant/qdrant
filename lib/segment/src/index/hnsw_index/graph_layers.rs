@@ -33,6 +33,7 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, read_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
+use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -621,31 +622,73 @@ impl GraphLayers {
     }
 }
 
+pub enum LoadOption<Fs: UniversalReadFs> {
+    /// Open as a mmap without populating it.
+    OnDiskMmap,
+    /// Load whole file into RAM using a generic backend.
+    RamFromUniversal { fs: Fs },
+}
+
+impl LoadOption<MmapFs> {
+    pub fn on_disk_mmap() -> Self {
+        Self::OnDiskMmap
+    }
+
+    pub fn ram_from_mmap() -> Self {
+        Self::RamFromUniversal { fs: MmapFs }
+    }
+}
+
 impl GraphLayers {
-    pub fn load(dir: &Path, on_disk: bool, compress: bool) -> OperationResult<Self> {
-        let graph_data: GraphLayerData = read_bin(&GraphLayers::get_path(dir))?;
+    pub fn load<Fs>(
+        dir: &Path,
+        load_option: LoadOption<Fs>,
+        compress: bool,
+    ) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs,
+    {
+        let graph_data_path = GraphLayers::get_path(dir);
+        let graph_data: GraphLayerData = match &load_option {
+            LoadOption::OnDiskMmap => read_bin(&graph_data_path)?,
+            LoadOption::RamFromUniversal { fs } => read_bin_via(fs, &graph_data_path)?,
+        };
 
         if compress {
+            // TODO: use `Fs` within this function? It writes data, and we don't have `UniversalWriteFs` yet.
+            //       It is not enabled as per `LINK_COMPRESSION_CONVERT_EXISTING` anyway.
             Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0))?;
         }
 
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: Self::load_links(dir, on_disk)?,
+            links: Self::load_links(dir, load_option)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
     }
 
-    fn load_links(dir: &Path, on_disk: bool) -> OperationResult<GraphLinks> {
+    fn load_links<Fs>(dir: &Path, load_option: LoadOption<Fs>) -> OperationResult<GraphLinks>
+    where
+        Fs: UniversalReadFs,
+    {
         for format in [
             GraphLinksFormat::CompressedWithVectors,
             GraphLinksFormat::Compressed,
             GraphLinksFormat::Plain,
         ] {
             let path = GraphLayers::get_links_path(dir, format);
-            if path.exists() {
-                return GraphLinks::load_from_file(&path, on_disk, format);
+            match &load_option {
+                LoadOption::OnDiskMmap => {
+                    if path.exists() {
+                        return GraphLinks::load_from_mmap(&path, format);
+                    }
+                }
+                LoadOption::RamFromUniversal { fs } => {
+                    if fs.exists(&path)? {
+                        return GraphLinks::load_from_universal_file(fs, &path, format);
+                    }
+                }
             }
         }
         Err(OperationError::service_error("No links file found"))
@@ -668,7 +711,8 @@ impl GraphLayers {
 
         let start = std::time::Instant::now();
 
-        let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
+        let links =
+            GraphLinks::load_from_universal_file(&MmapFs, &plain_path, GraphLinksFormat::Plain)?;
         let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
             let edges = links.to_edges();
@@ -862,7 +906,7 @@ mod tests {
         let res1 = search_in_graph(&query, top, &vector_holder, &graph1);
         drop(graph1);
 
-        let graph2 = GraphLayers::load(dir.path(), false, compress).unwrap();
+        let graph2 = GraphLayers::load(dir.path(), LoadOption::ram_from_mmap(), compress).unwrap();
         if compress {
             assert_eq!(graph2.links.format(), GraphLinksFormat::Compressed);
         } else {
