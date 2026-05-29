@@ -15,8 +15,8 @@ use qdrant_edge::{
     CreateVectorName, DeleteVectorName, DenseVectorConfig, Distance, EdgeConfig, EdgeShard,
     EdgeVectorParams, Modifier, NamedQuery, PointInsertOperations, PointOperations, PointStruct,
     QueryEnum, QueryRequest, ScoringQuery, SparseVector, SparseVectorConfig, UpdateOperation,
-    Vector, VectorInternal, VectorNameConfig, VectorNameOperations, Vectors,
-    WithPayloadInterface, WithVector,
+    Vector, VectorInternal, VectorNameConfig, VectorNameOperations, Vectors, WithPayloadInterface,
+    WithVector,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -59,10 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ])),
     ))?;
 
-    println!(
-        "Points after initial insert: {}",
-        shard.info().points_count
-    );
+    println!("Points after initial insert: {}", shard.info().points_count);
 
     // Verify search works on the default vector
     let results = shard.query(QueryRequest {
@@ -264,7 +261,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         with_vector: WithVector::Bool(false),
         with_payload: WithPayloadInterface::Bool(true),
     })?;
-    println!("Search on 'keywords' after reopen: {} results", results.len());
+    println!(
+        "Search on 'keywords' after reopen: {} results",
+        results.len()
+    );
     assert!(!results.is_empty());
 
     println!("\nDone!");
