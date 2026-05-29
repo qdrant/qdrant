@@ -5,6 +5,15 @@ mod read_ops;
 
 pub use self::lifecycle::ImmutableBoolIndexBuilder;
 
+/// Newtype wrapper that hides the writable builder API of
+/// [`MutableBoolIndex`][1] — same on-disk layout and same mmap-backed
+/// `RoaringFlags` storage, only the public surface is narrowed.
+///
+/// Distinct from [`ReadOnlyBoolIndex`][2], which is a separate stack bound to
+/// `UniversalRead` only.
+///
+/// [1]: super::mutable_bool_index::MutableBoolIndex
+/// [2]: super::read_only_bool_index::ReadOnlyBoolIndex
 pub struct ImmutableBoolIndex(pub(super) MutableBoolIndex);
 
 #[cfg(test)]
