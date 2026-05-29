@@ -20,9 +20,8 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
     ///
     /// [1]: super::super::mutable_null_index::MutableNullIndex::open
     pub fn open(fs: &S::Fs, path: &Path, total_point_count: usize) -> OperationResult<Self> {
-        let has_values_flags =
-            ReadOnlyRoaringFlags::open(fs, &path.join(HAS_VALUES_DIRNAME), false)?;
-        let is_null_flags = ReadOnlyRoaringFlags::open(fs, &path.join(IS_NULL_DIRNAME), false)?;
+        let has_values_flags = ReadOnlyRoaringFlags::open(fs, &path.join(HAS_VALUES_DIRNAME))?;
+        let is_null_flags = ReadOnlyRoaringFlags::open(fs, &path.join(IS_NULL_DIRNAME))?;
 
         Ok(Self {
             _base_dir: path.to_path_buf(),

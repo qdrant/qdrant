@@ -19,6 +19,28 @@ use crate::universal_io::{
     UniversalReadFs, UniversalWrite,
 };
 
+/// `IterOnes` view over a `BitSlice<u64, Lsb0>` — type alias so `self_cell`
+/// can refer to it as a single-lifetime type constructor.
+type IterOnesView<'a> = bitvec::slice::IterOnes<'a, BitStore, Lsb0>;
+
+self_cell::self_cell!(
+    /// Owns a `BitVec` and the `IterOnes` cursor over it, so an owned-path
+    /// `iter_ones()` can return without collecting set positions into a `Vec`.
+    struct OwnedOnes {
+        owner: BitVec,
+        #[covariant]
+        dependent: IterOnesView,
+    }
+);
+
+impl Iterator for OwnedOnes {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<u64> {
+        self.with_dependent_mut(|_, it| it.next()).map(|i| i as u64)
+    }
+}
+
 /// Number of bits per `BitStore` element.
 const BITS_PER_ELEMENT: u32 = BitStore::BITS;
 
@@ -149,20 +171,18 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// Iterate the bit indices of all set bits, in ascending order.
     ///
     /// Zero-copy on backends that support it (mmap): the iterator borrows the
-    /// mapped pages. Other backends materialize the set positions into a `Vec`
-    /// first. Reads the whole storage including any trailing capacity, so
-    /// callers that keep unused capacity cleared get back exactly their set
-    /// positions.
-    pub fn iter_set_bits(&self) -> Result<impl Iterator<Item = u64> + '_> {
-        Ok(match self.read_all()? {
+    /// mapped pages. On owned-read backends the iterator carries the materialized
+    /// `BitVec` alongside its `IterOnes` cursor via [`OwnedOnes`], so no
+    /// intermediate `Vec` of set positions is allocated. Reads the whole storage
+    /// including any trailing capacity, so callers that keep unused capacity
+    /// cleared get back exactly their set positions.
+    pub fn iter_ones(&self) -> Result<impl Iterator<Item = u64> + '_> {
+        let cow_bitslice = self.read_all()?;
+        let iter = match cow_bitslice {
             Cow::Borrowed(bitslice) => Either::Left(bitslice.iter_ones().map(|i| i as u64)),
-            Cow::Owned(bitvec) => {
-                // Owned path: backend doesn't support zero-copy; materialize
-                // into a Vec so we don't return a reference to a local.
-                let indices: Vec<u64> = bitvec.iter_ones().map(|i| i as u64).collect();
-                Either::Right(indices.into_iter())
-            }
-        })
+            Cow::Owned(bitvec) => Either::Right(OwnedOnes::new(bitvec, |bv| bv.iter_ones())),
+        };
+        Ok(iter)
     }
 
     /// Get a single bit at the given bit index.
@@ -614,5 +634,20 @@ mod tests {
         assert_eq!(bs.len(), storage.bit_len() as usize);
         // With mmap backend, read_all returns Cow::Borrowed (zero-copy)
         assert!(matches!(bs, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_owned_ones_walks_all_set_bits() {
+        // The owned path of `iter_ones` carries the BitVec alongside its
+        // IterOnes cursor via OwnedOnes. Verify the cursor actually advances
+        // and yields every set position — coszio's retracted from_fn shape
+        // failed this exact test (it re-yielded the first set bit forever).
+        let mut bv: BitVec = BitVec::repeat(false, 200);
+        for i in [1u64, 3, 4, 64, 65, 199] {
+            bv.set(i as usize, true);
+        }
+        let iter = OwnedOnes::new(bv, |bv| bv.iter_ones());
+        let collected: Vec<u64> = iter.collect();
+        assert_eq!(collected, vec![1, 3, 4, 64, 65, 199]);
     }
 }

@@ -284,7 +284,7 @@ where
     pub fn iter_trues(&self) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
         // Unused capacity past `len` is always cleared, so iterating set bits
         // over the whole storage yields exactly the "true" positions.
-        Ok(self.flags.iter_set_bits()?.map(|i| i as PointOffsetType))
+        Ok(self.flags.iter_ones()?.map(|i| i as PointOffsetType))
     }
 
     /// Populate all pages in the mmap.
