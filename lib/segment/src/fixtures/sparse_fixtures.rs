@@ -118,9 +118,9 @@ macro_rules! fixture_for_all_indices {
             ::sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam<f32>
         >($($args)*);
 
-        eprintln!("InvertedIndexCompressedMmap<f32>");
+        eprintln!("InvertedIndexCompressedMmap<f32, MmapFile>");
         $test::<
-            ::sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap<f32>
+            ::sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap<f32, MmapFile>
         >($($args)*);
     };
 }

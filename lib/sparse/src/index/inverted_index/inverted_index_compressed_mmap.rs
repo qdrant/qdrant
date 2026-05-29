@@ -14,9 +14,7 @@ use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    MmapFile, OpenOptions, Populate, Result, UniversalRead, UniversalReadFs,
-};
+use common::universal_io::{OpenOptions, Populate, Result, UniversalRead, UniversalReadFs};
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
@@ -57,7 +55,7 @@ pub struct InvertedIndexFileHeader {
 
 /// Inverted flatten index from dimension id to posting list
 #[derive(Debug)]
-pub struct InvertedIndexCompressedMmap<W, S: UniversalRead = MmapFile> {
+pub struct InvertedIndexCompressedMmap<W, S: UniversalRead> {
     path: PathBuf,
     storage: S,
     pub file_header: InvertedIndexFileHeader,
@@ -419,6 +417,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
 #[cfg(test)]
 mod tests {
+    use common::universal_io::MmapFile;
     use tempfile::Builder;
 
     use super::*;
@@ -501,7 +500,8 @@ mod tests {
             compare_indexes(&inverted_index_ram, &inverted_index_mmap);
         }
         let index =
-            InvertedIndexCompressedMmap::<W>::load(&Default::default(), &tmp_dir_path).unwrap();
+            InvertedIndexCompressedMmap::<W, MmapFile>::load(&Default::default(), &tmp_dir_path)
+                .unwrap();
         // posting_count: 0th entry is always empty + 1st + 2nd + 3rd + 4th empty + 5th
         assert_eq!(index.file_header.posting_count, 6);
         assert_eq!(index.file_header.vector_count, 9);

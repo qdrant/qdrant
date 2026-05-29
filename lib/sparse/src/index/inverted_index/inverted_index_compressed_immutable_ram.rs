@@ -23,17 +23,19 @@ pub struct InvertedIndexCompressedImmutableRam<W: Weight> {
     pub(super) total_sparse_size: usize,
 }
 
+type Storage = common::universal_io::MmapFile;
+
 impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     type Iter<'a> = CompressedPostingListIterator<'a, W>;
 
-    type Version = <InvertedIndexCompressedMmap<W> as InvertedIndex>::Version;
+    type Version = <InvertedIndexCompressedMmap<W, Storage> as InvertedIndex>::Version;
 
     fn is_on_disk(&self) -> bool {
         false
     }
 
     fn open(path: &Path) -> Result<Self> {
-        let mmap_inverted_index = InvertedIndexCompressedMmap::<W>::load(&MmapFs, path)?;
+        let mmap_inverted_index = InvertedIndexCompressedMmap::<W, Storage>::load(&MmapFs, path)?;
         let mut inverted_index = InvertedIndexCompressedImmutableRam {
             postings: Vec::with_capacity(mmap_inverted_index.file_header.posting_count),
             vector_count: mmap_inverted_index.file_header.vector_count,
@@ -55,7 +57,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     }
 
     fn save(&self, path: &Path) -> Result<()> {
-        InvertedIndexCompressedMmap::<W>::convert_and_save(&MmapFs, self, path)?;
+        InvertedIndexCompressedMmap::<W, Storage>::convert_and_save(&MmapFs, self, path)?;
         Ok(())
     }
 
@@ -77,12 +79,12 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     }
 
     fn files(path: &Path) -> Vec<std::path::PathBuf> {
-        InvertedIndexCompressedMmap::<W>::files(path)
+        InvertedIndexCompressedMmap::<W, Storage>::files(path)
     }
 
     fn immutable_files(path: &Path) -> Vec<std::path::PathBuf> {
         // `InvertedIndexCompressedImmutableRam` is always immutable
-        InvertedIndexCompressedMmap::<W>::immutable_files(path)
+        InvertedIndexCompressedMmap::<W, Storage>::immutable_files(path)
     }
 
     fn remove(&mut self, _id: PointOffsetType, _old_vector: RemappedSparseVector) {

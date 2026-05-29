@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::VERSION_FILE;
 use common::types::{PointOffsetType, TelemetryDetail};
+use common::universal_io::MmapFile;
 use fs_err as fs;
 use itertools::Itertools;
 use rand::SeedableRng;
@@ -222,7 +223,7 @@ fn sparse_vector_index_consistent_with_storage() {
     // create mmap sparse vector index
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
-    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
+    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
@@ -248,7 +249,7 @@ fn sparse_vector_index_consistent_with_storage() {
     // load index from memmap file
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
-    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
+    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
@@ -272,13 +273,14 @@ fn sparse_vector_index_consistent_with_storage() {
 #[test]
 fn sparse_vector_index_load_missing_mmap() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexCompressedMmap<f32>>> =
-        fixture_sparse_index_from_iter(
-            data_dir.path(),
-            [].iter().cloned(),
-            10_000,
-            SparseIndexType::Mmap,
-        );
+    let sparse_vector_index: OperationResult<
+        SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>>,
+    > = fixture_sparse_index_from_iter(
+        data_dir.path(),
+        [].iter().cloned(),
+        10_000,
+        SparseIndexType::Mmap,
+    );
     // absent configuration file for mmap are ignored
     // a new index is created
     assert!(sparse_vector_index.is_ok())

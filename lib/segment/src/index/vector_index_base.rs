@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use common::universal_io::MmapFile;
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::InvertedIndex;
@@ -95,9 +96,9 @@ pub enum VectorIndexEnum {
     SparseCompressedImmutableRamU8(
         SparseVectorIndex<InvertedIndexCompressedImmutableRam<QuantizedU8>>,
     ),
-    SparseCompressedMmapF32(SparseVectorIndex<InvertedIndexCompressedMmap<f32>>),
-    SparseCompressedMmapF16(SparseVectorIndex<InvertedIndexCompressedMmap<f16>>),
-    SparseCompressedMmapU8(SparseVectorIndex<InvertedIndexCompressedMmap<QuantizedU8>>),
+    SparseCompressedMmapF32(SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>>),
+    SparseCompressedMmapF16(SparseVectorIndex<InvertedIndexCompressedMmap<f16, MmapFile>>),
+    SparseCompressedMmapU8(SparseVectorIndex<InvertedIndexCompressedMmap<QuantizedU8, MmapFile>>),
 }
 
 impl VectorIndexEnum {

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use rand::{RngExt, SeedableRng};
 use tempfile::TempDir;
 
@@ -68,7 +69,7 @@ pub fn generate_sparse_index<W, R>(
     density: usize,
     vocab1: usize,
     vocab2: usize,
-) -> TestIndex<InvertedIndexCompressedMmap<W>>
+) -> TestIndex<InvertedIndexCompressedMmap<W, MmapFile>>
 where
     W: Weight + 'static,
     R: rand::Rng,
@@ -88,7 +89,7 @@ pub fn build_index<W>(
     density: usize,
     vocab1: usize,
     vocab2: usize,
-) -> TestIndex<InvertedIndexCompressedMmap<W>>
+) -> TestIndex<InvertedIndexCompressedMmap<W, MmapFile>>
 where
     W: Weight + 'static,
 {

@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use criterion::measurement::Measurement;
 use criterion::{Criterion, criterion_group, criterion_main};
 use dataset::Dataset;
@@ -162,7 +163,7 @@ pub fn run_bench(
 
             run_bench2(
                 c.benchmark_group(format!("search/mmap_{}/{name}", $name)),
-                &InvertedIndexCompressedMmap::<$type>::open(&index_path).unwrap(),
+                &InvertedIndexCompressedMmap::<$type, MmapFile>::open(&index_path).unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
@@ -269,7 +270,8 @@ fn cached_compressed_index<W: Weight>(index: &InvertedIndexRam, name: &str) -> P
             fs::remove_dir_all(&tmp_path).unwrap();
         }
         fs::create_dir_all(&tmp_path).unwrap();
-        InvertedIndexCompressedMmap::<W>::from_ram_index(Cow::Borrowed(index), &tmp_path).unwrap();
+        InvertedIndexCompressedMmap::<W, MmapFile>::from_ram_index(Cow::Borrowed(index), &tmp_path)
+            .unwrap();
         fs::rename(tmp_path, &path).unwrap();
     }
     eprintln!("Using cache: {path:?}");
