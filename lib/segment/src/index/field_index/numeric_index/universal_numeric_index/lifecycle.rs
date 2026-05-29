@@ -3,11 +3,11 @@ use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitSliceExt};
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate, TypedStorage};
+use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate, TypedStorage, read_json_via};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -121,8 +121,8 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             return Ok(None);
         }
 
-        let histogram = Histogram::<T>::load(path)?;
-        let config: UniversalNumericIndexConfig = read_json(&config_path)?;
+        let histogram = Histogram::<T>::load_via(&MmapFs, path)?;
+        let config: UniversalNumericIndexConfig = read_json_via(&MmapFs, &config_path)?;
         let do_populate = !is_on_disk;
 
         let pairs_options = OpenOptions {

@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 use serde_json::Value;
 
-use super::mmap_numeric_index::UniversalNumericIndex;
+use super::universal_numeric_index::UniversalNumericIndex;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use super::storage::NumericIndexInner;
 use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};

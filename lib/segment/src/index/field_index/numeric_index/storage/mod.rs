@@ -30,7 +30,7 @@ use gridstore::Blob;
 
 use super::Encodable;
 use super::immutable_numeric_index::ImmutableNumericIndex;
-use super::mmap_numeric_index::UniversalNumericIndex;
+use super::universal_numeric_index::UniversalNumericIndex;
 use super::mutable_numeric_index::MutableNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;

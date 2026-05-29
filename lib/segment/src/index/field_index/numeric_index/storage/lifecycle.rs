@@ -9,7 +9,7 @@ use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::immutable_numeric_index::ImmutableNumericIndex;
-use super::super::mmap_numeric_index::UniversalNumericIndex;
+use super::super::universal_numeric_index::UniversalNumericIndex;
 use super::super::mutable_numeric_index::MutableNumericIndex;
 use super::NumericIndexInner;
 use crate::common::Flusher;
