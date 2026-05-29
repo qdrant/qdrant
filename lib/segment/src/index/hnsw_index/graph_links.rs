@@ -7,6 +7,7 @@ use std::sync::Arc;
 use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting, Madviseable, open_read_mmap};
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalReadFs, read_whole_via};
 use memmap2::Mmap;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -215,12 +216,23 @@ impl GraphLinksEnum {
 }
 
 impl GraphLinks {
-    pub fn load_from_file(
+    pub fn load_from_universal_file<F>(
+        fs: &F,
         path: &Path,
-        on_disk: bool,
         format: GraphLinksFormat,
-    ) -> OperationResult<Self> {
-        let populate = !on_disk;
+    ) -> OperationResult<Self>
+    where
+        F: UniversalReadFs,
+    {
+        let bytes = read_whole_via(fs, path, |bytes| Ok(bytes.into_owned()))?;
+
+        Self::try_new(GraphLinksEnum::Ram(bytes), |x| {
+            GraphLinksView::load(x.as_bytes(), format)
+        })
+    }
+
+    pub fn load_from_mmap(path: &Path, format: GraphLinksFormat) -> OperationResult<Self> {
+        let populate = false;
         let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
         Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
             GraphLinksView::load(x.as_bytes(), format)
@@ -499,7 +511,7 @@ mod tests {
         })
         .unwrap();
 
-        let cmp_links = GraphLinks::load_from_file(&links_file, true, format).unwrap();
+        let cmp_links = GraphLinks::load_from_mmap(&links_file, format).unwrap();
         check_links(links, &cmp_links, &vectors);
     }
 

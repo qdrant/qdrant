@@ -225,7 +225,7 @@ impl GraphLayersBuilder {
             atomic_save(&links_path, |writer| {
                 serialize_graph_links(edges, format_param, self.hnsw_m, writer)
             })?;
-            links = GraphLinks::load_from_file(&links_path, true, format_param.as_format())?;
+            links = GraphLinks::load_from_mmap(&links_path, format_param.as_format())?;
         } else {
             // Since we'll keep it in the RAM anyway, we can afford to build in the RAM too.
             links = GraphLinks::new_from_edges(edges, format_param, self.hnsw_m)?;

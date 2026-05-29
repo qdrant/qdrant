@@ -9,6 +9,9 @@ pub enum UniversalIoError {
     #[error(transparent)]
     Mmap(#[from] crate::mmap::Error),
 
+    #[error(transparent)]
+    Bincode(#[from] bincode::Error),
+
     #[error("Bytemuck cast error: {0:?}")]
     BytemuckCast(bytemuck::PodCastError),
 

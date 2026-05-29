@@ -156,7 +156,8 @@ impl From<UniversalIoError> for OperationError {
             UniversalIoError::Io(err) => Self::from(err),
             UniversalIoError::Mmap(err) => Self::from(err),
 
-            UniversalIoError::BytemuckCast(_)
+            UniversalIoError::Bincode(_)
+            | UniversalIoError::BytemuckCast(_)
             | UniversalIoError::ZerocopySize(_)
             | UniversalIoError::IoUringNotSupported(_)
             | UniversalIoError::NotFound { .. }
