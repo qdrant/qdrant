@@ -1,39 +1,17 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::MmapFs;
 use fs_err as fs;
 
-use super::read_ops::{self, BoolIndexRead};
+use super::super::read_ops::BoolIndexRead;
+use super::{FALSES_DIRNAME, MutableBoolIndex, Storage, TRUES_DIRNAME};
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::flags::roaring_flags::{RoaringFlags, RoaringFlagsRead};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::{
-    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexRead, ValueIndexer,
-};
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::types::{FieldCondition, PayloadKeyType};
-
-pub(super) const TRUES_DIRNAME: &str = "trues";
-pub(super) const FALSES_DIRNAME: &str = "falses";
-
-/// Payload index for boolean values, in-memory via roaring bitmaps, stored in memory-mapped bitslices.
-pub struct MutableBoolIndex {
-    base_dir: PathBuf,
-    indexed_count: usize,
-    trues_count: usize,
-    falses_count: usize,
-    storage: Storage<MmapFile>,
-}
-
-struct Storage<S: common::universal_io::UniversalRead> {
-    trues_flags: RoaringFlags<S>,
-    falses_flags: RoaringFlags<S>,
-}
+use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 
 impl MutableBoolIndex {
     pub fn builder(path: &Path) -> OperationResult<MutableBoolIndexBuilder> {
@@ -197,60 +175,6 @@ impl MutableBoolIndex {
     }
 }
 
-impl BoolIndexRead for MutableBoolIndex {
-    type Flags = RoaringFlags<MmapFile>;
-
-    fn trues_flags(&self) -> &Self::Flags {
-        &self.storage.trues_flags
-    }
-
-    fn falses_flags(&self) -> &Self::Flags {
-        &self.storage.falses_flags
-    }
-
-    fn indexed_count(&self) -> usize {
-        self.indexed_count
-    }
-
-    fn telemetry_index_type(&self) -> &'static str {
-        "mmap_bool"
-    }
-
-    // Override the default impls to use precomputed counts maintained by the
-    // write path, avoiding a bitmap scan on every read.
-    fn trues_count(&self) -> usize {
-        self.trues_count
-    }
-
-    fn falses_count(&self) -> usize {
-        self.falses_count
-    }
-}
-
-pub struct MutableBoolIndexBuilder(MutableBoolIndex);
-
-impl FieldIndexBuilderTrait for MutableBoolIndexBuilder {
-    type FieldIndexType = MutableBoolIndex;
-
-    fn init(&mut self) -> OperationResult<()> {
-        // After Self is created, it is already initialized
-        Ok(())
-    }
-
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&serde_json::Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
-    }
-
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(self.0)
-    }
-}
-
 impl ValueIndexer for MutableBoolIndex {
     type ValueType = bool;
 
@@ -326,70 +250,26 @@ impl PayloadFieldIndex for MutableBoolIndex {
     }
 }
 
-impl PayloadFieldIndexRead for MutableBoolIndex {
-    fn count_indexed_points(&self) -> usize {
-        self.indexed_count()
+pub struct MutableBoolIndexBuilder(MutableBoolIndex);
+
+impl FieldIndexBuilderTrait for MutableBoolIndexBuilder {
+    type FieldIndexType = MutableBoolIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        // After Self is created, it is already initialized
+        Ok(())
     }
 
-    fn filter<'a>(
-        &'a self,
-        condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        Ok(read_ops::filter(self, condition, hw_counter))
-    }
-
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&serde_json::Value],
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(read_ops::estimate_cardinality(self, condition, hw_counter))
-    }
-
-    fn for_each_payload_block(
-        &self,
-        threshold: usize,
-        key: PayloadKeyType,
-        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        read_ops::for_each_payload_block(self, threshold, key, f)
+        self.0.add_point(id, payload, hw_counter)
     }
 
-    fn condition_checker<'a>(
-        &'a self,
-        condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        read_ops::condition_checker(self, condition, hw_acc)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use tempfile::TempDir;
-    use walkdir::WalkDir;
-
-    use super::MutableBoolIndex;
-    use crate::index::field_index::PayloadFieldIndex;
-
-    #[test]
-    fn test_files() {
-        let dir = TempDir::with_prefix("test_mmap_bool_index").unwrap();
-        let index = MutableBoolIndex::open(dir.path(), true).unwrap().unwrap();
-
-        let reported = index.files().into_iter().collect::<HashSet<_>>();
-
-        let actual = WalkDir::new(dir.path())
-            .into_iter()
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                entry.path().is_file().then_some(entry.into_path())
-            })
-            .collect::<HashSet<_>>();
-
-        assert_eq!(reported, actual);
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(self.0)
     }
 }
