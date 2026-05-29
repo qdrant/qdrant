@@ -41,6 +41,10 @@ mod reexports_from_qdrant_crates {
         PointInsertOperationsInternal as PointInsertOperations, PointOperations,
         PointSyncOperation, UpdateMode,
     };
+    pub use shard::operations::vector_name_ops::{
+        CreateVectorName, DeleteVectorName, DenseVectorConfig, SparseVectorConfig,
+        VectorNameConfig, VectorNameOperations,
+    };
     pub use shard::operations::vector_ops::{UpdateVectorsOp, VectorOperations};
     pub use shard::operations::{
         CollectionUpdateOperations as UpdateOperation, CreateIndex, FieldIndexOperations,
