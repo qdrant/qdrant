@@ -1,13 +1,14 @@
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 use segment::common::operation_error::OperationResult;
 use segment::index::field_index::numeric_index::NumericIndexRead;
-use segment::index::field_index::numeric_index::mmap_numeric_index::UniversalNumericIndex;
 use segment::index::field_index::numeric_index::mutable_numeric_index::InMemoryNumericIndex;
+use segment::index::field_index::numeric_index::universal_numeric_index::UniversalNumericIndex;
 use tempfile::Builder;
 
 mod prof;
@@ -56,8 +57,14 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         })
     });
 
-    let mmap_index =
-        UniversalNumericIndex::build(mutable_index, dir.path(), false, &deleted_points).unwrap();
+    let mmap_index = UniversalNumericIndex::<_, MmapFile>::build(
+        &MmapFs,
+        mutable_index,
+        dir.path(),
+        false,
+        &deleted_points,
+    )
+    .unwrap();
 
     group.bench_function("mmap-numeric-index", |b| {
         b.iter(|| {
