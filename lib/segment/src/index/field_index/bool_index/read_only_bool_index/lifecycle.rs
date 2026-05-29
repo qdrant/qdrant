@@ -21,8 +21,8 @@ impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
     ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
     pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
-        let trues_flags = ReadOnlyRoaringFlags::open(fs, &path.join(TRUES_DIRNAME), false)?;
-        let falses_flags = ReadOnlyRoaringFlags::open(fs, &path.join(FALSES_DIRNAME), false)?;
+        let trues_flags = ReadOnlyRoaringFlags::open(fs, &path.join(TRUES_DIRNAME))?;
+        let falses_flags = ReadOnlyRoaringFlags::open(fs, &path.join(FALSES_DIRNAME))?;
 
         let indexed_count = trues_flags
             .get_bitmap()
