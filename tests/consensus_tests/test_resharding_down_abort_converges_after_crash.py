@@ -32,7 +32,11 @@ def test_resharding_down_abort_converges_when_killed_mid_abort(tmp_path: pathlib
 
     create_collection(peer_uris[0], collection=COLLECTION, shard_number=3, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(COLLECTION, peer_uris)
-    upsert_random_points(peer_uris[0], num=20_000, collection_name=COLLECTION)
+    # Batch the load: a single large `wait=true` upsert keeps a replica busy past
+    # the hardcoded 2s inter-node health-check under CI load, which fails the
+    # write with a transient "Healthcheck timeout 2000ms exceeded" before
+    # resharding even starts. 1000-point ops stay well under that threshold.
+    upsert_random_points(peer_uris[0], num=20_000, collection_name=COLLECTION, batch_size=1_000)
 
     resp = start_resharding(peer_uris[0], COLLECTION, direction="down", shard_key=None)
     assert_http_ok(resp)
