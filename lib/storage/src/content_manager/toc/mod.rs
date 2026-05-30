@@ -1,98 +1,76 @@
 mod collection_container;
+use common::types::TelemetryDetail;
 mod collection_meta_ops;
 mod create_collection;
-pub mod dispatcher;
+mod locks;
 mod point_ops;
-mod point_ops_internal;
-pub mod request_hw_counter;
-mod runtimes;
 mod snapshots;
-mod telemetry;
 mod temp_directories;
 pub mod transfer;
 
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::rest::models::HardwareUsage;
+use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
+use api::grpc::qdrant::WaitOnConsensusCommitRequest;
+use api::grpc::transport_channel_pool::AddTimeout;
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::common::adaptive_handle::{AdaptiveSearchHandle, SearchMode};
-use collection::config::{
-    CollectionConfigInternal, default_replication_factor, default_shard_number,
-};
+use collection::config::{default_replication_factor, CollectionConfig};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
-use collection::shards::replica_set::AbortShardTransfer;
-use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::replica_set;
+use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::{CollectionId, replica_set};
-use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwSharedDrain;
-use common::cpu::get_num_cpus;
-use common::fs::safe_delete_in_tmp;
-use dashmap::DashMap;
-use fs_err as fs;
-use fs_err::tokio as tokio_fs;
-use futures::{StreamExt, stream};
-use segment::data_types::collection_defaults::CollectionConfigDefaults;
-use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use collection::telemetry::CollectionTelemetry;
+use common::cpu::{get_num_cpus, CpuBudget};
+use futures::future::try_join_all;
+use futures::Future;
+use tokio::runtime::Runtime;
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
+use tonic::codegen::InterceptedService;
+use tonic::transport::Channel;
+use tonic::Status;
 
-use self::dispatcher::TocDispatcher;
-use crate::ConsensusOperations;
+use self::transfer::ShardTransferDispatcher;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::errors::{StorageError, StorageResult};
+use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::content_manager::toc::telemetry::TocTelemetryCollector;
-use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
-use crate::types::StorageConfig;
+use crate::rbac::{Access, AccessRequirements, CollectionPass};
+use crate::types::{PeerAddressById, StorageConfig};
+use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 
-/// How long to wait till deleted collection is released from previous operations
-pub const COLLECTION_DELETE_WAIT_TIMEOUT: Duration = Duration::from_secs(60 * 10); // 10 mins
-pub const COLLECTION_DELETE_SPIN_INTERVAL: Duration = Duration::from_millis(200);
-
 /// The main object of the service. It holds all objects, required for proper functioning.
-///
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
 /// the launch of the service.
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
-    pub(crate) storage_config: Arc<StorageConfig>,
-    /// Adaptive wrapper that routes search `spawn_blocking` calls between
-    /// the high-CPU and high-IO search runtimes based on process CPU usage.
-    adaptive_search_handle: AdaptiveSearchHandle,
-    /// Search runtime sized for CPU-bound load (`high_cpu_blocking_threads` in
-    /// TOC runtime setup — typically one blocking thread per CPU when
-    /// `max_search_threads` is unset). Owned here so the runtime outlives all
-    /// Handles routed through `adaptive_search_handle`.
-    _high_cpu_search_runtime: Runtime,
-    /// Search runtime sized for IO-bound load (`high_io_blocking_threads`,
-    /// which delegates to `common::defaults::search_thread_count`). Owned here
-    /// for the same reason as `_high_cpu_search_runtime`.
-    _high_io_search_runtime: Runtime,
+    pub(super) storage_config: Arc<StorageConfig>,
+    search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
-    optimizer_resource_budget: ResourceBudget,
+    optimizer_cpu_budget: CpuBudget,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
     /// Backlink to the consensus, if none - single node mode
     consensus_proposal_sender: Option<OperationSender>,
-    /// Dispatcher for access to table of contents and consensus, if none - single node mode
-    toc_dispatcher: parking_lot::Mutex<Option<TocDispatcher>>,
+    is_write_locked: AtomicBool,
+    lock_error_message: parking_lot::Mutex<Option<String>>,
     /// Prevent DDoS of too many concurrent updates in distributed mode.
     /// One external update usually triggers multiple internal updates, which breaks internal
     /// timings. For example, the health check timing and consensus timing.
@@ -102,10 +80,8 @@ pub struct TableOfContent {
     /// A lock to prevent concurrent collection creation.
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
-    /// Aggregation of all hardware measurements for each alias or collection config.
-    collection_hw_metrics: DashMap<CollectionId, Arc<HwSharedDrain>>,
-    /// Collector for various telemetry/metrics.
-    telemetry: TocTelemetryCollector,
+    /// Dispatcher for shard transfer to access consensus.
+    shard_transfer_dispatcher: parking_lot::Mutex<Option<ShardTransferDispatcher>>,
 }
 
 impl TableOfContent {
@@ -113,57 +89,32 @@ impl TableOfContent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
-        optimizer_resource_budget: ResourceBudget,
+        search_runtime: Runtime,
+        update_runtime: Runtime,
+        general_runtime: Runtime,
+        optimizer_cpu_budget: CpuBudget,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
-    ) -> StorageResult<Self> {
-        let collections_path = storage_config.storage_path.join(COLLECTIONS_DIR);
-        fs::create_dir_all(&collections_path)?;
+    ) -> Self {
+        let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
+        create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
+        let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
+        create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
-            fs::create_dir_all(path)?;
+            let temp_path = Path::new(path);
+            create_dir_all(temp_path).expect("Can't create temporary files directory");
         }
-
-        // Clean up stale temporary directories before loading collections.
-        // Must happen before WAL application to avoid interference from leftover
-        // temp files (e.g. interrupted snapshot transfers from a previous run).
-        temp_directories::clear_tmp_directories(storage_config)?;
-
-        // Build the runtimes. They must be constructed outside any async
-        // context so they can be dropped from a sync context without panic.
-        let max_search_threads = storage_config.performance.max_search_threads;
-        let high_cpu_search_runtime = runtimes::create_high_cpu_search_runtime(max_search_threads)
-            .map_err(|err| {
-                StorageError::service_error(format!("Can't create high-CPU search runtime: {err}"))
-            })?;
-        let high_io_search_runtime = runtimes::create_high_io_search_runtime(max_search_threads)
-            .map_err(|err| {
-                StorageError::service_error(format!("Can't create high-IO search runtime: {err}"))
-            })?;
-        let update_runtime = runtimes::create_update_runtime(
-            storage_config.performance.max_optimization_runtime_threads,
-        )
-        .map_err(|err| {
-            StorageError::service_error(format!("Can't create update runtime: {err}"))
-        })?;
-        let general_runtime = runtimes::create_general_purpose_runtime().map_err(|err| {
-            StorageError::service_error(format!("Can't create general purpose runtime: {err}"))
-        })?;
-
-        let adaptive_search_handle = AdaptiveSearchHandle::new(
-            high_cpu_search_runtime.handle().clone(),
-            high_io_search_runtime.handle().clone(),
-        );
-
-        let collection_paths = fs::read_dir(&collections_path)?;
+        let collection_paths =
+            read_dir(&collections_path).expect("Can't read Collections directory");
+        let mut collections: HashMap<String, Collection> = Default::default();
         let is_distributed = consensus_proposal_sender.is_some();
-
-        // Collect valid collection paths for loading
-        let mut collection_load_tasks = Vec::new();
         for entry in collection_paths {
-            let collection_path = entry?.path();
+            let collection_path = entry
+                .expect("Can't access of one of the collection files")
+                .path();
 
-            if !CollectionConfigInternal::check(&collection_path) {
+            if !CollectionConfig::check(&collection_path) {
                 log::warn!(
                     "Collection config is not found in the collection directory: {}, skipping",
                     collection_path.display(),
@@ -173,82 +124,49 @@ impl TableOfContent {
 
             let collection_name = collection_path
                 .file_name()
-                .and_then(|os_str| os_str.to_str())
-                .ok_or_else(|| {
-                    StorageError::service_error(format!(
-                        "Can't resolve a filename of one of the collection files: {collection_path:?}",
-                    ))
-                })?
+                .expect("Can't resolve a filename of one of the collection files")
+                .to_str()
+                .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
-
             let collection_snapshots_path =
-                Self::collection_snapshots_path(&storage_config.snapshots_path, &collection_name);
-
-            let consensus_proposal_sender = consensus_proposal_sender.clone();
-            let channel_service = channel_service.clone();
-            let storage_config = storage_config.clone();
-            let search_runtime_handle = adaptive_search_handle.clone();
-            let update_runtime_handle = update_runtime.handle().clone();
-            let optimizer_resource_budget = optimizer_resource_budget.clone();
-
-            collection_load_tasks.push(async move {
-                log::info!("Loading collection: {collection_name}");
-                let collection = Collection::load(
-                    collection_name.clone(),
-                    this_peer_id,
-                    &collection_path,
-                    &collection_snapshots_path,
-                    storage_config
-                        .to_shared_storage_config(is_distributed)
-                        .into(),
-                    channel_service,
-                    Self::change_peer_from_state_callback(
-                        consensus_proposal_sender.clone(),
-                        collection_name.clone(),
-                        ReplicaState::Dead,
-                    ),
-                    Self::request_shard_transfer_callback(
-                        consensus_proposal_sender.clone(),
-                        collection_name.clone(),
-                    ),
-                    Self::abort_shard_transfer_callback(
-                        consensus_proposal_sender.clone(),
-                        collection_name.clone(),
-                    ),
-                    Some(search_runtime_handle),
-                    Some(update_runtime_handle),
-                    optimizer_resource_budget,
-                    storage_config.optimizers_overwrite.clone(),
-                )
-                .await;
-                (collection_name.clone(), collection)
+                Self::collection_snapshots_path(&snapshots_path, &collection_name);
+            create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
+                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
             });
+            log::info!("Loading collection: {collection_name}");
+            let collection = general_runtime.block_on(Collection::load(
+                collection_name.clone(),
+                this_peer_id,
+                &collection_path,
+                &collection_snapshots_path,
+                storage_config
+                    .to_shared_storage_config(is_distributed)
+                    .into(),
+                channel_service.clone(),
+                Self::change_peer_state_callback(
+                    consensus_proposal_sender.clone(),
+                    collection_name.clone(),
+                    ReplicaState::Dead,
+                    None,
+                ),
+                Self::request_shard_transfer_callback(
+                    consensus_proposal_sender.clone(),
+                    collection_name.clone(),
+                ),
+                Self::abort_shard_transfer_callback(
+                    consensus_proposal_sender.clone(),
+                    collection_name.clone(),
+                ),
+                Some(search_runtime.handle().clone()),
+                Some(update_runtime.handle().clone()),
+                optimizer_cpu_budget.clone(),
+            ));
+
+            collections.insert(collection_name, collection);
         }
-
-        // Load collections with specified concurrency
-        let mut collection_stream = stream::iter(collection_load_tasks).buffer_unordered(
-            storage_config
-                .performance
-                .load_concurrency
-                .get_concurrent_collections()
-                .get(),
-        );
-
-        let mut collections: Collections = Default::default();
-        general_runtime.block_on(async {
-            while let Some((collection_name, collection)) = collection_stream.next().await {
-                collections.insert(collection_name, Arc::new(collection));
-            }
-        });
-
-        // Initialize snapshot telemetry for all loaded collections.
-        let telemetry = TocTelemetryCollector::default();
-        for collection_name in collections.keys() {
-            telemetry.init_snapshot_telemetry(collection_name);
-        }
-
-        let alias_path = storage_config.storage_path.join(ALIASES_PATH);
-        let alias_persistence = AliasPersistence::open(&alias_path)?;
+        let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
+        let alias_persistence =
+            AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
 
         let rate_limiter = match storage_config.performance.update_rate_limit {
             Some(limit) => Some(Semaphore::new(limit)),
@@ -267,25 +185,23 @@ impl TableOfContent {
             }
         };
 
-        Ok(TableOfContent {
+        TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
-            adaptive_search_handle,
-            _high_cpu_search_runtime: high_cpu_search_runtime,
-            _high_io_search_runtime: high_io_search_runtime,
+            search_runtime,
             update_runtime,
             general_runtime,
-            optimizer_resource_budget,
+            optimizer_cpu_budget,
             alias_persistence: RwLock::new(alias_persistence),
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
-            toc_dispatcher: Default::default(),
+            is_write_locked: AtomicBool::new(false),
+            lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
-            collection_hw_metrics: DashMap::new(),
-            telemetry,
-        })
+            shard_transfer_dispatcher: Default::default(),
+        }
     }
 
     /// Return `true` if service is working in distributed mode.
@@ -293,60 +209,19 @@ impl TableOfContent {
         self.consensus_proposal_sender.is_some()
     }
 
-    /// Currently active search mode (high_cpu / high_io).
-    pub fn search_pool_mode(&self) -> SearchMode {
-        self.adaptive_search_handle.current_mode()
-    }
-
-    /// Blocking-thread counts for the two search runtimes
-    /// (high_cpu, high_io).
-    pub fn search_pool_thread_counts(&self) -> (usize, usize) {
-        let max_search_threads = self.storage_config.performance.max_search_threads;
-        (
-            runtimes::high_cpu_blocking_threads(max_search_threads),
-            runtimes::high_io_blocking_threads(max_search_threads),
-        )
-    }
-
-    pub fn storage_path(&self) -> &Path {
+    pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
     }
 
     /// List of all collections to which the user has access
     pub async fn all_collections(&self, access: &Access) -> Vec<CollectionPass<'static>> {
-        self.all_collections_with_access_requirements(access, AccessRequirements::new())
-            .await
-    }
-
-    pub async fn all_collections_access(&self, access: &Access) -> Vec<CollectionPass<'static>> {
-        self.all_collections_with_access_requirements(access, AccessRequirements::new())
-            .await
-    }
-
-    pub async fn multipass_into_collections(
-        &self,
-        multipass: &CollectionMultipass,
-    ) -> Vec<CollectionPass<'static>> {
-        self.collections
-            .read()
-            .await
-            .keys()
-            .map(|name| multipass.issue_pass(name).into_static())
-            .collect()
-    }
-
-    async fn all_collections_with_access_requirements(
-        &self,
-        access: &Access,
-        access_requirements: AccessRequirements,
-    ) -> Vec<CollectionPass<'static>> {
         self.collections
             .read()
             .await
             .keys()
             .filter_map(|name| {
                 access
-                    .check_collection_access(name, access_requirements)
+                    .check_collection_access(name, AccessRequirements::new())
                     .ok()
                     .map(|pass| pass.into_static())
             })
@@ -366,28 +241,33 @@ impl TableOfContent {
     /// Intended for internal use only.
     ///
     /// **Do no make public**
-    async fn get_collection_unchecked(
+    pub(self) async fn get_collection_unchecked(
         &self,
         collection_name: &str,
-    ) -> Result<Arc<Collection>, StorageError> {
+    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
 
         let real_collection_name = {
             let alias_persistence = self.alias_persistence.read().await;
-            Self::resolve_name(collection_name, &read_collection, &alias_persistence)?
+            Self::resolve_name(collection_name, &read_collection, &alias_persistence).await?
         };
-
-        Ok(read_collection.get(&real_collection_name).unwrap().clone())
+        // resolve_name already checked collection existence, unwrap is safe here
+        Ok(RwLockReadGuard::map(read_collection, |collection| {
+            collection.get(&real_collection_name).unwrap()
+        }))
     }
 
-    pub async fn get_collection(
+    pub async fn get_collection<'a>(
         &self,
-        collection: &CollectionPass<'_>,
-    ) -> Result<Arc<Collection>, StorageError> {
+        collection: &CollectionPass<'a>,
+    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         self.get_collection_unchecked(collection.name()).await
     }
 
-    async fn get_collection_opt(&self, collection_name: String) -> Option<Arc<Collection>> {
+    async fn get_collection_opt(
+        &self,
+        collection_name: String,
+    ) -> Option<RwLockReadGuard<Collection>> {
         self.get_collection_unchecked(&collection_name).await.ok()
     }
 
@@ -404,7 +284,7 @@ impl TableOfContent {
     /// If the collection exists - return its name
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
-    fn resolve_name(
+    async fn resolve_name(
         collection_name: &str,
         collections: &Collections,
         aliases: &AliasPersistence,
@@ -415,19 +295,10 @@ impl TableOfContent {
             None => collection_name.to_string(),
             Some(resolved_alias) => resolved_alias,
         };
-        collections.validate_collection_exists(&resolved_name)?;
+        collections
+            .validate_collection_exists(&resolved_name)
+            .await?;
         Ok(resolved_name)
-    }
-
-    pub async fn all_collection_aliases(
-        &self,
-        collection_name: &str,
-        _multipass: &CollectionMultipass,
-    ) -> Vec<String> {
-        self.alias_persistence
-            .read()
-            .await
-            .collection_aliases(collection_name)
     }
 
     /// List of all aliases for a given collection
@@ -459,7 +330,7 @@ impl TableOfContent {
         for collection_pass in &all_collections {
             for alias in self.collection_aliases(collection_pass, access).await? {
                 aliases.push(AliasDescription {
-                    alias_name: alias.clone(),
+                    alias_name: alias.to_string(),
                     collection_name: collection_pass.to_string(),
                 });
             }
@@ -468,26 +339,16 @@ impl TableOfContent {
         Ok(aliases)
     }
 
-    pub fn suggest_shard_distribution(
+    pub async fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
-        collection_defaults: Option<&CollectionConfigDefaults>,
-        number_of_peers: usize,
+        suggested_shard_number: NonZeroU32,
     ) -> ShardDistributionProposal {
-        let non_zero_number_of_peers =
-            NonZeroU32::new(number_of_peers as u32).expect("NUmber of peers must be at least 1");
-
-        let suggested_shard_number = collection_defaults
-            .map(|cd| cd.get_shard_number(number_of_peers as u32))
-            .map(|x| NonZeroU32::new(x).expect("Shard number must be at least 1"))
-            .unwrap_or_else(|| default_shard_number().saturating_mul(non_zero_number_of_peers));
-
         let shard_number = op
             .create_collection
             .shard_number
             .and_then(NonZeroU32::new)
             .unwrap_or(suggested_shard_number);
-
         let mut known_peers_set: HashSet<_> = self
             .channel_service
             .id_to_address
@@ -497,17 +358,11 @@ impl TableOfContent {
             .collect();
         known_peers_set.insert(self.this_peer_id());
         let known_peers: Vec<_> = known_peers_set.into_iter().collect();
-
-        let suggested_replication_factor = collection_defaults
-            .and_then(|cd| cd.replication_factor)
-            .and_then(NonZeroU32::new)
-            .unwrap_or_else(default_replication_factor);
-
         let replication_factor = op
             .create_collection
             .replication_factor
             .and_then(NonZeroU32::new)
-            .unwrap_or(suggested_replication_factor);
+            .unwrap_or_else(default_replication_factor);
 
         let shard_distribution =
             ShardDistributionProposal::new(shard_number, replication_factor, &known_peers);
@@ -544,34 +399,16 @@ impl TableOfContent {
     }
 
     pub fn request_snapshot(&self) -> Result<(), StorageError> {
-        self.get_consensus_proposal_sender()?
-            .send(ConsensusOperations::request_snapshot())?;
+        let sender = match &self.consensus_proposal_sender {
+            Some(sender) => sender,
+            None => {
+                return Err(StorageError::service_error(
+                    "Qdrant is running in standalone mode",
+                ))
+            }
+        };
 
-        Ok(())
-    }
-
-    pub async fn update_cluster_metadata(
-        &self,
-        key: String,
-        value: serde_json::Value,
-        wait: bool,
-    ) -> Result<(), StorageError> {
-        let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
-
-        if wait {
-            let dispatcher = self.toc_dispatcher.lock().clone().ok_or_else(|| {
-                StorageError::service_error("Qdrant is running in standalone mode")
-            })?;
-            dispatcher
-                .consensus_state()
-                .propose_consensus_op_with_await(operation, None)
-                .await
-                .map_err(|err| {
-                    StorageError::service_error(format!("Failed to propose and confirm metadata update operation through consensus: {err}"))
-                })?;
-        } else {
-            self.get_consensus_proposal_sender()?.send(operation)?;
-        }
+        sender.send(ConsensusOperations::request_snapshot())?;
 
         Ok(())
     }
@@ -591,26 +428,34 @@ impl TableOfContent {
         false
     }
 
-    /// Cancels all transfers related to the current peer.
-    ///
-    /// Transfers whehre this peer is the source or the target will be cancelled.
-    pub async fn cancel_related_transfers(&self, reason: &str) -> Result<(), StorageError> {
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        access: &Access,
+    ) -> Vec<CollectionTelemetry> {
+        let mut result = Vec::new();
+        let all_collections = self.all_collections(access).await;
+        for collection_pass in &all_collections {
+            if let Ok(collection) = self.get_collection(collection_pass).await {
+                result.push(collection.get_telemetry_data(detail).await);
+            }
+        }
+        result
+    }
+
+    /// Cancels all transfers where the source peer is the current peer.
+    pub async fn cancel_outgoing_all_transfers(&self, reason: &str) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             for collection in collections.values() {
-                for transfer in collection.get_related_transfers(self.this_peer_id).await {
-                    let cancel_transfer = ConsensusOperations::abort_transfer(
-                        collection.name().to_string(),
-                        transfer,
-                        reason,
-                    );
+                for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
+                    let cancel_transfer =
+                        ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
                     proposal_sender.send(cancel_transfer)?;
                 }
             }
         } else {
-            log::error!(
-                "Can't cancel transfers related to this node, this is a single node deployment"
-            );
+            log::error!("Can't cancel outgoing transfers, this is a single node deployment");
         }
         Ok(())
     }
@@ -621,17 +466,7 @@ impl TableOfContent {
         state: ReplicaState,
         from_state: Option<ReplicaState>,
     ) -> replica_set::ChangePeerState {
-        let callback =
-            Self::change_peer_from_state_callback(proposal_sender, collection_name, state);
-        Arc::new(move |peer_id, shard_id| callback(peer_id, shard_id, from_state))
-    }
-
-    fn change_peer_from_state_callback(
-        proposal_sender: Option<OperationSender>,
-        collection_name: String,
-        state: ReplicaState,
-    ) -> replica_set::ChangePeerFromState {
-        Arc::new(move |peer_id, shard_id, from_state| {
+        Arc::new(move |peer_id, shard_id| {
             if let Some(proposal_sender) = &proposal_sender {
                 if let Err(send_error) = Self::send_set_replica_state_proposal_op(
                     proposal_sender,
@@ -642,13 +477,15 @@ impl TableOfContent {
                     from_state,
                 ) {
                     log::error!(
-                        "Can't send proposal to deactivate replica on peer {peer_id} of shard {shard_id} of collection {collection_name}. Error: {send_error}",
+                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
+                        peer_id,
+                        shard_id,
+                        collection_name,
+                        send_error
                     );
                 }
             } else {
-                log::error!(
-                    "Can't send proposal to deactivate replica. Error: this is a single node deployment",
-                );
+                log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
             }
         })
     }
@@ -683,13 +520,14 @@ impl TableOfContent {
                     ConsensusOperations::start_transfer(collection_name.clone(), shard_transfer);
                 if let Err(send_error) = proposal_sender.send(operation) {
                     log::error!(
-                        "Can't send proposal to request shard transfer to peer {to_peer} of collection {collection_name}. Error: {send_error}"
+                        "Can't send proposal to request shard transfer to peer {} of collection {}. Error: {}",
+                        to_peer,
+                        collection_name,
+                        send_error
                     );
                 }
             } else {
-                log::error!(
-                    "Can't send proposal to request shard transfer. Error: this is a single node deployment",
-                );
+                log::error!("Can't send proposal to request shard transfer. Error: this is a single node deployment");
             }
         })
     }
@@ -734,7 +572,7 @@ impl TableOfContent {
         let path = self.get_collection_path(collection_name);
 
         if path.exists() {
-            if CollectionConfigInternal::check(&path) {
+            if CollectionConfig::check(&path) {
                 return Err(StorageError::bad_input(format!(
                     "Can't create collection with name {collection_name}. Collection data already exists at {path}",
                     collection_name = collection_name,
@@ -746,17 +584,15 @@ impl TableOfContent {
                     "Removing invalid collection path {path} from storage",
                     path = path.display(),
                 );
-
-                let path = path.clone();
-                let deleted_dir = self.storage_config.storage_path.join(".deleted");
-                tokio::task::spawn_blocking(move || {
-                    safe_delete_in_tmp(&path, &deleted_dir)?.close()
-                })
-                .await??;
+                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
+                    StorageError::service_error(format!(
+                        "Can't clear directory for collection {collection_name}. Error: {err}"
+                    ))
+                })?;
             }
         }
 
-        tokio_fs::create_dir_all(&path).await.map_err(|err| {
+        tokio::fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(format!(
                 "Can't create directory for collection {collection_name}. Error: {err}"
             ))
@@ -766,49 +602,118 @@ impl TableOfContent {
     }
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
-        self.storage_config
-            .storage_path
+        Path::new(&self.storage_config.storage_path)
             .join(COLLECTIONS_DIR)
             .join(collection_name)
     }
 
-    fn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {
-        self.consensus_proposal_sender
-            .as_ref()
-            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))
+    /// Wait until all other known peers reach the given commit
+    ///
+    /// # Errors
+    ///
+    /// This errors if:
+    /// - any of the peers is not on the same term
+    /// - waiting takes longer than the specified timeout
+    /// - any of the peers cannot be reached
+    pub async fn await_commit_on_all_peers(
+        &self,
+        commit: u64,
+        term: u64,
+        timeout: Duration,
+    ) -> Result<(), StorageError> {
+        let requests = self
+            .peer_address_by_id()
+            .keys()
+            .filter(|id| **id != self.this_peer_id)
+            // The collective timeout at the bottom of this function handles actually timing out.
+            // Since an explicit timeout must be given here as well, it is multiplied by two to
+            // give the collective timeout some space.
+            .map(|peer_id| self.await_commit_on_peer(*peer_id, commit, term, timeout * 2))
+            .collect::<Vec<_>>();
+        let responses = try_join_all(requests);
+
+        // Handle requests with timeout
+        tokio::time::timeout(timeout, responses)
+            .await
+            .map(|_| ())
+            .map_err(|_elapsed| StorageError::Timeout {
+                description: "Failed to wait for consensus commit on all peers, timed out.".into(),
+            })
     }
 
-    /// Insert dispatcher for access to table of contents and consensus.
-    pub fn with_toc_dispatcher(&self, dispatcher: TocDispatcher) {
-        self.toc_dispatcher.lock().replace(dispatcher);
+    fn peer_address_by_id(&self) -> PeerAddressById {
+        self.channel_service.id_to_address.read().clone()
+    }
+
+    /// Wait until the given peer reaches the given commit
+    ///
+    /// # Errors
+    ///
+    /// This errors if the given peer is on a different term. Also errors if the peer cannot be reached.
+    async fn await_commit_on_peer(
+        &self,
+        peer_id: PeerId,
+        commit: u64,
+        term: u64,
+        timeout: Duration,
+    ) -> Result<(), StorageError> {
+        let response = self
+            .with_qdrant_client(peer_id, |mut client| async move {
+                let request = WaitOnConsensusCommitRequest {
+                    commit: commit as i64,
+                    term: term as i64,
+                    timeout: timeout.as_secs() as i64,
+                };
+                client
+                    .wait_on_consensus_commit(tonic::Request::new(request))
+                    .await
+            })
+            .await
+            .map_err(|err| {
+                StorageError::service_error(format!(
+                    "Failed to wait for consensus commit on peer {peer_id}: {err}"
+                ))
+            })?
+            .into_inner();
+
+        // Create error if wait request failed
+        if !response.ok {
+            return Err(StorageError::service_error(format!(
+                "Failed to wait for consensus commit on peer {peer_id}, has diverged commit/term or timed out."
+            )));
+        }
+        Ok(())
+    }
+
+    async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        peer_id: PeerId,
+        f: impl Fn(QdrantInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
+    ) -> Result<T, CollectionError> {
+        let address = self
+            .channel_service
+            .id_to_address
+            .read()
+            .get(&peer_id)
+            .ok_or_else(|| CollectionError::service_error("Address for peer ID is not found."))?
+            .clone();
+        self.channel_service
+            .channel_pool
+            .with_channel(&address, |channel| {
+                let client = QdrantInternalClient::new(channel);
+                let client = client.max_decoding_message_size(usize::MAX);
+                f(client)
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Insert dispatcher into table of contents for shard transfer.
+    pub fn with_shard_transfer_dispatcher(&self, dispatcher: ShardTransferDispatcher) {
+        self.shard_transfer_dispatcher.lock().replace(dispatcher);
     }
 
     pub fn get_channel_service(&self) -> &ChannelService {
         &self.channel_service
-    }
-
-    /// Gets a copy of hardware metrics for all collections that have been collected from operations on this node.
-    /// This copy is intentional to prevent 'uncontrolled' modifications of the DashMap, which doesn't need to be mutable for modifications.
-    pub fn all_hw_metrics(&self) -> HashMap<String, HardwareUsage> {
-        self.collection_hw_metrics
-            .iter()
-            .map(|i| {
-                let key = i.key().clone();
-                let hw_usage = HardwareUsage {
-                    cpu: i.get_cpu(),
-                    payload_io_read: i.get_payload_io_read(),
-                    payload_io_write: i.get_payload_io_write(),
-                    payload_index_io_read: i.get_payload_index_io_read(),
-                    payload_index_io_write: i.get_payload_index_io_write(),
-                    vector_io_read: i.get_vector_io_read(),
-                    vector_io_write: i.get_vector_io_write(),
-                };
-                (key, hw_usage)
-            })
-            .collect()
-    }
-
-    pub fn general_runtime_handle(&self) -> &Handle {
-        self.general_runtime.handle()
     }
 }

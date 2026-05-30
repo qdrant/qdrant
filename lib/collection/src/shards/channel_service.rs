@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
-use api::grpc::transport_channel_pool::{PoolInterceptor, TransportChannelPool};
-use futures::Future;
+use api::grpc::qdrant::WaitOnConsensusCommitRequest;
+use api::grpc::transport_channel_pool::{AddTimeout, TransportChannelPool};
 use futures::future::try_join_all;
+use futures::Future;
 use semver::Version;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
@@ -25,32 +25,16 @@ pub struct ChannelService {
     pub channel_pool: Arc<TransportChannelPool>,
     /// Port at which the public REST API is exposed for the current peer.
     pub current_rest_port: u16,
-    /// Indicates whether the TLS is enabled for the public REST API.
-    pub rest_tls_enabled: bool,
-
-    /// Instance wide API key if configured, must be used with care.
-    pub api_key: Option<String>,
-
-    /// Alternative API key, works the same as `api_key`. Intended for rolling key updates.
-    pub alt_api_key: Option<String>,
 }
 
 impl ChannelService {
     /// Construct a new channel service with the given REST port.
-    pub fn new(
-        current_rest_port: u16,
-        rest_tls_enabled: bool,
-        api_key: Option<String>,
-        alt_api_key: Option<String>,
-    ) -> Self {
+    pub fn new(current_rest_port: u16) -> Self {
         Self {
             id_to_address: Default::default(),
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port,
-            rest_tls_enabled,
-            api_key,
-            alt_api_key,
         }
     }
 
@@ -79,7 +63,7 @@ impl ChannelService {
         commit: u64,
         term: u64,
         timeout: Duration,
-    ) -> CollectionResult<()> {
+    ) -> Result<(), CollectionError> {
         let requests = self
             .id_to_address
             .read()
@@ -123,7 +107,7 @@ impl ChannelService {
         commit: u64,
         term: u64,
         timeout: Duration,
-    ) -> CollectionResult<()> {
+    ) -> Result<(), CollectionError> {
         let response = self
             .with_qdrant_client(peer_id, |mut client| async move {
                 let request = WaitOnConsensusCommitRequest {
@@ -150,11 +134,11 @@ impl ChannelService {
         Ok(())
     }
 
-    pub async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
+    async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
         peer_id: PeerId,
-        f: impl Fn(QdrantInternalClient<InterceptedService<Channel, PoolInterceptor>>) -> O,
-    ) -> CollectionResult<T> {
+        f: impl Fn(QdrantInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
+    ) -> Result<T, CollectionError> {
         let address = self
             .id_to_address
             .read()
@@ -175,42 +159,18 @@ impl ChannelService {
     ///
     /// If the version is not known for any peer, this returns `false`.
     /// Peer versions are known since 1.9 and up.
-    pub fn all_peers_at_version(&self, version: &Version) -> bool {
+    pub fn all_peers_at_version(&self, version: Version) -> bool {
         let id_to_address = self.id_to_address.read();
         let id_to_metadata = self.id_to_metadata.read();
 
         // Ensure there aren't more peer addresses than metadata
         if id_to_address.len() > id_to_metadata.len() {
-            let peers_without_metadata: HashMap<_, _> = id_to_address
-                .iter()
-                .filter(|(id, _uri)| !id_to_metadata.contains_key(id))
-                .collect();
-            log::info!(
-                "Not all peers at version:{version} because there are peers without metadata:{peers_without_metadata:?}"
-            );
             return false;
         }
 
-        let all = id_to_metadata
+        id_to_metadata
             .values()
-            .all(|metadata| &metadata.version >= version);
-
-        if !all {
-            log::info!("Not all peers at version:{version} peers:{id_to_metadata:?}");
-        }
-
-        all
-    }
-
-    /// Check whether the specified peer is running at least the given version
-    ///
-    /// If the version is not known for the peer, this returns `false`.
-    /// Peer versions are known since 1.9 and up.
-    pub fn peer_is_at_version(&self, peer_id: PeerId, version: &Version) -> bool {
-        self.id_to_metadata
-            .read()
-            .get(&peer_id)
-            .is_some_and(|metadata| &metadata.version >= version)
+            .all(|metadata| metadata.version >= version)
     }
 
     /// Get the REST address for the current peer.
@@ -235,31 +195,7 @@ impl ChannelService {
                     "Cannot determine REST address, cannot specify port on address {url} for peer ID {this_peer_id}",
                 ))
             })?;
-        let scheme = if self.rest_tls_enabled {
-            "https"
-        } else {
-            "http"
-        };
-        url.set_scheme(scheme).map_err(|()| {
-            CollectionError::service_error(format!(
-                "Cannot determine REST address, cannot set {scheme} scheme on address {url} for peer ID {this_peer_id}",
-            ))
-        })?;
-
         Ok(url)
-    }
-
-    pub fn other_peers(&self, this_peer_id: PeerId) -> Vec<PeerId> {
-        self.id_to_address
-            .read()
-            .keys()
-            .filter(|id| **id != this_peer_id)
-            .copied()
-            .collect()
-    }
-
-    pub fn request_timeout(&self) -> Duration {
-        self.channel_pool.request_timeout()
     }
 }
 
@@ -271,9 +207,6 @@ impl Default for ChannelService {
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port: 6333,
-            rest_tls_enabled: false,
-            api_key: None,
-            alt_api_key: None,
         }
     }
 }

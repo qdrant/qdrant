@@ -22,7 +22,7 @@ impl PeerShardCount {
     fn new(peer_id: PeerId) -> Self {
         Self {
             shard_count: 0,
-            bias: rand::random::<u32>() as usize,
+            bias: rand::random(),
             peer_id,
         }
     }
@@ -100,13 +100,35 @@ impl ShardDistributionProposal {
 
         Self { distribution }
     }
+
+    pub fn local_shards_for(&self, peer_id: PeerId) -> Vec<ShardId> {
+        self.distribution
+            .iter()
+            .filter_map(|(shard, peers)| {
+                if peers.contains(&peer_id) {
+                    Some(shard)
+                } else {
+                    None
+                }
+            })
+            .copied()
+            .collect()
+    }
+
+    pub fn remote_shards_for(&self, peer_id: PeerId) -> Vec<(ShardId, Vec<PeerId>)> {
+        self.distribution
+            .iter()
+            .filter(|(_shard, peers)| !peers.contains(&peer_id))
+            .cloned()
+            .collect()
+    }
 }
 
 impl From<ShardDistributionProposal> for CollectionShardDistribution {
     fn from(proposal: ShardDistributionProposal) -> Self {
-        let ShardDistributionProposal { distribution } = proposal;
         CollectionShardDistribution {
-            shards: distribution
+            shards: proposal
+                .distribution
                 .into_iter()
                 .map(|(shard_id, peers)| (shard_id, peers.into_iter().collect()))
                 .collect(),
@@ -172,6 +194,7 @@ mod tests {
                     .flat_map(|proposal| {
                         proposal
                             .distribution
+                            .clone()
                             .into_iter()
                             .flat_map(|(_, peers)| peers)
                     })

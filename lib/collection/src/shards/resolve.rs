@@ -1,17 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::hash;
-use std::iter::Peekable;
-use std::rc::Rc;
 
-use itertools::Itertools;
-use segment::data_types::facets::{FacetResponse, FacetValue};
 use segment::types::{Payload, ScoredPoint};
-use shard::retrieve::record_internal::RecordInternal;
 use tinyvec::TinyVec;
 
-use crate::common::transpose_iterator::transposed_iter;
-use crate::operations::types::CountResult;
-use crate::operations::universal_query::shard_query::ShardQueryResponse;
+use crate::operations::types::{CountResult, Record};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResolveCondition {
@@ -19,16 +12,7 @@ pub enum ResolveCondition {
     Majority,
 }
 
-impl ResolveCondition {
-    fn resolution_count(&self, num_replicas: usize) -> usize {
-        match self {
-            Self::All => num_replicas,
-            Self::Majority => num_replicas / 2 + 1,
-        }
-    }
-}
-
-pub trait Resolve: Default + Sized {
+pub trait Resolve: Sized {
     fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self;
 }
 
@@ -57,126 +41,55 @@ impl Resolve for CountResult {
     }
 }
 
-impl Resolve for FacetResponse {
-    /// Resolve the counts for each value using the CountResult implementation
-    fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self {
-        let num_replicas = responses.len();
-        let resolution_count = condition.resolution_count(num_replicas);
-
-        // Example responses:
-        // [
-        //   {
-        //     hits: [
-        //       { value: "a", count: 20 },
-        //       { value: "b": count: 15 }
-        //     ]
-        //   },
-        //   {
-        //     hits: [
-        //       { value: "a", count: 21 },
-        //       { value: "b": count: 13 }
-        //     ]
-        //   },
-        // ]
-
-        let resolved_counts: HashMap<_, _> = responses
-            .iter()
-            .flat_map(|FacetResponse { hits }| hits)
-            // Collect all hits into a Hashmap of {value -> Vec<CountResult>}
-            .fold(
-                HashMap::new(),
-                |mut map: HashMap<FacetValue, Vec<CountResult>>, hit| {
-                    if let Some(counts) = map.get_mut(&hit.value) {
-                        counts.push(CountResult { count: hit.count });
-                    } else {
-                        map.entry(hit.value.clone())
-                            .or_insert(Vec::with_capacity(num_replicas))
-                            .push(CountResult { count: hit.count });
-                    };
-                    map
-                },
-            )
-            .into_iter()
-            // Filter out values that don't appear in enough replicas
-            .filter(|(_, counts)| counts.len() >= resolution_count)
-            // Resolve the counts with the CountResult implementation
-            .map(|(value, counts)| {
-                let count = CountResult::resolve(counts, condition).count;
-
-                (value, count)
-            })
-            .collect();
-
-        let filtered_iters = responses.into_iter().map(|FacetResponse { hits }| {
-            hits.into_iter().filter_map(|mut hit| {
-                resolved_counts.get(&hit.value).map(|&count| {
-                    // Use the resolved count
-                    hit.count = count;
-                    hit
-                })
-            })
-        });
-
-        // Retain the original order of the hits (instead of always sorting in the same direction).
-        let resolved_hits =
-            MergeInOrder::new(filtered_iters, |hit| hit.value.clone(), resolution_count).collect();
-
-        // resolved_hits for ResolveCondition::All:
-        // [
-        //  { value: "a", count: 20 },
-        //  { value: "b", count: 13 }
-        // ]
-
-        FacetResponse {
-            hits: resolved_hits,
-        }
-    }
-}
-
-impl Resolve for Vec<RecordInternal> {
+impl Resolve for Vec<Record> {
     fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
-        Resolver::resolve(records, |record| record.id, record_eq, condition)
+        let mut resolved = Resolver::resolve(records, |record| record.id, record_eq, condition);
+        resolved.sort_unstable_by_key(|record| record.id);
+        resolved
     }
 }
 
 impl Resolve for Vec<Vec<ScoredPoint>> {
     fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
-        // batches: <replica_id, <batch_id, ScoredPoints>>
-        // transpose to <batch_id, <replica_id, ScoredPoints>>
+        // batches: <replica_id, <batch_id, ScoredPoint>>
+        // transpose to <batch_id, <replica_id, ScoredPoint>>
 
-        let batches = transposed_iter(batches);
-
-        batches
-            .map(|points| Resolver::resolve(points, |point| point.id, scored_point_eq, condition))
-            .collect()
-    }
-}
-
-impl Resolve for Vec<ShardQueryResponse> {
-    fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
-        // batches: <replica_id, <batch_id, ShardQueryResponse>>
-        // transpose to <batch_id, <replica_id, ShardQueryResponse>>
-
-        let batches = transposed_iter(batches);
+        let batches = transpose(batches);
 
         batches
             .into_iter()
-            .map(|shard_responses| Resolve::resolve(shard_responses, condition))
+            .map(|points| {
+                let mut resolved =
+                    Resolver::resolve(points, |point| point.id, scored_point_eq, condition);
+
+                resolved.sort_unstable();
+                resolved
+            })
             .collect()
     }
 }
 
-fn record_eq(this: &RecordInternal, other: &RecordInternal) -> bool {
-    this.id == other.id
-        && this.order_value == other.order_value
-        && this.vector == other.vector
-        && payload_eq(&this.payload, &other.payload)
+fn transpose<T>(vec: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    if vec.is_empty() {
+        return Vec::new();
+    }
+
+    let len = vec[0].len();
+
+    let mut iters: Vec<_> = vec.into_iter().map(IntoIterator::into_iter).collect();
+
+    (0..len)
+        .map(|_| iters.iter_mut().filter_map(Iterator::next).collect())
+        .collect()
+}
+
+fn record_eq(this: &Record, other: &Record) -> bool {
+    this.id == other.id && this.vector == other.vector && payload_eq(&this.payload, &other.payload)
 }
 
 fn scored_point_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
     this.id == other.id
         && this.score == other.score
-        && this.order_value == other.order_value
         && this.vector == other.vector
         && payload_eq(&this.payload, &other.payload)
 }
@@ -188,21 +101,20 @@ fn payload_eq(this: &Option<Payload>, other: &Option<Payload>) -> bool {
     }
 }
 
-/// Expected number of replicas
-const EXPECTED_REPLICAS: usize = 5;
-
-type ResolverRecords<'a, Item> = TinyVec<[ResolverRecord<'a, Item>; EXPECTED_REPLICAS]>;
-
 struct Resolver<'a, Item, Id, Ident, Cmp> {
     items: HashMap<Id, ResolverRecords<'a, Item>>,
     identify: Ident,
     compare: Cmp,
 }
 
+type ResolverRecords<'a, Item> = TinyVec<[ResolverRecord<'a, Item>; RESOLVER_RECORDS_CAPACITY]>;
+
+const RESOLVER_RECORDS_CAPACITY: usize = 5; // Expected number of replicas
+
 impl<'a, Item, Id, Ident, Cmp> Resolver<'a, Item, Id, Ident, Cmp>
 where
     Id: Eq + hash::Hash,
-    Ident: Fn(&Item) -> Id + Copy,
+    Ident: Fn(&Item) -> Id,
     Cmp: Fn(&Item, &Item) -> bool,
 {
     pub fn resolve(
@@ -211,113 +123,51 @@ where
         compare: Cmp,
         condition: ResolveCondition,
     ) -> Vec<Item> {
-        let resolution_count = condition.resolution_count(items.len());
+        let resolution_count = match condition {
+            ResolveCondition::All => items.len(),
+            ResolveCondition::Majority => items.len() / 2 + 1,
+        };
 
-        // Items:
-        //  [
-        //      [
-        //          { id: 10, item: A, score: 0.9 },
-        //          { id: 3, item: B, score: 0.8 },
-        //          { id: 4, item: C, score: 0.7 }
-        //      ],
-        //      [
-        //          { id: 10, item: A, score: 0.9 },
-        //          { id: 3, item: B, score: 0.8 },
-        //          { id: 4, item: C, score: 0.7 }
-        //      ],
-        //      [
-        //          { id: 10, item: A, score: 0.9 },
-        //          { id: 4, item: C, score: 0.7 },
-        //          { id: 2, item: D, score: 0.6 }
-        //      ]
-        //  ]
         let mut resolver = Resolver::new(items.first().map_or(0, Vec::len), identify, compare);
         resolver.add_all(&items);
 
-        // resolver items:
-        // {
-        //     10: [ { item: A, count: 3, coordinates: [(0, 0), (1, 0), (2, 0)] } ],
-        //     3:  [ { item: B, count: 2, coordinates: [(0, 1), (1, 1)] } ],
-        //     4:  [ { item: C, count: 3, coordinates: [(0, 2), (1, 2), (2, 1)] } ],
-        //     2:  [ { item: D, count: 1, coordinates: [(2, 2)] } ]
-        // }
-
-        // For majority, we need resolution_count = 2
-
         // Select coordinates of accepted items, avoiding copying
-        let resolved_coords: HashSet<_> = resolver
+        let resolved_items: HashSet<_> = resolver
             .items
-            .into_values()
-            .filter_map(|points| {
+            .into_iter()
+            .filter_map(|(_, points)| {
                 points
                     .into_iter()
                     .find(|point| point.count >= resolution_count)
-                    .map(|point| point.coordinates.into_iter())
+                    .map(|point| (point.row, point.index))
             })
-            .flatten()
             .collect();
 
-        // resolved coords:
-        // [
-        //     (0, 0), (1, 0), (2, 0),
-        //     (0, 1), (1, 1),
-        //     (0, 2), (1, 2), (2, 1)
-        // ]
-
         // Shortcut if everything is consistent: return first items, avoiding filtering
-        let all_items_len = items.iter().map(Vec::len).sum::<usize>();
-        let is_consistent = resolved_coords.len() == all_items_len;
+        let is_consistent = resolved_items.len() == items.first().map_or(0, Vec::len)
+            && resolved_items.iter().all(|&(row, _)| row == 0);
 
         if is_consistent {
-            // Return the first replica result as everything is consistent
-            return items.into_iter().next().unwrap_or_default();
+            items.into_iter().next().unwrap_or_default()
+        } else {
+            items
+                .into_iter()
+                .enumerate()
+                .flat_map(|(row, items)| {
+                    items
+                        .into_iter()
+                        .enumerate()
+                        .map(move |(index, item)| (row, index, item))
+                })
+                .filter_map(|(row, index, item)| {
+                    if resolved_items.contains(&(row, index)) {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
         }
-
-        // Items:
-        //  [
-        //      [
-        //          { id: 3, item: B, score: 0.8 },
-        //          { id: 4, item: C, score: 0.7 }
-        //      ],
-        //      [
-        //          { id: 3, item: B, score: 0.8 },
-        //          { id: 4, item: C, score: 0.7 }
-        //      ],
-        //      [
-        //          { id: 4, item: C, score: 0.7 },
-        //      ]
-        //  ]
-        let resolved_coords = Rc::new(resolved_coords);
-
-        let resolved_iters = items
-            .into_iter()
-            .enumerate()
-            .map(|(replica_id, replica_response)| {
-                // replica_response:
-                //  [
-                //      { id: 10, item: A, score: 0.9 },
-                //      { id: 4, item: C, score: 0.7 },
-                //      { id: 2, item: D, score: 0.6 }
-                //  ]
-
-                let resolved_coords = resolved_coords.clone();
-                replica_response
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(move |(index, item)| {
-                        resolved_coords
-                            .contains(&(replica_id, index))
-                            .then_some(item)
-                    })
-
-                // Iterator of filtered items:
-                //  Iter<
-                //      { id: 10, item: A, score: 0.9 },
-                //      { id: 4, item: C, score: 0.7 },
-                //  >
-            });
-
-        MergeInOrder::new(resolved_iters, identify, resolution_count).collect_vec()
     }
 
     fn new(capacity: usize, identify: Ident, compare: Cmp) -> Self {
@@ -340,13 +190,12 @@ where
         }
     }
 
-    fn add(&mut self, id: Id, item: &'a Item, row: RowId, index: ColumnId) {
+    fn add(&mut self, id: Id, item: &'a Item, row: usize, index: usize) {
         let points = self.items.entry(id).or_default();
 
         for point in points.iter_mut() {
             if (self.compare)(item, point.item.unwrap()) {
                 point.count += 1;
-                point.coordinates.push((row, index));
                 return;
             }
         }
@@ -355,160 +204,41 @@ where
     }
 }
 
-type RowId = usize;
-type ColumnId = usize;
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ResolverRecord<'a, T> {
     item: Option<&'a T>,
-    /// Store all coordinates of equal items in `(row, index)` tuples
-    coordinates: TinyVec<[(RowId, ColumnId); EXPECTED_REPLICAS]>,
-    /// Keeps track of the amount of times we see this same item
+    row: usize,
+    index: usize,
     count: usize,
 }
 
-impl<T> Default for ResolverRecord<'_, T> {
+impl<'a, T> Copy for ResolverRecord<'a, T> {}
+
+impl<'a, T> Clone for ResolverRecord<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, T> Default for ResolverRecord<'a, T> {
     fn default() -> Self {
         Self {
             item: None,
-            coordinates: Default::default(),
+            row: 0,
+            index: 0,
             count: 0,
         }
     }
 }
 
 impl<'a, T> ResolverRecord<'a, T> {
-    fn new(item: &'a T, row: RowId, index: ColumnId) -> Self {
-        let mut coordinates = TinyVec::new();
-        coordinates.push((row, index));
-
+    fn new(item: &'a T, row: usize, index: usize) -> Self {
         Self {
             item: Some(item),
-            coordinates,
+            row,
+            index,
             count: 1,
         }
-    }
-}
-
-/// Resolves multiple list of items by reading heads of all iterators on each step
-/// and accepting the most common occurrence as the next resolved item.
-///
-/// [
-///    [A, F, B, C],
-///    [A, B, C],
-///    [F, B, C],
-/// ]
-///
-///   1   2   3   4
-///  [A,  F,  B,  C]
-///  [A,      B,  C]
-///  [    F,  B,  C]
-struct MergeInOrder<I: Iterator, Ident> {
-    /// One iterator per set of results, which outputs items that comply with resolution count, in their original order
-    resolved_iters: Vec<Peekable<I>>,
-    /// Closure which retrieves the item's ID
-    ident: Ident,
-
-    /// Only used to debug_assert correctness
-    resolution_count: usize,
-}
-
-impl<Iter, Ident, Id, Item> MergeInOrder<Iter, Ident>
-where
-    Id: Eq + hash::Hash,
-    Ident: Fn(&Item) -> Id,
-    Iter: Iterator<Item = Item>,
-{
-    fn new(
-        resolved_iters: impl Iterator<Item = Iter>,
-        identify: Ident,
-        resolution_count: usize,
-    ) -> Self {
-        let resolved_iters = resolved_iters.map(|iter| iter.peekable()).collect();
-
-        Self {
-            resolved_iters,
-            ident: identify,
-            resolution_count,
-        }
-    }
-
-    /// An iterator over all current heads of the resolved iterators
-    fn peek_heads(&mut self) -> impl Iterator<Item = (RowId, Id)> + '_ {
-        self.resolved_iters
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(row, iter)| iter.peek().map(|peeked| (row, (self.ident)(peeked))))
-    }
-
-    /// Peeks each row, then maps IDs to the peeked rows in which each ID appears
-    ///
-    /// Example:
-    ///
-    /// ```text
-    /// resolved_iters = [
-    ///     <- (10, A) <- (4, B) <- (3, C)
-    ///     <- (10, A) <- (4, B) <- (3, C)
-    ///     <- (4, B) <- (3, C)
-    /// ]
-    /// ```
-    ///
-    /// output:
-    /// ```text
-    /// {
-    ///     10: [0, 1],
-    ///     4:  [2],
-    /// }
-    /// ```
-    fn heads_map(&mut self) -> HashMap<Id, TinyVec<[RowId; EXPECTED_REPLICAS]>> {
-        let capacity = self.resolved_iters.len();
-        self.peek_heads()
-            .fold(HashMap::with_capacity(capacity), |mut map, (row, id)| {
-                let entry = map.entry(id).or_default();
-                entry.push(row);
-                map
-            })
-    }
-
-    /// Advances the rows and returns the item in the first of them
-    ///
-    /// Minimum len of `row_ids` should be the resolution count.
-    fn advance_rows(&mut self, row_ids: &[RowId]) -> Option<Item> {
-        debug_assert!(row_ids.len() >= self.resolution_count);
-
-        let mut merged_item = None;
-        for row_id in row_ids {
-            merged_item = self.resolved_iters[*row_id].next();
-        }
-
-        merged_item
-    }
-}
-
-impl<Iter, Ident, Id, Item> Iterator for MergeInOrder<Iter, Ident>
-where
-    Id: Eq + hash::Hash,
-    Ident: Fn(&Item) -> Id,
-    Iter: Iterator<Item = Item>,
-{
-    type Item = Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // Choose the item that appears the most times in the heads
-
-        // heads_map: (id to source row_ids)
-        // {
-        //     10: [0, 1],
-        //     4:  [2],
-        // }
-        let heads_map = self.heads_map();
-
-        // Most frequent row IDs - Assume most frequent item is the one to be resolved next
-        // [0, 1]
-        let chosen_rows = heads_map.into_values().max_by_key(|kv| kv.len())?;
-
-        // Pull the item from the chosen rows (return only one of them)
-        self.advance_rows(&chosen_rows)
     }
 }
 
@@ -547,7 +277,6 @@ mod test {
             payload: None,
             vector: None,
             shard_key: None,
-            order_value: None,
         }
     }
 
@@ -589,7 +318,7 @@ mod test {
 
         let mut removed = Vec::new();
 
-        for action in actions {
+        for action in actions.into_iter() {
             let offset = removed
                 .iter()
                 .filter(|&&removed| removed <= action.index())
@@ -729,23 +458,6 @@ mod test {
         [3, 6, 9, 12, 13, 16, 19, 22, 26, 27]
     }
 
-    #[rustfmt::skip]
-    fn input_5() -> [Vec<i32>; 3] {
-        [
-            vec![1, 2, 3, 4, 5, 6, 7],
-            vec![               6, 7],
-            vec![1, 2, 3, 4         ],
-        ]
-    }
-
-    fn expected_5_majority() -> [i32; 6] {
-        [1, 2, 3, 4, 6, 7]
-    }
-
-    fn expected_5_all() -> [i32; 0] {
-        []
-    }
-
     #[test]
     fn resolve_0_all() {
         resolve_0(ResolveCondition::All);
@@ -811,16 +523,6 @@ mod test {
         test_resolve_simple(input_4(), expected_4_majority(), ResolveCondition::Majority);
     }
 
-    #[test]
-    fn resolve_5_majority() {
-        test_resolve_simple(input_5(), expected_5_majority(), ResolveCondition::Majority);
-    }
-
-    #[test]
-    fn resolve_5_all() {
-        test_resolve_simple(input_5(), expected_5_all(), ResolveCondition::All);
-    }
-
     fn test_resolve<T, E>(input: Vec<T>, expected: E, condition: ResolveCondition)
     where
         T: Resolve + Clone + PartialEq<E> + fmt::Debug,
@@ -861,7 +563,10 @@ mod test {
 
     impl Resolve for Vec<Val> {
         fn resolve(values: Vec<Self>, condition: ResolveCondition) -> Self {
-            Resolver::resolve(values, |val| val.0, PartialEq::eq, condition)
+            let mut resolved = Resolver::resolve(values, |val| val.0, PartialEq::eq, condition);
+
+            resolved.sort_unstable();
+            resolved
         }
     }
 }

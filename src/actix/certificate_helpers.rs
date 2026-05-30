@@ -1,15 +1,15 @@
 use std::fmt::Debug;
+use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use fs_err::File;
 use parking_lot::RwLock;
 use rustls::client::VerifierBuilderError;
 use rustls::pki_types::CertificateDer;
 use rustls::server::{ClientHello, ResolvesServerCert, WebPkiClientVerifier};
 use rustls::sign::CertifiedKey;
-use rustls::{RootCertStore, ServerConfig, crypto};
+use rustls::{crypto, RootCertStore, ServerConfig};
 use rustls_pemfile::Item;
 
 use crate::settings::{Settings, TlsConfig};
@@ -58,10 +58,10 @@ impl RotatingCertificateResolver {
         // - *re-check that TTL is expired* (to avoid refreshing the key multiple times from concurrent threads)
         // - refresh and return the key
         let mut key = self.key.write();
-        if key.is_expired(ttl)
-            && let Err(err) = key.refresh(&self.tls_config)
-        {
-            log::error!("Failed to refresh server TLS certificate, keeping current: {err}");
+        if key.is_expired(ttl) {
+            if let Err(err) = key.refresh(&self.tls_config) {
+                log::error!("Failed to refresh server TLS certificate, keeping current: {err}");
+            }
         }
 
         key.key.clone()
@@ -112,12 +112,9 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
         rustls_pemfile::read_all(rd).collect::<io::Result<Vec<_>>>()
     })?
     .into_iter()
-    .filter_map(|item| {
-        #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
-        match item {
-            Item::X509Certificate(data) => Some(data),
-            _ => None,
-        }
+    .filter_map(|item| match item {
+        Item::X509Certificate(data) => Some(data),
+        _ => None,
     })
     .collect();
     if certs.is_empty() {
@@ -127,8 +124,6 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
     // Load private key
     let private_key_item =
         with_buf_read(&tls_config.key, rustls_pemfile::read_one)?.ok_or(Error::NoPrivateKey)?;
-
-    #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
     let private_key = match private_key_item {
         Item::Pkcs1Key(pkey) => rustls_pki_types::PrivateKeyDer::from(pkey),
         Item::Pkcs8Key(pkey) => rustls_pki_types::PrivateKeyDer::from(pkey),
@@ -156,10 +151,9 @@ pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
     // Verify client CA or not
     let config = if settings.service.verify_https_client_certificate {
         let mut root_cert_store = RootCertStore::empty();
-
-        let ca_cert_path = tls_config.ca_cert.as_ref().ok_or(Error::NoCaCert)?;
-        let ca_certs: Vec<CertificateDer> =
-            with_buf_read(ca_cert_path, |rd| rustls_pemfile::certs(rd).collect())?;
+        let ca_certs: Vec<CertificateDer> = with_buf_read(&tls_config.ca_cert, |rd| {
+            rustls_pemfile::certs(rd).collect()
+        })?;
         root_cert_store.add_parsable_certificates(ca_certs);
         let client_cert_verifier = WebPkiClientVerifier::builder(root_cert_store.into())
             .build()
@@ -206,6 +200,4 @@ pub enum Error {
     Sign(#[source] rustls::Error),
     #[error("client certificate verification")]
     ClientCertVerifier(#[source] VerifierBuilderError),
-    #[error("No ca_cert provided")]
-    NoCaCert,
 }

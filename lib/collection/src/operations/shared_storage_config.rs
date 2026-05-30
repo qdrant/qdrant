@@ -1,24 +1,15 @@
-use std::default;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 use std::time::Duration;
 
-use common::load_concurrency::LoadConcurrencyConfig;
-use segment::types::HnswGlobalConfig;
-
-use crate::common::snapshots_manager::SnapshotsConfig;
+use crate::common::snapshots_manager::S3Config;
 use crate::operations::types::NodeType;
 use crate::shards::transfer::ShardTransferMethod;
 
 /// Default timeout for search requests.
 /// In cluster mode, this should be aligned with collection timeout.
 const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
-const DEFAULT_UPDATE_QUEUE_SIZE: usize = 1_000_000;
-const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = DEFAULT_UPDATE_QUEUE_SIZE;
-/// Maximum number of operations which are stored in RAM in update worker queue.
-/// If there are more pending operations, operation data
-/// will be read from WAL when processing the operation.
-pub const DEFAULT_UPDATE_QUEUE_RAM_BUFFER: usize = 500;
+const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
+const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
 pub const DEFAULT_IO_SHARD_TRANSFER_LIMIT: Option<usize> = Some(1);
 pub const DEFAULT_SNAPSHOTS_PATH: &str = "./snapshots";
 
@@ -37,11 +28,8 @@ pub struct SharedStorageConfig {
     pub default_shard_transfer_method: Option<ShardTransferMethod>,
     pub incoming_shard_transfers_limit: Option<usize>,
     pub outgoing_shard_transfers_limit: Option<usize>,
-    pub snapshots_path: PathBuf,
-    pub snapshots_config: SnapshotsConfig,
-    pub hnsw_global_config: HnswGlobalConfig,
-    pub load_concurrency_config: LoadConcurrencyConfig,
-    pub search_thread_count: usize,
+    pub snapshots_path: String,
+    pub s3_config: Option<S3Config>,
 }
 
 impl Default for SharedStorageConfig {
@@ -57,11 +45,8 @@ impl Default for SharedStorageConfig {
             default_shard_transfer_method: None,
             incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
             outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
-            snapshots_path: PathBuf::from(DEFAULT_SNAPSHOTS_PATH),
-            snapshots_config: default::Default::default(),
-            hnsw_global_config: HnswGlobalConfig::default(),
-            load_concurrency_config: LoadConcurrencyConfig::default(),
-            search_thread_count: common::defaults::search_thread_count(common::cpu::get_num_cpus()),
+            snapshots_path: DEFAULT_SNAPSHOTS_PATH.to_string(),
+            s3_config: None,
         }
     }
 }
@@ -79,11 +64,8 @@ impl SharedStorageConfig {
         default_shard_transfer_method: Option<ShardTransferMethod>,
         incoming_shard_transfers_limit: Option<usize>,
         outgoing_shard_transfers_limit: Option<usize>,
-        snapshots_path: PathBuf,
-        snapshots_config: SnapshotsConfig,
-        hnsw_global_config: HnswGlobalConfig,
-        load_concurrency_config: LoadConcurrencyConfig,
-        search_thread_count: usize,
+        snapshots_path: String,
+        s3_config: Option<S3Config>,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -101,10 +83,7 @@ impl SharedStorageConfig {
             incoming_shard_transfers_limit,
             outgoing_shard_transfers_limit,
             snapshots_path,
-            snapshots_config,
-            hnsw_global_config,
-            load_concurrency_config,
-            search_thread_count,
+            s3_config,
         }
     }
 }

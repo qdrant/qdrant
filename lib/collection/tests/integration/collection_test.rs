@@ -1,26 +1,19 @@
 use std::collections::{HashMap, HashSet};
-use std::io::{BufReader, BufWriter};
+use std::fs::File;
 
-use ahash::AHashSet;
-use api::rest::SearchRequestInternal;
-use collection::operations::CollectionUpdateOperations;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
-use collection::operations::point_ops::{
-    BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
-    PointStructPersisted, VectorStructPersisted, WriteOrdering,
-};
+use collection::operations::point_ops::{Batch, PointOperations, PointStruct, WriteOrdering};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
-    UpdateStatus,
+    CountRequestInternal, OrderByInterface, PointRequestInternal, RecommendRequestInternal,
+    ScrollRequestInternal, SearchRequestInternal, UpdateStatus,
 };
+use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
-use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use fs_err::File;
+use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface};
-use segment::data_types::vectors::VectorStructInternal;
+use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
 use segment::types::{
     Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
@@ -28,7 +21,7 @@ use segment::types::{
 use serde_json::Map;
 use tempfile::Builder;
 
-use crate::common::{N_SHARDS, load_local_collection, simple_collection_fixture};
+use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_updater() {
@@ -41,31 +34,27 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
 
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    let batch = BatchPersisted {
-        ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
-        vectors: BatchVectorStructPersisted::Single(vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ]),
-        payloads: None,
-    };
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        Batch {
+            ids: vec![0, 1, 2, 3, 4]
+                .into_iter()
+                .map(|x| x.into())
+                .collect_vec(),
+            vectors: BatchVectorStruct::from(vec![
+                vec![1.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 1.0, 0.0],
+                vec![1.0, 1.0, 1.0, 1.0],
+                vec![1.0, 1.0, 0.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+            ])
+            .into(),
+            payloads: None,
+        }
+        .into(),
+    );
 
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(batch),
-    ));
-
-    let hw_counter = HwMeasurementAcc::new();
     let insert_result = collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await;
 
     match insert_result {
@@ -86,14 +75,12 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
     let search_res = collection
         .search(
             search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
         .await;
 
@@ -118,31 +105,24 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
 
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    let batch = BatchPersisted {
-        ids: vec![0.into(), 1.into()],
-        vectors: BatchVectorStructPersisted::Single(vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-        ]),
-        payloads: serde_json::from_str(
-            r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
-        )
-        .unwrap(),
-    };
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        Batch {
+            ids: vec![0.into(), 1.into()],
+            vectors: BatchVectorStruct::from(vec![
+                vec![1.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 1.0, 0.0],
+            ])
+            .into(),
+            payloads: serde_json::from_str(
+                r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
+            )
+            .unwrap(),
+        }
+        .into(),
+    );
 
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(batch),
-    ));
-
-    let hw_counter = HwMeasurementAcc::new();
     let insert_result = collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await;
 
     match insert_result {
@@ -163,14 +143,12 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
     let search_res = collection
         .search(
             search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
         .await;
 
@@ -181,7 +159,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             assert_eq!(res[0].payload.as_ref().unwrap().len(), 1);
             let vec = vec![1.0, 0.0, 1.0, 1.0];
             match &res[0].vector {
-                Some(VectorStructInternal::Single(v)) => assert_eq!(v.clone(), vec),
+                Some(VectorStruct::Single(v)) => assert_eq!(v.clone(), vec),
                 _ => panic!("vector is not returned"),
             }
         }
@@ -198,20 +176,14 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         exact: true,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
     let count_res = collection
-        .count(
-            count_request,
-            None,
-            &ShardSelectorInternal::All,
-            None,
-            hw_acc,
-        )
+        .count(count_request, None, &ShardSelectorInternal::All)
         .await
         .unwrap();
     assert_eq!(count_res.count, 1);
 }
 
+// FIXME: does not work
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_loading() {
     test_collection_loading_with_shards(1).await;
@@ -223,32 +195,27 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
 
     {
         let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
-
-        let batch = BatchPersisted {
-            ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
-            vectors: BatchVectorStructPersisted::Single(vec![
-                vec![1.0, 0.0, 1.0, 1.0],
-                vec![1.0, 0.0, 1.0, 0.0],
-                vec![1.0, 1.0, 1.0, 1.0],
-                vec![1.0, 1.0, 0.0, 1.0],
-                vec![1.0, 0.0, 0.0, 0.0],
-            ]),
-            payloads: None,
-        };
-
         let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
+            Batch {
+                ids: vec![0, 1, 2, 3, 4]
+                    .into_iter()
+                    .map(|x| x.into())
+                    .collect_vec(),
+                vectors: BatchVectorStruct::from(vec![
+                    vec![1.0, 0.0, 1.0, 1.0],
+                    vec![1.0, 0.0, 1.0, 0.0],
+                    vec![1.0, 1.0, 1.0, 1.0],
+                    vec![1.0, 1.0, 0.0, 1.0],
+                    vec![1.0, 0.0, 0.0, 0.0],
+                ])
+                .into(),
+                payloads: None,
+            }
+            .into(),
         );
 
-        let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(
-                insert_points,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter,
-            )
+            .update_from_client_simple(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
 
@@ -262,19 +229,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                 key: None,
             }));
 
-        let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(
-                assign_payload,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter,
-            )
+            .update_from_client_simple(assign_payload, true, WriteOrdering::default())
             .await
             .unwrap();
-
-        collection.stop_gracefully().await;
     }
 
     let collection_path = collection_dir.path();
@@ -290,13 +248,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         with_vector: true.into(),
     };
     let retrieved = loaded_collection
-        .retrieve(
-            request,
-            None,
-            &ShardSelectorInternal::All,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .retrieve(request, None, &ShardSelectorInternal::All)
         .await
         .unwrap();
 
@@ -309,25 +261,23 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             assert_eq!(non_empty_payload.len(), 1)
         }
     }
-
-    loaded_collection.stop_gracefully().await;
     println!("Function end");
 }
 
 #[test]
 fn test_deserialization() {
-    let batch = BatchPersisted {
-        ids: vec![0.into(), 1.into()],
-        vectors: BatchVectorStructPersisted::Single(vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-        ]),
-        payloads: None,
-    };
-
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(batch),
-    ));
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        Batch {
+            ids: vec![0.into(), 1.into()],
+            vectors: BatchVectorStruct::from(vec![
+                vec![1.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 1.0, 0.0],
+            ])
+            .into(),
+            payloads: None,
+        }
+        .into(),
+    );
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
     let _read_obj: CollectionUpdateOperations = serde_json::from_str(&json_str).unwrap();
@@ -339,22 +289,21 @@ fn test_deserialization() {
 
 #[test]
 fn test_deserialization2() {
-    let points = vec![
-        PointStructPersisted {
-            id: 0.into(),
-            vector: VectorStructPersisted::from(vec![1.0, 0.0, 1.0, 1.0]),
-            payload: None,
-        },
-        PointStructPersisted {
-            id: 1.into(),
-            vector: VectorStructPersisted::from(vec![1.0, 0.0, 1.0, 0.0]),
-            payload: None,
-        },
-    ];
-
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(points),
-    ));
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        vec![
+            PointStruct {
+                id: 0.into(),
+                vector: VectorStruct::from(vec![1.0, 0.0, 1.0, 1.0]).into(),
+                payload: None,
+            },
+            PointStruct {
+                id: 1.into(),
+                vector: VectorStruct::from(vec![1.0, 0.0, 1.0, 0.0]).into(),
+                payload: None,
+            },
+        ]
+        .into(),
+    );
 
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
@@ -376,38 +325,31 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    let batch = BatchPersisted {
-        ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8]
-            .into_iter()
-            .map(u64::into)
-            .collect_vec(),
-        vectors: BatchVectorStructPersisted::Single(vec![
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0, 0.0],
-            vec![0.0, 0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-        ]),
-        payloads: None,
-    };
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        Batch {
+            ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8]
+                .into_iter()
+                .map(|x| x.into())
+                .collect_vec(),
+            vectors: BatchVectorStruct::from(vec![
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+            ])
+            .into(),
+            payloads: None,
+        }
+        .into(),
+    );
 
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(batch),
-    ));
-
-    let hw_acc = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_acc.clone(),
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
     let result = recommend_by(
@@ -422,7 +364,6 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        hw_acc,
     )
     .await
     .unwrap();
@@ -442,38 +383,31 @@ async fn test_read_api_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    let batch = BatchPersisted {
-        ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8]
-            .into_iter()
-            .map(u64::into)
-            .collect_vec(),
-        vectors: BatchVectorStructPersisted::Single(vec![
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0, 0.0],
-            vec![0.0, 0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-        ]),
-        payloads: None,
-    };
-
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(batch),
+        Batch {
+            ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8]
+                .into_iter()
+                .map(|x| x.into())
+                .collect_vec(),
+            vectors: BatchVectorStruct::from(vec![
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+            ])
+            .into(),
+            payloads: None,
+        }
+        .into(),
     ));
 
-    let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -489,8 +423,6 @@ async fn test_read_api_with_shards(shard_number: u32) {
             },
             None,
             &ShardSelectorInternal::All,
-            None,
-            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -515,7 +447,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     let get_payload = |value: f64| -> Option<Payload> {
         let mut payload_map = Map::new();
-        payload_map.insert(PRICE_FLOAT_KEY.to_string(), value.into());
+        payload_map.insert(PRICE_FLOAT_KEY.to_string(), (value).into());
         payload_map.insert(PRICE_INT_KEY.to_string(), (value as i64).into());
         payload_map.insert(
             MULTI_VALUE_KEY.to_string(),
@@ -541,43 +473,36 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         get_payload(1.0),
     ];
 
-    let batch = BatchPersisted {
-        ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
-            .into_iter()
-            .map(u64::into)
-            .collect_vec(),
-        vectors: BatchVectorStructPersisted::Single(vec![
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0, 0.0],
-            vec![0.0, 0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-            vec![0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-        ]),
-        payloads: Some(payloads),
-    };
-
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(batch),
+        Batch {
+            ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+                .into_iter()
+                .map(|x| x.into())
+                .collect_vec(),
+            vectors: BatchVectorStruct::from(vec![
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+                vec![1.0, 1.0, 1.0, 1.0],
+            ])
+            .into(),
+            payloads: Some(payloads),
+        }
+        .into(),
     ));
 
-    let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter.clone(),
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -586,7 +511,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_FLOAT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
-            hw_counter.clone(),
         )
         .await
         .unwrap();
@@ -596,7 +520,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_INT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
-            hw_counter.clone(),
         )
         .await
         .unwrap();
@@ -606,13 +529,12 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             MULTI_VALUE_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
-            hw_counter.clone(),
         )
         .await
         .unwrap();
 
     ///////// Test single-valued fields ///////////
-    for key in [PRICE_FLOAT_KEY, PRICE_INT_KEY] {
+    for key in [PRICE_FLOAT_KEY, PRICE_INT_KEY].into_iter() {
         let result_asc = collection
             .scroll_by(
                 ScrollRequestInternal {
@@ -629,8 +551,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 },
                 None,
                 &ShardSelectorInternal::All,
-                None,
-                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -661,8 +581,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 },
                 None,
                 &ShardSelectorInternal::All,
-                None,
-                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -677,11 +595,11 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 let b = b.0.get(key).unwrap().as_f64();
                 a >= b
             }),
-            "Expected descending order when using {key} key, got: {:#?}",
+            "got: {:#?}",
             result_desc.points
         );
 
-        let asc_already_seen: AHashSet<_> = result_asc.points.iter().map(|x| x.id).collect();
+        let asc_already_seen: HashSet<_> = result_asc.points.iter().map(|x| x.id).collect();
 
         dbg!(&asc_already_seen);
         let asc_second_page = collection
@@ -702,8 +620,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 },
                 None,
                 &ShardSelectorInternal::All,
-                None,
-                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -715,12 +631,12 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             .collect::<HashSet<_>>();
         let valid_asc_second_page_points = [10, 9, 8, 7, 6]
             .into_iter()
-            .map(u64::into)
+            .map(|x| x.into())
             .collect::<HashSet<ExtendedPointId>>();
         assert_eq!(asc_second_page.points.len(), 5);
         assert!(asc_second_page_points.is_subset(&valid_asc_second_page_points));
 
-        let desc_already_seen: AHashSet<_> = result_desc.points.iter().map(|x| x.id).collect();
+        let desc_already_seen: HashSet<_> = result_desc.points.iter().map(|x| x.id).collect();
 
         dbg!(&desc_already_seen);
 
@@ -742,8 +658,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 },
                 None,
                 &ShardSelectorInternal::All,
-                None,
-                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -756,13 +670,15 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
         let valid_desc_second_page_points = [5, 6, 7, 8, 9]
             .into_iter()
-            .map(u64::into)
+            .map(|x| x.into())
             .collect::<HashSet<ExtendedPointId>>();
 
         assert_eq!(desc_second_page.points.len(), 4);
         assert!(
             desc_second_page_points.is_subset(&valid_desc_second_page_points),
-            "expected: {valid_desc_second_page_points:?}, got: {desc_second_page_points:?}"
+            "expected: {:?}, got: {:?}",
+            valid_desc_second_page_points,
+            desc_second_page_points
         );
     }
 
@@ -779,27 +695,23 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             },
             None,
             &ShardSelectorInternal::All,
-            None,
-            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
 
-    assert!(
-        result_multi
-            .points
-            .iter()
-            .fold(HashMap::<PointIdType, usize, _>::new(), |mut acc, point| {
-                acc.entry(point.id)
-                    .and_modify(|x| {
-                        *x += 1;
-                    })
-                    .or_insert(1);
-                acc
-            })
-            .values()
-            .all(|&x| x == 2),
-    );
+    assert!(result_multi
+        .points
+        .iter()
+        .fold(HashMap::<PointIdType, usize, _>::new(), |mut acc, point| {
+            acc.entry(point.id)
+                .and_modify(|x| {
+                    *x += 1;
+                })
+                .or_insert(1);
+            acc
+        })
+        .values()
+        .all(|&x| x == 2));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -813,31 +725,27 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    let batch = BatchPersisted {
-        ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
-        vectors: BatchVectorStructPersisted::Single(vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ]),
-        payloads: None,
-    };
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        Batch {
+            ids: vec![0, 1, 2, 3, 4]
+                .into_iter()
+                .map(|x| x.into())
+                .collect_vec(),
+            vectors: BatchVectorStruct::from(vec![
+                vec![1.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 1.0, 0.0],
+                vec![1.0, 1.0, 1.0, 1.0],
+                vec![1.0, 1.0, 0.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+            ])
+            .into(),
+            payloads: None,
+        }
+        .into(),
+    );
 
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(batch),
-    ));
-
-    let hw_counter = HwMeasurementAcc::new();
     let insert_result = collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter.clone(),
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await;
 
     match insert_result {
@@ -848,7 +756,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     }
 
     // delete points with id (0, 3)
-    let to_be_deleted: AHashSet<PointIdType> = vec![0.into(), 3.into()].into_iter().collect();
+    let to_be_deleted: HashSet<PointIdType> = vec![0.into(), 3.into()].into_iter().collect();
     let delete_filter =
         segment::types::Filter::new_must(Condition::HasId(HasIdCondition::from(to_be_deleted)));
 
@@ -857,13 +765,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     );
 
     let delete_result = collection
-        .update_from_client_simple(
-            delete_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(delete_points, true, WriteOrdering::default())
         .await;
 
     match delete_result {
@@ -885,8 +787,6 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
             },
             None,
             &ShardSelectorInternal::All,
-            None,
-            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -903,25 +803,22 @@ async fn test_collection_local_load_initializing_not_stuck() {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     // Create and unload collection
-    simple_collection_fixture(collection_dir.path(), 1)
-        .await
-        .stop_gracefully()
-        .await;
+    simple_collection_fixture(collection_dir.path(), 1).await;
 
     // Modify replica state file on disk, set state to Initializing
     // This is to simulate a situation where a collection was not fully created, we cannot create
     // this situation through our collection interface
     {
         let replica_state_path = collection_dir.path().join("0/replica_state.json");
-        let replica_state_file = BufReader::new(File::open(&replica_state_path).unwrap());
+        let replica_state_file = File::open(&replica_state_path).unwrap();
         let mut replica_set_state: ReplicaSetState =
             serde_json::from_reader(replica_state_file).unwrap();
 
-        for peer_id in replica_set_state.peers().clone().into_keys() {
+        for peer_id in replica_set_state.peers().into_keys() {
             replica_set_state.set_peer_state(peer_id, ReplicaState::Initializing);
         }
 
-        let replica_state_file = BufWriter::new(File::create(&replica_state_path).unwrap());
+        let replica_state_file = File::create(&replica_state_path).unwrap();
         serde_json::to_writer(replica_state_file, &replica_set_state).unwrap();
     }
 

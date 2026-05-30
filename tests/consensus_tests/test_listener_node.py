@@ -61,7 +61,6 @@ def test_listener_node(tmp_path: pathlib.Path):
     upsert_random_points(peer_api_uris[0], 100)
 
     p = processes.pop()
-    restart_port = p.p2p_port
     p.kill()
 
     peer_api_uris.pop()
@@ -71,7 +70,7 @@ def test_listener_node(tmp_path: pathlib.Path):
             peer_dirs[-1],
             f"peer_0_{N_PEERS}_restart.log",
             bootstrap_uri,
-            port=restart_port,
+            port=20000,
             extra_env={
                 "QDRANT__STORAGE__NODE_TYPE": "Listener",
             }
@@ -87,7 +86,6 @@ def test_listener_node(tmp_path: pathlib.Path):
     res1 = search(peer_api_uris[0], query_vector, city="London", collection=COLLECTION_NAME)
 
     p = processes.pop()
-    restart_port = p.p2p_port
     p.kill()
 
     peer_api_uris.pop()
@@ -97,7 +95,7 @@ def test_listener_node(tmp_path: pathlib.Path):
             peer_dirs[-1],
             f"peer_0_{N_PEERS}_restart_again.log",
             bootstrap_uri,
-            port=restart_port,
+            port=20000,
             extra_env={
                 "QDRANT__STORAGE__NODE_TYPE": "Normal",
             }

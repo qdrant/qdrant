@@ -8,9 +8,9 @@ use nom::multi::{many0, many1};
 use nom::sequence::{delimited, preceded};
 use nom::{IResult, Parser};
 
-use super::{JsonPath, JsonPathItem};
+use super::v2::{JsonPathItem, JsonPathV2};
 
-impl FromStr for JsonPath {
+impl FromStr for JsonPathV2 {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -22,10 +22,11 @@ impl FromStr for JsonPath {
 }
 
 pub fn key_needs_quoting(s: &str) -> bool {
-    all_consuming(raw_str).parse(s).is_err()
+    let mut parser = all_consuming(raw_str);
+    parser(s).is_err()
 }
 
-fn json_path(input: &str) -> IResult<&str, JsonPath> {
+fn json_path(input: &str) -> IResult<&str, JsonPathV2> {
     let (input, first_key) = alt((raw_str.map(str::to_string), quoted_str)).parse(input)?;
 
     let (input, rest) = many0(alt((
@@ -33,10 +34,9 @@ fn json_path(input: &str) -> IResult<&str, JsonPath> {
         (preceded(char('.'), quoted_str).map(JsonPathItem::Key)),
         (delimited(char('['), number, char(']')).map(JsonPathItem::Index)),
         (tag("[]").map(|_| JsonPathItem::WildcardIndex)),
-    )))
-    .parse(input)?;
+    )))(input)?;
 
-    Ok((input, JsonPath { first_key, rest }))
+    Ok((input, JsonPathV2 { first_key, rest }))
 }
 
 fn raw_str(input: &str) -> IResult<&str, &str> {
@@ -48,13 +48,13 @@ fn raw_str(input: &str) -> IResult<&str, &str> {
 
 fn quoted_str(input: &str) -> IResult<&str, String> {
     let (input, _) = char('"')(input)?;
-    let (input, rest) = many0(none_of("\\\"")).parse(input)?;
+    let (input, rest) = many0(none_of("\\\""))(input)?;
     let (input, _) = char('"')(input)?;
     Ok((input, rest.iter().collect()))
 }
 
 fn number(input: &str) -> IResult<&str, usize> {
-    map_res(recognize(digit1), str::parse).parse(input)
+    map_res(recognize(digit1), str::parse)(input)
 }
 
 #[cfg(test)]
@@ -63,11 +63,11 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        assert!("".parse::<JsonPath>().is_err());
+        assert!("".parse::<JsonPathV2>().is_err());
 
         assert_eq!(
             "foo".parse(),
-            Ok(JsonPath {
+            Ok(JsonPathV2 {
                 first_key: "foo".to_string(),
                 rest: vec![],
             })
@@ -75,7 +75,7 @@ mod tests {
 
         assert_eq!(
             "foo[1][50].bar-baz[].\"qux[.]quux\"".parse(),
-            Ok(JsonPath {
+            Ok(JsonPathV2 {
                 first_key: "foo".to_string(),
                 rest: vec![
                     JsonPathItem::Index(1),

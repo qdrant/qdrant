@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use common::validation::{validate_range_generic, validate_shard_different_peers};
-use segment::data_types::index::validate_integer_index_params;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant as grpc;
@@ -41,6 +40,19 @@ where
     }
 }
 
+impl<V> ValidateExt for Vec<V>
+where
+    V: Validate,
+{
+    #[inline]
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self.iter().find_map(|v| v.validate().err()) {
+            Some(err) => ValidationErrors::merge(Err(Default::default()), "[]", Err(err)),
+            None => Ok(()),
+        }
+    }
+}
+
 impl<K, V> ValidateExt for HashMap<K, V>
 where
     V: Validate,
@@ -74,16 +86,6 @@ impl Validate for grpc::vectors_config_diff::Config {
     }
 }
 
-impl Validate for grpc::create_vector_name_request::VectorConfig {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        use grpc::create_vector_name_request::VectorConfig;
-        match self {
-            VectorConfig::DenseConfig(dense) => dense.validate(),
-            VectorConfig::SparseConfig(sparse) => sparse.validate(),
-        }
-    }
-}
-
 impl Validate for grpc::quantization_config::Quantization {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use grpc::quantization_config::Quantization;
@@ -91,7 +93,6 @@ impl Validate for grpc::quantization_config::Quantization {
             Quantization::Scalar(scalar) => scalar.validate(),
             Quantization::Product(product) => product.validate(),
             Quantization::Binary(binary) => binary.validate(),
-            Quantization::Turboquant(turbo) => turbo.validate(),
         }
     }
 }
@@ -103,7 +104,6 @@ impl Validate for grpc::quantization_config_diff::Quantization {
             Quantization::Scalar(scalar) => scalar.validate(),
             Quantization::Product(product) => product.validate(),
             Quantization::Binary(binary) => binary.validate(),
-            Quantization::Turboquant(turbo) => turbo.validate(),
             Quantization::Disabled(_) => Ok(()),
         }
     }
@@ -120,41 +120,19 @@ impl Validate for grpc::update_collection_cluster_setup_request::Operation {
             Operation::CreateShardKey(op) => op.validate(),
             Operation::DeleteShardKey(op) => op.validate(),
             Operation::RestartTransfer(op) => op.validate(),
-            Operation::ReplicatePoints(op) => op.validate(),
         }
     }
 }
 
 impl Validate for grpc::MoveShard {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(
-            self.from_peer_id,
-            self.to_peer_id,
-            self.shard_id,
-            self.to_shard_id,
-        )
-    }
-}
-
-impl Validate for grpc::ReplicateShard {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(
-            self.from_peer_id,
-            self.to_peer_id,
-            self.shard_id,
-            self.to_shard_id,
-        )
+        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
     }
 }
 
 impl Validate for crate::grpc::qdrant::AbortShardTransfer {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(
-            self.from_peer_id,
-            self.to_peer_id,
-            self.shard_id,
-            self.to_shard_id,
-        )
+        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
     }
 }
 
@@ -190,27 +168,7 @@ impl Validate for grpc::DeleteShardKey {
 
 impl Validate for grpc::RestartTransfer {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(
-            self.from_peer_id,
-            self.to_peer_id,
-            self.shard_id,
-            self.to_shard_id,
-        )
-    }
-}
-
-impl Validate for grpc::ReplicatePoints {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        if self.from_shard_key != self.to_shard_key {
-            return Ok(());
-        }
-
-        let mut errors = ValidationErrors::new();
-        errors.add(
-            "to_shard_key",
-            validator::ValidationError::new("must be different from from_shard_key"),
-        );
-        Err(errors)
+        Ok(())
     }
 }
 
@@ -224,28 +182,6 @@ impl Validate for grpc::condition::ConditionOneOf {
             ConditionOneOf::IsEmpty(_) => Ok(()),
             ConditionOneOf::HasId(_) => Ok(()),
             ConditionOneOf::IsNull(_) => Ok(()),
-            ConditionOneOf::HasVector(_) => Ok(()),
-        }
-    }
-}
-
-impl Validate for grpc::update_operation::Update {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        use grpc::update_operation::Update;
-        match self {
-            Update::Sync(op) => op.validate(),
-            Update::Upsert(op) => op.validate(),
-            Update::Delete(op) => op.validate(),
-            Update::UpdateVectors(op) => op.validate(),
-            Update::DeleteVectors(op) => op.validate(),
-            Update::SetPayload(op) => op.validate(),
-            Update::OverwritePayload(op) => op.validate(),
-            Update::DeletePayload(op) => op.validate(),
-            Update::ClearPayload(op) => op.validate(),
-            Update::CreateFieldIndex(op) => op.validate(),
-            Update::DeleteFieldIndex(op) => op.validate(),
-            Update::CreateVectorName(op) => op.validate(),
-            Update::DeleteVectorName(op) => op.validate(),
         }
     }
 }
@@ -261,8 +197,6 @@ impl Validate for grpc::FieldCondition {
             geo_radius,
             geo_polygon,
             values_count,
-            is_empty,
-            is_null,
         } = self;
 
         let all_fields_none = r#match.is_none()
@@ -271,9 +205,7 @@ impl Validate for grpc::FieldCondition {
             && geo_bounding_box.is_none()
             && geo_radius.is_none()
             && geo_polygon.is_none()
-            && values_count.is_none()
-            && is_empty.is_none()
-            && is_null.is_none();
+            && values_count.is_none();
 
         if all_fields_none {
             let mut errors = ValidationErrors::new();
@@ -290,63 +222,11 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        #[expect(deprecated)]
-        let grpc::Vector {
-            data,
-            indices,
-            vectors_count,
-            vector,
-        } = self;
-
-        if let Some(vector) = vector {
-            vector.validate()?;
+        if let Some(indices) = &self.indices {
+            sparse::common::sparse_vector::validate_sparse_vector_impl(&indices.data, &self.data)
+        } else {
+            Ok(())
         }
-
-        match (indices, vectors_count) {
-            (Some(_), Some(_)) => {
-                let mut errors = ValidationErrors::new();
-                errors.add(
-                    "indices",
-                    ValidationError::new("`indices` and `vectors_count` cannot be both specified"),
-                );
-                Err(errors)
-            }
-            (Some(indices), None) => {
-                sparse::common::sparse_vector::validate_sparse_vector_impl(&indices.data, data)
-            }
-            (None, Some(vectors_count)) => {
-                common::validation::validate_multi_vector_len(*vectors_count, data)
-            }
-            (None, None) => Ok(()),
-        }
-    }
-}
-
-impl Validate for grpc::vector::Vector {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            grpc::vector::Vector::Dense(_dense) => Ok(()),
-            grpc::vector::Vector::Sparse(sparse) => sparse.validate(),
-            grpc::vector::Vector::MultiDense(multi) => multi.validate(),
-            grpc::vector::Vector::Document(_document) => Ok(()),
-            grpc::vector::Vector::Image(_image) => Ok(()),
-            grpc::vector::Vector::Object(_obj) => Ok(()),
-        }
-    }
-}
-
-impl Validate for grpc::SparseVector {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        let grpc::SparseVector { indices, values } = self;
-        sparse::common::sparse_vector::validate_sparse_vector_impl(indices, values)
-    }
-}
-
-impl Validate for grpc::MultiDenseVector {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        let grpc::MultiDenseVector { vectors } = self;
-        let multivec_length: Vec<_> = vectors.iter().map(|v| v.data.len()).collect();
-        common::validation::validate_multi_vector_by_length(&multivec_length)
     }
 }
 
@@ -364,87 +244,70 @@ impl Validate for super::qdrant::query_enum::Query {
         match self {
             super::qdrant::query_enum::Query::NearestNeighbors(q) => q.validate(),
             super::qdrant::query_enum::Query::RecommendBestScore(q) => q.validate(),
-            super::qdrant::query_enum::Query::RecommendSumScores(q) => q.validate(),
             super::qdrant::query_enum::Query::Discover(q) => q.validate(),
             super::qdrant::query_enum::Query::Context(q) => q.validate(),
         }
     }
 }
 
-impl Validate for super::qdrant::query::Variant {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            grpc::query::Variant::Nearest(q) => q.validate(),
-            grpc::query::Variant::NearestWithMmr(q) => q.validate(),
-            grpc::query::Variant::Recommend(q) => q.validate(),
-            grpc::query::Variant::Discover(q) => q.validate(),
-            grpc::query::Variant::Context(q) => q.validate(),
-            grpc::query::Variant::Formula(q) => q.validate(),
-            grpc::query::Variant::Rrf(q) => q.validate(),
-            grpc::query::Variant::RelevanceFeedback(q) => q.validate(),
-            grpc::query::Variant::Sample(_)
-            | grpc::query::Variant::Fusion(_)
-            | grpc::query::Variant::OrderBy(_) => Ok(()),
-        }
-    }
+/// Validate the value is in `[1, ]` or `None`.
+pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
 }
 
-impl Validate for super::qdrant::vector_input::Variant {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            grpc::vector_input::Variant::Id(_)
-            | grpc::vector_input::Variant::Dense(_)
-            | grpc::vector_input::Variant::Document(_)
-            | grpc::vector_input::Variant::Image(_)
-            | grpc::vector_input::Variant::Object(_) => Ok(()),
-            grpc::vector_input::Variant::Sparse(sparse_vector) => sparse_vector.validate(),
-            grpc::vector_input::Variant::MultiDense(multi_dense_vector) => {
-                multi_dense_vector.validate()
-            }
-        }
-    }
+/// Validate the value is in `[1, ]` or `None`.
+pub fn validate_u32_range_min_1(value: &Option<u32>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
 }
 
-impl Validate for super::qdrant::expression::Variant {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            grpc::expression::Variant::Constant(_) => Ok(()),
-            grpc::expression::Variant::Variable(_) => Ok(()),
-            grpc::expression::Variant::Condition(condition) => condition.validate(),
-            grpc::expression::Variant::GeoDistance(_) => Ok(()),
-            grpc::expression::Variant::Datetime(_) => Ok(()),
-            grpc::expression::Variant::DatetimeKey(_) => Ok(()),
-            grpc::expression::Variant::Mult(mult_expression) => mult_expression.validate(),
-            grpc::expression::Variant::Sum(sum_expression) => sum_expression.validate(),
-            grpc::expression::Variant::Div(div_expression) => div_expression.validate(),
-            grpc::expression::Variant::Neg(expression) => expression.validate(),
-            grpc::expression::Variant::Abs(expression) => expression.validate(),
-            grpc::expression::Variant::Sqrt(expression) => expression.validate(),
-            grpc::expression::Variant::Pow(pow_expression) => pow_expression.validate(),
-            grpc::expression::Variant::Exp(expression) => expression.validate(),
-            grpc::expression::Variant::Log10(expression) => expression.validate(),
-            grpc::expression::Variant::Ln(expression) => expression.validate(),
-            grpc::expression::Variant::ExpDecay(decay_params_expression) => {
-                decay_params_expression.validate()
-            }
-            grpc::expression::Variant::GaussDecay(decay_params_expression) => {
-                decay_params_expression.validate()
-            }
-            grpc::expression::Variant::LinDecay(decay_params_expression) => {
-                decay_params_expression.validate()
-            }
-        }
-    }
+/// Validate the value is in `[100, ]` or `None`.
+pub fn validate_u64_range_min_100(value: &Option<u64>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(100), None))
 }
 
-impl Validate for grpc::feedback_strategy::Variant {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            grpc::feedback_strategy::Variant::Naive(naive_feedback_strategy) => {
-                naive_feedback_strategy.validate()
-            }
-        }
+/// Validate the value is in `[1000, ]` or `None`.
+pub fn validate_u64_range_min_1000(value: &Option<u64>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1000), None))
+}
+
+/// Validate the value is in `[4, ]` or `None`.
+pub fn validate_u64_range_min_4(value: &Option<u64>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), None))
+}
+
+/// Validate the value is in `[4, 10000]` or `None`.
+pub fn validate_u64_range_min_4_max_10000(value: &Option<u64>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), Some(10_000)))
+}
+
+/// Validate the value is in `[0.5, 1.0]` or `None`.
+pub fn validate_f32_range_min_0_5_max_1(value: &Option<f32>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.5), Some(1.0)))
+}
+
+/// Validate the value is in `[0.0, 1.0]` or `None`.
+pub fn validate_f64_range_1(value: &Option<f64>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.0), Some(1.0)))
+}
+
+/// Validate the value is in `[1.0, ]` or `None`.
+pub fn validate_f64_range_min_1(value: &Option<f64>) -> Result<(), ValidationError> {
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1.0), None))
+}
+
+/// Validate the list of named vectors is not empty.
+pub fn validate_named_vectors_not_empty(
+    value: &Option<grpc::NamedVectors>,
+) -> Result<(), ValidationError> {
+    // If length is non-zero, we're good
+    match value {
+        Some(vectors) if !vectors.vectors.is_empty() => return Ok(()),
+        Some(_) | None => {}
     }
+
+    let mut err = ValidationError::new("length");
+    err.add_param(Cow::from("min"), &1);
+    Err(err)
 }
 
 /// Validate that GeoLineString has at least 4 points and is closed.
@@ -467,12 +330,19 @@ pub fn validate_geo_polygon_line_helper(line: &grpc::GeoLineString) -> Result<()
     Ok(())
 }
 
-pub fn validate_geo_polygon_exterior(line: &grpc::GeoLineString) -> Result<(), ValidationError> {
-    if line.points.is_empty() {
-        return Err(ValidationError::new("not_empty"));
+pub fn validate_geo_polygon_exterior(
+    line: &Option<grpc::GeoLineString>,
+) -> Result<(), ValidationError> {
+    match line {
+        Some(l) => {
+            if l.points.is_empty() {
+                return Err(ValidationError::new("not_empty"));
+            }
+            validate_geo_polygon_line_helper(l)?;
+            Ok(())
+        }
+        _ => Err(ValidationError::new("not_empty")),
     }
-    validate_geo_polygon_line_helper(line)?;
-    Ok(())
 }
 
 pub fn validate_geo_polygon_interiors(
@@ -485,8 +355,11 @@ pub fn validate_geo_polygon_interiors(
 }
 
 /// Validate that the timestamp is within the range specified in the protobuf docs.
-/// <https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp>
-pub fn validate_timestamp(ts: &prost_wkt_types::Timestamp) -> Result<(), ValidationError> {
+/// https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp
+pub fn validate_timestamp(ts: &Option<prost_wkt_types::Timestamp>) -> Result<(), ValidationError> {
+    let Some(ts) = ts else {
+        return Ok(());
+    };
     validate_range_generic(
         ts.seconds,
         Some(TIMESTAMP_MIN_SECONDS),
@@ -496,53 +369,13 @@ pub fn validate_timestamp(ts: &prost_wkt_types::Timestamp) -> Result<(), Validat
     Ok(())
 }
 
-impl Validate for super::qdrant::payload_index_params::IndexParams {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            grpc::payload_index_params::IndexParams::KeywordIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::IntegerIndexParams(integer_index_params) => {
-                integer_index_params.validate()
-            }
-            grpc::payload_index_params::IndexParams::FloatIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::GeoIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::TextIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::BoolIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::DatetimeIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::UuidIndexParams(_) => Ok(()),
-        }
-    }
-}
-
-impl Validate for super::qdrant::IntegerIndexParams {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        let super::qdrant::IntegerIndexParams {
-            lookup,
-            range,
-            is_principal: _,
-            on_disk: _,
-            enable_hnsw: _,
-        } = &self;
-        validate_integer_index_params(lookup, range)
-    }
-}
-
-impl Validate for super::qdrant::points_selector::PointsSelectorOneOf {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            grpc::points_selector::PointsSelectorOneOf::Points(_) => Ok(()),
-            grpc::points_selector::PointsSelectorOneOf::Filter(filter) => filter.validate(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest,
-        DenseVectorCreationConfig, GeoLineString, GeoPoint, GeoPolygon, SearchPoints,
-        UpdateCollection, create_vector_name_request,
+        CreateCollection, CreateFieldIndexCollection, GeoLineString, GeoPoint, GeoPolygon,
+        SearchPoints, UpdateCollection,
     };
 
     #[test]
@@ -559,7 +392,7 @@ mod tests {
 
         // Collection name validation must not be strict on non-creation
         let bad_request = UpdateCollection {
-            collection_name: "no\\path".into(),
+            collection_name: "no/path".into(),
             ..Default::default()
         };
         assert!(
@@ -603,16 +436,6 @@ mod tests {
         // Collection name validation must be strict on creation
         let bad_request = CreateCollection {
             collection_name: "no*path".into(),
-            ..Default::default()
-        };
-        assert!(
-            bad_request.validate().is_err(),
-            "bad collection request should error on validation"
-        );
-
-        // Collection name validation must still disallow some characters on update
-        let bad_request = UpdateCollection {
-            collection_name: "no/path".into(),
             ..Default::default()
         };
         assert!(
@@ -748,47 +571,5 @@ mod tests {
             good_polygon.validate().is_ok(),
             "good polygon should not error on validation"
         );
-    }
-
-    #[test]
-    fn test_create_vector_name_request() {
-        let request_with_zero_size = CreateVectorNameRequest {
-            collection_name: "test".into(),
-            vector_name: "vec".into(),
-            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
-                DenseVectorCreationConfig {
-                    size: 0,
-                    ..Default::default()
-                },
-            )),
-            ..Default::default()
-        };
-        assert!(request_with_zero_size.validate().is_err());
-
-        let request_with_oversize = CreateVectorNameRequest {
-            collection_name: "test".into(),
-            vector_name: "vec".into(),
-            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
-                DenseVectorCreationConfig {
-                    size: 65537,
-                    ..Default::default()
-                },
-            )),
-            ..Default::default()
-        };
-        assert!(request_with_oversize.validate().is_err());
-
-        let good_request = CreateVectorNameRequest {
-            collection_name: "test".into(),
-            vector_name: "vec".into(),
-            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
-                DenseVectorCreationConfig {
-                    size: 768,
-                    ..Default::default()
-                },
-            )),
-            ..Default::default()
-        };
-        assert!(good_request.validate().is_ok());
     }
 }

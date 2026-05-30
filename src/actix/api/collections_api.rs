@@ -1,24 +1,21 @@
+use std::future::Future;
 use std::time::Duration;
 
 use actix_web::rt::time::Instant;
-use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
+use actix_web::{delete, get, patch, post, put, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
-use collection::operations::types::CollectionError;
-use collection::operations::verification::new_unchecked_verification_pass;
 use serde::Deserialize;
-use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::dispatcher::Dispatcher;
-use storage::rbac::AccessRequirements;
 use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::api::StrictCollectionPath;
-use crate::actix::auth::ActixAuth;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response};
 use crate::common::collections::*;
 
@@ -35,146 +32,120 @@ impl WaitTimeout {
 }
 
 #[get("/collections")]
-async fn get_collections(
+fn get_collections(
     dispatcher: web::Data<Dispatcher>,
-    ActixAuth(auth): ActixAuth,
-) -> HttpResponse {
-    // No request to verify
-    let pass = new_unchecked_verification_pass();
-
-    helpers::time(do_list_collections(dispatcher.toc(&auth, &pass), &auth)).await
+    ActixAccess(access): ActixAccess,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move { do_list_collections(dispatcher.toc(&access), access).await })
 }
 
 #[get("/aliases")]
 async fn get_aliases(
     dispatcher: web::Data<Dispatcher>,
-    ActixAuth(auth): ActixAuth,
-) -> HttpResponse {
-    // No request to verify
-    let pass = new_unchecked_verification_pass();
-
-    helpers::time(do_list_aliases(dispatcher.toc(&auth, &pass), &auth)).await
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let timing = Instant::now();
+    let response = do_list_aliases(dispatcher.toc(&access), access).await;
+    process_response(response, timing)
 }
 
-#[get("/collections/{collection_name}")]
+#[get("/collections/{name}")]
 async fn get_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAuth(auth): ActixAuth,
-) -> HttpResponse {
-    // No request to verify
-    let pass = new_unchecked_verification_pass();
-
-    helpers::time(do_get_collection(
-        dispatcher.toc(&auth, &pass),
-        &auth,
-        &collection.collection_name,
-        None,
-    ))
-    .await
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let timing = Instant::now();
+    let response = do_get_collection(dispatcher.toc(&access), access, &collection.name, None).await;
+    process_response(response, timing)
 }
 
-#[get("/collections/{collection_name}/exists")]
+#[get("/collections/{name}/exists")]
 async fn get_collection_existence(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAuth(auth): ActixAuth,
-) -> HttpResponse {
-    // No request to verify
-    let pass = new_unchecked_verification_pass();
-
-    helpers::time(do_collection_exists(
-        dispatcher.toc(&auth, &pass),
-        &auth,
-        &collection.collection_name,
-    ))
-    .await
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let timing = Instant::now();
+    let response = do_collection_exists(dispatcher.toc(&access), access, &collection.name).await;
+    process_response(response, timing)
 }
 
-#[get("/collections/{collection_name}/aliases")]
+#[get("/collections/{name}/aliases")]
 async fn get_collection_aliases(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAuth(auth): ActixAuth,
-) -> HttpResponse {
-    // No request to verify
-    let pass = new_unchecked_verification_pass();
-
-    helpers::time(do_list_collection_aliases(
-        dispatcher.toc(&auth, &pass),
-        &auth,
-        &collection.collection_name,
-    ))
-    .await
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let timing = Instant::now();
+    let response =
+        do_list_collection_aliases(dispatcher.toc(&access), access, &collection.name).await;
+    process_response(response, timing)
 }
 
-#[put("/collections/{collection_name}")]
+#[put("/collections/{name}")]
 async fn create_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<StrictCollectionPath>,
     operation: Json<CreateCollection>,
     Query(query): Query<WaitTimeout>,
-    ActixAuth(auth): ActixAuth,
-) -> HttpResponse {
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
     let timing = Instant::now();
-    let create_collection_op =
-        CreateCollectionOperation::new(collection.collection_name.clone(), operation.into_inner());
-
-    let Ok(create_collection_op) = create_collection_op else {
-        return process_response(create_collection_op, timing, None);
-    };
-
     let response = dispatcher
         .submit_collection_meta_op(
-            CollectionMetaOperations::CreateCollection(create_collection_op),
-            auth,
+            CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
+                collection.name.clone(),
+                operation.into_inner(),
+            )),
+            access,
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None)
+    process_response(response, timing)
 }
 
-#[patch("/collections/{collection_name}")]
+#[patch("/collections/{name}")]
 async fn update_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<UpdateCollection>,
     Query(query): Query<WaitTimeout>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let name = collection.collection_name.clone();
+    let name = collection.name.clone();
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::UpdateCollection(UpdateCollectionOperation::new(
                 name,
                 operation.into_inner(),
             )),
-            auth,
+            access,
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None)
+    process_response(response, timing)
 }
 
-#[delete("/collections/{collection_name}")]
+#[delete("/collections/{name}")]
 async fn delete_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     Query(query): Query<WaitTimeout>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
-                collection.collection_name.clone(),
+                collection.name.clone(),
             )),
-            auth,
+            access,
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None)
+    process_response(response, timing)
 }
 
 #[post("/collections/aliases")]
@@ -182,141 +153,50 @@ async fn update_aliases(
     dispatcher: web::Data<Dispatcher>,
     operation: Json<ChangeAliasesOperation>,
     Query(query): Query<WaitTimeout>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::ChangeAliases(operation.0),
-            auth,
+            access,
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None)
+    process_response(response, timing)
 }
 
-#[get("/collections/{collection_name}/cluster")]
+#[get("/collections/{name}/cluster")]
 async fn get_cluster_info(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // No request to verify
-    let pass = new_unchecked_verification_pass();
-
-    helpers::time(do_get_collection_cluster(
-        dispatcher.toc(&auth, &pass),
-        &auth,
-        &collection.collection_name,
-    ))
-    .await
+    let timing = Instant::now();
+    let response =
+        do_get_collection_cluster(dispatcher.toc(&access), access, &collection.name).await;
+    process_response(response, timing)
 }
 
-#[post("/collections/{collection_name}/cluster")]
+#[post("/collections/{name}/cluster")]
 async fn update_collection_cluster(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<ClusterOperations>,
     Query(query): Query<WaitTimeout>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait_timeout = query.timeout();
     let response = do_update_collection_cluster(
         &dispatcher.into_inner(),
-        collection.collection_name.clone(),
+        collection.name.clone(),
         operation.0,
-        auth,
+        access,
         wait_timeout,
     )
     .await;
-    process_response(response, timing, None)
-}
-
-#[derive(Deserialize, Clone, Validate)]
-struct OptimizationsParam {
-    with: Option<String>,
-    completed_limit: Option<u64>,
-}
-
-const DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT: u64 = 16;
-
-impl TryFrom<&OptimizationsParam> for OptimizationsRequestOptions {
-    type Error = CollectionError;
-
-    fn try_from(
-        params: &OptimizationsParam,
-    ) -> Result<OptimizationsRequestOptions, CollectionError> {
-        let OptimizationsParam {
-            with,
-            completed_limit,
-        } = params;
-        let completed_limit =
-            completed_limit.unwrap_or(DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT) as usize;
-        let mut options = OptimizationsRequestOptions {
-            queued: false,
-            completed_limit: None,
-            idle_segments: false,
-        };
-        for field in with.as_deref().unwrap_or("").split(',') {
-            match field.trim() {
-                "" => (),
-                "queued" => options.queued = true,
-                "completed" => options.completed_limit = Some(completed_limit),
-                "idle_segments" => options.idle_segments = true,
-                _ => Err(CollectionError::bad_input(format!(
-                    "Unknown field in 'with' parameter: {field}"
-                )))?,
-            }
-        }
-        Ok(options)
-    }
-}
-
-#[get("/collections/{collection_name}/optimizations")]
-fn get_optimizations(
-    dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
-    ActixAuth(auth): ActixAuth,
-    params: Query<OptimizationsParam>,
-) -> impl Future<Output = HttpResponse> {
-    helpers::time(async move {
-        let options = OptimizationsRequestOptions::try_from(&params.into_inner())?;
-        let pass = new_unchecked_verification_pass();
-        let collection_pass = auth.check_collection_access(
-            &collection.collection_name,
-            AccessRequirements::new(),
-            "get_optimizations",
-        )?;
-        Ok(dispatcher
-            .toc(&auth, &pass)
-            .get_collection(&collection_pass)
-            .await?
-            .optimizations(options)
-            .await?)
-    })
-}
-
-#[get("/collections/{collection_name}/memory")]
-fn get_collection_memory(
-    dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
-    ActixAuth(auth): ActixAuth,
-) -> impl Future<Output = HttpResponse> {
-    helpers::time(async move {
-        let pass = new_unchecked_verification_pass();
-        let collection_pass = auth.check_collection_access(
-            &collection.collection_name,
-            AccessRequirements::new(),
-            "get_collection_memory",
-        )?;
-        Ok(dispatcher
-            .toc(&auth, &pass)
-            .get_collection(&collection_pass)
-            .await?
-            .memory_report()
-            .await?)
-    })
+    process_response(response, timing)
 }
 
 // Configure services
@@ -333,8 +213,6 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_aliases)
         .service(get_collection_aliases)
         .service(get_cluster_info)
-        .service(get_optimizations)
-        .service(get_collection_memory)
         .service(update_collection_cluster);
 }
 

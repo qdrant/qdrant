@@ -1,24 +1,13 @@
-use std::borrow::Cow;
+use std::cmp::max;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::Result;
 
-use crate::common::sparse_vector::RemappedSparseVector;
-use crate::common::types::{DimId, DimOffset};
-use crate::index::inverted_index::{InvertedIndex, out_of_bounds};
-use crate::index::posting_list::{PostingList, PostingListIterator};
-use crate::index::posting_list_common::PostingElementEx;
-
-pub struct Version;
-
-impl StorageVersion for Version {
-    fn current_raw() -> &'static str {
-        panic!("InvertedIndexRam is not supposed to be versioned");
-    }
-}
+use super::inverted_index_mmap::InvertedIndexMmap;
+use crate::common::sparse_vector::SparseVector;
+use crate::common::types::DimId;
+use crate::index::inverted_index::InvertedIndex;
+use crate::index::posting_list::{PostingElement, PostingList, PostingListIterator};
 
 /// Inverted flatten index from dimension id to posting list
 #[derive(Debug, Clone, PartialEq)]
@@ -29,88 +18,64 @@ pub struct InvertedIndexRam {
     /// Number of unique indexed vectors
     /// pre-computed on build and upsert to avoid having to traverse the posting lists.
     pub vector_count: usize,
-    /// Total size of all searchable sparse vectors in bytes
-    pub total_sparse_size: usize,
 }
 
 impl InvertedIndex for InvertedIndexRam {
-    type Iter<'a> = PostingListIterator<'a>;
+    fn open(path: &Path) -> std::io::Result<Self> {
+        let mmap_inverted_index = InvertedIndexMmap::load(path)?;
+        let mut inverted_index = InvertedIndexRam {
+            postings: Default::default(),
+            vector_count: mmap_inverted_index.file_header.vector_count,
+        };
 
-    type Version = Version;
-
-    fn is_on_disk(&self) -> bool {
-        false
-    }
-
-    fn open(_path: &Path) -> Result<Self> {
-        panic!("InvertedIndexRam is not supposed to be loaded");
-    }
-
-    fn save(&self, _path: &Path) -> std::io::Result<()> {
-        panic!("InvertedIndexRam is not supposed to be saved");
-    }
-
-    fn get<'a>(
-        &'a self,
-        id: DimOffset,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> Result<PostingListIterator<'a>> {
-        Ok(self.get(id)?.iter())
-    }
-
-    fn len(&self) -> usize {
-        self.postings.len()
-    }
-
-    fn posting_list_len(&self, id: DimOffset, _hw_counter: &HardwareCounterCell) -> Result<usize> {
-        Ok(self.get(id)?.elements.len())
-    }
-
-    fn files(_path: &Path) -> Vec<PathBuf> {
-        Vec::new()
-    }
-
-    fn immutable_files(_path: &Path) -> Vec<PathBuf> {
-        // `InvertedIndexRam` has no files
-        Vec::new()
-    }
-
-    fn remove(&mut self, id: PointOffsetType, old_vector: RemappedSparseVector) {
-        let old_vector_size = old_vector.len() * size_of::<PostingElementEx>();
-        for dim_id in old_vector.indices {
-            if let Some(posting) = self.postings.get_mut(dim_id as usize) {
-                posting.delete(id);
-            } else {
-                log::debug!("Posting list for dimension {dim_id} not found");
-            }
+        for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
+            let posting_list = mmap_inverted_index.get(&i).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Posting list {} not found", i),
+                )
+            })?;
+            inverted_index.postings.push(PostingList {
+                elements: posting_list.to_owned(),
+            });
         }
 
-        self.total_sparse_size = self.total_sparse_size.saturating_sub(old_vector_size);
-        self.vector_count = self.vector_count.saturating_sub(1);
+        Ok(inverted_index)
     }
 
-    fn upsert(
-        &mut self,
-        id: PointOffsetType,
-        vector: RemappedSparseVector,
-        old_vector: Option<RemappedSparseVector>,
-    ) {
-        self.upsert(id, vector, old_vector);
+    fn save(&self, path: &Path) -> std::io::Result<()> {
+        InvertedIndexMmap::convert_and_save(self, path)?;
+        Ok(())
+    }
+
+    fn get(&self, id: &DimId) -> Option<PostingListIterator> {
+        self.get(id)
+            .map(|posting_list| PostingListIterator::new(&posting_list.elements))
+    }
+
+    fn files(path: &Path) -> Vec<PathBuf> {
+        [
+            InvertedIndexMmap::index_file_path(path),
+            InvertedIndexMmap::index_config_file_path(path),
+        ]
+        .into_iter()
+        .filter(|p| p.exists())
+        .collect()
+    }
+
+    fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
+        self.upsert(id, vector);
     }
 
     fn from_ram_index<P: AsRef<Path>>(
-        ram_index: Cow<InvertedIndexRam>,
+        ram_index: InvertedIndexRam,
         _path: P,
     ) -> std::io::Result<Self> {
-        Ok(ram_index.into_owned())
+        Ok(ram_index)
     }
 
     fn vector_count(&self) -> usize {
         self.vector_count
-    }
-
-    fn total_sparse_vectors_size(&self) -> usize {
-        self.total_sparse_size
     }
 
     fn max_index(&self) -> Option<DimId> {
@@ -127,47 +92,22 @@ impl InvertedIndexRam {
         InvertedIndexRam {
             postings: Vec::new(),
             vector_count: 0,
-            total_sparse_size: 0,
         }
     }
 
-    pub fn get(&self, id: DimOffset) -> Result<&PostingList> {
-        self.postings
-            .get(id as usize)
-            .ok_or_else(|| out_of_bounds(id, self.len()))
+    /// Get posting list for dimension id
+    pub fn get(&self, id: &DimId) -> Option<&PostingList> {
+        self.postings.get((*id) as usize)
     }
 
     /// Upsert a vector into the inverted index.
-    pub fn upsert(
-        &mut self,
-        id: PointOffsetType,
-        vector: RemappedSparseVector,
-        old_vector: Option<RemappedSparseVector>,
-    ) {
-        // Find elements of the old vector that are not in the new vector
-        if let Some(old_vector) = &old_vector {
-            let elements_to_delete = old_vector
-                .indices
-                .iter()
-                .filter(|&dim_id| !vector.indices.contains(dim_id))
-                .map(|&dim_id| dim_id as usize);
-            for dim_id in elements_to_delete {
-                if let Some(posting) = self.postings.get_mut(dim_id) {
-                    posting.delete(id);
-                } else {
-                    log::debug!("Posting list for dimension {dim_id} not found");
-                }
-            }
-        }
-
-        let new_vector_size = vector.len() * size_of::<PostingElementEx>();
-
-        for (dim_id, weight) in vector.indices.into_iter().zip(vector.values) {
+    pub fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
+        for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
                 Some(posting) => {
                     // update existing posting list
-                    let posting_element = PostingElementEx::new(id, weight);
+                    let posting_element = PostingElement::new(id, weight);
                     posting.upsert(posting_element);
                 }
                 None => {
@@ -178,27 +118,16 @@ impl InvertedIndexRam {
                 }
             }
         }
-        if let Some(old) = old_vector {
-            self.total_sparse_size = self
-                .total_sparse_size
-                .saturating_sub(old.len() * size_of::<PostingElementEx>());
-        } else {
-            self.vector_count += 1;
-        }
-
-        self.total_sparse_size += new_vector_size
-    }
-
-    pub fn total_posting_elements_size(&self) -> usize {
-        self.postings
-            .iter()
-            .map(|posting| posting.elements.len() * size_of::<PostingElementEx>())
-            .sum()
+        // given that there are no holes in the internal ids and that we are not deleting from the index
+        // we can just use the id as a proxy the count
+        self.vector_count = max(self.vector_count, id as usize);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tempfile::Builder;
+
     use super::*;
     use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
@@ -214,11 +143,10 @@ mod tests {
 
         inverted_index_ram.upsert(
             4,
-            RemappedSparseVector::new(vec![1, 2, 3], vec![40.0, 40.0, 40.0]).unwrap(),
-            None,
+            SparseVector::new(vec![1, 2, 3], vec![40.0, 40.0, 40.0]).unwrap(),
         );
         for i in 1..4 {
-            let posting_list = inverted_index_ram.get(i).unwrap();
+            let posting_list = inverted_index_ram.get(&i).unwrap();
             let posting_list = posting_list.elements.as_slice();
             assert_eq!(posting_list.len(), 4);
             assert_eq!(posting_list.first().unwrap().weight, 10.0);
@@ -243,8 +171,7 @@ mod tests {
 
         inverted_index_ram.upsert(
             4,
-            RemappedSparseVector::new(vec![1, 2, 30], vec![40.0, 40.0, 40.0]).unwrap(),
-            None,
+            SparseVector::new(vec![1, 2, 30], vec![40.0, 40.0, 40.0]).unwrap(),
         );
 
         // new dimension resized postings
@@ -252,7 +179,7 @@ mod tests {
 
         // updated existing dimension
         for i in 1..3 {
-            let posting_list = inverted_index_ram.get(i).unwrap();
+            let posting_list = inverted_index_ram.get(&i).unwrap();
             let posting_list = posting_list.elements.as_slice();
             assert_eq!(posting_list.len(), 4);
             assert_eq!(posting_list.first().unwrap().weight, 10.0);
@@ -262,7 +189,7 @@ mod tests {
         }
 
         // fetch 30th posting
-        let postings = inverted_index_ram.get(30).unwrap();
+        let postings = inverted_index_ram.get(&30).unwrap();
         let postings = postings.elements.as_slice();
         assert_eq!(postings.len(), 1);
         let posting = postings.first().unwrap();
@@ -272,9 +199,9 @@ mod tests {
 
     #[test]
     fn test_upsert_insert_equivalence() {
-        let first_vec: RemappedSparseVector = [(1, 10.0), (2, 10.0), (3, 10.0)].into();
-        let second_vec: RemappedSparseVector = [(1, 20.0), (2, 20.0), (3, 20.0)].into();
-        let third_vec: RemappedSparseVector = [(1, 30.0), (2, 30.0), (3, 30.0)].into();
+        let first_vec: SparseVector = [(1, 10.0), (2, 10.0), (3, 10.0)].into();
+        let second_vec: SparseVector = [(1, 20.0), (2, 20.0), (3, 20.0)].into();
+        let third_vec: SparseVector = [(1, 30.0), (2, 30.0), (3, 30.0)].into();
 
         let mut builder = InvertedIndexBuilder::new();
         builder.add(1, first_vec.clone());
@@ -285,14 +212,31 @@ mod tests {
         assert_eq!(inverted_index_ram_built.vector_count, 3);
 
         let mut inverted_index_ram_upserted = InvertedIndexRam::empty();
-        inverted_index_ram_upserted.upsert(1, first_vec, None);
-        inverted_index_ram_upserted.upsert(2, second_vec, None);
-        inverted_index_ram_upserted.upsert(3, third_vec, None);
+        inverted_index_ram_upserted.upsert(1, first_vec);
+        inverted_index_ram_upserted.upsert(2, second_vec);
+        inverted_index_ram_upserted.upsert(3, third_vec);
 
         assert_eq!(
             inverted_index_ram_built.postings.len(),
             inverted_index_ram_upserted.postings.len()
         );
         assert_eq!(inverted_index_ram_built, inverted_index_ram_upserted);
+    }
+
+    #[test]
+    fn inverted_index_ram_save_load() {
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap());
+        builder.add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap());
+        builder.add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap());
+        let inverted_index_ram = builder.build();
+
+        assert_eq!(inverted_index_ram.vector_count, 3);
+
+        let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
+        inverted_index_ram.save(tmp_dir_path.path()).unwrap();
+
+        let loaded_inverted_index_ram = InvertedIndexRam::open(tmp_dir_path.path()).unwrap();
+        assert_eq!(inverted_index_ram, loaded_inverted_index_ram);
     }
 }

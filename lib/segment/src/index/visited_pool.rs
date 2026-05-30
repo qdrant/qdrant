@@ -17,8 +17,8 @@ pub struct VisitedListHandle<'a> {
 /// and reuse same counter for multiple queries.
 #[derive(Debug)]
 struct VisitedList {
-    current_iter: u8,
-    visit_counters: Vec<u8>,
+    current_iter: usize,
+    visit_counters: Vec<usize>,
 }
 
 impl Default for VisitedList {
@@ -39,7 +39,7 @@ impl VisitedList {
     }
 }
 
-impl Drop for VisitedListHandle<'_> {
+impl<'a> Drop for VisitedListHandle<'a> {
     fn drop(&mut self) {
         self.pool
             .return_back(std::mem::take(&mut self.visited_list));
@@ -54,12 +54,25 @@ impl<'a> VisitedListHandle<'a> {
         }
     }
 
+    pub fn get_current_iteration_id(&self) -> usize {
+        self.visited_list.current_iter
+    }
+
+    // Count how many points were visited since the given iteration
+    pub fn count_visits_since(&self, iteration_id: usize) -> usize {
+        self.visited_list
+            .visit_counters
+            .iter()
+            .filter(|x| **x >= iteration_id)
+            .count()
+    }
+
     /// Return `true` if visited
     pub fn check(&self, point_id: PointOffsetType) -> bool {
         self.visited_list
             .visit_counters
             .get(point_id as usize)
-            .is_some_and(|x| *x == self.visited_list.current_iter)
+            .map_or(false, |x| *x >= self.visited_list.current_iter)
     }
 
     /// Updates visited list
@@ -69,24 +82,13 @@ impl<'a> VisitedListHandle<'a> {
         if idx >= self.visited_list.visit_counters.len() {
             self.visited_list.visit_counters.resize(idx + 1, 0);
         }
-        std::mem::replace(
-            &mut self.visited_list.visit_counters[idx],
-            self.visited_list.current_iter,
-        ) == self.visited_list.current_iter
+        let prev_value = self.visited_list.visit_counters[idx];
+        self.visited_list.visit_counters[idx] = self.visited_list.current_iter;
+        prev_value >= self.visited_list.current_iter
     }
 
     pub fn next_iteration(&mut self) {
-        self.visited_list.current_iter = self.visited_list.current_iter.wrapping_add(1);
-        if self.visited_list.current_iter == 0 {
-            self.visited_list.current_iter = 1;
-            self.visited_list.visit_counters.fill(0);
-        }
-    }
-
-    fn resize(&mut self, num_points: usize) {
-        // `self.current_iter` is never 0, so it's safe to use 0 as a default
-        // value.
-        self.visited_list.visit_counters.resize(num_points, 0);
+        self.visited_list.current_iter += 1;
     }
 }
 
@@ -105,14 +107,14 @@ impl VisitedPool {
         }
     }
 
-    pub fn get(&self, num_points: usize) -> VisitedListHandle<'_> {
+    pub fn get(&self, num_points: usize) -> VisitedListHandle {
         // If there are more concurrent requests, a new temporary list is created dynamically.
         // This limit is implemented to prevent memory leakage.
         match self.pool.write().pop() {
             None => VisitedListHandle::new(self, VisitedList::new(num_points)),
-            Some(data) => {
+            Some(mut data) => {
+                data.visit_counters.resize(num_points, 0);
                 let mut visited_list = VisitedListHandle::new(self, data);
-                visited_list.resize(num_points);
                 visited_list.next_iteration();
                 visited_list
             }
@@ -130,30 +132,5 @@ impl VisitedPool {
 impl Default for VisitedPool {
     fn default() -> Self {
         VisitedPool::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_visited_list() {
-        let pool = VisitedPool::new();
-        let mut visited_list = pool.get(10);
-
-        for _ in 0..2 {
-            assert!(!visited_list.check(0));
-            assert!(!visited_list.check_and_update_visited(0));
-            assert!(visited_list.check(0));
-
-            assert!(visited_list.check_and_update_visited(0));
-            assert!(visited_list.check(0));
-
-            for _ in 0..(u8::MAX as usize * 2 + 10) {
-                visited_list.next_iteration();
-                assert!(!visited_list.check(0));
-            }
-        }
     }
 }

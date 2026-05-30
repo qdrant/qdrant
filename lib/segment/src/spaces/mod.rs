@@ -8,7 +8,6 @@ pub mod simple_sse;
 #[cfg(target_arch = "x86_64")]
 pub mod simple_avx;
 
-pub mod metric_f16;
 pub mod metric_uint;
 
 #[cfg(target_arch = "aarch64")]

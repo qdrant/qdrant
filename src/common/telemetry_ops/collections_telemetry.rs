@@ -1,11 +1,6 @@
-use std::sync::atomic::AtomicBool;
-use std::time::Duration;
-
-use ahash::HashSet;
-use collection::operations::types::CollectionResult;
-use collection::telemetry::{
-    CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
-};
+use collection::config::CollectionParams;
+use collection::operations::types::OptimizersStatus;
+use collection::telemetry::CollectionTelemetry;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -13,71 +8,101 @@ use serde::Serialize;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 
-#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
-#[serde(untagged)]
-pub enum CollectionTelemetryEnum {
-    Full(Box<CollectionTelemetry>),
-    Aggregated(Box<CollectionsAggregatedTelemetry>),
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+pub struct CollectionsAggregatedTelemetry {
+    pub vectors: usize,
+    pub optimizers_status: OptimizersStatus,
+    pub params: CollectionParams,
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[serde(untagged)]
+pub enum CollectionTelemetryEnum {
+    Full(CollectionTelemetry),
+    Aggregated(CollectionsAggregatedTelemetry),
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct CollectionsTelemetry {
-    #[anonymize(false)]
     pub number_of_collections: usize,
-    #[anonymize(false)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_collections: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collections: Option<Vec<CollectionTelemetryEnum>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub snapshots: Option<Vec<CollectionSnapshotTelemetry>>,
+}
+
+impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
+    fn from(telemetry: CollectionTelemetry) -> Self {
+        let optimizers_status = telemetry
+            .shards
+            .iter()
+            .flat_map(|shard| shard.local.as_ref().map(|x| x.optimizations.status.clone()))
+            .max()
+            .unwrap_or(OptimizersStatus::Ok);
+
+        CollectionsAggregatedTelemetry {
+            vectors: telemetry.count_vectors(),
+            optimizers_status,
+            params: telemetry.config.params,
+        }
+    }
 }
 
 impl CollectionsTelemetry {
-    pub async fn collect(
-        detail: TelemetryDetail,
-        access: &Access,
-        only_collections: Option<HashSet<String>>,
-        toc: &TableOfContent,
-        timeout: Duration,
-        is_stopped: &AtomicBool,
-    ) -> CollectionResult<Self> {
+    pub async fn collect(detail: TelemetryDetail, access: &Access, toc: &TableOfContent) -> Self {
         let number_of_collections = toc.all_collections(access).await.len();
-        let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
-            let telemetry_data = if detail.level >= DetailsLevel::Level2 {
-                let toc_telemetry = toc
-                    .get_telemetry_data(detail, access, only_collections, timeout, is_stopped)
-                    .await?;
+        let collections = if detail.level >= DetailsLevel::Level1 {
+            let telemetry_data = toc
+                .get_telemetry_data(detail, access)
+                .await
+                .into_iter()
+                .map(|telemetry| {
+                    if detail.level >= DetailsLevel::Level2 {
+                        CollectionTelemetryEnum::Full(telemetry)
+                    } else {
+                        CollectionTelemetryEnum::Aggregated(telemetry.into())
+                    }
+                })
+                .collect();
 
-                let collections: Vec<_> = toc_telemetry
-                    .collection_telemetry
-                    .into_iter()
-                    .map(|t| CollectionTelemetryEnum::Full(Box::new(t)))
-                    .collect();
-
-                (collections, toc_telemetry.snapshot_telemetry)
-            } else {
-                let collections = toc
-                    .get_aggregated_telemetry_data(access, timeout, is_stopped)
-                    .await?
-                    .into_iter()
-                    .map(|t| CollectionTelemetryEnum::Aggregated(Box::new(t)))
-                    .collect();
-                (collections, vec![])
-            };
-
-            (Some(telemetry_data.0), Some(telemetry_data.1))
+            Some(telemetry_data)
         } else {
-            (None, None)
+            None
         };
 
-        let max_collections = toc.max_collections();
-
-        Ok(CollectionsTelemetry {
+        CollectionsTelemetry {
             number_of_collections,
-            max_collections,
             collections,
-            snapshots,
-        })
+        }
+    }
+}
+
+impl Anonymize for CollectionsTelemetry {
+    fn anonymize(&self) -> Self {
+        CollectionsTelemetry {
+            number_of_collections: self.number_of_collections,
+            collections: self.collections.anonymize(),
+        }
+    }
+}
+
+impl Anonymize for CollectionTelemetryEnum {
+    fn anonymize(&self) -> Self {
+        match self {
+            CollectionTelemetryEnum::Full(telemetry) => {
+                CollectionTelemetryEnum::Full(telemetry.anonymize())
+            }
+            CollectionTelemetryEnum::Aggregated(telemetry) => {
+                CollectionTelemetryEnum::Aggregated(telemetry.anonymize())
+            }
+        }
+    }
+}
+
+impl Anonymize for CollectionsAggregatedTelemetry {
+    fn anonymize(&self) -> Self {
+        CollectionsAggregatedTelemetry {
+            optimizers_status: self.optimizers_status.clone(),
+            vectors: self.vectors.anonymize(),
+            params: self.params.anonymize(),
+        }
     }
 }

@@ -1,10 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::time::SystemTime;
 
 use api::grpc::conversions::naive_date_time_to_proto;
 use chrono::{DateTime, NaiveDateTime};
-use fs_err::tokio as tokio_fs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -13,7 +11,6 @@ use validator::Validate;
 use crate::operations::types::CollectionResult;
 
 /// Defines source of truth for snapshot recovery:
-///
 /// `NoSync` means - restore snapshot without *any* additional synchronization.
 /// `Snapshot` means - prefer snapshot data over the current state.
 /// `Replica` means - prefer existing data over the snapshot.
@@ -21,8 +18,8 @@ use crate::operations::types::CollectionResult;
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPriority {
     NoSync,
-    #[default]
     Snapshot,
+    #[default]
     Replica,
     // `ShardTransfer` is for internal use only, and should not be exposed/used in public API
     #[serde(skip)]
@@ -33,9 +30,9 @@ impl TryFrom<i32> for SnapshotPriority {
     type Error = tonic::Status;
 
     fn try_from(snapshot_priority: i32) -> Result<Self, Self::Error> {
-        api::grpc::qdrant::ShardSnapshotPriority::try_from(snapshot_priority)
+        api::grpc::qdrant::ShardSnapshotPriority::from_i32(snapshot_priority)
             .map(Into::into)
-            .map_err(|_| tonic::Status::invalid_argument("Malformed shard snapshot priority"))
+            .ok_or_else(|| tonic::Status::invalid_argument("Malformed shard snapshot priority"))
     }
 }
 
@@ -76,25 +73,11 @@ pub struct SnapshotRecover {
 
     /// Optional SHA256 checksum to verify snapshot integrity before recovery.
     #[serde(default)]
-    #[validate(custom(function = "common::validation::validate_sha256_hash"))]
+    #[validate(custom = "common::validation::validate_sha256_hash")]
     pub checksum: Option<String>,
-
-    /// Optional API key used when fetching the snapshot from a remote URL.
-    #[serde(default)]
-    pub api_key: Option<String>,
-}
-
-fn snapshot_description_example() -> SnapshotDescription {
-    SnapshotDescription {
-        name: "my-collection-3766212330831337-2024-07-22-08-31-55.snapshot".to_string(),
-        creation_time: Some(NaiveDateTime::from_str("2022-08-04T10:49:10").unwrap()),
-        size: 1_000_000,
-        checksum: Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0".to_string()),
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[schemars(example = "snapshot_description_example")]
 pub struct SnapshotDescription {
     pub name: String,
     pub creation_time: Option<NaiveDateTime>,
@@ -105,25 +88,18 @@ pub struct SnapshotDescription {
 
 impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
     fn from(value: SnapshotDescription) -> Self {
-        let SnapshotDescription {
-            name,
-            creation_time,
-            size,
-            checksum,
-        } = value;
-
         Self {
-            name,
-            creation_time: creation_time.map(naive_date_time_to_proto),
-            size: size as i64,
-            checksum,
+            name: value.name,
+            creation_time: value.creation_time.map(naive_date_time_to_proto),
+            size: value.size as i64,
+            checksum: value.checksum,
         }
     }
 }
 
 pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotDescription> {
     let name = path.file_name().unwrap().to_str().unwrap();
-    let file_meta = tokio_fs::metadata(&path).await?;
+    let file_meta = tokio::fs::metadata(&path).await?;
     let creation_time = file_meta.created().ok().and_then(|created_time| {
         created_time
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -147,7 +123,7 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
 
 async fn read_checksum_for_snapshot(snapshot_path: impl Into<PathBuf>) -> Option<String> {
     let checksum_path = get_checksum_path(snapshot_path);
-    tokio_fs::read_to_string(&checksum_path).await.ok()
+    tokio::fs::read_to_string(&checksum_path).await.ok()
 }
 
 pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
@@ -156,7 +132,24 @@ pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
     checksum_path.into()
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema, Validate)]
+pub async fn list_snapshots_in_directory(
+    directory: &Path,
+) -> CollectionResult<Vec<SnapshotDescription>> {
+    let mut entries = tokio::fs::read_dir(directory).await?;
+    let mut snapshots = Vec::new();
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+
+        if !path.is_dir() && path.extension().map_or(false, |ext| ext == "snapshot") {
+            snapshots.push(get_snapshot_description(&path).await?);
+        }
+    }
+
+    Ok(snapshots)
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
 pub struct ShardSnapshotRecover {
     pub location: ShardSnapshotLocation,
 
@@ -164,13 +157,9 @@ pub struct ShardSnapshotRecover {
     pub priority: Option<SnapshotPriority>,
 
     /// Optional SHA256 checksum to verify snapshot integrity before recovery.
-    #[validate(custom(function = "common::validation::validate_sha256_hash"))]
+    #[validate(custom = "common::validation::validate_sha256_hash")]
     #[serde(default)]
     pub checksum: Option<String>,
-
-    /// Optional API key used when fetching the snapshot from a remote URL.
-    #[serde(default)]
-    pub api_key: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
@@ -202,9 +191,7 @@ impl TryFrom<api::grpc::qdrant::ShardSnapshotLocation> for ShardSnapshotLocation
     fn try_from(location: api::grpc::qdrant::ShardSnapshotLocation) -> Result<Self, Self::Error> {
         use api::grpc::qdrant::shard_snapshot_location;
 
-        let api::grpc::qdrant::ShardSnapshotLocation { location } = location;
-
-        let Some(location) = location else {
+        let Some(location) = location.location else {
             return Err(tonic::Status::invalid_argument(
                 "Malformed shard snapshot location",
             ));

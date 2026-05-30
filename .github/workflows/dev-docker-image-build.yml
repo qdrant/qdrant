@@ -1,40 +1,42 @@
-name: Build and push a branch image to ghcr
+name: Push dev branch container to ghcr
 
 on:
   workflow_dispatch:
   push:
     branches:
       - dev
-      - master
-  repository_dispatch:
-    types: [benchmark-trigger-image-build]
 
 jobs:
-  branch-build-and-push:
-    if: ${{ !github.event.client_payload.triggered }}
+  dev-build-and-push:
     runs-on: [self-hosted, linux, x64]
     steps:
-        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-          with:
-            ref: ${{ github.ref_name }}
-        - uses: ./.github/actions/branch-build-and-push
-          with:
-            ghcr-password: ${{ secrets.GITHUB_TOKEN }}
-            dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
-            push-to-ghcr: true
-            # Only push 'dev' and 'master' branch to Docker Hub
-            push-to-dockerhub: ${{ github.ref_name == 'dev' || github.ref_name == 'master' }}
-            # Enable `staging` feature for all branches except master (tags are excluded by ref_type check)
-            staging-build: ${{ github.ref_type == 'branch' && github.ref_name != 'master' }}
+        - uses: actions/checkout@v4
+        - name: Build the Docker image
+          run: |
+            buildx_containers=$(docker container ls -qf "name=buildx_buildkit")
+            buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit")
 
-  triggered-branch-build-and-push:
-    if: ${{ github.event.client_payload.triggered }}
-    runs-on: [self-hosted, linux, x64]
-    steps:
-        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-          with:
-            ref: ${{ github.event.client_payload.version }}
-        - uses: ./.github/actions/branch-build-and-push
-          with:
-            ghcr-password: ${{ secrets.GITHUB_TOKEN }}
-            push-to-ghcr: true
+            if [ -n "$buildx_containers" ]; then
+              echo "Buildx containers to delete: " "$buildx_containers"
+              docker container rm -f "$buildx_containers"
+            fi
+
+            if [ -n "$buildx_volumes" ]; then
+              echo "Buildx volumes to delete: " "$buildx_volumes"
+              docker volume rm "$buildx_volumes"
+            fi
+
+            # Create build container
+            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+            docker buildx create --use
+
+            # Authenticate on registries
+            docker login https://ghcr.io -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
+
+            # Build regular image for Github Registry
+            GITHUB_TAG="-t ghcr.io/qdrant/qdrant:dev-${{ github.sha }} -t ghcr.io/qdrant/qdrant:dev"
+
+            # Pull, retag and push to GitHub packages
+            docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
+
+

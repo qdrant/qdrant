@@ -1,16 +1,9 @@
-#![allow(dead_code)]
-
-use api::rest::models::{CollectionsResponse, ShardKeysResponse, Usage, VersionInfo};
-use api::rest::schema::PointInsertOperations;
-use api::rest::{
-    FacetRequest, FacetResponse, QueryGroupsRequest, QueryRequest, QueryRequestBatch,
-    QueryResponse, Record, ScoredPoint, SearchMatrixOffsetsResponse, SearchMatrixPairsResponse,
-    SearchMatrixRequest, UpdateVectors,
-};
+use api::grpc::models::{CollectionsResponse, VersionInfo};
+use api::rest::{Record, ScoredPoint};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointsSelector, WriteOrdering};
+use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
 };
@@ -21,24 +14,22 @@ use collection::operations::types::{
     RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
     SearchRequestBatch, UpdateResult,
 };
-use collection::operations::vector_ops::DeleteVectors;
+use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
+use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
-use schemars::r#gen::SchemaSettings;
 use serde::Serialize;
-use shard::operations::optimization::OptimizationsResponse;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 use storage::types::ClusterStatus;
 
+use crate::common::helpers::LocksOption;
+use crate::common::points::{CreateFieldIndex, UpdateOperations};
 use crate::common::telemetry::TelemetryData;
-use crate::common::telemetry_ops::distributed_telemetry::DistributedTelemetryData;
-use crate::common::update::{CreateFieldIndex, UpdateOperations};
 
 mod actix;
 mod common;
 mod settings;
-mod tracing;
 
 #[derive(Serialize, JsonSchema)]
 struct AllDefinitions {
@@ -71,6 +62,7 @@ struct AllDefinitions {
     ar: ClusterOperations,
     at: SearchRequestBatch,
     au: RecommendRequestBatch,
+    av: LocksOption,
     aw: SnapshotRecover,
     ax: CollectionsAliasesResponse,
     ay: AliasDescription,
@@ -88,26 +80,12 @@ struct AllDefinitions {
     bb: DiscoverRequestBatch,
     bc: VersionInfo,
     bd: CollectionExistence,
-    be: QueryRequest,
-    bf: QueryRequestBatch,
-    bg: QueryResponse,
-    bh: QueryGroupsRequest,
-    bi: SearchMatrixRequest,
-    bj: SearchMatrixOffsetsResponse,
-    bk: SearchMatrixPairsResponse,
-    bl: FacetRequest,
-    bm: FacetResponse,
-    bn: Usage,
-    bo: ShardKeysResponse,
-    bp: OptimizationsResponse,
-    bq: DistributedTelemetryData,
-    br: segment::data_types::vector_name_config::VectorNameConfig,
 }
 
 fn save_schema<T: JsonSchema>() {
     let settings = SchemaSettings::draft07();
-    let generator = settings.into_generator();
-    let schema = generator.into_root_schema_for::<T>();
+    let gen = settings.into_generator();
+    let schema = gen.into_root_schema_for::<T>();
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();
     println!("{schema_str}")
 }

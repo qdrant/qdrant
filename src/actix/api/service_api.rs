@@ -1,71 +1,52 @@
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 
-use actix_web::http::StatusCode;
 use actix_web::http::header::ContentType;
+use actix_web::http::StatusCode;
 use actix_web::rt::time::Instant;
-use actix_web::web::Data;
-use actix_web::{HttpResponse, Responder, get, post, web};
-use actix_web_validator::{Path, Query};
-use collection::operations::verification::new_unchecked_verification_pass;
+use actix_web::web::Query;
+use actix_web::{get, post, web, HttpResponse, Responder};
+use actix_web_validator::Json;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
-use validator::Validate;
 
-use super::CollectionPath;
-use crate::actix::auth::ActixAuth;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
+use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
 use crate::common::telemetry::TelemetryCollector;
-use crate::settings::ServiceConfig;
-use crate::tracing;
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 pub struct TelemetryParam {
     pub anonymize: Option<bool>,
     pub details_level: Option<usize>,
-    pub per_collection: Option<bool>,
-    #[validate(range(min = 1))]
-    pub timeout: Option<u64>,
-}
-
-impl TelemetryParam {
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(Duration::from_secs)
-    }
 }
 
 #[get("/telemetry")]
 fn telemetry(
-    telemetry_collector: Data<Mutex<TelemetryCollector>>,
+    telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
+        access.check_global_access(AccessRequirements::new())?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
             .map_or(DetailsLevel::Level0, Into::into);
-
         let detail = TelemetryDetail {
             level: details_level,
             histograms: false,
-            per_collection: params.per_collection.unwrap_or(false),
         };
-        let telemetry_data = telemetry_collector
-            .lock()
-            .await
-            .prepare_data(&auth, detail, None, params.timeout())
-            .await?;
+        let telemetry_collector = telemetry_collector.lock().await;
+        let telemetry_data = telemetry_collector.prepare_data(&access, detail).await;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
         } else {
@@ -75,86 +56,93 @@ fn telemetry(
     })
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 pub struct MetricsParam {
     pub anonymize: Option<bool>,
-    pub per_collection: Option<bool>,
-    #[validate(range(min = 1))]
-    pub timeout: Option<u64>,
-}
-
-impl MetricsParam {
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(Duration::from_secs)
-    }
 }
 
 #[get("/metrics")]
 async fn metrics(
-    telemetry_collector: Data<Mutex<TelemetryCollector>>,
+    telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
-    config: Data<ServiceConfig>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    if let Err(err) = auth
-        .unlogged_access() // Do not log access to metrics, as it is too noizy
-        .check_global_access(AccessRequirements::new())
-    {
-        return process_response_error(err, Instant::now(), None);
+    if let Err(err) = access.check_global_access(AccessRequirements::new()) {
+        return process_response_error(err, Instant::now());
     }
 
     let anonymize = params.anonymize.unwrap_or(false);
-    let per_collection = params.per_collection.unwrap_or(false);
+    let telemetry_collector = telemetry_collector.lock().await;
     let telemetry_data = telemetry_collector
-        .lock()
-        .await
         .prepare_data(
-            &auth,
+            &access,
             TelemetryDetail {
-                level: DetailsLevel::Level4,
+                level: DetailsLevel::Level1,
                 histograms: true,
-                per_collection,
             },
-            None,
-            params.timeout(),
         )
         .await;
-    match telemetry_data {
-        Err(err) => process_response_error(err, Instant::now(), None),
-        Ok(telemetry_data) => {
-            let telemetry_data = if anonymize {
-                telemetry_data.anonymize()
-            } else {
-                telemetry_data
-            };
+    let telemetry_data = if anonymize {
+        telemetry_data.anonymize()
+    } else {
+        telemetry_data
+    };
 
-            let metrics_prefix = config.metrics_prefix.as_deref();
-            HttpResponse::Ok()
-                .content_type(ContentType::plaintext())
-                .body(
-                    MetricsData::new_from_telemetry(telemetry_data, metrics_prefix)
-                        .format_metrics(),
-                )
-        }
-    }
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .body(MetricsData::from(telemetry_data).format_metrics())
+}
+
+#[post("/locks")]
+fn put_locks(
+    dispatcher: web::Data<Dispatcher>,
+    locks_option: Json<LocksOption>,
+    ActixAccess(access): ActixAccess,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        let toc = dispatcher.toc(&access);
+        access.check_global_access(AccessRequirements::new().manage())?;
+        let result = LocksOption {
+            write: toc.is_write_locked(),
+            error_message: toc.get_lock_error_message(),
+        };
+        toc.set_locks(locks_option.write, locks_option.error_message.clone());
+        Ok(result)
+    })
+}
+
+#[get("/locks")]
+fn get_locks(
+    dispatcher: web::Data<Dispatcher>,
+    ActixAccess(access): ActixAccess,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        access.check_global_access(AccessRequirements::new())?;
+        let toc = dispatcher.toc(&access);
+        let result = LocksOption {
+            write: toc.is_write_locked(),
+            error_message: toc.get_lock_error_message(),
+        };
+        Ok(result)
+    })
 }
 
 #[get("/stacktrace")]
-fn get_stacktrace(ActixAuth(auth): ActixAuth) -> impl Future<Output = HttpResponse> {
+fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        auth.check_global_access(AccessRequirements::new().manage(), "get_stacktrace")?;
+        access.check_global_access(AccessRequirements::new().manage())?;
         Ok(get_stack_trace())
     })
 }
 
 #[get("/healthz")]
 async fn healthz() -> impl Responder {
-    kubernetes_healthz()
+    kubernetes_healthz().await
 }
 
 #[get("/livez")]
 async fn livez() -> impl Responder {
-    kubernetes_healthz()
+    kubernetes_healthz().await
 }
 
 #[get("/readyz")]
@@ -176,101 +164,20 @@ async fn readyz(health_checker: web::Data<Option<Arc<health::HealthChecker>>>) -
 }
 
 /// Basic Kubernetes healthz endpoint
-fn kubernetes_healthz() -> impl Responder {
+async fn kubernetes_healthz() -> impl Responder {
     HttpResponse::Ok()
         .content_type(ContentType::plaintext())
         .body("healthz check passed")
-}
-
-#[get("/logger")]
-async fn get_logger_config(
-    ActixAuth(auth): ActixAuth,
-    handle: web::Data<tracing::LoggerHandle>,
-) -> impl Responder {
-    let timing = Instant::now();
-
-    let future = async {
-        let _ = auth.check_global_access(AccessRequirements::new(), "get_logger_config")?;
-        let config = handle.get_config().await;
-        Ok(config)
-    };
-
-    helpers::process_response(future.await, timing, None)
-}
-
-#[post("/logger")]
-async fn update_logger_config(
-    ActixAuth(auth): ActixAuth,
-    handle: web::Data<tracing::LoggerHandle>,
-    mut config: web::Json<tracing::LoggerConfig>,
-) -> impl Responder {
-    let timing = Instant::now();
-
-    let future = async {
-        let _ =
-            auth.check_global_access(AccessRequirements::new().manage(), "update_logger_config")?;
-
-        // Log file can only be set in Qdrant config file
-        config.on_disk.log_file = None;
-
-        handle
-            .update_config(config.into_inner())
-            .await
-            .map_err(|err| StorageError::service_error(err.to_string()))?;
-
-        Ok(true)
-    };
-
-    helpers::process_response(future.await, timing, None)
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct TruncateUnappliedWalParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wait: Option<bool>,
-}
-
-#[post("/collections/{collection_name}/truncate_unapplied_wal")]
-async fn truncate_unapplied_wal(
-    dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
-    params: Query<TruncateUnappliedWalParams>,
-    ActixAuth(auth): ActixAuth,
-) -> impl Responder {
-    let future = async move {
-        let collection_pass = auth
-            .check_global_access(AccessRequirements::new().manage(), "truncate_unapplied_wal")?
-            .issue_pass(&collection.collection_name)
-            .into_static();
-
-        let pass = new_unchecked_verification_pass();
-        let collection = dispatcher
-            .toc(&auth, &pass)
-            .get_collection(&collection_pass)
-            .await?;
-
-        collection
-            .truncate_unapplied_wal()
-            .await
-            .map_err(StorageError::from)
-    };
-    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
         .service(metrics)
+        .service(put_locks)
+        .service(get_locks)
         .service(get_stacktrace)
         .service(healthz)
         .service(livez)
-        .service(readyz)
-        .service(get_logger_config)
-        .service(update_logger_config)
-        .service(truncate_unapplied_wal);
-}
-
-// Dedicated service for metrics
-pub fn config_metrics_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(metrics);
+        .service(readyz);
 }

@@ -8,7 +8,7 @@ pub struct BuildConditionChecker<'a> {
     pub current_point: PointOffsetType,
 }
 
-impl FilterContext for BuildConditionChecker<'_> {
+impl<'a> FilterContext for BuildConditionChecker<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         if point_id == self.current_point {
             return false; // Do not match current point while inserting it (second time)

@@ -6,11 +6,7 @@ use validator::{Validate, ValidationErrors};
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
-    /// The subject ID; can be a subscription ID, cluster ID, or user ID
-    pub sub: Option<String>,
-
     /// Expiration time (seconds since UNIX epoch)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<u64>,
 
     #[serde(default = "default_access")]
@@ -18,10 +14,6 @@ pub struct Claims {
 
     /// Validate this token by looking for a value inside a collection.
     pub value_exists: Option<ValueExists>,
-
-    /// An arbitrary subject string provided by the client, used for audit logging.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subject: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]

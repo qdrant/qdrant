@@ -8,110 +8,123 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  UV_VERSION: 0.9.17
 
 jobs:
-  integration-tests:
+  test:
 
     runs-on: ubuntu-latest
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: dtolnay/rust-toolchain@stable 
+      - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: arduino/setup-protoc@v3
         with:
-          shared-key: integration-tests
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.13'
-      - name: Install dependencies
-        run: |
-          sudo apt-get install clang
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv --project tests lock --check
-          uv --project tests sync
-      - name: Build
-        run: cargo build --features "service_debug data-consistency-check staging" --locked
-      - name: Run integration tests
-        run: uv --project tests run bash ./tests/integration-tests.sh
-        shell: bash
-
-  integration-tests-consensus:
-
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: integration-tests
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
         run: sudo apt-get install clang
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.13'
-      - name: Install uv and Python dependencies
-        run: |
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv --project tests lock --check
-          uv --project tests sync
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check staging" --locked
+        run: cargo build --features service_debug
+      - name: Run integration tests
+        run: ./tests/integration-tests.sh
+        shell: bash
+
+  test-consensus:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install python deps
+        run: pip install -r ./tests/consensus_tests/requirements.txt
+      - name: Build
+        run: cargo build --features service_debug
       - name: Run integration tests - 1 peer
-        run: uv --project tests run bash ./tests/integration-tests.sh distributed
+        run: ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
-        run: uv --project tests run pytest -n auto --dist=loadfile -v tests/consensus_tests --durations=10
+        run: pytest ./tests/consensus_tests
         timeout-minutes: 60
-      - name: upload logs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
         with:
-          path: consensus_test_logs
           name: consensus-test-logs
-          retention-days: 10
+          retention-days: 90 # default max value
+          path: consensus_test_logs
 
   test-consensus-compose:
 
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-      - name: Install uv and Python dependencies
-        run: |
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv --project tests lock --check
-          uv --project tests sync
+          python-version: '3.10'
+      - name: Install requests python lib
+        run: pip install requests
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@v3
       - name: Docker build
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        uses: docker/build-push-action@v5
         with:
           context: .
           tags: qdrant_consensus
           cache-from: |
-            type=gha,scope=${{ github.base_ref || github.ref_name }}-consensus
-            type=gha,scope=dev-consensus
-          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-consensus', github.ref_name) || '' }}
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
             PROFILE=ci
-            FEATURES=staging
       - name: Run integration tests - multiple peers - compose
-        run: uv --project tests run bash ./test_restart.sh
+        run: ./test_restart.sh
         working-directory: ./tests/consensus_tests
+
+  test-tls-compose:
+
+    name: "Basic TLS/HTTPS tests"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: qdrant_tls
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
+          build-args: |
+            PROFILE=ci
+      - name: Run basic TLS/HTTPS test
+        run: ./test_tls.sh
+        working-directory: ./tests/tls
+      - name: Run snapshot shard transfer TLS/HTTPS test
+        run: ./test_tls_snapshot_shard_transfer.sh
+        working-directory: ./tests/tls
+
 
   test-consistency:
 
@@ -119,17 +132,15 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: integration-tests
+        uses: dtolnay/rust-toolchain@stable 
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@v3
       - name: Install dependencies
-        run: sudo apt-get install -y clang jq
+        run: sudo apt-get install -y jq
       - name: Docker build
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        uses: docker/build-push-action@v5
         with:
           context: tools/schema2openapi
           tags: schema2openapi
@@ -140,128 +151,110 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
-            FEATURES=staging
       - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: gRPC file consistency check
         run: ./tests/grpc_consistency_check.sh
       - name: OpenAPI file consistency check
         run: ./tests/openapi_consistency_check.sh
 
-  test-shard-snapshot-api-s3-minio:
+
+  test-low-resources:
     runs-on: ubuntu-latest
-    # Setup minio server
-    services:
-      minio:
-        image: satantime/minio-server
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ACCESS_KEY: "minioadmin"
-          MINIO_SECRET_KEY: "minioadmin"
+
     steps:
-      - name: Setup test bucket
-        env:
-          AWS_ACCESS_KEY_ID: "minioadmin"
-          AWS_SECRET_ACCESS_KEY: "minioadmin"
-          AWS_EC2_METADATA_DISABLED: "true"
-        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: integration-tests
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
       - name: Install dependencies
-        run: sudo apt-get install clang jq
-      - name: Build
-        run: cargo build --bin qdrant --features "staging" --locked
-      - name: Run Shard Snapshot API Tests (local)
-        shell: bash
-        run: |
-          cargo run --features "staging" &
-          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
-          sleep 10
-
-          ./tests/shard-snapshot-api.sh test-all
-      - name: Run Shard Snapshot API Tests (s3)
-        shell: bash
-        run: |
-          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE=s3
-          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__BUCKET=test-bucket
-          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__REGION=us-east-1
-          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ACCESS_KEY=minioadmin
-          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__SECRET_KEY=minioadmin
-          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL=http://127.0.0.1:9000
-
-          cargo run --features "staging" &
-          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
-          sleep 10
-
-          ./tests/shard-snapshot-api.sh test-all
-
-  e2e-tests:
-    runs-on: ubuntu-latest
-
-    # Setup minio server
-    services:
-      minio:
-        image: satantime/minio-server
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ACCESS_KEY: "minioadmin"
-          MINIO_SECRET_KEY: "minioadmin"
-
-    steps:
-      - name: Setup test bucket
-        env:
-          AWS_ACCESS_KEY_ID: "minioadmin"
-          AWS_SECRET_ACCESS_KEY: "minioadmin"
-          AWS_EC2_METADATA_DISABLED: "true"
-        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        run: sudo apt-get install clang git-lfs jq
+      - name: Setup git-lfs
+        run: git lfs install
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
         with:
-          lfs: true  # Fetch LFS files automatically
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.13'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-      - name: Install uv and Python dependencies
-        run: |
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv --project tests lock --check
-          uv --project tests sync
-      - name: Build Qdrant Docker image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        uses: docker/setup-buildx-action@v3
+      - name: Docker build
+        uses: docker/build-push-action@v5
         with:
           context: .
-          tags: qdrant/qdrant:e2e-tests
+          tags: qdrant-recovery
           cache-from: |
-            type=gha,scope=${{ github.base_ref || github.ref_name }}-e2e
-            type=gha,scope=dev-e2e
-          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-e2e', github.ref_name) || '' }}
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
             PROFILE=ci
-            FEATURES=data-consistency-check,staging
-      - name: Verify Docker image
-        run: docker images | grep qdrant
-      - name: Run e2e tests
-        run: uv --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
+      - name: Run low RAM test
+        working-directory: ./tests/low-ram
         shell: bash
-        timeout-minutes: 20
-      - name: Upload test logs on failure
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
+        run: ./low-ram.sh
+      - name: Run low Disk test
+        working-directory: ./tests/low-disk
+        shell: bash
+        run: ./low-disk.sh
+
+  test-snapshot-operations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get install clang jq
+      - name: Setup git-lfs
+        run: git lfs install
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
         with:
-          name: e2e-test-logs
-          path: |
-            tests/e2e_tests/test_*.log
-            tests/e2e_tests/**/logs/
-          retention-days: 7
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: qdrant-snapshots
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
+          build-args: |
+            PROFILE=ci
+      - name: Run test snapshot operations on different storage filesystems
+        working-directory: ./tests/snapshots
+        shell: bash
+        run: ./snapshots-recovery.sh
+
+  test-shard-snapshot-api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies
+        run: sudo apt-get install clang jq
+      - name: Build
+        run: cargo build --bin qdrant
+      - name: Run Shard Snapshot API Tests
+        shell: bash
+        run: |
+          cargo run &
+          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
+          sleep 10
+          ./tests/shard-snapshot-api.sh test-all

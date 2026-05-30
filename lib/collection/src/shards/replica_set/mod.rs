@@ -1,12 +1,9 @@
 pub mod clock_set;
 mod execute_read_operation;
 mod locally_disabled_peers;
-mod partial_snapshot_meta;
 mod read_ops;
-pub mod replica_set_state;
 mod shard_transfer;
-pub mod snapshots;
-mod telemetry;
+mod snapshots;
 mod update;
 
 use std::collections::{HashMap, HashSet};
@@ -15,42 +12,29 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::save_on_disk::SaveOnDisk;
-use common::types::DeferredBehavior;
-use replica_set_state::{ReplicaSetState, ReplicaState};
-use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey, StrictModeConfig};
+use common::cpu::CpuBudget;
+use common::types::TelemetryDetail;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use shard::operations::optimization::{
-    OptimizationsRequestOptions, OptimizationsResponse, OptimizationsSummary,
-};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
-use tokio::task::spawn_blocking;
-use tokio_util::task::AbortOnDropHandle;
 
-use self::partial_snapshot_meta::PartialSnapshotMeta;
-use super::CollectionId;
 use super::local_shard::clock_map::RecoveryPoint;
-use super::local_shard::{LocalShard, LocalShardOptimizations};
+use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
-use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
-use crate::common::collection_size_stats::CollectionSizeStats;
+use super::CollectionId;
 use crate::common::snapshots_manager::SnapshotStorageManager;
-use crate::config::CollectionConfigInternal;
+use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
-use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
-use crate::optimizers_builder::OptimizersConfig;
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_trait::WaitUntil;
+use crate::shards::telemetry::ReplicaSetTelemetry;
 
 //    │    Collection Created
 //    │
@@ -89,7 +73,6 @@ use crate::shards::shard_trait::WaitUntil;
 //
 
 /// A set of shard replicas.
-///
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.
 /// Perform updates on all replicas and report error if there is at least one failure.
@@ -105,31 +88,23 @@ pub struct ShardReplicaSet {
     locally_disabled_peers: parking_lot::RwLock<locally_disabled_peers::Registry>,
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
-    /// Optional shard key. Wrapped in `parking_lot::RwLock` so it can be
-    /// reassigned via `&self` (e.g. when applying snapshot state on a shard
-    /// that was already mounted).
-    shard_key: parking_lot::RwLock<Option<ShardKey>>,
-    notify_peer_failure_cb: ChangePeerFromState,
+    notify_peer_failure_cb: ChangePeerState,
     abort_shard_transfer_cb: AbortShardTransfer,
     channel_service: ChannelService,
     collection_id: CollectionId,
-    collection_config: Arc<RwLock<CollectionConfigInternal>>,
-    optimizers_config: OptimizersConfig,
+    collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
-    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     update_runtime: Handle,
-    search_runtime: AdaptiveSearchHandle,
-    optimizer_resource_budget: ResourceBudget,
+    search_runtime: Handle,
+    optimizer_cpu_budget: CpuBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
     /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
-    pub partial_snapshot_meta: PartialSnapshotMeta,
 }
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
 pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
-pub type ChangePeerFromState = Arc<dyn Fn(PeerId, ShardId, Option<ReplicaState>) + Send + Sync>;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
@@ -138,22 +113,19 @@ impl ShardReplicaSet {
     #[allow(clippy::too_many_arguments)]
     pub async fn build(
         shard_id: ShardId,
-        shard_key: Option<ShardKey>,
         collection_id: CollectionId,
         this_peer_id: PeerId,
         local: bool,
         remotes: HashSet<PeerId>,
-        on_peer_failure: ChangePeerFromState,
+        on_peer_failure: ChangePeerState,
         abort_shard_transfer: AbortShardTransfer,
         collection_path: &Path,
-        collection_config: Arc<RwLock<CollectionConfigInternal>>,
-        effective_optimizers_config: OptimizersConfig,
+        collection_config: Arc<RwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
-        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
         update_runtime: Handle,
-        search_runtime: AdaptiveSearchHandle,
-        optimizer_resource_budget: ResourceBudget,
+        search_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
         init_state: Option<ReplicaState>,
     ) -> CollectionResult<Self> {
         let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
@@ -164,11 +136,8 @@ impl ShardReplicaSet {
                 &shard_path,
                 collection_config.clone(),
                 shared_storage_config.clone(),
-                payload_index_schema.clone(),
                 update_runtime.clone(),
-                search_runtime.clone(),
-                optimizer_resource_budget.clone(),
-                effective_optimizers_config.clone(),
+                optimizer_cpu_budget.clone(),
             )
             .await?;
             Some(Shard::Local(shard))
@@ -176,7 +145,7 @@ impl ShardReplicaSet {
             None
         };
         let replica_state: SaveOnDisk<ReplicaSetState> =
-            SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE))?;
+            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
 
         let init_replica_state = init_state.unwrap_or(ReplicaState::Initializing);
         replica_state.write(|rs| {
@@ -204,7 +173,6 @@ impl ShardReplicaSet {
 
         Ok(Self {
             shard_id,
-            shard_key: parking_lot::RwLock::new(shard_key),
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
@@ -215,15 +183,12 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config,
-            optimizers_config: effective_optimizers_config,
             shared_storage_config,
-            payload_index_schema,
             update_runtime,
             search_runtime,
-            optimizer_resource_budget,
+            optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
-            partial_snapshot_meta: PartialSnapshotMeta::default(),
         })
     }
 
@@ -235,30 +200,26 @@ impl ShardReplicaSet {
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         shard_id: ShardId,
-        shard_key: Option<ShardKey>,
         collection_id: CollectionId,
         shard_path: &Path,
-        is_dirty_shard: bool,
-        collection_config: Arc<RwLock<CollectionConfigInternal>>,
-        effective_optimizers_config: OptimizersConfig,
+        collection_config: Arc<RwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
-        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
-        on_peer_failure: ChangePeerFromState,
+        on_peer_failure: ChangePeerState,
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
-        search_runtime: AdaptiveSearchHandle,
-        optimizer_resource_budget: ResourceBudget,
+        search_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
-            SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
+            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
 
         if replica_state.read().this_peer_id != this_peer_id {
             replica_state
                 .write(|rs| {
-                    let old_peer_id = rs.this_peer_id;
-                    let local_state = rs.remove_peer_state(old_peer_id);
+                    let this_peer_id = rs.this_peer_id;
+                    let local_state = rs.remove_peer_state(&this_peer_id);
                     if let Some(state) = local_state {
                         rs.set_peer_state(this_peer_id, state);
                     }
@@ -281,27 +242,15 @@ impl ShardReplicaSet {
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
                 Shard::Dummy(DummyShard::new(recovery_reason))
-            } else if is_dirty_shard {
-                log::error!(
-                    "Shard {collection_id}:{shard_id} is not fully initialized - loading as dummy shard"
-                );
-                // This dummy shard will be replaced only when it rejects an update (marked as dead so recovery process kicks in)
-                Shard::Dummy(DummyShard::new(
-                    "Dirty shard - shard is not fully initialized",
-                ))
             } else {
                 let res = LocalShard::load(
                     shard_id,
                     collection_id.clone(),
                     shard_path,
                     collection_config.clone(),
-                    effective_optimizers_config.clone(),
                     shared_storage_config.clone(),
-                    payload_index_schema.clone(),
-                    true,
                     update_runtime.clone(),
-                    search_runtime.clone(),
-                    optimizer_resource_budget.clone(),
+                    optimizer_cpu_budget.clone(),
                 )
                 .await;
 
@@ -334,7 +283,6 @@ impl ShardReplicaSet {
 
         let replica_set = Self {
             shard_id,
-            shard_key: parking_lot::RwLock::new(shard_key),
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
@@ -346,19 +294,15 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config,
-            optimizers_config: effective_optimizers_config,
             shared_storage_config,
-            payload_index_schema,
             update_runtime,
             search_runtime,
-            optimizer_resource_budget,
+            optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
-            partial_snapshot_meta: PartialSnapshotMeta::default(),
         };
 
-        // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
-        if local_load_failure && replica_set.active_shards(true).is_empty() {
+        if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
             replica_set
                 .locally_disabled_peers
                 .write()
@@ -368,44 +312,17 @@ impl ShardReplicaSet {
         replica_set
     }
 
-    pub async fn stop_gracefully(&self) {
-        if let Some(local) = self.local.write().await.take() {
-            local.stop_gracefully().await;
-        }
-    }
-
-    pub fn shard_key(&self) -> Option<ShardKey> {
-        self.shard_key.read().clone()
-    }
-
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
-    }
-
-    pub async fn has_remote_shard(&self) -> bool {
-        !self.remotes.read().await.is_empty()
     }
 
     pub async fn has_local_shard(&self) -> bool {
         self.local.read().await.is_some()
     }
 
-    /// Checks if the shard exists locally and not a proxy.
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::Local(_) | Shard::Dummy(_)))
-    }
-
-    pub async fn is_proxy(&self) -> bool {
-        let local_read = self.local.read().await;
-        match *local_read {
-            None => false,
-            Some(Shard::Local(_)) => false,
-            Some(Shard::Proxy(_)) => true,
-            Some(Shard::ForwardProxy(_)) => true,
-            Some(Shard::QueueProxy(_)) => true,
-            Some(Shard::Dummy(_)) => false,
-        }
     }
 
     pub async fn is_queue_proxy(&self) -> bool {
@@ -419,74 +336,20 @@ impl ShardReplicaSet {
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
-        self.replica_state.read().peers().clone()
+        self.replica_state.read().peers()
     }
 
-    /// Checks if the current replica contains a unique source of truth and should never
-    /// be deactivated or removed.
-    /// If current replica is the only "alive" replica, it is considered the last source of truth.
-    ///
-    /// If our replica is `Initializing`, we consider it to be the last source of truth if there is
-    /// no other active replicas. If we would deactivate it, it will be impossible to recover the
-    /// replica later. This may happen if we got killed or crashed during collection creation.
-    ///
-    /// Same logic applies to `Listener` replicas, as they are not recoverable if there are no
-    /// other active replicas.
-    ///
-    /// Examples:
-    /// Active(this), Initializing(other), Initializing(other) -> true
-    /// Active(this), Active(other) -> false
-    /// Initializing(this) -> true
-    /// Initializing(this), Initializing(other) -> true
-    /// Initializing(this), Dead(other) -> true
-    /// Initializing(this), Active(other) -> false
-    /// Active(this), Initializing(other) -> true
-    ///
-    pub fn is_last_source_of_truth_replica(&self, peer_id: PeerId) -> bool {
-        // This includes `Active` and `ReshardingScaleDown` replicas!
-        let active_peers = self.replica_state.read().active_peers();
-        if active_peers.is_empty()
-            && let Some(peer_state) = self.peer_state(peer_id)
-        {
-            // If there are no other active peers, deactivating those replicas
-            // is not recoverable, so it is considered the last source of truth,
-            // even though it is not technically active.
-            return matches!(
-                peer_state,
-                ReplicaState::Initializing | ReplicaState::Listener
-            );
-        }
-        active_peers.len() == 1 && active_peers.contains(&peer_id)
+    pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
+        self.replica_state.read().get_peer_state(peer_id).copied()
     }
 
-    pub fn peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
-        self.replica_state.read().get_peer_state(peer_id)
-    }
-
-    pub fn check_peers_state_all(&self, check: impl Fn(ReplicaState) -> bool) -> bool {
-        self.replica_state.read().check_peers_state_all(check)
-    }
-
-    /// List the peer IDs on which this shard is active
-    /// - `remote_only`: if true, excludes the local peer ID from the result
-    pub fn active_shards(&self, remote_only: bool) -> Vec<PeerId> {
+    pub async fn active_remote_shards(&self) -> Vec<PeerId> {
         let replica_state = self.replica_state.read();
+        let this_peer_id = replica_state.this_peer_id;
         replica_state
-            .active_peers() // This includes `Active` and `ReshardingScaleDown` replicas!
+            .active_peers()
             .into_iter()
-            .filter(|&peer_id| {
-                !self.is_locally_disabled(peer_id)
-                    && (!remote_only || peer_id != replica_state.this_peer_id)
-            })
-            .collect()
-    }
-
-    pub fn readable_shards(&self) -> Vec<PeerId> {
-        let replica_state = self.replica_state.read();
-        replica_state
-            .readable_peers() // This includes `ActiveRead`, `Active`, and `ReshardingScaleDown` replicas!
-            .into_iter()
-            .filter(|&peer_id| !self.is_locally_disabled(peer_id))
+            .filter(|peer_id| !self.is_locally_disabled(peer_id) && *peer_id != this_peer_id)
             .collect()
     }
 
@@ -516,7 +379,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         self.wait_for(
             move |replica_set_state| {
-                replica_set_state.get_peer_state(replica_set_state.this_peer_id) == Some(state)
+                replica_set_state.get_peer_state(&replica_set_state.this_peer_id) == Some(&state)
             },
             timeout,
         )
@@ -530,16 +393,17 @@ impl ShardReplicaSet {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub fn wait_for_state(
+    pub async fn wait_for_state(
         &self,
         peer_id: PeerId,
         state: ReplicaState,
         timeout: Duration,
-    ) -> impl Future<Output = CollectionResult<()>> + 'static {
+    ) -> CollectionResult<()> {
         self.wait_for(
-            move |replica_set_state| replica_set_state.get_peer_state(peer_id) == Some(state),
+            move |replica_set_state| replica_set_state.get_peer_state(&peer_id) == Some(&state),
             timeout,
         )
+        .await
     }
 
     /// Wait for a replica set state condition to be true.
@@ -549,60 +413,45 @@ impl ShardReplicaSet {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub fn wait_for<F>(
-        &self,
-        check: F,
-        timeout: Duration,
-    ) -> impl Future<Output = CollectionResult<()>> + 'static
+    async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<()>
     where
         F: Fn(&ReplicaSetState) -> bool + Send + 'static,
     {
         // TODO: Propagate cancellation into `spawn_blocking` task!?
 
         let replica_state = self.replica_state.clone();
-        let task = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
-            replica_state.wait_for(check, timeout)
-        }));
+        let timed_out =
+            !tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
+                .await
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Failed to wait for replica set state: {err}"
+                    ))
+                })?;
 
-        async move {
-            let status = task.await.map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to wait for replica set state: {err}"
-                ))
-            })?;
-
-            if status {
-                Ok(())
-            } else {
-                Err(CollectionError::timeout(
-                    timeout,
-                    "wait for replica set state",
-                ))
-            }
+        if timed_out {
+            return Err(CollectionError::service_error(
+                "Failed to wait for replica set state, timed out",
+            ));
         }
+
+        Ok(())
     }
 
-    /// Clears the local shard data and loads an empty local shard
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         let current_shard = local.take();
-        if let Some(current_shard) = current_shard {
-            current_shard.stop_gracefully().await;
-        }
-        LocalShard::clear(&self.shard_path).await?;
 
+        // ToDo: Remove shard files here?
         let local_shard_res = LocalShard::build(
             self.shard_id,
             self.collection_id.clone(),
             &self.shard_path,
             self.collection_config.clone(),
             self.shared_storage_config.clone(),
-            self.payload_index_schema.clone(),
             self.update_runtime.clone(),
-            self.search_runtime.clone(),
-            self.optimizer_resource_budget.clone(),
-            self.optimizers_config.clone(),
+            self.optimizer_cpu_budget.clone(),
         )
         .await;
 
@@ -612,18 +461,16 @@ impl ShardReplicaSet {
                 Ok(())
             }
             Err(err) => {
-                let error = format!(
-                    "Failed to initialize local shard at {:?}: {err}",
+                log::error!(
+                    "Failed to initialize local shard {:?}: {err}",
                     self.shard_path
                 );
-                log::error!("{error}");
-                *local = Some(Shard::Dummy(DummyShard::new(error)));
+                *local = current_shard;
                 Err(err)
             }
         }
     }
 
-    /// Replaces the local shard with the given one.
     pub async fn set_local(
         &self,
         local: LocalShard,
@@ -634,13 +481,10 @@ impl ShardReplicaSet {
         if !self.replica_state.read().is_local || state.is_some() {
             self.replica_state.write(|rs| {
                 rs.is_local = true;
-                if let Some(state) = state {
-                    rs.set_peer_state(self.this_peer_id(), state);
+                if let Some(active) = state {
+                    rs.set_peer_state(self.this_peer_id(), active);
                 }
             })?;
-
-            self.on_local_state_updated(state.unwrap_or(ReplicaState::Dead))
-                .await?;
         }
         self.update_locally_disabled(self.this_peer_id());
         Ok(old_shard)
@@ -652,7 +496,7 @@ impl ShardReplicaSet {
         self.replica_state.write(|rs| {
             rs.is_local = false;
             let this_peer_id = rs.this_peer_id;
-            rs.remove_peer_state(this_peer_id);
+            rs.remove_peer_state(&this_peer_id);
         })?;
 
         self.update_locally_disabled(self.this_peer_id());
@@ -664,23 +508,18 @@ impl ShardReplicaSet {
 
         if let Some(removing_local) = removing_local {
             // stop ongoing tasks and delete data
-            removing_local.stop_gracefully().await;
+            drop(removing_local);
             LocalShard::clear(&self.shard_path).await?;
         }
         Ok(())
     }
 
     pub async fn add_remote(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
-        debug_assert_ne!(peer_id, self.this_peer_id());
+        debug_assert!(peer_id != self.this_peer_id());
 
-        self.replica_state
-            .write(|rs| rs.set_peer_state(peer_id, state))?;
-
-        if self.this_peer_id() == peer_id {
-            self.on_local_state_updated(state).await?;
-        } else {
-            self.on_remote_state_updated(peer_id, state).await;
-        }
+        self.replica_state.write(|rs| {
+            rs.set_peer_state(peer_id, state);
+        })?;
 
         self.update_locally_disabled(peer_id);
 
@@ -703,7 +542,7 @@ impl ShardReplicaSet {
 
     pub async fn remove_remote(&self, peer_id: PeerId) -> CollectionResult<()> {
         self.replica_state.write(|rs| {
-            rs.remove_peer_state(peer_id);
+            rs.remove_peer_state(&peer_id);
         })?;
 
         self.update_locally_disabled(peer_id);
@@ -717,23 +556,19 @@ impl ShardReplicaSet {
     /// Ensure that remote shard is initialized.
     pub async fn ensure_replica_with_state(
         &self,
-        peer_id: PeerId,
+        peer_id: &PeerId,
         state: ReplicaState,
     ) -> CollectionResult<()> {
-        if peer_id == self.this_peer_id() {
-            self.set_replica_state(peer_id, state).await?;
+        if *peer_id == self.this_peer_id() {
+            self.set_replica_state(peer_id, state)?;
         } else {
             // Create remote shard if necessary
-            self.add_remote(peer_id, state).await?;
+            self.add_remote(*peer_id, state).await?;
         }
         Ok(())
     }
 
-    pub async fn set_replica_state(
-        &self,
-        peer_id: PeerId,
-        state: ReplicaState,
-    ) -> CollectionResult<()> {
+    pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
         log::debug!(
             "Changing local shard {}:{} state from {:?} to {state:?}",
             self.collection_id,
@@ -742,69 +577,13 @@ impl ShardReplicaSet {
         );
 
         self.replica_state.write(|rs| {
-            if rs.this_peer_id == peer_id {
+            if rs.this_peer_id == *peer_id {
                 rs.is_local = true;
             }
-            rs.set_peer_state(peer_id, state);
+            rs.set_peer_state(*peer_id, state);
         })?;
-
-        if self.this_peer_id() == peer_id {
-            self.on_local_state_updated(state).await?;
-        } else {
-            self.on_remote_state_updated(peer_id, state).await;
-        }
-
-        self.update_locally_disabled(peer_id);
+        self.update_locally_disabled(*peer_id);
         Ok(())
-    }
-
-    /// Called when the local replica state is updated
-    ///
-    /// Not called if:
-    /// - there is no local shard
-    /// - the local shard is removed
-    async fn on_local_state_updated(&self, new_state: ReplicaState) -> CollectionResult<()> {
-        // Update newest clocks snapshot on each state change
-        if let Some(local_shard) = self.local.read().await.as_ref() {
-            if new_state.is_active() {
-                local_shard.clear_newest_clocks_snapshot().await?;
-            } else {
-                local_shard.take_newest_clocks_snapshot().await?;
-            }
-            // Reset WAL retention to normal whenever local shard changes state
-            local_shard.set_normal_wal_retention().await;
-        }
-
-        Ok(())
-    }
-
-    /// Called when a peer state is changed (except local peer).
-    ///
-    async fn on_remote_state_updated(&self, _peer_id: PeerId, _new_state: ReplicaState) {
-        let mut is_any_remote_dead = false;
-        let mut is_local_active = false;
-        let this_peer_id = self.this_peer_id();
-
-        for (peer_id, peer_state) in self.replica_state.read().peers().iter() {
-            if *peer_id == this_peer_id {
-                if peer_state.is_active() {
-                    is_local_active = true;
-                }
-            } else if peer_state.requires_recovery() {
-                is_any_remote_dead = true;
-            }
-        }
-
-        {
-            let local_opt = self.local.read().await;
-            if let Some(local_shard) = local_opt.as_ref() {
-                if is_local_active && is_any_remote_dead {
-                    local_shard.set_extended_wal_retention().await;
-                } else {
-                    local_shard.set_normal_wal_retention().await;
-                }
-            }
-        }
     }
 
     pub async fn remove_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
@@ -819,17 +598,12 @@ impl ShardReplicaSet {
     pub async fn apply_state(
         &self,
         replicas: HashMap<PeerId, ReplicaState>,
-        shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
-        let old_peers = self.replica_state.read().peers().clone();
+        let old_peers = self.replica_state.read().peers();
 
         self.replica_state.write(|state| {
             state.set_peers(replicas.clone());
         })?;
-
-        if let Some(&state) = replicas.get(&self.this_peer_id()) {
-            self.on_local_state_updated(state).await?;
-        }
 
         self.locally_disabled_peers.write().clear();
 
@@ -843,7 +617,7 @@ impl ShardReplicaSet {
         }
 
         for (peer_id, state) in replicas {
-            let peer_already_exists = old_peers.contains_key(&peer_id);
+            let peer_already_exists = old_peers.get(&peer_id).is_some();
 
             if peer_already_exists {
                 // do nothing
@@ -859,42 +633,25 @@ impl ShardReplicaSet {
                     &self.shard_path,
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
-                    self.payload_index_schema.clone(),
                     self.update_runtime.clone(),
-                    self.search_runtime.clone(),
-                    self.optimizer_resource_budget.clone(),
-                    self.optimizers_config.clone(),
+                    self.optimizer_cpu_budget.clone(),
                 )
                 .await?;
-
                 match state {
-                    ReplicaState::Active
-                    | ReplicaState::Listener
-                    | ReplicaState::ReshardingScaleDown => {
+                    ReplicaState::Active | ReplicaState::Listener => {
                         // No way we can provide up-to-date replica right away at this point,
                         // so we report a failure to consensus
-                        let existing = self.set_local(local_shard, Some(state)).await?;
-                        if let Some(existing) = existing {
-                            existing.stop_gracefully().await;
-                        }
-                        self.notify_peer_failure(peer_id, Some(state));
+                        self.set_local(local_shard, Some(state)).await?;
+                        self.notify_peer_failure(peer_id);
                     }
-
                     ReplicaState::Dead
                     | ReplicaState::Partial
-                    | ReplicaState::ManualRecovery
                     | ReplicaState::Initializing
                     | ReplicaState::PartialSnapshot
-                    | ReplicaState::Recovery
-                    | ReplicaState::Resharding
-                    | ReplicaState::ActiveRead => {
-                        let existing = self.set_local(local_shard, Some(state)).await?;
-                        if let Some(existing) = existing {
-                            existing.stop_gracefully().await;
-                        }
+                    | ReplicaState::Recovery => {
+                        self.set_local(local_shard, Some(state)).await?;
                     }
                 }
-
                 continue;
             }
 
@@ -908,16 +665,9 @@ impl ShardReplicaSet {
             );
             self.remotes.write().await.push(new_remote);
         }
-
-        // Apply shard key
-        *self.shard_key.write() = shard_key;
-
         Ok(())
     }
 
-    /// ## Cancel safety
-    ///
-    /// This function is **not** cancel safe.
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(shard) = &*read_local {
@@ -927,21 +677,7 @@ impl ShardReplicaSet {
         }
     }
 
-    /// Apply shard's strict mode configuration update
-    ///
-    /// The actual rate limiters live on `LocalShard`, so this just delegates
-    /// while we hold the local-shard write lock.
-    pub(crate) async fn on_strict_mode_config_update(
-        &self,
-        new_strict_mode: &StrictModeConfig,
-    ) -> CollectionResult<()> {
-        if let Some(shard) = self.local.write().await.as_mut() {
-            shard.on_strict_mode_config_update(new_strict_mode);
-        }
-        Ok(())
-    }
-
-    /// Check if there are any locally disabled peers
+    /// Check if the are any locally disabled peers
     /// And if so, report them to the consensus
     pub fn sync_local_state<F>(&self, get_shard_transfers: F) -> CollectionResult<()>
     where
@@ -953,15 +689,16 @@ impl ShardReplicaSet {
             .notify_elapsed()
             .collect();
 
-        for (failed_peer_id, from_state) in peers_to_notify {
-            self.notify_peer_failure(failed_peer_id, from_state);
+        for failed_peer in peers_to_notify {
+            // TODO: Only `notify_peer_failure` if `failed_peer` is *not* the last `Active` peer? 🤔
+            self.notify_peer_failure(failed_peer);
 
-            for transfer in get_shard_transfers(self.shard_id, failed_peer_id) {
+            for transfer in get_shard_transfers(self.shard_id, failed_peer) {
                 self.abort_shard_transfer(
                     transfer,
                     &format!(
-                        "{failed_peer_id}/{}:{} replica failed",
-                        self.collection_id, self.shard_id,
+                        "{failed_peer}/{}:{} replica failed",
+                        self.collection_id, self.shard_id
                     ),
                 );
             }
@@ -970,100 +707,37 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    pub(crate) async fn get_telemetry_data(&self, detail: TelemetryDetail) -> ReplicaSetTelemetry {
+        let local_shard = self.local.read().await;
+        let local = local_shard
+            .as_ref()
+            .map(|local_shard| local_shard.get_telemetry_data(detail));
+        ReplicaSetTelemetry {
+            id: self.shard_id,
+            local,
+            remote: self
+                .remotes
+                .read()
+                .await
+                .iter()
+                .map(|remote| remote.get_telemetry_data(detail))
+                .collect(),
+            replicate_states: self.replica_state.read().peers(),
+        }
+    }
+
     pub(crate) async fn health_check(&self, peer_id: PeerId) -> CollectionResult<()> {
         let remotes = self.remotes.read().await;
 
         let Some(remote) = remotes.iter().find(|remote| remote.peer_id == peer_id) else {
-            return Err(CollectionError::not_found(format!(
-                "{}/{}:{} shard",
-                peer_id, self.collection_id, self.shard_id
-            )));
+            return Err(CollectionError::NotFound {
+                what: format!("{}/{}:{} shard", peer_id, self.collection_id, self.shard_id),
+            });
         };
 
         remote.health_check().await?;
 
         Ok(())
-    }
-
-    pub async fn delete_local_points(
-        &self,
-        filter: Filter,
-        hw_measurement_acc: HwMeasurementAcc,
-        force: bool,
-        deferred_behavior: DeferredBehavior,
-    ) -> CollectionResult<UpdateResult> {
-        let local_shard_guard = self.local.read().await;
-
-        let Some(local_shard) = local_shard_guard.deref() else {
-            return Err(CollectionError::not_found(format!(
-                "local shard {}:{}",
-                self.collection_id, self.shard_id
-            )));
-        };
-
-        let mut next_offset = Some(ExtendedPointId::NumId(0));
-        let mut ids = Vec::new();
-
-        while let Some(current_offset) = next_offset {
-            const BATCH_SIZE: usize = 1000;
-
-            let mut points = local_shard
-                .get()
-                .local_scroll_by_id(
-                    Some(current_offset),
-                    BATCH_SIZE + 1,
-                    &false.into(),
-                    &false.into(),
-                    Some(&filter),
-                    &self.search_runtime,
-                    None,
-                    hw_measurement_acc.clone(),
-                    deferred_behavior,
-                )
-                .await?;
-
-            if points.len() > BATCH_SIZE {
-                next_offset = points.pop().map(|points| points.id);
-            } else {
-                next_offset = None;
-            }
-
-            ids.extend(points.into_iter().map(|points| points.id));
-        }
-
-        if ids.is_empty() {
-            return Ok(UpdateResult {
-                operation_id: None,
-                status: UpdateStatus::Completed,
-                clock_tag: None,
-            });
-        }
-
-        drop(local_shard_guard);
-
-        let op =
-            CollectionUpdateOperations::PointOperation(point_ops::PointOperations::DeletePoints {
-                ids,
-            });
-
-        // TODO(resharding): Assign clock tag to the operation!? 🤔
-        let result = self
-            .update_local(
-                op.into(),
-                WaitUntil::Visible,
-                None,
-                hw_measurement_acc,
-                force,
-            )
-            .await?
-            .ok_or_else(|| {
-                CollectionError::bad_request(format!(
-                    "local shard {}:{} does not exist or is unavailable",
-                    self.collection_id, self.shard_id,
-                ))
-            })?;
-
-        Ok(result)
     }
 
     fn init_remote_shards(
@@ -1087,118 +761,42 @@ impl ShardReplicaSet {
             .collect()
     }
 
-    /// Check if peer is suitable for rate limiting
-    fn peer_is_write_rate_limitable(&self, peer_id: PeerId) -> bool {
-        self.peer_state(peer_id)
-            .is_some_and(ReplicaState::is_write_rate_limitable)
+    /// Check whether a peer is registered as `active`.
+    /// Unknown peers are not active.
+    fn peer_is_active(&self, peer_id: &PeerId) -> bool {
+        self.peer_state(peer_id) == Some(ReplicaState::Active) && !self.is_locally_disabled(peer_id)
     }
 
-    fn peer_is_readable(&self, peer_id: PeerId) -> bool {
-        let peer_state = self.peer_state(peer_id);
-        let is_readable = match peer_state {
-            Some(state) => state.is_readable(),
-            None => false,
-        };
-
-        is_readable && !self.is_locally_disabled(peer_id)
+    fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
+        self.locally_disabled_peers.read().is_disabled(*peer_id)
     }
 
-    fn peer_is_updatable(&self, peer_id: PeerId) -> bool {
-        let peer_state = self.peer_state(peer_id);
-        let is_updatable = match peer_state {
-            Some(state) => state.is_updatable(),
-            None => false,
-        };
-
-        is_updatable && !self.is_locally_disabled(peer_id)
-    }
-
-    /// Check if this shard is active.
-    /// By active, we mean, that at least one replica have `is_active` state.
-    /// It is possible, that some replicas are not active, if they are created in a `Partial` state.
-    /// For example, during tenant promotion.
-    pub fn shard_is_active(&self) -> bool {
-        let replica_state = self.replica_state.read();
-        replica_state
-            .peers()
-            .values()
-            .any(|state| state.is_active())
-    }
-
-    /// Check if this peer can be used as a source of truth within a shard_id.
-    /// For instance:
-    /// - It can be the only receiver of updates
-    /// - It can be a primary replica for ordered writes
-    fn peer_can_be_source_of_truth(&self, peer_id: PeerId) -> bool {
-        let can_be_source_of_truth = match self.peer_state(peer_id) {
-            Some(state) => state.can_be_source_of_truth(),
-            None => false,
-        };
-
-        can_be_source_of_truth && !self.is_locally_disabled(peer_id)
-    }
-
-    fn peer_is_initializing(&self, peer_id: PeerId) -> bool {
-        let is_initializing = matches!(self.peer_state(peer_id), Some(ReplicaState::Initializing));
-        is_initializing && !self.is_locally_disabled(peer_id)
-    }
-
-    fn is_locally_disabled(&self, peer_id: PeerId) -> bool {
-        self.locally_disabled_peers.read().is_disabled(peer_id)
-    }
-
-    /// Locally disable given peer
-    ///
-    /// Disables the peer and notifies consensus periodically.
-    ///
-    /// Prevents disabling the last peer (according to consensus).
-    ///
-    /// If `from_state` is given, the peer will only be disabled if the given state matches
-    /// consensus.
-    pub fn add_locally_disabled(
-        &self,
-        state: Option<&ReplicaSetState>,
-        peer_id: PeerId,
-        from_state: Option<ReplicaState>,
-    ) {
-        let mut state_guard = None;
-
-        let state = match state {
-            Some(state) => state,
-            None => state_guard.insert(self.replica_state.read()),
-        };
-
-        let other_peers = state
-            .active_or_resharding_peers()
-            .filter(|id| id != &peer_id);
-
-        let mut locally_disabled_peers_guard = self.locally_disabled_peers.upgradable_read();
-
-        // Prevent disabling last peer in consensus
+    fn add_locally_disabled(&self, peer_id: PeerId) {
+        if self
+            .locally_disabled_peers
+            .write()
+            .disable_peer_and_notify_if_elapsed(peer_id)
         {
-            if !locally_disabled_peers_guard.is_disabled(peer_id)
-                && locally_disabled_peers_guard.is_all_disabled(other_peers)
-            {
-                log::warn!("Cannot locally disable last active peer {peer_id} for replica");
-                return;
-            }
+            self.notify_peer_failure(peer_id);
         }
+    }
 
-        locally_disabled_peers_guard.with_upgraded(|locally_disabled_peers| {
-            if locally_disabled_peers.disable_peer_and_notify_if_elapsed(peer_id, from_state) {
-                self.notify_peer_failure(peer_id, from_state);
+    // Make sure that locally disabled peers do not contradict the consensus
+    fn update_locally_disabled(&self, peer_id_to_remove: PeerId) {
+        // Check that we are not trying to disable the last active peer
+        let peers = self.peers();
+
+        let active_peers = peers.iter().filter_map(|(&peer_id, &state)| {
+            if state == ReplicaState::Active {
+                Some(peer_id)
+            } else {
+                None
             }
         });
-    }
 
-    /// Make sure that locally disabled peers do not contradict the consensus
-    fn update_locally_disabled(&self, peer_id_to_remove: PeerId) {
         let mut locally_disabled_peers = self.locally_disabled_peers.write();
 
-        // Check that we are not trying to disable the last active peer
-        if locally_disabled_peers
-            .is_all_disabled(self.replica_state.read().active_or_resharding_peers())
-        {
+        if locally_disabled_peers.is_all_disabled(active_peers) {
             log::warn!("Resolving consensus/local state inconsistency");
             locally_disabled_peers.clear();
         } else {
@@ -1206,9 +804,9 @@ impl ShardReplicaSet {
         }
     }
 
-    fn notify_peer_failure(&self, peer_id: PeerId, from_state: Option<ReplicaState>) {
-        log::debug!("Notify peer failure: {peer_id}");
-        self.notify_peer_failure_cb.deref()(peer_id, self.shard_id, from_state)
+    fn notify_peer_failure(&self, peer_id: PeerId) {
+        log::debug!("Notify peer failure: {}", peer_id);
+        self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
     }
 
     fn abort_shard_transfer(&self, transfer: ShardTransfer, reason: &str) {
@@ -1227,7 +825,9 @@ impl ShardReplicaSet {
     pub(crate) async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
         let local_shard = self.local.read().await;
         let Some(local_shard) = local_shard.as_ref() else {
-            return Err(CollectionError::not_found("Peer does not have local shard"));
+            return Err(CollectionError::NotFound {
+                what: "Peer does not have local shard".into(),
+            });
         };
 
         local_shard.shard_recovery_point().await
@@ -1240,283 +840,114 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         let local_shard = self.local.read().await;
         let Some(local_shard) = local_shard.as_ref() else {
-            return Err(CollectionError::not_found("Peer does not have local shard"));
+            return Err(CollectionError::NotFound {
+                what: "Peer does not have local shard".into(),
+            });
         };
 
         local_shard.update_cutoff(cutoff).await
     }
 
-    /// Get the last N entries from the WAL.
-    pub(crate) async fn get_wal_entries(
-        &self,
-        count: u64,
-    ) -> CollectionResult<Vec<(SeqNumberType, OperationWithClockTag)>> {
-        let local = self.local.read().await;
+    pub(crate) fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
+        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
+    }
+}
 
-        let Some(local) = local.as_ref() else {
-            return Err(CollectionError::not_found("Peer does not have local shard"));
-        };
+/// Represents a replica set state
+#[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq, Clone)]
+pub struct ReplicaSetState {
+    pub is_local: bool,
+    pub this_peer_id: PeerId,
+    peers: HashMap<PeerId, ReplicaState>,
+}
 
-        local.get_wal_entries(count).await
+impl ReplicaSetState {
+    pub fn get_peer_state(&self, peer_id: &PeerId) -> Option<&ReplicaState> {
+        self.peers.get(peer_id)
     }
 
-    pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
-        SnapshotStorageManager::new(&self.shared_storage_config.snapshots_config)
+    pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {
+        self.peers.insert(peer_id, state);
     }
 
-    pub(crate) async fn trigger_optimizers(&self) -> bool {
-        let shard = self.local.read().await;
-        let Some(shard) = shard.as_ref() else {
-            return false;
-        };
-        shard.trigger_optimizers();
-        true
+    pub fn remove_peer_state(&mut self, peer_id: &PeerId) -> Option<ReplicaState> {
+        self.peers.remove(peer_id)
     }
 
-    /// Returns the estimated size of all local segments.
-    /// Since this locks all segments you should cache this value in performance critical scenarios!
-    pub(crate) async fn calculate_local_shard_stats(
-        &self,
-    ) -> CollectionResult<Option<CollectionSizeStats>> {
-        let Some(segments) = self.local.read().await.as_ref().and_then(|i| match i {
-            Shard::Local(local) => Some(
-                // Collect the segments first so we don't have the segment holder locked for the entire duration of the loop.
-                local
-                    .segments
-                    .read()
-                    .iter()
-                    .map(|i| i.1.clone())
-                    .collect::<Vec<_>>(),
-            ),
-            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
-                None
-            }
-        }) else {
-            return Ok(None);
-        };
-
-        let handle = spawn_blocking(move || {
-            let mut total_vector_size = 0;
-            let mut total_payload_size = 0;
-            let mut total_points = 0;
-
-            for segment in segments {
-                let size_info = segment.get().read().size_info();
-                total_vector_size += size_info.vectors_size_bytes;
-                total_payload_size += size_info.payloads_size_bytes;
-                total_points += size_info.num_points;
-            }
-
-            (total_vector_size, total_payload_size, total_points)
-        });
-        let (total_vector_size, total_payload_size, total_points) =
-            AbortOnDropHandle::new(handle).await?;
-
-        Ok(Some(CollectionSizeStats {
-            vector_storage_size: total_vector_size,
-            payload_storage_size: total_payload_size,
-            points_count: total_points,
-        }))
+    pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
+        self.peers.clone()
     }
 
-    pub(crate) fn payload_index_schema(&self) -> Arc<SaveOnDisk<PayloadIndexSchema>> {
-        self.payload_index_schema.clone()
-    }
-
-    /// Get optimizations info for this shard replica set.
-    ///
-    /// Collects data from local shard (optimizers log + planned optimizations)
-    /// and from remote shards via gRPC, then merges the results.
-    pub async fn optimizations(
-        &self,
-        options: OptimizationsRequestOptions,
-    ) -> CollectionResult<OptimizationsResponse> {
-        let OptimizationsRequestOptions {
-            queued: _,
-            completed_limit,
-            idle_segments: _,
-        } = options;
-
-        // Collect from local and remote shards concurrently
-        let local_future = self.local_optimizations(options);
-        let remote_futures = async {
-            let remotes = self.remotes.read().await;
-            let futures: Vec<_> = remotes
-                .iter()
-                .filter(|remote| self.peer_is_updatable(remote.peer_id))
-                .map(|remote| remote.optimizations(options))
-                .collect();
-            futures::future::try_join_all(futures).await
-        };
-
-        let (mut response, remote_responses) =
-            futures::future::try_join(local_future, remote_futures).await?;
-
-        for remote_response in remote_responses {
-            response.merge(remote_response);
-        }
-
-        // Sort from newest to oldest
-        response
-            .running
-            .sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
-
-        if let Some(completed) = &mut response.completed {
-            completed.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
-            if let Some(limit) = completed_limit {
-                completed.truncate(limit);
-            }
-        }
-
-        Ok(response)
-    }
-
-    /// Get memory report from only the local shard.
-    ///
-    /// Used by the internal gRPC handler to return local data
-    /// without querying remote shards (which would cause recursion).
-    pub async fn local_memory_report(
-        &self,
-    ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
-        let local = self.local.read().await;
-        match local.as_ref() {
-            Some(Shard::Local(local_shard)) => local_shard.memory_report().await,
-            Some(Shard::Proxy(proxy_shard)) => proxy_shard.memory_report().await,
-            Some(Shard::ForwardProxy(forward_shard)) => forward_shard.memory_report().await,
-            Some(Shard::QueueProxy(queue_shard)) => queue_shard.memory_report().await,
-            Some(Shard::Dummy(_)) | None => {
-                Ok(crate::common::memory_reporter::CollectionMemoryReport::default())
-            }
-        }
-    }
-
-    /// Collect memory reports from both local and remote shards.
-    pub async fn memory_report(
-        &self,
-    ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
-        use crate::common::memory_reporter::CollectionMemoryReport;
-
-        let local_future = self.local_memory_report();
-        let remote_futures = async {
-            let remotes = self.remotes.read().await;
-            let futures: Vec<_> = remotes
-                .iter()
-                .map(|remote| remote.memory_report())
-                .collect();
-            futures::future::try_join_all(futures).await
-        };
-
-        let (local_report, remote_reports) =
-            futures::future::try_join(local_future, remote_futures).await?;
-
-        let mut all_reports = vec![local_report];
-        all_reports.extend(remote_reports);
-        Ok(CollectionMemoryReport::merge_all(all_reports))
-    }
-
-    /// Get optimizations info from only the local shard.
-    ///
-    /// This is used by the internal gRPC handler to return local data
-    /// without querying remote shards (which would cause recursion).
-    pub async fn local_optimizations(
-        &self,
-        options: OptimizationsRequestOptions,
-    ) -> CollectionResult<OptimizationsResponse> {
-        let OptimizationsRequestOptions {
-            queued: with_queued,
-            completed_limit,
-            idle_segments: with_idle_segments,
-        } = options;
-
-        let mut running = Vec::new();
-        let mut completed = Vec::new();
-        let mut idle_segments = with_idle_segments.then_some(Vec::new());
-        let mut queued = with_queued.then_some(Vec::new());
-
-        let mut queued_optimizations = 0;
-        let mut queued_segments = 0;
-        let mut queued_points = 0;
-        let mut idle_segments_count = 0;
-
-        let local = self.local.read().await;
-
-        let is_updatable = self.peer_is_updatable(self.this_peer_id());
-
-        if let Some(shard) = local.as_ref()
-            && is_updatable
-        {
-            if let Some(log) = shard.optimizers_log() {
-                for tracker in log.lock().iter() {
-                    if tracker.state.lock().status.is_running() {
-                        running.push(tracker.to_optimization());
-                    } else if completed_limit.is_some() {
-                        completed.push(tracker.to_optimization());
-                    }
+    pub fn active_peers(&self) -> Vec<PeerId> {
+        self.peers
+            .iter()
+            .filter_map(|(peer_id, state)| {
+                if *state == ReplicaState::Active {
+                    Some(*peer_id)
+                } else {
+                    None
                 }
-            }
-            if let Some(shard_optimizations) = shard.optimizations() {
-                let LocalShardOptimizations {
-                    queued: local_queued,
-                    idle_segments: local_idle_segments,
-                } = shard_optimizations;
-
-                queued_optimizations += local_queued.len();
-                for queued_optimization in &local_queued {
-                    queued_segments += queued_optimization.segments.len();
-                    for segment in &queued_optimization.segments {
-                        queued_points += segment.points_count;
-                    }
-                }
-                idle_segments_count += local_idle_segments.len();
-                if let Some(queued) = &mut queued {
-                    queued.extend(local_queued);
-                }
-                if let Some(idle_segments) = &mut idle_segments {
-                    idle_segments.extend(local_idle_segments);
-                }
-            }
-        }
-
-        // Sort from newest to oldest
-        running.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
-
-        Ok(OptimizationsResponse {
-            summary: OptimizationsSummary {
-                queued_optimizations,
-                queued_segments,
-                queued_points,
-                idle_segments: idle_segments_count,
-            },
-            running,
-            queued,
-            completed: completed_limit.map(|completed_limit| {
-                completed.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
-                completed.truncate(completed_limit);
-                completed
-            }),
-            idle_segments,
-        })
+            })
+            .collect()
     }
 
-    /// Truncate unapplied WAL records for the local shard (if present).
-    /// Returns amount of removed records.
-    pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
-        let local = self.local.read().await;
-        let Some(local) = local.as_ref() else {
-            // No local shard to drop WAL from.
-            return Ok(0);
-        };
+    pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
+        self.peers = peers;
+    }
+}
 
-        let removed_records_count = local.truncate_unapplied_wal().await?;
-        if removed_records_count > 0 {
-            log::debug!(
-                "Dropped {} WAL records from shard {}:{}",
-                removed_records_count,
-                self.collection_id,
-                self.shard_id,
-            );
+/// State of the single shard within a replica set.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum ReplicaState {
+    // Active and sound
+    #[default]
+    Active,
+    // Failed for some reason
+    Dead,
+    // The shard is partially loaded and is currently receiving data from other shards
+    Partial,
+    // Collection is being created
+    Initializing,
+    // A shard which receives data, but is not used for search
+    // Useful for backup shards
+    Listener,
+    // Deprecated since Qdrant 1.9.0, used in Qdrant 1.7.0 and 1.8.0
+    //
+    // Snapshot shard transfer is in progress, updates aren't sent to the shard
+    // Normally rejects updates. Since 1.8 it allows updates if force is true.
+    // TODO(1.10): remove PartialSnapshot state entirely?
+    PartialSnapshot,
+    // Shard is undergoing recovery by an external node
+    // Normally rejects updates, accepts updates if force is true
+    Recovery,
+}
+
+impl ReplicaState {
+    /// Check whether the replica state is active or listener.
+    pub fn is_active_or_listener(self) -> bool {
+        // Use explicit match, to catch future changes to `ReplicaState`
+        match self {
+            ReplicaState::Active | ReplicaState::Listener => true,
+
+            ReplicaState::Dead
+            | ReplicaState::Initializing
+            | ReplicaState::Partial
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery => false,
         }
-        Ok(removed_records_count)
+    }
+
+    /// Check whether the replica state is partial or partial-like.
+    pub fn is_partial_or_recovery(self) -> bool {
+        // Use explicit match, to catch future changes to `ReplicaState`
+        match self {
+            ReplicaState::Partial | ReplicaState::PartialSnapshot | ReplicaState::Recovery => true,
+
+            ReplicaState::Active
+            | ReplicaState::Dead
+            | ReplicaState::Initializing
+            | ReplicaState::Listener => false,
+        }
     }
 }
 

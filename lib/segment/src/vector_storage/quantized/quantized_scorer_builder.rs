@@ -1,4 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use std::sync::atomic::AtomicBool;
+
+use bitvec::slice::BitSlice;
 use quantization::EncodedVectors;
 
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
@@ -7,30 +9,26 @@ use super::quantized_vectors::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    DenseVector, MultiDenseVectorInternal, QueryVector, VectorElementType, VectorElementTypeByte,
-    VectorElementTypeHalf,
+    DenseVector, QueryVector, VectorElementType, VectorElementTypeByte,
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
-use crate::vector_storage::quantized::quantized_multi_custom_query_scorer::QuantizedMultiCustomQueryScorer;
-use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
-use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsetsStorage, QuantizedMultivectorStorage,
-};
-use crate::vector_storage::query::{
-    ContextQuery, DiscoverQuery, NaiveFeedbackQuery, RecoBestScoreQuery, RecoQuery,
-    RecoSumScoresQuery, TransformInto,
-};
-use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
+use crate::vector_storage::query::context_query::ContextQuery;
+use crate::vector_storage::query::discovery_query::DiscoveryQuery;
+use crate::vector_storage::query::reco_query::RecoQuery;
+use crate::vector_storage::query::TransformInto;
+use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
 pub(super) struct QuantizedScorerBuilder<'a> {
     quantized_storage: &'a QuantizedVectorStorage,
     quantization_config: &'a QuantizationConfig,
     query: QueryVector,
+    point_deleted: &'a BitSlice,
+    vec_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
     distance: &'a Distance,
     datatype: VectorStorageDatatype,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> QuantizedScorerBuilder<'a> {
@@ -39,19 +37,21 @@ impl<'a> QuantizedScorerBuilder<'a> {
         quantized_storage: &'a QuantizedVectorStorage,
         quantization_config: &'a QuantizationConfig,
         query: QueryVector,
+        point_deleted: &'a BitSlice,
+        vec_deleted: &'a BitSlice,
+        is_stopped: &'a AtomicBool,
         distance: &'a Distance,
         datatype: VectorStorageDatatype,
-        mut hardware_counter: HardwareCounterCell,
     ) -> Self {
-        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_storage.is_on_disk()));
-
         Self {
             quantized_storage,
             quantization_config,
             query,
+            point_deleted,
+            vec_deleted,
+            is_stopped,
             distance,
             datatype,
-            hardware_counter,
         }
     }
 
@@ -75,272 +75,93 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     self.build_with_metric::<VectorElementTypeByte, ManhattanMetric>()
                 }
             },
-            VectorStorageDatatype::Float16 => match self.distance {
-                Distance::Cosine => self.build_with_metric::<VectorElementTypeHalf, CosineMetric>(),
-                Distance::Euclid => self.build_with_metric::<VectorElementTypeHalf, EuclidMetric>(),
-                Distance::Dot => {
-                    self.build_with_metric::<VectorElementTypeHalf, DotProductMetric>()
-                }
-                Distance::Manhattan => {
-                    self.build_with_metric::<VectorElementTypeHalf, ManhattanMetric>()
-                }
-            },
         }
     }
 
     pub fn build_with_metric<TElement, TMetric>(self) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
-        TElement: PrimitiveVectorElement,
+        TElement: PrimitiveVectorElement + 'a,
         TMetric: Metric<TElement> + 'a,
     {
         match self.quantized_storage {
             QuantizedVectorStorage::ScalarRam(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
             }
             QuantizedVectorStorage::ScalarMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
-            }
-            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
             }
             QuantizedVectorStorage::PQRam(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
             }
             QuantizedVectorStorage::PQMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
-            }
-            QuantizedVectorStorage::PQChunkedMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
             }
             QuantizedVectorStorage::BinaryRam(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
             }
             QuantizedVectorStorage::BinaryMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
-            }
-            QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
-            }
-            QuantizedVectorStorage::TQRam(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
-            }
-            QuantizedVectorStorage::TQMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
-            }
-            QuantizedVectorStorage::TQChunkedMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric>(storage)
-            }
-            QuantizedVectorStorage::ScalarRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::ScalarMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::ScalarChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::PQRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::PQMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::PQChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::BinaryRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::BinaryMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::TQRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::TQMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
-            }
-            QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
             }
         }
     }
 
-    fn new_quantized_scorer<TElement, TMetric>(
+    #[inline]
+    fn new_quantized_scorer<TElement, TMetric, TEncodedQuery>(
         self,
-        quantized_storage: &'a impl EncodedVectors,
+        quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
-        TElement: PrimitiveVectorElement,
+        TElement: PrimitiveVectorElement + 'a,
         TMetric: Metric<TElement> + 'a,
+        TEncodedQuery: 'a,
     {
         let Self {
             quantized_storage: _same_as_quantized_storage_in_args,
             quantization_config,
             query,
+            point_deleted,
+            vec_deleted,
+            is_stopped,
             distance: _,
             datatype: _,
-            hardware_counter,
         } = self;
 
         match query {
             QueryVector::Nearest(vector) => {
-                let query_scorer = QuantizedQueryScorer::<_>::new::<TElement, TMetric>(
-                    DenseVector::try_from(vector)?,
+                let query_scorer = QuantizedQueryScorer::<TElement, TMetric, _, _>::new(
+                    vector.try_into()?,
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer)
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
-            QueryVector::RecommendBestScore(reco_query) => {
+            QueryVector::Recommend(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
-                    RecoBestScoreQuery::from(reco_query),
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                    reco_query,
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer)
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
-            QueryVector::RecommendSumScores(reco_query) => {
-                let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
-                    RecoSumScoresQuery::from(reco_query),
+            QueryVector::Discovery(discovery_query) => {
+                let discovery_query: DiscoveryQuery<DenseVector> =
+                    discovery_query.transform_into()?;
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                    discovery_query,
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-            QueryVector::Discover(discover_query) => {
-                let discover_query: DiscoverQuery<DenseVector> = discover_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
-                    discover_query,
-                    quantized_storage,
-                    quantization_config,
-                    hardware_counter,
-                );
-                raw_scorer_from_query_scorer(query_scorer)
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Context(context_query) => {
                 let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
                     context_query,
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-            QueryVector::FeedbackNaive(feedback_query) => {
-                let feedback_query: NaiveFeedbackQuery<DenseVector> =
-                    feedback_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
-                    feedback_query.into_query(),
-                    quantized_storage,
-                    quantization_config,
-                    hardware_counter,
-                );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-        }
-    }
-
-    fn new_multi_quantized_scorer<TElement, TMetric, QuantizedStorage, OffsetStorage>(
-        self,
-        quantized_multivector_storage: &'a QuantizedMultivectorStorage<
-            QuantizedStorage,
-            OffsetStorage,
-        >,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>>
-    where
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement> + 'a,
-        QuantizedStorage: quantization::EncodedVectors + 'a,
-        OffsetStorage: MultivectorOffsetsStorage + 'a,
-    {
-        let Self {
-            quantized_storage: _same_as_quantized_storage_in_args,
-            quantization_config,
-            query,
-            distance: _,
-            datatype: _,
-            hardware_counter,
-        } = self;
-
-        match query {
-            QueryVector::Nearest(vector) => {
-                let query_scorer = QuantizedMultiQueryScorer::new_multi::<TElement, TMetric>(
-                    &MultiDenseVectorInternal::try_from(vector)?,
-                    quantized_multivector_storage,
-                    quantization_config,
-                    hardware_counter,
-                );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-            QueryVector::RecommendBestScore(reco_query) => {
-                let reco_query: RecoQuery<MultiDenseVectorInternal> =
-                    reco_query.transform_into()?;
-                let query_scorer =
-                    QuantizedMultiCustomQueryScorer::new_multi::<TElement, TMetric, _, _>(
-                        RecoBestScoreQuery::from(reco_query),
-                        quantized_multivector_storage,
-                        quantization_config,
-                        hardware_counter,
-                    );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-            QueryVector::RecommendSumScores(reco_query) => {
-                let reco_query: RecoQuery<MultiDenseVectorInternal> =
-                    reco_query.transform_into()?;
-                let query_scorer =
-                    QuantizedMultiCustomQueryScorer::new_multi::<TElement, TMetric, _, _>(
-                        RecoSumScoresQuery::from(reco_query),
-                        quantized_multivector_storage,
-                        quantization_config,
-                        hardware_counter,
-                    );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-            QueryVector::Discover(discover_query) => {
-                let discover_query: DiscoverQuery<MultiDenseVectorInternal> =
-                    discover_query.transform_into()?;
-                let query_scorer =
-                    QuantizedMultiCustomQueryScorer::new_multi::<TElement, TMetric, _, _>(
-                        discover_query,
-                        quantized_multivector_storage,
-                        quantization_config,
-                        hardware_counter,
-                    );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-            QueryVector::Context(context_query) => {
-                let context_query: ContextQuery<MultiDenseVectorInternal> =
-                    context_query.transform_into()?;
-                let query_scorer =
-                    QuantizedMultiCustomQueryScorer::new_multi::<TElement, TMetric, _, _>(
-                        context_query,
-                        quantized_multivector_storage,
-                        quantization_config,
-                        hardware_counter,
-                    );
-                raw_scorer_from_query_scorer(query_scorer)
-            }
-            QueryVector::FeedbackNaive(feedback_query) => {
-                let feedback_query: NaiveFeedbackQuery<MultiDenseVectorInternal> =
-                    feedback_query.transform_into()?;
-                let query_scorer =
-                    QuantizedMultiCustomQueryScorer::new_multi::<TElement, TMetric, _, _>(
-                        feedback_query.into_query(),
-                        quantized_multivector_storage,
-                        quantization_config,
-                        hardware_counter,
-                    );
-                raw_scorer_from_query_scorer(query_scorer)
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
         }
     }

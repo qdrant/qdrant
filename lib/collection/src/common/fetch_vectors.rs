@@ -1,37 +1,28 @@
-use std::fmt::Debug;
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::{HashMap, HashSet};
 
-use ahash::{AHashMap, AHashSet};
-use api::rest::ShardKeySelector;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::Future;
 use futures::future::try_join_all;
-use segment::data_types::vectors::{VectorInternal, VectorRef};
-use segment::types::{PointIdType, VectorName, VectorNameBuf, WithPayloadInterface, WithVector};
-use shard::retrieve::record_internal::RecordInternal;
+use futures::Future;
+use segment::data_types::vectors::{Vector, VectorRef};
+use segment::types::{PointIdType, WithPayloadInterface, WithVector};
+use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequestInternal, RecommendExample,
-};
-use crate::operations::universal_query::collection_query::{
-    CollectionQueryRequest, CollectionQueryResolveRequest, Query, VectorInputInternal,
+    CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,
 };
 
 pub async fn retrieve_points(
     collection: &Collection,
     ids: Vec<PointIdType>,
-    vector_names: Vec<VectorNameBuf>,
+    vector_names: Vec<String>,
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
-    timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<Vec<RecordInternal>> {
+) -> CollectionResult<Vec<Record>> {
     collection
         .retrieve(
             PointRequestInternal {
@@ -41,26 +32,22 @@ pub async fn retrieve_points(
             },
             read_consistency,
             shard_selector,
-            timeout,
-            hw_measurement_acc,
         )
         .await
 }
 
 pub enum CollectionRefHolder<'a> {
     Ref(&'a Collection),
-    Arc(Arc<Collection>),
+    Guard(RwLockReadGuard<'a, Collection>),
 }
 
 pub async fn retrieve_points_with_locked_collection(
     collection_holder: CollectionRefHolder<'_>,
     ids: Vec<PointIdType>,
-    vector_names: Vec<VectorNameBuf>,
+    vector_names: Vec<String>,
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
-    timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<Vec<RecordInternal>> {
+) -> CollectionResult<Vec<Record>> {
     match collection_holder {
         CollectionRefHolder::Ref(collection) => {
             retrieve_points(
@@ -69,66 +56,39 @@ pub async fn retrieve_points_with_locked_collection(
                 vector_names,
                 read_consistency,
                 shard_selector,
-                timeout,
-                hw_measurement_acc,
             )
             .await
         }
-        CollectionRefHolder::Arc(guard) => {
-            retrieve_points(
-                &guard,
-                ids,
-                vector_names,
-                read_consistency,
-                shard_selector,
-                timeout,
-                hw_measurement_acc,
-            )
-            .await
+        CollectionRefHolder::Guard(guard) => {
+            retrieve_points(&guard, ids, vector_names, read_consistency, shard_selector).await
         }
     }
+}
+#[derive(Eq, PartialEq, Hash)]
+pub struct PointRef<'a> {
+    pub collection_name: Option<&'a String>,
+    pub point_id: PointIdType,
 }
 
 pub type CollectionName = String;
 
-/// This is a temporary structure, which holds resolved references to vectors,
-/// mentioned in the query.
-///
-///  ┌──────────────┐
-///  │              │  -> Batch request
-///  │ request(+ids)├───────┐   to storage
-///  │              │       │
-///  └──────────────┘       │
-///                         │
-///                         │
-///    Reference Vectors    ▼
-///  ┌──────────────────────────────┐
-///  │                              │
-///  │  ┌───────┐      ┌──────────┐ │
-///  │  │       │      │          │ │
-///  │  │  IDs  ├─────►│ Vectors  │ │
-///  │  │       │      │          │ │
-///  │  └───────┘      └──────────┘ │
-///  │                              │
-///  └──────────────────────────────┘
-///
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct ReferencedVectors {
-    collection_mapping: AHashMap<CollectionName, AHashMap<PointIdType, RecordInternal>>,
-    default_mapping: AHashMap<PointIdType, RecordInternal>,
+    collection_mapping: HashMap<CollectionName, HashMap<PointIdType, Record>>,
+    default_mapping: HashMap<PointIdType, Record>,
 }
 
 impl ReferencedVectors {
     pub fn extend(
         &mut self,
         collection_name: Option<CollectionName>,
-        mapping: impl IntoIterator<Item = (PointIdType, RecordInternal)>,
+        mapping: impl IntoIterator<Item = (PointIdType, Record)>,
     ) {
         match collection_name {
             None => self.default_mapping.extend(mapping),
             Some(collection) => {
                 let entry = self.collection_mapping.entry(collection);
-                let entry_internal: &mut AHashMap<_, _> = entry.or_default();
+                let entry_internal: &mut HashMap<_, _> = entry.or_default();
                 entry_internal.extend(mapping);
             }
         }
@@ -138,50 +98,37 @@ impl ReferencedVectors {
         self.default_mapping.extend(other.default_mapping);
         for (collection_name, points) in other.collection_mapping {
             let entry = self.collection_mapping.entry(collection_name);
-            let entry_internal: &mut AHashMap<_, _> = entry.or_default();
+            let entry_internal: &mut HashMap<_, _> = entry.or_default();
             entry_internal.extend(points);
         }
     }
 
     pub fn get(
         &self,
-        lookup_collection_name: Option<&CollectionName>,
+        collection_name: &Option<&CollectionName>,
         point_id: PointIdType,
-    ) -> Option<&RecordInternal> {
-        match lookup_collection_name {
+    ) -> Option<&Record> {
+        match collection_name {
             None => self.default_mapping.get(&point_id),
             Some(collection) => {
-                let collection_mapping = self.collection_mapping.get(collection)?;
+                let collection_mapping = self.collection_mapping.get(*collection)?;
                 collection_mapping.get(&point_id)
             }
         }
     }
-
-    /// Convert potential reference to a vector (vector id) into actual vector,
-    /// which was resolved by the request to the storage.
-    pub fn resolve_reference<'a>(
-        &'a self,
-        collection_name: Option<&'a String>,
-        vector_name: &VectorName,
-        vector_input: VectorInputInternal,
-    ) -> Option<VectorInternal> {
-        match vector_input {
-            VectorInputInternal::Vector(vector) => Some(vector),
-            VectorInputInternal::Id(vid) => {
-                let rec = self.get(collection_name, vid)?;
-                rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
-            }
-        }
-    }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct ReferencedPoints<'coll_name> {
-    ids_per_collection: AHashMap<Option<&'coll_name String>, AHashSet<PointIdType>>,
-    vector_names_per_collection: AHashMap<Option<&'coll_name String>, AHashSet<VectorNameBuf>>,
+    ids_per_collection: HashMap<Option<&'coll_name String>, HashSet<PointIdType>>,
+    vector_names_per_collection: HashMap<Option<&'coll_name String>, HashSet<String>>,
 }
 
 impl<'coll_name> ReferencedPoints<'coll_name> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.ids_per_collection.is_empty() && self.vector_names_per_collection.is_empty()
     }
@@ -189,7 +136,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
     pub fn add_from_iter(
         &mut self,
         point_ids: impl Iterator<Item = PointIdType>,
-        vector_name: VectorNameBuf,
+        vector_name: String,
         collection_name: Option<&'coll_name String>,
     ) {
         let reference_vectors_ids = self.ids_per_collection.entry(collection_name).or_default();
@@ -206,28 +153,22 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
         });
     }
 
-    pub async fn fetch_vectors<F, Fut>(
+    pub async fn fetch_vectors<'a, F, Fut>(
         mut self,
         collection: &Collection,
         read_consistency: Option<ReadConsistency>,
         collection_by_name: &F,
         shard_selector: ShardSelectorInternal,
-        timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ReferencedVectors>
     where
         F: Fn(String) -> Fut,
-        Fut: Future<Output = Option<Arc<Collection>>>,
+        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
     {
         debug_assert!(self.ids_per_collection.len() == self.vector_names_per_collection.len());
 
         let mut collections_names = Vec::new();
         let mut vector_retrieves = Vec::new();
-        for (collection_name, reference_vectors_ids) in self.ids_per_collection {
-            // do not fetch vectors if there are no reference vectors
-            if reference_vectors_ids.is_empty() {
-                continue;
-            }
+        for (collection_name, reference_vectors_ids) in self.ids_per_collection.into_iter() {
             collections_names.push(collection_name);
             let points: Vec<_> = reference_vectors_ids.into_iter().collect();
             let vector_names: Vec<_> = self
@@ -243,32 +184,29 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                     vector_names,
                     read_consistency,
                     &shard_selector,
-                    timeout,
-                    hw_measurement_acc.clone(),
                 )),
                 Some(name) => {
-                    let other_collection = collection_by_name(name.clone()).await;
+                    let other_collection = collection_by_name(name.to_string()).await;
                     match other_collection {
                         Some(other_collection) => {
                             vector_retrieves.push(retrieve_points_with_locked_collection(
-                                CollectionRefHolder::Arc(other_collection),
+                                CollectionRefHolder::Guard(other_collection),
                                 points,
                                 vector_names,
                                 read_consistency,
                                 &shard_selector,
-                                timeout,
-                                hw_measurement_acc.clone(),
                             ))
                         }
                         None => {
-                            return Err(CollectionError::not_found(format!("Collection {name}")));
+                            return Err(CollectionError::NotFound {
+                                what: format!("Collection {name}"),
+                            })
                         }
                     }
                 }
             }
         }
-        let all_reference_vectors: Vec<Vec<RecordInternal>> =
-            try_join_all(vector_retrieves).await?;
+        let all_reference_vectors: Vec<Vec<Record>> = try_join_all(vector_retrieves).await?;
         let mut all_vectors_records_map: ReferencedVectors = Default::default();
 
         for (collection_name, reference_vectors) in
@@ -289,16 +227,16 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
 pub fn convert_to_vectors_owned(
     examples: Vec<RecommendExample>,
     all_vectors_records_map: &ReferencedVectors,
-    vector_name: &VectorName,
+    vector_name: &str,
     collection_name: Option<&String>,
-) -> Vec<VectorInternal> {
+) -> Vec<Vector> {
     examples
         .into_iter()
         .filter_map(|example| match example {
             RecommendExample::Dense(vector) => Some(vector.into()),
             RecommendExample::Sparse(vector) => Some(vector.into()),
             RecommendExample::PointId(vid) => {
-                let rec = all_vectors_records_map.get(collection_name, vid).unwrap();
+                let rec = all_vectors_records_map.get(&collection_name, vid).unwrap();
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
         })
@@ -308,30 +246,28 @@ pub fn convert_to_vectors_owned(
 pub fn convert_to_vectors<'a>(
     examples: impl Iterator<Item = &'a RecommendExample> + 'a,
     all_vectors_records_map: &'a ReferencedVectors,
-    vector_name: &'a VectorName,
+    vector_name: &'a str,
     collection_name: Option<&'a String>,
 ) -> impl Iterator<Item = VectorRef<'a>> + 'a {
     examples.filter_map(move |example| match example {
         RecommendExample::Dense(vector) => Some(vector.into()),
         RecommendExample::Sparse(vector) => Some(vector.into()),
         RecommendExample::PointId(vid) => {
-            let rec = all_vectors_records_map.get(collection_name, *vid).unwrap();
+            let rec = all_vectors_records_map.get(&collection_name, *vid).unwrap();
             rec.get_vector_by_name(vector_name)
         }
     })
 }
 
-pub async fn resolve_referenced_vectors_batch<F, Fut, Req: RetrieveRequest>(
-    requests: &[(Req, ShardSelectorInternal)],
+pub async fn resolve_referenced_vectors_batch<'a, 'b, F, Fut, Req: RetrieveRequest>(
+    requests: &'b [(Req, ShardSelectorInternal)],
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
-    timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<ReferencedVectors>
 where
     F: Fn(String) -> Fut,
-    Fut: Future<Output = Option<Arc<Collection>>>,
+    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
     let fetch_requests = batch_requests::<
         &(Req, ShardSelectorInternal),
@@ -343,7 +279,7 @@ where
         |(request, _)| request.get_lookup_shard_key(),
         |(request, _), referenced_points| {
             let collection_name = request.get_lookup_collection();
-            let vector_name = request.get_lookup_vector_name();
+            let vector_name = request.get_search_vector_name();
             let point_ids_iter = request.get_referenced_point_ids();
             referenced_points.add_from_iter(
                 point_ids_iter.into_iter(),
@@ -366,8 +302,6 @@ where
                 read_consistency,
                 &collection_by_name,
                 shard_selector,
-                timeout,
-                hw_measurement_acc.clone(),
             );
             requests.push(fetch);
             Ok(())
@@ -387,53 +321,4 @@ where
     }
 
     Ok(all_vectors_records_map)
-}
-
-/// This function is used to build a list of queries to resolve vectors for the given batch of query requests.
-///
-/// For each request, one query is issue for the root request and one query for each nested prefetch.
-/// The resolver queries have no prefetches.
-pub fn build_vector_resolver_queries(
-    requests_batch: &Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
-) -> Vec<(CollectionQueryResolveRequest, ShardSelectorInternal)> {
-    let mut resolve_prefetches = vec![];
-    for (request, shard_selector) in requests_batch {
-        build_vector_resolver_query(request, shard_selector)
-            .into_iter()
-            .for_each(|(resolve_request, shard_selector)| {
-                resolve_prefetches.push((resolve_request, shard_selector))
-            });
-    }
-    resolve_prefetches
-}
-
-pub fn build_vector_resolver_query(
-    request: &CollectionQueryRequest,
-    shard_selector: &ShardSelectorInternal,
-) -> Vec<(CollectionQueryResolveRequest, ShardSelectorInternal)> {
-    let mut resolve_prefetches = vec![];
-    // resolve ids for root query
-    let referenced_ids = request
-        .query
-        .as_ref()
-        .map(Query::get_referenced_ids)
-        .unwrap_or_default();
-
-    if !referenced_ids.is_empty() {
-        let resolve_root = CollectionQueryResolveRequest {
-            referenced_ids,
-            lookup_from: request.lookup_from.clone(),
-            using: request.using.clone(),
-        };
-        resolve_prefetches.push((resolve_root, shard_selector.clone()));
-    }
-
-    // flatten prefetches
-    for prefetch in &request.prefetch {
-        for flatten in prefetch.flatten_resolver_requests() {
-            resolve_prefetches.push((flatten, shard_selector.clone()));
-        }
-    }
-
-    resolve_prefetches
 }

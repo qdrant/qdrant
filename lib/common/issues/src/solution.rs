@@ -4,16 +4,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
 pub enum Solution {
     /// A solution that can be applied immediately
-    Immediate(Box<ImmediateSolution>),
+    Immediate(ImmediateSolution),
 
     /// Two or more solutions to choose from
     ImmediateChoice(Vec<ImmediateSolution>),
 
     /// A solution that requires manual intervention
     Refactor(String),
+
+    /// Failed to generate solution
+    None,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
@@ -51,10 +53,8 @@ mod http_schemars {
             "Method".to_string()
         }
 
-        fn json_schema(
-            generator: &mut schemars::r#gen::SchemaGenerator,
-        ) -> schemars::schema::Schema {
-            let mut schema = generator.subschema_for::<String>().into_object();
+        fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+            let mut schema = gen.subschema_for::<String>().into_object();
             schema.metadata().description = Some("HTTP method".to_string());
             schema.into()
         }
@@ -67,10 +67,8 @@ mod http_schemars {
             "Uri".to_string()
         }
 
-        fn json_schema(
-            generator: &mut schemars::r#gen::SchemaGenerator,
-        ) -> schemars::schema::Schema {
-            let mut schema = generator.subschema_for::<String>().into_object();
+        fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+            let mut schema = gen.subschema_for::<String>().into_object();
             schema.metadata().description = Some("HTTP URI".to_string());
             schema.into()
         }
@@ -83,12 +81,8 @@ mod http_schemars {
             "HeaderMap".to_string()
         }
 
-        fn json_schema(
-            generator: &mut schemars::r#gen::SchemaGenerator,
-        ) -> schemars::schema::Schema {
-            let mut schema = generator
-                .subschema_for::<HashMap<String, String>>()
-                .into_object();
+        fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+            let mut schema = gen.subschema_for::<HashMap<String, String>>().into_object();
             schema.metadata().description = Some("HTTP headers".to_string());
             schema.into()
         }

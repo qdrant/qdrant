@@ -1,57 +1,29 @@
 use std::fmt::Display;
 
+use schemars::JsonSchema;
 use segment::data_types::groups::GroupId;
 use segment::types::PointIdType;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::WithLookup;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(untagged)]
 pub enum WithLookupInterface {
     Collection(String),
     WithLookup(WithLookup),
 }
 
-impl From<api::rest::WithLookupInterface> for WithLookupInterface {
-    fn from(with_lookup: api::rest::WithLookupInterface) -> Self {
+impl From<WithLookupInterface> for WithLookup {
+    fn from(with_lookup: WithLookupInterface) -> Self {
         match with_lookup {
-            api::rest::WithLookupInterface::Collection(collection_name) => {
-                Self::Collection(collection_name)
-            }
-            api::rest::WithLookupInterface::WithLookup(with_lookup) => {
-                Self::WithLookup(WithLookup::from(with_lookup))
-            }
-        }
-    }
-}
-
-impl From<api::rest::WithLookupInterface> for WithLookup {
-    fn from(with_lookup: api::rest::WithLookupInterface) -> Self {
-        match with_lookup {
-            api::rest::WithLookupInterface::Collection(collection_name) => Self {
+            WithLookupInterface::Collection(collection_name) => Self {
                 collection_name,
                 with_payload: Some(true.into()),
                 with_vectors: Some(false.into()),
             },
-            api::rest::WithLookupInterface::WithLookup(with_lookup) => {
-                WithLookup::from(with_lookup)
-            }
-        }
-    }
-}
-
-impl From<api::rest::WithLookup> for WithLookup {
-    fn from(with_lookup: api::rest::WithLookup) -> Self {
-        let api::rest::WithLookup {
-            collection_name,
-            with_payload,
-            with_vectors,
-        } = with_lookup;
-
-        WithLookup {
-            collection_name,
-            with_payload,
-            with_vectors,
+            WithLookupInterface::WithLookup(with_lookup) => with_lookup,
         }
     }
 }
@@ -67,9 +39,9 @@ pub enum PseudoId {
 impl Display for PseudoId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PseudoId::String(s) => write!(f, "{s}"),
-            PseudoId::NumberU64(n) => write!(f, "{n}"),
-            PseudoId::NumberI64(n) => write!(f, "{n}"),
+            PseudoId::String(s) => write!(f, "{}", s),
+            PseudoId::NumberU64(n) => write!(f, "{}", n),
+            PseudoId::NumberI64(n) => write!(f, "{}", n),
         }
     }
 }

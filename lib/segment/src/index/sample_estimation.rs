@@ -1,6 +1,20 @@
+use std::cmp::{max, min};
+
 use common::types::PointOffsetType;
 
 const MAX_ESTIMATED_POINTS: usize = 1000;
+
+/// How many points do we need to check in order to estimate expected query cardinality.
+/// Based on <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval>
+#[allow(dead_code)]
+fn estimate_required_sample_size(total: usize, confidence_interval: usize) -> usize {
+    let confidence_interval = min(confidence_interval, total);
+    let z = 1.96; // percentile 0.95 of normal distribution
+    let index_fraction = confidence_interval as f64 / total as f64 / 2.0;
+    let h = 0.5; // success rate which requires most number of estimations
+    let estimated_size = h * (1. - h) / (index_fraction / z).powi(2);
+    max(estimated_size as usize, 10)
+}
 
 /// Returns (expected cardinality ± confidence interval at 0.99)
 /// Based on <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Agresti%E2%80%93Coull_interval>
@@ -29,7 +43,7 @@ pub fn sample_check_cardinality(
     let mut exp = 0;
     let mut interval;
     for idx in sample_points.take(MAX_ESTIMATED_POINTS) {
-        matched_points += usize::from(checker(idx));
+        matched_points += checker(idx) as usize;
         total_checked += 1;
 
         let estimation =
@@ -52,7 +66,7 @@ pub fn sample_check_cardinality(
 #[cfg(test)]
 mod tests {
     use rand::rngs::StdRng;
-    use rand::{RngExt, SeedableRng};
+    use rand::{Rng, SeedableRng};
 
     use super::*;
 
@@ -65,7 +79,7 @@ mod tests {
         let mut delta = 100_000;
         let mut positive = 0;
         for i in 1..=101 {
-            positive += usize::from(rng.random_bool(true_p));
+            positive += rng.gen_bool(true_p) as usize;
             if i % 20 == 1 {
                 let interval = confidence_agresti_coull_interval(i, positive, total);
                 assert!(interval.1 < delta);

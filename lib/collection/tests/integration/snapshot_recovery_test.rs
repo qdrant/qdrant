@@ -1,36 +1,32 @@
 use std::sync::Arc;
 
-use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
-use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
-use collection::operations::CollectionUpdateOperations;
+use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
-    WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::shared_storage_config::SharedStorageConfig;
-use collection::operations::types::{NodeType, VectorsConfig};
+use collection::operations::types::{NodeType, SearchRequestInternal, VectorsConfig};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
+use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::replica_set_state::ReplicaState;
-use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use collection::shards::replica_set::ReplicaState;
+use common::cpu::CpuBudget;
+use segment::data_types::vectors::VectorStruct;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
-use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
 
 use crate::common::{
-    REST_PORT, TEST_OPTIMIZERS_CONFIG, dummy_abort_shard_transfer, dummy_on_replica_failure,
-    dummy_request_shard_transfer,
+    dummy_abort_shard_transfer, dummy_on_replica_failure, dummy_request_shard_transfer, REST_PORT,
+    TEST_OPTIMIZERS_CONFIG,
 };
 
 async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
-        wal_retain_closed: 1,
     };
 
     let collection_params = CollectionParams {
@@ -38,15 +34,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         ..CollectionParams::empty()
     };
 
-    let config = CollectionConfigInternal {
+    let config = CollectionConfig {
         params: collection_params,
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
-        strict_mode_config: Default::default(),
-        uuid: None,
-        metadata: None,
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
@@ -77,15 +70,13 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         &config,
         Arc::new(storage_config),
         shard_distribution,
-        None,
-        ChannelService::new(REST_PORT, false, None, None),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
         None,
         None,
-        ResourceBudget::default(),
-        None,
+        CpuBudget::default(),
     )
     .await
     .unwrap();
@@ -101,24 +92,17 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     // Upload 1000 random vectors to the collection
     let mut points = Vec::new();
     for i in 0..100 {
-        points.push(PointStructPersisted {
+        points.push(PointStruct {
             id: i.into(),
-            vector: VectorStructPersisted::Single(vec![i as f32, 0.0, 0.0, 0.0]),
+            vector: VectorStruct::from(vec![i as f32, 0.0, 0.0, 0.0]).into(),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -129,10 +113,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         .await
         .unwrap();
 
-    let snapshot_data =
-        SnapshotData::new_packed_persistent(snapshots_path.path().join(snapshot_description.name));
-
-    if let Err(err) = Collection::restore_snapshot(snapshot_data, recover_dir.path(), 0, false) {
+    if let Err(err) = Collection::restore_snapshot(
+        &snapshots_path.path().join(snapshot_description.name),
+        recover_dir.path(),
+        0,
+        false,
+    ) {
         panic!("Failed to restore snapshot: {err}")
     }
 
@@ -142,14 +128,13 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         recover_dir.path(),
         snapshots_path.path(),
         Default::default(),
-        ChannelService::new(REST_PORT, false, None, None),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
         None,
         None,
-        ResourceBudget::default(),
-        None,
+        CpuBudget::default(),
     )
     .await;
 
@@ -166,26 +151,22 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
     let reference_result = collection
         .search(
             full_search_request.clone().into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
         .await
         .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
     let recovered_result = recovered_collection
         .search(
             full_search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
         .await
         .unwrap();

@@ -1,21 +1,17 @@
 [package]
 name = "api"
-version = "1.18.1"
+version = "1.9.1-dev"
 authors = [
-    "Andrey Vasnetsov <andrey@vasnetsov.com>",
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
     "Qdrant Team <info@qdrant.tech>",
 ]
 license = "Apache-2.0"
-edition = "2024"
-
-[lints]
-workspace = true
+edition = "2021"
 
 [features]
 tracing = ["dep:tracing", "segment/tracing"]
 
 [dependencies]
-ahash = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 prost-wkt-types = { workspace = true }
@@ -24,22 +20,23 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
 tokio = { workspace = true }
-rand = { workspace = true }
+rand = "0.8.5"
 chrono = { workspace = true }
-thiserror = { workspace = true }
+thiserror = "1.0"
 parking_lot = { workspace = true }
 validator = { workspace = true }
-itertools = { workspace = true }
-ordered-float = { workspace = true }
+log = "0.4"
 
 common = { path = "../common/common" }
-segment = { path = "../segment", default-features = false }
+segment = { path = "../segment" }
 sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
 
 [build-dependencies]
-tonic-build = { workspace = true }
-prost-build = { workspace = true }
+tonic-build = { version = "0.10.2", features = ["prost"] }
+prost-build = { version = "0.11.8", features = ["cleanup-markdown"] }
 common = { path = "../common/common" }
 
+[dev-dependencies]
+tokio = { workspace = true }

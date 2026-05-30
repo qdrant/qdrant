@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::{borrow, iter, mem, slice};
 
 use tinyvec::TinyVec;
@@ -81,10 +80,10 @@ where
         }
     }
 
-    pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
     where
         K: borrow::Borrow<Q>,
-        Q: Eq + ?Sized,
+        Q: Eq,
     {
         self.list
             .iter()
@@ -92,10 +91,10 @@ where
             .map(|(_, v)| v)
     }
 
-    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut V>
     where
         K: borrow::Borrow<Q>,
-        Q: Eq + ?Sized,
+        Q: Eq,
     {
         self.list
             .iter_mut()
@@ -103,38 +102,8 @@ where
             .map(|(_, v)| v)
     }
 
-    /// Returns the (mutable) value assigned to `key`, if such an entry exists.
-    /// Otherwise the default value for `V` is inserted and returned as mutable reference.
-    ///
-    /// This method automatically clones `key` if required. Therefore Q must implement `ToOwned<Owned = K>`.
-    pub fn get_or_insert_default<Q>(&mut self, key: &Q) -> &mut V
-    where
-        V: Sized,
-        K: borrow::Borrow<Q>,
-        Q: Eq + ToOwned<Owned = K> + ?Sized,
-    {
-        // Try to locate an existing entry for the key.
-        let existing_position = self.list.iter().position(|(k, _)| k.borrow() == key);
-
-        // Insert default value if not existing and get the new index.
-        let index = match existing_position {
-            Some(existing_pos) => existing_pos,
-            None => {
-                let new_index = self.list.len();
-                self.list.push((key.to_owned(), V::default()));
-                new_index
-            }
-        };
-
-        &mut self.list[index].1
-    }
-
-    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
-    where
-        K: borrow::Borrow<Q>,
-        Q: Eq + ?Sized,
-    {
-        let found = self.list.iter().position(|(k, _)| k.borrow() == key);
+    pub fn remove(&mut self, key: &K) -> Option<V> {
+        let found = self.list.iter().position(|(k, _)| k == key);
         match found {
             Some(i) => {
                 let (_, v) = self.list.remove(i);
@@ -144,10 +113,10 @@ where
         }
     }
 
-    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
     where
         K: borrow::Borrow<Q>,
-        Q: Eq + ?Sized,
+        Q: Eq,
     {
         self.list.iter().any(|(k, _)| k.borrow() == key)
     }
@@ -187,18 +156,7 @@ where
     }
 }
 
-impl<K, V> From<TinyMap<K, V>> for HashMap<K, V>
-where
-    K: Default + std::hash::Hash + Eq,
-    V: Default,
-{
-    #[inline]
-    fn from(value: TinyMap<K, V>) -> Self {
-        value.into_iter().collect()
-    }
-}
-
-impl<K, V> FromIterator<(K, V)> for TinyMap<K, V>
+impl<K, V> iter::FromIterator<(K, V)> for TinyMap<K, V>
 where
     K: Default,
     V: Default,
@@ -249,7 +207,7 @@ mod tests {
         map.clear();
         map.insert(key.clone(), value.clone());
         assert_eq!(map.get_mut(&key), Some(&mut value));
-        map.get_mut(&key).unwrap().clone_from(&value3);
+        *map.get_mut(&key).unwrap() = value3.clone();
         assert_eq!(map.get(&key), Some(&value3));
 
         // Test iter
@@ -259,42 +217,5 @@ mod tests {
         let mut iter = map.iter();
         assert_eq!(iter.next(), Some(&(key2, value2)));
         assert_eq!(iter.next(), Some(&(key3, value3)));
-    }
-
-    #[test]
-    fn test_tiny_map_get_or_insert() {
-        let mut map: TinyMap<String, usize> = TinyMap::new();
-
-        map.insert("a".to_string(), 1);
-        map.insert("b".to_string(), 2);
-        assert_eq!(map.len(), 2);
-
-        assert_eq!(*map.get_or_insert_default("a"), 1);
-        assert_eq!(map.len(), 2);
-
-        assert_eq!(*map.get_or_insert_default("b"), 2);
-        assert_eq!(map.len(), 2);
-
-        assert_eq!(*map.get_or_insert_default("c"), 0);
-        assert_eq!(map.len(), 3);
-
-        let mut map: TinyMap<usize, usize> = TinyMap::new();
-        map.insert(1, 1);
-        map.insert(2, 4);
-        assert_eq!(map.len(), 2);
-
-        assert_eq!(*map.get_or_insert_default(&1), 1);
-        assert_eq!(map.len(), 2);
-
-        assert_eq!(*map.get_or_insert_default(&2), 4);
-        assert_eq!(map.len(), 2);
-
-        assert_eq!(*map.get_or_insert_default(&3), 0);
-        assert_eq!(map.len(), 3);
-
-        *map.get_or_insert_default(&3) = 6;
-        assert_eq!(map.len(), 3); // This call should not add an additional item.
-
-        assert_eq!(map.get(&3), Some(&6));
     }
 }

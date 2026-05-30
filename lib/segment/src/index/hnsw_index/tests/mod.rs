@@ -1,69 +1,71 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
 
+use std::path::Path;
+
 use common::types::PointOffsetType;
 use rand::Rng;
 
-use super::graph_links::GraphLinksFormat;
-use crate::fixtures::index_fixtures::TestRawScorerProducer;
-use crate::index::hnsw_index::HnswM;
+use super::graph_links::GraphLinksRam;
+use crate::data_types::vectors::VectorElementType;
+use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::types::Distance;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::spaces::metric::Metric;
 
-pub(crate) fn create_graph_layer_builder_fixture<R: Rng + ?Sized>(
+pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
     use_heuristic: bool,
-    use_quantization: bool,
-    distance: Distance,
     rng: &mut R,
-) -> (TestRawScorerProducer, GraphLayersBuilder) {
+) -> (TestRawScorerProducer<TMetric>, GraphLayersBuilder)
+where
+    R: Rng + ?Sized,
+{
     let ef_construct = 16;
     let entry_points_num = 10;
 
-    let vector_holder =
-        TestRawScorerProducer::new(dim, distance, num_vectors, use_quantization, rng);
+    let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
 
     let mut graph_layers_builder = GraphLayersBuilder::new(
         num_vectors,
-        HnswM::new2(m),
+        m,
+        m * 2,
         ef_construct,
         entry_points_num,
         use_heuristic,
     );
 
     for idx in 0..(num_vectors as PointOffsetType) {
+        let fake_filter_context = FakeFilterContext {};
+        let added_vector = vector_holder.vectors.get(idx).to_vec();
+        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, vector_holder.internal_scorer(idx));
+        graph_layers_builder.link_new_point(idx, scorer);
     }
     (vector_holder, graph_layers_builder)
 }
 
-#[expect(clippy::too_many_arguments)]
-pub(crate) fn create_graph_layer_fixture<R: Rng + ?Sized>(
+pub(crate) fn create_graph_layer_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
-    format: GraphLinksFormat,
     use_heuristic: bool,
-    use_quantization: bool,
-    distance: Distance,
     rng: &mut R,
-) -> (TestRawScorerProducer, GraphLayers) {
-    let (vector_holder, graph_layers_builder) = create_graph_layer_builder_fixture(
-        num_vectors,
-        m,
-        dim,
-        use_heuristic,
-        use_quantization,
-        distance,
-        rng,
-    );
-    let graph_layers = graph_layers_builder.into_graph_layers_ram(
-        format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
-    );
-    (vector_holder, graph_layers)
+    links_path: Option<&Path>,
+) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>)
+where
+    R: Rng + ?Sized,
+{
+    let (vector_holder, graph_layers_builder) =
+        create_graph_layer_builder_fixture(num_vectors, m, dim, use_heuristic, rng);
+
+    (
+        vector_holder,
+        graph_layers_builder.into_graph_layers(links_path).unwrap(),
+    )
 }

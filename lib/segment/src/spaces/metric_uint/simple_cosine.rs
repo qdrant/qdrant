@@ -64,24 +64,14 @@ pub fn cosine_similarity_bytes(
     let mut norm2 = 0;
 
     for (a, b) in v1.iter().zip(v2) {
-        dot_product += i32::from(*a) * i32::from(*b);
-        norm1 += i32::from(*a) * i32::from(*a);
-        norm2 += i32::from(*b) * i32::from(*b);
+        dot_product += (*a as i32) * (*b as i32);
+        norm1 += (*a as i32) * (*a as i32);
+        norm2 += (*b as i32) * (*b as i32);
     }
 
     if norm1 == 0 || norm2 == 0 {
         return 0.0;
     }
 
-    dot_product as ScoreType / (norm1 as ScoreType * norm2 as ScoreType).sqrt()
-}
-
-#[test]
-fn test_zero() {
-    let v1: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
-    let v2: Vec<u8> = vec![255, 255, 0, 254, 253, 252, 251, 250];
-
-    assert_eq!(cosine_similarity_bytes(&v1, &v2), 0.0);
-    assert_eq!(cosine_similarity_bytes(&v2, &v1), 0.0);
-    assert_eq!(cosine_similarity_bytes(&v1, &v1), 0.0);
+    dot_product as ScoreType / ((norm1 as ScoreType * norm2 as ScoreType).sqrt())
 }

@@ -1,24 +1,19 @@
+use std::collections::HashSet;
 use std::iter::FromIterator;
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashSet;
-use common::counter::hardware_counter::HardwareCounterCell;
-use fs_err as fs;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal, only_default_vector,
+    only_default_vector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
-use segment::entry::StorageSegmentEntry as _;
-use segment::entry::entry_point::{NonAppendableSegmentEntry as _, ReadSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
+use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::segment_constructor::{load_segment, normalize_segment_dir};
-use segment::types::{Condition, Distance, Filter, SearchParams, SegmentType, WithPayload};
-use tempfile::{Builder, TempDir};
-use uuid::Uuid;
+use segment::types::{Condition, Distance, Filter, SearchParams, WithPayload};
+use tempfile::Builder;
 
 use crate::fixtures::segment::{build_segment_1, build_segment_3};
 
@@ -47,7 +42,7 @@ fn test_point_exclusion() {
     let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 
-    let ids: AHashSet<_> = AHashSet::from_iter([3.into()]);
+    let ids: HashSet<_> = HashSet::from_iter([3.into()]);
 
     let frt = Filter::new_must_not(Condition::HasId(ids.into()));
 
@@ -100,7 +95,7 @@ fn test_named_vector_search() {
     let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 
-    let ids: AHashSet<_> = AHashSet::from_iter([3.into()]);
+    let ids: HashSet<_> = HashSet::from_iter([3.into()]);
 
     let frt = Filter {
         should: None,
@@ -138,17 +133,14 @@ fn test_missed_vector_name() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_segment_3(dir.path());
 
-    let hw_counter = HardwareCounterCell::new();
-
     let exists = segment
         .upsert_point(
             7,
             1.into(),
-            NamedVectors::from_pairs([
-                ("vector2".into(), vec![10.]),
-                ("vector3".into(), vec![5., 6., 7., 8.]),
+            NamedVectors::from([
+                ("vector2".to_owned(), vec![10.]),
+                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
-            &hw_counter,
         )
         .unwrap();
     assert!(exists, "this partial vector should overwrite existing");
@@ -157,11 +149,10 @@ fn test_missed_vector_name() {
         .upsert_point(
             8,
             6.into(),
-            NamedVectors::from_pairs([
-                ("vector2".into(), vec![10.]),
-                ("vector3".into(), vec![5., 6., 7., 8.]),
+            NamedVectors::from([
+                ("vector2".to_owned(), vec![10.]),
+                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
-            &hw_counter,
         )
         .unwrap();
     assert!(!exists, "this partial vector should not existing");
@@ -172,18 +163,15 @@ fn test_vector_name_not_exists() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_segment_3(dir.path());
 
-    let hw_counter = HardwareCounterCell::new();
-
     let result = segment.upsert_point(
         6,
         6.into(),
-        NamedVectors::from_pairs([
-            ("vector1".into(), vec![5., 6., 7., 8.]),
-            ("vector2".into(), vec![10.]),
-            ("vector3".into(), vec![5., 6., 7., 8.]),
-            ("vector4".into(), vec![5., 6., 7., 8.]),
+        NamedVectors::from([
+            ("vector1".to_owned(), vec![5., 6., 7., 8.]),
+            ("vector2".to_owned(), vec![10.]),
+            ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+            ("vector4".to_owned(), vec![5., 6., 7., 8.]),
         ]),
-        &hw_counter,
     );
 
     if let Err(OperationError::VectorNameNotExists { received_name }) = result {
@@ -197,17 +185,17 @@ fn test_vector_name_not_exists() {
 fn ordered_deletion_test() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-
     let path = {
         let mut segment = build_segment_1(dir.path());
-        segment.delete_point(6, 5.into(), &hw_counter).unwrap();
-        segment.delete_point(6, 4.into(), &hw_counter).unwrap();
-        segment.flush(false).unwrap();
-        segment.segment_path.clone()
+        segment.delete_point(6, 5.into()).unwrap();
+        segment.delete_point(6, 4.into()).unwrap();
+        segment.flush(true).unwrap();
+        segment.current_path.clone()
     };
 
-    let segment = load_segment(&path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let segment = load_segment(&path, &AtomicBool::new(false))
+        .unwrap()
+        .unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment
@@ -225,69 +213,35 @@ fn ordered_deletion_test() {
     assert_eq!(best_match.id, 3.into());
 }
 
-mod normalize_segment_dir {
-    use super::*;
+#[test]
+fn skip_deleted_segment() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    fn make_segment() -> (TempDir, PathBuf, Uuid) {
-        let tmpdir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let segment = build_segment_1(tmpdir.path());
-        (tmpdir, segment.segment_path.clone(), segment.uuid)
-    }
+    let path = {
+        let mut segment = build_segment_1(dir.path());
+        segment.delete_point(6, 5.into()).unwrap();
+        segment.delete_point(6, 4.into()).unwrap();
+        segment.flush(true).unwrap();
+        segment.current_path.clone()
+    };
 
-    #[test]
-    fn happy_case() {
-        let (_tmpdir, original_path, original_uuid) = make_segment();
-        let result = normalize_segment_dir(&original_path).unwrap();
-        assert_eq!(Some((original_path, original_uuid)), result);
-    }
+    let new_path = path.with_extension("deleted");
+    std::fs::rename(&path, new_path).unwrap();
 
-    #[test]
-    fn deleted_suffix_case() {
-        let (tmpdir, original_path, _original_uuid) = make_segment();
-        let deleted_path = original_path.with_extension("deleted");
-        fs::rename(&original_path, &deleted_path).unwrap();
-        assert!(normalize_segment_dir(&deleted_path).unwrap().is_none());
-        assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
-    }
+    let segment = load_segment(&path, &AtomicBool::new(false)).unwrap();
 
-    #[test]
-    fn missing_version_case() {
-        let (tmpdir, original_path, _original_uuid) = make_segment();
-        fs::remove_file(original_path.join(common::storage_version::VERSION_FILE)).unwrap();
-        assert!(normalize_segment_dir(&original_path).unwrap().is_none());
-        assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
-    }
-
-    #[test]
-    fn non_uuid_case() {
-        let (tmpdir, original_path, original_uuid) = make_segment();
-        let non_uuid_path = original_path.with_file_name("not-an-uuid");
-        fs::rename(&original_path, &non_uuid_path).unwrap();
-        let (normalized_path, normalized_uuid) =
-            normalize_segment_dir(&non_uuid_path).unwrap().unwrap();
-        let expected_path = tmpdir.path().join(normalized_uuid.to_string());
-        assert_ne!(normalized_uuid, original_uuid);
-        assert_eq!(normalized_path, expected_path);
-        assert!(fs::read_dir(&normalized_path).is_ok());
-        assert!(fs::read_dir(&non_uuid_path).is_err());
-
-        // Check idempotency
-        let result = normalize_segment_dir(&normalized_path).unwrap();
-        assert_eq!(Some((normalized_path, normalized_uuid)), result);
-    }
+    assert!(segment.is_none());
 }
 
 #[test]
 fn test_update_named_vector() {
     let num_points = 25;
     let dim = 4;
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
     let distance = Distance::Cosine;
     let vectors = (0..num_points)
         .map(|_| random_vector(&mut rng, dim))
         .collect_vec();
-
-    let hw_counter = HardwareCounterCell::new();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
@@ -295,7 +249,7 @@ fn test_update_named_vector() {
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .upsert_point(i, i.into(), only_default_vector(vec), &hw_counter)
+            .upsert_point(i, i.into(), only_default_vector(vec))
             .unwrap();
     }
 
@@ -303,8 +257,10 @@ fn test_update_named_vector() {
 
     // do exact search
     let search_params = SearchParams {
+        hnsw_ef: None,
         exact: true,
-        ..Default::default()
+        quantization: None,
+        indexed_only: false,
     };
     let nearest_upsert = segment
         .search(
@@ -323,10 +279,10 @@ fn test_update_named_vector() {
 
     // check if nearest_upsert is normalized
     match &nearest_upsert.vector {
-        Some(VectorStructInternal::Single(v)) => {
+        Some(VectorStruct::Single(v)) => {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
-        Some(VectorStructInternal::Named(v)) => {
+        Some(VectorStruct::Multi(v)) => {
             let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
@@ -338,12 +294,7 @@ fn test_update_named_vector() {
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .update_vectors(
-                i + num_points as u64,
-                i.into(),
-                only_default_vector(vec),
-                &hw_counter,
-            )
+            .update_vectors(i + num_points as u64, i.into(), only_default_vector(vec))
             .unwrap();
     }
 
@@ -363,10 +314,10 @@ fn test_update_named_vector() {
 
     // check that nearest_upsert is normalized
     match &nearest_update.vector {
-        Some(VectorStructInternal::Single(v)) => {
+        Some(VectorStruct::Single(v)) => {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
-        Some(VectorStructInternal::Named(v)) => {
+        Some(VectorStruct::Multi(v)) => {
             let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
@@ -376,24 +327,4 @@ fn test_update_named_vector() {
 
     // check that nearests are the same
     assert_eq!(nearest_upsert.id, nearest_update.id);
-}
-
-#[test]
-fn test_plain_search_top_zero() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-    let segment = build_segment_1(dir.path());
-    assert_eq!(segment.segment_type(), SegmentType::Plain);
-
-    segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &[1.0, 1.0, 1.0, 1.0].into(),
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            0,
-            None,
-        )
-        .unwrap();
 }

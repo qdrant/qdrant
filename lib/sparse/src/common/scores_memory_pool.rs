@@ -16,7 +16,7 @@ impl<'a> PooledScoresHandle<'a> {
     }
 }
 
-impl Drop for PooledScoresHandle<'_> {
+impl<'a> Drop for PooledScoresHandle<'a> {
     fn drop(&mut self) {
         self.pool.return_back(std::mem::take(&mut self.scores));
     }
@@ -34,7 +34,7 @@ impl ScoresMemoryPool {
         }
     }
 
-    pub fn get(&self) -> PooledScoresHandle<'_> {
+    pub fn get(&self) -> PooledScoresHandle {
         match self.pool.lock().pop() {
             None => PooledScoresHandle::new(self, vec![]),
             Some(data) => PooledScoresHandle::new(self, data),

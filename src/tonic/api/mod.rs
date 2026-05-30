@@ -1,16 +1,11 @@
 pub mod collections_api;
+mod collections_common;
 pub mod collections_internal_api;
 pub mod points_api;
+mod points_common;
 pub mod points_internal_api;
-pub mod qdrant_internal_api;
 pub mod raft_api;
 pub mod snapshots_api;
-pub mod storage_read_api;
-pub mod telemetry_wrapper;
-
-mod collections_common;
-mod query_common;
-mod update_common;
 
 use collection::operations::validation;
 use tonic::Status;
@@ -46,7 +41,7 @@ mod tests {
 
     #[derive(Validate, Debug)]
     struct OtherThing {
-        #[validate(nested)]
+        #[validate]
         pub things: Vec<SomeThing>,
     }
 
@@ -63,7 +58,7 @@ mod tests {
         assert_eq!(validation.code(), Code::InvalidArgument);
         assert_eq!(
             validation.message(),
-            "Validation error in body: [things[0].idx: value 0 invalid, must be 1 or larger]"
+            "Validation error in body: [things[0].idx: value 0 invalid, must be 1.0 or larger]"
         )
     }
 }

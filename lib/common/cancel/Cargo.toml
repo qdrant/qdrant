@@ -6,13 +6,10 @@ authors = [
     "Qdrant Team <info@qdrant.tech>",
 ]
 license = "Apache-2.0"
-edition = "2024"
+edition = "2021"
 publish = false
 
-[lints]
-workspace = true
-
 [dependencies]
-thiserror = { workspace = true }
+thiserror = "1.0"
 tokio = { workspace = true }
 tokio-util = { workspace = true }

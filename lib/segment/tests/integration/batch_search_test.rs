@@ -1,29 +1,27 @@
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::FeatureFlags;
-use common::progress_tracker::ProgressTracker;
-use rand::SeedableRng;
+use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
-use segment::data_types::query_context::QueryContext;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
+use rand::SeedableRng;
+use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
-use segment::index::VectorIndexRead;
-use segment::index::hnsw_index::get_num_indexing_threads;
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::json_path::JsonPath;
-use segment::payload_json;
-use segment::segment_constructor::VectorIndexBuildArgs;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::index::hnsw_index::graph_links::GraphLinksRam;
+use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::num_rayon_threads;
+use segment::index::VectorIndex;
+use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    SeqNumberType, WithPayload,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
+    SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType, WithPayload,
 };
+use serde_json::json;
 use tempfile::Builder;
+
+use crate::utils::path;
 
 #[test]
 fn test_batch_and_single_request_equivalency() {
@@ -32,53 +30,58 @@ fn test_batch_and_single_request_equivalency() {
     let num_payload_values = 2;
     let dim = 8;
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance,
+                storage_type: VectorStorageType::Memory,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multi_vec_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+
     let int_key = "int";
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
-
-    let hw_counter = HardwareCounterCell::new();
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
     segment
-        .create_field_index(
-            0,
-            &JsonPath::new(int_key),
-            Some(&PayloadSchemaType::Integer.into()),
-            &hw_counter,
-        )
+        .create_field_index(0, &path(int_key), Some(&PayloadSchemaType::Integer.into()))
         .unwrap();
 
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rng, dim);
+        let vector = random_vector(&mut rnd, dim);
 
-        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
-        let payload = payload_json! {int_key: int_payload};
+        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let payload: Payload = json!({int_key:int_payload,}).into();
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
     for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rng, dim).into();
-        let query_vector_2 = random_vector(&mut rng, dim).into();
+        let query_vector_1 = random_vector(&mut rnd, dim).into();
+        let query_vector_2 = random_vector(&mut rnd, dim).into();
 
-        let payload_value = random_int_payload(&mut rng, 1..=1).pop().unwrap();
+        let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            JsonPath::new(int_key),
+            path(int_key),
             payload_value.into(),
         )));
 
@@ -106,9 +109,6 @@ fn test_batch_and_single_request_equivalency() {
             )
             .unwrap();
 
-        let query_context = QueryContext::default();
-        let segment_query_context = query_context.get_segment_query_context();
-
         let batch_res = segment
             .search_batch(
                 DEFAULT_VECTOR_NAME,
@@ -118,7 +118,8 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &segment_query_context,
+                &false.into(),
+                10_000,
             )
             .unwrap();
 
@@ -143,44 +144,33 @@ fn test_batch_and_single_request_equivalency() {
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        inline_storage: None,
     };
 
-    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            quantized_vectors: quantized_vectors.clone(),
-            payload_index: payload_index_ptr,
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
+    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        vector_storage.clone(),
+        quantized_vectors.clone(),
+        payload_index_ptr,
+        hnsw_config,
     )
     .unwrap();
 
-    for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rng, dim).into();
-        let query_vector_2 = random_vector(&mut rng, dim).into();
+    hnsw_index.build_index(permit, &stopped).unwrap();
 
-        let payload_value = random_int_payload(&mut rng, 1..=1).pop().unwrap();
+    for _ in 0..10 {
+        let query_vector_1 = random_vector(&mut rnd, dim).into();
+        let query_vector_2 = random_vector(&mut rnd, dim).into();
+
+        let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            JsonPath::new(int_key),
+            path(int_key),
             payload_value.into(),
         )));
 
@@ -190,7 +180,8 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
 
@@ -200,7 +191,8 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
 
@@ -210,7 +202,8 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
 

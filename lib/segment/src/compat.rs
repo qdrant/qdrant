@@ -7,21 +7,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{
     Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentConfig,
-    SegmentState, SeqNumberType, VectorDataConfig, VectorNameBuf, VectorStorageType,
+    SegmentState, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[deprecated = "use SegmentConfig instead"]
 pub struct SegmentConfigV5 {
-    pub vector_data: HashMap<VectorNameBuf, VectorDataConfigV5>,
+    pub vector_data: HashMap<String, VectorDataConfigV5>,
     /// Type of index used for search
     pub index: Indexes,
     /// Type of vector storage
     pub storage_type: StorageTypeV5,
     /// Defines payload storage type
     #[serde(default)]
-    pub payload_storage_type: Option<PayloadStorageType>,
+    pub payload_storage_type: PayloadStorageType,
     /// Quantization parameters. If none - quantization is disabled.
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
@@ -29,44 +29,30 @@ pub struct SegmentConfigV5 {
 
 impl From<SegmentConfigV5> for SegmentConfig {
     fn from(old_segment: SegmentConfigV5) -> Self {
-        let SegmentConfigV5 {
-            vector_data,
-            index,
-            storage_type,
-            payload_storage_type,
-            quantization_config,
-        } = old_segment;
-
-        let vector_data = vector_data
+        let vector_data = old_segment
+            .vector_data
             .into_iter()
             .map(|(vector_name, old_data)| {
-                let VectorDataConfigV5 {
-                    size,
-                    distance,
-                    hnsw_config,
-                    quantization_config: vec_quantization_config,
-                    on_disk,
-                } = old_data;
-
                 let new_data = VectorDataConfig {
-                    size,
-                    distance,
+                    size: old_data.size,
+                    distance: old_data.distance,
                     // Use HNSW index if vector specific one is set, or fall back to segment index
-                    index: match hnsw_config {
+                    index: match old_data.hnsw_config {
                         Some(hnsw_config) => Indexes::Hnsw(hnsw_config),
-                        None => index.clone(),
+                        None => old_segment.index.clone(),
                     },
                     // Remove vector specific quantization config if no segment one is set
                     // This is required because in some cases this was incorrectly set on the vector
                     // level
-                    quantization_config: quantization_config.as_ref().and(vec_quantization_config),
+                    quantization_config: old_segment
+                        .quantization_config
+                        .as_ref()
+                        .and(old_data.quantization_config),
                     // Mmap if explicitly on disk, otherwise convert old storage type
-                    storage_type: if on_disk == Some(true) {
-                        VectorStorageType::Mmap
-                    } else {
-                        storage_type.into()
-                    },
-                    multivector_config: None,
+                    storage_type: (old_data.on_disk == Some(true))
+                        .then_some(VectorStorageType::Mmap)
+                        .unwrap_or_else(|| old_segment.storage_type.into()),
+                    multi_vec_config: None,
                     datatype: None,
                 };
 
@@ -74,14 +60,10 @@ impl From<SegmentConfigV5> for SegmentConfig {
             })
             .collect();
 
-        // ToDo: remove this whole thing once we drop rocksdb support
-
-        let default_storage_type = PayloadStorageType::Mmap;
-
         SegmentConfig {
             vector_data,
             sparse_vector_data: Default::default(),
-            payload_storage_type: payload_storage_type.unwrap_or(default_storage_type),
+            payload_storage_type: old_segment.payload_storage_type,
         }
     }
 }
@@ -142,11 +124,9 @@ pub struct SegmentStateV5 {
 
 impl From<SegmentStateV5> for SegmentState {
     fn from(old: SegmentStateV5) -> Self {
-        let SegmentStateV5 { version, config } = old;
         Self {
-            initial_version: None,
-            version,
-            config: config.into(),
+            version: old.version,
+            config: old.config.into(),
         }
     }
 }
@@ -161,7 +141,7 @@ mod tests {
         let old_segment = SegmentConfigV5 {
             vector_data: vec![
                 (
-                    "vec1".into(),
+                    "vec1".to_string(),
                     VectorDataConfigV5 {
                         size: 10,
                         distance: Distance::Dot,
@@ -172,14 +152,13 @@ mod tests {
                             max_indexing_threads: 0,
                             on_disk: None,
                             payload_m: Some(10),
-                            inline_storage: None,
                         }),
                         quantization_config: None,
                         on_disk: None,
                     },
                 ),
                 (
-                    "vec2".into(),
+                    "vec2".to_string(),
                     VectorDataConfigV5 {
                         size: 10,
                         distance: Distance::Dot,
@@ -204,16 +183,15 @@ mod tests {
                 max_indexing_threads: 0,
                 on_disk: None,
                 payload_m: None,
-                inline_storage: None,
             }),
             storage_type: StorageTypeV5::InMemory,
-            payload_storage_type: None,
+            payload_storage_type: PayloadStorageType::default(),
             quantization_config: None,
         };
 
         let new_segment: SegmentConfig = old_segment.into();
 
-        eprintln!("new = {new_segment:#?}");
+        eprintln!("new = {:#?}", new_segment);
 
         match &new_segment.vector_data.get("vec1").unwrap().index {
             Indexes::Plain { .. } => panic!("expected HNSW index"),
@@ -245,7 +223,7 @@ mod tests {
         let old_segment = SegmentConfigV5 {
             vector_data: vec![
                 (
-                    "vec1".into(),
+                    "vec1".to_string(),
                     VectorDataConfigV5 {
                         size: 10,
                         distance: Distance::Dot,
@@ -255,7 +233,7 @@ mod tests {
                     },
                 ),
                 (
-                    "vec2".into(),
+                    "vec2".to_string(),
                     VectorDataConfigV5 {
                         size: 10,
                         distance: Distance::Dot,
@@ -280,10 +258,9 @@ mod tests {
                 max_indexing_threads: 0,
                 on_disk: None,
                 payload_m: None,
-                inline_storage: None,
             }),
             storage_type: StorageTypeV5::InMemory,
-            payload_storage_type: None,
+            payload_storage_type: PayloadStorageType::default(),
             quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: ScalarQuantizationConfig {
                     r#type: Default::default(),
@@ -295,7 +272,7 @@ mod tests {
 
         let new_segment: SegmentConfig = old_segment.into();
 
-        eprintln!("new = {new_segment:#?}");
+        eprintln!("new = {:#?}", new_segment);
 
         if new_segment
             .vector_data
@@ -321,9 +298,6 @@ mod tests {
                     panic!("expected scalar quantization")
                 }
                 QuantizationConfig::Binary(_) => {
-                    panic!("expected scalar quantization")
-                }
-                QuantizationConfig::Turbo(_) => {
                     panic!("expected scalar quantization")
                 }
             },

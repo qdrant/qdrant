@@ -1,18 +1,16 @@
+use std::any::Any;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use tokio::task::JoinHandle;
-use tokio_util::task::AbortOnDropHandle;
 
-/// A task that can be asked to stop
-///
-/// If this future is dropped the blocking task may be aborted prematurely if it has not started
-/// yet.
-#[must_use = "dropping this handle may abort the task"]
+type PanicPayload = Box<dyn Any + Send + 'static>;
+
 pub struct StoppableTaskHandle<T> {
-    pub join_handle: AbortOnDropHandle<Option<T>>,
+    pub join_handle: JoinHandle<Option<T>>,
     started: Arc<AtomicBool>,
     stopped: Weak<AtomicBool>,
+    panic_handler: Option<Box<dyn Fn(PanicPayload) + Sync + Send>>,
 }
 
 impl<T> StoppableTaskHandle<T> {
@@ -32,14 +30,17 @@ impl<T> StoppableTaskHandle<T> {
 
     pub fn stop(self) -> Option<JoinHandle<Option<T>>> {
         self.ask_to_stop();
-        self.is_started().then_some(self.join_handle.detach())
+        self.is_started().then_some(self.join_handle)
     }
 
-    /// Join this stoppable task
+    /// Join this stoppable task and handle any panics
+    ///
+    /// Any panics are propagated through the configured panic handler. If no handler is
+    /// configured, nothing happens.
     ///
     /// To call this, the task must already be finished. Otherwise it panics in development, or
     /// blocks in release.
-    pub async fn join(self) {
+    pub async fn join_and_handle_panic(self) {
         debug_assert!(
             self.join_handle.is_finished(),
             "Task must be finished, we cannot block here on awaiting the join handle",
@@ -48,6 +49,17 @@ impl<T> StoppableTaskHandle<T> {
         match self.join_handle.await {
             Ok(_) => {}
             Err(err) if err.is_cancelled() => {}
+            // Propagate panic
+            Err(err) if err.is_panic() => match self.panic_handler {
+                Some(panic_handler) => {
+                    log::trace!("Handling stoppable task panic through custom panic handler");
+                    let panic = err.into_panic();
+                    panic_handler(panic);
+                }
+                None => {
+                    log::debug!("Stoppable task panicked without panic handler");
+                }
+            },
             // Log error on unknown error
             Err(err) => {
                 log::error!("Stoppable task handle error for unknown reason: {err}");
@@ -57,7 +69,12 @@ impl<T> StoppableTaskHandle<T> {
 }
 
 /// Spawn stoppable task `f`
-pub fn spawn_stoppable<F, T>(f: F) -> StoppableTaskHandle<T>
+///
+/// An optional `panic_handler` may be given, eventually called if the task panicked.
+pub fn spawn_stoppable<F, T>(
+    f: F,
+    panic_handler: Option<Box<dyn Fn(PanicPayload) + Sync + Send>>,
+) -> StoppableTaskHandle<T>
 where
     F: FnOnce(&AtomicBool) -> T + Send + 'static,
     T: Send + 'static,
@@ -70,30 +87,31 @@ where
     // Weak reference is sufficient
     let stopped_w = Arc::downgrade(&stopped);
 
-    let handle = tokio::task::spawn_blocking(move || {
-        // TODO: Should we use `Ordering::Acquire` or `Ordering::SeqCst`? 🤔
-        if stopped.load(Ordering::Relaxed) {
-            return None;
-        }
-
-        // TODO: Should we use `Ordering::Release` or `Ordering::SeqCst`? 🤔
-        started.store(true, Ordering::Relaxed);
-
-        Some(f(&stopped))
-    });
-
     StoppableTaskHandle {
-        join_handle: AbortOnDropHandle::new(handle),
+        join_handle: tokio::task::spawn_blocking(move || {
+            // TODO: Should we use `Ordering::Acquire` or `Ordering::SeqCst`? 🤔
+            if stopped.load(Ordering::Relaxed) {
+                return None;
+            }
+
+            // TODO: Should we use `Ordering::Release` or `Ordering::SeqCst`? 🤔
+            started.store(true, Ordering::Relaxed);
+
+            Some(f(&stopped))
+        }),
         started: started_c,
         stopped: stopped_w,
+        panic_handler,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use common::panic;
     use tokio::time::sleep;
 
     use super::*;
@@ -120,7 +138,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_task_stop() {
-        let handle = spawn_stoppable(counting_task);
+        let handle = spawn_stoppable(counting_task, None);
 
         // Signal task to stop after ~20 steps
         sleep(STEP * 20).await;
@@ -131,13 +149,13 @@ mod tests {
         assert!(handle.is_finished());
 
         // Expect task counter to be between [5, 25], we cannot be exact on busy systems
-        if let Some(handle) = handle.stop()
-            && let Some(count) = handle.await.unwrap()
-        {
-            assert!(
-                count < 25,
-                "Stoppable task should have count should be less than 25, but it is {count}",
-            );
+        if let Some(handle) = handle.stop() {
+            if let Some(count) = handle.await.unwrap() {
+                assert!(
+                    count < 25,
+                    "Stoppable task should have count should be less than 25, but it is {count}",
+                );
+            }
         }
     }
 
@@ -146,7 +164,7 @@ mod tests {
         const TASKS: usize = 64;
 
         let handles = (0..TASKS)
-            .map(|_| spawn_stoppable(counting_task))
+            .map(|_| spawn_stoppable(counting_task, None))
             .collect::<Vec<_>>();
 
         // Signal tasks to stop after ~20 steps
@@ -158,14 +176,44 @@ mod tests {
 
         // Expect task counters to be between [5, 30], we cannot be exact on busy systems
         for handle in handles {
-            if let Some(handle) = handle.stop()
-                && let Some(count) = handle.await.unwrap()
-            {
-                assert!(
-                    count < 30, // 10 extra steps to stop all tasks
-                    "Stoppable task should have count should be less than 30, but it is {count}",
-                );
+            if let Some(handle) = handle.stop() {
+                if let Some(count) = handle.await.unwrap() {
+                    assert!(
+                        count < 30, // 10 extra steps to stop all tasks
+                        "Stoppable task should have count should be less than 30, but it is {count}",
+                    );
+                }
             }
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_task_panic() {
+        let panic_payload = Arc::new(Mutex::new(String::new()));
+
+        let handle = spawn_stoppable(
+            |_| {
+                thread::sleep(STEP * 50);
+                panic!("stoppable task panicked");
+            },
+            Some(Box::new({
+                let panic_payload = panic_payload.clone();
+
+                move |payload| {
+                    *panic_payload.lock().unwrap() =
+                        panic::downcast_str(&payload).unwrap_or("").into();
+                }
+            })),
+        );
+
+        sleep(STEP * 20).await;
+        assert!(!handle.is_finished());
+        sleep(STEP * 100).await;
+        assert!(handle.is_finished());
+
+        // Join handle to call back panic
+        handle.join_and_handle_panic().await;
+
+        assert_eq!(*panic_payload.lock().unwrap(), "stoppable task panicked");
     }
 }

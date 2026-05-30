@@ -3,15 +3,15 @@ const NUM_VECTORS_2: u64 = 500;
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::cpu::CpuPermit;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
+use segment::index::hnsw_index::num_rayon_threads;
+use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::segment_constructor::simple_segment_constructor::{
-    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
-};
-use segment::types::{Distance, HnswGlobalConfig};
-use segment::vector_storage::VectorStorageRead;
+use segment::segment_constructor::simple_segment_constructor::build_multivec_segment;
+use segment::types::Distance;
+use segment::vector_storage::VectorStorage;
 use tempfile::Builder;
 
 #[test]
@@ -24,54 +24,51 @@ fn test_rebuild_with_removed_vectors() {
     let mut segment1 = build_multivec_segment(dir.path(), 4, 6, Distance::Dot).unwrap();
     let mut segment2 = build_multivec_segment(dir.path(), 4, 6, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-
     for i in 0..NUM_VECTORS_1 {
         segment1
             .upsert_point(
                 1,
                 i.into(),
-                NamedVectors::from_pairs([
-                    (VECTOR1_NAME.into(), vec![i as f32, 0., 0., 0.]),
-                    (VECTOR2_NAME.into(), vec![0., i as f32, 0., 0., 0., 0.]),
+                NamedVectors::from([
+                    ("vector1".to_string(), vec![i as f32, 0., 0., 0.]),
+                    ("vector2".to_string(), vec![0., i as f32, 0., 0., 0., 0.]),
                 ]),
-                &hw_counter,
             )
             .unwrap();
     }
 
     for i in 0..NUM_VECTORS_2 {
         let vectors = if i % 5 == 0 {
-            NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0., 0., i as f32, 0.])])
+            NamedVectors::from([("vector1".to_string(), vec![0., 0., i as f32, 0.])])
         } else {
-            NamedVectors::from_pairs([
-                (VECTOR1_NAME.into(), vec![0., 0., i as f32, 0.]),
-                (VECTOR2_NAME.into(), vec![0., 0., 0., i as f32, 0., 0.]),
+            NamedVectors::from([
+                ("vector1".to_string(), vec![0., 0., i as f32, 0.]),
+                ("vector2".to_string(), vec![0., 0., 0., i as f32, 0., 0.]),
             ])
         };
 
         segment2
-            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors, &hw_counter)
+            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors)
             .unwrap();
     }
 
     for i in 0..NUM_VECTORS_2 {
         if i % 3 == 0 {
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR1_NAME)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), "vector1")
                 .unwrap();
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), "vector2")
                 .unwrap();
         }
         if i % 3 == 1 {
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), "vector2")
                 .unwrap();
         }
         if i % 2 == 0 {
             segment2
-                .delete_point(2, (NUM_VECTORS_1 + i).into(), &hw_counter)
+                .delete_point(2, (NUM_VECTORS_1 + i).into())
                 .unwrap();
         }
     }
@@ -83,24 +80,20 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = segment2.all_vectors(idx.into(), &hw_counter).unwrap();
+        let vec = segment2.all_vectors(idx.into()).unwrap();
         reference.push(vec);
     }
 
-    let mut builder = SegmentBuilder::new(
-        temp_dir.path(),
-        &segment1.segment_config,
-        &HnswGlobalConfig::default(),
-    )
-    .unwrap();
+    let mut builder =
+        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    builder.update_from(&segment1, &stopped).unwrap();
+    builder.update_from(&segment2, &stopped).unwrap();
 
-    builder
-        .update(&[&segment1, &segment2], &stopped, &hw_counter)
-        .unwrap();
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
-    let merged_segment = builder.build_for_test(dir.path());
+    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
 
     let merged_points_count = merged_segment.available_point_count();
 
@@ -111,14 +104,14 @@ fn test_rebuild_with_removed_vectors() {
 
     let vec1_count = merged_segment
         .vector_data
-        .get(VECTOR1_NAME)
+        .get("vector1")
         .unwrap()
         .vector_storage
         .borrow()
         .available_vector_count();
     let vec2_count = merged_segment
         .vector_data
-        .get(VECTOR2_NAME)
+        .get("vector2")
         .unwrap()
         .vector_storage
         .borrow()
@@ -138,7 +131,7 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = merged_segment.all_vectors(idx.into(), &hw_counter).unwrap();
+        let vec = merged_segment.all_vectors(idx.into()).unwrap();
         merged_reference.push(vec);
     }
 

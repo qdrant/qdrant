@@ -2,35 +2,33 @@ use std::backtrace::Backtrace;
 use std::collections::TryReserveError;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
-use common::mmap::Error as MmapError;
-use common::universal_io::UniversalIoError;
-use gridstore::error::GridstoreError;
+use io::file_operations::FileStorageError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
-use crate::types::{PayloadKeyType, PointIdType, SeqNumberType, VectorNameBuf};
+use crate::common::mmap_type::Error as MmapError;
+use crate::types::{PayloadKeyType, PointIdType, SeqNumberType};
 use crate::utils::mem::Mem;
 
 pub const PROCESS_CANCELLED_BY_SERVICE_MESSAGE: &str = "process cancelled by service";
 
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum OperationError {
-    #[error("Vector dimension error: expected dim: {expected_dim}, got {received_dim}")]
-    WrongVectorDimension {
+    #[error("Vector inserting error: expected dim: {expected_dim}, got {received_dim}")]
+    WrongVector {
         expected_dim: usize,
         received_dim: usize,
     },
     #[error("Not existing vector name error: {received_name}")]
-    VectorNameNotExists { received_name: VectorNameBuf },
+    VectorNameNotExists { received_name: String },
+    #[error("Missed vector name error: {received_name}")]
+    MissedVectorName { received_name: String },
     #[error("No point with id {missed_point_id}")]
     PointIdError { missed_point_id: PointIdType },
-    #[error(
-        "Payload type does not match with previously given for field {field_name}. Expected: {expected_type}"
-    )]
+    #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
     TypeError {
         field_name: PayloadKeyType,
         expected_type: String,
@@ -50,84 +48,32 @@ pub enum OperationError {
     OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
-    #[error("Timeout error: {description}")]
-    Timeout { description: String },
     #[error("Validation failed: {description}")]
     ValidationError { description: String },
     #[error("Wrong usage of sparse vectors")]
     WrongSparse,
     #[error("Wrong usage of multi vectors")]
     WrongMulti,
-    #[error(
-        "No range index for `order_by` key: `{key}`. Please create one to use `order_by`. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Range conditions"
-    )]
-    MissingRangeIndexForOrderBy { key: String },
-    #[error(
-        "No appropriate index for faceting: `{key}`. Please create one to facet on this field. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Match conditions"
-    )]
-    MissingMapIndexForFacet { key: String },
-    #[error(
-        "Expected {expected_type} value for {field_name} in the payload and/or in the formula defaults. Error: {description}"
-    )]
-    VariableTypeError {
-        field_name: PayloadKeyType,
-        expected_type: String,
-        description: String,
-    },
-    #[error("The expression {expression} produced a non-finite number")]
-    NonFiniteNumber { expression: String },
+    #[error("Wrong key of payload")]
+    WrongPayloadKey { description: String },
 }
 
 impl OperationError {
-    /// Create a new service error with a description and a backtrace
-    /// Warning: capturing a backtrace can be an expensive operation on some platforms, so this should be used with caution in performance-sensitive parts of code.
-    pub fn service_error(description: impl Into<String>) -> Self {
-        Self::ServiceError {
+    pub fn service_error(description: impl Into<String>) -> OperationError {
+        OperationError::ServiceError {
             description: description.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
+}
 
-    /// Create a new service error with a description and no backtrace
-    pub fn service_error_light(description: impl Into<String>) -> Self {
-        Self::ServiceError {
-            description: description.into(),
-            backtrace: None,
-        }
+pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {
+    if stopped.load(Ordering::Relaxed) {
+        return Err(OperationError::Cancelled {
+            description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
+        });
     }
-
-    pub fn validation_error(description: impl Into<String>) -> Self {
-        Self::ValidationError {
-            description: description.into(),
-        }
-    }
-
-    pub fn inconsistent_storage(description: impl Into<String>) -> Self {
-        Self::InconsistentStorage {
-            description: description.into(),
-        }
-    }
-
-    pub fn cancelled(description: impl Into<String>) -> Self {
-        Self::Cancelled {
-            description: description.into(),
-        }
-    }
-
-    pub fn vector_name_not_exists(vector_name: impl Into<String>) -> Self {
-        Self::VectorNameNotExists {
-            received_name: vector_name.into(),
-        }
-    }
-
-    pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
-        Self::Timeout {
-            description: format!(
-                "Operation '{}' timed out after {timeout:?}",
-                operation.into(),
-            ),
-        }
-    }
+    Ok(())
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
@@ -138,9 +84,27 @@ pub struct SegmentFailedState {
     pub error: OperationError,
 }
 
+impl From<semver::Error> for OperationError {
+    fn from(error: semver::Error) -> Self {
+        OperationError::ServiceError {
+            description: error.to_string(),
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
 impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
-        Self::service_error(error.to_string())
+        OperationError::ServiceError {
+            description: format!("{error}"),
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
+impl From<FileStorageError> for OperationError {
+    fn from(err: FileStorageError) -> Self {
+        Self::service_error(err.to_string())
     }
 }
 
@@ -150,88 +114,47 @@ impl From<MmapError> for OperationError {
     }
 }
 
-impl From<UniversalIoError> for OperationError {
-    fn from(err: UniversalIoError) -> Self {
-        match err {
-            UniversalIoError::Io(err) => Self::from(err),
-            UniversalIoError::Mmap(err) => Self::from(err),
-
-            UniversalIoError::BytemuckCast(_)
-            | UniversalIoError::ZerocopySize(_)
-            | UniversalIoError::IoUringNotSupported(_)
-            | UniversalIoError::NotFound { .. }
-            | UniversalIoError::OutOfBounds { .. }
-            | UniversalIoError::InvalidFileIndex { .. }
-            | UniversalIoError::Uninitialized { .. }
-            | UniversalIoError::QueueIsFull => Self::service_error(err.to_string()),
-        }
-    }
-}
-
-impl<Src, Dst: ?Sized> From<zerocopy::SizeError<Src, Dst>> for OperationError
-where
-    zerocopy::SizeError<Src, Dst>: std::fmt::Display,
-{
-    fn from(err: zerocopy::SizeError<Src, Dst>) -> Self {
-        Self::service_error(format!("Zerocopy size error: {err}"))
-    }
-}
-
-impl<A, S, V> From<zerocopy::ConvertError<A, S, V>> for OperationError
-where
-    zerocopy::ConvertError<A, S, V>: std::fmt::Display,
-{
-    fn from(err: zerocopy::ConvertError<A, S, V>) -> Self {
-        Self::service_error(format!("Zerocopy convert error: {err}"))
-    }
-}
-
 impl From<serde_cbor::Error> for OperationError {
     fn from(err: serde_cbor::Error) -> Self {
-        Self::service_error(format!("Failed to parse data: {err}"))
+        OperationError::service_error(format!("Failed to parse data: {err}"))
     }
 }
 
 impl<E> From<AtomicIoError<E>> for OperationError {
     fn from(err: AtomicIoError<E>) -> Self {
         match err {
-            AtomicIoError::Internal(io_err) => Self::from(io_err),
-            AtomicIoError::User(_user_err) => Self::service_error("Unknown atomic write error"),
+            AtomicIoError::Internal(io_err) => OperationError::from(io_err),
+            AtomicIoError::User(_user_err) => {
+                OperationError::service_error("Unknown atomic write error")
+            }
         }
     }
 }
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
-        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match err.kind() {
             ErrorKind::OutOfMemory => {
                 let free_memory = Mem::new().available_memory_bytes();
-                Self::OutOfMemory {
+                OperationError::OutOfMemory {
                     description: format!("IO Error: {err}"),
                     free: free_memory,
                 }
             }
-            _ => Self::service_error(format!("IO Error: {err}")),
+            _ => OperationError::service_error(format!("IO Error: {err}")),
         }
     }
 }
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
-        Self::service_error(format!("Json error: {err}"))
+        OperationError::service_error(format!("Json error: {err}"))
     }
 }
 
 impl From<fs_extra::error::Error> for OperationError {
     fn from(err: fs_extra::error::Error) -> Self {
-        Self::service_error(format!("File system error: {err}"))
-    }
-}
-
-impl From<geohash::GeohashError> for OperationError {
-    fn from(err: geohash::GeohashError) -> Self {
-        Self::service_error(format!("Geohash error: {err}"))
+        OperationError::service_error(format!("File system error: {err}"))
     }
 }
 
@@ -241,11 +164,11 @@ impl From<quantization::EncodingError> for OperationError {
             quantization::EncodingError::IOError(err)
             | quantization::EncodingError::EncodingError(err)
             | quantization::EncodingError::ArgumentsError(err) => {
-                Self::service_error(format!("Quantization encoding error: {err}"))
+                OperationError::service_error(format!("Quantization encoding error: {err}"))
             }
-            quantization::EncodingError::Stopped => {
-                Self::cancelled(PROCESS_CANCELLED_BY_SERVICE_MESSAGE)
-            }
+            quantization::EncodingError::Stopped => OperationError::Cancelled {
+                description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
+            },
         }
     }
 }
@@ -253,37 +176,10 @@ impl From<quantization::EncodingError> for OperationError {
 impl From<TryReserveError> for OperationError {
     fn from(err: TryReserveError) -> Self {
         let free_memory = Mem::new().available_memory_bytes();
-        Self::OutOfMemory {
+        OperationError::OutOfMemory {
             description: format!("Failed to reserve memory: {err}"),
             free: free_memory,
         }
-    }
-}
-
-impl From<GridstoreError> for OperationError {
-    fn from(err: GridstoreError) -> Self {
-        match err {
-            GridstoreError::ServiceError { description } => {
-                Self::service_error(format!("Gridstore error: {description}"))
-            }
-            GridstoreError::FlushCancelled => Self::cancelled("Gridstore flushing was cancelled"),
-            GridstoreError::Io(_) | GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
-                Self::service_error(err.to_string())
-            }
-            GridstoreError::ValidationError { message } => Self::validation_error(message),
-            GridstoreError::UniversalIo(err) => {
-                Self::service_error(format!("Gridstore IO error: {err}"))
-            }
-            GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
-            GridstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
-        }
-    }
-}
-
-#[cfg(feature = "gpu")]
-impl From<gpu::GpuError> for OperationError {
-    fn from(err: gpu::GpuError) -> Self {
-        Self::service_error(format!("GPU error: {err:?}"))
     }
 }
 
@@ -292,74 +188,9 @@ pub type OperationResult<T> = Result<T, OperationError>;
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {
     match err {
         Ok(_) => None,
-        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         Err(error) => match error {
             OperationError::ServiceError { .. } => Some(error.clone()),
             _ => None,
         },
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct CancelledError;
-
-pub type CancellableResult<T> = Result<T, CancelledError>;
-
-impl From<CancelledError> for OperationError {
-    fn from(CancelledError: CancelledError) -> Self {
-        Self::cancelled(PROCESS_CANCELLED_BY_SERVICE_MESSAGE)
-    }
-}
-
-pub fn check_process_stopped(stopped: &AtomicBool) -> CancellableResult<()> {
-    if stopped.load(Ordering::Relaxed) {
-        return Err(CancelledError);
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-
-    #[test]
-    fn test_timeout_error_formatting() {
-        // Test sub-second timeout (500ms)
-        let timeout = Duration::from_millis(500);
-        let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = error.to_string();
-        assert!(
-            error_msg.contains("500ms"),
-            "Expected '500ms' but got: {error_msg}"
-        );
-
-        // Test exact second timeout (1000ms = 1s)
-        let timeout = Duration::from_millis(1000);
-        let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = error.to_string();
-        assert!(
-            error_msg.contains("1s"),
-            "Expected '1s' but got: {error_msg}"
-        );
-
-        // Test multi-second timeout with sub-second precision (2500ms = 2.5s)
-        let timeout = Duration::from_millis(2500);
-        let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = error.to_string();
-        assert!(
-            error_msg.contains("2.5s"),
-            "Expected '2.5s' but got: {error_msg}"
-        );
-
-        // Test large timeout (60000ms = 60s)
-        let timeout = Duration::from_millis(60000);
-        let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = error.to_string();
-        assert!(
-            error_msg.contains("60s"),
-            "Expected '60s' but got: {error_msg}"
-        );
     }
 }

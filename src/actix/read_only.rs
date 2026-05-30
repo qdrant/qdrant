@@ -15,6 +15,12 @@ pub struct ReadOnlyTransform {
 }
 
 impl ReadOnlyTransform {
+    /// Create a new read-only transform.
+    ///
+    /// # Arguments
+    ///
+    /// * `read_only` - If `true`, write HTTP methods will be rejected with 403 Forbidden.
+    ///                 If `false`, all requests pass through unchanged.
     pub fn new(read_only: bool) -> Self {
         Self { read_only }
     }
@@ -32,6 +38,7 @@ where
     type Transform = ReadOnlyMiddleware<S>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
+    /// Wrap the given service in a [`ReadOnlyMiddleware`].
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(ReadOnlyMiddleware {
             read_only: self.read_only,
@@ -40,6 +47,11 @@ where
     }
 }
 
+/// Actix-web middleware that rejects write HTTP methods when read-only mode is active.
+///
+/// When `read_only` is `true`, requests using PUT, POST, DELETE, or PATCH are
+/// immediately answered with `403 Forbidden`. All other requests are forwarded
+/// to the inner service unchanged.
 pub struct ReadOnlyMiddleware<S> {
     read_only: bool,
     service: Arc<S>,
@@ -57,6 +69,10 @@ where
 
     forward_ready!(service);
 
+    /// Handle an incoming request.
+    ///
+    /// If read-only mode is enabled and the request uses a write HTTP method,
+    /// responds with `403 Forbidden`. Otherwise delegates to the wrapped service.
     fn call(&self, req: ServiceRequest) -> Self::Future {
         if self.read_only && is_write_method(req.method()) {
             let response = HttpResponse::Forbidden().json(serde_json::json!({

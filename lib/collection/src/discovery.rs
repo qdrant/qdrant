@@ -1,44 +1,40 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoverQuery};
-use shard::query::query_enum::QueryEnum;
-use shard::search::CoreSearchRequestBatch;
+use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
-    ReferencedVectors, convert_to_vectors, resolve_referenced_vectors_batch,
+    convert_to_vectors, resolve_referenced_vectors_batch, ReferencedVectors,
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, DiscoverRequestInternal,
+    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
+    DiscoverRequestInternal, QueryEnum,
 };
 
-fn discover_into_core_search(
-    collection_name: &str,
+fn discovery_into_core_search(
     request: DiscoverRequestInternal,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CollectionResult<CoreSearchRequest> {
-    let lookup_collection_name = request.get_lookup_collection();
+    let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
 
-    let lookup_vector_name = request.get_lookup_vector_name();
-
-    let using = request.using.as_ref().map(|using| using.as_name());
+    let lookup_vector_name = request.get_search_vector_name();
 
     // Check we actually fetched all referenced vectors in this request
     let referenced_ids = request.get_referenced_point_ids();
 
     for &point_id in &referenced_ids {
         if all_vectors_records_map
-            .get(lookup_collection_name, point_id)
+            .get(&lookup_collection_name, point_id)
             .is_none()
         {
             return Err(CollectionError::PointNotFound {
@@ -78,41 +74,33 @@ fn discover_into_core_search(
         .collect_vec();
 
     let query: QueryEnum = match (target, context_pairs) {
-        // Target with/without pairs => Discover
+        // Target with/without pairs => Discovery
         (Some(target), pairs) => QueryEnum::Discover(NamedQuery {
-            query: DiscoverQuery::new(target, pairs),
-            using,
+            query: DiscoveryQuery::new(target, pairs),
+            using: Some(lookup_vector_name),
         }),
 
         // Only pairs => Context
         (None, pairs) => QueryEnum::Context(NamedQuery {
             query: ContextQuery::new(pairs),
-            using,
+            using: Some(lookup_vector_name),
         }),
     };
 
-    // do not exclude vector ids from different lookup collection
-    let reference_vectors_ids_to_exclude = match lookup_collection_name {
-        Some(lookup_collection_name) if lookup_collection_name != collection_name => vec![],
-        _ => referenced_ids,
-    };
-
-    let filter = if reference_vectors_ids_to_exclude.is_empty() {
-        request.filter
-    } else {
+    let filter = {
         let not_ids = Filter::new_must_not(Condition::HasId(HasIdCondition {
-            has_id: reference_vectors_ids_to_exclude.into_iter().collect(),
+            has_id: referenced_ids.into_iter().collect(),
         }));
 
         match &request.filter {
-            None => Some(not_ids),
-            Some(filter) => Some(not_ids.merge(filter)),
+            None => not_ids,
+            Some(filter) => not_ids.merge(filter),
         }
     };
 
     let core_search = CoreSearchRequest {
         query,
-        filter,
+        filter: Some(filter),
         params: request.params,
         limit: request.limit,
         offset: request.offset.unwrap_or_default(),
@@ -124,18 +112,17 @@ fn discover_into_core_search(
     Ok(core_search)
 }
 
-pub async fn discover<F, Fut>(
+pub async fn discover<'a, F, Fut>(
     request: DiscoverRequestInternal,
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
-    Fut: Future<Output = Option<Arc<Collection>>>,
+    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
     if request.limit == 0 {
         return Ok(vec![]);
@@ -149,25 +136,22 @@ where
         collection_by_name,
         read_consistency,
         timeout,
-        hw_measurement_acc,
     )
     .await?;
     Ok(results.into_iter().next().unwrap())
 }
 
-pub async fn discover_batch<F, Fut>(
+pub async fn discover_batch<'a, F, Fut>(
     request_batch: Vec<(DiscoverRequestInternal, ShardSelectorInternal)>,
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,
-    Fut: Future<Output = Option<Arc<Collection>>>,
+    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
-    let start = std::time::Instant::now();
     // shortcuts batch if all requests with limit=0
     if request_batch.iter().all(|(s, _)| s.limit == 0) {
         return Ok(vec![]);
@@ -197,13 +181,8 @@ where
         collection,
         collection_by_name,
         read_consistency,
-        timeout,
-        hw_measurement_acc.clone(),
     )
     .await?;
-
-    // update timeout
-    let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
 
     let res = batch_requests::<
         (DiscoverRequestInternal, ShardSelectorInternal),
@@ -214,11 +193,9 @@ where
         request_batch,
         |(_req, shard)| shard,
         |(req, _), acc| {
-            discover_into_core_search(collection.name(), req, &all_vectors_records_map).map(
-                |core_req| {
-                    acc.push(core_req);
-                },
-            )
+            discovery_into_core_search(req, &all_vectors_records_map).map(|core_req| {
+                acc.push(core_req);
+            })
         },
         |shard_selector, core_searches, requests| {
             if core_searches.is_empty() {
@@ -234,7 +211,6 @@ where
                 read_consistency,
                 shard_selector,
                 timeout,
-                hw_measurement_acc.clone(),
             ));
 
             Ok(())

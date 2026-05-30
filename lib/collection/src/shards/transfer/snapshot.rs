@@ -3,19 +3,17 @@ use std::sync::Arc;
 
 use common::defaults;
 use parking_lot::Mutex;
-use semver::Version;
 use tempfile::TempPath;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
-use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
-use crate::operations::snapshot_ops::{SnapshotPriority, get_checksum_path};
+use super::{ShardTransfer, ShardTransferConsensus};
+use crate::operations::snapshot_ops::{get_checksum_path, SnapshotPriority};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::SharedShardHolder;
+use crate::shards::shard_holder::LockedShardHolder;
 
 /// Orchestrate shard snapshot transfer
 ///
@@ -156,14 +154,14 @@ use crate::shards::shard_holder::SharedShardHolder;
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_snapshot(
     transfer_config: ShardTransfer,
-    shard_holder: SharedShardHolder,
+    shard_holder: Arc<LockedShardHolder>,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    channel_service: &ChannelService,
+    channel_service: ChannelService,
     consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
-    collection_id: &CollectionId,
+    collection_name: &str,
     temp_dir: &Path,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
@@ -175,7 +173,7 @@ pub(super) async fn transfer_snapshot(
     let shard_holder_read = shard_holder.read().await;
     let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
-    let transferring_shard = shard_holder_read.get_shard(shard_id);
+    let transferring_shard = shard_holder_read.get_shard(&shard_id);
     let Some(replica_set) = transferring_shard else {
         return Err(CollectionError::service_error(format!(
             "Shard {shard_id} cannot be queue proxied because it does not exist"
@@ -183,78 +181,47 @@ pub(super) async fn transfer_snapshot(
     };
 
     // Queue proxy local shard
-    progress.lock().set_stage(TransferStage::Proxifying);
     replica_set
-        .queue_proxify_local(remote_shard.clone(), None, progress.clone())
+        .queue_proxify_local(remote_shard.clone(), None, progress)
         .await?;
 
     debug_assert!(
         replica_set.is_queue_proxy().await,
-        "Local shard must be a queue proxy",
+        "Local shard must be a queue proxy"
     );
 
-    // The ability to read streaming snapshot format is introduced in 1.12 (#5179).
-    let use_streaming_endpoint =
-        channel_service.peer_is_at_version(remote_peer_id, &Version::new(1, 12, 0));
+    // Create shard snapshot
+    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
+    let snapshot_description = shard_holder_read
+        .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
+        .await?;
 
-    let mut snapshot_temp_paths = Vec::new();
-    let mut shard_download_url = local_rest_address;
-
-    let encoded_collection_name = urlencoding::encode(collection_id);
-    if use_streaming_endpoint {
-        log::trace!("Using streaming endpoint for shard snapshot transfer");
-        shard_download_url.set_path(&format!(
-            "/collections/{encoded_collection_name}/shards/{shard_id}/snapshot",
-        ));
-    } else {
-        // Create shard snapshot
-        progress.lock().set_stage(TransferStage::CreatingSnapshot);
-        log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
-        let snapshot_description = shard_holder_read
-            .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
-            .await?
-            .await?;
-
-        // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-        let snapshot_temp_path = shard_holder_read
-            .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
-            .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
-                ))
-            })?;
-        let snapshot_temp_path = TempPath::try_from_path(snapshot_temp_path)?;
-        let snapshot_checksum_temp_path =
-            TempPath::try_from_path(get_checksum_path(&snapshot_temp_path))?;
-        snapshot_temp_paths.push(snapshot_temp_path);
-        snapshot_temp_paths.push(snapshot_checksum_temp_path);
-
-        let encoded_snapshot_name = urlencoding::encode(&snapshot_description.name);
-
-        shard_download_url.set_path(&format!(
-            "/collections/{encoded_collection_name}/shards/{shard_id}/snapshots/{encoded_snapshot_name}"
-        ));
-    };
+    // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
+    let snapshot_temp_path = shard_holder_read
+        .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
+        .await
+        .map(TempPath::from_path)
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
+            ))
+        })?;
+    let snapshot_checksum_temp_path = TempPath::from_path(get_checksum_path(&snapshot_temp_path));
 
     // Recover shard snapshot on remote
-    progress.lock().set_stage(TransferStage::Recovering);
+    let mut shard_download_url = local_rest_address;
+    shard_download_url.set_path(&format!(
+        "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
+        &snapshot_description.name,
+    ));
+
     log::trace!("Transferring and recovering shard {shard_id} snapshot on peer {remote_peer_id}");
-
-    // Since we are providing access to local instance, any of the API keys can be used
-    let local_api_key = channel_service
-        .api_key
-        .as_deref()
-        .or(channel_service.alt_api_key.as_deref());
-
     remote_shard
         .recover_shard_snapshot_from_url(
-            collection_id,
+            collection_name,
             shard_id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
-            // Provide API key here so the remote can access our snapshot
-            local_api_key,
         )
         .await
         .map_err(|err| {
@@ -263,22 +230,21 @@ pub(super) async fn transfer_snapshot(
             ))
         })?;
 
-    for snapshot_temp_path in snapshot_temp_paths {
-        if let Err(err) = snapshot_temp_path.close() {
-            log::warn!(
-                "Failed to delete shard transfer snapshot after recovery, \
-                 snapshot file may be left behind: {err}"
-            );
-        }
+    if let Err(err) = snapshot_temp_path.close() {
+        log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
+    }
+    if let Err(err) = snapshot_checksum_temp_path.close() {
+        log::warn!("Failed to delete shard transfer snapshot checksum file after recovery, file may be left behind: {err}");
     }
 
     // Set shard state to Partial
-    progress.lock().set_stage(TransferStage::WaitingConsensus);
-    log::trace!(
-        "Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus",
-    );
+    log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
     consensus
-        .recovered_switch_to_partial_confirm_remote(&transfer_config, collection_id, &remote_shard)
+        .snapshot_recovered_switch_to_partial_confirm_remote(
+            &transfer_config,
+            collection_name,
+            &remote_shard,
+        )
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
@@ -287,13 +253,10 @@ pub(super) async fn transfer_snapshot(
         })?;
 
     // Transfer queued updates to remote, transform into forward proxy
-    progress.lock().set_stage(TransferStage::FlushingQueue);
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
     replica_set.queue_proxy_into_forward_proxy().await?;
 
     // Wait for Partial state in our replica set
-    // Consensus sync is done right after this function
-    progress.lock().set_stage(TransferStage::WaitingConsensus);
     let partial_state = ReplicaState::Partial;
     log::trace!("Wait for local shard to reach {partial_state:?} state");
     replica_set
@@ -308,6 +271,9 @@ pub(super) async fn transfer_snapshot(
                 "Shard being transferred did not reach {partial_state:?} state in time: {err}",
             ))
         })?;
+
+    // Synchronize all nodes
+    super::await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
     log::debug!(
         "Ending shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"

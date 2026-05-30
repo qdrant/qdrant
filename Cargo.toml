@@ -1,7 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.18.1"
-description = "Qdrant - Vector Search engine"
+version = "1.9.1-dev"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -10,16 +9,17 @@ readme = "README.md"
 homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
-edition = "2024"
-rust-version = "1.94"
+edition = "2021"
+rust-version = "1.77"
 default-run = "qdrant"
 
-[lints]
-workspace = true
-
 [features]
-default = []
-service_debug = ["parking_lot/deadlock_detection"]
+default = ["web", "parking_lot"]
+web = ["actix-web"]
+multiling-chinese = ["segment/multiling-chinese"]
+multiling-japanese = ["segment/multiling-japanese"]
+multiling-korean = ["segment/multiling-korean"]
+service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
 tracing = [
     "api/tracing",
     "collection/tracing",
@@ -33,330 +33,136 @@ tracing-tracy = ["tracing", "dep:tracing-tracy"]
 tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
-data-consistency-check = ["collection/data-consistency-check"]
-gpu = ["gpu/gpu", "segment/gpu"]
-deb = []
-staging = ["collection/staging", "storage/staging", "shard/staging"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
-sealed_test = "1.1.0"
+sealed_test = "1.0.0"
 
-mockito = { workspace = true }
-tempfile = { workspace = true }
+tempfile = "3.10.1"
 rusty-hook = "^0.11.2"
-nix = { workspace = true, features = ["process"] }
-fs-err = { workspace = true, features = ["debug", "debug_tokio", "tokio"] } # for nicer error messages
 
 
 [dependencies]
-parking_lot = { workspace = true }
+parking_lot = { workspace = true, optional = true }
 
-fs-err = { workspace = true }
-thiserror = { workspace = true }
-log = { workspace = true }
-colored = "3"
+thiserror = "1.0"
+log = "0.4"
+colored = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 chrono = { workspace = true }
-rand = { workspace = true }
+rand = "0.8.5"
 schemars = { workspace = true }
-itertools = { workspace = true }
-anyhow = "1.0.98"
+itertools = "0.12"
+anyhow = "1.0.82"
 futures = { workspace = true }
 futures-util = { workspace = true }
-clap = { workspace = true }
+clap = { version = "4.5.4", features = ["derive"] }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
-ordered-float = { workspace = true }
-ahash = { workspace = true }
-urlencoding = { workspace = true }
+wal = { workspace = true }
 
-config = { version = "0.15.22", default-features = false, features = ["yaml"] }
+config = "~0.14.0"
 
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 
-actix-cors = "0.7.1"
-actix-web-validator = { workspace = true }
-actix-web = { workspace = true }
-actix-files = { workspace = true }
+actix-cors = "0.7.0"
+actix-files = "0.6.5"
+actix-web = { version = "4.5.1", optional = true, features = ["rustls-0_22", "actix-tls"] }
+actix-web-validator = "5.0.1"
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
-tower = { version = "0.5.3", features = ["util"] }
-tower-layer = "0.3.3"
+tower = { version = "0.4.13" }
+tower-layer = "0.3.2"
 reqwest = { workspace = true }
 # rustls minor version must be synced with actix-web
-rustls = { version = "0.23.37", default-features = false, features = [
-    "logging",
-    "std",
-    "tls12",
-    "ring",
-] }
-rustls-pki-types = "1.14.0"
-rustls-pemfile = "2.2.0"
-prometheus = { version = "0.14.0", default-features = false }
+rustls = "0.22.4"
+rustls-pki-types = "1.4.1"
+rustls-pemfile = "2.1.2"
+prometheus = { version = "0.13.3", default-features = false }
 validator = { workspace = true }
-jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
-
-murmur3 = { git = "https://github.com/qdrant/murmur3", rev = "2c39087" }
-
-tempfile = { workspace = true }
+jsonwebtoken = "9.3.0"
 
 # Consensus related crates
-raft = { workspace = true }
-slog = { version = "2.8.2", features = [
-    "max_level_trace",
-    "release_max_level_debug",
-] }
+raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
+slog = { version = "2.7.0", features = ["max_level_trace", "release_max_level_debug"] }
 slog-stdlog = "4.1.1"
-prost-for-raft = { workspace = true }
-raft-proto = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84", features = [
-    "prost-codec",
-], default-features = false }
+prost = { workspace = true }
+raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
 common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
+memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
-segment = { path = "lib/segment", default-features = false }
-shard = { path = "lib/shard", default-features = false }
+segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
-gpu = { path = "lib/gpu" }
-wal = { path = "lib/wal" }
-
-actix-multipart = "0.7.2"
-constant_time_eq = "0.4.2"
+actix-multipart = "0.6.1"
+constant_time_eq = "0.3.0"
 
 # Profiling
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = [
-    "env-filter",
-    "fmt",
-    "json",
-] }
-tracing-log = { version = "0.2", default-features = false, features = [
-    "log-tracer",
-    "std",
-] }
-console-subscriber = { version = "0.5.0", default-features = false, features = [
-    "parking_lot",
-], optional = true }
-tracing-tracy = { version = "0.11.4", features = ["ondemand"], optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = { version = "0.2", default-features = false, features = ["log-tracer", "std"] }
+console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
+tracing-tracy = { version = "0.11.0", features = ["ondemand"], optional = true }
 actix-web-extras = "0.1.0"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-procfs = { version = "0.18.0", default-features = false }
-pyroscope = { version = "2.0.0", features = ["backend-pprof-rs", "backend-jemalloc"] }
 # Backtrace
+[target.'cfg(target_os = "linux")'.dependencies]
 rstack-self = { version = "0.3.0", optional = true }
 
-# Jemalloc
 [target.'cfg(all(not(target_env = "msvc"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
-tikv-jemallocator = { version = "0.6.1", features = [
-    "stats",
-    "unprefixed_malloc_on_supported_platforms",
-    "background_threads",
-    "profiling",
-] }
-tikv-jemalloc-ctl = { version = "0.6.1", features = ["stats"] }
-
-[workspace.lints.clippy]
-cast_lossless = "warn"
-doc_link_with_quotes = "warn"
-enum_glob_use = "warn"
-explicit_into_iter_loop = "warn"
-filter_map_next = "warn"
-flat_map_option = "warn"
-from_iter_instead_of_collect = "warn"
-implicit_clone = "warn"
-inconsistent_struct_constructor = "warn"
-inefficient_to_string = "warn"
-manual_is_variant_and = "warn"
-manual_let_else = "warn"
-needless_continue = "warn"
-needless_raw_string_hashes = "warn"
-ptr_as_ptr = "warn"
-ref_option_ref = "warn"
-uninlined_format_args = "warn"
-unnecessary_wraps = "warn"
-unused_self = "warn"
-used_underscore_binding = "warn"
-match_wildcard_for_single_variants = "warn"
-needless_pass_by_ref_mut = "warn"
-unused_async = "warn"
-wildcard_enum_match_arm = "warn"
-
-[workspace.lints.rust]
-# https://blog.rust-lang.org/2024/05/06/check-cfg.html#expecting-custom-cfgs
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
-
-[workspace.lints.rustdoc]
-private_intra_doc_links = "allow"
+tikv-jemallocator = "0.5"
 
 [workspace.dependencies]
-actix-web-validator = "7.0.0"
-actix-web = { version = "4.13.0", features = ["rustls-0_23", "actix-tls"] }
-actix-files = "0.6.10"
-ahash = { version = "0.8.12", features = ["serde"] }
-anyhow = "1.0.102"
-async-trait = "0.1.89"
-atomicwrites = "0.4.4"
-bincode = "1.3.3" # no upgrade because 2.0.x is much slower https://github.com/qdrant/qdrant/pull/6134
-bitpacking = "0.9.3"
-bytemuck = { version = "1.25.0", features = [
-    "derive",
-    "extern_crate_alloc",
-    "must_cast",
-    "transparentwrapper_extra",
-] }
-bytes = "1.11.1"
-cc = "1.2"
-chrono = { version = "0.4.44", features = ["serde"] }
-clap = { version = "4.6.1", features = ["derive", "env"] }
-criterion = "0.8.2"
-data-encoding = "2.11.0"
-ecow = { version = "0.2.6", features = ["serde"] }
-env_logger = "0.11"
+chrono = { version = "0.4.38", features = ["serde"] }
 fnv = "1.0"
-fs4 = "1.1.0"
-fs-err = { version = "3.3.0", features = ["tokio"] }
-fs_extra = "1.3.0"
-futures = "0.3.32"
-futures-util = "0.3.32"
-generic-tests = "0.1.3"
-half = { version = "2.7.1", features = [
-    "alloc",
-    "bytemuck",
-    "serde",
-    "num-traits",
-] }
-http = "1.4.0"
-humantime = "2.3.0"
+futures = "0.3.30"
+futures-util = "0.3.30"
 indexmap = { version = "2", features = ["serde"] }
-url = { version = "2.5.8", features = ["serde"] }
-urlencoding = "2.1.3"
-indicatif = { version = "0.18.4", features = ["rayon"] }
-integer-encoding = "4.1.0"
-itertools = "0.14.0"
-log = "0.4.29"
-memmap2 = "0.9.10"
-mockito = "1.7"
-nix = { version = "0.31", features = ["fs", "feature"] }
-num-traits = "0.2.19"
-ordered-float = { version = "5.3.0", features = ["serde", "schemars", "bytemuck"] }
-rayon = "1.12.0"
-parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection", "serde"] }
-ph = "0.8.5"
-pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
-proptest = { version = "1.11.0", default-features = false, features = ["std"] }
-prost = "0.12.6"
-prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
-prost-wkt-types = "0.5"
-prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
-raft = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84" ,features = ["prost-codec"], default-features = false }
-rand = "0.10.1"
-rand_distr = "0.6.0"
-rmp-serde = "~1.3"
-roaring = "0.11.4"
-reqwest = { version = "0.13.3", default-features = false, features = [
-    "json",
-    "http2",
-    "stream",
-    "rustls",
-    "blocking",
-] }
-rstest = { version = "0.26.1", default-features = false }
-schemars = { version = "0.8.22", features = [
-    "uuid1",
-    "preserve_order",
-    "chrono",
-    "url",
-    "indexmap2",
-] }
+parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
+prost = "0.11.9"
+prost-wkt-types = "0.4.2"
+reqwest = { version = "0.12.4", default-features = false, features = ["http2", "stream", "rustls-tls", "blocking"] }
+schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
 semver = { version = "1.0", features = ["serde"] }
-self_cell = "1.2.2"
 serde = { version = "~1.0", features = ["derive", "rc"] }
-serde_cbor = "0.11.2"
-serde_variant = "0.1.3"
-serde_with = "3.20.0"
-sha2 = "0.11.0"
-serde_json = { version = "~1.0", features = ["preserve_order"] }
-strum = { version = "0.28.0", features = ["derive"] }
-tap = "1.0.1"
-tar = "0.4.46"
-tempfile = "3.27.0"
-tinyvec = { version = "1.11.0", features = ["alloc", "latest_stable_rust"] }
-tokio = { version = "1.52.3", features = ["full"] }
-tokio-util = { version = "0.7", features = ["io", "io-util", "rt"] }
-tonic = { version = "0.11.0", features = ["gzip", "tls"] }
-tonic-build = { version = "0.11.0", features = ["prost"] }
-tonic-reflection = "0.11.0"
+serde_cbor = { version = "0.11.2" }
+serde_json = "~1.0"
+strum = { version = "0.26.2", features = ["derive"] }
+tar = "0.4.40"
+tokio = { version = "1.37.0", features = ["full"] }
+tokio-util = "0.7"
+tonic = { version = "0.9.2", features = ["gzip", "tls"] }
+tonic-reflection = "0.9.2"
 tracing = { version = "0.1", features = ["async-await"] }
-uuid = { version = "1.23", features = ["v4", "serde"] }
-validator = { version = "0.20.0", features = ["derive"] }
-zerocopy = { version = "0.8.48", features = ["derive"] }
-atomic_refcell = "0.1.14"
-byteorder = "1.5.0"
-thiserror = "2.0.18"
-bitvec = "1.0.1"
-smallvec = { version = "1.15.1", features = ["write"] }
-dashmap = "6.2"
-walkdir = "2.5.0"
-
-[patch.crates-io]
-tonic = { git = "https://github.com/qdrant/tonic", branch = "v0.11.0-qdrant" }
-hyper = { git = "https://github.com/qdrant/hyper", branch = "v0.14.26-qdrant" }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+validator = { version = "0.16.1", features = ["derive"] }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "a7870900f29811a24e20882887d60e6a2febf945" }
 
 [[bin]]
 name = "schema_generator"
 path = "src/schema_generator.rs"
 test = false
 bench = false
-required-features = ["service_debug"]
 
 [[bin]]
 name = "wal_inspector"
 path = "src/wal_inspector.rs"
 test = false
 bench = false
-required-features = ["service_debug"]
-
-[[bin]]
-name = "wal_pop"
-path = "src/wal_pop.rs"
-test = false
-bench = false
-required-features = ["service_debug"]
-
-[[bin]]
-name = "segment_inspector"
-path = "src/segment_inspector.rs"
-test = false
-bench = false
-required-features = ["service_debug"]
-
 
 [workspace]
 members = [
     "lib/api",
     "lib/collection",
     "lib/common/*",
-    "lib/edge",
-    "lib/edge/python",
-    "lib/edge/python/codegen",
-    "lib/gridstore",
-    "lib/macros",
-    "lib/posting_list",
     "lib/segment",
-    "lib/shard",
     "lib/sparse",
     "lib/storage",
-    "lib/trififo",
-    "lib/wal",
 ]
 
 [profile.release]
@@ -367,7 +173,6 @@ codegen-units = 1
 # and we don't want the huge binary sizes from debug builds.
 [profile.ci]
 inherits = "release"
-debug-assertions = true
 lto = false
 opt-level = 0
 
@@ -375,61 +180,13 @@ opt-level = 0
 [profile.bench]
 lto = false
 debug = true
-codegen-units = 256 # restore default value for faster compilation
 
 # Profile for performance testing, which is faster to build than release.
 [profile.perf]
 inherits = "release"
 lto = false
 opt-level = 3
-codegen-units = 256  # restore default value for faster compilation
 
-[profile.dev]
-debug = "line-tables-only"
-
-# Override for fast sha256 hashing in dev builds
-[profile.dev.package.sha2]
-opt-level = 3
-
-# Override for fast sha256 hashing in ci builds
-[profile.ci.package.sha2]
-opt-level = 3
-
-[package.metadata.deb]
-maintainer = "Qdrant Team <team@qdrant.com>"
-depends = "$auto"
-default-features = true
-features = ["deb"]
-license-file = "LICENSE"
-section = "database"
-priority = "optional"
-extended-description = """\
-Qdrant is a high-performance vector search engine. It is designed to index and search large collections of high-dimensional vectors.\
-"""
-assets = [
-    [
-        "target/release/qdrant",
-        "usr/bin/",
-        "755",
-    ],
-    [
-        "README.md",
-        "usr/share/doc/qdrant/README",
-        "644",
-    ],
-    [
-        "static/*",
-        "var/lib/qdrant/static/",
-        "644",
-    ],
-    [
-        "static/assets/*",
-        "var/lib/qdrant/static/assets/",
-        "644",
-    ],
-    [
-        "config/deb.yaml",
-        "etc/qdrant/config.yaml",
-        "644",
-    ],
-]
+[patch.crates-io]
+# Temporary patch until <https://github.com/hyperium/tonic/pull/1401> is merged
+tonic = { git = 'https://github.com/qdrant/tonic', branch = "v0.9.2-patched" }

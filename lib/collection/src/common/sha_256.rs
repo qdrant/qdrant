@@ -2,16 +2,14 @@ use std::io;
 use std::path::Path;
 
 use bytes::BytesMut;
-use fs_err::tokio::File;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 
-/// Compute sha256 hash for the given file
 pub async fn hash_file(file_path: &Path) -> io::Result<String> {
     log::debug!("Computing checksum for file: {file_path:?}");
 
     const ONE_MB: usize = 1024 * 1024;
-    let input_file = File::open(file_path).await?;
+    let input_file = tokio::fs::File::open(file_path).await?;
     let mut reader = tokio::io::BufReader::new(input_file);
     let mut sha = Sha256::new();
     let mut buf = BytesMut::with_capacity(ONE_MB);
@@ -24,7 +22,7 @@ pub async fn hash_file(file_path: &Path) -> io::Result<String> {
         sha.update(&buf[0..len]);
     }
     let hash = sha.finalize();
-    Ok(hash.iter().map(|b| format!("{b:02x}")).collect())
+    Ok(format!("{hash:x}"))
 }
 
 /// Compare two hashes, ignoring whitespace and case

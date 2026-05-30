@@ -30,15 +30,13 @@ def test_collection_recovery_below_limit(tmp_path: pathlib.Path):
         assert shard["points_count"] > 0
 
     # Kill last peer
-    p = processes.pop()
-    restart_port = p.p2p_port
-    p.kill()
+    processes.pop().kill()
 
     # Insert some more points
     upsert_random_points(peer_urls[0], N_POINTS)
 
     # Restart the peer, wait until it is up
-    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, port=restart_port)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url)
     wait_for_peer_online(peer_url)
 
     # Wait until all shards are active, never allow more than 1 shard transfer
@@ -79,15 +77,13 @@ def test_collection_recovery_reach_limit(tmp_path: pathlib.Path):
         assert shard["points_count"] > 0
 
     # Kill last peer
-    p = processes.pop()
-    restart_port = p.p2p_port
-    p.kill()
+    processes.pop().kill()
 
     # Insert some more points
     upsert_random_points(peer_urls[0], N_POINTS)
 
     # Restart the peer, wait until it is up
-    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, port=restart_port, extra_env=env)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, extra_env=env)
     wait_for_peer_online(peer_url)
 
     # We must see 3 transfers at one point with our customized limits
@@ -130,9 +126,7 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
         assert shard["points_count"] > 0
 
     # Kill last peer
-    p = processes.pop()
-    restart_port = p.p2p_port
-    p.kill()
+    processes.pop().kill()
     killed_peer_dir = peer_dirs[-1]
 
     # Insert some more points
@@ -158,23 +152,15 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
         assert_http_ok(r)
 
     # Restart the peer, wait unil it is up
-    peer_url = start_peer(killed_peer_dir, "peer_0_restarted.log", bootstrap_url, port=restart_port)
-    # Use a longer timeout: with 3 concurrent user-requested snapshot transfers running, the
-    # leader can fall behind on heartbeats and trigger raft elections. The recovery transfer's
-    # `RecoveryToPartial` proposal can be dropped during the leader election, and the retry
-    # path waits up to CONSENSUS_CONFIRM_TIMEOUT (10s) per attempt before retrying. Combined
-    # with sequential per-shard recovery (auto transfer limit = 1 × 3 shards), 30s is too tight.
-    wait_for_peer_online(peer_url, wait_for_timeout=60)
-    recovering_peer_id = get_cluster_info(peer_url)["peer_id"]
+    peer_url = start_peer(killed_peer_dir, "peer_0_restarted.log", bootstrap_url)
+    wait_for_peer_online(peer_url)
 
     # We must see N_SHARDS transfers on our new node
     # WARN: this check is disabled, as it's not guaranteed that we are lucky enough to see 3 transfers in our check interval
     # wait_for(transfers_reached_threshold, peer_urls[-1], wait_for_interval=0.1, transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS + 1)
 
     # Wait until all shards are active on our recovering node, never allow more than 1 shard transfers
-    # Only count transfers involving the recovering peer — concurrent user-requested transfers
-    # between other peers are not subject to the automatic transfer limit.
-    wait_for(transfers_below_limit_or_done, peer_url, wait_for_interval=0.1, transfer_limit=1, involves_peer_id=recovering_peer_id)
+    wait_for(transfers_below_limit_or_done, peer_url, wait_for_interval=0.1, transfer_limit=1)
 
     # Wait until all shards are active on our new node we replicated to
     wait_for(all_collection_shards_are_active, peer_urls[-1], COLLECTION_NAME)
@@ -196,13 +182,9 @@ def transfers_reached_threshold(peer_url, transfer_threshold=1, transfer_limit =
     return transfer_count >= transfer_threshold
 
 
-def transfers_below_limit_or_done(peer_url, transfer_limit = 1, involves_peer_id = None):
+def transfers_below_limit_or_done(peer_url, transfer_limit = 1):
     # Ongoing transfers must be below limit
-    info = get_collection_cluster_info(peer_url, COLLECTION_NAME)
-    transfers = info["shard_transfers"]
-    if involves_peer_id is not None:
-        transfers = [t for t in transfers if t["from"] == involves_peer_id or t["to"] == involves_peer_id]
-    transfer_count = len(transfers)
+    transfer_count = get_shard_transfer_count(peer_url, COLLECTION_NAME)
     if transfer_count > transfer_limit:
         raise Exception(f"Number of shard transfers in collection {COLLECTION_NAME} is above our limit ({transfer_count}/{transfer_limit})")
 

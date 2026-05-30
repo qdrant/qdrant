@@ -1,20 +1,12 @@
 use std::cmp::Reverse;
+use std::collections::binary_heap::Iter as BinaryHeapIter;
 use std::collections::BinaryHeap;
+use std::iter::Rev;
 use std::num::NonZeroUsize;
 use std::vec::IntoIter as VecIntoIter;
 
-use bytemuck::{TransparentWrapper as _, TransparentWrapperAlloc as _};
 use serde::{Deserialize, Serialize};
 
-/// To avoid excessive memory allocation, FixedLengthPriorityQueue
-/// imposes a reasonable limit on the allocation size. If the limit
-/// is extremely large, we treat it as if no limit was set and
-/// delay allocation, assuming that the results will fit within a
-/// predefined threshold.
-const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
-
-/// A container that forgets all but the top N elements
-///
 /// This is a MinHeap by default - it will keep the largest elements, pop smallest
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct FixedLengthPriorityQueue<T: Ord> {
@@ -32,20 +24,13 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Creates a new queue with the given length
     /// Panics if length is 0
     pub fn new(length: usize) -> Self {
-        let heap = BinaryHeap::with_capacity(
-            length
-                .saturating_add(1)
-                .min(LARGEST_REASONABLE_ALLOCATION_SIZE),
-        );
-        let length = NonZeroUsize::new(length).expect("length must be greater than zero");
+        let heap = BinaryHeap::with_capacity(length + 1);
+        let length = NonZeroUsize::new(length).expect("length must be > 0");
         FixedLengthPriorityQueue::<T> { heap, length }
     }
 
-    /// Pushes a value into the priority queue.
-    ///
-    /// If the queue if full, replaces the smallest value and returns it.
     pub fn push(&mut self, value: T) -> Option<T> {
-        if !self.is_full() {
+        if self.heap.len() < self.length.into() {
             self.heap.push(Reverse(value));
             return None;
         }
@@ -58,25 +43,20 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
         Some(value.0)
     }
 
-    /// Consumes the [`FixedLengthPriorityQueue`] and returns a vector
-    /// in sorted (descending) order.
-    pub fn into_sorted_vec(self) -> Vec<T> {
-        Reverse::peel_vec(self.heap.into_sorted_vec())
+    pub fn into_vec(self) -> Vec<T> {
+        self.heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|Reverse(x)| x)
+            .collect()
     }
 
-    /// Returns an iterator over the elements in the queue, in arbitrary order.
-    pub fn iter_unsorted(&self) -> std::slice::Iter<'_, T> {
-        Reverse::peel_slice(self.heap.as_slice()).iter()
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter {
+            it: self.heap.iter().rev(),
+        }
     }
 
-    /// Returns an iterator over the elements in the queue
-    /// in sorted (descending) order.
-    pub fn into_iter_sorted(self) -> VecIntoIter<T> {
-        self.into_sorted_vec().into_iter()
-    }
-
-    /// Returns the smallest element of the queue,
-    /// if there is any.
     pub fn top(&self) -> Option<&T> {
         self.heap.peek().map(|x| &x.0)
     }
@@ -90,16 +70,50 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     pub fn is_empty(&self) -> bool {
         self.heap.is_empty()
     }
+}
 
-    /// Checks if the queue is full
-    pub fn is_full(&self) -> bool {
-        self.heap.len() >= self.length.into()
+pub struct Iter<'a, T> {
+    it: Rev<BinaryHeapIter<'a, Reverse<T>>>,
+}
+
+pub struct IntoIter<T> {
+    it: VecIntoIter<Reverse<T>>,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.it.next().map(|Reverse(x)| x)
     }
+}
 
-    pub fn retain<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&T) -> bool,
-    {
-        self.heap.retain(|x| f(&x.0));
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.it.next().map(|Reverse(x)| x)
+    }
+}
+
+impl<'a, T: Ord> IntoIterator for &'a FixedLengthPriorityQueue<T> {
+    type Item = &'a T;
+
+    type IntoIter = Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<T: Ord> IntoIterator for FixedLengthPriorityQueue<T> {
+    type Item = T;
+
+    type IntoIter = IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            it: self.heap.into_sorted_vec().into_iter(),
+        }
     }
 }

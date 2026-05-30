@@ -1,13 +1,12 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use rand::SeedableRng;
 use rand::prelude::StdRng;
+use rand::SeedableRng;
 use segment::fixtures::payload_context_fixture::{
     create_plain_payload_index, create_struct_payload_index,
 };
 use segment::fixtures::payload_fixtures::random_filter;
-use segment::index::PayloadIndexRead;
+use segment::index::PayloadIndex;
 use tempfile::Builder;
 
 const NUM_POINTS: usize = 2000;
@@ -22,22 +21,18 @@ fn test_filtering_context_consistency() {
     let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
-    let hw_counter = HardwareCounterCell::new();
-
     for _ in 0..ATTEMPTS {
         let filter = random_filter(&mut rng, 3);
 
-        let plain_filter_context = plain_index.filter_context(&filter, &hw_counter).unwrap();
+        let plain_filter_context = plain_index.filter_context(&filter);
+        let struct_filter_context = struct_index.filter_context(&filter);
+
         let plain_result = (0..NUM_POINTS)
             .filter(|point_id| plain_filter_context.check(*point_id as PointOffsetType))
             .collect_vec();
-
-        let struct_result = struct_index.with_view(|v| {
-            let struct_filter_context = v.filter_context(&filter, &hw_counter).unwrap();
-            (0..NUM_POINTS)
-                .filter(|point_id| struct_filter_context.check(*point_id as PointOffsetType))
-                .collect_vec()
-        });
+        let struct_result = (0..NUM_POINTS)
+            .filter(|point_id| struct_filter_context.check(*point_id as PointOffsetType))
+            .collect_vec();
         assert_eq!(plain_result, struct_result, "filter: {filter:#?}");
     }
 }

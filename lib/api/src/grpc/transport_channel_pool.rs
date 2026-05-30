@@ -3,18 +3,17 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use rand::{RngExt, rng};
+use rand::{thread_rng, Rng};
 use tokio::select;
 use tonic::codegen::InterceptedService;
 use tonic::service::Interceptor;
 use tonic::transport::{Channel, ClientTlsConfig, Error as TonicError, Uri};
 use tonic::{Code, Request, Status};
 
-use crate::HTTP_HEADER_API_KEY;
 use crate::grpc::dynamic_channel_pool::DynamicChannelPool;
 use crate::grpc::dynamic_pool::CountedItem;
-use crate::grpc::qdrant::HealthCheckRequest;
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
+use crate::grpc::qdrant::HealthCheckRequest;
 
 /// Maximum lifetime of a gRPC channel.
 ///
@@ -73,39 +72,21 @@ enum RequestFailure {
     RequestConnection(TonicError),
 }
 
-/// Interceptor applied to all outgoing internal gRPC requests.
-/// Adds a default timeout and optionally injects an API key for cluster authentication.
-pub struct PoolInterceptor {
+/// Intercepts gRPC requests and adds a default timeout if it wasn't already set.
+pub struct AddTimeout {
     default_timeout: Duration,
-    api_key: Option<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>,
 }
 
-impl PoolInterceptor {
-    fn new(default_timeout: Duration, api_key: Option<String>) -> Self {
-        Self {
-            default_timeout,
-            api_key: api_key.map(|k| {
-                let mut value: tonic::metadata::MetadataValue<tonic::metadata::Ascii> = k
-                    .parse()
-                    .expect("API key contains invalid characters for gRPC metadata");
-                value.set_sensitive(true);
-                value
-            }),
-        }
+impl AddTimeout {
+    pub fn new(default_timeout: Duration) -> Self {
+        Self { default_timeout }
     }
 }
 
-impl Interceptor for PoolInterceptor {
+impl Interceptor for AddTimeout {
     fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
         if request.metadata().get("grpc-timeout").is_none() {
             request.set_timeout(self.default_timeout);
-        }
-        if let Some(ref api_key) = self.api_key
-            && request.metadata().get(HTTP_HEADER_API_KEY).is_none()
-        {
-            request
-                .metadata_mut()
-                .insert(HTTP_HEADER_API_KEY, api_key.clone());
         }
         Ok(request)
     }
@@ -120,7 +101,6 @@ pub struct TransportChannelPool {
     grpc_timeout: Duration,
     connection_timeout: Duration,
     tls_config: Option<ClientTlsConfig>,
-    api_key: Option<String>,
 }
 
 impl Default for TransportChannelPool {
@@ -131,7 +111,6 @@ impl Default for TransportChannelPool {
             grpc_timeout: DEFAULT_GRPC_TIMEOUT,
             connection_timeout: DEFAULT_CONNECT_TIMEOUT,
             tls_config: None,
-            api_key: None,
         }
     }
 }
@@ -142,7 +121,6 @@ impl TransportChannelPool {
         connection_timeout: Duration,
         pool_size: usize,
         tls_config: Option<ClientTlsConfig>,
-        api_key: Option<String>,
     ) -> Self {
         Self {
             uri_to_pool: Default::default(),
@@ -150,7 +128,6 @@ impl TransportChannelPool {
             connection_timeout,
             pool_size: NonZeroUsize::new(pool_size).unwrap(),
             tls_config,
-            api_key,
         }
     }
 
@@ -260,7 +237,7 @@ impl TransportChannelPool {
     async fn make_request<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: &impl Fn(InterceptedService<Channel, PoolInterceptor>) -> O,
+        f: &impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
         timeout: Duration,
     ) -> Result<T, RequestFailure> {
         let channel = match self.get_or_create_pooled_channel(uri).await {
@@ -270,10 +247,8 @@ impl TransportChannelPool {
             }
         };
 
-        let intercepted_channel = InterceptedService::new(
-            channel.item().clone(),
-            PoolInterceptor::new(timeout, self.api_key.clone()),
-        );
+        let intercepted_channel =
+            InterceptedService::new(channel.item().clone(), AddTimeout::new(timeout));
 
         let result: RequestFailure = select! {
             res = f(intercepted_channel) => {
@@ -308,17 +283,13 @@ impl TransportChannelPool {
     pub async fn with_channel_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: impl Fn(InterceptedService<Channel, PoolInterceptor>) -> O,
+        f: impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
         timeout: Option<Duration>,
         retries: usize,
     ) -> Result<T, RequestError<Status>> {
         let mut retries_left = retries;
         let mut attempt = 0;
-
-        // Actual timeout must be slightly larger than request timeout, so that in case
-        // of timeout even, we have a headroom to properly handle and report it.
-        let max_timeout =
-            timeout.unwrap_or_else(|| self.request_timeout() + self.connection_timeout);
+        let max_timeout = timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
 
         loop {
             let request_result: Result<T, _> = self.make_request(uri, &f, max_timeout).await;
@@ -336,7 +307,8 @@ impl TransportChannelPool {
                             // Meaning that the peer is not available anymore.
                             // So we can just fail the request.
                             RetryAction::Fail(Status::unavailable(format!(
-                                "Peer {uri} is not available"
+                                "Peer {} is not available",
+                                uri
                             )))
                         }
                         HealthCheckError::ConnectionError(error) => {
@@ -346,7 +318,8 @@ impl TransportChannelPool {
                             // Actions:
                             // - retry no backoff
                             RetryAction::RetryImmediately(Status::unavailable(format!(
-                                "Failed to connect to {uri}, error: {error}"
+                                "Failed to connect to {}, error: {}",
+                                uri, error
                             )))
                         }
                         HealthCheckError::RequestError(status) => {
@@ -368,20 +341,7 @@ impl TransportChannelPool {
                             // Something is broken, but let's retry anyway, but only once.
                             RetryAction::RetryOnce(status)
                         }
-                        Code::Ok
-                        | Code::Unknown
-                        | Code::InvalidArgument
-                        | Code::DeadlineExceeded
-                        | Code::NotFound
-                        | Code::AlreadyExists
-                        | Code::PermissionDenied
-                        | Code::ResourceExhausted
-                        | Code::FailedPrecondition
-                        | Code::Aborted
-                        | Code::OutOfRange
-                        | Code::Unimplemented
-                        | Code::DataLoss
-                        | Code::Unauthenticated => {
+                        _ => {
                             // No special handling, just fail already.
                             RetryAction::Fail(status)
                         }
@@ -395,7 +355,8 @@ impl TransportChannelPool {
                     // Actions:
                     // - retry with backoff
                     RetryAction::RetryWithBackoff(Status::unavailable(format!(
-                        "Failed to connect to {uri}, error: {error}"
+                        "Failed to connect to {}, error: {}",
+                        uri, error
                     )))
                 }
             };
@@ -406,7 +367,7 @@ impl TransportChannelPool {
                 RetryAction::RetryWithBackoff(fallback_status) => {
                     // Calculate backoff
                     let backoff = DEFAULT_BACKOFF * 2u32.pow(attempt as u32)
-                        + Duration::from_millis(rng().random_range(0..100));
+                        + Duration::from_millis(thread_rng().gen_range(0..100));
 
                     if backoff > max_timeout {
                         // We can't wait for the request any longer, return the error as is
@@ -437,14 +398,9 @@ impl TransportChannelPool {
     pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: impl Fn(InterceptedService<Channel, PoolInterceptor>) -> O,
+        f: impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
     ) -> Result<T, RequestError<Status>> {
         self.with_channel_timeout(uri, f, None, DEFAULT_RETRIES)
             .await
-    }
-
-    /// Default time to wait for a request to complete.
-    pub fn request_timeout(&self) -> Duration {
-        self.grpc_timeout
     }
 }

@@ -6,18 +6,16 @@ authors = [
     "Qdrant Team <info@qdrant.tech>",
 ]
 license = "Apache-2.0"
-edition = "2024"
+edition = "2021"
 publish = false
-
-[lints]
-workspace = true
 
 [dependencies]
 chrono = { workspace = true }
-dashmap = { workspace = true }
-http = { workspace = true }
-http-serde = "2.1.1"
+dashmap = "5.5.3"
+http = "1.0.0"
+http-serde = "2.0.0"
+log = "0.4.20"
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serial_test = { version = "3.4.0", default-features = false }
+serial_test = { version = "3.1.0", default-features = false }

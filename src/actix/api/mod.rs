@@ -1,19 +1,8 @@
-use collection::shards::shard::ShardId;
-use common::validation::{validate_collection_name, validate_collection_name_legacy};
-use serde::Deserialize;
-use validator::Validate;
-
-pub mod audit_api;
 pub mod cluster_api;
 pub mod collections_api;
 pub mod count_api;
-pub mod debug_api;
-pub mod discover_api;
-pub mod facet_api;
+pub mod discovery_api;
 pub mod issues_api;
-pub mod local_shard_api;
-pub mod profiler_api;
-pub mod query_api;
 pub mod read_params;
 pub mod recommend_api;
 pub mod retrieve_api;
@@ -22,7 +11,10 @@ pub mod service_api;
 pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
-pub mod vector_name_api;
+
+use common::validation::validate_collection_name;
+use serde::Deserialize;
+use validator::Validate;
 
 /// A collection path with stricter validation
 ///
@@ -31,11 +23,8 @@ pub mod vector_name_api;
 /// collections. Basic validation is enforced everywhere else.
 #[derive(Deserialize, Validate)]
 struct StrictCollectionPath {
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "validate_collection_name")
-    )]
-    collection_name: String,
+    #[validate(length(min = 1, max = 255), custom = "validate_collection_name")]
+    name: String,
 }
 
 /// A collection path with basic validation
@@ -45,43 +34,6 @@ struct StrictCollectionPath {
 /// collections. Basic validation is enforced everywhere else.
 #[derive(Deserialize, Validate)]
 struct CollectionPath {
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "validate_collection_name_legacy")
-    )]
-    collection_name: String,
-}
-
-/// Collection + snapshot name path with basic collection name validation.
-#[derive(Deserialize, Validate)]
-struct CollectionSnapshotPath {
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "validate_collection_name_legacy")
-    )]
-    collection_name: String,
-    snapshot_name: String,
-}
-
-/// Collection + shard path with basic collection name validation.
-#[derive(Deserialize, Validate)]
-struct CollectionShardPath {
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "validate_collection_name_legacy")
-    )]
-    collection_name: String,
-    shard: ShardId,
-}
-
-/// Collection + shard + snapshot path with basic collection name validation.
-#[derive(Deserialize, Validate)]
-struct CollectionShardSnapshotPath {
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "validate_collection_name_legacy")
-    )]
-    collection_name: String,
-    shard: ShardId,
-    snapshot: String,
+    #[validate(length(min = 1, max = 255))]
+    name: String,
 }

@@ -1,75 +1,85 @@
-use std::collections::HashMap;
+use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
+use crate::rest::{DenseVector, NamedVectorStruct};
 
-use segment::data_types::vectors::{DenseVector, VectorInternal, VectorStructInternal};
-use uuid::Uuid;
-
-use super::schema::{ScoredPoint, Vector};
-use super::{
-    FacetRequestInternal, FacetResponse, FacetValue, FacetValueHit, NearestQuery, Query,
-    QueryInterface, VectorOutput, VectorStructOutput,
-};
-use crate::grpc;
-use crate::rest::NamedVectorStruct;
-use crate::rest::models::InferenceUsage;
-
-impl From<InferenceUsage> for grpc::InferenceUsage {
-    fn from(value: InferenceUsage) -> Self {
-        let mut grpc_usage_models = HashMap::with_capacity(value.models.len());
-        for (model, usage) in value.models {
-            grpc_usage_models.insert(
-                model,
-                grpc::ModelUsage {
-                    tokens: usage.tokens,
-                },
-            );
-        }
-        grpc::InferenceUsage {
-            models: grpc_usage_models,
-        }
-    }
-}
-
-impl From<VectorInternal> for VectorOutput {
-    fn from(value: VectorInternal) -> Self {
+impl From<segment::data_types::vectors::Vector> for Vector {
+    fn from(value: segment::data_types::vectors::Vector) -> Self {
         match value {
-            VectorInternal::Dense(vector) => VectorOutput::Dense(vector),
-            VectorInternal::Sparse(vector) => VectorOutput::Sparse(vector),
-            VectorInternal::MultiDense(vector) => {
-                VectorOutput::MultiDense(vector.into_multi_vectors())
+            segment::data_types::vectors::Vector::Dense(vector) => Vector::Dense(vector),
+            segment::data_types::vectors::Vector::Sparse(vector) => Vector::Sparse(vector),
+            segment::data_types::vectors::Vector::MultiDense(_vector) => {
+                // TODO(colbert)
+                unimplemented!()
             }
         }
     }
 }
 
-impl From<VectorStructInternal> for VectorStructOutput {
-    fn from(value: VectorStructInternal) -> Self {
-        // ToDo: this conversion should be removed
-        match value {
-            VectorStructInternal::Single(vector) => VectorStructOutput::Single(vector),
-            VectorStructInternal::MultiDense(vector) => {
-                VectorStructOutput::MultiDense(vector.into_multi_vectors())
-            }
-            VectorStructInternal::Named(vectors) => VectorStructOutput::Named(
-                vectors
-                    .into_iter()
-                    .map(|(k, v)| (k, VectorOutput::from(v)))
-                    .collect(),
-            ),
-        }
-    }
-}
-
-impl From<Vector> for VectorInternal {
+impl From<Vector> for segment::data_types::vectors::Vector {
     fn from(value: Vector) -> Self {
         match value {
-            Vector::Dense(vector) => VectorInternal::Dense(vector),
-            Vector::Sparse(vector) => VectorInternal::Sparse(vector),
-            Vector::MultiDense(vectors) => VectorInternal::MultiDense(
-                segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vectors),
+            Vector::Dense(vector) => segment::data_types::vectors::Vector::Dense(vector),
+            Vector::Sparse(vector) => segment::data_types::vectors::Vector::Sparse(vector),
+        }
+    }
+}
+
+impl From<segment::data_types::vectors::VectorStruct> for VectorStruct {
+    fn from(value: segment::data_types::vectors::VectorStruct) -> Self {
+        match value {
+            segment::data_types::vectors::VectorStruct::Single(vector) => {
+                VectorStruct::Single(vector)
+            }
+            segment::data_types::vectors::VectorStruct::Multi(vectors) => {
+                VectorStruct::Multi(vectors.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
+        }
+    }
+}
+
+impl From<VectorStruct> for segment::data_types::vectors::VectorStruct {
+    fn from(value: VectorStruct) -> Self {
+        match value {
+            VectorStruct::Single(vector) => {
+                segment::data_types::vectors::VectorStruct::Single(vector)
+            }
+            VectorStruct::Multi(vectors) => segment::data_types::vectors::VectorStruct::Multi(
+                vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
             ),
-            Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
-                // If this is reached, it means validation failed
-                unimplemented!("Inference is not implemented, please use vectors instead")
+        }
+    }
+}
+
+impl From<segment::data_types::vectors::BatchVectorStruct> for BatchVectorStruct {
+    fn from(value: segment::data_types::vectors::BatchVectorStruct) -> Self {
+        match value {
+            segment::data_types::vectors::BatchVectorStruct::Single(vector) => {
+                BatchVectorStruct::Single(vector)
+            }
+            segment::data_types::vectors::BatchVectorStruct::Multi(vectors) => {
+                BatchVectorStruct::Multi(
+                    vectors
+                        .into_iter()
+                        .map(|(k, v)| (k, v.into_iter().map(|v| v.into()).collect()))
+                        .collect(),
+                )
+            }
+        }
+    }
+}
+
+impl From<BatchVectorStruct> for segment::data_types::vectors::BatchVectorStruct {
+    fn from(value: BatchVectorStruct) -> Self {
+        match value {
+            BatchVectorStruct::Single(vector) => {
+                segment::data_types::vectors::BatchVectorStruct::Single(vector)
+            }
+            BatchVectorStruct::Multi(vectors) => {
+                segment::data_types::vectors::BatchVectorStruct::Multi(
+                    vectors
+                        .into_iter()
+                        .map(|(k, v)| (k, v.into_iter().map(|v| v.into()).collect()))
+                        .collect(),
+                )
             }
         }
     }
@@ -77,23 +87,26 @@ impl From<Vector> for VectorInternal {
 
 impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(value: segment::types::ScoredPoint) -> Self {
-        let segment::types::ScoredPoint {
-            id,
-            version,
-            score,
-            payload,
-            vector,
-            shard_key,
-            order_value,
-        } = value;
         ScoredPoint {
-            id,
-            version,
-            score,
-            payload,
-            vector: vector.map(VectorStructOutput::from),
-            shard_key,
-            order_value,
+            id: value.id,
+            version: value.version,
+            score: value.score,
+            payload: value.payload,
+            vector: value.vector.map(From::from),
+            shard_key: value.shard_key,
+        }
+    }
+}
+
+impl From<ScoredPoint> for segment::types::ScoredPoint {
+    fn from(value: ScoredPoint) -> Self {
+        segment::types::ScoredPoint {
+            id: value.id,
+            version: value.version,
+            score: value.score,
+            payload: value.payload,
+            vector: value.vector.map(From::from),
+            shard_key: value.shard_key,
         }
     }
 }
@@ -114,6 +127,26 @@ impl From<NamedVectorStruct> for segment::data_types::vectors::NamedVectorStruct
     }
 }
 
+impl From<segment::data_types::vectors::NamedVectorStruct> for NamedVectorStruct {
+    fn from(value: segment::data_types::vectors::NamedVectorStruct) -> Self {
+        match value {
+            segment::data_types::vectors::NamedVectorStruct::Default(vector) => {
+                NamedVectorStruct::Default(vector)
+            }
+            segment::data_types::vectors::NamedVectorStruct::Dense(vector) => {
+                NamedVectorStruct::Dense(vector)
+            }
+            segment::data_types::vectors::NamedVectorStruct::Sparse(vector) => {
+                NamedVectorStruct::Sparse(vector)
+            }
+            segment::data_types::vectors::NamedVectorStruct::MultiDense(_vector) => {
+                // TODO(colbert)
+                unimplemented!("MultiDense is not available in the API yet")
+            }
+        }
+    }
+}
+
 impl From<DenseVector> for NamedVectorStruct {
     fn from(v: DenseVector) -> Self {
         NamedVectorStruct::Default(v)
@@ -123,66 +156,5 @@ impl From<DenseVector> for NamedVectorStruct {
 impl From<segment::data_types::vectors::NamedVector> for NamedVectorStruct {
     fn from(v: segment::data_types::vectors::NamedVector) -> Self {
         NamedVectorStruct::Dense(v)
-    }
-}
-
-impl From<QueryInterface> for Query {
-    fn from(value: QueryInterface) -> Self {
-        match value {
-            QueryInterface::Nearest(vector) => Query::Nearest(NearestQuery {
-                nearest: vector,
-                mmr: None,
-            }),
-            QueryInterface::Query(query) => query,
-        }
-    }
-}
-
-impl From<segment::data_types::facets::FacetValue> for FacetValue {
-    fn from(value: segment::data_types::facets::FacetValue) -> Self {
-        match value {
-            segment::data_types::facets::FacetValue::Keyword(keyword) => Self::String(keyword),
-            segment::data_types::facets::FacetValue::Int(integer) => Self::Integer(integer),
-            segment::data_types::facets::FacetValue::Uuid(uuid_int) => {
-                Self::String(Uuid::from_u128(uuid_int).to_string())
-            }
-            segment::data_types::facets::FacetValue::Bool(b) => Self::Bool(b),
-        }
-    }
-}
-
-impl From<segment::data_types::facets::FacetValueHit> for FacetValueHit {
-    fn from(value: segment::data_types::facets::FacetValueHit) -> Self {
-        let segment::data_types::facets::FacetValueHit { value, count } = value;
-        Self {
-            value: From::from(value),
-            count,
-        }
-    }
-}
-
-impl From<segment::data_types::facets::FacetResponse> for FacetResponse {
-    fn from(value: segment::data_types::facets::FacetResponse) -> Self {
-        let segment::data_types::facets::FacetResponse { hits } = value;
-        Self {
-            hits: hits.into_iter().map(From::from).collect(),
-        }
-    }
-}
-
-impl From<FacetRequestInternal> for segment::data_types::facets::FacetParams {
-    fn from(value: FacetRequestInternal) -> Self {
-        let FacetRequestInternal {
-            key,
-            limit,
-            filter,
-            exact,
-        } = value;
-        Self {
-            key,
-            limit: limit.unwrap_or(Self::DEFAULT_LIMIT),
-            filter,
-            exact: exact.unwrap_or(Self::DEFAULT_EXACT),
-        }
     }
 }

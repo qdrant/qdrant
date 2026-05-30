@@ -1,50 +1,26 @@
-mod deferred_points_dedup;
-mod deferred_points_tests;
-mod fix_payload_indices;
-pub mod fixtures;
-mod hw_metrics;
-mod payload;
-mod points_dedup;
-mod query_prefetch_offset_limit;
 mod sha_256_test;
-mod shard_query;
-mod shard_telemetry;
 mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use common::budget::ResourceBudget;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::save_on_disk::SaveOnDisk;
+use common::cpu::CpuBudget;
 use futures::future::join_all;
 use itertools::Itertools;
-use parking_lot::Mutex;
-use rand::RngExt;
-use segment::data_types::vectors::only_default_vector;
-use segment::index::hnsw_index::get_num_indexing_threads;
-use segment::types::{Distance, PointIdType};
-use shard::operations::optimization::OptimizerThresholds;
-use shard::segment_holder::locked::LockedSegmentHolder;
+use parking_lot::{Mutex, RwLock};
+use segment::index::hnsw_index::num_rayon_threads;
 use tempfile::Builder;
-use tokio::time::{Instant, sleep};
+use tokio::time::{sleep, Instant};
 
 use crate::collection::Collection;
-use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::fixtures::{
-    PointIdGenerator, get_indexing_optimizer, get_merge_optimizer, random_segment,
+    get_indexing_optimizer, get_merge_optimizer, random_segment,
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::TrackerStatus;
-use crate::config::CollectionParams;
-use crate::operations::types::VectorsConfig;
-use crate::operations::vector_params_builder::VectorParamsBuilder;
-use crate::optimizers_builder::build_segment_optimizer_config;
-use crate::update_handler::Optimizer;
-use crate::update_workers::UpdateWorkers;
+use crate::update_handler::{Optimizer, UpdateHandler};
 
 #[tokio::test]
 async fn test_optimization_process() {
@@ -55,35 +31,33 @@ async fn test_optimization_process() {
     let mut holder = SegmentHolder::default();
 
     let segments_to_merge = vec![
-        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
-        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
-        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+        holder.add(random_segment(dir.path(), 100, 3, dim)),
+        holder.add(random_segment(dir.path(), 100, 3, dim)),
+        holder.add(random_segment(dir.path(), 100, 3, dim)),
     ];
 
-    let segment_to_index = holder.add_new(random_segment(dir.path(), 100, 110, dim));
+    let segment_to_index = holder.add(random_segment(dir.path(), 100, 110, dim));
 
     let _other_segment_ids: Vec<SegmentId> = vec![
-        holder.add_new(random_segment(dir.path(), 100, 20, dim)),
-        holder.add_new(random_segment(dir.path(), 100, 20, dim)),
+        holder.add(random_segment(dir.path(), 100, 20, dim)),
+        holder.add(random_segment(dir.path(), 100, 20, dim)),
     ];
 
     let merge_optimizer: Arc<Optimizer> =
-        Arc::new(get_merge_optimizer(dir.path(), temp_dir.path(), dim, None));
+        Arc::new(get_merge_optimizer(dir.path(), temp_dir.path(), dim));
     let indexing_optimizer: Arc<Optimizer> =
         Arc::new(get_indexing_optimizer(dir.path(), temp_dir.path(), dim));
 
     let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
-    let total_optimized_points = Arc::new(AtomicUsize::new(0));
-    let segments = LockedSegmentHolder::new(holder);
-    let handles = UpdateWorkers::launch_optimization(
+    let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+    let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
-        total_optimized_points.clone(),
-        &ResourceBudget::default(),
+        &CpuBudget::default(),
         segments.clone(),
-        || {},
+        |_| {},
         None,
     );
 
@@ -95,8 +69,8 @@ async fn test_optimization_process() {
     // We skip optimizations that use less than half of the preferred CPU budget
     let expected_optimization_count = {
         let cpus = common::cpu::get_cpu_budget(0);
-        let hnsw_threads = get_num_indexing_threads(0);
-        (cpus / hnsw_threads + usize::from((cpus % hnsw_threads) >= hnsw_threads.div_ceil(2)))
+        let hnsw_threads = num_rayon_threads(0);
+        (cpus / hnsw_threads + ((cpus % hnsw_threads) >= hnsw_threads.div_ceil(2)) as usize)
             .clamp(1, total_optimizations)
     };
 
@@ -110,7 +84,7 @@ async fn test_optimization_process() {
         let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), expected_optimization_count);
         log.iter().for_each(|entry| {
-            assert!(["indexing", "merge"].contains(&entry.name));
+            assert!(["indexing", "merge"].contains(&entry.name.as_str()));
             assert_eq!(entry.status, TrackerStatus::Done);
         });
     }
@@ -120,13 +94,12 @@ async fn test_optimization_process() {
         assert_eq!(res.unwrap(), Some(true));
     }
 
-    let handles = UpdateWorkers::launch_optimization(
+    let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
-        total_optimized_points.clone(),
-        &ResourceBudget::default(),
+        &CpuBudget::default(),
         segments.clone(),
-        || {},
+        |_| {},
         None,
     );
 
@@ -151,8 +124,6 @@ async fn test_optimization_process() {
     for sid in segments_to_merge {
         assert!(segments.read().get(sid).is_none());
     }
-
-    assert_eq!(total_optimized_points.load(Ordering::Relaxed), 119);
 }
 
 #[tokio::test]
@@ -164,7 +135,7 @@ async fn test_cancel_optimization() {
     let dim = 256;
 
     for _ in 0..5 {
-        holder.add_new(random_segment(dir.path(), 100, 1000, dim));
+        holder.add(random_segment(dir.path(), 100, 1000, dim));
     }
 
     let indexing_optimizer: Arc<Optimizer> =
@@ -175,15 +146,13 @@ async fn test_cancel_optimization() {
     let now = Instant::now();
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
-    let total_optimized_points = Arc::new(AtomicUsize::new(0));
-    let segments = LockedSegmentHolder::new(holder);
-    let handles = UpdateWorkers::launch_optimization(
+    let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+    let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
-        total_optimized_points.clone(),
-        &ResourceBudget::default(),
+        &CpuBudget::default(),
         segments.clone(),
-        || {},
+        |_| {},
         None,
     );
 
@@ -208,13 +177,13 @@ async fn test_cancel_optimization() {
         // We skip optimizations that use less than half of the preferred CPU budget
         let expected_optimization_count = {
             let cpus = common::cpu::get_cpu_budget(0);
-            let hnsw_threads = get_num_indexing_threads(0);
-            (cpus / hnsw_threads + usize::from((cpus % hnsw_threads) >= hnsw_threads.div_ceil(2)))
+            let hnsw_threads = num_rayon_threads(0);
+            (cpus / hnsw_threads + ((cpus % hnsw_threads) >= hnsw_threads.div_ceil(2)) as usize)
                 .clamp(1, 3)
         };
 
         let log = optimizers_log.lock().to_telemetry();
-        assert!(log.len() <= expected_optimization_count);
+        assert_eq!(log.len(), expected_optimization_count);
         for status in log {
             assert_eq!(status.name, "indexing");
             assert!(matches!(status.status, TrackerStatus::Cancelled(_)));
@@ -227,112 +196,6 @@ async fn test_cancel_optimization() {
             LockedSegment::Proxy(_) => panic!("segment is not restored"),
         }
     }
-
-    assert_eq!(total_optimized_points.load(Ordering::Relaxed), 0);
-}
-
-#[tokio::test]
-async fn test_new_segment_when_all_over_capacity() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-    let dim = 256;
-    let collection_params = CollectionParams {
-        vectors: VectorsConfig::Single(VectorParamsBuilder::new(dim as u64, Distance::Dot).build()),
-        ..CollectionParams::empty()
-    };
-    let optimizer_thresholds = OptimizerThresholds {
-        max_segment_size_kb: 1,
-        memmap_threshold_kb: 1_000_000,
-        indexing_threshold_kb: 1_000_000,
-        deferred_internal_id: None,
-    };
-    let hnsw_config = Default::default();
-    let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
-
-    let payload_schema_file = dir.path().join("payload.schema");
-    let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
-        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
-
-    let mut holder = SegmentHolder::default();
-
-    holder.add_new(random_segment(dir.path(), 100, 3, dim));
-    holder.add_new(random_segment(dir.path(), 100, 3, dim));
-    holder.add_new(random_segment(dir.path(), 100, 3, dim));
-    holder.add_new(random_segment(dir.path(), 100, 3, dim));
-    holder.add_new(random_segment(dir.path(), 100, 3, dim));
-
-    let segments = LockedSegmentHolder::new(holder);
-
-    // Expect our 5 created segments now
-    assert_eq!(segments.read().len(), 5);
-
-    // On optimization we expect one new segment to be created, all are over capacity
-    UpdateWorkers::ensure_appendable_segment_with_capacity(
-        &segments,
-        dir.path(),
-        &segment_config,
-        &optimizer_thresholds,
-        payload_index_schema.clone(),
-    )
-    .unwrap();
-    assert_eq!(segments.read().len(), 6);
-
-    // On reoptimization we don't expect another segment, we have one segment with capacity
-    UpdateWorkers::ensure_appendable_segment_with_capacity(
-        &segments,
-        dir.path(),
-        &segment_config,
-        &optimizer_thresholds,
-        payload_index_schema.clone(),
-    )
-    .unwrap();
-
-    assert_eq!(segments.read().len(), 6);
-
-    let hw_counter = HardwareCounterCell::new();
-
-    // Insert some points in the smallest segment to fill capacity
-    {
-        let segments_read = segments.read();
-        let (_, segment) = segments_read
-            .iter()
-            .min_by_key(|(_, segment)| {
-                segment
-                    .get()
-                    .read()
-                    .max_available_vectors_size_in_bytes()
-                    .unwrap()
-            })
-            .unwrap();
-
-        let mut rnd = rand::rng();
-        for _ in 0..10 {
-            let point_id: PointIdType = PointIdGenerator::default().unique();
-            let random_vector: Vec<_> = (0..dim).map(|_| rnd.random()).collect();
-            segment
-                .get()
-                .write()
-                .upsert_point(
-                    101,
-                    point_id,
-                    only_default_vector(&random_vector),
-                    &hw_counter,
-                )
-                .unwrap();
-        }
-    }
-
-    // On reoptimization we expect one more segment to be created, all are over capacity
-    UpdateWorkers::ensure_appendable_segment_with_capacity(
-        &segments,
-        dir.path(),
-        &segment_config,
-        &optimizer_thresholds,
-        payload_index_schema,
-    )
-    .unwrap();
-    assert_eq!(segments.read().len(), 7);
 }
 
 #[test]

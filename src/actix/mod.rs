@@ -1,41 +1,30 @@
+#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
 pub mod api;
 mod auth;
 mod certificate_helpers;
-mod forwarded;
+#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
-pub mod metrics_service;
-mod read_only;
-pub mod web_ui;
 
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
-use ::api::rest::models::{ApiResponse, ApiStatus, VersionInfo};
+use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
-use actix_multipart::form::MultipartFormConfig;
 use actix_multipart::form::tempfile::TempFileConfig;
-use actix_web::http::KeepAlive;
-use actix_web::middleware::{Compress, Condition, Logger, NormalizePath};
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, error, get, web};
+use actix_multipart::form::MultipartFormConfig;
+use actix_web::middleware::{Compress, Condition, Logger};
+use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_extras::middleware::Condition as ConditionEx;
-use api::facet_api::config_facet_api;
 use collection::operations::validation;
-use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, Auth};
+use storage::rbac::Access;
 
-use crate::actix::api::audit_api::config_audit_api;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
-use crate::actix::api::debug_api::config_debugger_api;
-use crate::actix::api::discover_api::config_discover_api;
-use crate::actix::api::issues_api::config_issues_api;
-use crate::actix::api::local_shard_api::config_local_shard_api;
-use crate::actix::api::profiler_api::config_profiler_api;
-use crate::actix::api::query_api::config_query_api;
+use crate::actix::api::discovery_api::config_discovery_api;
 use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
@@ -43,51 +32,71 @@ use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::actix::api::vector_name_api::config_vector_name_api;
-use crate::actix::auth::{AuthTransform, WhitelistItem};
-use crate::actix::read_only::ReadOnlyTransform;
-use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
+use crate::actix::auth::{Auth, WhitelistItem};
 use crate::common::auth::AuthKeys;
-use crate::common::debugger::DebuggerState;
 use crate::common::health;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
-use crate::settings::{Settings, max_web_workers};
-use crate::tracing::LoggerHandle;
+use crate::settings::{max_web_workers, Settings};
+
+const DEFAULT_STATIC_DIR: &str = "./static";
+const WEB_UI_PATH: &str = "/dashboard";
 
 #[get("/")]
 pub async fn index() -> impl Responder {
     HttpResponse::Ok().json(VersionInfo::default())
 }
 
+#[allow(dead_code)]
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     health_checker: Option<Arc<health::HealthChecker>>,
     settings: Settings,
-    logger_handle: LoggerHandle,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
-        // Nothing to verify here.
-        let pass = new_unchecked_verification_pass();
-        let auth = Auth::new_internal(Access::full("Service initialization"));
-        let auth_keys =
-            AuthKeys::try_create(&settings.service, dispatcher.toc(&auth, &pass).clone());
-        let upload_dir = dispatcher.toc(&auth, &pass).upload_dir().unwrap();
+        let auth_keys = AuthKeys::try_create(
+            &settings.service,
+            dispatcher.toc(&Access::full("For JWT validation")).clone(),
+        );
+        let upload_dir = dispatcher
+            .toc(&Access::full("For upload dir"))
+            .upload_dir()
+            .unwrap();
         let dispatcher_data = web::Data::from(dispatcher);
         let actix_telemetry_collector = telemetry_collector
             .lock()
             .await
             .actix_telemetry_collector
             .clone();
-        let debugger_state = web::Data::new(DebuggerState::from_settings(&settings));
         let telemetry_collector_data = web::Data::from(telemetry_collector);
-        let logger_handle_data = web::Data::new(logger_handle);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
-        let web_ui_available = web_ui_folder(&settings);
-        let service_config = web::Data::new(settings.service.clone());
-        let audit_config_data = web::Data::new(settings.audit.clone());
+        let static_folder = settings
+            .service
+            .static_content_dir
+            .clone()
+            .unwrap_or(DEFAULT_STATIC_DIR.to_string());
+
+        let web_ui_enabled = settings.service.enable_static_content.unwrap_or(true);
+        // validate that the static folder exists IF the web UI is enabled
+        let web_ui_available = if web_ui_enabled {
+            let static_folder = Path::new(&static_folder);
+            if !static_folder.exists() || !static_folder.is_dir() {
+                // enabled BUT folder does not exist
+                log::warn!(
+                    "Static content folder for Web UI '{}' does not exist",
+                    static_folder.display(),
+                );
+                false
+            } else {
+                // enabled AND folder exists
+                true
+            }
+        } else {
+            // not enabled
+            false
+        };
 
         let mut api_key_whitelist = vec![
             WhitelistItem::exact("/"),
@@ -95,7 +104,7 @@ pub fn init(
             WhitelistItem::prefix("/readyz"),
             WhitelistItem::prefix("/livez"),
         ];
-        if web_ui_available.is_some() {
+        if web_ui_available {
             api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
         }
 
@@ -114,21 +123,11 @@ pub fn init(
 
             let mut app = App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
-                // Read-only mode: block write operations with 403 Forbidden
-                // NOTE: In actix-web, the LAST .wrap() call is the outermost middleware (executes first).
-                // ReadOnlyTransform is placed here so it runs AFTER AuthTransform (below),
-                // ensuring authentication is checked before rejecting write requests.
-                .wrap(ReadOnlyTransform::new(
-                    settings.service.read_only.unwrap_or(false),
-                ))
                 // api_key middleware
-                // This is the outermost middleware — runs first on incoming requests.
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
-                    |auth_keys| AuthTransform::new(auth_keys.clone(), api_key_whitelist.clone()),
+                    |auth_keys| Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
                 )))
-                // Normalize path
-                .wrap(NormalizePath::trim())
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(
                     // Set up logger, but avoid logging hot status endpoints
@@ -145,35 +144,23 @@ pub fn init(
                 ))
                 .app_data(dispatcher_data.clone())
                 .app_data(telemetry_collector_data.clone())
-                .app_data(logger_handle_data.clone())
                 .app_data(http_client.clone())
-                .app_data(debugger_state.clone())
                 .app_data(health_checker.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)
                 .app_data(TempFileConfig::default().directory(&upload_dir))
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
-                .app_data(service_config.clone())
-                .app_data(audit_config_data.clone())
                 .service(index)
                 .configure(config_collections_api)
-                .configure(config_vector_name_api)
                 .configure(config_snapshots_api)
                 .configure(config_update_api)
                 .configure(config_cluster_api)
                 .configure(config_service_api)
                 .configure(config_search_api)
                 .configure(config_recommend_api)
-                .configure(config_discover_api)
-                .configure(config_query_api)
-                .configure(config_facet_api)
+                .configure(config_discovery_api)
                 .configure(config_shards_api)
-                .configure(config_issues_api)
-                .configure(config_debugger_api)
-                .configure(config_profiler_api)
-                .configure(config_local_shard_api)
-                .configure(config_audit_api)
                 // Ordering of services is important for correct path pattern matching
                 // See: <https://github.com/qdrant/qdrant/issues/3543>
                 .service(scroll_points)
@@ -181,29 +168,14 @@ pub fn init(
                 .service(get_point)
                 .service(get_points);
 
-            if let Some(static_folder) = web_ui_available.as_deref() {
-                app = app.service(web_ui_factory(static_folder));
+            if web_ui_available {
+                app = app.service(
+                    actix_files::Files::new(WEB_UI_PATH, &static_folder).index_file("index.html"),
+                )
             }
-
             app
         })
-        .keep_alive(KeepAlive::from(Duration::from_secs(
-            settings.service.http_keep_alive_timeout_sec,
-        )))
-        .client_request_timeout(Duration::from_secs(
-            settings.service.http_client_request_timeout_sec,
-        ))
-        .client_disconnect_timeout(Duration::from_secs(
-            settings.service.http_client_disconnect_timeout_sec,
-        ))
         .workers(max_web_workers(&settings));
-
-        log::info!(
-            "REST transport settings: keep_alive={}s, client_request_timeout={}s, client_disconnect_timeout={}s",
-            settings.service.http_keep_alive_timeout_sec,
-            settings.service.http_client_request_timeout_sec,
-            settings.service.http_client_disconnect_timeout_sec,
-        );
 
         let port = settings.service.http_port;
         let bind_addr = format!("{}:{}", settings.service.host, port);
@@ -221,15 +193,15 @@ pub fn init(
             );
 
             let config = certificate_helpers::actix_tls_server_config(&settings)
-                .map_err(io::Error::other)?;
-            server.bind_rustls_0_23(bind_addr, config)?
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+            server.bind_rustls_0_22(bind_addr, config)?
         } else {
             log::info!("TLS disabled for REST API");
 
             server.bind(bind_addr)?
         };
 
-        log::info!("Qdrant HTTP listening on {port}");
+        log::info!("Qdrant HTTP listening on {}", port);
         server.run().await
     })
 }
@@ -256,34 +228,23 @@ fn validation_error_handler(
                 }
             )
         }
-        actix_web_validator::Error::JsonPayloadError(err) =>
-        {
-            #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
-            match err {
-                actix_web::error::JsonPayloadError::Deserialize(err) => {
-                    format!("Format error in {name}: {err}")
-                }
-                _ => err.to_string(),
-            }
+        actix_web_validator::Error::JsonPayloadError(
+            actix_web::error::JsonPayloadError::Deserialize(err),
+        ) => {
+            format!("Format error in {name}: {}", err,)
         }
-        actix_web_validator::Error::UrlEncodedError(_) | actix_web_validator::Error::QsError(_) => {
-            err.to_string()
-        }
+        err => err.to_string(),
     };
 
     // Build fitting response
     let response = match &err {
         actix_web_validator::Error::Validate(_) => HttpResponse::UnprocessableEntity(),
-        actix_web_validator::Error::Deserialize(_)
-        | actix_web_validator::Error::JsonPayloadError(_)
-        | actix_web_validator::Error::UrlEncodedError(_)
-        | actix_web_validator::Error::QsError(_) => HttpResponse::BadRequest(),
+        _ => HttpResponse::BadRequest(),
     }
     .json(ApiResponse::<()> {
         result: None,
         status: ApiStatus::Error(msg),
         time: 0.0,
-        usage: None,
     });
     error::InternalError::from_response(err, response).into()
 }

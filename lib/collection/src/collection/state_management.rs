@@ -1,64 +1,28 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::StreamExt as _;
-use futures::stream::FuturesUnordered;
-
-use crate::collection::Collection;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::collection::Collection;
 use crate::collection_state::{ShardInfo, State};
-use crate::config::{CollectionConfigInternal, CollectionParams};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::config::CollectionConfig;
+use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::ShardTransferChange;
-use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_holder::ShardKeyMapping;
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
-    pub async fn check_config_compatible(
-        &self,
-        config: &CollectionConfigInternal,
-    ) -> CollectionResult<()> {
-        self.collection_config
-            .read()
-            .await
-            .params
-            .check_compatible(&config.params)
-    }
-
     pub async fn apply_state(
         &self,
         state: State,
         this_peer_id: PeerId,
         abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
-        let State {
-            config,
-            shards,
-            resharding,
-            transfers,
-            shards_key_mapping,
-            payload_index_schema,
-        } = state;
-
-        // Used to detect which named vectors have changed after applying new config
-        let old_collection_config = self.collection_config.read().await.params.clone();
-
-        // Apply config first — this updates the collection-level vector definitions
-        let new_config = config.clone();
-        self.apply_config(config).await?;
-        self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
+        self.apply_config(state.config).await?;
+        self.apply_shard_transfers(state.transfers, this_peer_id, abort_transfer)
             .await?;
-        self.apply_reshard_state(resharding).await?;
-        self.apply_shard_info(shards, shards_key_mapping).await?;
-        self.apply_payload_index_schema(payload_index_schema)
+        self.apply_shard_info(state.shards, state.shards_key_mapping)
             .await?;
-        // Reconcile named vectors at the segment level to match the new config.
-        // This ensures segments have the correct vector storages after a Raft snapshot.
-        self.apply_vector_name_schema(old_collection_config, &new_config)
+        self.apply_payload_index_schema(state.payload_index_schema)
             .await?;
         Ok(())
     }
@@ -76,25 +40,11 @@ impl Collection {
             .shard_transfers
             .read()
             .clone();
-        for transfer in shard_transfers.intersection(&old_transfers) {
-            log::debug!("Aborting shard transfer: {transfer:?}");
-        }
-        for transfer in old_transfers.difference(&shard_transfers) {
-            log::debug!("Aborting shard transfer: {transfer:?}");
-        }
         for transfer in shard_transfers.difference(&old_transfers) {
             if transfer.from == this_peer_id {
                 // Abort transfer as sender should not learn about the transfer from snapshot
                 // If this happens it mean the sender is probably outdated and it is safer to abort
-                abort_transfer(transfer.clone());
-                // Since we remove the transfer from our list below, we don't invoke regular abort logic on this node
-                // Do it here explicitly so we don't miss a silent abort change
-                let _ = self
-                    .shards_holder
-                    .read()
-                    .await
-                    .shard_transfer_changes
-                    .send(ShardTransferChange::Abort(transfer.key()));
+                abort_transfer(transfer.clone())
             }
         }
         self.shards_holder
@@ -105,110 +55,29 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_reshard_state(&self, resharding: Option<ReshardState>) -> CollectionResult<()> {
-        // We don't have to explicitly abort resharding or bump shard replica states, because:
-        // - peers are not driving resharding themselves
-        // - ongoing (resharding) shard transfers are explicitly updated
-        // - shard replica set states are explicitly updated
-        self.shards_holder
-            .write()
-            .await
-            .resharding_state
-            .write(|state| *state = resharding)?;
-        Ok(())
-    }
+    async fn apply_config(&self, new_config: CollectionConfig) -> CollectionResult<()> {
+        log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
+        self.update_optimizer_params(new_config.optimizer_config)
+            .await?;
 
-    async fn apply_config(&self, new_config: CollectionConfigInternal) -> CollectionResult<()> {
-        let recreate_optimizers;
-
+        // Update replication factor
         {
             let mut config = self.collection_config.write().await;
-
-            if config.uuid != new_config.uuid {
-                return Err(CollectionError::service_error(format!(
-                    "collection {} UUID mismatch: \
-                     UUID of existing collection is different from UUID of collection in Raft snapshot: \
-                     existing collection UUID: {:?}, Raft snapshot collection UUID: {:?}",
-                    self.id, config.uuid, new_config.uuid,
-                )));
-            }
-
-            if let Err(err) = config.params.check_compatible(&new_config.params) {
-                // Stop consensus with a service error, if new config is incompatible with current one.
-                //
-                // We expect that `apply_config` is only called when configs are compatible, otherwise
-                // collection have to be *recreated*.
-                return Err(CollectionError::service_error(err.to_string()));
-            }
-
-            // Destructure `new_config`, to ensure we compare all config fields. Compiler would
-            // complain, if new field is added to `CollectionConfig` struct, but not destructured
-            // explicitly. We have to explicitly compare config fields, because we want to compare
-            // `wal_config` and `strict_mode_config` independently of other fields.
-            let CollectionConfigInternal {
-                params,
-                hnsw_config,
-                optimizer_config,
-                wal_config,
-                quantization_config,
-                strict_mode_config,
-                uuid: _,
-                metadata,
-            } = &new_config;
-
-            let is_core_config_updated = params != &config.params
-                || hnsw_config != &config.hnsw_config
-                || optimizer_config != &config.optimizer_config
-                || quantization_config != &config.quantization_config;
-
-            let is_metadata_updated = metadata != &config.metadata;
-
-            let is_wal_config_updated = wal_config != &config.wal_config;
-            let is_strict_mode_config_updated = strict_mode_config != &config.strict_mode_config;
-
-            let is_config_updated = is_core_config_updated
-                || is_wal_config_updated
-                || is_strict_mode_config_updated
-                || is_metadata_updated;
-
-            if !is_config_updated {
-                return Ok(());
-            }
-
-            if is_wal_config_updated {
-                log::warn!(
-                    "WAL config of collection {} updated when applying Raft snapshot, \
-                     but updated WAL config will only be applied on Qdrant restart",
-                    self.id,
-                );
-            }
-
-            *config = new_config;
-
-            // We need to recreate optimizers, if "core" config was updated
-            recreate_optimizers = is_core_config_updated;
+            config.params.replication_factor = new_config.params.replication_factor;
+            config.params.write_consistency_factor = new_config.params.write_consistency_factor;
         }
 
-        self.collection_config.read().await.save(&self.path)?;
-
-        self.print_warnings().await;
-
-        // Recreate optimizers in the background: this path is reached from consensus (Raft snapshot
-        // application), and stopping the existing optimizers can take a long time, which would
-        // otherwise stall the consensus loop.
-        if recreate_optimizers {
-            self.recreate_optimizers_background();
-        }
+        self.recreate_optimizers_blocking().await?;
 
         Ok(())
     }
 
     async fn apply_shard_info(
         &self,
-        shards: AHashMap<ShardId, ShardInfo>,
+        shards: HashMap<ShardId, ShardInfo>,
         shards_key_mapping: ShardKeyMapping,
     ) -> CollectionResult<()> {
-        let mut extra_shards: AHashMap<ShardId, ShardReplicaSet> = AHashMap::new();
+        let mut extra_shards: HashMap<ShardId, ShardReplicaSet> = HashMap::new();
 
         let shard_ids = shards.keys().copied().collect::<HashSet<_>>();
 
@@ -218,32 +87,23 @@ impl Collection {
         // On the first state of the update, we update state of shards themselves
         // and create new shards if needed
 
-        let mut shards_holder = self.shards_holder.write().await;
-
         for (shard_id, shard_info) in shards {
-            let shard_key = shards_key_mapping.shard_key(shard_id);
-            match shards_holder.get_shard(shard_id) {
-                Some(replica_set) => {
-                    replica_set
-                        .apply_state(shard_info.replicas, shard_key)
-                        .await?;
-                }
+            match self.shards_holder.read().await.get_shard(&shard_id) {
+                Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
                 None => {
-                    let mut shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
-                    shard_replicas.sort_unstable();
-                    let replica_set = self
-                        .create_replica_set(shard_id, shard_key.clone(), &shard_replicas, None)
-                        .await?;
-                    replica_set
-                        .apply_state(shard_info.replicas, shard_key)
-                        .await?;
+                    let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
+                    let replica_set = self.create_replica_set(shard_id, &shard_replicas).await?;
+                    replica_set.apply_state(shard_info.replicas).await?;
                     extra_shards.insert(shard_id, replica_set);
                 }
             }
         }
 
         // On the second step, we register missing shards and remove extra shards
-        shards_holder
+
+        self.shards_holder
+            .write()
+            .await
             .apply_shards_state(shard_ids, shards_key_mapping, extra_shards)
             .await
     }
@@ -261,163 +121,8 @@ impl Collection {
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            // This function is only used in collection state recovery and thus an unmeasured internal operation.
-            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
-                .await?;
+            self.create_payload_index(field_name, field_schema).await?;
         }
         Ok(())
-    }
-
-    /// Reconcile named vectors at the segment level to match the given config.
-    ///
-    /// This is called during state application (Raft snapshot recovery) to ensure
-    /// that segments have the correct vector storages, even if the node missed the
-    /// original create/delete vector name operations.
-    async fn apply_vector_name_schema(
-        &self,
-        old_collection_params: CollectionParams,
-        target_config: &CollectionConfigInternal,
-    ) -> CollectionResult<()> {
-        use segment::data_types::vector_name_config::{
-            DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
-        };
-        use segment::types::VectorStorageDatatype;
-
-        let mut to_create: Vec<(segment::types::VectorNameBuf, VectorNameConfig)> = Vec::new();
-        let mut to_delete: Vec<segment::types::VectorNameBuf> = Vec::new();
-
-        // Dense vectors: compare target vs current
-        for (vector_name, target_params) in target_config.params.vectors.params_iter() {
-            let target_dense = DenseVectorConfig {
-                size: target_params.size.get() as usize,
-                distance: target_params.distance,
-                multivector_config: target_params.multivector_config,
-                datatype: target_params.datatype.map(VectorStorageDatatype::from),
-            };
-
-            match old_collection_params.vectors.get_params(vector_name) {
-                None => {
-                    // New vector — create it
-                    to_create.push((
-                        vector_name.to_owned(),
-                        VectorNameConfig::dense(target_dense),
-                    ));
-                }
-                Some(current_params) => {
-                    // Exists in both — check if parameters changed (delete+recreate)
-                    let current_dense = DenseVectorConfig {
-                        size: current_params.size.get() as usize,
-                        distance: current_params.distance,
-                        multivector_config: current_params.multivector_config,
-                        datatype: current_params.datatype.map(VectorStorageDatatype::from),
-                    };
-                    if current_dense != target_dense {
-                        to_delete.push(vector_name.to_owned());
-                        to_create.push((
-                            vector_name.to_owned(),
-                            VectorNameConfig::dense(target_dense),
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Dense vectors: delete those in current but not in target
-        for (vector_name, _) in old_collection_params.vectors.params_iter() {
-            if target_config
-                .params
-                .vectors
-                .get_params(vector_name)
-                .is_none()
-            {
-                to_delete.push(vector_name.to_owned());
-            }
-        }
-
-        // Sparse vectors: compare target vs current
-        if let Some(target_sparse) = &target_config.params.sparse_vectors {
-            let current_sparse = old_collection_params.sparse_vectors.as_ref();
-            for (vector_name, target_params) in target_sparse {
-                let target_sparse_cfg = SparseVectorConfig {
-                    modifier: target_params.modifier,
-                    datatype: target_params
-                        .index
-                        .as_ref()
-                        .and_then(|idx| idx.datatype)
-                        .map(VectorStorageDatatype::from),
-                };
-
-                let current_exists = current_sparse.and_then(|c| c.get(vector_name));
-                match current_exists {
-                    None => {
-                        to_create.push((
-                            vector_name.clone(),
-                            VectorNameConfig::sparse(target_sparse_cfg),
-                        ));
-                    }
-                    Some(current_params) => {
-                        let current_sparse_cfg = SparseVectorConfig {
-                            modifier: current_params.modifier,
-                            datatype: current_params
-                                .index
-                                .as_ref()
-                                .and_then(|idx| idx.datatype)
-                                .map(VectorStorageDatatype::from),
-                        };
-                        if current_sparse_cfg != target_sparse_cfg {
-                            to_delete.push(vector_name.clone());
-                            to_create.push((
-                                vector_name.clone(),
-                                VectorNameConfig::sparse(target_sparse_cfg),
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sparse vectors: delete those in current but not in target
-        if let Some(current_sparse) = &old_collection_params.sparse_vectors {
-            let target_sparse = target_config.params.sparse_vectors.as_ref();
-            for vector_name in current_sparse.keys() {
-                if !target_sparse.is_some_and(|t| t.contains_key(vector_name)) {
-                    to_delete.push(vector_name.clone());
-                }
-            }
-        }
-
-        // Delete first (includes changed vectors), then create
-        for vector_name in to_delete {
-            self.delete_named_vector(vector_name).await?;
-        }
-
-        for (vector_name, config) in to_create {
-            self.create_named_vector(vector_name, config, HwMeasurementAcc::disposable())
-                .await?;
-        }
-
-        Ok(())
-    }
-
-    /// Truncate unapplied WAL records for all local shards in the collection.
-    /// Returns amount of removed records.
-    pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
-        let shard_holder = self.shards_holder.clone().read_owned().await;
-
-        let results = self
-            .update_runtime
-            .spawn(async move {
-                let local_updates: FuturesUnordered<_> = shard_holder
-                    .all_shards()
-                    .map(|shard| shard.truncate_unapplied_wal())
-                    .collect();
-
-                let results: Vec<_> = local_updates.collect().await;
-
-                results
-            })
-            .await?;
-
-        results.into_iter().sum()
     }
 }

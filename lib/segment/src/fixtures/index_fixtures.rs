@@ -1,110 +1,145 @@
+use std::marker::PhantomData;
+use std::ops::Range;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
-use rand::{Rng, RngExt};
+use rand::Rng;
 
-use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorRef};
-use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::types::{Distance, ScalarQuantizationConfig};
-use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectors, QuantizedVectorsStorageType,
+use crate::common::operation_error::OperationResult;
+use crate::common::Flusher;
+use crate::data_types::named_vectors::CowVector;
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::payload_storage::FilterContext;
+use crate::spaces::metric::Metric;
+use crate::types::{Distance, VectorStorageDatatype};
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::{
+    raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
+    DEFAULT_STOPPED,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
-    (0..size).map(|_| rnd_gen.random_range(-1.0..1.0)).collect()
+    (0..size).map(|_| rnd_gen.gen_range(-1.0..1.0)).collect()
 }
 
-pub struct TestRawScorerProducer {
-    storage: VectorStorageEnum,
-    deleted_points: BitVec,
-    quantized_vectors: Option<QuantizedVectors>,
+pub struct FakeFilterContext {}
+
+impl FilterContext for FakeFilterContext {
+    fn check(&self, _point_id: PointOffsetType) -> bool {
+        true
+    }
 }
 
-impl TestRawScorerProducer {
-    pub fn new<R: Rng + ?Sized>(
-        dim: usize,
-        distance: Distance,
-        num_vectors: usize,
-        use_quantization: bool,
-        rng: &mut R,
-    ) -> Self {
-        let mut storage = new_volatile_dense_vector_storage(dim, distance);
-        let hw_counter = HardwareCounterCell::new();
-        for offset in 0..num_vectors as PointOffsetType {
+pub struct TestRawScorerProducer<TMetric: Metric<VectorElementType>> {
+    pub vectors: ChunkedVectors<VectorElementType>,
+    pub deleted_points: BitVec,
+    pub deleted_vectors: BitVec,
+    pub metric: PhantomData<TMetric>,
+}
+
+impl<TMetric: Metric<VectorElementType>> DenseVectorStorage<VectorElementType>
+    for TestRawScorerProducer<TMetric>
+{
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+        self.vectors.get(key)
+    }
+}
+
+impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer<TMetric> {
+    fn vector_dim(&self) -> usize {
+        self.vectors.get(0).len()
+    }
+
+    fn distance(&self) -> Distance {
+        TMetric::distance()
+    }
+
+    fn datatype(&self) -> VectorStorageDatatype {
+        VectorStorageDatatype::Float32
+    }
+
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
+    fn total_vector_count(&self) -> usize {
+        self.vectors.len()
+    }
+
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        self.get_dense(key).into()
+    }
+
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        self.vectors.insert(key, vector.try_into()?)?;
+        Ok(())
+    }
+
+    fn update_from(
+        &mut self,
+        _other: &VectorStorageEnum,
+        _other_ids: &mut impl Iterator<Item = PointOffsetType>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        todo!()
+    }
+
+    fn flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+        Ok(!self.deleted_vectors.replace(key as usize, true))
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted_vectors[key as usize]
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_vectors.count_ones()
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        &self.deleted_vectors
+    }
+}
+
+impl<TMetric> TestRawScorerProducer<TMetric>
+where
+    TMetric: Metric<VectorElementType>,
+{
+    pub fn new<R>(dim: usize, num_vectors: usize, rng: &mut R) -> Self
+    where
+        R: Rng + ?Sized,
+    {
+        let mut vectors = ChunkedVectors::new(dim);
+        for _ in 0..num_vectors {
             let rnd_vec = random_vector(rng, dim);
-            let rnd_vec = distance.preprocess_vector::<VectorElementType>(rnd_vec);
-            storage
-                .insert_vector(offset, VectorRef::from(&rnd_vec), &hw_counter)
-                .unwrap();
+            let rnd_vec = TMetric::preprocess(rnd_vec);
+            vectors.push(&rnd_vec).unwrap();
         }
-
-        let quantized_vectors = use_quantization.then(|| {
-            QuantizedVectors::create(
-                &storage,
-                &ScalarQuantizationConfig {
-                    r#type: Default::default(),
-                    quantile: None,
-                    always_ram: Some(true),
-                }
-                .into(),
-                QuantizedVectorsStorageType::Immutable,
-                // NOTE: In general case, we should keep the temporary directory
-                // as long as the QuantizedVectors instance is alive. But as for
-                // now, for this configuration, QuantizedVectors does not touch
-                // the file system (except during the creation), so we can drop
-                // the directory immediately.
-                tempfile::tempdir().unwrap().path(),
-                1,
-                &AtomicBool::new(false),
-            )
-            .unwrap()
-        });
-
-        TestRawScorerProducer {
-            storage,
+        TestRawScorerProducer::<TMetric> {
+            vectors,
             deleted_points: BitVec::repeat(false, num_vectors),
-            quantized_vectors,
+            deleted_vectors: BitVec::repeat(false, num_vectors),
+            metric: PhantomData,
         }
     }
 
-    pub fn storage(&self) -> &VectorStorageEnum {
-        &self.storage
-    }
-
-    pub fn quantized_vectors(&self) -> Option<&QuantizedVectors> {
-        self.quantized_vectors.as_ref()
-    }
-
-    pub fn graph_links_vectors(&self) -> Option<StorageGraphLinksVectors<'_>> {
-        StorageGraphLinksVectors::try_new(&self.storage, self.quantized_vectors.as_ref())
-    }
-
-    pub fn scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {
-        FilteredScorer::new(
-            query.into(),
-            &self.storage,
-            self.quantized_vectors.as_ref(),
-            None,
-            &self.deleted_points,
-            HardwareCounterCell::new(),
+    pub fn get_raw_scorer(&self, query: DenseVector) -> OperationResult<Box<dyn RawScorer + '_>> {
+        let query = TMetric::preprocess(query).into();
+        raw_scorer_impl(
+            query,
+            self,
+            self.deleted_vector_bitslice(),
+            &DEFAULT_STOPPED,
         )
-        .unwrap()
-    }
-
-    pub fn internal_scorer(&self, point_id: PointOffsetType) -> FilteredScorer<'_> {
-        FilteredScorer::new_internal(
-            point_id,
-            &self.storage,
-            self.quantized_vectors.as_ref(),
-            None,
-            &self.deleted_points,
-            HardwareCounterCell::new(),
-        )
-        .unwrap()
     }
 }

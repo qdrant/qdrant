@@ -1,15 +1,14 @@
-use api::rest::SearchRequestInternal;
-use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
-    WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use collection::operations::types::SearchRequestInternal;
+use collection::operations::CollectionUpdateOperations;
+use segment::data_types::vectors::VectorStruct;
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 
-use crate::common::{N_SHARDS, simple_collection_fixture};
+use crate::common::{simple_collection_fixture, N_SHARDS};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_paginated_search() {
@@ -28,24 +27,17 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     // Upload 1000 random vectors to the collection
     let mut points = Vec::new();
     for i in 0..1000 {
-        points.push(PointStructPersisted {
+        points.push(PointStruct {
             id: i.into(),
-            vector: VectorStructPersisted::Single(vec![i as f32, 0.0, 0.0, 0.0]),
+            vector: VectorStruct::from(vec![i as f32, 0.0, 0.0, 0.0]).into(),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -62,14 +54,12 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
     let reference_result = collection
         .search(
             full_search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
         .await
         .unwrap();
@@ -90,14 +80,12 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
     let page_1_result = collection
         .search(
             page_1_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
         .await
         .unwrap();
@@ -119,14 +107,12 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
     let page_9_result = collection
         .search(
             page_9_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
         .await
         .unwrap();

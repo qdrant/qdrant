@@ -4,7 +4,7 @@ paths:
   /collections/{collection_name}/points/{id}:
     get:
       tags:
-        - Points
+        - points
       summary: Get point
       description: Retrieve full information of single point by id
       operationId: get_point
@@ -32,7 +32,7 @@ paths:
   /collections/{collection_name}/points:
     post:
       tags:
-        - Points
+        - points
       summary: Get points
       description: Retrieve multiple points by specified IDs
       operationId: get_points
@@ -56,18 +56,11 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
-        - name: timeout
-          in: query
-          description: If set, overrides global timeout for this request. Unit is seconds.
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(array(reference("Record")))
 
     put:
       tags:
-        - Points
+        - points
       summary: Upsert points
       description: Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
       operationId: upsert_points
@@ -97,19 +90,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/delete:
     post:
       tags:
-        - Points
+        - points
       summary: Delete points
       description: Delete points
       operationId: delete_points
@@ -139,19 +125,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/vectors:
     put:
       tags:
-        - Points
+        - points
       summary: Update vectors
       description: Update specified named vectors on points, keep unspecified vectors intact.
       operationId: update_vectors
@@ -181,19 +160,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/vectors/delete:
     post:
       tags:
-        - Points
+        - points
       summary: Delete vectors
       description: Delete named vectors from the given points.
       operationId: delete_vectors
@@ -223,19 +195,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload:
     post:
       tags:
-        - Points
+        - points
       summary: Set payload
       description: Set payload values for points
       operationId: set_payload
@@ -265,17 +230,10 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
     put:
       tags:
-        - Points
+        - points
       summary: Overwrite payload
       description: Replace full payload of points with new one
       operationId: overwrite_payload
@@ -305,19 +263,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload/delete:
     post:
       tags:
-        - Points
+        - points
       summary: Delete payload
       description: Delete specified key payload for points
       operationId: delete_payload
@@ -347,19 +298,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload/clear:
     post:
       tags:
-        - Points
+        - points
       summary: Clear payload
       description: Remove all payload for specified points
       operationId: clear_payload
@@ -389,18 +333,11 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(reference("UpdateResult"))
   /collections/{collection_name}/points/batch:
     post:
       tags:
-        - Points
+        - points
       summary: Batch update points
       description: Apply a series of update operations for points, vectors and payloads
       operationId: batch_update
@@ -429,11 +366,4 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
-        - name: timeout
-          in: query
-          description: "Timeout for the operation"
-          required: false
-          schema:
-            type: integer
-            minimum: 1
       responses: #@ response(array(reference("UpdateResult")))

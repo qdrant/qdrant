@@ -1,33 +1,30 @@
 pub mod anonymize;
-pub mod buffered_update_bitslice;
 pub mod error_logging;
-pub mod flags;
 pub mod macros;
-pub mod memory_usage;
+pub mod mmap_type;
 pub mod operation_error;
 pub mod operation_time_statistics;
-pub mod reciprocal_rank_fusion;
-pub mod score_fusion;
+pub mod rocksdb_buffered_delete_wrapper;
+pub mod rocksdb_buffered_update_wrapper;
+pub mod rocksdb_wrapper;
 pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
+pub mod version;
 
 use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName};
+use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
 
 /// Check that the given vector name is part of the segment config.
 ///
 /// Returns an error if incompatible.
-pub fn check_vector_name(
-    vector_name: &VectorName,
-    segment_config: &SegmentConfig,
-) -> OperationResult<()> {
+pub fn check_vector_name(vector_name: &str, segment_config: &SegmentConfig) -> OperationResult<()> {
     // TODO(sparse) it's a wrong error check. We use the fact,
     // that get_vector_config_or_error can return only one type of error - VectorNameNotExists
     if get_vector_config_or_error(vector_name, segment_config).is_err() {
@@ -40,7 +37,7 @@ pub fn check_vector_name(
 ///
 /// Returns an error if incompatible.
 pub fn check_vector(
-    vector_name: &VectorName,
+    vector_name: &str,
     query_vector: &QueryVector,
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
@@ -61,24 +58,16 @@ fn check_query_vector(
         QueryVector::Nearest(vector) => {
             check_vector_against_config(VectorRef::from(vector), vector_config)?
         }
-        QueryVector::RecommendBestScore(reco_query)
-        | QueryVector::RecommendSumScores(reco_query) => {
-            reco_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Recommend(reco_query) => reco_query.flat_iter().try_for_each(|vector| {
+            check_vector_against_config(VectorRef::from(vector), vector_config)
+        })?,
+        QueryVector::Discovery(discovery_query) => {
+            discovery_query.flat_iter().try_for_each(|vector| {
                 check_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Discover(discover_query) => {
-            discover_query.flat_iter().try_for_each(|vector| {
-                check_vector_against_config(VectorRef::from(vector), vector_config)
-            })?
-        }
-        QueryVector::Context(context_query) => {
-            context_query.flat_iter().try_for_each(|vector| {
-                check_vector_against_config(VectorRef::from(vector), vector_config)
-            })?
-        }
-        QueryVector::FeedbackNaive(feedback_query) => {
-            feedback_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Context(discovery_context_query) => {
+            discovery_context_query.flat_iter().try_for_each(|vector| {
                 check_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
@@ -95,24 +84,16 @@ fn check_query_sparse_vector(
         QueryVector::Nearest(vector) => {
             check_sparse_vector_against_config(VectorRef::from(vector), vector_config)?
         }
-        QueryVector::RecommendBestScore(reco_query)
-        | QueryVector::RecommendSumScores(reco_query) => {
-            reco_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Recommend(reco_query) => reco_query.flat_iter().try_for_each(|vector| {
+            check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
+        })?,
+        QueryVector::Discovery(discovery_query) => {
+            discovery_query.flat_iter().try_for_each(|vector| {
                 check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Discover(discover_query) => {
-            discover_query.flat_iter().try_for_each(|vector| {
-                check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
-            })?
-        }
-        QueryVector::Context(context_query) => {
-            context_query.flat_iter().try_for_each(|vector| {
-                check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
-            })?
-        }
-        QueryVector::FeedbackNaive(feedback_query) => {
-            feedback_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Context(discovery_context_query) => {
+            discovery_context_query.flat_iter().try_for_each(|vector| {
                 check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
@@ -125,7 +106,7 @@ fn check_query_sparse_vector(
 ///
 /// Returns an error if incompatible.
 pub fn check_query_vectors(
-    vector_name: &VectorName,
+    vector_name: &str,
     query_vectors: &[&QueryVector],
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
@@ -160,26 +141,30 @@ pub fn check_named_vectors(
 ///
 /// Returns an error if incompatible.
 fn get_vector_config_or_error<'a>(
-    vector_name: &VectorName,
+    vector_name: &str,
     segment_config: &'a SegmentConfig,
 ) -> OperationResult<&'a VectorDataConfig> {
     segment_config
         .vector_data
         .get(vector_name)
-        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))
+        .ok_or_else(|| OperationError::VectorNameNotExists {
+            received_name: vector_name.into(),
+        })
 }
 
 /// Get the sparse vector config for the given name, or return a name error.
 ///
 /// Returns an error if incompatible.
 fn get_sparse_vector_config_or_error<'a>(
-    vector_name: &VectorName,
+    vector_name: &str,
     segment_config: &'a SegmentConfig,
 ) -> OperationResult<&'a SparseVectorDataConfig> {
     segment_config
         .sparse_vector_data
         .get(vector_name)
-        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))
+        .ok_or_else(|| OperationError::VectorNameNotExists {
+            received_name: vector_name.into(),
+        })
 }
 
 /// Check if the given dense vector data is compatible with the given configuration.
@@ -194,7 +179,7 @@ fn check_vector_against_config(
             // Check dimensionality
             let dim = vector_config.size;
             if vector.len() != dim {
-                return Err(OperationError::WrongVectorDimension {
+                return Err(OperationError::WrongVector {
                     expected_dim: dim,
                     received_dim: vector.len(),
                 });
@@ -207,7 +192,7 @@ fn check_vector_against_config(
             let dim = vector_config.size;
             for vector in multi_vector.multi_vectors() {
                 if vector.len() != dim {
-                    return Err(OperationError::WrongVectorDimension {
+                    return Err(OperationError::WrongVector {
                         expected_dim: dim,
                         received_dim: vector.len(),
                     });
@@ -231,10 +216,11 @@ fn check_sparse_vector_against_config(
 
 pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {
     if is_stopped.load(std::sync::atomic::Ordering::Relaxed) {
-        return Err(OperationError::cancelled("Operation is stopped externally"));
+        return Err(OperationError::Cancelled {
+            description: "Operation is stopped externally".to_string(),
+        });
     }
     Ok(())
 }
 
 pub const BYTES_IN_KB: usize = 1024;
-pub const BYTES_IN_MB: usize = 1_048_576;

@@ -9,7 +9,7 @@ pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
     log::warn!("{description} has validation errors:");
     describe_errors(errs)
         .into_iter()
-        .for_each(|(key, msg)| log::warn!("- {key}: {msg}"));
+        .for_each(|(key, msg)| log::warn!("- {key}: {}", msg));
 }
 
 /// Label the given validation errors in a single string.
@@ -47,7 +47,7 @@ fn describe_error(
     if let Some(message) = message {
         return message.to_string();
     } else if let Some(Value::String(message)) = params.get("message") {
-        return message.clone();
+        return message.to_string();
     }
 
     // Generate messages based on codes
@@ -113,9 +113,10 @@ fn describe_error(
                 .to_string()
         }
         "min_line_length" => match (params.get("min_length"), params.get("length")) {
-            (Some(min_length), Some(length)) => {
-                format!("value invalid, the size must be at least {min_length}, got {length}")
-            }
+            (Some(min_length), Some(length)) => format!(
+                "value invalid, the size must be at least {}, got {}",
+                min_length, length
+            ),
             _ => err.to_string(),
         },
         // Undescribed error codes
@@ -138,7 +139,7 @@ mod tests {
 
     #[derive(Validate, Debug)]
     struct OtherThing {
-        #[validate(nested)]
+        #[validate]
         pub things: Vec<SomeThing>,
     }
 
@@ -198,7 +199,7 @@ mod tests {
             describe_errors(&errors),
             vec![(
                 "things[0].idx".into(),
-                "value 0 invalid, must be 1 or larger".into()
+                "value 0 invalid, must be 1.0 or larger".into()
             )]
         );
     }

@@ -1,10 +1,16 @@
-mod collection_restore_test;
-mod collection_test;
-mod common;
-mod continuous_snapshot_test;
-mod distance_matrix_test;
-mod grouping_test;
-mod lookup_test;
-mod multi_vec_test;
-mod pagination_test;
-mod snapshot_recovery_test;
+#[cfg(test)]
+pub mod collection_restore_test;
+#[cfg(test)]
+pub mod collection_test;
+#[cfg(test)]
+pub mod common;
+#[cfg(test)]
+pub mod grouping_test;
+#[cfg(test)]
+pub mod lookup_test;
+#[cfg(test)]
+pub mod multi_vec_test;
+#[cfg(test)]
+pub mod pagination_test;
+#[cfg(test)]
+pub mod snapshot_recovery_test;

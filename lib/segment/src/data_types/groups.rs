@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, json};
+use serde_json::json;
 
 /// Value of the group_by key, shared across all the hits in the group
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Eq, PartialEq, Clone, Hash)]
@@ -35,34 +35,46 @@ impl From<&str> for GroupId {
     }
 }
 
-impl From<GroupId> for JsonValue {
+impl From<GroupId> for serde_json::Value {
     fn from(key: GroupId) -> Self {
         match key {
-            GroupId::String(s) => JsonValue::String(s),
+            GroupId::String(s) => serde_json::Value::String(s),
             GroupId::NumberU64(n) => json!(n),
             GroupId::NumberI64(n) => json!(n),
         }
     }
 }
 
-impl TryFrom<&JsonValue> for GroupId {
+impl TryFrom<&serde_json::Value> for GroupId {
     type Error = ();
 
     /// Only allows Strings and Numbers to be converted into GroupId
-    fn try_from(value: &JsonValue) -> Result<Self, Self::Error> {
+    fn try_from(value: &serde_json::Value) -> Result<Self, Self::Error> {
         match value {
-            JsonValue::String(s) => Ok(Self::String(s.clone())),
-            JsonValue::Number(n) if let Some(n_u64) = n.as_u64() => Ok(Self::NumberU64(n_u64)),
-            JsonValue::Number(n) if let Some(n_i64) = n.as_i64() => Ok(Self::NumberI64(n_i64)),
-            JsonValue::Number(_) => Err(()),
-            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-                Err(())
+            serde_json::Value::String(s) => Ok(Self::String(s.to_string())),
+            serde_json::Value::Number(n) => {
+                if let Some(n_u64) = n.as_u64() {
+                    Ok(Self::NumberU64(n_u64))
+                } else if let Some(n_i64) = n.as_i64() {
+                    Ok(Self::NumberI64(n_i64))
+                } else {
+                    Err(())
+                }
             }
+            _ => Err(()),
         }
     }
 }
 
 impl GroupId {
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            GroupId::NumberI64(id) => Some(*id),
+            GroupId::NumberU64(id) => i64::try_from(*id).ok(),
+            GroupId::String(_) => None,
+        }
+    }
+
     pub fn as_u64(&self) -> Option<u64> {
         match self {
             GroupId::NumberI64(id) => u64::try_from(*id).ok(),

@@ -1,24 +1,19 @@
-use std::sync::Arc;
-
 use collection::collection::Collection;
 use collection::lookup::types::PseudoId;
-use collection::lookup::{WithLookup, lookup_ids};
+use collection::lookup::{lookup_ids, WithLookup};
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::point_ops::{
-    BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
-    WriteOrdering,
-};
+use collection::operations::point_ops::{Batch, WriteOrdering};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
-use rand::{self, RngExt, SeedableRng};
+use rand::{self, Rng, SeedableRng};
 use rstest::*;
-use segment::data_types::vectors::VectorStructInternal;
-use segment::payload_json;
-use segment::types::PointIdType;
+use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
+use segment::types::{Payload, PointIdType};
+use serde_json::json;
 use tempfile::Builder;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::common::simple_collection_fixture;
@@ -27,7 +22,7 @@ const SEED: u64 = 42;
 
 struct Resources {
     request: WithLookup,
-    collection: Arc<Collection>,
+    collection: RwLock<Collection>,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 }
@@ -46,40 +41,31 @@ async fn setup() -> Resources {
     let int_ids = (0..1000).map(PointIdType::from);
 
     let mut rng = SmallRng::seed_from_u64(SEED);
-    let uuids = (0..1000).map(|_| PointIdType::Uuid(Uuid::from_u128(rng.random())));
+    let uuids = (0..1000).map(|_| PointIdType::Uuid(Uuid::from_u128(rng.gen())));
 
     let ids = int_ids.chain(uuids).collect_vec();
 
     let mut rng = SmallRng::seed_from_u64(SEED);
     let vectors = (0..2000)
-        .map(|_| rng.random::<[f32; 4]>().to_vec())
+        .map(|_| rng.gen::<[f32; 4]>().to_vec())
         .collect_vec();
 
     let payloads = ids
         .iter()
-        .map(|i| Some(payload_json! {"foo": format!("bar {}", i)}))
+        .map(|i| Some(Payload::from(json!({ "foo": format!("bar {}", i) }))))
         .collect_vec();
 
-    let batch = BatchPersisted {
-        ids,
-        vectors: BatchVectorStructPersisted::Single(vectors),
-        payloads: Some(payloads),
-    };
-
     let upsert_points = collection::operations::CollectionUpdateOperations::PointOperation(
-        PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
+        Batch {
+            ids,
+            vectors: BatchVectorStruct::from(vectors).into(),
+            payloads: Some(payloads),
+        }
+        .into(),
     );
 
-    let hw_counter = HwMeasurementAcc::new();
-
     collection
-        .update_from_client_simple(
-            upsert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(upsert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -89,7 +75,7 @@ async fn setup() -> Resources {
 
     Resources {
         request,
-        collection: Arc::new(collection),
+        collection: RwLock::new(collection),
         read_consistency,
         shard_selection,
     }
@@ -104,7 +90,7 @@ async fn happy_lookup_ids() {
         shard_selection,
     } = setup().await;
 
-    let collection = collection.clone();
+    let collection = collection.read().await;
 
     let collection_by_name = |_: String| async { Some(collection) };
 
@@ -113,7 +99,7 @@ async fn happy_lookup_ids() {
 
     let mut rng = SmallRng::seed_from_u64(SEED);
     let uuids = (0..n)
-        .map(|_| Uuid::from_u128(rng.random()).to_string())
+        .map(|_| Uuid::from_u128(rng.gen()).to_string())
         .map_into();
 
     let values = ints.chain(uuids).collect_vec();
@@ -131,8 +117,6 @@ async fn happy_lookup_ids() {
         collection_by_name,
         read_consistency,
         &shard_selection,
-        None,
-        HwMeasurementAcc::new(),
     )
     .await;
 
@@ -146,20 +130,20 @@ async fn happy_lookup_ids() {
 
     // use points 0..n and 1000..1000+n as expected vectors
     let expected_vectors = (0..1000 + n)
-        .map(|i| (i, rng.random::<[f32; 4]>().to_vec()))
+        .map(|i| (i, rng.gen::<[f32; 4]>().to_vec()))
         .filter(|(i, _)| !(&n..&1000).contains(&i))
         .map(|(_, v)| v)
-        .map(VectorStructInternal::from);
+        .map(VectorStruct::from);
 
     for (id_value, vector) in values.into_iter().zip(expected_vectors) {
         let record = result
             .get(&id_value)
-            .unwrap_or_else(|| panic!("Expected to find record for id {id_value}"));
+            .unwrap_or_else(|| panic!("Expected to find record for id {}", id_value));
 
         assert_eq!(record.id, PointIdType::try_from(id_value.clone()).unwrap());
         assert_eq!(
             record.payload,
-            Some(payload_json! { "foo": format!("bar {}", id_value) })
+            Some(Payload::from(json!({ "foo": format!("bar {}", id_value) })))
         );
         assert_eq!(record.vector, Some(vector));
     }
@@ -167,7 +151,7 @@ async fn happy_lookup_ids() {
 
 fn first_uuid() -> String {
     let mut rng = SmallRng::seed_from_u64(SEED);
-    Uuid::from_u128(rng.random()).to_string()
+    Uuid::from_u128(rng.gen()).to_string()
 }
 
 #[rstest]
@@ -207,7 +191,7 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         None => ShardSelectorInternal::All,
     };
 
-    let collection = collection.clone();
+    let collection = collection.read().await;
 
     let collection_by_name = |_: String| async { Some(collection) };
 
@@ -221,8 +205,6 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         collection_by_name,
         read_consistency,
         &shard_selection,
-        None,
-        HwMeasurementAcc::new(),
     )
     .await;
 
@@ -255,8 +237,6 @@ async fn err_when_collection_by_name_returns_none() {
         collection_by_name,
         read_consistency,
         &shard_selection,
-        None,
-        HwMeasurementAcc::new(),
     )
     .await;
 

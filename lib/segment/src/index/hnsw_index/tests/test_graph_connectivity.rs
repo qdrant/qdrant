@@ -1,22 +1,24 @@
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::FeatureFlags;
-use common::progress_tracker::ProgressTracker;
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
-use rand::rng;
+use rand::thread_rng;
 use tempfile::Builder;
 
-use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use crate::entry::entry_point::SegmentEntry;
 use crate::fixtures::index_fixtures::random_vector;
-use crate::index::hnsw_index::get_num_indexing_threads;
-use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use crate::segment_constructor::VectorIndexBuildArgs;
-use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-use crate::types::{Distance, HnswConfig, HnswGlobalConfig, SeqNumberType};
+use crate::index::hnsw_index::graph_links::{GraphLinks, GraphLinksRam};
+use crate::index::hnsw_index::hnsw::HNSWIndex;
+use crate::index::hnsw_index::num_rayon_threads;
+use crate::index::VectorIndex;
+use crate::segment_constructor::build_segment;
+use crate::types::{
+    Distance, HnswConfig, Indexes, SegmentConfig, SeqNumberType, VectorDataConfig,
+    VectorStorageType,
+};
 
 #[test]
 fn test_graph_connectivity() {
@@ -29,25 +31,35 @@ fn test_graph_connectivity() {
     let distance = Distance::Cosine;
     let full_scan_threshold = 10_000;
 
-    let mut rng = rng();
+    let mut rnd = thread_rng();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance,
+                storage_type: VectorStorageType::Memory,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multi_vec_config: None,
+                datatype: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+        sparse_vector_data: Default::default(),
+    };
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rng, dim);
+        let vector = random_vector(&mut rnd, dim);
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
     }
 
@@ -60,52 +72,41 @@ fn test_graph_connectivity() {
         max_indexing_threads: 4,
         on_disk: Some(false),
         payload_m: None,
-        inline_storage: None,
     };
 
-    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .clone(),
-            quantized_vectors: Default::default(),
-            payload_index: payload_index_ptr,
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
+    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .clone(),
+        Default::default(),
+        payload_index_ptr.clone(),
+        hnsw_config,
     )
     .unwrap();
+
+    hnsw_index.build_index(permit, &stopped).unwrap();
+
+    let graph = hnsw_index.graph().unwrap();
 
     let mut reverse_links = vec![vec![]; num_vectors as usize];
 
     for point_id in 0..num_vectors {
-        for link in hnsw_index
-            .graph()
-            .links
-            .links(point_id as PointOffsetType, 0)
-        {
-            reverse_links[link as usize].push(point_id);
+        let links = graph.links.links(point_id as PointOffsetType, 0);
+        for link in links {
+            reverse_links[*link as usize].push(point_id);
         }
     }
 
     for point_id in 0..num_vectors {
         assert!(
             !reverse_links[point_id as usize].is_empty(),
-            "Point {point_id} has no inbound links"
+            "Point {} has no inbound links",
+            point_id
         );
     }
 }

@@ -1,10 +1,10 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use super::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
+use super::{ShardTransfer, ShardTransferKey};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::replica_set::replica_set_state::ReplicaState;
-use crate::shards::shard::PeerId;
-use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::replica_set::ReplicaState;
+use crate::shards::shard::{PeerId, ShardId};
 
 pub fn validate_transfer_exists(
     transfer_key: &ShardTransferKey,
@@ -75,22 +75,17 @@ where
 /// 1. If `from` and `to` exists
 /// 2. If `from` have local shard and it is active
 /// 3. If there is no active transfers which involve `from` or `to`
-/// 4. If a target shard is only set for resharding transfers
-///
-/// For resharding transfers this also checks:
-/// 1. If the source and target shards are different
-/// 2. If the source and target shardsd share the same shard key
 ///
 /// If validation fails, return `BadRequest` error.
 pub fn validate_transfer(
     transfer: &ShardTransfer,
     all_peers: &HashSet<PeerId>,
-    source_replicas: Option<&HashMap<PeerId, ReplicaState>>,
-    destination_replicas: Option<&HashMap<PeerId, ReplicaState>>,
+    shard_state: Option<&HashMap<PeerId, ReplicaState>>,
     current_transfers: &HashSet<ShardTransfer>,
-    shards_key_mapping: &ShardKeyMapping,
 ) -> CollectionResult<()> {
-    let Some(source_replicas) = source_replicas else {
+    let shard_state = if let Some(shard_state) = shard_state {
+        shard_state
+    } else {
         return Err(CollectionError::service_error(format!(
             "Shard {} does not exist",
             transfer.shard_id,
@@ -111,14 +106,7 @@ pub fn validate_transfer(
         )));
     }
 
-    // We allow transfers *from* `ReshardingScaleDown` replicas, because they contain a *superset*
-    // of points in a regular replica
-    let is_active = matches!(
-        source_replicas.get(&transfer.from),
-        Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown),
-    );
-
-    if !is_active {
+    if shard_state.get(&transfer.from) != Some(&ReplicaState::Active) {
         return Err(CollectionError::bad_request(format!(
             "Shard {} is not active on peer {}",
             transfer.shard_id, transfer.from,
@@ -132,81 +120,122 @@ pub fn validate_transfer(
         )));
     }
 
-    if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
-        let Some(destination_replicas) = destination_replicas else {
-            return Err(CollectionError::service_error(format!(
-                "Destination shard {} does not exist",
-                transfer.shard_id,
-            )));
-        };
+    Ok(())
+}
 
-        let Some(to_shard_id) = transfer.to_shard_id else {
-            return Err(CollectionError::bad_request(
-                "Target shard is not set for resharding transfer",
-            ));
-        };
-
-        if transfer.shard_id == to_shard_id {
-            return Err(CollectionError::bad_request(format!(
-                "Source and target shard must be different for resharding transfer, both are {to_shard_id}",
-            )));
+/// Selects a best peer to transfer shard from.
+///
+/// Requirements:
+/// 1. Peer should have an active replica of the shard
+/// 2. There should be no active transfers from this peer with the same shard
+/// 3. Prefer peer with the lowest number of active transfers
+///
+/// If there are no peers that satisfy the requirements, returns `None`.
+pub fn suggest_transfer_source(
+    shard_id: ShardId,
+    target_peer: PeerId,
+    current_transfers: &[ShardTransfer],
+    shard_peers: &HashMap<PeerId, ReplicaState>,
+) -> Option<PeerId> {
+    let mut candidates = HashSet::new();
+    for (peer_id, state) in shard_peers {
+        if *state == ReplicaState::Active && *peer_id != target_peer {
+            candidates.insert(*peer_id);
         }
-
-        if let Some(ReplicaState::Dead) = destination_replicas.get(&transfer.to) {
-            return Err(CollectionError::bad_request(format!(
-                "Resharding shard transfer can't be started, \
-                 because destination shard {}/{to_shard_id} is dead",
-                transfer.to,
-            )));
-        }
-
-        // Both shard IDs must share the same shard key
-        let source_shard_key = shards_key_mapping
-            .iter()
-            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
-            .map(|(key, _)| key);
-        let target_shard_key = shards_key_mapping
-            .iter()
-            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
-            .map(|(key, _)| key);
-        if source_shard_key != target_shard_key {
-            return Err(CollectionError::bad_request(format!(
-                "Source and target shard must have the same shard key, but they have {source_shard_key:?} and {target_shard_key:?}",
-            )));
-        }
-    } else if transfer.filter.is_some() {
-        let Some(destination_replicas) = destination_replicas else {
-            return Err(CollectionError::service_error(format!(
-                "Destination shard {} does not exist",
-                transfer.shard_id,
-            )));
-        };
-
-        let Some(to_shard_id) = transfer.to_shard_id else {
-            return Err(CollectionError::bad_request(
-                "Target shard is not set for filtered points transfer",
-            ));
-        };
-
-        if transfer.shard_id == to_shard_id {
-            return Err(CollectionError::bad_request(format!(
-                "Source and target shard must be different for filtered points transfer, both are {to_shard_id}",
-            )));
-        }
-
-        if let Some(ReplicaState::Dead) = destination_replicas.get(&transfer.to) {
-            return Err(CollectionError::bad_request(format!(
-                "Filtered shard transfer can't be started, \
-                     because destination shard {}/{to_shard_id} is dead",
-                transfer.to,
-            )));
-        }
-    } else if let Some(to_shard_id) = transfer.to_shard_id {
-        return Err(CollectionError::bad_request(format!(
-            "Target shard {to_shard_id} can only be set for {:?} or filtered streaming records transfers",
-            ShardTransferMethod::ReshardingStreamRecords,
-        )));
     }
 
-    Ok(())
+    let currently_transferring = current_transfers
+        .iter()
+        .filter(|transfer| transfer.shard_id == shard_id)
+        .map(|transfer| transfer.from)
+        .collect::<HashSet<PeerId>>();
+
+    candidates = candidates
+        .difference(&currently_transferring)
+        .cloned()
+        .collect();
+
+    let transfer_counts = current_transfers
+        .iter()
+        .fold(HashMap::new(), |mut counts, transfer| {
+            *counts.entry(transfer.from).or_insert(0_usize) += 1;
+            counts
+        });
+
+    // Sort candidates by the number of active transfers
+    let mut candidates = candidates
+        .into_iter()
+        .map(|peer_id| (peer_id, transfer_counts.get(&peer_id).unwrap_or(&0)))
+        .collect::<Vec<(PeerId, &usize)>>();
+    candidates.sort_unstable_by_key(|(_, count)| **count);
+
+    candidates.first().map(|(peer_id, _)| *peer_id)
+}
+
+/// Selects the best peer to add a replica to.
+///
+/// Requirements:
+/// 1. Peer should not have an active replica of the shard
+/// 2. Peer should have minimal number of active transfers
+pub fn suggest_peer_to_add_replica(
+    shard_id: ShardId,
+    shard_distribution: HashMap<ShardId, HashSet<PeerId>>,
+) -> Option<PeerId> {
+    let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
+    for peers in shard_distribution.values() {
+        for peer_id in peers {
+            *peer_loads.entry(*peer_id).or_insert(0_usize) += 1;
+        }
+    }
+    let peers_with_shard = shard_distribution
+        .get(&shard_id)
+        .cloned()
+        .unwrap_or_default();
+    for peer_with_shard in peers_with_shard {
+        peer_loads.remove(&peer_with_shard);
+    }
+
+    let mut candidates = peer_loads.into_iter().collect::<Vec<(PeerId, usize)>>();
+    candidates.sort_unstable_by_key(|(_, count)| *count);
+    candidates.first().map(|(peer_id, _)| *peer_id)
+}
+
+/// Selects the best peer to remove a replica from.
+///
+/// Requirements:
+/// 1. Peer should have a replica of the shard
+/// 2. Peer should maximal number of active shards
+/// 3. Shard replica should preferably be non-active
+pub fn suggest_peer_to_remove_replica(
+    shard_distribution: HashMap<ShardId, HashSet<PeerId>>,
+    shard_peers: HashMap<PeerId, ReplicaState>,
+) -> Option<PeerId> {
+    let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
+    for (_, peers) in shard_distribution {
+        for peer_id in peers {
+            *peer_loads.entry(peer_id).or_insert(0_usize) += 1;
+        }
+    }
+
+    let mut candidates: Vec<_> = shard_peers
+        .into_iter()
+        .map(|(peer_id, status)| {
+            (
+                peer_id,
+                status,
+                peer_loads.get(&peer_id).copied().unwrap_or(0),
+            )
+        })
+        .collect();
+
+    candidates.sort_unstable_by(|(_, status1, count1), (_, status2, count2)| {
+        match (status1, status2) {
+            (ReplicaState::Active, ReplicaState::Active) => count2.cmp(count1),
+            (ReplicaState::Active, _) => Ordering::Less,
+            (_, ReplicaState::Active) => Ordering::Greater,
+            (_, _) => count2.cmp(count1),
+        }
+    });
+
+    candidates.first().map(|(peer_id, _, _)| *peer_id)
 }

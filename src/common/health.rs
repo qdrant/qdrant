@@ -1,19 +1,18 @@
 use std::collections::HashSet;
 use std::future::{self, Future};
-use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool};
+use std::sync::Arc;
 use std::time::Duration;
 use std::{panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
 use api::grpc::transport_channel_pool::{self, TransportChannelPool};
-use collection::shards::CollectionId;
 use collection::shards::shard::ShardId;
+use collection::shards::CollectionId;
 use common::defaults;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
-use itertools::Itertools;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -34,14 +33,14 @@ pub struct HealthChecker {
     // Signal to the health checker task, that the API was called.
     // Used to drive the health checker task and avoid constant polling.
     check_ready_signal: Arc<sync::Notify>,
-    _cancel: cancel::DropGuard,
+    cancel: cancel::DropGuard,
 }
 
 impl HealthChecker {
     pub fn spawn(
         toc: Arc<TableOfContent>,
         consensus_state: ConsensusStateRef,
-        runtime: &runtime::Handle,
+        runtime: runtime::Handle,
         wait_for_bootstrap: bool,
     ) -> Self {
         let task = Task {
@@ -58,7 +57,7 @@ impl HealthChecker {
             is_ready: task.is_ready.clone(),
             is_ready_signal: task.is_ready_signal.clone(),
             check_ready_signal: task.check_ready_signal.clone(),
-            _cancel: task.cancel.clone().drop_guard(),
+            cancel: task.cancel.clone().drop_guard(),
         };
 
         let task = runtime.spawn(task.exec());
@@ -72,7 +71,7 @@ impl HealthChecker {
             return true;
         }
 
-        self.notify_task();
+        self.notify_task().await;
         self.wait_ready().await
     }
 
@@ -80,7 +79,7 @@ impl HealthChecker {
         self.is_ready.load(atomic::Ordering::Relaxed)
     }
 
-    pub fn notify_task(&self) {
+    pub async fn notify_task(&self) {
         self.check_ready_signal.notify_one();
     }
 
@@ -114,7 +113,7 @@ pub struct Task {
 }
 
 impl Task {
-    pub async fn exec(self) {
+    pub async fn exec(mut self) {
         while let Err(err) = self.exec_catch_unwind().await {
             let message = common::panic::downcast_str(&err).unwrap_or("");
             let separator = if !message.is_empty() { ": " } else { "" };
@@ -123,17 +122,17 @@ impl Task {
         }
     }
 
-    async fn exec_catch_unwind(&self) -> thread::Result<()> {
+    async fn exec_catch_unwind(&mut self) -> thread::Result<()> {
         panic::AssertUnwindSafe(self.exec_cancel())
             .catch_unwind()
             .await
     }
 
-    async fn exec_cancel(&self) {
+    async fn exec_cancel(&mut self) {
         let _ = cancel::future::cancel_on_token(self.cancel.clone(), self.exec_impl()).await;
     }
 
-    async fn exec_impl(&self) {
+    async fn exec_impl(&mut self) {
         // Wait until node joins cluster for the first time
         //
         // If this is a new deployment and `--bootstrap` CLI parameter was specified...
@@ -153,33 +152,30 @@ impl Task {
         // This allows to check the happy path without waiting for the first call.
         self.check_ready_signal.notify_one();
 
-        // Get estimate of current cluster commit so we can wait for it
-        let Some(mut cluster_commit_index) = self.cluster_commit_index(true).await else {
+        // Get *cluster* commit index, or check if this is the only node in the cluster
+        let Some(cluster_commit_index) = self.cluster_commit_index().await else {
             self.set_ready();
             return;
         };
 
-        // Wait until local peer has reached cluster commit
-        loop {
-            while self.commit_index() < cluster_commit_index {
-                // Wait for `/readyz` signal
-                self.check_ready_signal.notified().await;
+        // Check if *local* commit index >= *cluster* commit index...
+        while self.commit_index() < cluster_commit_index {
+            // If not:
+            //
+            // - Check if this is the only node in the cluster
+            let Some(_) = self.cluster_commit_index().await else {
+                self.set_ready();
+                return;
+            };
 
-                // Ensure we're not the only peer left
-                if self.consensus_state.peer_count() <= 1 {
-                    self.set_ready();
-                    return;
-                }
-            }
-
-            match self.cluster_commit_index(false).await {
-                // If cluster commit is still the same, we caught up and we're done
-                Some(new_index) if cluster_commit_index == new_index => break,
-                // Cluster commit is newer, update it and wait again
-                Some(new_index) => cluster_commit_index = new_index,
-                // Failed to get cluster commit, assume we're done
-                None => break,
-            }
+            // TODO: Do we want to update `cluster_commit_index` here?
+            //
+            // I.e.:
+            // - If we *don't* update `cluster_commit_index`, then we will only wait till the node
+            //   catch up with the cluster commit index *at the moment the node has been started*
+            // - If we *do* update `cluster_commit_index`, then we will keep track of cluster
+            //   commit index updates and wait till the node *completely* catch up with the leader,
+            //   which might be hard (if not impossible) in some situations
         }
 
         // Collect "unhealthy" shards list
@@ -202,11 +198,7 @@ impl Task {
         self.set_ready();
     }
 
-    /// Get the highest consensus commit across cluster peers
-    ///
-    /// If `one_peer` is true the first fetched commit is returned. It may not necessarily be the
-    /// latest commit.
-    async fn cluster_commit_index(&self, one_peer: bool) -> Option<u64> {
+    async fn cluster_commit_index(&self) -> Option<u64> {
         // Wait for `/readyz` signal
         self.check_ready_signal.notified().await;
 
@@ -216,18 +208,20 @@ impl Task {
         }
 
         // Get *cluster* commit index
-        let peer_address_by_id = self.consensus_state.peer_address_by_id();
-        let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
         let this_peer_id = self.toc.this_peer_id;
-        let this_peer_uri = peer_address_by_id.get(&this_peer_id);
+        let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
+
+        let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
         let mut requests = peer_address_by_id
-            .values()
-            // Do not get the current commit from ourselves
-            .filter(|&uri| Some(uri) != this_peer_uri)
-            // Historic peers might use the same URLs as our current peers, request each URI once
-            .unique()
-            .map(|uri| get_consensus_commit(transport_channel_pool, uri))
+            .iter()
+            .filter_map(|(&peer_id, uri)| {
+                if peer_id != this_peer_id {
+                    Some(get_consensus_commit(transport_channel_pool, uri))
+                } else {
+                    None
+                }
+            })
             .collect::<FuturesUnordered<_>>()
             .inspect_err(|err| log::error!("GetConsensusCommit request failed: {err}"))
             .filter_map(|res| future::ready(res.ok()));
@@ -260,11 +254,7 @@ impl Task {
         //
         // Total nodes: 5
         // Required: 5 / 2 = 2
-        let sufficient_commit_indices_count = if !one_peer {
-            peer_address_by_id.len() / 2
-        } else {
-            1
-        };
+        let sufficient_commit_indices_count = peer_address_by_id.len() / 2;
 
         // *Wait* for `total nodex / 2` successful responses...
         let mut commit_indices: Vec<_> = (&mut requests)
@@ -297,14 +287,11 @@ impl Task {
         self.consensus_state
             .persistent
             .read()
-            .last_applied_entry()
-            .unwrap_or(0)
+            .state
+            .hard_state
+            .commit
     }
 
-    /// List shards that are unhealthy, which may undergo automatic recovery.
-    ///
-    /// Shards in resharding state are not considered unhealthy and are excluded here.
-    /// They require an external driver to make them active or to drop them.
     async fn unhealthy_shards(&self) -> HashSet<Shard> {
         let this_peer_id = self.toc.this_peer_id;
         let collections = self
@@ -325,7 +312,7 @@ impl Task {
                     continue;
                 };
 
-                if state.is_healthy() {
+                if state.is_active_or_listener() {
                     continue;
                 }
 

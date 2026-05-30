@@ -1,13 +1,12 @@
+use std::fs::File;
 use std::io::Write;
 use std::os::raw::c_int;
 use std::path::Path;
 
 use criterion::profiler::Profiler;
-use fs_err as fs;
-use fs_err::File;
-use pprof::ProfilerGuard;
 use pprof::flamegraph::TextTruncateDirection;
 use pprof::protos::Message;
+use pprof::ProfilerGuard;
 
 /// Small custom profiler that can be used with Criterion to create a flamegraph for benchmarks.
 /// Also see [the Criterion documentation on this][custom-profiler].
@@ -46,7 +45,7 @@ pub struct FlamegraphProfiler<'a> {
     active_profiler: Option<ProfilerGuard<'a>>,
 }
 
-impl FlamegraphProfiler<'_> {
+impl<'a> FlamegraphProfiler<'a> {
     #[allow(dead_code)]
     pub fn new(frequency: c_int) -> Self {
         FlamegraphProfiler {
@@ -56,13 +55,13 @@ impl FlamegraphProfiler<'_> {
     }
 }
 
-impl Profiler for FlamegraphProfiler<'_> {
+impl<'a> Profiler for FlamegraphProfiler<'a> {
     fn start_profiling(&mut self, _benchmark_id: &str, _benchmark_dir: &Path) {
         self.active_profiler = Some(ProfilerGuard::new(self.frequency).unwrap());
     }
 
     fn stop_profiling(&mut self, _benchmark_id: &str, benchmark_dir: &Path) {
-        fs::create_dir_all(benchmark_dir).unwrap();
+        std::fs::create_dir_all(benchmark_dir).unwrap();
         let pprof_path = benchmark_dir.join("profile.pb");
         let flamegraph_path = benchmark_dir.join("flamegraph.svg");
         eprintln!("\nflamegraph_path = {flamegraph_path:#?}");

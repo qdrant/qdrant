@@ -3,59 +3,31 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
-import "telemetry_internal.proto";
-
 service QdrantInternal {
-  // Get current commit and term on the target peer.
-  rpc GetConsensusCommit(GetConsensusCommitRequest)
-      returns (GetConsensusCommitResponse) {}
+  /*
+  Get current commit and term on the target node.
+   */
+  rpc GetConsensusCommit (GetConsensusCommitRequest) returns (GetConsensusCommitResponse) {}
 
-  // Wait until the target peer reached the given commit ID.
-  rpc WaitOnConsensusCommit(WaitOnConsensusCommitRequest)
-      returns (WaitOnConsensusCommitResponse) {}
-
-  // Get telemetry
-  rpc GetTelemetry(GetTelemetryRequest) returns (GetTelemetryResponse) {}
-
-  // Get audit log entries from this peer
-  rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse) {}
+  /*
+  Wait until the target node reached the given commit ID.
+  */
+  rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
 }
 
 message GetConsensusCommitRequest {}
 
 message GetConsensusCommitResponse {
-  // Raft commit as u64
-  int64 commit = 1;
-  // Raft term as u64
-  int64 term = 2;
+  int64 commit = 1; // Raft commit as u64
+  int64 term = 2; // Raft term as u64
 }
 
 message WaitOnConsensusCommitRequest {
-  // Raft commit as u64
-  int64 commit = 1;
-  // Raft term as u64
-  int64 term = 2;
-  // Timeout in seconds
-  int64 timeout = 3;
+  int64 commit = 1; // Raft commit as u64
+  int64 term = 2; // Raft term as u64
+  int64 timeout = 3; // Timeout in seconds
 }
 
 message WaitOnConsensusCommitResponse {
-  // False if commit/term is diverged and never reached or if timed out.
-  bool ok = 1;
-}
-
-message GetAuditLogRequest {
-  // ISO-8601 start time (inclusive), omit for no lower bound
-  optional string time_from = 1;
-  // ISO-8601 end time (exclusive), omit for no upper bound
-  optional string time_to = 2;
-  // Key=value filters applied to every JSON field
-  map<string, string> filters = 3;
-  // Maximum number of entries to return
-  uint64 limit = 4;
-}
-
-message GetAuditLogResponse {
-  // Audit log entries as raw JSON strings (one per entry)
-  repeated string entries = 1;
+  bool ok = 1; // False if commit/term is diverged and never reached or if timed out.
 }

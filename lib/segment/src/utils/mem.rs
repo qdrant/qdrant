@@ -15,6 +15,7 @@ impl Mem {
         }
     }
 
+    #[allow(dead_code)]
     pub fn refresh(&mut self) {
         #[cfg(target_os = "linux")]
         if let Some(cgroups) = &mut self.cgroups {
@@ -26,10 +27,10 @@ impl Mem {
 
     pub fn total_memory_bytes(&self) -> u64 {
         #[cfg(target_os = "linux")]
-        if let Some(cgroups) = &self.cgroups
-            && let Some(memory_limit_bytes) = cgroups.memory_limit_bytes()
-        {
-            return memory_limit_bytes;
+        if let Some(cgroups) = &self.cgroups {
+            if let Some(memory_limit_bytes) = cgroups.memory_limit_bytes() {
+                return memory_limit_bytes;
+            }
         }
 
         self.sysinfo.total_memory_bytes()
@@ -37,10 +38,10 @@ impl Mem {
 
     pub fn available_memory_bytes(&self) -> u64 {
         #[cfg(target_os = "linux")]
-        if let Some(cgroups) = &self.cgroups
-            && let Some(memory_limit_bytes) = cgroups.memory_limit_bytes()
-        {
-            return memory_limit_bytes.saturating_sub(cgroups.used_memory_bytes());
+        if let Some(cgroups) = &self.cgroups {
+            if let Some(memory_limit_bytes) = cgroups.memory_limit_bytes() {
+                return memory_limit_bytes.saturating_sub(cgroups.used_memory_bytes());
+            }
         }
 
         self.sysinfo.available_memory_bytes()
@@ -49,7 +50,7 @@ impl Mem {
 
 #[cfg(target_os = "linux")]
 mod cgroups_mem {
-    use cgroups_rs::fs::{Cgroup, hierarchies, memory};
+    use cgroups_rs::{hierarchies, memory, Cgroup};
     use procfs::process::Process;
 
     #[derive(Clone, Debug)]
@@ -142,7 +143,7 @@ mod sysinfo_mem {
     impl SysinfoMem {
         pub fn new() -> Self {
             let system = System::new_with_specifics(
-                RefreshKind::nothing().with_memory(MemoryRefreshKind::everything()),
+                RefreshKind::new().with_memory(MemoryRefreshKind::everything()),
             );
             Self { system }
         }

@@ -1,29 +1,14 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+use segment::json_path::JsonPath;
+use segment::types::ValueVariants;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use validator::{Validate, ValidateArgs, ValidationError, ValidationErrors};
 
 use crate::content_manager::errors::StorageError;
 
-pub mod auditable_operation;
-pub mod auth;
 mod ops_checks;
-
-pub use auth::Auth;
-
-/// How the request was authenticated.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum AuthType {
-    Jwt,
-    ApiKey,
-    /// No authentication was configured or required.
-    None,
-    /// Request originated from the cluster itself (internal P2P communication).
-    /// These requests are not audit-logged.
-    Internal,
-}
 
 /// A structure that defines access rights.
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -38,46 +23,21 @@ pub enum Access {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CollectionAccessList(pub Vec<CollectionAccess>);
 
-pub struct ExistingCollections {
-    inner: HashSet<String>,
-}
-
 #[derive(Serialize, Deserialize, Validate, PartialEq, Clone, Debug)]
-#[validate(context = ExistingCollections, mutable)]
 pub struct CollectionAccess {
     /// Collection names that are allowed to be accessed
-    #[validate(custom(function = "validate_unique_collections", use_context))]
+    #[validate(custom(
+        function = "validate_unique_collections",
+        arg = "&'v_a mut HashSet<String>"
+    ))]
     pub collection: String,
 
     pub access: CollectionAccessMode,
 
     /// Payload constraints.
     /// An object where each key is a JSON path, and each value is JSON value.
-    ///
-    /// Deprecation: this parameter is kept for preventing old keys to become valid after parameter removal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[deprecated(since = "1.15.0")]
-    #[validate(custom(function = "validate_payload_empty"))]
-    pub payload: Option<Value>, // Value is a placeholder for a now removed type
-}
-
-fn validate_payload_empty(_payload: &Value) -> Result<(), ValidationError> {
-    Err(ValidationError {
-        code: Cow::from("deprecated"),
-        message: Some(Cow::from(
-            "The 'payload' constraint is deprecated and should not be used",
-        )),
-        params: HashMap::new(),
-    })
-}
-
-impl CollectionAccess {
-    fn view(&self) -> CollectionAccessView<'_> {
-        CollectionAccessView {
-            collection: &self.collection,
-            access: self.access,
-        }
-    }
+    pub payload: Option<PayloadConstraint>,
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
@@ -100,12 +60,10 @@ pub enum CollectionAccessMode {
     /// Read and write access to a collection, with some restrictions.
     #[serde(rename = "rw")]
     ReadWrite,
-
-    /// Points read and write - access to update and modify points in the collection,
-    /// but not snapshots or payload indexes.
-    #[serde(rename = "prw")]
-    PointsReadWrite,
 }
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct PayloadConstraint(pub HashMap<JsonPath, ValueVariants>);
 
 impl Access {
     /// Create an `Access` object with full access.
@@ -127,9 +85,7 @@ impl Access {
     ) -> Result<CollectionMultipass, StorageError> {
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
-            Access::Collection(_) => {
-                return Err(StorageError::forbidden("Global access is required"));
-            }
+            _ => return Err(StorageError::forbidden("Global access is required")),
         }
         Ok(CollectionMultipass)
     }
@@ -164,16 +120,11 @@ impl CollectionAccessList {
                     "Access to collection {collection_name} is required"
                 ))
             })?;
-        Ok(access.view())
-    }
-
-    /// Lists the collections which fulfill the requirements.
-    pub fn meeting_requirements(&self, requirements: AccessRequirements) -> Vec<&String> {
-        self.0
-            .iter()
-            .filter(|access| access.view().meets_requirements(requirements).is_ok())
-            .map(|access| &access.collection)
-            .collect()
+        Ok(CollectionAccessView {
+            collection: collection_name,
+            access: access.access,
+            payload: &access.payload,
+        })
     }
 }
 
@@ -181,41 +132,32 @@ impl CollectionAccessList {
 struct CollectionAccessView<'a> {
     pub collection: &'a str,
     pub access: CollectionAccessMode,
+    pub payload: &'a Option<PayloadConstraint>,
 }
 
-impl CollectionAccessView<'_> {
+impl<'a> CollectionAccessView<'a> {
+    pub(self) fn check_whole_access(&self) -> Result<(), StorageError> {
+        if self.payload.is_some() {
+            return incompatible_with_payload_constraint(self.collection);
+        }
+        Ok(())
+    }
+
     fn meets_requirements(&self, requirements: AccessRequirements) -> Result<(), StorageError> {
         let AccessRequirements {
             write,
             manage,
-            extras,
+            whole,
         } = requirements;
-
-        if extras {
-            match self.access {
-                CollectionAccessMode::Read => {}      // Ok
-                CollectionAccessMode::ReadWrite => {} // Ok
-                CollectionAccessMode::PointsReadWrite => {
-                    return Err(StorageError::forbidden(format!(
-                        "Only points access is allowed for collection {}",
-                        self.collection,
-                    )));
-                }
-            }
-        }
-
         if write {
             match self.access {
                 CollectionAccessMode::Read => {
                     return Err(StorageError::forbidden(format!(
                         "Write access to collection {} is required",
                         self.collection,
-                    )));
+                    )))
                 }
                 CollectionAccessMode::ReadWrite => (),
-                CollectionAccessMode::PointsReadWrite => {
-                    // Extras are checked above.
-                }
             }
         }
         if manage {
@@ -224,6 +166,9 @@ impl CollectionAccessView<'_> {
             return Err(StorageError::forbidden(
                 "Manage access for this operation is required",
             ));
+        }
+        if whole && self.payload.is_some() {
+            return incompatible_with_payload_constraint(self.collection);
         }
         Ok(())
     }
@@ -264,8 +209,8 @@ pub struct AccessRequirements {
     pub write: bool,
     /// Manage access is required, implies write access.
     pub manage: bool,
-    /// Require access to collection extras, like snapshots, payload indexes, cluster info.
-    pub extras: bool,
+    /// If true, the access should be not limited by a payload restrictions.
+    pub whole: bool,
 }
 
 impl AccessRequirements {
@@ -287,9 +232,9 @@ impl AccessRequirements {
         }
     }
 
-    pub fn extras(&self) -> Self {
+    pub fn whole(&self) -> Self {
         Self {
-            extras: true,
+            whole: true,
             ..*self
         }
     }
@@ -300,12 +245,12 @@ impl GlobalAccessMode {
         let AccessRequirements {
             write,
             manage,
-            extras: _,
+            whole: _,
         } = requirements;
         if write || manage {
             match self {
                 GlobalAccessMode::Read => {
-                    return Err(StorageError::forbidden("Global manage access is required"));
+                    return Err(StorageError::forbidden("Global manage access is required"))
                 }
                 GlobalAccessMode::Manage => (),
             }
@@ -314,22 +259,29 @@ impl GlobalAccessMode {
     }
 }
 
+/// Helper function to indicate that the operation is not allowed when `payload` constraint is
+/// present.
+fn incompatible_with_payload_constraint<T>(collection_name: &str) -> Result<T, StorageError> {
+    Err(StorageError::forbidden(format!(
+        "This operation is not allowed when \"payload\" restriction is present for collection \
+         {collection_name}"
+    )))
+}
+
 impl Access {
     /// Return a list of validation errors in a format suitable for [ValidationErrors::merge_all].
     pub fn validate(&self) -> Vec<Result<(), ValidationErrors>> {
         match self {
             Access::Global(_) => Vec::new(),
             Access::Collection(list) => {
-                let mut used_collections = ExistingCollections {
-                    inner: HashSet::new(),
-                };
+                let mut used_collections = HashSet::new();
                 list.0
                     .iter()
                     .map(|x| {
                         ValidationErrors::merge(
                             Ok(()),
                             "access",
-                            x.validate_with_args(&mut used_collections),
+                            x.validate_args(&mut used_collections),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -340,9 +292,9 @@ impl Access {
 
 fn validate_unique_collections(
     collection: &str,
-    used_collections: &mut ExistingCollections,
+    used_collections: &mut HashSet<String>,
 ) -> Result<(), ValidationError> {
-    let unique = used_collections.inner.insert(collection.to_owned());
+    let unique = used_collections.insert(collection.to_owned());
     if unique {
         Ok(())
     } else {
@@ -363,7 +315,7 @@ impl AccessCollectionBuilder {
         Self(Vec::new())
     }
 
-    pub(self) fn add(mut self, name: &str, write: bool) -> Self {
+    pub(self) fn add(mut self, name: &str, write: bool, whole: bool) -> Self {
         self.0.push(CollectionAccess {
             collection: name.to_string(),
             access: if write {
@@ -371,8 +323,7 @@ impl AccessCollectionBuilder {
             } else {
                 CollectionAccessMode::Read
             },
-            #[expect(deprecated)]
-            payload: None,
+            payload: (!whole).then(|| PayloadConstraint::new_test(name)),
         });
         self
     }
@@ -382,5 +333,26 @@ impl AccessCollectionBuilder {
 impl From<AccessCollectionBuilder> for Access {
     fn from(builder: AccessCollectionBuilder) -> Self {
         Access::Collection(CollectionAccessList(builder.0))
+    }
+}
+
+#[cfg(test)]
+impl PayloadConstraint {
+    /// Create a dummy value for testing.
+    pub fn new_test(name: &str) -> Self {
+        PayloadConstraint(HashMap::from([(
+            format!("f_{name}").parse().unwrap(),
+            ValueVariants::Keyword(format!("v_{name}")),
+        )]))
+    }
+
+    /// Create a dummy payload that matches this constraint.
+    pub fn to_test_payload(&self) -> segment::types::Payload {
+        segment::types::Payload(
+            self.0
+                .iter()
+                .map(|(path, value)| (path.to_string(), value.to_value()))
+                .collect(),
+        )
     }
 }

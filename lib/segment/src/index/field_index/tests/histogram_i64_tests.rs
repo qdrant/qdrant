@@ -1,11 +1,9 @@
 use std::collections::BTreeSet;
 use std::collections::Bound::Included;
 
-use common::types::PointOffsetType;
 use rand::prelude::SliceRandom;
 
-use crate::index::field_index::histogram::Histogram;
-use crate::index::field_index::numeric_point::Point;
+use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::tests::histogram_test_utils::print_results;
 use crate::index::field_index::tests::histogram_tests::{build_histogram, count_range};
 
@@ -127,13 +125,13 @@ fn test_histogram() {
     let max_bucket_size = 1000;
     let precision = 0.01;
 
-    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
     let mut points: Vec<_> = histogram_fixture_values();
-    points.shuffle(&mut rand::rng());
+    points.shuffle(&mut rand::thread_rng());
     let points: Vec<_> = points
         .into_iter()
         .enumerate()
-        .map(|(idx, val)| Point::new(val, idx as PointOffsetType))
+        .map(|(idx, val)| Point { val, idx })
         .collect();
 
     let (histogram, points_index) = build_histogram(max_bucket_size, precision, points);
@@ -190,9 +188,12 @@ fn test_build_i64_histogram() {
     let precision = 0.01;
     let num_samples = 100_000;
 
-    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
     let points: Vec<_> = (0..num_samples)
-        .map(|i| Point::new(rand::random::<i64>(), i))
+        .map(|i| Point {
+            val: rand::random::<i64>(),
+            idx: i,
+        })
         .collect();
 
     let (histogram, points_index) = build_histogram(max_bucket_size, precision, points);

@@ -1,126 +1,111 @@
-use std::array;
-use std::sync::Arc;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use rand::RngExt;
-use rand::distr::StandardUniform;
-use segment::data_types::named_vectors::CowVector;
-use segment::data_types::vectors::{DenseVector, QueryVector};
-use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use segment::id_tracker::IdTrackerRead;
-use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
+use common::types::PointOffsetType;
+use criterion::{criterion_group, criterion_main, Criterion};
+use rand::distributions::Standard;
+use rand::Rng;
+use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use segment::data_types::vectors::{DenseVector, Vector, VectorRef};
+use segment::fixtures::payload_context_fixture::FixtureIdTracker;
+use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
-use segment::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
-use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage};
+use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
-const DIM: usize = 1024;
+const NUM_VECTORS: usize = 100000;
+const DIM: usize = 1024; // Larger dimensionality - greater the SIMD advantage
 
 fn random_vector(size: usize) -> DenseVector {
-    rand::rng()
-        .sample_iter(StandardUniform)
-        .take(size)
-        .collect()
+    let rng = rand::thread_rng();
+
+    rng.sample_iter(Standard).take(size).collect()
 }
 
-fn random_query_batch<const SIZE: usize>() -> [QueryVector; SIZE] {
-    array::from_fn(|_| QueryVector::from(random_vector(DIM)))
+fn init_vector_storage(
+    path: &Path,
+    dim: usize,
+    num: usize,
+    dist: Distance,
+) -> (
+    Arc<AtomicRefCell<VectorStorageEnum>>,
+    Arc<AtomicRefCell<IdTrackerSS>>,
+) {
+    let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
+    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
+    let storage =
+        open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, dist, &AtomicBool::new(false))
+            .unwrap();
+    {
+        let mut borrowed_storage = storage.borrow_mut();
+        for i in 0..num {
+            let vector: Vector = random_vector(dim).into();
+            borrowed_storage
+                .insert_vector(i as PointOffsetType, VectorRef::from(&vector))
+                .unwrap();
+        }
+    }
+
+    (storage, id_tracker)
 }
 
-fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: &mut Criterion) {
-    let tmp = Builder::new()
-        .prefix("vector-search-bench")
-        .tempdir()
-        .expect("tempdir created");
+fn benchmark_naive(c: &mut Criterion) {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-    #[cfg(target_os = "linux")]
-    segment::vector_storage::common::set_async_scorer(IO_URING);
+    let dist = Distance::Dot;
+    let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let borrowed_storage = storage.borrow();
+    let borrowed_id_tracker = id_tracker.borrow();
 
-    #[cfg(not(target_os = "linux"))]
-    assert!(!IO_URING, "async scorer is only supported on Linux");
+    let mut group = c.benchmark_group("storage-score-all");
 
-    let mut storage = open_dense_vector_storage(tmp.path(), DIM, Distance::Dot, false)
-        .expect("vector storage created");
-
-    let mut vectors = (0..VECTORS).map(|_| {
-        let vector = random_vector(DIM);
-        (CowVector::from(vector), false)
-    });
-
-    storage
-        .update_from(&mut vectors, &AtomicBool::from(false))
-        .expect("vector storage populated");
-
-    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(VECTORS)));
-    let id_tracker = id_tracker.borrow();
-
-    let mut group = c.benchmark_group("vector search");
-
-    let benchmark_id = format!(
-        "{} storage/{}k vectors/batch of {BATCH}",
-        if IO_URING { "io_uring" } else { "mmap" },
-        VECTORS / 1000,
-    );
-
-    group.bench_function(benchmark_id, |b| {
-        b.iter_batched(
-            random_query_batch::<BATCH>,
-            |vectors| {
-                BatchFilteredSearcher::new_for_test(
-                    &vectors,
-                    &storage,
-                    id_tracker.deleted_point_bitslice(),
-                    10,
-                )
-                .peek_top_all(&DEFAULT_STOPPED)
-                .expect("points scored")
-            },
-            BatchSize::SmallInput,
-        )
+    group.bench_function("storage vector search", |b| {
+        b.iter(|| {
+            let vector = random_vector(DIM);
+            let vector = vector.as_slice().into();
+            new_raw_scorer(
+                vector,
+                &borrowed_storage,
+                borrowed_id_tracker.deleted_point_bitslice(),
+            )
+            .unwrap()
+            .peek_top_all(10)
+        })
     });
 }
 
-#[cfg(target_os = "linux")]
-criterion_group! {
-    name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(1000));
-    targets =
-        benchmark::<false, 10_000, 1>,
-        benchmark::<false, 10_000, 4>,
-        benchmark::<false, 100_000, 1>,
-        benchmark::<false, 100_000, 4>,
+fn random_access_benchmark(c: &mut Criterion) {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        benchmark::<true, 10_000, 1>,
-        benchmark::<true, 10_000, 4>,
-        benchmark::<true, 100_000, 1>,
-        benchmark::<true, 100_000, 4>,
+    let dist = Distance::Dot;
+    let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let borrowed_storage = storage.borrow();
+    let borrowed_id_tracker = id_tracker.borrow();
+
+    let mut group = c.benchmark_group("storage-score-random");
+
+    let vector = random_vector(DIM);
+    let vector = vector.as_slice().into();
+
+    let scorer = new_raw_scorer(
+        vector,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
+    .unwrap();
+
+    let mut total_score = 0.;
+    group.bench_function("storage vector search", |b| {
+        b.iter(|| {
+            let random_id = rand::thread_rng().gen_range(0..NUM_VECTORS) as PointOffsetType;
+            total_score += scorer.score_point(random_id);
+        })
+    });
+    eprintln!("total_score = {:?}", total_score);
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-criterion_group! {
-    name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(1000));
-    targets =
-        benchmark::<false, 10_000, 1>,
-        benchmark::<false, 10_000, 4>,
-        benchmark::<false, 100_000, 1>,
-        benchmark::<false, 100_000, 4>,
-}
-
-#[cfg(target_os = "windows")]
-criterion_group! {
-    name = benches;
-    config = Criterion::default();
-    targets =
-        benchmark::<false, 10_000, 1>,
-        benchmark::<false, 10_000, 4>,
-        benchmark::<false, 100_000, 1>,
-        benchmark::<false, 100_000, 4>,
-}
-
+criterion_group!(benches, benchmark_naive, random_access_benchmark);
 criterion_main!(benches);

@@ -1,25 +1,16 @@
-use std::future::Future;
-use std::num::NonZeroUsize;
 use std::ops::Deref as _;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
-use tokio::sync::oneshot;
-use tokio::task::yield_now;
-use tokio_util::task::AbortOnDropHandle;
 
-use super::{RemoteShard, ShardReplicaSet, clock_set};
+use super::{clock_set, ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
-use crate::shards::local_shard::shard_ops::await_update_result;
-use crate::shards::replica_set::clock_set::ClockGuard;
-use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
-use crate::shards::shard::{PeerId, Shard};
-use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
+use crate::shards::shard::PeerId;
+use crate::shards::shard_trait::ShardOperation as _;
 
 /// Maximum number of attempts for applying an update with a new clock.
 ///
@@ -32,111 +23,41 @@ const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 impl ShardReplicaSet {
     /// Update local shard if any without forwarding to remote shards
     ///
-    /// If `force` is true, the operation will be applied unconditionally no matter the replica
-    /// state. Must only be used internally.
-    ///
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
     pub async fn update_local(
         &self,
         operation: OperationWithClockTag,
-        wait: WaitUntil,
-        timeout: Option<Duration>,
-        mut hw_measurement: HwMeasurementAcc,
-        force: bool,
+        wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
         // cancel safe.
 
         let local = self.local.read().await;
 
-        let Some(shard) = local.deref() else {
-            return Ok(None);
-        };
-
-        let Some(state) = self.peer_state(self.this_peer_id()) else {
-            return Ok(None);
-        };
-
-        // Don't measure hw when resharding
-        if state.is_resharding() && !hw_measurement.is_disposable() {
-            hw_measurement = HwMeasurementAcc::disposable();
-        }
-
-        // Decide whether to apply the operation in the current replica state.
-        // `force` and a force-tagged clock both bypass the recovery-state guard.
-        let accepts_operation = match state {
-            ReplicaState::Active
-            | ReplicaState::Partial
-            | ReplicaState::Initializing
-            | ReplicaState::Listener
-            | ReplicaState::Resharding
-            | ReplicaState::ReshardingScaleDown
-            | ReplicaState::ActiveRead => true,
-            // Recovery states only accept updates with an explicit force flag.
-            ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
-                force || operation.clock_tag.is_some_and(|tag| tag.force)
-            }
-            // Dead/ManualRecovery only accept updates when the caller forces.
-            ReplicaState::Dead | ReplicaState::ManualRecovery => force,
-        };
-
-        if !accepts_operation {
-            if matches!(
-                state,
-                ReplicaState::PartialSnapshot | ReplicaState::Recovery
-            ) && log::log_enabled!(log::Level::Debug)
-            {
-                if let Some(ids) = operation.operation.point_ids() {
-                    log::debug!(
-                        "Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state",
-                    );
-                } else {
-                    log::debug!(
-                        "Operation {operation:?} rejected on this peer, force flag required in recovery state",
-                    );
+        if let Some(local_shard) = local.deref() {
+            match self.peer_state(&self.this_peer_id()) {
+                Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing) => {
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
+                Some(ReplicaState::Listener) => {
+                    Ok(Some(local_shard.get().update(operation, false).await?))
+                }
+                // In recovery state, only allow operations with force flag
+                Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery)
+                    if operation.clock_tag.map_or(false, |tag| tag.force) =>
+                {
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
+                Some(
+                    ReplicaState::PartialSnapshot | ReplicaState::Recovery | ReplicaState::Dead,
+                )
+                | None => Ok(None),
             }
-            return Ok(None);
-        }
-
-        // Listener replicas only durably ack to WAL; everything else honours
-        // the caller-supplied wait/timeout.
-        let (effective_wait, effective_timeout) = if state.is_listener() {
-            (WaitUntil::Wal, None)
         } else {
-            (wait, timeout)
-        };
-
-        // Rate limit update operations on Active replica.
-        if state.is_write_rate_limitable() {
-            self.check_operation_write_rate_limiter(&hw_measurement, shard, &operation)
-                .await?;
+            Ok(None)
         }
-
-        // For a plain `Shard::Local`, submit the operation while the read
-        // guard is held (brief), then drop the guard before awaiting
-        // completion. Holding the guard across a deferred-points wait would
-        // deadlock concurrent shard transfers that need `local.write()`.
-        // Proxy variants are transient and keep the inline-await path.
-        let result = match shard {
-            Shard::Local(local_shard) => {
-                let outcome = local_shard
-                    .submit_update(operation, effective_wait, hw_measurement)
-                    .await?;
-                drop(local);
-                await_update_result(outcome, effective_timeout).await?
-            }
-            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
-                shard
-                    .get()
-                    .update(operation, effective_wait, effective_timeout, hw_measurement)
-                    .await?
-            }
-        };
-
-        Ok(Some(result))
     }
 
     /// # Cancel safety
@@ -145,11 +66,8 @@ impl ShardReplicaSet {
     pub async fn update_with_consistency(
         &self,
         operation: CollectionUpdateOperations,
-        wait: WaitUntil,
-        timeout: Option<Duration>,
+        wait: bool,
         ordering: WriteOrdering,
-        update_only_existing: bool,
-        mut hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
 
@@ -159,12 +77,6 @@ impl ShardReplicaSet {
                 self.collection_id, self.shard_id
             )));
         };
-
-        // Don't measure hw when resharding
-        let peer_state = self.peer_state(leader_peer);
-        if peer_state.is_some_and(|state| state.is_resharding()) {
-            hw_measurement_acc = HwMeasurementAcc::disposable();
-        }
 
         // If we are the leader, run the update from this replica set
         if leader_peer == self.this_peer_id() {
@@ -176,24 +88,15 @@ impl ShardReplicaSet {
                 WriteOrdering::Weak => None,
             };
 
-            self.update(
-                operation,
-                wait,
-                timeout,
-                update_only_existing,
-                hw_measurement_acc,
-            )
-            .await
+            self.update(operation, wait).await
         } else {
             // Forward the update to the designated leader
-            self.forward_update(leader_peer, operation, wait, timeout, ordering, hw_measurement_acc)
+            self.forward_update(leader_peer, operation, wait, ordering)
                 .await
                 .map_err(|err| {
                     if err.is_transient() {
                         // Deactivate the peer if forwarding failed with transient error
-                        let replica_state = self.replica_state.read();
-                        let from_state = replica_state.get_peer_state(leader_peer);
-                        self.add_locally_disabled(Some(&replica_state), leader_peer, from_state);
+                        self.add_locally_disabled(leader_peer);
 
                         // Return service error
                         CollectionError::service_error(format!(
@@ -217,27 +120,17 @@ impl ShardReplicaSet {
 
     fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
         let read_lock = self.replica_state.read();
-        let peer_ids = read_lock.peers().keys().cloned().collect::<Vec<_>>();
+        let peer_ids = read_lock.peers.keys().cloned().collect::<Vec<_>>();
         drop(read_lock);
 
         peer_ids
             .into_iter()
-            .filter(|&peer_id| self.peer_can_be_source_of_truth(peer_id)) // re-acquire replica_state read lock
+            .filter(|peer_id| self.peer_is_active(peer_id)) // re-acquire replica_state read lock
             .max()
     }
 
     fn highest_replica_peer_id(&self) -> Option<PeerId> {
-        self.replica_state.read().peers().keys().max().cloned()
-    }
-
-    pub async fn get_clock(&self) -> ClockGuard {
-        loop {
-            match self.clock_set.lock().await.get_clock() {
-                Some(clock) => return clock,
-                // Prevent blocking async runtime with spinlock
-                None => yield_now().await,
-            }
-        }
+        self.replica_state.read().peers.keys().max().cloned()
     }
 
     /// # Cancel safety
@@ -246,10 +139,7 @@ impl ShardReplicaSet {
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
-        wait: WaitUntil,
-        timeout: Option<Duration>,
-        update_only_existing: bool,
-        hw_measurement_acc: HwMeasurementAcc,
+        wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // `ShardRepilcaSet::update_impl` is not cancel safe, so this method is not cancel safe.
 
@@ -259,28 +149,13 @@ impl ShardReplicaSet {
         // - lock `remotes`, `local`, `clock` (in specified order!) on the *first* iteration of the loop
         // - then release and lock `remotes` and `local` *only* for all next iterations
         // - but keep initial `clock` for the whole duration of `update`
-        let clock_timeout = timeout.unwrap_or(Duration::MAX);
-        let mut clock = tokio::time::timeout(clock_timeout, self.get_clock())
-            .await
-            .map_err(|_| {
-                CollectionError::timeout(
-                    clock_timeout,
-                    format!("Failed to acquire clock for update operation within {timeout:?}"),
-                )
-            })?;
+        let mut clock = self.clock_set.lock().await.get_clock();
 
         for attempt in 1..=UPDATE_MAX_CLOCK_REJECTED_RETRIES {
             let is_non_zero_tick = clock.current_tick().is_some();
 
             let res = self
-                .update_impl(
-                    operation.clone(),
-                    wait,
-                    timeout,
-                    &mut clock,
-                    update_only_existing,
-                    hw_measurement_acc.clone(),
-                )
+                .update_impl(operation.clone(), wait, &mut clock)
                 .await?;
 
             if let Some(res) = res {
@@ -289,18 +164,11 @@ impl ShardReplicaSet {
 
             // Log a warning, if operation was rejected... but only if operation had a non-0 tick,
             // because operations with tick 0 should *always* be rejected and rejection is *expected*.
-            if is_non_zero_tick && log::log_enabled!(log::Level::Warn) {
-                if let Some(ids) = operation.point_ids() {
-                    log::warn!(
-                        "Operation affecting point IDs {ids:?} was rejected by some node(s), retrying... \
-                         (attempt {attempt}/{UPDATE_MAX_CLOCK_REJECTED_RETRIES})"
-                    );
-                } else {
-                    log::warn!(
-                        "Operation {operation:?} was rejected by some node(s), retrying... \
-                         (attempt {attempt}/{UPDATE_MAX_CLOCK_REJECTED_RETRIES})"
-                    );
-                }
+            if is_non_zero_tick {
+                log::warn!(
+                    "Operation {operation:?} was rejected by some node(s), retrying... \
+                     (attempt {attempt}/{UPDATE_MAX_CLOCK_REJECTED_RETRIES})"
+                );
             }
         }
 
@@ -317,137 +185,92 @@ impl ShardReplicaSet {
     async fn update_impl(
         &self,
         operation: CollectionUpdateOperations,
-        wait: WaitUntil,
-        timeout: Option<Duration>,
+        wait: bool,
         clock: &mut clock_set::ClockGuard,
-        update_only_existing: bool,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
         // between nodes, so this method is not cancel safe.
 
-        // Snapshot the remote shards into owned values, then drop the read guard so
-        // we don't hold `remotes.read()` across the long update await. Holding it
-        // would deadlock with `add_remote`'s `remotes.write()` on the consensus
-        // apply path (e.g. when starting a shard transfer concurrently with a
-        // wait=true update that's parked on a deferred-points wait).
-        let (updatable_remote_shards, total_remotes) = {
-            let remotes = self.remotes.read().await;
-            let updatable: Vec<RemoteShard> = remotes
-                .iter()
-                .filter(|rs| self.is_peer_updatable(rs.peer_id))
-                .cloned()
-                .collect();
-            (updatable, remotes.len())
-        };
-
+        let remotes = self.remotes.read().await;
         let local = self.local.read().await;
-        let replica_count = usize::from(local.is_some()) + total_remotes;
 
         let this_peer_id = self.this_peer_id();
 
-        // Local is defined and can receive updates
-        let local_is_updatable = local.is_some() && self.is_peer_updatable(this_peer_id);
+        // target all remote peers that can receive updates
+        let active_remote_shards: Vec<_> = remotes
+            .iter()
+            .filter(|rs| self.peer_is_active_or_pending(&rs.peer_id))
+            .collect();
 
-        if updatable_remote_shards.is_empty() && !local_is_updatable {
+        // local is defined AND the peer itself can receive updates
+        let local_is_updatable = local.is_some() && self.peer_is_active_or_pending(&this_peer_id);
+
+        if active_remote_shards.is_empty() && !local_is_updatable {
             return Err(CollectionError::service_error(format!(
-                "The replica set for shard {} on peer {this_peer_id} has no active replica",
-                self.shard_id,
+                "The replica set for shard {} on peer {} has no active replica",
+                self.shard_id, this_peer_id
             )));
         }
 
         let current_clock_tick = clock.tick_once();
         let clock_tag = ClockTag::new(this_peer_id, clock.id() as _, current_clock_tick);
         let operation = OperationWithClockTag::new(operation, Some(clock_tag));
-        let is_listener = self
-            .peer_state(this_peer_id)
-            .is_some_and(ReplicaState::is_listener);
 
-        let local_wait = if is_listener { WaitUntil::Wal } else { wait };
+        let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
 
-        // Rate-limit local writes on Active replica, while we still hold the read guard.
-        if local_is_updatable
-            && self.peer_is_write_rate_limitable(this_peer_id)
-            && let Some(shard) = local.deref()
-        {
-            self.check_operation_write_rate_limiter(&hw_measurement_acc, shard, &operation)
-                .await?;
+        if let Some(local) = local.deref() {
+            if self.peer_is_active_or_pending(&this_peer_id) {
+                let local_wait = if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
+                    false
+                } else {
+                    wait
+                };
+
+                let operation = operation.clone();
+
+                let local_update = async move {
+                    local
+                        .get()
+                        .update(operation, local_wait)
+                        .await
+                        .map(|ok| (this_peer_id, ok))
+                        .map_err(|err| (this_peer_id, err))
+                };
+
+                update_futures.push(local_update.left_future());
+            }
         }
 
-        let update_concurrency = self.shared_storage_config.update_concurrency;
+        for remote in active_remote_shards {
+            let operation = operation.clone();
 
-        // Build remote update futures up front; they're identical between the
-        // two local-dispatch paths and don't borrow from the local read guard.
-        let remote_futures: Vec<_> = updatable_remote_shards
-            .into_iter()
-            .map(|remote| {
-                let operation = operation.clone();
-                let hw_acc = hw_measurement_acc.clone();
-                async move {
-                    let peer_id = remote.peer_id;
-                    remote
-                        .update(operation, wait, timeout, hw_acc)
-                        .await
-                        .map(|ok| (peer_id, ok))
-                        .map_err(|err| (peer_id, err))
-                }
-            })
-            .collect();
-
-        // For a plain `Shard::Local`, submit the operation while the read
-        // guard is held (brief), then drop the guard before awaiting
-        // completion. Holding the guard across a deferred-points wait would
-        // deadlock concurrent shard transfers that need `local.write()`.
-        // Proxy variants are transient and keep the inline-await path.
-        let all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> =
-            match local.deref() {
-                Some(Shard::Local(local_shard)) if local_is_updatable => {
-                    let outcome = local_shard
-                        .submit_update(operation, local_wait, hw_measurement_acc)
-                        .await?;
-                    drop(local);
-
-                    let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
-                    let local_update = async move {
-                        await_update_result(outcome, timeout)
-                            .await
-                            .map(|ok| (this_peer_id, ok))
-                            .map_err(|err| (this_peer_id, err))
-                    };
-                    update_futures.push(local_update.left_future());
-                    update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
-
-                    run_update_futures(update_futures, update_concurrency).await
-                }
-                None
-                | Some(Shard::Local(_))
-                | Some(Shard::Proxy(_))
-                | Some(Shard::ForwardProxy(_))
-                | Some(Shard::QueueProxy(_))
-                | Some(Shard::Dummy(_)) => {
-                    let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
-
-                    if let Some(shard) = local.deref()
-                        && local_is_updatable
-                    {
-                        let local_update = async move {
-                            shard
-                                .get()
-                                .update(operation, local_wait, timeout, hw_measurement_acc)
-                                .await
-                                .map(|ok| (this_peer_id, ok))
-                                .map_err(|err| (this_peer_id, err))
-                        };
-                        update_futures.push(local_update.left_future());
-                    }
-                    update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
-
-                    let res = run_update_futures(update_futures, update_concurrency).await;
-                    drop(local);
-                    res
-                }
+            let remote_update = async move {
+                remote
+                    .update(operation, wait)
+                    .await
+                    .map(|ok| (remote.peer_id, ok))
+                    .map_err(|err| (remote.peer_id, err))
             };
+
+            update_futures.push(remote_update.right_future());
+        }
+
+        let all_res: Vec<Result<_, _>> = match self.shared_storage_config.update_concurrency {
+            Some(concurrency) => {
+                futures::stream::iter(update_futures)
+                    .buffer_unordered(concurrency.get())
+                    .collect()
+                    .await
+            }
+
+            None => FuturesUnordered::from_iter(update_futures).collect().await,
+        };
+
+        drop(remotes);
+        drop(local);
+
+        let total_results = all_res.len();
 
         let write_consistency_factor = self
             .collection_config
@@ -457,7 +280,7 @@ impl ShardReplicaSet {
             .write_consistency_factor
             .get() as usize;
 
-        let minimal_success_count = write_consistency_factor.min(replica_count);
+        let minimal_success_count = write_consistency_factor.min(total_results);
 
         let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
@@ -471,7 +294,7 @@ impl ShardReplicaSet {
                 if echo_tag.peer_id != clock_tag.peer_id {
                     debug_assert!(
                         false,
-                        "Echoed clock tag peer_id does not match the original",
+                        "Echoed clock tag peer_id does not match the original"
                     );
                     return None;
                 }
@@ -479,7 +302,7 @@ impl ShardReplicaSet {
                 if echo_tag.clock_id != clock_tag.clock_id {
                     debug_assert!(
                         false,
-                        "Echoed clock tag clock_id does not match the original",
+                        "Echoed clock tag clock_id does not match the original"
                     );
                     return None;
                 }
@@ -492,127 +315,67 @@ impl ShardReplicaSet {
             clock.advance_to(new_clock_tick);
         }
 
-        // Notify consensus about replica failures if:
-        // 1. there are some failures, but enough successes for the operation to be accepted
-        // 2. a resharding replica failed, and there are not enough successes for the operation to be accepted
-        //
-        // Notify user about potential consistency problems if:
-        // 1. there are some failures and enough successes, but we fail to deactivate the failed replicas
-        // 2. successes were not applied to any Active or Resharding replica
-        //
-        // Notify user with operation error if:
-        // 1. there are not enough successes for the operation to be accepted
+        // Notify consensus about failures if:
+        // 1. There is at least one success, otherwise it might be a problem of sending node
+        // 2. ???
 
         let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
-            format!("Failed peer: {peer_id}, error: {collection_error}")
+            format!("Failed peer: {}, error: {}", peer_id, collection_error)
         } else {
-            String::new()
+            "".to_string()
         };
 
-        if !failures.is_empty() {
-            for (peer_id, err) in &failures {
-                log::warn!(
-                    "Failed to update shard {}:{} on peer {peer_id}, error: {err}",
-                    self.collection_id,
-                    self.shard_id,
-                );
-            }
+        if successes.len() >= minimal_success_count {
+            let wait_for_deactivation =
+                self.handle_failed_replicas(&failures, &self.replica_state.read());
 
-            // If there is at least one full-complete operation, we can't ignore non-transient errors (4xx)
-            // And we must deactivate failed replicas to ensure consistency
-            let has_full_completed_updates = successes.iter().any(|(_, res)| match res.status {
-                UpdateStatus::Completed => true,
-                UpdateStatus::Acknowledged => false,
-                UpdateStatus::ClockRejected => false,
-                UpdateStatus::WaitTimeout => false,
-            });
+            // report all failing peers to consensus
+            if wait && wait_for_deactivation && !failures.is_empty() {
+                // ToDo: allow timeout configuration in API
+                let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
 
-            if successes.len() >= minimal_success_count {
-                // If there are enough successes, deactivate failed replicas
-                // Failed replicas will automatically recover from another replica ensuring consistency
+                let replica_state = self.replica_state.clone();
+                let peer_ids: Vec<_> = failures.iter().map(|(peer_id, _)| *peer_id).collect();
 
-                let failures_to_handle: Vec<_> = if !has_full_completed_updates {
-                    // We can only deactivate transient errors
-                    failures
-                        .into_iter()
-                        .filter(|(_, err)| err.is_transient())
-                        .collect()
-                } else {
-                    failures
-                };
+                let shards_disabled = tokio::task::spawn_blocking(move || {
+                    replica_state.wait_for(
+                        |state| {
+                            peer_ids.iter().all(|peer_id| {
+                                state
+                                    .peers
+                                    .get(peer_id)
+                                    .map(|state| state != &ReplicaState::Active)
+                                    .unwrap_or(true) // not found means that peer is dead
+                            })
+                        },
+                        DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
+                    )
+                })
+                .await?;
 
-                let wait_for_deactivation = self.handle_failed_replicas(
-                    &failures_to_handle,
-                    &self.replica_state.read(),
-                    update_only_existing,
-                );
-
-                // Wait for replica failures to be accepted, otherwise return consistency error
-                if wait.needs_callback() && wait_for_deactivation {
-                    // ToDo: allow timeout configuration in API
-                    let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
-
-                    let replica_state = self.replica_state.clone();
-                    let peer_ids: Vec<_> = failures_to_handle
-                        .iter()
-                        .map(|(peer_id, _)| *peer_id)
-                        .collect();
-
-                    let shards_disabled =
-                        AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
-                            replica_state.wait_for(
-                                |state| {
-                                    peer_ids.iter().all(|peer_id| {
-                                        // Not found means that peer is dead
-
-                                        // Wait for replica deactivation.
-                                        let is_active = state
-                                            .peers()
-                                            .get(peer_id)
-                                            .map(|state| state.can_be_source_of_truth())
-                                            .unwrap_or(false);
-
-                                        !is_active
-                                    })
-                                },
-                                timeout,
-                            )
-                        }))
-                        .await?;
-
-                    if !shards_disabled {
-                        return Err(CollectionError::service_error(format!(
-                            "Some replica of shard {} failed to apply operation and deactivation \
-                            timed out after {timeout:?}. Consistency of this update is not guaranteed. Please retry. {failure_error}",
-                            self.shard_id,
-                        )));
-                    }
+                if !shards_disabled {
+                    return Err(CollectionError::service_error(format!(
+                        "Some replica of shard {} failed to apply operation and deactivation \
+                         timed out after {} seconds. Consistency of this update is not guaranteed. Please retry. {failure_error}",
+                        self.shard_id, timeout.as_secs()
+                    )));
                 }
-            } else {
-                // If there aren't enough successes, report error to user
-
-                // TODO(resharding): reconsider how we count/deactivate resharding replicas.
-                self.handle_failed_replicas(
-                    failures
-                        .iter()
-                        .filter(|(peer_id, _)| self.peer_is_resharding(*peer_id)),
-                    &self.replica_state.read(),
-                    update_only_existing,
-                );
-
-                let (_peer_id, err) = failures.into_iter().next().unwrap();
-                return Err(err);
             }
         }
 
-        // Successes must have applied to at least one active replica
+        if !failures.is_empty() && successes.len() < minimal_success_count {
+            // completely failed - report error to user
+            let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
+            return Err(err);
+        }
+
         if !successes
             .iter()
-            .any(|&(peer_id, _)| self.peer_can_be_source_of_truth(peer_id))
+            .any(|(peer_id, _)| self.peer_is_active(peer_id))
         {
             return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \
-                 Consistency of this update is not guaranteed. Please retry. {failure_error}",
+                 Consistency of this update is not guaranteed. Please retry. {failure_error}"
             )));
         }
 
@@ -624,108 +387,56 @@ impl ShardReplicaSet {
             return Ok(None);
         }
 
-        let res = Self::merge_successful_update_results(&successes);
+        // there are enough successes, return the first one
+        let (_, res) = successes
+            .into_iter()
+            .next()
+            .expect("successes is not empty");
 
         Ok(Some(res))
     }
 
-    /// Check write rate limiter for the operation
-    ///
-    /// Lazily compute the cost of the operation and check against the write
-    /// rate limiter. The limiter lives on `LocalShard`; proxy wrappers forward
-    /// writes to that same local shard, so we resolve the wrapped local shard
-    /// uniformly via [`Shard::local_shard`]. `Dummy` shards have no limiter.
-    async fn check_operation_write_rate_limiter(
-        &self,
-        hw_measurement: &HwMeasurementAcc,
-        local: &Shard,
-        operation: &OperationWithClockTag,
-    ) -> CollectionResult<()> {
-        let Some(local_shard) = local.local_shard() else {
-            return Ok(());
+    fn peer_is_active_or_pending(&self, peer_id: &PeerId) -> bool {
+        let res = match self.peer_state(peer_id) {
+            Some(ReplicaState::Active) => true,
+            Some(ReplicaState::Partial) => true,
+            Some(ReplicaState::Initializing) => true,
+            Some(ReplicaState::Dead) => false,
+            Some(ReplicaState::Listener) => true,
+            Some(ReplicaState::PartialSnapshot) => false,
+            Some(ReplicaState::Recovery) => false,
+            None => false,
         };
-        local_shard
-            .check_write_rate_limiter(hw_measurement, async || {
-                let mut ratelimiter_cost = 1;
-
-                // Estimate the cost based on affected points if filter is available.
-                match local
-                    .estimate_request_cardinality(&operation.operation, hw_measurement)
-                    .await
-                {
-                    Ok(est) => ratelimiter_cost = 1.max(est.exp),
-                    Err(err) => log::error!("Estimating cardinality: {err:?}"),
-                }
-
-                ratelimiter_cost
-            })
-            .await?;
-        Ok(())
+        res && !self.is_locally_disabled(peer_id)
     }
 
-    /// Whether to send updates to the given peer
-    ///
-    /// A peer in dead state, or a locally disabled peer, will not accept updates.
-    fn is_peer_updatable(&self, peer_id: PeerId) -> bool {
-        let Some(state) = self.peer_state(peer_id) else {
-            return false;
-        };
-
-        state.is_updatable() && !self.is_locally_disabled(peer_id)
-    }
-
-    fn peer_is_resharding(&self, peer_id: PeerId) -> bool {
-        let is_resharding = matches!(
-            self.peer_state(peer_id),
-            Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
-        );
-
-        is_resharding && !self.is_locally_disabled(peer_id)
-    }
-
-    fn handle_failed_replicas<'a>(
+    fn handle_failed_replicas(
         &self,
-        failures: impl IntoIterator<Item = &'a (PeerId, CollectionError)>,
+        failures: &Vec<(PeerId, CollectionError)>,
         state: &ReplicaSetState,
-        update_only_existing: bool,
     ) -> bool {
         let mut wait_for_deactivation = false;
 
         for (peer_id, err) in failures {
-            let Some(peer_state) = state.get_peer_state(*peer_id) else {
+            log::warn!(
+                "Failed to update shard {}:{} on peer {peer_id}, error: {err}",
+                self.collection_id,
+                self.shard_id,
+            );
+
+            let Some(&peer_state) = state.get_peer_state(peer_id) else {
                 continue;
             };
 
-            // Ignore errors entirely for dead and listener replicas
-            match peer_state {
-                ReplicaState::Dead | ReplicaState::Listener | ReplicaState::ManualRecovery => {
-                    continue;
-                }
-                ReplicaState::Active
-                | ReplicaState::Initializing
-                | ReplicaState::Partial
-                | ReplicaState::Recovery
-                | ReplicaState::PartialSnapshot
-                | ReplicaState::Resharding
-                | ReplicaState::ReshardingScaleDown
-                | ReplicaState::ActiveRead => (),
-            }
-
-            // Handle a special case where transfer receiver is not in the expected replica state yet.
-            // Data consistency will be handled by the shard transfer and the associated proxies.
-            if peer_state.is_partial_or_recovery() && err.is_pre_condition_failed() {
+            if peer_state != ReplicaState::Active && peer_state != ReplicaState::Initializing {
                 continue;
             }
 
-            // Ignore missing point errors if replica is in partial or recovery state
-            // Partial or recovery state indicates that the replica is receiving a shard transfer,
-            // it might not have received all the points yet
-            // See: <https://github.com/qdrant/qdrant/pull/5991>
-            if peer_state.is_partial_or_recovery() && err.is_missing_point() {
-                continue;
-            }
-
-            if update_only_existing && err.is_missing_point() {
+            if peer_state == ReplicaState::Partial
+                && matches!(err, CollectionError::PreConditionFailed { .. })
+            {
+                // Handles a special case where transfer receiver haven't created a shard yet.
+                // In this case update should be handled by source shard and forward proxy.
                 continue;
             }
 
@@ -740,26 +451,10 @@ impl ShardReplicaSet {
             log::debug!(
                 "Deactivating peer {peer_id} because of failed update of shard {}:{}",
                 self.collection_id,
-                self.shard_id,
+                self.shard_id
             );
 
-            // Deactivate replica in consensus if it matches the state we expect.
-            // We filter out transient transfer states (Partial, Recovery, etc.)
-            // because those can change rapidly between proposal and apply, and
-            // we want the deactivation to go through even if the state has
-            // moved on. Resharding/ReshardingScaleDown are stable through the
-            // resharding lifecycle (only flipped by finish_migrating_points
-            // → Active or by this same deactivation flow → Dead), so we keep
-            // them populated. Carrying the captured pre-state in the consensus
-            // log entry is what lets the local `abort_resharding` side-effect
-            // in `Collection::set_shard_replica_state` re-fire correctly on
-            // replay — without it, replay reads `current_state` as Dead from
-            // disk and silently skips the side-effect, leaving
-            // resharding_state stale.
-            let from_state = Some(peer_state)
-                .filter(|state| !state.is_partial_or_recovery() || state.is_resharding());
-
-            self.add_locally_disabled(Some(state), *peer_id, from_state);
+            self.add_locally_disabled(*peer_id);
         }
 
         wait_for_deactivation
@@ -774,10 +469,8 @@ impl ShardReplicaSet {
         &self,
         leader_peer: PeerId,
         operation: CollectionUpdateOperations,
-        wait: WaitUntil,
-        timeout: Option<Duration>,
+        wait: bool,
         ordering: WriteOrdering,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::forward_update` is cancel safe, so this method is cancel safe.
 
@@ -791,77 +484,8 @@ impl ShardReplicaSet {
         };
 
         remote_leader
-            .forward_update(
-                OperationWithClockTag::from(operation),
-                wait,
-                timeout,
-                ordering,
-                hw_measurement_acc,
-            ) // `clock_tag` *has to* be `None`!
+            .forward_update(OperationWithClockTag::from(operation), wait, ordering) // `clock_tag` *have to* be `None`!
             .await
-    }
-
-    /// Pick a successful update result to return from a replica set.
-    ///
-    /// We pick the reply from the highest peer ID. This makes the returned response deterministic.
-    fn merge_successful_update_results(successes: &[(PeerId, UpdateResult)]) -> UpdateResult {
-        debug_assert!(!successes.is_empty());
-        debug_assert!(
-            !successes
-                .iter()
-                .any(|(_, r)| r.status == UpdateStatus::ClockRejected),
-            "ClockRejected must be handled before merging successful results",
-        );
-
-        // Aggregate status: WaitTimeout > .. > ClockRejected
-        let status = successes
-            .iter()
-            .map(|(_, res)| res.status)
-            .max_by_key(|s| s.priority())
-            .unwrap_or(UpdateStatus::Acknowledged);
-
-        let mut result = successes
-            .iter()
-            .max_by_key(|(peer_id, _)| *peer_id)
-            .map(|(_, res)| *res)
-            .expect("successes is not empty");
-
-        result.status = status;
-        result
-    }
-
-    /// Send plunger operation
-    ///
-    /// Returns oneshot channel receiver that will be notified once the plunger operation is
-    /// processed. Returns `None` if local shard is not present.
-    ///
-    /// # Cancel safety
-    ///
-    /// This method is cancel safe.
-    pub async fn plunge_local_async(&self) -> CollectionResult<Option<oneshot::Receiver<()>>> {
-        match self.local.read().await.deref() {
-            Some(local) => local.plunge_async().await.map(Some),
-            None => Ok(None),
-        }
-    }
-}
-
-/// Drive a batch of update futures, optionally limiting concurrency.
-async fn run_update_futures<F>(
-    update_futures: Vec<F>,
-    update_concurrency: Option<NonZeroUsize>,
-) -> Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>>
-where
-    F: Future<Output = Result<(PeerId, UpdateResult), (PeerId, CollectionError)>>,
-{
-    match update_concurrency {
-        Some(concurrency) => {
-            futures::stream::iter(update_futures)
-                .buffer_unordered(concurrency.get())
-                .collect()
-                .await
-        }
-        None => FuturesUnordered::from_iter(update_futures).collect().await,
     }
 }
 
@@ -871,86 +495,18 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::Arc;
 
-    use common::budget::ResourceBudget;
-    use common::save_on_disk::SaveOnDisk;
+    use common::cpu::CpuBudget;
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
     use tokio::runtime::Handle;
     use tokio::sync::RwLock;
 
     use super::*;
-    use crate::common::adaptive_handle::AdaptiveSearchHandle;
     use crate::config::*;
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
-    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
-
-    #[test]
-    fn test_merge_successful_update_results_wait_timeout_dominates() {
-        let this_peer_id: PeerId = 1;
-
-        let local_tag = ClockTag::new_with_token(this_peer_id, 7, 10, 0);
-        let remote_tag = ClockTag::new_with_token(this_peer_id, 7, 12, 0);
-
-        let successes = vec![
-            (
-                this_peer_id,
-                UpdateResult {
-                    operation_id: Some(10),
-                    status: UpdateStatus::Completed,
-                    clock_tag: Some(local_tag),
-                },
-            ),
-            (
-                2,
-                UpdateResult {
-                    operation_id: Some(20),
-                    status: UpdateStatus::WaitTimeout,
-                    clock_tag: Some(remote_tag),
-                },
-            ),
-        ];
-
-        let merged = ShardReplicaSet::merge_successful_update_results(&successes);
-
-        assert_eq!(merged.status, UpdateStatus::WaitTimeout);
-        assert_eq!(merged.operation_id, Some(20));
-        assert_eq!(merged.clock_tag.unwrap().clock_tick, 12);
-    }
-
-    #[test]
-    fn test_merge_successful_update_results_prefers_highest_peer_id() {
-        let this_peer_id: PeerId = 1;
-
-        let local_tag = ClockTag::new_with_token(this_peer_id, 7, 10, 0);
-        let remote_tag = ClockTag::new_with_token(this_peer_id, 7, 11, 0);
-
-        let successes = vec![
-            (
-                this_peer_id,
-                UpdateResult {
-                    operation_id: Some(10),
-                    status: UpdateStatus::Acknowledged,
-                    clock_tag: Some(local_tag),
-                },
-            ),
-            (
-                2,
-                UpdateResult {
-                    operation_id: Some(20),
-                    status: UpdateStatus::Completed,
-                    clock_tag: Some(remote_tag),
-                },
-            ),
-        ];
-
-        let merged = ShardReplicaSet::merge_successful_update_results(&successes);
-
-        assert_eq!(merged.status, UpdateStatus::Completed);
-        assert_eq!(merged.operation_id, Some(20));
-        assert_eq!(merged.clock_tag.unwrap().clock_tick, 11);
-    }
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
 
     #[tokio::test]
     async fn test_highest_replica_peer_id() {
@@ -961,12 +517,10 @@ mod tests {
         // at build time the replicas are all dead, they need to be activated
         assert_eq!(rs.highest_alive_replica_peer_id(), None);
 
-        rs.set_replica_state(1, ReplicaState::Active).await.unwrap();
-        rs.set_replica_state(3, ReplicaState::Active).await.unwrap();
-        rs.set_replica_state(4, ReplicaState::Active).await.unwrap();
-        rs.set_replica_state(5, ReplicaState::Partial)
-            .await
-            .unwrap();
+        rs.set_replica_state(&1, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&3, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&4, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&5, ReplicaState::Partial).unwrap();
 
         assert_eq!(rs.highest_replica_peer_id(), Some(5));
         assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
@@ -977,22 +531,19 @@ mod tests {
         vacuum_min_vector_number: 1000,
         default_segment_number: 2,
         max_segment_size: None,
-        #[expect(deprecated)]
         memmap_threshold: None,
         indexing_threshold: Some(50_000),
         flush_interval_sec: 30,
         max_optimization_threads: Some(2),
-        prevent_unoptimized: None,
     };
 
     async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
         let update_runtime = Handle::current();
-        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+        let search_runtime = Handle::current();
 
         let wal_config = WalConfig {
             wal_capacity_mb: 1,
             wal_segments_ahead: 0,
-            wal_retain_closed: 1,
         };
 
         let collection_params = CollectionParams {
@@ -1003,27 +554,18 @@ mod tests {
             ..CollectionParams::empty()
         };
 
-        let config = CollectionConfigInternal {
+        let config = CollectionConfig {
             params: collection_params,
             optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
             wal_config,
             hnsw_config: Default::default(),
             quantization_config: None,
-            strict_mode_config: None,
-            uuid: None,
-            metadata: None,
         };
-
-        let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
-        let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
-        let payload_index_schema =
-            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
         let remotes = HashSet::from([2, 3, 4, 5]);
         ShardReplicaSet::build(
             1,
-            None,
             "test_collection".to_string(),
             1,
             false,
@@ -1032,21 +574,19 @@ mod tests {
             dummy_abort_shard_transfer(),
             collection_dir.path(),
             shared_config,
-            config.optimizer_config.clone(),
             Default::default(),
-            payload_index_schema,
             Default::default(),
             update_runtime,
             search_runtime,
-            ResourceBudget::default(),
+            CpuBudget::default(),
             None,
         )
         .await
         .unwrap()
     }
 
-    fn dummy_on_replica_failure() -> ChangePeerFromState {
-        Arc::new(move |_peer_id, _shard_id, _from_state| {})
+    fn dummy_on_replica_failure() -> ChangePeerState {
+        Arc::new(move |_peer_id, _shard_id| {})
     }
 
     fn dummy_abort_shard_transfer() -> AbortShardTransfer {

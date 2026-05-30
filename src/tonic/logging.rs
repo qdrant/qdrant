@@ -1,9 +1,9 @@
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
-use tonic::Code;
 use tonic::body::BoxBody;
 use tonic::codegen::http::Response;
+use tonic::Code;
 use tower::Service;
 use tower_layer::Layer;
 
@@ -17,7 +17,7 @@ pub struct LoggingMiddlewareLayer;
 
 impl LoggingMiddlewareLayer {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -50,7 +50,7 @@ where
             let elapsed_sec = instant.elapsed().as_secs_f32();
             match response {
                 Err(error) => {
-                    log::error!("gRPC request error {method_name}");
+                    log::error!("gGRPC request error {}", method_name);
                     Err(error)
                 }
                 Ok(response_tonic) => {
@@ -58,11 +58,11 @@ where
                     if let Some(grpc_status) = grpc_status {
                         match grpc_status.code() {
                             Code::Ok => {
-                                log::trace!("gRPC {method_name} Ok {elapsed_sec:.6}");
+                                log::trace!("gRPC {} Ok {:.6}", method_name, elapsed_sec);
                             }
                             Code::Cancelled => {
                                 // cluster mode generates a large amount of `stream error received: stream no longer needed`
-                                log::trace!("gRPC cancelled {method_name} {elapsed_sec:.6}");
+                                log::trace!("gRPC {} {:.6}", method_name, elapsed_sec);
                             }
                             Code::DeadlineExceeded
                             | Code::Aborted
@@ -95,57 +95,7 @@ where
                             ),
                         };
                     } else {
-                        // Fallback to response's `status_code` if no `grpc-status` header found.
-                        match response_tonic.status().as_u16() {
-                            100..=199 => {
-                                log::trace!(
-                                    "gRPC information {} {} {:.6}",
-                                    method_name,
-                                    response_tonic.status(),
-                                    elapsed_sec,
-                                );
-                            }
-                            200..=299 => {
-                                log::trace!(
-                                    "gRPC success {} {} {:.6}",
-                                    method_name,
-                                    response_tonic.status(),
-                                    elapsed_sec,
-                                );
-                            }
-                            300..=399 => {
-                                log::debug!(
-                                    "gRPC redirection {} {} {:.6}",
-                                    method_name,
-                                    response_tonic.status(),
-                                    elapsed_sec,
-                                );
-                            }
-                            400..=499 => {
-                                log::info!(
-                                    "gRPC client error {} {} {:.6}",
-                                    method_name,
-                                    response_tonic.status(),
-                                    elapsed_sec,
-                                );
-                            }
-                            500..=599 => {
-                                log::error!(
-                                    "gRPC server error {} {} {:.6}",
-                                    method_name,
-                                    response_tonic.status(),
-                                    elapsed_sec,
-                                );
-                            }
-                            _ => {
-                                log::warn!(
-                                    "gRPC {} unknown status code {} {:.6}",
-                                    method_name,
-                                    response_tonic.status(),
-                                    elapsed_sec,
-                                );
-                            }
-                        };
+                        log::trace!("gRPC {} Ok {:.6}", method_name, elapsed_sec);
                     }
                     Ok(response_tonic)
                 }

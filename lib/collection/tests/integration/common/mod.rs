@@ -1,18 +1,19 @@
+#![allow(deprecated)]
+
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
-use collection::operations::types::CollectionResult;
+use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::operations::types::CollectionError;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::shards::CollectionId;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
-use common::budget::ResourceBudget;
+use collection::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
+use collection::shards::CollectionId;
+use common::cpu::CpuBudget;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.
@@ -27,20 +28,18 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     vacuum_min_vector_number: 1000,
     default_segment_number: 2,
     max_segment_size: None,
-    #[expect(deprecated)]
     memmap_threshold: None,
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
     max_optimization_threads: Some(2),
-    prevent_unoptimized: None,
 };
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32) -> Collection {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
-        wal_retain_closed: 1,
     };
 
     let collection_params = CollectionParams {
@@ -49,15 +48,12 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         ..CollectionParams::empty()
     };
 
-    let collection_config = CollectionConfigInternal {
+    let collection_config = CollectionConfig {
         params: collection_params,
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
-        strict_mode_config: Default::default(),
-        uuid: None,
-        metadata: None,
     };
 
     let snapshot_path = collection_path.join("snapshots");
@@ -73,8 +69,8 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     .unwrap()
 }
 
-pub fn dummy_on_replica_failure() -> ChangePeerFromState {
-    Arc::new(move |_peer_id, _shard_id, _from_state| {})
+pub fn dummy_on_replica_failure() -> ChangePeerState {
+    Arc::new(move |_peer_id, _shard_id| {})
 }
 
 pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
@@ -85,14 +81,19 @@ pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
     Arc::new(|_transfer, _reason| {})
 }
 
+#[cfg(test)]
+pub fn path(p: &str) -> segment::json_path::JsonPath {
+    p.parse().unwrap()
+}
+
 /// Default to a collection with all the shards local
 #[cfg(test)]
 pub async fn new_local_collection(
     id: CollectionId,
     path: &Path,
     snapshots_path: &Path,
-    config: &CollectionConfigInternal,
-) -> CollectionResult<Collection> {
+    config: &CollectionConfig,
+) -> Result<Collection, CollectionError> {
     let collection = Collection::new(
         id,
         0,
@@ -101,15 +102,13 @@ pub async fn new_local_collection(
         config,
         Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
-        None,
-        ChannelService::new(REST_PORT, false, None, None),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
         None,
         None,
-        ResourceBudget::default(),
-        None,
+        CpuBudget::default(),
     )
     .await;
 
@@ -137,14 +136,13 @@ pub async fn load_local_collection(
         path,
         snapshots_path,
         Default::default(),
-        ChannelService::new(REST_PORT, false, None, None),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
         None,
         None,
-        ResourceBudget::default(),
-        None,
+        CpuBudget::default(),
     )
     .await
 }

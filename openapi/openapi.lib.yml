@@ -18,19 +18,12 @@ default:
       schema:
         type: object
         properties:
-          usage:
-            default: null
-            anyOf:
-              - $ref: '#/components/schemas/Usage'
-              - nullable: true
           time:
             type: number
             format: float
             description: Time spent to process this request
-            example: 0.002
           status:
             type: string
-            example: ok
           result: #@ model
 #@ end
 
@@ -58,10 +51,8 @@ default:
             type: number
             format: float
             description: Time spent to process this request
-            example: 0.002
           status:
             type: string
-            example: ok
           result: #@ model
 "202":
   description: operation is accepted

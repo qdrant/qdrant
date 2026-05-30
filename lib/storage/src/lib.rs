@@ -10,12 +10,8 @@ use content_manager::errors::StorageError;
 use content_manager::toc::TableOfContent;
 use types::ClusterStatus;
 
-pub mod audit;
-pub mod audit_reader;
-mod common;
 pub mod content_manager;
 pub mod dispatcher;
-pub mod issues_subscribers;
 pub mod rbac;
 pub mod types;
 
@@ -23,7 +19,7 @@ pub mod serialize_peer_addresses {
     use std::collections::HashMap;
 
     use itertools::Itertools;
-    use serde::{self, Deserialize, Deserializer, Serialize, Serializer, de};
+    use serde::{self, de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::types::PeerAddressById;
 
@@ -34,7 +30,7 @@ pub mod serialize_peer_addresses {
         let addresses: HashMap<u64, String> = addresses
             .clone()
             .into_iter()
-            .map(|(id, address)| (id, address.to_string()))
+            .map(|(id, address)| (id, format!("{address}")))
             .collect();
         addresses.serialize(serializer)
     }

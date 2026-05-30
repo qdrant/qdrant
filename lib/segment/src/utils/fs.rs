@@ -1,7 +1,5 @@
-use std::fmt;
-use std::path::Path;
-
-use fs_err as fs;
+use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -17,7 +15,7 @@ pub fn move_all(dir: &Path, dest_dir: &Path) -> OperationResult<()> {
 }
 
 fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()> {
-    let entries = fs::read_dir(dir).map_err(|err| {
+    let entries = dir.read_dir().map_err(|err| {
         if base != dir {
             failed_to_read_dir_error(dir, err)
         } else {
@@ -44,18 +42,17 @@ fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()
 
         if path.is_dir() && dest_path.exists() {
             move_all_impl(base, &path, &dest_path)?;
-            fs::remove_dir(path)?;
         } else {
-            if let Some(dir) = dest_path.parent()
-                && !dir.exists()
-            {
-                fs::create_dir_all(dir).map_err(|err| {
-                    failed_to_move_error(
-                        &path,
-                        &dest_path,
-                        format!("failed to create {dir:?} directory: {err}"),
-                    )
-                })?;
+            if let Some(dir) = dest_path.parent() {
+                if !dir.exists() {
+                    fs::create_dir_all(dir).map_err(|err| {
+                        failed_to_move_error(
+                            &path,
+                            &dest_path,
+                            format!("failed to create {dir:?} directory: {err}"),
+                        )
+                    })?;
+                }
             }
 
             fs::rename(&path, &dest_path)
@@ -86,4 +83,31 @@ fn failed_to_read_dir_error(dir: &Path, err: impl fmt::Display) -> OperationErro
 
 fn failed_to_move_error(path: &Path, dest: &Path, err: impl fmt::Display) -> OperationError {
     OperationError::service_error(format!("failed to move {path:?} to {dest:?}: {err}"))
+}
+
+/// Finds the first symlink in the directory tree and returns its path.
+pub fn find_symlink(directory: &Path) -> Option<PathBuf> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(_) => return None,
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+
+        let path = entry.path();
+
+        if path.is_dir() {
+            if let Some(path) = find_symlink(&path) {
+                return Some(path);
+            }
+        } else if path.is_symlink() {
+            return Some(path);
+        }
+    }
+
+    None
 }

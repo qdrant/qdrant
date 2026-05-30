@@ -1,5 +1,4 @@
 import pathlib
-import requests
 
 from .fixtures import create_collection, upsert_random_points
 from .utils import *
@@ -25,9 +24,7 @@ def test_collection_recovery(tmp_path: pathlib.Path):
         assert shard["points_count"] > 0
 
     # Kill last peer
-    p = processes.pop()
-    restart_port = p.p2p_port
-    p.kill()
+    processes.pop().kill()
 
     # Delete collection files from disk
     collection_path = Path(peer_dirs[-1]) / "storage" / "collections" / COLLECTION_NAME
@@ -35,7 +32,7 @@ def test_collection_recovery(tmp_path: pathlib.Path):
     shutil.rmtree(collection_path)
 
     # Restart the peer
-    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, port=restart_port)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url)
 
     # Wait until peer is up
     wait_for_peer_online(peer_url)
@@ -43,26 +40,36 @@ def test_collection_recovery(tmp_path: pathlib.Path):
     # Recover Raft state
     recover_raft_state(peer_url)
 
-    # Wait until collection is recovered
-    wait_for(collection_recovered, peer_url, COLLECTION_NAME)
+    # Wait for all shards to be active
+    wait_for(all_collection_shards_are_active, peer_url, COLLECTION_NAME)
+
+    # Check, that the collection is not empty on recovered node
+    info = get_collection_cluster_info(peer_url, COLLECTION_NAME)
+
+    for shard in info["local_shards"]:
+        assert shard["points_count"] > 0
 
 
 def recover_raft_state(peer_url):
-    resp = requests.post(f"{peer_url}/cluster/recover")
-    assert_http_ok(resp)
+    r = requests.post(f"{peer_url}/cluster/recover")
+    return request_result(r)
 
+
+def request_result(resp):
+    assert_http_ok(resp)
     return resp.json()["result"]
 
 
-def collection_recovered(peer_url, collection_name):
+def all_collection_shards_are_active(peer_url, collection_name):
     try:
         info = get_collection_cluster_info(peer_url, collection_name)
     except:
         return False
 
+    remote_shards = info["remote_shards"]
     local_shards = info["local_shards"]
 
-    if len(local_shards) == 0:
+    if len(remote_shards) == 0:
         return False
 
-    return all(map(lambda shard: shard["state"] == "Active" and shard["points_count"] > 0, local_shards))
+    return all(map(lambda shard: shard["state"] == "Active", local_shards + remote_shards))

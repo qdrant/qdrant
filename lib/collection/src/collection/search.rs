@@ -1,33 +1,24 @@
-use std::mem;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::future;
-use itertools::{Either, Itertools};
-use segment::types::{
-    ExtendedPointId, Filter, Order, ScoredPoint, ShardKey, WithPayloadInterface, WithVector,
-};
-use shard::retrieve::record_internal::RecordInternal;
-use shard::search::CoreSearchRequestBatch;
-use tokio::time::Instant;
+use futures::{future, TryFutureExt};
+use segment::data_types::vectors::VectorStruct;
+use segment::spaces::tools;
+use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, WithVector};
 
 use super::Collection;
-use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 
 impl Collection {
-    #[cfg(feature = "testing")]
     pub async fn search(
         &self,
         request: CoreSearchRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -37,13 +28,7 @@ impl Collection {
             searches: vec![request],
         };
         let results = self
-            .do_core_search_batch(
-                request_batch,
-                read_consistency,
-                shard_selection,
-                timeout,
-                hw_measurement_acc,
-            )
+            .do_core_search_batch(request_batch, read_consistency, shard_selection, timeout)
             .await?;
         Ok(results.into_iter().next().unwrap())
     }
@@ -54,22 +39,27 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let start = Instant::now();
         // shortcuts batch if all requests with limit=0
         if request.searches.iter().all(|s| s.limit == 0) {
             return Ok(vec![]);
         }
+        // A factor which determines if we need to use the 2-step search or not
+        // Should be adjusted based on usage statistics.
+        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
 
-        let is_payload_required = request
-            .searches
-            .iter()
-            .all(|s| s.with_payload.as_ref().is_some_and(|p| p.is_required()));
-        let with_vectors = request
-            .searches
-            .iter()
-            .all(|s| s.with_vector.as_ref().is_some_and(|wv| wv.is_enabled()));
+        let is_payload_required = request.searches.iter().all(|s| {
+            s.with_payload
+                .clone()
+                .map(|p| p.is_required())
+                .unwrap_or_default()
+        });
+        let with_vectors = request.searches.iter().all(|s| {
+            s.with_vector
+                .as_ref()
+                .map(|wv| wv.is_enabled())
+                .unwrap_or(false)
+        });
 
         let metadata_required = is_payload_required || with_vectors;
 
@@ -81,8 +71,8 @@ impl Collection {
         // Actually used number of records.
         let used_transfers = sum_limits;
 
-        let is_required_transfer_large_enough = require_transfers
-            > used_transfers.saturating_mul(super::query::PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
+        let is_required_transfer_large_enough =
+            require_transfers > used_transfers * PAYLOAD_TRANSFERS_FACTOR_THRESHOLD;
 
         if metadata_required && is_required_transfer_large_enough {
             // If there is a significant offset, we need to retrieve the whole result
@@ -92,12 +82,8 @@ impl Collection {
             let mut without_payload_requests = Vec::with_capacity(request.searches.len());
             for search in &request.searches {
                 let mut without_payload_request = search.clone();
-                without_payload_request
-                    .with_payload
-                    .replace(WithPayloadInterface::Bool(false));
-                without_payload_request
-                    .with_vector
-                    .replace(WithVector::Bool(false));
+                without_payload_request.with_payload = None;
+                without_payload_request.with_vector = None;
                 without_payload_requests.push(without_payload_request);
             }
             let without_payload_batch = CoreSearchRequestBatch {
@@ -109,14 +95,11 @@ impl Collection {
                     read_consistency,
                     &shard_selection,
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
-            // update timeout
-            let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
             let filled_results = without_payload_results
                 .into_iter()
-                .zip(request.searches)
+                .zip(request.clone().searches.into_iter())
                 .map(|(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
                         without_payload_result,
@@ -124,20 +107,12 @@ impl Collection {
                         req.with_vector.unwrap_or_default(),
                         read_consistency,
                         &shard_selection,
-                        timeout,
-                        hw_measurement_acc.clone(),
                     )
                 });
             future::try_join_all(filled_results).await
         } else {
             let result = self
-                .do_core_search_batch(
-                    request,
-                    read_consistency,
-                    &shard_selection,
-                    timeout,
-                    hw_measurement_acc,
-                )
+                .do_core_search_batch(request, read_consistency, &shard_selection, timeout)
                 .await?;
             Ok(result)
         }
@@ -149,68 +124,41 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
-        let instant = Instant::now();
-
-        // Snapshot the targeted shards under the read guard, then drop it
-        // before awaiting the per-shard searches. Holding the guard across
-        // the searches would block writers (e.g. shard creation) for the
-        // entire search duration; cloning `Arc<ShardReplicaSet>` lets each
-        // search keep the shard alive on its own.
-        let targets: Vec<(Arc<_>, Option<ShardKey>)> = {
-            let shard_holder = self.shards_holder.read().await;
-            shard_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-                .collect()
-        };
-
         // query all shards concurrently
-        let all_searches = targets.into_iter().map(|(shard, shard_key)| {
-            let request = request.clone();
-            let hw_measurement_acc = hw_measurement_acc.clone();
-            async move {
-                let mut records = shard
+        let all_searches_res = {
+            let shard_holder = self.shards_holder.read().await;
+            let target_shards = shard_holder.select_shards(shard_selection)?;
+            let all_searches = target_shards.iter().map(|(shard, shard_key)| {
+                let shard_key = shard_key.cloned();
+                shard
                     .core_search(
-                        request,
+                        Arc::clone(&request),
                         read_consistency,
                         shard_selection.is_shard_id(),
                         timeout,
-                        hw_measurement_acc,
                     )
-                    .await?;
-                if shard_key.is_some() {
-                    for batch in &mut records {
-                        for point in batch {
-                            point.shard_key.clone_from(&shard_key);
+                    .and_then(move |mut records| async move {
+                        if shard_key.is_none() {
+                            return Ok(records);
                         }
-                    }
-                }
-                CollectionResult::Ok(records)
-            }
-        });
-        let all_searches_res = future::try_join_all(all_searches).await?;
+                        for batch in &mut records {
+                            for point in batch {
+                                point.shard_key = shard_key.clone();
+                            }
+                        }
+                        Ok(records)
+                    })
+            });
+            future::try_join_all(all_searches).await?
+        };
 
-        let result = self
-            .merge_from_shards(
-                all_searches_res,
-                request.clone(),
-                !shard_selection.is_shard_id(),
-            )
-            .await;
-
-        let filters_refs = request.searches.iter().map(|req| req.filter.as_ref());
-
-        self.post_process_if_slow_request(instant.elapsed(), filters_refs);
-
-        result
+        self.merge_from_shards(all_searches_res, request, !shard_selection.is_shard_id())
+            .await
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn fill_search_result_with_payload(
         &self,
         search_result: Vec<ScoredPoint>,
@@ -218,8 +166,6 @@ impl Collection {
         with_vector: WithVector,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
-        timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
@@ -241,16 +187,9 @@ impl Collection {
             with_vector,
         };
         let retrieved_records = self
-            .retrieve(
-                retrieve_request,
-                read_consistency,
-                shard_selection,
-                timeout,
-                hw_measurement_acc,
-            )
+            .retrieve(retrieve_request, read_consistency, shard_selection)
             .await?;
-
-        let mut records_map: AHashMap<ExtendedPointId, RecordInternal> = retrieved_records
+        let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
             .into_iter()
             .map(|rec| (rec.id, rec))
             .collect();
@@ -262,7 +201,7 @@ impl Collection {
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
                     scored_point.payload = record.payload;
-                    scored_point.vector = record.vector;
+                    scored_point.vector = record.vector.map(VectorStruct::from);
                     scored_point
                 })
             })
@@ -278,67 +217,52 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
-        let collection_params = self.collection_config.read().await.params.clone();
-
-        // Merge results from shards in order and deduplicate based on point ID
-        let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
-        let mut seen_ids = AHashSet::new();
-
-        for (batch_index, request) in request.searches.iter().enumerate() {
-            let order = if request.query.is_distance_scored() {
-                collection_params
-                    .get_distance(request.query.get_vector_name())?
-                    .distance_order()
-            } else {
-                // Score comes from special handling of the distances in a way that it doesn't
-                // directly represent distance anymore, so the order is always `LargeBetter`
-                Order::LargeBetter
-            };
-
-            let results_from_shards = all_searches_res
-                .iter_mut()
-                .map(|res| res.get_mut(batch_index).map_or(Vec::new(), mem::take));
-
-            let merged_iter = match order {
-                Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),
-                Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),
+        // merge results from shards in order
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
+        for shard_searches_results in all_searches_res.iter_mut() {
+            for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
+                merged_results[index].append(shard_searches_result)
             }
-            .filter(|point| seen_ids.insert(point.id));
-
-            // Skip `offset` only for client requests
-            // to avoid applying `offset` twice in distributed mode.
-            let top_res = if is_client_request && request.offset > 0 {
-                merged_iter
-                    .skip(request.offset)
-                    .take(request.limit)
-                    .collect()
-            } else {
-                merged_iter.take(request.offset + request.limit).collect()
-            };
-
-            top_results.push(top_res);
-
-            seen_ids.clear();
         }
+        let collection_params = self.collection_config.read().await.params.clone();
+        let top_results: Vec<_> = merged_results
+            .into_iter()
+            .zip(request.searches.iter())
+            .map(|(res, request)| {
+                let order = match &request.query {
+                    QueryEnum::Nearest(_) => collection_params
+                        .get_distance(request.query.get_vector_name())?
+                        .distance_order(),
+
+                    // Score comes from special handling of the distances in a way that it doesn't
+                    // directly represent distance anymore, so the order is always `LargeBetter`
+                    QueryEnum::Discover(_)
+                    | QueryEnum::Context(_)
+                    | QueryEnum::RecommendBestScore(_) => Order::LargeBetter,
+                };
+
+                let mut top_res = match order {
+                    Order::LargeBetter => {
+                        tools::peek_top_largest_iterable(res, request.limit + request.offset)
+                    }
+                    Order::SmallBetter => {
+                        tools::peek_top_smallest_iterable(res, request.limit + request.offset)
+                    }
+                };
+                // Remove `offset` from top result only for client requests
+                // to avoid applying `offset` twice in distributed mode.
+                if is_client_request && request.offset > 0 {
+                    if top_res.len() >= request.offset {
+                        // Panics if the end point > length of the vector.
+                        top_res.drain(..request.offset);
+                    } else {
+                        top_res.clear()
+                    }
+                }
+                Ok(top_res)
+            })
+            .collect::<CollectionResult<Vec<_>>>()?;
 
         Ok(top_results)
-    }
-
-    pub fn post_process_if_slow_request<'a>(
-        &self,
-        duration: Duration,
-        filters: impl IntoIterator<Item = Option<&'a Filter>>,
-    ) {
-        if duration > crate::problems::UnindexedField::slow_query_threshold() {
-            let filters = filters.into_iter().flatten().cloned().collect_vec();
-
-            let schema = self.payload_index_schema.read().schema.clone();
-
-            issues::publish(SlowQueryEvent {
-                collection_id: self.id.clone(),
-                filters,
-                schema,
-            });
-        }
     }
 }

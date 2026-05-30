@@ -28,6 +28,29 @@ def run_update_points_in_background(peer_url, collection_name, init_offset=0, th
     p.start()
     return p
 
+def check_data_consistency(data):
+
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]
+        data_j = data[j]
+
+        if data_i != data_j:
+            ids_i = set(x.id for x in data_i)
+            ids_j = set(x.id for x in data_j)
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                print(f"Diff len between {i} and {j}: {len(diff)}")
+
+            assert False, "Data on all nodes should be consistent"
+
 
 # Test data consistency across nodes when creating snapshots.
 #
@@ -41,7 +64,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, 20000)
 
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
     wait_collection_exists_and_active_on_all_peers(
@@ -80,5 +103,5 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
             }
         )
         assert_http_ok(r)
-        data.append(r.json()["result"]["points"])
+        data.append(r.json()["result"])
     check_data_consistency(data)

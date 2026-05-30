@@ -9,7 +9,7 @@ use validator::Validate;
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema, Validate)]
 pub struct ReadParams {
     #[serde(default, deserialize_with = "deserialize_read_consistency")]
-    #[validate(nested)]
+    #[validate]
     pub consistency: Option<ReadConsistency>,
     /// If set, overrides global timeout for this request. Unit is seconds.
     pub timeout: Option<NonZeroU64>,
@@ -18,10 +18,6 @@ pub struct ReadParams {
 impl ReadParams {
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout.map(|num| Duration::from_secs(num.get()))
-    }
-
-    pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
-        self.timeout.map(|i| i.get() as usize)
     }
 }
 
@@ -41,9 +37,9 @@ where
     match Helper::deserialize(deserializer)? {
         Helper::ReadConsistency(read_consistency) => Ok(Some(read_consistency)),
         Helper::Str("") => Ok(None),
-        Helper::Str(x) => Err(serde::de::Error::custom(format!(
-            "failed to deserialize read consistency query parameter value '{x}'"
-        ))),
+        _ => Err(serde::de::Error::custom(
+            "failed to deserialize read consistency query parameter value",
+        )),
     }
 }
 

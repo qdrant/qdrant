@@ -1,6 +1,6 @@
 use std::future::{self, Future};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use tokio::sync::watch;
 
@@ -47,7 +47,6 @@ impl UpdateTracker {
 }
 
 #[derive(Debug)]
-#[must_use = "dropping this guard immediately decrements the update counter"]
 pub struct UpdateGuard {
     update_operations: Arc<AtomicUsize>,
 }

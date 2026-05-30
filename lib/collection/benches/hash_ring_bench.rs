@@ -2,8 +2,8 @@
 mod prof;
 
 use collection::hash_ring::HashRing;
-use criterion::{Criterion, criterion_group, criterion_main};
-use rand::RngExt;
+use criterion::{criterion_group, criterion_main, Criterion};
+use rand::Rng;
 
 fn hash_ring_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("hash-ring-bench");
@@ -17,18 +17,18 @@ fn hash_ring_bench(c: &mut Criterion) {
         ring_fair.add(i);
     }
 
-    let mut rnd = rand::rng();
+    let mut rnd = rand::thread_rng();
 
     group.bench_function("hash-ring-fair", |b| {
         b.iter(|| {
-            let point = rnd.random_range(0..100000);
+            let point = rnd.gen_range(0..100000);
             let _shard = ring_fair.get(&point);
         })
     });
 
     group.bench_function("hash-ring-raw", |b| {
         b.iter(|| {
-            let point = rnd.random_range(0..100000);
+            let point = rnd.gen_range(0..100000);
             let _shard = ring_raw.get(&point);
         })
     });

@@ -1,19 +1,5 @@
 log_level: INFO
 
-# Logging configuration
-# Qdrant logs to stdout. You may configure to also write logs to a file on disk.
-# Be aware that this file may grow indefinitely.
-# logger:
-#   # Logging format, supports `text` and `json`
-#   format: text
-#   on_disk:
-#     enabled: true
-#     log_file: path/to/log/file.log
-#     log_level: INFO
-#     # Logging format, supports `text` and `json`
-#     format: text
-#     buffer_size_bytes: 1024
-
 storage:
   # Where to store all the data
   storage_path: ./storage
@@ -21,39 +7,15 @@ storage:
   # Where to store snapshots
   snapshots_path: ./snapshots
 
-  snapshots_config:
-    # "local" or "s3" - where to store snapshots
-    snapshots_storage: local
-    # s3_config:
-    #   bucket: ""
-    #   region: ""
-    #   access_key: ""
-    #   secret_key: ""
-
   # Where to store temporary files
-  # If null, temporary snapshots are stored in: storage/snapshots_temp/
+  # If null, temporary snapshot are stored in: storage/snapshots_temp/
   temp_path: null
 
-  # If true - point payloads will not be stored in memory.
+  # If true - point's payload will not be stored in memory.
   # It will be read from the disk every time it is requested.
   # This setting saves RAM by (slightly) increasing the response time.
   # Note: those payload values that are involved in filtering and are indexed - remain in RAM.
-  #
-  # Default: true
   on_disk_payload: true
-
-  # Load-time memory mode. Only affects how segments are loaded on startup;
-  # does not modify any persisted configuration. Intended as a recovery knob
-  # when a node crash-loops on out-of-memory.
-  #
-  # Options:
-  # - disabled (default): load segments as persisted.
-  # - no_resident: downgrade components to their on-disk variants where
-  #   possible — quantization loads as if always_ram=false, payload field
-  #   indexes as if on_disk=true, payload storage as mmap (not populated).
-  # - no_populate: same as no_resident, plus skip mmap prefault on load for
-  #   vectors, HNSW graph and payload storage.
-  #low_memory_mode: disabled
 
   # Maximum number of concurrent updates to shard replicas
   # If `null` - maximum concurrency is used.
@@ -78,6 +40,11 @@ storage:
     # Number of parallel threads used for search operations. If 0 - auto selection.
     max_search_threads: 0
 
+    # Max number of threads (jobs) for running optimizations across all collections, each thread runs one job.
+    # If 0 - have no limit and choose dynamically to saturate CPU.
+    # Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+    max_optimization_threads: 0
+
     # CPU budget, how many CPUs (threads) to allocate for an optimization job.
     # If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
     # If negative - subtract this number of CPUs from the available CPUs.
@@ -101,18 +68,6 @@ storage:
     # Default is to allow 1 transfer.
     # If null - allow unlimited transfers.
     #outgoing_shard_transfers_limit: 1
-
-    # Enable async scorer which uses io_uring when rescoring.
-    # Only supported on Linux, must be enabled in your kernel.
-    # See: <https://qdrant.tech/articles/io_uring/#and-what-about-qdrant>
-    #async_scorer: false
-
-    # Maximum number of collections to load concurrently.
-    #max_concurrent_collection_loads: 1
-    # Maximum number of local shards to load concurrently when loading a collection.
-    #max_concurrent_shard_loads: 1
-    # Maximum number of segments to load concurrently when loading a local shard.
-    #max_concurrent_segment_loads: 8
 
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
@@ -141,12 +96,20 @@ storage:
     # If not set, will be automatically selected considering the number of available CPUs.
     max_segment_size_kb: null
 
+    # Maximum size (in KiloBytes) of vectors to store in-memory per segment.
+    # Segments larger than this threshold will be stored as read-only memmaped file.
+    # To enable memmap storage, lower the threshold
+    # Note: 1Kb = 1 vector of size 256
+    # To explicitly disable mmap optimization, set to `0`.
+    # If not set, will be disabled by default.
+    memmap_threshold_kb: null
+
     # Maximum size (in KiloBytes) of vectors allowed for plain index.
-    # Default value based on experiments and observations.
+    # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
     # Note: 1Kb = 1 vector of size 256
     # To explicitly disable vector indexing, set to `0`.
     # If not set, the default value will be used.
-    indexing_threshold_kb: 10000
+    indexing_threshold_kb: 20000
 
     # Interval between forced flushes.
     flush_interval_sec: 5
@@ -157,17 +120,6 @@ storage:
     # If 0 - no optimization threads, optimizations will be disabled.
     max_optimization_threads: null
 
-  # This section has the same options as 'optimizers' above. All values specified here will overwrite the collections
-  # optimizers configs regardless of the config above and the options specified at collection creation.
-  #optimizers_overwrite:
-  #  deleted_threshold: 0.2
-  #  vacuum_min_vector_number: 1000
-  #  default_segment_number: 0
-  #  max_segment_size_kb: null
-  #  indexing_threshold_kb: 10000
-  #  flush_interval_sec: 5
-  #  max_optimization_threads: null
-
   # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
@@ -176,11 +128,9 @@ storage:
     # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     ef_construct: 100
 
-    # Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
-    # This measures the total size of vectors being queried against.
-    # When the maximum estimated amount of points that a condition satisfies is smaller than
-    # `full_scan_threshold_kb`, the query planner will use full-scan search instead of HNSW index
-    # traversal for better performance.
+    # Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
+    # If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
+    # in this case full-scan search should be preferred by query planner and additional indexing is not required.
     # Note: 1Kb = 1 vector of size 256
     full_scan_threshold_kb: 10000
 
@@ -201,55 +151,6 @@ storage:
   # If stream_records, snapshot or wal_delta - prefer this specific method.
   # More info: https://qdrant.tech/documentation/guides/distributed_deployment/#shard-transfer-method
   shard_transfer_method: null
-
-  # Default parameters for collections
-  collection:
-    # Number of replicas of each shard that network tries to maintain
-    replication_factor: 1
-
-    # How many replicas should apply the operation for us to consider it successful
-    write_consistency_factor: 1
-
-    # Default parameters for vectors.
-    vectors:
-      # Whether vectors should be stored in memory or on disk.
-      on_disk: null
-
-    # shard_number_per_node: 1
-
-    # Default quantization configuration.
-    # More info: https://qdrant.tech/documentation/guides/quantization
-    quantization: null
-
-    # Default strict mode parameters for newly created collections.
-    #strict_mode:
-      # Whether strict mode is enabled for a collection or not.
-      #enabled: false
-
-      # Max allowed `limit` parameter for all APIs that don't have their own max limit.
-      #max_query_limit: null
-
-      # Max allowed `timeout` parameter.
-      #max_timeout: null
-
-      # Allow usage of unindexed fields in retrieval based (eg. search) filters.
-      #unindexed_filtering_retrieve: null
-
-      # Allow usage of unindexed fields in filtered updates (eg. delete by payload).
-      #unindexed_filtering_update: null
-
-      # Max HNSW value allowed in search parameters.
-      #search_max_hnsw_ef: null
-
-      # Whether exact search is allowed or not.
-      #search_allow_exact: null
-
-      # Max oversampling value allowed in search.
-      #search_max_oversampling: null
-
-  # Maximum number of collections allowed to be created
-  # If null - no limit.
-  max_collections: null
 
 service:
   # Maximum size of POST data in a single request in megabytes
@@ -292,7 +193,7 @@ service:
   #
   # Uncomment to enable.
   # api_key: your_secret_api_key_here
-
+   
   # Set an api-key for read-only operations.
   # If set, all requests must include a header with the api-key.
   # example header: `api-key: <API-KEY>`
@@ -309,33 +210,6 @@ service:
   # Use generated token instead of API key.
   #
   # jwt_rbac: true
-
-  # Enforce API key / JWT authentication on the internal (p2p) gRPC API.
-  # The regular api_key is always forwarded on internal requests, but the
-  # receiving side only verifies it when this flag is enabled. Keep disabled
-  # during a rolling upgrade so older peers (that do not attach a key yet)
-  # can still reach newer peers, then turn it on once every node is upgraded.
-  #
-  # enforce_internal_auth: true
-
-  # Hardware reporting adds information to the API responses with a
-  # hint on how many resources were used to execute the request.
-  #
-  # Warning: experimental, this feature is still under development and is not supported yet.
-  #
-  # Uncomment to enable.
-  # hardware_reporting: true
-  #
-  # Uncomment to enable.
-  # Prefix for the names of metrics in the /metrics API.
-  # metrics_prefix: qdrant_
-
-  # Allow snapshot recovery from remote HTTP/HTTPS URLs.
-  # If disabled, snapshot recovery will only work with local files and uploads.
-  # Disabling this can mitigate SSRF risks in environments where the Qdrant node
-  # has access to internal resources that should not be reachable by users.
-  # Default: true
-  # enable_snapshot_url_recovery: true
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
@@ -358,15 +232,11 @@ cluster:
     # We encourage you NOT to change this parameter unless you know what you are doing.
     tick_period_ms: 100
 
-    # Compact consensus operations once we have this amount of applied
-    # operations. Allows peers to join quickly with a consensus snapshot without
-    # replaying a huge amount of operations.
-    # If 0 - disable compaction
-    compact_wal_entries: 128
 
 # Set to true to prevent service from sending usage statistics to the developers.
 # Read more: https://qdrant.tech/documentation/guides/telemetry
 telemetry_disabled: false
+
 
 # TLS configuration.
 # Required if either service.enable_tls or cluster.p2p.enable_tls is true.
@@ -392,17 +262,3 @@ tls:
   # If `null` - TTL is disabled.
   cert_ttl: 3600
 
-# Audit logging configuration.
-# When enabled, Qdrant writes structured JSON audit log entries for every
-# access-checked API request.
-#
-# audit:
-#   enabled: false
-#   dir: ./storage/audit
-#   rotation: daily
-#   max_log_files: 7
-#   # If true, use X-Forwarded-For header to determine client IP in audit logs.
-#   # Only enable this when running behind a trusted reverse proxy or load balancer.
-#   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
-#   # Default: false
-#   trust_forwarded_headers: false

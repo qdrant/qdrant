@@ -1,10 +1,5 @@
-pub mod compressed_posting_list;
-pub mod inverted_index;
-#[cfg(feature = "testing")]
-pub mod loaders;
-pub mod posting_list;
-pub mod posting_list_common;
-pub mod search_context;
+#![allow(dead_code)]
 
-#[cfg(test)]
-mod tests;
+pub mod inverted_index;
+pub mod posting_list;
+pub mod search_context;

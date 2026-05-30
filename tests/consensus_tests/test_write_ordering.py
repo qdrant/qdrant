@@ -28,7 +28,6 @@ def test_write_ordering(tmp_path: pathlib.Path):
     # Kill update leader peer
     print(f"Stopping update leader peer with url {max_peer_url} at index {url_index}")
     p = processes.pop(url_index)
-    restart_port = p.p2p_port
     p.kill()
     peer_api_uris.pop(url_index)
 
@@ -106,7 +105,7 @@ def test_write_ordering(tmp_path: pathlib.Path):
     assert r.status_code == 500
 
     # Restart peer
-    new_url = start_peer(peer_dirs[url_index], f"peer_{url_index}_restarted.log", bootstrap_uri, port=restart_port)
+    new_url = start_peer(peer_dirs[url_index], f"peer_{url_index}_restarted.log", bootstrap_uri)
     peer_api_uris.append(new_url)
 
     # Wait for peers to be online

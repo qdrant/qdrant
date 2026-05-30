@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use tonic::transport::{Channel, ClientTlsConfig, Error as TonicError, Uri};
@@ -13,9 +13,7 @@ pub async fn make_grpc_channel(
 ) -> Result<Channel, TonicError> {
     let mut endpoint = Channel::builder(uri)
         .timeout(timeout)
-        .connect_timeout(connection_timeout)
-        .http2_max_local_error_reset_streams(None);
-
+        .connect_timeout(connection_timeout);
     if let Some(config) = tls_config {
         endpoint = endpoint.tls_config(config)?;
     }
@@ -25,6 +23,7 @@ pub async fn make_grpc_channel(
 
 pub struct DynamicChannelPool {
     pool: Mutex<DynamicPool<Channel>>,
+    init_at: Instant,
     uri: Uri,
     timeout: Duration,
     connection_timeout: Duration,
@@ -48,14 +47,21 @@ impl DynamicChannelPool {
             channels.push(channel);
         }
 
+        let init_at = Instant::now();
+
         let pool = DynamicPool::new(channels, usage_per_channel, min_channels);
         Ok(Self {
             pool: Mutex::new(pool),
+            init_at,
             uri,
             timeout,
             connection_timeout,
             tls_config,
         })
+    }
+
+    pub fn init_at(&self) -> Instant {
+        self.init_at
     }
 
     pub async fn choose(&self) -> Result<CountedItem<Channel>, TonicError> {

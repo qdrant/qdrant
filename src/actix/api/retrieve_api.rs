@@ -1,34 +1,23 @@
-use std::time::Duration;
-
-use actix_web::{Responder, get, post, web};
+use actix_web::rt::time::Instant;
+use actix_web::{get, post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{PointRequest, PointRequestInternal, ScrollRequest};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::TryFutureExt;
+use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
-use shard::retrieve::record_internal::RecordInternal;
-use storage::content_manager::collection_verification::{
-    check_strict_mode, check_strict_mode_timeout,
-};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Auth;
-use tokio::time::Instant;
+use storage::rbac::Access;
 use validator::Validate;
 
-use super::CollectionPath;
 use super::read_params::ReadParams;
-use crate::actix::auth::ActixAuth;
-use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
-};
-use crate::common::query::do_get_points;
-use crate::settings::ServiceConfig;
+use super::CollectionPath;
+use crate::actix::auth::ActixAccess;
+use crate::actix::helpers::{self, process_response};
+use crate::common::points::do_get_points;
 
 #[derive(Deserialize, Validate)]
 struct PointPath {
@@ -42,10 +31,8 @@ async fn do_get_point(
     collection_name: &str,
     point_id: PointIdType,
     read_consistency: Option<ReadConsistency>,
-    timeout: Option<Duration>,
-    auth: Auth,
-    hw_counter: HwMeasurementAcc,
-) -> Result<Option<RecordInternal>, StorageError> {
+    access: Access,
+) -> Result<Option<Record>, StorageError> {
     let request = PointRequestInternal {
         ids: vec![point_id],
         with_payload: Some(WithPayloadInterface::Bool(true)),
@@ -58,90 +45,54 @@ async fn do_get_point(
         collection_name,
         request,
         read_consistency,
-        timeout,
         shard_selection,
-        auth,
-        hw_counter,
+        access,
     )
     .await
     .map(|points| points.into_iter().next())
 }
 
-#[get("/collections/{collection_name}/points/{id}")]
+#[get("/collections/{name}/points/{id}")]
 async fn get_point(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     point: Path<PointPath>,
     params: Query<ReadParams>,
-    service_config: web::Data<ServiceConfig>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let pass = match check_strict_mode_timeout(
-        params.timeout_as_secs(),
-        &collection.collection_name,
-        &dispatcher,
-        &auth,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
+    helpers::time(async move {
+        let point_id: PointIdType = point.id.parse().map_err(|_| StorageError::BadInput {
+            description: format!("Can not recognize \"{}\" as point id", point.id),
+        })?;
 
-    let Ok(point_id) = point.id.parse::<PointIdType>() else {
-        let err =
-            StorageError::bad_input(format!("Can not recognize \"{}\" as point id", point.id));
-        return process_response_error(err, Instant::now(), None);
-    };
+        let Some(record) = do_get_point(
+            dispatcher.toc(&access),
+            &collection.name,
+            point_id,
+            params.consistency,
+            access,
+        )
+        .await?
+        else {
+            return Err(StorageError::NotFound {
+                description: format!("Point with id {point_id} does not exists!"),
+            });
+        };
 
-    let request_hw_counter = get_request_hardware_counter(
-        &dispatcher,
-        collection.collection_name.clone(),
-        service_config.hardware_reporting(),
-        None,
-    );
-    let timing = Instant::now();
-
-    let res = do_get_point(
-        dispatcher.toc(&auth, &pass),
-        &collection.collection_name,
-        point_id,
-        params.consistency,
-        params.timeout(),
-        auth,
-        request_hw_counter.get_counter(),
-    )
-    .await
-    .and_then(|i| {
-        i.ok_or_else(|| {
-            StorageError::not_found(format!("Point with id {point_id} does not exists!"))
-        })
+        Ok(api::rest::Record::from(record))
     })
-    .map(api::rest::Record::from);
-
-    process_response(res, timing, request_hw_counter.to_rest_api())
+    .await
 }
 
-#[post("/collections/{collection_name}/points")]
+#[post("/collections/{name}/points")]
 async fn get_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<PointRequest>,
     params: Query<ReadParams>,
-    service_config: web::Data<ServiceConfig>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let pass = match check_strict_mode_timeout(
-        params.timeout_as_secs(),
-        &collection.collection_name,
-        &dispatcher,
-        &auth,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
+    let timing = Instant::now();
 
     let PointRequest {
         point_request,
@@ -153,87 +104,50 @@ async fn get_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let request_hw_counter = get_request_hardware_counter(
-        &dispatcher,
-        collection.collection_name.clone(),
-        service_config.hardware_reporting(),
-        None,
-    );
-    let timing = Instant::now();
-
-    let res = do_get_points(
-        dispatcher.toc(&auth, &pass),
-        &collection.collection_name,
+    let response = do_get_points(
+        dispatcher.toc(&access),
+        &collection.name,
         point_request,
         params.consistency,
-        params.timeout(),
         shard_selection,
-        auth,
-        request_hw_counter.get_counter(),
+        access,
     )
-    .map_ok(|response| {
-        response
-            .into_iter()
-            .map(api::rest::Record::from)
-            .collect_vec()
-    })
     .await;
-
-    process_response(res, timing, request_hw_counter.to_rest_api())
+    let response = response.map(|v| v.into_iter().map(api::rest::Record::from).collect_vec());
+    process_response(response, timing)
 }
 
-#[post("/collections/{collection_name}/points/scroll")]
+#[post("/collections/{name}/points/scroll")]
 async fn scroll_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
-    service_config: web::Data<ServiceConfig>,
-    ActixAuth(auth): ActixAuth,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    let timing = Instant::now();
+
     let ScrollRequest {
         scroll_request,
         shard_key,
     } = request.into_inner();
-
-    let pass = match check_strict_mode(
-        &scroll_request,
-        params.timeout_as_secs(),
-        &collection.collection_name,
-        &dispatcher,
-        &auth,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let request_hw_counter = get_request_hardware_counter(
-        &dispatcher,
-        collection.collection_name.clone(),
-        service_config.hardware_reporting(),
-        None,
-    );
-    let timing = Instant::now();
-
-    let res = dispatcher
-        .toc(&auth, &pass)
+    let response = dispatcher
+        .toc(&access)
         .scroll(
-            &collection.collection_name,
+            &collection.name,
             scroll_request,
             params.consistency,
-            params.timeout(),
+            // TODO: handle params.timeout
             shard_selection,
-            auth,
-            request_hw_counter.get_counter(),
+            access,
         )
         .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api())
+    process_response(response, timing)
 }

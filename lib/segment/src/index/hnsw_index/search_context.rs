@@ -1,4 +1,5 @@
 use std::collections::BinaryHeap;
+use std::iter::FromIterator;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{ScoreType, ScoredPointOffset};
@@ -13,10 +14,12 @@ pub struct SearchContext {
 }
 
 impl SearchContext {
-    pub fn new(ef: usize) -> Self {
+    pub fn new(entry_point: ScoredPointOffset, ef: usize) -> Self {
+        let mut nearest = FixedLengthPriorityQueue::new(ef);
+        nearest.push(entry_point);
         SearchContext {
-            nearest: FixedLengthPriorityQueue::new(ef),
-            candidates: BinaryHeap::new(),
+            nearest,
+            candidates: BinaryHeap::from_iter([entry_point]),
         }
     }
 

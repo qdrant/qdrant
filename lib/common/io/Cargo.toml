@@ -1,0 +1,17 @@
+[package]
+name = "io"
+version = "0.0.0"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+atomicwrites = "0.4.3"
+bincode = "1.3.3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "1.0.59"

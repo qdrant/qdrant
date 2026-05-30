@@ -3,8 +3,8 @@ mod prof;
 
 use std::collections::{BTreeMap, HashMap};
 
-use criterion::{Criterion, criterion_group, criterion_main};
-use rand::RngExt;
+use criterion::{criterion_group, criterion_main, Criterion};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,26 +29,26 @@ struct StructId {
 
 fn id_serialization_speed(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization-group");
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
 
     group.bench_function("u64", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
+            let key: u64 = rng.gen_range(0..100000000);
             bincode::serialize(&key).unwrap();
         });
     });
 
     group.bench_function("u128", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
-            let new_key = u128::from(key);
+            let key: u64 = rng.gen_range(0..100000000);
+            let new_key = key as u128;
             bincode::serialize(&new_key).unwrap();
         });
     });
 
     group.bench_function("struct-u64", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
+            let key: u64 = rng.gen_range(0..100000000);
             let new_key = StructId {
                 id: Some(key),
                 uuid: None,
@@ -59,10 +59,10 @@ fn id_serialization_speed(c: &mut Criterion) {
 
     group.bench_function("struct-uuid", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
+            let key: u64 = rng.gen_range(0..100000000);
             let new_key = StructId {
                 id: None,
-                uuid: Some(Uuid::from_u128(u128::from(key))),
+                uuid: Some(Uuid::from_u128(key as u128)),
             };
             bincode::serialize(&new_key).unwrap();
         });
@@ -70,7 +70,7 @@ fn id_serialization_speed(c: &mut Criterion) {
 
     group.bench_function("enum-u64", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
+            let key: u64 = rng.gen_range(0..100000000);
             let new_key = EnumIdTagged::Num(key);
             bincode::serialize(&new_key).unwrap();
         });
@@ -78,23 +78,23 @@ fn id_serialization_speed(c: &mut Criterion) {
 
     group.bench_function("enum-uuid", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
-            let new_key = EnumIdTagged::Uuid(Uuid::from_u128(u128::from(key)));
+            let key: u64 = rng.gen_range(0..100000000);
+            let new_key = EnumIdTagged::Uuid(Uuid::from_u128(key as u128));
             bincode::serialize(&new_key).unwrap();
         });
     });
 
     group.bench_function("struct-cbor-u128", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
-            let new_key = u128::from(key);
+            let key: u64 = rng.gen_range(0..100000000);
+            let new_key = key as u128;
             serde_cbor::to_vec(&new_key).unwrap();
         });
     });
 
     group.bench_function("struct-cbor-u64", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
+            let key: u64 = rng.gen_range(0..100000000);
             let new_key = StructId {
                 id: Some(key),
                 uuid: None,
@@ -105,10 +105,10 @@ fn id_serialization_speed(c: &mut Criterion) {
 
     group.bench_function("struct-cbor-uuid", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
+            let key: u64 = rng.gen_range(0..100000000);
             let new_key = StructId {
                 id: None,
-                uuid: Some(Uuid::from_u128(u128::from(key))),
+                uuid: Some(Uuid::from_u128(key as u128)),
             };
             serde_cbor::to_vec(&new_key).unwrap();
         });
@@ -116,7 +116,7 @@ fn id_serialization_speed(c: &mut Criterion) {
 
     group.bench_function("enum-cbor-u64", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
+            let key: u64 = rng.gen_range(0..100000000);
             let new_key = EnumId::Num(key);
             serde_cbor::to_vec(&new_key).unwrap();
         });
@@ -124,8 +124,8 @@ fn id_serialization_speed(c: &mut Criterion) {
 
     group.bench_function("enum-cbor-uuid", |b| {
         b.iter(|| {
-            let key: u64 = rng.random_range(0..100000000);
-            let new_key = EnumId::Uuid(Uuid::from_u128(u128::from(key)));
+            let key: u64 = rng.gen_range(0..100000000);
+            let new_key = EnumId::Uuid(Uuid::from_u128(key as u128));
             serde_cbor::to_vec(&new_key).unwrap();
         });
     });

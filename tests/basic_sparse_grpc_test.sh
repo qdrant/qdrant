@@ -6,21 +6,15 @@ set -ex
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
-QDRANT_HOST=${QDRANT_HOST:-'localhost:6334'}
+QDRANT_HOST='localhost:6334'
 
-docker_grpcurl=("docker" "run" "--rm" "--network=host" "-v" "${PWD}/lib/api/src/grpc/proto:/proto" "fullstorydev/grpcurl" "-plaintext" "-import-path" "/proto" "-proto" "qdrant.proto")
+docker_grpcurl="docker run --rm --network=host -v ${PWD}/lib/api/src/grpc/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
 
-if [ -n "${QDRANT_HOST_HEADERS}" ]; then
-  while read h; do
-    docker_grpcurl+=("-H" "$h")
-  done <<<  $(echo "${QDRANT_HOST_HEADERS}" | jq -r 'to_entries|map("\(.key): \(.value)")[]')
-fi
-
-"${docker_grpcurl[@]}" -d '{
+$docker_grpcurl -d '{
    "collection_name": "test_sparse_collection"
 }' $QDRANT_HOST qdrant.Collections/Delete
 
-"${docker_grpcurl[@]}" -d '{
+$docker_grpcurl -d '{
    "collection_name": "test_sparse_collection",
    "sparse_vectors_config": {
       "map": {
@@ -29,9 +23,9 @@ fi
    }
 }' $QDRANT_HOST qdrant.Collections/Create
 
-"${docker_grpcurl[@]}" -d '{}' $QDRANT_HOST qdrant.Collections/List
+$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
 
-"${docker_grpcurl[@]}" -d '{
+$docker_grpcurl -d '{
   "collection_name": "test_sparse_collection",
   "wait": true,
   "ordering": null,
@@ -110,9 +104,9 @@ fi
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
 
-"${docker_grpcurl[@]}" -d '{ "collection_name": "test_sparse_collection" }' $QDRANT_HOST qdrant.Collections/Get
+$docker_grpcurl -d '{ "collection_name": "test_sparse_collection" }' $QDRANT_HOST qdrant.Collections/Get
 
-"${docker_grpcurl[@]}" -d '{
+$docker_grpcurl -d '{
   "collection_name": "test_sparse_collection",
   "vector": [0.2,0.1,0.9,0.7],
   "sparse_indices": { "data": [0,1,2,3] },
@@ -120,7 +114,7 @@ fi
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
-"${docker_grpcurl[@]}" -d '{
+$docker_grpcurl -d '{
   "collection_name": "test_sparse_collection",
   "filter": {
     "should": [
@@ -140,7 +134,7 @@ fi
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
-"${docker_grpcurl[@]}" -d '{
+$docker_grpcurl -d '{
   "collection_name": "test_sparse_collection",
   "limit": 2,
   "with_vectors": {"enable": true},
@@ -158,7 +152,7 @@ fi
   }
 }' $QDRANT_HOST qdrant.Points/Scroll
 
-"${docker_grpcurl[@]}" -d '{
+$docker_grpcurl -d '{
   "collection_name": "test_sparse_collection",
   "with_vectors": {"enable": true},
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
@@ -167,7 +161,7 @@ fi
 # validate search request when vector and indices have different sizes
 set +e
 response=$(
-  "${docker_grpcurl[@]}" -d '{
+  $docker_grpcurl -d '{
     "collection_name": "test_sparse_collection",
     "vector": [0.2,0.1],
     "sparse_indices": { "data": [0,1,2,3] },
@@ -175,13 +169,13 @@ response=$(
     "limit": 3
   }' $QDRANT_HOST qdrant.Points/Search 2>&1
 )
-if [[ $response != *"Sparse indices does not match sparse vector conditions: values: Validation error: must be the same length as indices [{}]"* ]]; then
+if [[ $response != *"Sparse indices does not match sparse vector conditions"* ]]; then
     echo Unexpected response, expected validation error: $response
     exit 1
 fi
 
 response=$(
-  "${docker_grpcurl[@]}" -d '{
+  $docker_grpcurl -d '{
     "collection_name": "test_sparse_collection",
     "wait": true,
     "ordering": null,
@@ -199,7 +193,7 @@ response=$(
     ]
   }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
 )
-if [[ $response != *"Validation error in body: [points[0].vectors.vectors_options.vectors.[].values: Validation error: must be the same length as indices [{}]]"* ]]; then
+if [[ $response != *"Validation error in body: [points.[].vectors.vectors_options.vectors.[].values: Validation error: must be the same length as indices [{}]]"* ]]; then
     echo Unexpected response, expected validation error: $response
     exit 1
 fi

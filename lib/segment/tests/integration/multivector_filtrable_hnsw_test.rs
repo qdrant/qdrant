@@ -1,52 +1,110 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use common::budget::ResourcePermit;
-use common::flags::FeatureFlags;
-use common::progress_tracker::ProgressTracker;
+use common::cpu::CpuPermit;
 use common::types::TelemetryDetail;
-use ordered_float::OrderedFloat;
+use itertools::Itertools;
 use rand::prelude::StdRng;
-use rand::{RngExt, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rstest::rstest;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
+use segment::data_types::vectors::{only_default_multi_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
-use segment::fixtures::query_fixtures::{QueryVariant, random_multi_vec_query};
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{PayloadIndex, VectorIndexRead};
+use segment::index::hnsw_index::graph_links::GraphLinksRam;
+use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::num_rayon_threads;
+use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
     PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
     VectorStorageType,
 };
-use segment::vector_storage::VectorStorageRead;
+use segment::vector_storage::query::context_query::ContextPair;
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::reco_query::RecoQuery;
+use serde_json::json;
 use tempfile::Builder;
+
+use crate::utils::path;
+
+const MAX_EXAMPLE_PAIRS: usize = 4;
+
+enum QueryVariant {
+    Nearest,
+    RecommendBestScore,
+    Discovery,
+}
+
+fn random_multi_vec_discovery_query<R: Rng + ?Sized>(
+    rnd: &mut R,
+    dim: usize,
+    num_vector_per_points: usize,
+) -> QueryVector {
+    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+
+    let target = random_multi_vector(rnd, dim, num_vector_per_points).into();
+
+    let pairs = (0..num_pairs)
+        .map(|_| {
+            let positive = random_multi_vector(rnd, dim, num_vector_per_points).into();
+            let negative = random_multi_vector(rnd, dim, num_vector_per_points).into();
+            ContextPair { positive, negative }
+        })
+        .collect_vec();
+
+    DiscoveryQuery::new(target, pairs).into()
+}
+
+fn random_multi_vec_reco_query<R: Rng + ?Sized>(
+    rnd: &mut R,
+    dim: usize,
+    num_vector_per_points: usize,
+) -> QueryVector {
+    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+
+    let positive = (0..num_examples)
+        .map(|_| random_multi_vector(rnd, dim, num_vector_per_points).into())
+        .collect_vec();
+    let negative = (0..num_examples)
+        .map(|_| random_multi_vector(rnd, dim, num_vector_per_points).into())
+        .collect_vec();
+
+    RecoQuery::new(positive, negative).into()
+}
+
+fn random_multi_vec_query<R: Rng + ?Sized>(
+    variant: &QueryVariant,
+    rnd: &mut R,
+    dim: usize,
+    num_vector_per_points: usize,
+) -> QueryVector {
+    match variant {
+        QueryVariant::Nearest => random_multi_vector(rnd, dim, num_vector_per_points).into(),
+        QueryVariant::Discovery => {
+            random_multi_vec_discovery_query(rnd, dim, num_vector_per_points)
+        }
+        QueryVariant::RecommendBestScore => {
+            random_multi_vec_reco_query(rnd, dim, num_vector_per_points)
+        }
+    }
+}
 
 /// Check all cases with single vector per multi and several vectors per multi
 #[rstest]
 #[case::nearest_eq(QueryVariant::Nearest, 1, 32, 5)]
 #[case::nearest_multi(QueryVariant::Nearest, 3, 64, 20)]
-#[case::discover_eq(QueryVariant::Discover, 1, 128, 5)]
-#[case::discover_multi(QueryVariant::Discover, 3, 128, 20)]
-#[case::recobestscore_eq(QueryVariant::RecoBestScore, 1, 64, 5)]
-#[case::recobestscore_multi(QueryVariant::RecoBestScore, 2, 64, 10)]
-#[case::recosumscores_eq(QueryVariant::RecoSumScores, 1, 64, 5)]
-#[case::recosumscores_multi(QueryVariant::RecoSumScores, 2, 64, 10)]
+#[case::discovery_eq(QueryVariant::Discovery, 1, 128, 5)]
+#[case::discovery_multi(QueryVariant::Discovery, 3, 128, 20)]
+#[case::recommend_eq(QueryVariant::RecommendBestScore, 1, 64, 5)]
+#[case::recommend_multi(QueryVariant::RecommendBestScore, 2, 64, 10)]
 fn test_multi_filterable_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] max_num_vector_per_points: usize,
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use segment::json_path::JsonPath;
-    use segment::payload_json;
-    use segment::segment_constructor::VectorIndexBuildArgs;
-    use segment::types::HnswGlobalConfig;
-
     let stopped = AtomicBool::new(false);
 
     let vector_dim = 8;
@@ -57,7 +115,7 @@ fn test_multi_filterable_hnsw(
     let full_scan_threshold = 8; // KB
     let num_payload_values = 2;
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -68,10 +126,10 @@ fn test_multi_filterable_hnsw(
             VectorDataConfig {
                 size: vector_dim,
                 distance,
-                storage_type: VectorStorageType::default(),
+                storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {}, // uses plain index for comparison
                 quantization_config: None,
-                multivector_config: Some(MultiVectorConfig::default()), // uses multivec config
+                multi_vec_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
             },
         )]),
@@ -81,43 +139,26 @@ fn test_multi_filterable_hnsw(
 
     let int_key = "int";
 
-    let hw_counter = HardwareCounterCell::new();
-
-    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_points {
         let idx = n.into();
         // Random number of vectors per multivec point
-        let num_vector_for_point = rng.random_range(1..=max_num_vector_per_points);
-        let multi_vec = random_multi_vector(&mut rng, vector_dim, num_vector_for_point);
+        let num_vector_for_point = rnd.gen_range(1..=max_num_vector_per_points);
+        let multi_vec = random_multi_vector(&mut rnd, vector_dim, num_vector_for_point);
 
-        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
-        let payload = payload_json! {int_key: int_payload};
+        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let payload: Payload = json!({int_key:int_payload,}).into();
 
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, named_vectors)
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
-    assert_eq!(
-        segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_storage
-            .borrow()
-            .total_vector_count(),
-        num_points as usize
-    );
 
     let payload_index_ptr = segment.payload_index.clone();
-    payload_index_ptr
-        .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
-        .unwrap();
 
     let hnsw_config = HnswConfig {
         m,
@@ -126,56 +167,52 @@ fn test_multi_filterable_hnsw(
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        inline_storage: None,
     };
 
-    let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            quantized_vectors: quantized_vectors.clone(),
-            payload_index: payload_index_ptr,
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
+    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        vector_storage.clone(),
+        quantized_vectors.clone(),
+        payload_index_ptr.clone(),
+        hnsw_config,
     )
     .unwrap();
+
+    hnsw_index.build_index(permit.clone(), &stopped).unwrap();
+
+    payload_index_ptr
+        .borrow_mut()
+        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
+        .unwrap();
+
+    hnsw_index.build_index(permit, &stopped).unwrap();
 
     let top = 3;
     let mut hits = 0;
     let attempts = 100;
     for i in 0..attempts {
         // Random number of vectors per multivec query
-        let num_vector_for_query = rng.random_range(1..=max_num_vector_per_points);
+        let num_vector_for_query = rnd.gen_range(1..=max_num_vector_per_points);
         let query =
-            random_multi_vec_query(&query_variant, &mut rng, vector_dim, num_vector_for_query);
+            random_multi_vec_query(&query_variant, &mut rnd, vector_dim, num_vector_for_query);
 
         let range_size = 40;
-        let left_range = rng.random_range(0..400);
+        let left_range = rnd.gen_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            JsonPath::new(int_key),
+            path(int_key),
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(OrderedFloat(f64::from(left_range))),
-                lte: Some(OrderedFloat(f64::from(right_range))),
+                gte: Some(left_range as f64),
+                lte: Some(right_range as f64),
             },
         )));
 
@@ -190,7 +227,8 @@ fn test_multi_filterable_hnsw(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
 
@@ -207,16 +245,23 @@ fn test_multi_filterable_hnsw(
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &Default::default())
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
             .unwrap();
 
         if plain_result == index_result {
             hits += 1;
         } else {
-            eprintln!("Attempt {i}/{attempts}");
-            eprintln!("Different results for query {query:?}");
-            eprintln!("plain_result = {plain_result:#?}");
-            eprintln!("index_result = {index_result:#?}");
+            eprintln!("Attempt {}/{}", i, attempts);
+            eprintln!("Different results for query {:?}", query);
+            eprintln!("plain_result = {:#?}", plain_result);
+            eprintln!("index_result = {:#?}", index_result);
         }
     }
     assert!(

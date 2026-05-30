@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use api::grpc::qdrant::{
-    ReadConsistency as ReadConsistencyGrpc, ReadConsistencyType as ReadConsistencyTypeGrpc,
-    read_consistency,
+    read_consistency, ReadConsistency as ReadConsistencyGrpc,
+    ReadConsistencyType as ReadConsistencyTypeGrpc,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -25,11 +25,7 @@ use validator::{Validate, ValidationError as ValidatorError, ValidationErrors};
 #[serde(untagged)]
 pub enum ReadConsistency {
     // send N random request and return points, which present on all of them
-    Factor(
-        #[serde(deserialize_with = "deserialize_factor")]
-        #[schemars(range(min = 1))]
-        usize,
-    ),
+    Factor(#[serde(deserialize_with = "deserialize_factor")] usize),
     Type(ReadConsistencyType),
 }
 
@@ -80,8 +76,7 @@ impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
     type Error = tonic::Status;
 
     fn try_from(consistency: ReadConsistencyGrpc) -> Result<Self, Self::Error> {
-        let ReadConsistencyGrpc { value } = consistency;
-        let value = value.ok_or_else(|| {
+        let value = consistency.value.ok_or_else(|| {
             tonic::Status::invalid_argument(
                 "invalid read consistency message: `ReadConsistency::value` field is `None`",
             )
@@ -94,10 +89,6 @@ impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
             ),
             read_consistency::Value::Type(consistency) => Self::Type(consistency.try_into()?),
         };
-
-        consistency
-            .validate()
-            .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?;
 
         Ok(consistency)
     }
@@ -169,7 +160,7 @@ impl TryFrom<i32> for ReadConsistencyType {
     type Error = tonic::Status;
 
     fn try_from(consistency: i32) -> Result<Self, Self::Error> {
-        let consistency = ReadConsistencyTypeGrpc::try_from(consistency).map_err(|_| {
+        let consistency = ReadConsistencyTypeGrpc::from_i32(consistency).ok_or_else(|| {
             tonic::Status::invalid_argument(format!(
                 "invalid read consistency type value {consistency}",
             ))

@@ -29,30 +29,32 @@ jobs:
           rustup update
           rustup show
           cargo -Vv
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        uses: dtolnay/rust-toolchain@stable
       - name: Install cross-compilation tools
         with:
           target: ${{ matrix.target }}
         if: startsWith(matrix.os, 'ubuntu') && contains(matrix.target, '-musl')
-        uses: taiki-e/setup-cross-toolchain-action@129361238c06ff2cc1c4ca5c5d2217af441ffdf6 # v1.40.1
+        uses: taiki-e/setup-cross-toolchain-action@v1
       - name: Build and publish
-        uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: qdrant
           target: ${{ matrix.target }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Debian Package
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
-          bash -x tools/sync-web-ui.sh
           cargo install cargo-deb
           cargo deb --no-strip --target ${{ matrix.target }}
       - name: Upload Debian package
         if: matrix.target == 'x86_64-unknown-linux-musl'
-        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
+        uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/${{ matrix.target }}/debian/*.deb
@@ -78,12 +80,13 @@ jobs:
           rustup update
           rustup show
           cargo -Vv
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
       - name: Build and publish
-        uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: qdrant
           target: ${{ matrix.target }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows-binaries:
     strategy:
@@ -93,28 +96,31 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build
         run: cargo build --release --locked
 
       - name: Build and publish
-        uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: qdrant
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-app-image:
     strategy:
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-20.04
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -122,13 +128,15 @@ jobs:
           sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler libfuse2
 
       - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build release binary
-        run: cargo build --release --locked
+        run: cargo build --release
 
       - name: Build AppImage
         shell: bash
@@ -159,7 +167,7 @@ jobs:
               --output appimage
 
       - name: Upload AppImage
-        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
+        uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: "qdrant-x86_64.AppImage"

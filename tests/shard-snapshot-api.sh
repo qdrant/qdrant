@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eEuo pipefail
+set -euo pipefail
 
 
 declare QDRANT_HOST="${QDRANT_HOST:-localhost}"
@@ -38,7 +38,6 @@ declare FILESERVER_PID=''
 
 function main {
 	load-qdrant-status
-	trap 'failure $LINENO' ERR
 	trap cleanup EXIT
 	"$@"
 }
@@ -79,21 +78,6 @@ function cleanup {
 	then
 		rm "$DOWNLOADED_SNAPSHOT"
 	fi
-}
-
-function failure {
-	printf "Exit code: %d\n" $? >&2
-	declare INDEX
-	for (( INDEX=0; INDEX<${#BASH_LINENO[@]}-1; INDEX++ ))
-	do
-		printf "%s:%d@%s: " \
-			"${BASH_SOURCE[INDEX+1]}" \
-			"$(( INDEX > 0 ? BASH_LINENO[INDEX] : $1 ))" \
-			"${FUNCNAME[INDEX+1]}"
-		(( INDEX > 0 )) && \
-			printf "%s\n" "${FUNCNAME[INDEX]}" || \
-			printf "%s\n" " $BASH_COMMAND"
-	done >&2
 }
 
 function kill-jobs {
@@ -316,16 +300,8 @@ function upload {
 	fixture-with-downloaded-snapshot
 	fixture-with-empty-collection
 
-    # Memory usage before upload
-    echo "Memory usage before upload:"
-    free -h
-
 	do-upload "$@"
 	check-recovered - "$DOWNLOADED_SNAPSHOT_POINTS" "$@"
-
-    # Memory usage after upload
-    echo "Memory usage after upload:"
-    free -h
 }
 
 function upload-priority-snapshot {
@@ -444,7 +420,7 @@ function fixture-with-points {
 				--uri "http://$QDRANT_HOST:$QDRANT_GRPC_PORT" \
 				--collection-name "$(basename "$(url)")" \
 				--dim 128 \
-                --num-vectors 100000 \
+				--num-vectors 10000 \
 				--skip-create
 		else
 			curl-ok \
@@ -613,7 +589,7 @@ function points-count {
 }
 
 function concurrent {
-	declare PARALLEL ; PARALLEL="$(or-default "$1" 10)"
+	declare PARALLEL ; PARALLEL="$(or-default "$1" 2)"
 	declare CMD=( "${@:2}" )
 
 	declare -A JOBS

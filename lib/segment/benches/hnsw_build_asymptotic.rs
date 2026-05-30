@@ -1,19 +1,20 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use std::cell::LazyCell;
-
-use common::iterator_ext::IteratorExt as _;
-use criterion::{Criterion, criterion_group, criterion_main};
+use common::types::PointOffsetType;
+use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
-use rand::{RngExt, rng};
-use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
-use segment::index::hnsw_index::graph_layers::SearchAlgorithm;
+use rand::{thread_rng, Rng};
+use segment::data_types::vectors::VectorElementType;
+use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
+use segment::index::hnsw_index::graph_layers::GraphLayers;
+use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use segment::index::hnsw_index::graph_links::GraphLinksRam;
+use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
-use segment::types::Distance;
-use segment::vector_storage::DEFAULT_STOPPED;
 
+const NUM_VECTORS: usize = 5_000;
 const DIM: usize = 16;
 const M: usize = 16;
 const TOP: usize = 10;
@@ -21,185 +22,186 @@ const EF_CONSTRUCT: usize = 64;
 const EF: usize = 64;
 const USE_HEURISTIC: bool = true;
 
-mod fixture;
+fn build_index<TMetric: Metric<VectorElementType>>(
+    num_vectors: usize,
+) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>) {
+    let mut rng = thread_rng();
+
+    let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
+    let mut graph_layers_builder =
+        GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+    let fake_filter_context = FakeFilterContext {};
+    for idx in 0..(num_vectors as PointOffsetType) {
+        let added_vector = vector_holder.vectors.get(idx).to_vec();
+        let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        let level = graph_layers_builder.get_random_layer(&mut rng);
+        graph_layers_builder.set_levels(idx, level);
+        graph_layers_builder.link_new_point(idx, scorer);
+    }
+    (
+        vector_holder,
+        graph_layers_builder.into_graph_layers(None).unwrap(),
+    )
+}
 
 fn hnsw_build_asymptotic(c: &mut Criterion) {
     let mut group = c.benchmark_group("hnsw-index-build-asymptotic");
 
-    let mut rng = rng();
+    let mut rng = thread_rng();
 
-    let setup_5k = LazyCell::new(|| {
-        eprintln!();
-        fixture::make_cached_graph::<CosineMetric>(5_000, DIM, M, EF_CONSTRUCT, USE_HEURISTIC)
-    });
+    let (vector_holder, graph_layers) = build_index::<CosineMetric>(NUM_VECTORS);
 
-    group.bench_function("build-n-search-hnsw-5k", |b| {
-        let (vector_holder, graph_layers) = &*setup_5k;
+    group.bench_function("build-n-search-hnsw", |b| {
         b.iter(|| {
+            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let scorer = vector_holder.scorer(query);
-            graph_layers
-                .search(
-                    TOP,
-                    EF,
-                    SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
-                    &DEFAULT_STOPPED,
-                )
-                .unwrap();
+            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers.search(TOP, EF, scorer, None);
         })
     });
 
-    drop(setup_5k);
+    for _ in 0..10 {
+        let fake_filter_context = FakeFilterContext {};
+        let query = random_vector(&mut rng, DIM);
+        let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        graph_layers.search(TOP, EF, scorer, None);
+    }
 
-    const NUM_VECTORS: usize = 1_000_000;
-    let setup_1m = LazyCell::new(|| {
-        eprintln!();
-        fixture::make_cached_graph::<CosineMetric>(NUM_VECTORS, DIM, M, EF_CONSTRUCT, USE_HEURISTIC)
-    });
+    let (vector_holder, graph_layers) = build_index::<CosineMetric>(NUM_VECTORS * 10);
 
-    group.bench_function("build-n-search-hnsw-1M", |b| {
-        let (vector_holder, graph_layers) = &*setup_1m;
+    group.bench_function("build-n-search-hnsw-10x", |b| {
         b.iter(|| {
+            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let scorer = vector_holder.scorer(query);
-            graph_layers
-                .search(
-                    TOP,
-                    EF,
-                    SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
-                    &DEFAULT_STOPPED,
-                )
-                .unwrap();
+            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers.search(TOP, EF, scorer, None);
         })
     });
 
-    group.bench_function("build-n-search-hnsw-1M-score-point", |b| {
-        let (vector_holder, _graph_layers) = &*setup_1m;
+    group.bench_function("build-n-search-hnsw-10x-score-point", |b| {
         b.iter(|| {
+            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.scorer(query);
+            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..1500)
-                .map(|_| rng.random_range(0..NUM_VECTORS) as u32)
+                .map(|_| rng.gen_range(0..(NUM_VECTORS * 10)) as u32)
                 .collect_vec();
-            scorer.score_points(&mut points_to_score, 1000).black_box();
+            scorer.score_points(&mut points_to_score, 1000);
         })
     });
 
-    drop(setup_1m);
+    for _ in 0..10 {
+        let fake_filter_context = FakeFilterContext {};
+        let query = random_vector(&mut rng, DIM);
+        let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        graph_layers.search(TOP, EF, scorer, None);
+    }
 }
 
 fn scoring_vectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("scoring-vector");
-    let mut rng = rng();
+    let mut rng = thread_rng();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000;
 
     let num_vectors = base_num_vectors;
-    let vector_holder =
-        TestRawScorerProducer::new(DIM, Distance::Dot, num_vectors, false, &mut rng);
+    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point", |b| {
         b.iter(|| {
+            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.scorer(query);
+            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.random_range(0..num_vectors) as u32)
+                .map(|_| rng.gen_range(0..num_vectors) as u32)
                 .collect_vec();
-            scorer
-                .score_points(&mut points_to_score, points_per_cycle)
-                .black_box();
+            scorer.score_points(&mut points_to_score, points_per_cycle);
         })
     });
 
     let num_vectors = base_num_vectors * 10;
-    let vector_holder =
-        TestRawScorerProducer::new(DIM, Distance::Dot, num_vectors, false, &mut rng);
+    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
+            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.scorer(query);
+            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.random_range(0..num_vectors) as u32)
+                .map(|_| rng.gen_range(0..num_vectors) as u32)
                 .collect_vec();
-            scorer
-                .score_points(&mut points_to_score, points_per_cycle)
-                .black_box();
+            scorer.score_points(&mut points_to_score, points_per_cycle);
         })
     });
 
     let num_vectors = base_num_vectors * 50;
-    let vector_holder =
-        TestRawScorerProducer::new(DIM, Distance::Dot, num_vectors, false, &mut rng);
+    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {
+            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.scorer(query);
+            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.random_range(0..num_vectors) as u32)
+                .map(|_| rng.gen_range(0..num_vectors) as u32)
                 .collect_vec();
-            scorer
-                .score_points(&mut points_to_score, points_per_cycle)
-                .black_box();
+            scorer.score_points(&mut points_to_score, points_per_cycle);
         })
     });
 }
 
 fn basic_scoring_vectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("scoring-vector");
+    let mut rng = thread_rng();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000_000;
 
     let num_vectors = base_num_vectors;
-    let setup = LazyCell::new(|| {
-        let mut rng = rng();
-        (0..num_vectors)
-            .map(|_| random_vector(&mut rng, DIM))
-            .collect_vec()
-    });
+
+    let vectors = (0..num_vectors)
+        .map(|_| random_vector(&mut rng, DIM))
+        .collect_vec();
+
     group.bench_function("basic-score-point", |b| {
-        let vectors = &*setup;
-        let mut rng = rng();
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let points_to_score = (0..points_per_cycle).map(|_| rng.random_range(0..num_vectors));
+            let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
                 .map(|x| DotProductMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });
-    drop(setup);
 
     let num_vectors = base_num_vectors * 2;
-    let setup = LazyCell::new(|| {
-        let mut rng = rng();
-        (0..num_vectors)
-            .map(|_| random_vector(&mut rng, DIM))
-            .collect_vec()
-    });
+
+    let vectors = (0..num_vectors)
+        .map(|_| random_vector(&mut rng, DIM))
+        .collect_vec();
+
     group.bench_function("basic-score-point-10x", |b| {
-        let vectors = &*setup;
-        let mut rng = rng();
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let points_to_score = (0..points_per_cycle).map(|_| rng.random_range(0..num_vectors));
+            let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
                 .map(|x| DotProductMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });
-    drop(setup);
 }
 
 #[cfg(not(target_os = "windows"))]

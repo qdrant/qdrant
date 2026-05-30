@@ -82,9 +82,9 @@ pub fn number_of_selected_points(points: usize, values: usize) -> usize {
 mod tests {
     use std::collections::HashSet;
 
-    use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
+    use rand::SeedableRng;
 
     use super::*;
 
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn approx_factorial() {
         let approx = approx_fact_log(10.).exp();
-        let real = f64::from(2 * 3 * 4 * 5 * 6 * 7 * 8 * 9 * 10);
+        let real = (2 * 3 * 4 * 5 * 6 * 7 * 8 * 9 * 10) as f64;
         let error = (approx / real - 1.0).abs();
         assert!(error < 0.01);
     }

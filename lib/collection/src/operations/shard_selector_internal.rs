@@ -1,6 +1,6 @@
-use api::rest::{ShardKeySelector, ShardKeyWithFallback};
 use segment::types::ShardKey;
 
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::shards::shard::ShardId;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,8 +13,6 @@ pub enum ShardSelectorInternal {
     ShardKey(ShardKey),
     /// Select multiple shard keys
     ShardKeys(Vec<ShardKey>),
-    /// Select shard key with a fallback shard
-    ShardKeyWithFallback(ShardKeyWithFallback),
     /// ShardId
     ShardId(ShardId),
 }
@@ -45,9 +43,6 @@ impl From<ShardKeySelector> for ShardSelectorInternal {
         match selector {
             ShardKeySelector::ShardKey(key) => ShardSelectorInternal::ShardKey(key),
             ShardKeySelector::ShardKeys(keys) => ShardSelectorInternal::ShardKeys(keys),
-            ShardKeySelector::ShardKeyWithFallback(key_with_fallback) => {
-                ShardSelectorInternal::ShardKeyWithFallback(key_with_fallback)
-            }
         }
     }
 }

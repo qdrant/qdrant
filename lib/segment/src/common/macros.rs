@@ -4,7 +4,7 @@
 /// #[macro_rules_attribute::macro_rules_derive(schemars_rename_generics)]
 /// #[derive_args(<i32> => "NewName", ...)]
 /// ```
-/// Workaround for <https://github.com/GREsau/schemars/issues/193>
+/// Workaround for https://github.com/GREsau/schemars/issues/193
 macro_rules! schemars_rename_generics {
     {
         #[doc = $doc:literal]
@@ -20,12 +20,12 @@ macro_rules! schemars_rename_generics {
             fn schema_name() -> String {
                 $new_name.to_string()
             }
-            fn json_schema(generator: &mut ::schemars::r#gen::SchemaGenerator) -> ::schemars::schema::Schema {
+            fn json_schema(gen: &mut ::schemars::gen::SchemaGenerator) -> ::schemars::schema::Schema {
                 #[doc = $doc]
                 #[derive(::schemars::JsonSchema)]
                 $( #[$attrs] )*
                 struct Temp<$($param),*>{ $($body)* }
-                Temp::<$($old_params),*>::json_schema(generator)
+                Temp::<$($old_params),*>::json_schema(gen)
             }
         }
         $crate::common::macros::schemars_rename_generics! {

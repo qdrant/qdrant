@@ -1,29 +1,27 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::FeatureFlags;
-use common::progress_tracker::ProgressTracker;
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
-use ordered_float::OrderedFloat;
-use rand::RngExt;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+use itertools::Itertools;
+use rand::{thread_rng, Rng};
+use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
-use segment::index::hnsw_index::get_num_indexing_threads;
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{PayloadIndex, PayloadIndexRead, VectorIndexRead};
-use segment::json_path::JsonPath;
-use segment::payload_json;
-use segment::segment_constructor::VectorIndexBuildArgs;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::index::hnsw_index::graph_links::GraphLinksRam;
+use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::num_rayon_threads;
+use segment::index::{PayloadIndex, VectorIndex};
+use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    Range, SearchParams, SeqNumberType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
+    Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
+use serde_json::json;
 use tempfile::Builder;
+
+use crate::utils::path;
 
 #[test]
 fn exact_search_test() {
@@ -39,34 +37,43 @@ fn exact_search_test() {
     let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
-    let mut rng = rand::rng();
+    let mut rnd = thread_rng();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance,
+                storage_type: VectorStorageType::Memory,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multi_vec_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+
     let int_key = "int";
 
-    let hw_counter = HardwareCounterCell::new();
-    let is_stopped = AtomicBool::new(false);
-
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rng, dim);
+        let vector = random_vector(&mut rnd, dim);
 
-        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
-        let payload = payload_json! {int_key: int_payload};
+        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let payload: Payload = json!({int_key:int_payload,}).into();
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
     // let opnum = num_vectors + 1;
@@ -80,28 +87,36 @@ fn exact_search_test() {
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        inline_storage: None,
     };
+
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
+    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .clone(),
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .quantized_vectors
+            .clone(),
+        payload_index_ptr.clone(),
+        hnsw_config,
+    )
+    .unwrap();
+
+    hnsw_index.build_index(permit.clone(), &stopped).unwrap();
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
-    let mut blocks = Vec::new();
-    borrowed_payload_index
-        .with_view(|v| {
-            v.for_each_payload_block(&JsonPath::new(int_key), indexing_threshold, &mut |block| {
-                blocks.push(block);
-                Ok(())
-            })
-        })
-        .unwrap();
-    for block in &blocks {
+    let blocks = borrowed_payload_index
+        .payload_blocks(&path(int_key), indexing_threshold)
+        .collect_vec();
+    for block in blocks.iter() {
         assert!(
             block.condition.range.is_some(),
             "only range conditions should be generated for this type of payload"
@@ -112,9 +127,7 @@ fn exact_search_test() {
     for block in &blocks {
         let px = payload_index_ptr.borrow();
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-        let points = px
-            .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
-            .unwrap();
+        let points = px.query_points(&filter);
         for point in points {
             coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
         }
@@ -133,38 +146,12 @@ fn exact_search_test() {
         "not all points are covered by payload blocks"
     );
 
-    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .clone(),
-            quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
-                .quantized_vectors
-                .clone(),
-            payload_index: payload_index_ptr.clone(),
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
-    )
-    .unwrap();
+    hnsw_index.build_index(permit, &stopped).unwrap();
 
     let top = 3;
     let attempts = 50;
     for _i in 0..attempts {
-        let query = random_vector(&mut rng, dim).into();
+        let query = random_vector(&mut rnd, dim).into();
 
         let index_result = hnsw_index
             .search(
@@ -176,13 +163,14 @@ fn exact_search_test() {
                     exact: true,
                     ..Default::default()
                 }),
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &Default::default())
+            .search(&[&query], None, top, None, &false.into(), usize::MAX)
             .unwrap();
 
         assert_eq!(
@@ -191,16 +179,16 @@ fn exact_search_test() {
         );
 
         let range_size = 40;
-        let left_range = rng.random_range(0..400);
+        let left_range = rnd.gen_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            JsonPath::new(int_key),
+            path(int_key),
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(OrderedFloat(f64::from(left_range))),
-                lte: Some(OrderedFloat(f64::from(right_range))),
+                gte: Some(left_range as f64),
+                lte: Some(right_range as f64),
             },
         )));
 
@@ -215,13 +203,21 @@ fn exact_search_test() {
                     exact: true,
                     ..Default::default()
                 }),
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &Default::default())
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
             .unwrap();
 
         assert_eq!(

@@ -1,54 +1,54 @@
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::FeatureFlags;
-use common::progress_tracker::ProgressTracker;
+use common::cpu::CpuPermit;
 use itertools::Itertools;
 use rand::prelude::StdRng;
-use rand::{Rng, RngExt, SeedableRng};
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
+use rand::{Rng, SeedableRng};
+use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
-use segment::index::hnsw_index::get_num_indexing_threads;
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{PayloadIndex, VectorIndexRead};
-use segment::json_path::JsonPath;
-use segment::payload_json;
-use segment::segment_constructor::VectorIndexBuildArgs;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::index::hnsw_index::graph_links::GraphLinksRam;
+use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::num_rayon_threads;
+use segment::index::{PayloadIndex, VectorIndex};
+use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    SearchParams, SeqNumberType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
+    SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::query::{ContextPair, DiscoverQuery};
+use segment::vector_storage::query::context_query::ContextPair;
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use serde_json::json;
 use tempfile::Builder;
+
+use crate::utils::path;
 
 const MAX_EXAMPLE_PAIRS: usize = 3;
 
-fn random_discover_query<R: Rng + ?Sized>(rng: &mut R, dim: usize) -> QueryVector {
-    let num_pairs: usize = rng.random_range(1..MAX_EXAMPLE_PAIRS);
+fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
+    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
 
-    let target = random_vector(rng, dim).into();
+    let target = random_vector(rnd, dim).into();
 
     let pairs = (0..num_pairs)
         .map(|_| {
-            let positive = random_vector(rng, dim).into();
-            let negative = random_vector(rng, dim).into();
+            let positive = random_vector(rnd, dim).into();
+            let negative = random_vector(rnd, dim).into();
             ContextPair { positive, negative }
         })
         .collect_vec();
 
-    DiscoverQuery::new(target, pairs).into()
+    DiscoveryQuery::new(target, pairs).into()
 }
 
-fn get_random_keyword_of<R: Rng + ?Sized>(num_options: usize, rng: &mut R) -> String {
-    let random_number = rng.random_range(0..num_options);
-    format!("keyword_{random_number}")
+fn get_random_keyword_of<R: Rng + ?Sized>(num_options: usize, rnd: &mut R) -> String {
+    let random_number = rnd.gen_range(0..num_options);
+    format!("keyword_{}", random_number)
 }
 
-/// Checks discover search precision when using hnsw index, this is different from the tests in
+/// Checks discovery search precision when using hnsw index, this is different from the tests in
 /// `filtrable_hnsw_test.rs` because it sets higher `m` and `ef_construct` parameters to get better precision
 #[test]
 fn hnsw_discover_precision() {
@@ -63,26 +63,36 @@ fn hnsw_discover_precision() {
     let distance = Distance::Cosine;
     let full_scan_threshold = 16; // KB
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance,
+                storage_type: VectorStorageType::Memory,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multi_vec_config: None,
+                datatype: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+        sparse_vector_data: Default::default(),
+    };
 
-    let hw_counter = HardwareCounterCell::new();
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rng, dim);
+        let vector = random_vector(&mut rnd, dim);
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
     }
 
@@ -95,43 +105,32 @@ fn hnsw_discover_precision() {
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        inline_storage: None,
     };
 
-    let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            quantized_vectors: quantized_vectors.clone(),
-            payload_index: payload_index_ptr,
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
+    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        vector_storage.clone(),
+        quantized_vectors.clone(),
+        payload_index_ptr.clone(),
+        hnsw_config,
     )
     .unwrap();
 
+    hnsw_index.build_index(permit, &stopped).unwrap();
+
     let top = 3;
-    let mut discover_hits = 0;
+    let mut discovery_hits = 0;
     let attempts = 100;
     for _i in 0..attempts {
-        let query: QueryVector = random_discover_query(&mut rng, dim);
+        let query: QueryVector = random_discovery_query(&mut rnd, dim);
 
-        let index_discover_result = hnsw_index
+        let index_discovery_result = hnsw_index
             .search(
                 &[&query],
                 None,
@@ -140,24 +139,25 @@ fn hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
 
-        let plain_discover_result = segment.vector_data[DEFAULT_VECTOR_NAME]
+        let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &Default::default())
+            .search(&[&query], None, top, None, &false.into(), usize::MAX)
             .unwrap();
 
-        if plain_discover_result == index_discover_result {
-            discover_hits += 1;
+        if plain_discovery_result == index_discovery_result {
+            discovery_hits += 1;
         }
     }
-    eprintln!("discover_hits = {discover_hits:#?} out of {attempts}");
+    eprintln!("discovery_hits = {discovery_hits:#?} out of {attempts}");
     assert!(
-        attempts - discover_hits <= max_failures,
-        "hits: {discover_hits} of {attempts}"
+        attempts - discovery_hits <= max_failures,
+        "hits: {discovery_hits} of {attempts}"
     ); // Not more than X% failures
 }
 
@@ -176,45 +176,47 @@ fn filtered_hnsw_discover_precision() {
     let full_scan_threshold = 16; // KB
     let num_payload_values = 4;
 
-    let mut rng = StdRng::seed_from_u64(42);
-
-    let hw_counter = HardwareCounterCell::new();
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance,
+                storage_type: VectorStorageType::Memory,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multi_vec_config: None,
+                datatype: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+        sparse_vector_data: Default::default(),
+    };
+
     let keyword_key = "keyword";
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rng, dim);
+        let vector = random_vector(&mut rnd, dim);
 
-        let keyword_payload = get_random_keyword_of(num_payload_values, &mut rng);
-        let payload = payload_json! {keyword_key: keyword_payload};
+        let keyword_payload = get_random_keyword_of(num_payload_values, &mut rnd);
+        let payload: Payload = json!({keyword_key:keyword_payload,}).into();
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
     let payload_index_ptr = segment.payload_index.clone();
-    payload_index_ptr
-        .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(keyword_key),
-            PayloadSchemaType::Keyword,
-            &hw_counter,
-        )
-        .unwrap();
 
     let hnsw_config = HnswConfig {
         m,
@@ -223,50 +225,44 @@ fn filtered_hnsw_discover_precision() {
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        inline_storage: None,
     };
 
-    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            quantized_vectors: quantized_vectors.clone(),
-            payload_index: payload_index_ptr,
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
+    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        vector_storage.clone(),
+        quantized_vectors.clone(),
+        payload_index_ptr.clone(),
+        hnsw_config,
     )
     .unwrap();
 
+    payload_index_ptr
+        .borrow_mut()
+        .set_indexed(&path(keyword_key), PayloadSchemaType::Keyword.into())
+        .unwrap();
+
+    hnsw_index.build_index(permit, &stopped).unwrap();
+
     let top = 3;
-    let mut discover_hits = 0;
+    let mut discovery_hits = 0;
     let attempts = 100;
     for _i in 0..attempts {
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            JsonPath::new(keyword_key),
-            get_random_keyword_of(num_payload_values, &mut rng).into(),
+            path(keyword_key),
+            get_random_keyword_of(num_payload_values, &mut rnd).into(),
         )));
 
         let filter_query = Some(&filter);
 
-        let query: QueryVector = random_discover_query(&mut rng, dim);
+        let query: QueryVector = random_discovery_query(&mut rnd, dim);
 
-        let index_discover_result = hnsw_index
+        let index_discovery_result = hnsw_index
             .search(
                 &[&query],
                 filter_query,
@@ -275,24 +271,32 @@ fn filtered_hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &Default::default(),
+                &false.into(),
+                usize::MAX,
             )
             .unwrap();
 
-        let plain_discover_result = segment.vector_data[DEFAULT_VECTOR_NAME]
+        let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &Default::default())
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
             .unwrap();
 
-        if plain_discover_result == index_discover_result {
-            discover_hits += 1;
+        if plain_discovery_result == index_discovery_result {
+            discovery_hits += 1;
         }
     }
 
-    eprintln!("discover_hits = {discover_hits:#?} out of {attempts}");
+    eprintln!("discovery_hits = {discovery_hits:#?} out of {attempts}");
     assert!(
-        attempts - discover_hits <= max_failures,
-        "hits: {discover_hits} of {attempts}"
+        attempts - discovery_hits <= max_failures,
+        "hits: {discovery_hits} of {attempts}"
     ); // Not more than X% failures
 }
