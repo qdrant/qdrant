@@ -1,3 +1,4 @@
+pub mod recovery_guard;
 mod resharding;
 pub(crate) mod shard_mapping;
 pub mod shared_shard_holder;
@@ -18,7 +19,6 @@ use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
-use parking_lot::Mutex;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use segment::utils::fs::move_all;
@@ -34,7 +34,7 @@ pub use self::shared_shard_holder::*;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
 use super::transfer::RecoveryStage;
-use super::transfer::transfer_tasks_pool::{RecoveryProgress, TransferTasksPool};
+use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::CollectionSizeStats;
@@ -55,6 +55,9 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_holder::recovery_guard::{
+    ActiveRecoveries, RecoveryProgressHandle, ShardRecoveryGuard,
+};
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
@@ -86,7 +89,8 @@ pub struct ShardHolder {
     sharding_method: ShardingMethod,
     /// Active snapshot recoveries on this peer (destination side of transfers).
     /// Tracks progress of downloading, unpacking, and restoring snapshots.
-    active_recoveries: Mutex<HashMap<ShardId, Arc<Mutex<RecoveryProgress>>>>,
+    /// Entries are added and removed via [`ShardRecoveryGuard`].
+    active_recoveries: ActiveRecoveries,
 }
 
 impl ShardHolder {
@@ -129,7 +133,7 @@ impl ShardHolder {
             key_mapping,
             shard_id_to_key_mapping,
             sharding_method,
-            active_recoveries: Mutex::new(HashMap::new()),
+            active_recoveries: ActiveRecoveries::default(),
         })
     }
 
@@ -476,18 +480,13 @@ impl ShardHolder {
         (incoming, outgoing)
     }
 
-    /// Start tracking recovery progress for a shard (destination side)
-    pub fn start_shard_recovery(&self, shard_id: ShardId) -> Arc<Mutex<RecoveryProgress>> {
-        let progress = Arc::new(Mutex::new(RecoveryProgress::new()));
-        self.active_recoveries
-            .lock()
-            .insert(shard_id, Arc::clone(&progress));
-        progress
-    }
-
-    /// Stop tracking recovery progress for a shard
-    pub fn finish_shard_recovery(&self, shard_id: ShardId) {
-        self.active_recoveries.lock().remove(&shard_id);
+    /// Start tracking recovery progress for a shard (destination side).
+    ///
+    /// Returns a [`ShardRecoveryGuard`] that must be held for the duration of the
+    /// recovery. Dropping the guard - on success, error, or cancellation - stops
+    /// tracking and removes the progress entry.
+    pub fn start_shard_recovery(&self, shard_id: ShardId) -> ShardRecoveryGuard {
+        self.active_recoveries.start(shard_id)
     }
 
     pub fn get_shard_transfer_info(
@@ -505,13 +504,7 @@ impl ShardHolder {
 
             // Check for active recovery on destination shard first, then sender task status
             let target_shard = to_shard_id.unwrap_or(shard_id);
-            let recovery_comment = self
-                .active_recoveries
-                .lock()
-                .get(&target_shard)
-                .and_then(|p| p.lock().format_comment());
-
-            let comment = recovery_comment.or_else(|| {
+            let comment = self.active_recoveries.comment(target_shard).or_else(|| {
                 tasks_pool
                     .get_task_status(&shard_transfer.key())
                     .map(|p| p.comment)
@@ -1246,6 +1239,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
+        recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
         if !self.contains_shard(shard_id) {
@@ -1261,8 +1255,8 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         // Set unpacking stage
-        if let Some(progress) = self.active_recoveries.lock().get(&shard_id) {
-            progress.lock().set_stage(RecoveryStage::Unpacking);
+        if let Some(recovery_progress) = &recovery_progress {
+            recovery_progress.lock().set_stage(RecoveryStage::Unpacking);
         }
 
         let extract = {
@@ -1303,8 +1297,8 @@ impl ShardHolder {
         extract.await??;
 
         // Set restoring stage
-        if let Some(progress) = self.active_recoveries.lock().get(&shard_id) {
-            progress.lock().set_stage(RecoveryStage::Restoring);
+        if let Some(recovery_progress) = &recovery_progress {
+            recovery_progress.lock().set_stage(RecoveryStage::Restoring);
         }
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
