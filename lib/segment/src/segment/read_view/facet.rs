@@ -17,6 +17,21 @@ use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::Filter;
 
+/// Multiplier from the user-facing `limit` to the threshold above which the
+/// per-segment facet read switches from a full-scan strategy
+/// ([`SegmentReadView::approximate_facet_scan`]) to a sampling strategy
+/// ([`SegmentReadView::sampled_approximate_facet`]).
+///
+/// Rationale: the full-scan path has to visit every distinct value in the
+/// index, so its cost is `O(unique_values_count)`. The sampling path is
+/// `O(limit * SAMPLE_OVERSAMPLE_FACTOR)` regardless of cardinality, but it
+/// is only accurate when the long tail of unique values is large compared
+/// to the requested top-K. The crossover is at
+/// `unique_values_count ≈ limit * FACET_FULL_SCAN_FACTOR`; below that, we
+/// stay on the full-scan path (we'd need to read most of the values anyway,
+/// so iterating once is simpler and avoids the per-candidate post-pass).
+const FACET_FULL_SCAN_FACTOR: usize = 4;
+
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
 where
     TIdT: IdTrackerRead,
@@ -24,7 +39,50 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
+    /// Top-level approximate-facet entry point. Picks between the full-scan
+    /// and the sampling strategy based on how many distinct values the index
+    /// contains relative to the requested `limit`.
     pub fn approximate_facet(
+        &self,
+        request: &FacetParams,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
+        // Shortcut if this segment has no points.
+        let available_points = self.id_tracker.available_point_count();
+        if available_points == 0 {
+            return Ok(HashMap::new());
+        }
+
+        // Decide strategy based on index cardinality vs requested limit.
+        // We don't need the index for any operation here yet, but
+        // `facet_index_for` is cheap (a HashMap lookup) and we need
+        // `unique_values_count()` to pick a strategy. If the index is
+        // missing, defer error reporting to the scan path which already
+        // produces the right error message.
+        let unique_count = self
+            .payload_index
+            .facet_index_for(&request.key)
+            .map(|fi| fi.unique_values_count());
+        let use_sampling = match unique_count {
+            Some(n) => n > request.limit.saturating_mul(FACET_FULL_SCAN_FACTOR),
+            None => false,
+        };
+
+        if use_sampling {
+            self.sampled_approximate_facet(request, is_stopped, hw_counter)
+        } else {
+            self.approximate_facet_scan(request, is_stopped, hw_counter)
+        }
+    }
+
+    /// Full-scan approximate-facet strategy: iterate every distinct value in
+    /// the index (or every filtered point, depending on filter selectivity)
+    /// and aggregate counts into a hash map.
+    ///
+    /// Prefer [`Self::approximate_facet`] for the strategy-aware entry point;
+    /// call this directly only when scanning is explicitly required.
+    pub fn approximate_facet_scan(
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,

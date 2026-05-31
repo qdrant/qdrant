@@ -5,6 +5,7 @@ mod info;
 mod order_by;
 mod payload;
 mod sampling;
+mod sampling_facet;
 mod scroll;
 mod search;
 mod segment_ops;
