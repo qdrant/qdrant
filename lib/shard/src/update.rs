@@ -437,7 +437,7 @@ pub fn delete_points_by_filter(
                 &is_stopped,
                 hw_counter,
                 // Include also deferred points.
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )?;
             has_deferred |= segment.has_deferred_points();
             Ok((segment_id, point_ids))
@@ -551,7 +551,7 @@ pub fn sync_points(
                 &with_vector,
                 hw_counter,
                 &is_stopped,
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )?;
             let mut updated = 0;
 
@@ -1019,7 +1019,7 @@ fn points_by_filter(
                 &is_stopped,
                 hw_counter,
                 // Read operation used for updates, so we must handle all points
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )?;
             has_deferred |= segment.has_deferred_points();
             Ok((segment_id, point_ids))

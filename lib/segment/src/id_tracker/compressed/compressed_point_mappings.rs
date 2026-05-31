@@ -155,11 +155,9 @@ impl CompressedPointMappings {
         )
     }
 
-    pub(crate) fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(
-            (0..self.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted[*i as usize]),
-        )
+    pub(crate) fn iter_internal(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        (0..self.internal_to_external.len() as PointOffsetType)
+            .filter(move |i| !self.deleted[*i as usize])
     }
 
     pub(crate) fn iter_internal_raw(

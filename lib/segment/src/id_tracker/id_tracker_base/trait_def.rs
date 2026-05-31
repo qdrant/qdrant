@@ -248,9 +248,9 @@ pub trait IdTrackerRead {
         point_ids: &[PointIdType],
         deferred_behavior: DeferredBehavior,
     ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
-        // For Exclude, the deferred-aware lookup returns the active head
+        // For VisibleOnly, the deferred-aware lookup returns the active head
         // only — there's no need for the post-lookup cutoff filter the
-        // old impl carried. For IncludeAll, the lookup prefers the
+        // old impl carried. For WithDeferred, the lookup prefers the
         // deferred head over a shadowed active so each ext yields its
         // latest version exactly once.
         let mut ids = Vec::with_capacity(point_ids.len());

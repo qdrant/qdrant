@@ -92,7 +92,7 @@ fn test_update_proxy_segments() {
                     None,
                     &is_stopped,
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
         })
@@ -313,7 +313,7 @@ fn test_delete_all_point_versions() {
         TEST_TIMEOUT,
         &AtomicBool::new(false),
         HwMeasurementAcc::new(),
-        DeferredBehavior::Exclude,
+        DeferredBehavior::VisibleOnly,
     )
     .unwrap();
     assert_eq!(
@@ -360,7 +360,7 @@ fn test_delete_all_point_versions() {
         TEST_TIMEOUT,
         &AtomicBool::new(false),
         HwMeasurementAcc::new(),
-        DeferredBehavior::Exclude,
+        DeferredBehavior::VisibleOnly,
     )
     .unwrap();
     assert!(retrieved.is_empty());
@@ -478,7 +478,7 @@ fn test_proxy_shared_updates() {
         TEST_TIMEOUT,
         &is_stopped,
         HwMeasurementAcc::new(),
-        DeferredBehavior::Exclude,
+        DeferredBehavior::VisibleOnly,
     )
     .unwrap();
 
@@ -615,7 +615,7 @@ fn test_proxy_shared_updates_same_version() {
         TEST_TIMEOUT,
         &is_stopped,
         HwMeasurementAcc::new(),
-        DeferredBehavior::Exclude,
+        DeferredBehavior::VisibleOnly,
     )
     .unwrap();
 

@@ -471,7 +471,7 @@ impl Collection {
                         count_request.clone(),
                         None,
                         hw_acc,
-                        DeferredBehavior::Exclude,
+                        DeferredBehavior::VisibleOnly,
                     )
                     .await
                     .unwrap_or_default();

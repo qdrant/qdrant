@@ -60,7 +60,7 @@ where
         deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
         let point_mappings = self.id_tracker.point_mappings();
-        let iter = if deferred_behavior.include_all_points() {
+        let iter = if deferred_behavior.with_deferred_points() {
             point_mappings.iter_from(offset)
         } else {
             point_mappings.iter_from_visible(offset)
@@ -120,7 +120,7 @@ where
     ) -> OperationResult<Vec<PointIdType>> {
         let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
         let point_mappings = self.id_tracker.point_mappings();
-        let iter = if deferred_behavior.include_all_points() {
+        let iter = if deferred_behavior.with_deferred_points() {
             point_mappings.iter_from(offset)
         } else {
             point_mappings.iter_from_visible(offset)

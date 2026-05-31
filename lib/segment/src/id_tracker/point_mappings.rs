@@ -6,9 +6,9 @@ use std::iter;
 use byteorder::LittleEndian;
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
-use common::bitvec::{BitSlice, BitVec};
-use common::types::PointOffsetType;
-use itertools::Itertools;
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
+use common::types::{DeferredBehavior, PointOffsetType};
+use itertools::{Either, Itertools};
 #[cfg(test)]
 use rand::RngExt;
 use rand::distr::Distribution;
@@ -30,6 +30,12 @@ pub struct PointMappings {
     /// - if `deleted` is longer, then extra bits should be set to `false` and ignored.
     /// - if `deleted` is shorter, then extra indices are as if the bits were set to `true`.
     deleted: BitVec,
+    /// Internal-id-indexed inverse mapping; no active-vs-deferred bias —
+    /// each slot just holds whatever external id last linked to it. An
+    /// active+deferred pair for the same ext (a shadowed active) occupies
+    /// two slots with the same value. Always gate reads on `deleted`:
+    /// `drop` resets entries to `NumId(u64::MAX)` but `set_link`'s
+    /// same-track replacement leaves the prior ext in place.
     internal_to_external: Vec<PointIdType>,
 
     // Active head per external id (internal_id < deferred cutoff, or no cutoff).
@@ -44,7 +50,7 @@ pub struct PointMappings {
     external_to_internal_uuid_deferred: BTreeMap<Uuid, PointOffsetType>,
 
     /// Bit set on active internal ids whose external id also has a deferred
-    /// head. Read-side iteration in `IncludeAll` mode uses this to skip the
+    /// head. Read-side iteration in `WithDeferred` mode uses this to skip the
     /// stale active version when a deferred override exists, avoiding
     /// duplicate-by-external yields.
     ///
@@ -191,10 +197,10 @@ impl PointMappings {
 
     /// Internal id for `external_id` with explicit deferred semantics.
     ///
-    /// - [`DeferredBehavior::Exclude`] returns the active head only. An ext
+    /// - [`DeferredBehavior::VisibleOnly`] returns the active head only. An ext
     ///   that only has a deferred head returns `None` — query paths see no
     ///   deferred mutations at all.
-    /// - [`DeferredBehavior::IncludeAll`] prefers the deferred head (the
+    /// - [`DeferredBehavior::WithDeferred`] prefers the deferred head (the
     ///   latest mutation) and falls back to active for points that never
     ///   crossed the cutoff. Yields each ext at most once.
     pub(crate) fn internal_id_with_behavior(
@@ -202,7 +208,7 @@ impl PointMappings {
         external_id: &PointIdType,
         deferred_behavior: common::types::DeferredBehavior,
     ) -> Option<PointOffsetType> {
-        if deferred_behavior.include_all_points() {
+        if deferred_behavior.with_deferred_points() {
             self.internal_id_deferred(external_id)
                 .or_else(|| self.internal_id_active(external_id))
         } else {
@@ -395,11 +401,37 @@ impl PointMappings {
         Box::new(iter_num.chain(iter_uuid))
     }
 
-    pub(crate) fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(
-            (0..self.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted[*i as usize]),
-        )
+    pub(crate) fn iter_internal(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        (0..self.internal_to_external.len() as PointOffsetType)
+            .filter(move |i| !self.deleted[*i as usize])
+    }
+
+    /// Iterate over non-deleted internal IDs, with deferred filtering
+    /// selected by `deferred_behavior`:
+    /// - [`DeferredBehavior::VisibleOnly`] takes ids strictly below the
+    ///   mapping's deferred threshold (yields everything when there's no
+    ///   threshold);
+    /// - [`DeferredBehavior::WithDeferred`] yields every non-deleted id,
+    ///   filtering out shadowed actives so each external id surfaces
+    ///   at most once.
+    pub(crate) fn iter_internal_with_behavior(
+        &self,
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = PointOffsetType> + '_ {
+        if deferred_behavior.with_deferred_points() {
+            let shadowed = &self.shadowed;
+            Either::Left(
+                self.iter_internal()
+                    .filter(move |&id| !shadowed.get_bit(id as usize).unwrap_or(false)),
+            )
+        } else {
+            match self.deferred_internal_id {
+                None => Either::Right(Either::Left(self.iter_internal())),
+                Some(cutoff) => Either::Right(Either::Right(
+                    self.iter_internal().take_while(move |&id| id < cutoff),
+                )),
+            }
+        }
     }
 
     #[cfg(test)]
@@ -434,8 +466,8 @@ impl PointMappings {
     ///   deferred map, tombstone the prior deferred head if any. If an
     ///   active head exists for this ext, **shadow** it (set the
     ///   shadowed bit) but do NOT tombstone or drop it — read paths in
-    ///   `Exclude` mode keep returning the active version until the
-    ///   optimiser rolls a fresh segment. `IncludeAll` consumers skip
+    ///   `VisibleOnly` mode keep returning the active version until the
+    ///   optimiser rolls a fresh segment. `WithDeferred` consumers skip
     ///   shadowed actives via PR C's filter so the deferred head wins
     ///   without yielding the same external id twice.
     ///
@@ -525,7 +557,7 @@ impl PointMappings {
     }
 
     /// Whether `internal_id` is an active head shadowed by a deferred
-    /// override. Read-side iteration in `IncludeAll` mode uses this to
+    /// override. Read-side iteration in `WithDeferred` mode uses this to
     /// dedup by external id without scanning both maps.
     #[cfg_attr(
         not(test),
@@ -541,7 +573,7 @@ impl PointMappings {
 
     /// Read-only view of the shadowed bitslice — used by
     /// `PointMappingsRefEnum::filter_deferred_and_deleted` in
-    /// [`DeferredBehavior::IncludeAll`] mode to skip shadowed actives.
+    /// [`DeferredBehavior::WithDeferred`] mode to skip shadowed actives.
     pub(crate) fn shadowed_bitslice(&self) -> &BitSlice {
         &self.shadowed
     }
@@ -745,7 +777,7 @@ mod set_link_shadow_tests {
         assert!(m.is_shadowed(2));
         // Deferred slot itself isn't shadowed.
         assert!(!m.is_shadowed(7));
-        // Exclude-style lookup (active-first fall-through) returns active.
+        // VisibleOnly-style lookup (active-first fall-through) returns active.
         assert_eq!(m.internal_id(&ext(7)), Some(2));
     }
 
@@ -792,14 +824,14 @@ mod set_link_shadow_tests {
         m.set_link(ext(7), 2);
         m.set_link(ext(7), 7);
 
-        // Exclude: visible-only — active head, even though it's shadowed.
+        // VisibleOnly: visible-only — active head, even though it's shadowed.
         assert_eq!(
-            m.internal_id_with_behavior(&ext(7), DeferredBehavior::Exclude),
+            m.internal_id_with_behavior(&ext(7), DeferredBehavior::VisibleOnly),
             Some(2)
         );
-        // IncludeAll: the latest — the deferred head wins.
+        // WithDeferred: the latest — the deferred head wins.
         assert_eq!(
-            m.internal_id_with_behavior(&ext(7), DeferredBehavior::IncludeAll),
+            m.internal_id_with_behavior(&ext(7), DeferredBehavior::WithDeferred),
             Some(7)
         );
     }
@@ -812,14 +844,14 @@ mod set_link_shadow_tests {
         let mut m = fresh_mapping(Some(5));
         m.set_link(ext(7), 7);
 
-        // Exclude readers never see deferred-only ext ids.
+        // VisibleOnly readers never see deferred-only ext ids.
         assert_eq!(
-            m.internal_id_with_behavior(&ext(7), DeferredBehavior::Exclude),
+            m.internal_id_with_behavior(&ext(7), DeferredBehavior::VisibleOnly),
             None
         );
-        // IncludeAll consumers do.
+        // WithDeferred consumers do.
         assert_eq!(
-            m.internal_id_with_behavior(&ext(7), DeferredBehavior::IncludeAll),
+            m.internal_id_with_behavior(&ext(7), DeferredBehavior::WithDeferred),
             Some(7)
         );
     }
@@ -843,18 +875,18 @@ mod set_link_shadow_tests {
         let r = PointMappingsRefEnum::Plain(&m);
         let candidates: Vec<PointOffsetType> = vec![2, 3, 7, 8];
 
-        // Exclude: visible-only path — drops everything above cutoff.
+        // VisibleOnly: visible-only path — drops everything above cutoff.
         let exclude: Vec<_> = r
-            .filter_deferred_and_deleted(candidates.iter().copied(), DeferredBehavior::Exclude)
+            .filter_deferred_and_deleted(candidates.iter().copied(), DeferredBehavior::VisibleOnly)
             .collect();
         assert_eq!(exclude, vec![2, 3]);
 
-        // IncludeAll: every ext yields exactly one slot — its latest.
+        // WithDeferred: every ext yields exactly one slot — its latest.
         // Shadowed 2 (ext 7's stale active) is filtered out; 7 (its deferred
         // head) is kept. Plain active 3 (ext 8) is kept. Deferred-only 8
         // (ext 9) is kept.
         let include_all: Vec<_> = r
-            .filter_deferred_and_deleted(candidates.iter().copied(), DeferredBehavior::IncludeAll)
+            .filter_deferred_and_deleted(candidates.iter().copied(), DeferredBehavior::WithDeferred)
             .collect();
         assert_eq!(include_all, vec![3, 7, 8]);
     }

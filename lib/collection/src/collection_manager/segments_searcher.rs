@@ -974,7 +974,7 @@ mod tests {
             Duration::from_secs(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
         assert_eq!(records.len(), 3);
@@ -994,7 +994,7 @@ mod tests {
             Duration::from_secs(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         );
         assert_matches!(records, Err(OperationError::Timeout { .. }));
     }

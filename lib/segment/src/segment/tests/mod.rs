@@ -1125,7 +1125,7 @@ fn test_deferred_point_read_operations() {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
         },
@@ -1149,7 +1149,7 @@ fn test_deferred_point_read_operations() {
                     },
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
         },
@@ -1186,7 +1186,7 @@ fn test_deferred_point_read_operations() {
                     &WithVector::Bool(false),
                     &hw_counter,
                     &AtomicBool::new(false),
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
                 .into_iter()

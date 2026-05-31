@@ -150,7 +150,7 @@ impl EdgeShard {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
             })
             .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
@@ -163,7 +163,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )?;
 
         let ordered_points = point_ids
@@ -196,7 +196,7 @@ impl EdgeShard {
                     order_by,
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
             })
             .collect::<Result<_, _>>()?;
@@ -219,7 +219,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )?;
 
         let ordered_points = point_ids
@@ -324,7 +324,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )?
         .into_values()
         .collect();

@@ -348,7 +348,7 @@ fn test_read_filter() {
             None,
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
 
@@ -361,7 +361,7 @@ fn test_read_filter() {
             Some(&filter),
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
 
@@ -380,7 +380,7 @@ fn test_read_filter() {
             None,
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
     let proxy_res_filtered = proxy_segment
@@ -390,7 +390,7 @@ fn test_read_filter() {
             Some(&filter),
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
 

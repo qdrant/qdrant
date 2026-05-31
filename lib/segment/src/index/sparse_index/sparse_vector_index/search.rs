@@ -84,7 +84,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             None => {
                 let iter = id_tracker.point_mappings().filter_deferred_and_deleted(
                     searcher.iter_not_deleted(),
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 );
                 searcher.peek_top_iter(iter, &is_stopped)?
             }

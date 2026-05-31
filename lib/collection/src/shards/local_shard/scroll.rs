@@ -90,7 +90,7 @@ impl LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .await?
             }
@@ -104,7 +104,7 @@ impl LocalShard {
                     order_by,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .await?
             }
@@ -479,7 +479,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             ),
         )
         .await

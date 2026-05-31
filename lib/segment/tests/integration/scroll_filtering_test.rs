@@ -35,7 +35,7 @@ fn test_filtering_context_consistency() {
                 &filter,
                 &is_stopped,
                 &hw_counter,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             )
         });
         let read_by_stream_res = segment.with_view(|view| {
@@ -45,7 +45,7 @@ fn test_filtering_context_consistency() {
                 &filter,
                 &is_stopped,
                 &hw_counter,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             )
         });
 

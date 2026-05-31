@@ -33,10 +33,10 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over internal IDs (offsets).
     ///
     /// Excludes soft deleted points.
-    pub fn iter_internal(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    pub fn iter_internal(self) -> impl Iterator<Item = PointOffsetType> + 'a {
         match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
+            PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_internal()),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_internal()),
         }
     }
 
@@ -68,22 +68,17 @@ impl<'a> PointMappingsRefEnum<'a> {
     pub fn iter_internal_excluding(
         self,
         exclude_bitslice: &'a BitSlice,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
-        };
-        Box::new(
-            iter.filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
-        )
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        self.iter_internal()
+            .filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false))
     }
 
     /// Iterate over all internal IDs, filtering deferred points using the
     /// mapping's own threshold.
-    pub fn iter_internal_visible(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    pub fn iter_internal_visible(self) -> impl Iterator<Item = PointOffsetType> + 'a {
         match self.deferred_internal_id() {
-            None => self.iter_internal(),
-            Some(deferred_internal_id) => Box::new(
+            None => Either::Left(self.iter_internal()),
+            Some(deferred_internal_id) => Either::Right(
                 self.iter_internal()
                     .take_while(move |&id| id < deferred_internal_id),
             ),
@@ -91,23 +86,23 @@ impl<'a> PointMappingsRefEnum<'a> {
     }
 
     /// Iterate over all internal IDs, with deferred filtering selected by
-    /// `deferred_behavior`:
-    /// - [`DeferredBehavior::Exclude`] applies the mapping's own threshold;
-    /// - [`DeferredBehavior::IncludeAll`] yields every point regardless of the
-    ///   threshold, but skips shadowed actives so each external id is
-    ///   yielded at most once (the deferred head takes precedence).
+    /// `deferred_behavior`. See [`PointMappings::iter_internal_with_behavior`]
+    /// for the per-mode contract.
     pub fn iter_internal_with_behavior(
         self,
         deferred_behavior: DeferredBehavior,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        if deferred_behavior.include_all_points() {
-            let shadowed = self.shadowed();
-            Box::new(
-                self.iter_internal()
-                    .filter(move |&id| !shadowed.get_bit(id as usize).unwrap_or(false)),
-            )
-        } else {
-            self.iter_internal_visible()
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        match self {
+            PointMappingsRefEnum::Plain(m) => {
+                Either::Left(m.iter_internal_with_behavior(deferred_behavior))
+            }
+            PointMappingsRefEnum::Compressed(m) => {
+                // Compressed mappings are immutable,
+                // they can't have deferred points,
+                // so we can only pull visible points
+                // and ignore the parameter
+                Either::Right(m.iter_internal())
+            }
         }
     }
 
@@ -121,12 +116,12 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// postings for tombstoned internal IDs (a single bit test per element,
     /// negligible overhead).
     ///
-    /// For [`DeferredBehavior::Exclude`] — points at or above the cutoff are
+    /// For [`DeferredBehavior::VisibleOnly`] — points at or above the cutoff are
     /// dropped on top of the deleted check.
-    /// For [`DeferredBehavior::IncludeAll`] — every non-deleted point is
+    /// For [`DeferredBehavior::WithDeferred`] — every non-deleted point is
     /// yielded, except shadowed actives (an active whose external id has
     /// been overridden by a deferred mutation). Skipping shadowed actives
-    /// is what gives the IncludeAll consumer a one-yield-per-external
+    /// is what gives the WithDeferred consumer a one-yield-per-external
     /// guarantee in the presence of append-only mutations into a deferred
     /// segment.
     pub fn filter_deferred_and_deleted<I>(

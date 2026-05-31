@@ -74,7 +74,7 @@ where
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
-                        DeferredBehavior::Exclude,
+                        DeferredBehavior::VisibleOnly,
                     )?
                     .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id));
                 facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
@@ -155,7 +155,7 @@ where
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )?
                 .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id));
             facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
