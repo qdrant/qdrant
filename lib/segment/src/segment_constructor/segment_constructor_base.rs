@@ -602,6 +602,7 @@ fn create_segment(
         vector_data,
         segment_type,
         appendable_flag,
+        append_only_mutations: false,
         payload_index,
         payload_storage,
         segment_config: config.clone(),

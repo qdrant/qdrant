@@ -80,6 +80,14 @@ pub struct Segment {
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
+    /// Route mutating ops through clone-and-tombstone so the underlying
+    /// vector and payload storages are never written in place. Intended for
+    /// S3-backed storages that prefer pure appends.
+    ///
+    /// Runtime-only — not persisted in the segment state file. Only takes
+    /// effect when [`Segment::is_appendable`] is also true, see
+    /// [`Segment::is_append_only`].
+    pub append_only_mutations: bool,
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,

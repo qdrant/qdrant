@@ -24,8 +24,8 @@ use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
 use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndex};
 use crate::types::{
-    PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType, SnapshotFormat,
-    VectorName,
+    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
+    SnapshotFormat, VectorName,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorageRead;
@@ -117,6 +117,156 @@ impl Segment {
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
+    }
+
+    /// Append-only update: snapshot the point at `old_id` into owned vectors
+    /// and payload, hand them to `mutate` for in-memory modification, then
+    /// write the result at a fresh internal id and repoint the id tracker.
+    ///
+    /// Step order:
+    ///
+    /// 1. Read all named vectors at `old_id` into an owned `NamedVectors`,
+    ///    and the full payload at `old_id` into an owned `Payload`.
+    /// 2. Call `mutate(&mut NamedVectors, &mut Payload)` to apply the
+    ///    op-specific change in memory; its return value is propagated to
+    ///    the caller alongside the new internal id.
+    /// 3. Allocate `new_id = total_point_count()`.
+    /// 4. Write the mutated vectors at `new_id`. Every configured named
+    ///    vector storage gets touched: present entries are written, absent
+    ///    ones are inserted as `None` (so the slot is grown and marked
+    ///    deleted, matching `insert_new_vectors`'s behavior).
+    /// 5. Write the mutated payload at `new_id` (skipped if empty).
+    /// 6. `set_link(point_id, new_id)` — auto-tombstones `old_id` in the id
+    ///    tracker so it becomes invisible to queries.
+    ///
+    /// `old_id`'s vector slots and payload row are intentionally left in
+    /// place. Appendable storages don't support physical removal; the
+    /// tombstoned slot is reclaimed later by segment optimization. Stale
+    /// field-index postings keyed by `old_id` likewise stay; readers filter
+    /// them via the id tracker's deleted bitslice.
+    ///
+    /// Returns the closure's return value together with the freshly
+    /// allocated internal id. The new id should be handed to
+    /// [`Segment::handle_point_version_and_failure`] so the point version is
+    /// recorded against the new slot.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only. Callers route into this
+    /// helper from the `SegmentEntry` mutation paths when
+    /// [`Segment::is_append_only`] is true.
+    pub(super) fn clone_and_mutate_point<F, R>(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        old_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        mutate: F,
+    ) -> OperationResult<(R, PointOffsetType)>
+    where
+        F: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<R>,
+    {
+        debug_assert!(self.is_appendable());
+
+        // 1. Snapshot vectors and payload at old_id into owned containers,
+        //    dropping all storage borrows before we start writing.
+        let mut vectors: NamedVectors<'static> = NamedVectors::default();
+        for (vector_name, vector_data) in self.vector_data.iter() {
+            let storage = vector_data.vector_storage.borrow();
+            if let Some(existing) = storage.get_vector_opt::<Random>(old_id) {
+                vectors.insert(vector_name.clone(), existing.to_owned());
+            }
+        }
+        let mut payload = self
+            .payload_index
+            .borrow()
+            .with_view(|view| view.get_payload(old_id, hw_counter))?;
+
+        // 2. Let the caller apply the op-specific change in memory.
+        let mutate_result = mutate(&mut vectors, &mut payload)?;
+
+        // 3. Allocate the fresh internal id.
+        let new_id = self.id_tracker.borrow().total_point_count() as PointOffsetType;
+
+        // 4. Write every configured named vector at new_id. Absent entries
+        //    are written as None so the storage slot grows in lockstep and
+        //    is marked deleted, matching insert_new_vectors's contract.
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let vector_opt = vectors.get(vector_name);
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector(new_id, vector_opt, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+
+        // 5. Write the payload at new_id. Skipped when empty so we don't
+        //    materialise a no-op payload row or touch the field indexes
+        //    for keys that aren't present.
+        if !payload.is_empty() {
+            self.payload_index
+                .borrow_mut()
+                .overwrite_payload(new_id, &payload, hw_counter)?;
+        }
+
+        // 6. Repoint the id tracker. `set_link` auto-tombstones old_id in
+        //    the deleted bitslice when external_id was previously mapped to
+        //    a different internal id.
+        self.id_tracker.borrow_mut().set_link(point_id, new_id)?;
+
+        Ok((mutate_result, new_id))
+    }
+
+    /// Mutating-op wrapper that picks the right path for the segment's
+    /// current mode.
+    ///
+    /// - On a normal segment (or when `existing_internal_id` would not
+    ///   benefit from being moved), runs `in_place(&mut Segment, old_id)`.
+    /// - On an [`Segment::is_append_only`] segment, routes through
+    ///   [`Segment::clone_and_mutate_point`] with `snapshot_mutate`, which
+    ///   sees an owned snapshot of the point's vectors and payload and
+    ///   modifies it in memory; the helper writes the result at a fresh
+    ///   internal id and tombstones the old one.
+    ///
+    /// Both closures return the op-specific result bool (e.g. "was anything
+    /// deleted"). The version-recording offset is chosen automatically:
+    /// the existing id for the in-place path, the freshly allocated id for
+    /// the append-only path.
+    ///
+    /// Callers must resolve `existing_internal_id` from the id tracker
+    /// themselves and handle the missing-pid case before calling this.
+    pub(super) fn handle_point_mutate<InPlace, SnapshotMutate>(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        existing_internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        in_place: InPlace,
+        snapshot_mutate: SnapshotMutate,
+    ) -> OperationResult<bool>
+    where
+        InPlace: FnOnce(&mut Segment, PointOffsetType) -> OperationResult<bool>,
+        SnapshotMutate: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<bool>,
+    {
+        let append_only = self.is_append_only();
+        self.handle_point_version_and_failure(
+            op_num,
+            point_id,
+            Some(existing_internal_id),
+            |segment| {
+                if append_only {
+                    let (op_result, new_id) = segment.clone_and_mutate_point(
+                        op_num,
+                        point_id,
+                        existing_internal_id,
+                        hw_counter,
+                        snapshot_mutate,
+                    )?;
+                    Ok((op_result, Some(new_id)))
+                } else {
+                    let op_result = in_place(segment, existing_internal_id)?;
+                    Ok((op_result, Some(existing_internal_id)))
+                }
+            },
+        )
     }
 
     /// Operation wrapped, which handles previous and new errors in the segment, automatically
@@ -329,6 +479,18 @@ impl Segment {
         // }
 
         Ok(())
+    }
+
+    /// Append-only counterpart to [`Segment::delete_point_internal`]: only
+    /// touches the id tracker, leaving the payload row and field-index
+    /// postings at `internal_id` in place. Readers filter the tombstone
+    /// via the id tracker's deleted bitslice (see
+    /// `PointMappingsRefEnum::filter_deferred_and_deleted`).
+    pub fn delete_point_tombstone_only(
+        &mut self,
+        internal_id: PointOffsetType,
+    ) -> OperationResult<()> {
+        self.id_tracker.borrow_mut().drop_internal(internal_id)
     }
 
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
