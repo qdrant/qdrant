@@ -602,12 +602,42 @@ fn create_segment(
         vector_data,
         segment_type,
         appendable_flag,
-        append_only_mutations: false,
+        append_only_mutations: append_only_mutations_env_override(),
         payload_index,
         payload_storage,
         segment_config: config.clone(),
         error_status: None,
     })
+}
+
+/// Debug-only escape hatch for testing append-only mutation routing
+/// without a collection-level config knob.
+///
+/// In debug builds, `QDRANT_APPEND_ONLY_MUTATIONS=1` (or `true`/`yes`)
+/// flips every newly built segment into append-only mode. Release builds
+/// always return `false`, so the env var has no effect.
+fn append_only_mutations_env_override() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        use std::sync::Once;
+        let enabled = std::env::var("QDRANT_APPEND_ONLY_MUTATIONS")
+            .ok()
+            .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+        if enabled {
+            static LOG_ONCE: Once = Once::new();
+            LOG_ONCE.call_once(|| {
+                log::warn!(
+                    "QDRANT_APPEND_ONLY_MUTATIONS=1: routing all appendable-segment \
+                     mutations through clone-and-tombstone. Debug builds only."
+                );
+            });
+        }
+        enabled
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
 }
 
 fn create_segment_id_tracker(
