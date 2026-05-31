@@ -106,17 +106,16 @@ impl PointMappings {
             }
             shadowed.set(active_id, true);
         };
-        for (k, _) in &external_to_internal_num_deferred {
+        for k in external_to_internal_num_deferred.keys() {
             if let Some(active_id) = external_to_internal_num.get(k) {
                 mark_shadow(*active_id);
             }
         }
-        for (k, _) in &external_to_internal_uuid_deferred {
+        for k in external_to_internal_uuid_deferred.keys() {
             if let Some(active_id) = external_to_internal_uuid.get(k) {
                 mark_shadow(*active_id);
             }
         }
-        drop(mark_shadow);
 
         let deferred_deleted_count = deferred_internal_id
             .map(|deferred_from| {
@@ -393,15 +392,26 @@ impl PointMappings {
     }
 
     /// Sets the link between an external and internal id.
-    /// Returns the previous internal id if it existed.
+    /// Returns the previous head for the same track if it existed.
     ///
-    /// PR A: the write routes into the active or deferred map based on
-    /// whether `internal_id` sits below or at-or-above
-    /// `deferred_internal_id`. Either way the previous head for this ext
-    /// (in either track) is tombstoned, matching the pre-split behaviour
-    /// where one ext owned exactly one slot. PR B replaces the
-    /// "tombstone the other track" branch with a shadow-bit flip so a
-    /// deferred mutation no longer hides the visible active version.
+    /// Routing by `internal_id` vs `deferred_internal_id` (the cutoff):
+    ///
+    /// - **Active write** (`internal_id < cutoff`, or no cutoff): insert
+    ///   into the active map, tombstone the prior active head if any. If
+    ///   a deferred head also exists for this ext, that deferred head is
+    ///   superseded — drop it from the deferred map and tombstone its
+    ///   slot. The new active becomes the single visible head.
+    /// - **Deferred write** (`internal_id >= cutoff`): insert into the
+    ///   deferred map, tombstone the prior deferred head if any. If an
+    ///   active head exists for this ext, **shadow** it (set the
+    ///   shadowed bit) but do NOT tombstone or drop it — read paths in
+    ///   `Exclude` mode keep returning the active version until the
+    ///   optimiser rolls a fresh segment. `IncludeAll` consumers skip
+    ///   shadowed actives via PR C's filter so the deferred head wins
+    ///   without yielding the same external id twice.
+    ///
+    /// Return value: the prior same-track head (now tombstoned). Shadowed
+    /// actives aren't reported since they remain live.
     pub(crate) fn set_link(
         &mut self,
         external_id: PointIdType,
@@ -411,9 +421,16 @@ impl PointMappings {
             .deferred_internal_id
             .is_some_and(|cutoff| internal_id >= cutoff);
 
-        // Insert into the routed map; pull the prior head out of the SAME
-        // map. The other-track cleanup happens below so the return value
-        // mirrors the pre-split single-map contract.
+        let internal_id_usize = internal_id as usize;
+        if internal_id_usize >= self.internal_to_external.len() {
+            self.internal_to_external
+                .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
+        }
+        if internal_id_usize >= self.deleted.len() {
+            self.deleted.resize(internal_id_usize + 1, true);
+        }
+
+        // Same-track insert; capture the prior head for tombstoning.
         let same_track_prior = match (external_id, is_deferred) {
             (PointIdType::NumId(idx), false) => {
                 self.external_to_internal_num.insert(idx, internal_id)
@@ -428,27 +445,41 @@ impl PointMappings {
                 .external_to_internal_uuid_deferred
                 .insert(uuid, internal_id),
         };
-        // Cross-track cleanup — drop any prior entry in the OTHER map so
-        // each ext owns exactly one slot, matching the pre-split contract.
-        let other_track_prior = match (external_id, is_deferred) {
-            (PointIdType::NumId(idx), false) => self.external_to_internal_num_deferred.remove(&idx),
-            (PointIdType::NumId(idx), true) => self.external_to_internal_num.remove(&idx),
-            (PointIdType::Uuid(uuid), false) => {
-                self.external_to_internal_uuid_deferred.remove(&uuid)
+
+        // Cross-track handling.
+        if is_deferred {
+            // Deferred write: shadow any visible active head for this ext.
+            let active_id = match external_id {
+                PointIdType::NumId(idx) => self.external_to_internal_num.get(&idx).copied(),
+                PointIdType::Uuid(uuid) => self.external_to_internal_uuid.get(&uuid).copied(),
+            };
+            if let Some(active_id) = active_id {
+                let active_id_usize = active_id as usize;
+                if active_id_usize >= self.shadowed.len() {
+                    self.shadowed.resize(active_id_usize + 1, false);
+                }
+                self.shadowed.set(active_id_usize, true);
             }
-            (PointIdType::Uuid(uuid), true) => self.external_to_internal_uuid.remove(&uuid),
-        };
-
-        let internal_id_usize = internal_id as usize;
-        if internal_id_usize >= self.internal_to_external.len() {
-            self.internal_to_external
-                .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
+        } else {
+            // Active write: any deferred head is now superseded — drop +
+            // tombstone. Treat it like any other replaced head.
+            let prior_deferred = match external_id {
+                PointIdType::NumId(idx) => self.external_to_internal_num_deferred.remove(&idx),
+                PointIdType::Uuid(uuid) => self.external_to_internal_uuid_deferred.remove(&uuid),
+            };
+            if let Some(old) = prior_deferred {
+                let old = old as usize;
+                if old != internal_id_usize {
+                    self.deleted.set(old, true);
+                    if old < self.shadowed.len() {
+                        self.shadowed.set(old, false);
+                    }
+                }
+            }
         }
-        if internal_id_usize >= self.deleted.len() {
-            self.deleted.resize(internal_id_usize + 1, true);
-        }
 
-        for old in [same_track_prior, other_track_prior].into_iter().flatten() {
+        // Tombstone the same-track prior head.
+        if let Some(old) = same_track_prior {
             let old = old as usize;
             if old != internal_id_usize {
                 self.deleted.set(old, true);
@@ -461,10 +492,33 @@ impl PointMappings {
         self.internal_to_external[internal_id_usize] = external_id;
         self.deleted.set(internal_id_usize, false);
 
-        // Prefer the same-track prior when reporting back, matching the
-        // pre-split single-map flavour. Cross-track replacement (the
-        // unusual case) falls back to whatever the other map held.
-        same_track_prior.or(other_track_prior)
+        same_track_prior
+    }
+
+    /// Whether `internal_id` is an active head shadowed by a deferred
+    /// override. Read-side iteration in `IncludeAll` mode uses this to
+    /// dedup by external id without scanning both maps.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "consumed by PR C's deferred-aware lookups")
+    )]
+    pub(crate) fn is_shadowed(&self, internal_id: PointOffsetType) -> bool {
+        self.shadowed
+            .get(internal_id as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// Read-only view of the shadowed bitslice — for callers that want to
+    /// pass it into pre-existing filter pipelines without going through
+    /// `is_shadowed` per element.
+    #[expect(
+        dead_code,
+        reason = "consumed by PR C's filter_deferred_and_deleted IncludeAll path"
+    )]
+    pub(crate) fn shadowed_bitslice(&self) -> &BitSlice {
+        &self.shadowed
     }
 
     pub(crate) fn total_point_count(&self) -> usize {
@@ -592,5 +646,128 @@ impl PointMappings {
             + external_to_internal_uuid_deferred.len())
             * uuid_entry_size;
         deleted_bytes + shadowed_bytes + internal_to_external_bytes + num_map_bytes + uuid_map_bytes
+    }
+}
+
+#[cfg(test)]
+mod set_link_shadow_tests {
+    use super::*;
+
+    fn fresh_mapping(cutoff: Option<PointOffsetType>) -> PointMappings {
+        PointMappings::new(
+            BitVec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            cutoff,
+        )
+    }
+
+    fn ext(n: u64) -> PointIdType {
+        PointIdType::NumId(n)
+    }
+
+    #[test]
+    fn no_cutoff_active_only() {
+        let mut m = fresh_mapping(None);
+        m.set_link(ext(42), 0);
+        m.set_link(ext(42), 1);
+
+        assert_eq!(m.internal_id(&ext(42)), Some(1));
+        assert!(m.is_deleted_point(0), "prior active head tombstoned");
+        assert!(!m.is_shadowed(0));
+        assert!(m.external_to_internal_num_deferred.is_empty());
+    }
+
+    #[test]
+    fn active_write_below_cutoff_no_shadow() {
+        // Cutoff at 5. Both writes are below — pure active replacement.
+        let mut m = fresh_mapping(Some(5));
+        m.set_link(ext(7), 0);
+        m.set_link(ext(7), 1);
+
+        assert_eq!(m.internal_id(&ext(7)), Some(1));
+        assert!(m.is_deleted_point(0));
+        assert!(!m.is_shadowed(0));
+        assert!(!m.is_shadowed(1));
+    }
+
+    #[test]
+    fn deferred_write_shadows_active() {
+        // Cutoff at 5. Insert active at 2, then deferred at 7.
+        // Active must stay visible (not tombstoned) and gain the shadow bit.
+        let mut m = fresh_mapping(Some(5));
+        m.set_link(ext(7), 2);
+        m.set_link(ext(7), 7);
+
+        // Active head still present in active map.
+        assert_eq!(m.external_to_internal_num.get(&7).copied(), Some(2));
+        // Deferred head present in deferred map.
+        assert_eq!(
+            m.external_to_internal_num_deferred.get(&7).copied(),
+            Some(7)
+        );
+        // Active not tombstoned, but shadowed.
+        assert!(!m.is_deleted_point(2));
+        assert!(m.is_shadowed(2));
+        // Deferred slot itself isn't shadowed.
+        assert!(!m.is_shadowed(7));
+        // Exclude-style lookup (active-first fall-through) returns active.
+        assert_eq!(m.internal_id(&ext(7)), Some(2));
+    }
+
+    #[test]
+    fn second_deferred_write_supersedes_prior_deferred_keeps_shadow() {
+        // Cutoff at 5. Active at 2; first deferred at 7; second deferred at 9.
+        // The shadow on 2 must persist; the first deferred (7) is tombstoned.
+        let mut m = fresh_mapping(Some(5));
+        m.set_link(ext(7), 2);
+        m.set_link(ext(7), 7);
+        m.set_link(ext(7), 9);
+
+        assert_eq!(m.external_to_internal_num.get(&7).copied(), Some(2));
+        assert_eq!(
+            m.external_to_internal_num_deferred.get(&7).copied(),
+            Some(9)
+        );
+        assert!(m.is_shadowed(2));
+        assert!(m.is_deleted_point(7), "prior deferred head tombstoned");
+        assert!(!m.is_deleted_point(9));
+    }
+
+    #[test]
+    fn fresh_deferred_insert_no_active_no_shadow() {
+        // No prior active — a fresh insert above cutoff.
+        let mut m = fresh_mapping(Some(5));
+        m.set_link(ext(7), 7);
+
+        assert!(!m.external_to_internal_num.contains_key(&7));
+        assert_eq!(
+            m.external_to_internal_num_deferred.get(&7).copied(),
+            Some(7)
+        );
+        assert!(!m.is_shadowed(7));
+        // Active-first lookup falls through to deferred.
+        assert_eq!(m.internal_id(&ext(7)), Some(7));
+    }
+
+    #[test]
+    fn drop_clears_both_tracks_and_shadow() {
+        let mut m = fresh_mapping(Some(5));
+        m.set_link(ext(7), 2);
+        m.set_link(ext(7), 7);
+        assert!(m.is_shadowed(2));
+
+        let returned = m.drop(ext(7));
+
+        // Prefer-active return shape from PR A is preserved.
+        assert_eq!(returned, Some(2));
+        // Both slots tombstoned, shadow cleared.
+        assert!(m.is_deleted_point(2));
+        assert!(m.is_deleted_point(7));
+        assert!(!m.is_shadowed(2));
+        assert!(!m.external_to_internal_num.contains_key(&7));
+        assert!(!m.external_to_internal_num_deferred.contains_key(&7));
+        assert_eq!(m.internal_id(&ext(7)), None);
     }
 }
