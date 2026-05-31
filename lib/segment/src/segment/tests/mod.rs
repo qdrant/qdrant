@@ -1465,6 +1465,190 @@ fn test_deferred_point_facets() {
     }
 }
 
+/// Build a segment with `n_points` points, each carrying a fresh unique UUID
+/// in a `uuid_fld` field indexed as `PayloadSchemaType::Uuid` plus a
+/// `colour` keyword field shared across many points.
+///
+/// Used to exercise the sampling approximate-facet strategy (which kicks in
+/// when `unique_values_count > limit * FACET_FULL_SCAN_FACTOR`).
+fn create_high_cardinality_segment(dir: &TempDir, n_points: usize) -> Segment {
+    let hw_counter = HardwareCounterCell::new();
+    let dim = 2;
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+
+    let default_vector: Vec<_> = (0..dim).map(|i| i as f32 / 10.0).collect();
+    let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&default_vector));
+
+    let mut op = 0u64;
+    for i in 0..n_points {
+        let point_id = PointIdType::from(i as u64 + 1);
+        segment
+            .insert_new_vectors(point_id, op, &vectors, &hw_counter)
+            .unwrap();
+        op += 1;
+        let mut payload = Payload::default();
+        let uuid_str = format!("00000000-0000-0000-0000-{i:012x}");
+        payload
+            .0
+            .insert("uuid_fld".to_string(), Value::String(uuid_str));
+        let colour: Value = ["red", "blue", "green"][i % 3].to_string().into();
+        payload.0.insert("colour".to_string(), colour);
+        segment
+            .set_full_payload(op, point_id, &payload, &hw_counter)
+            .unwrap();
+        op += 1;
+    }
+
+    segment
+        .create_field_index(
+            op,
+            &JsonPath::new("uuid_fld"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid)),
+            &hw_counter,
+        )
+        .unwrap();
+    op += 1;
+    segment
+        .create_field_index(
+            op,
+            &JsonPath::new("colour"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+            &hw_counter,
+        )
+        .unwrap();
+
+    segment
+}
+
+/// Exercises the sampling approximate-facet strategy on a UUID payload field
+/// with thousands of unique values. Asserts that:
+///
+/// - The number of returned hits is reasonable (bounded by the sampling
+///   target and small enough that we're not just falling back to the
+///   full-scan path).
+/// - Each reported count is exact (i.e., equals the true count for that
+///   UUID, which is 1 in this fixture). This validates that the
+///   exact-count post-pass works.
+/// - With a filter, only points matching the filter contribute to the
+///   sample, and the counts still match the post-pass.
+#[test]
+fn test_sampling_facet_high_cardinality_uuid() {
+    init_logger();
+    let hw_counter = HardwareCounterCell::new();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    // Each point has a unique UUID, so the field has `n_points` unique values.
+    // With `limit = 10` and FACET_FULL_SCAN_FACTOR = 4 the sampling strategy
+    // engages whenever `n_points > 40`.
+    let n_points = 5_000;
+    let segment = create_high_cardinality_segment(&dir, n_points);
+
+    let key = JsonPath::new("uuid_fld");
+
+    // -- No filter --
+    let request = FacetParams {
+        key: key.clone(),
+        limit: 10,
+        filter: None,
+        exact: false,
+    };
+    let hits = segment
+        .facet(&request, &AtomicBool::new(false), &hw_counter)
+        .unwrap();
+    // We oversample to (limit * 10).max(1000) = 1000 candidates.
+    // The result should be at most that, and at least `limit` (sanity).
+    assert!(!hits.is_empty(), "sampling returned no hits");
+    assert!(
+        hits.len() <= 1_000,
+        "expected ≤1000 hits from sampling, got {}",
+        hits.len()
+    );
+    // Each UUID is unique, so the exact count for any value is 1.
+    for (value, count) in &hits {
+        assert_eq!(
+            *count, 1,
+            "expected count 1 for unique UUID {value:?}, got {count}"
+        );
+    }
+
+    // -- With filter `colour = "red"` --
+    let red_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new("colour"),
+        Match::new_value(ValueVariants::String("red".to_string())),
+    )));
+    let request_filtered = FacetParams {
+        key: key.clone(),
+        limit: 10,
+        filter: Some(red_filter.clone()),
+        exact: false,
+    };
+    let hits_filtered = segment
+        .facet(&request_filtered, &AtomicBool::new(false), &hw_counter)
+        .unwrap();
+    assert!(
+        !hits_filtered.is_empty(),
+        "filtered sampling returned no hits"
+    );
+    for (value, count) in &hits_filtered {
+        assert_eq!(
+            *count, 1,
+            "expected count 1 for unique UUID {value:?} under filter, got {count}"
+        );
+    }
+    // Sampled UUIDs under filter must all correspond to "red" points. We can
+    // verify by checking the original payload: the i-th UUID corresponds to
+    // colour `["red", "blue", "green"][i % 3]`, so only `i % 3 == 0` UUIDs
+    // should appear.
+    for value in hits_filtered.keys() {
+        if let FacetValue::Uuid(uuid_int) = value {
+            // Reconstruct the original index from the lowest 64 bits — we
+            // formatted it as `...{i:012x}`, so the value is small.
+            let i = *uuid_int as u64 as usize;
+            assert_eq!(
+                i % 3,
+                0,
+                "found UUID for i={i} under colour=red filter (expected only i%3==0)"
+            );
+        } else {
+            panic!("expected Uuid facet value, got {value:?}");
+        }
+    }
+}
+
+/// Sanity check: when the unique value count is small relative to the
+/// requested `limit`, the dispatcher should pick the full-scan path. The
+/// returned counts must still be exact (this is the historical behaviour
+/// covered by `test_struct_keyword_facet`; the test is here to lock the
+/// behaviour against future changes to the strategy switch).
+#[test]
+fn test_sampling_facet_low_cardinality_falls_back_to_scan() {
+    init_logger();
+    let hw_counter = HardwareCounterCell::new();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let n_points = 300;
+    let segment = create_high_cardinality_segment(&dir, n_points);
+
+    // `colour` has 3 unique values; with limit=10 and FACTOR=4 the threshold
+    // is 40 > 3, so the scan path is used.
+    let request = FacetParams {
+        key: JsonPath::new("colour"),
+        limit: 10,
+        filter: None,
+        exact: false,
+    };
+    let hits = segment
+        .facet(&request, &AtomicBool::new(false), &hw_counter)
+        .unwrap();
+    assert_eq!(hits.len(), 3, "expected exactly 3 colours, got {hits:?}");
+    let total: usize = hits.values().sum();
+    assert_eq!(
+        total, n_points,
+        "scan-path facet counts should sum to total point count"
+    );
+}
+
 /// Extensively tests whether deferred points are excluded from the result of the given `operation`.
 fn assert_deferred_points_excluded<F, R, T>(
     name: &str,

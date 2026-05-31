@@ -10,6 +10,13 @@ use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::types::{IntPayloadType, UuidIntType};
 
 pub trait FacetIndex {
+    /// Number of distinct values currently indexed.
+    ///
+    /// Used by the facet read path to decide between the full-scan and the
+    /// sampling strategy: if `unique_values_count` is comparable to the
+    /// requested `limit`, scanning the whole index is cheaper than sampling.
+    fn unique_values_count(&self) -> usize;
+
     /// Call a closure on value->point_ids mapping for specified `points`.
     fn for_points_values(
         &self,
@@ -98,6 +105,19 @@ pub enum FacetIndexEnum<'a, S: UniversalRead = MmapFile> {
 }
 
 impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
+    fn unique_values_count(&self) -> usize {
+        match self {
+            FacetIndexEnum::Keyword(index) => FacetIndex::unique_values_count(*index),
+            FacetIndexEnum::Int(index) => FacetIndex::unique_values_count(*index),
+            FacetIndexEnum::Uuid(index) => FacetIndex::unique_values_count(*index),
+            FacetIndexEnum::Bool(index) => FacetIndex::unique_values_count(*index),
+            FacetIndexEnum::KeywordReadOnly(index) => FacetIndex::unique_values_count(*index),
+            FacetIndexEnum::IntReadOnly(index) => FacetIndex::unique_values_count(*index),
+            FacetIndexEnum::UuidReadOnly(index) => FacetIndex::unique_values_count(*index),
+            FacetIndexEnum::BoolReadOnly(index) => FacetIndex::unique_values_count(*index),
+        }
+    }
+
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,

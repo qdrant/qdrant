@@ -173,6 +173,14 @@ impl PayloadFieldIndex for BoolIndex {
 }
 
 impl FacetIndex for BoolIndex {
+    fn unique_values_count(&self) -> usize {
+        // A boolean field has at most two distinct values (true/false).
+        // We could compute the actual number cheaply, but this upper bound is
+        // enough for the facet-strategy decision (which only checks whether
+        // the cardinality vastly exceeds the user limit).
+        2
+    }
+
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
