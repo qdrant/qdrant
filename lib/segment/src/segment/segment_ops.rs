@@ -169,10 +169,18 @@ impl Segment {
         debug_assert!(self.is_appendable());
 
         // 1. Snapshot vectors and payload at old_id into owned containers,
-        //    dropping all storage borrows before we start writing.
+        //    dropping all storage borrows before we start writing. Slots
+        //    that are marked deleted in the per-vector bitslice carry
+        //    leftover default-vector bytes from the original
+        //    `update_vector(_, None, _)` insert — including those would
+        //    promote phantom data into the fresh slot, so we skip them
+        //    and write `None` at new_id (re-tombstoning the slot).
         let mut vectors: NamedVectors<'static> = NamedVectors::default();
         for (vector_name, vector_data) in self.vector_data.iter() {
             let storage = vector_data.vector_storage.borrow();
+            if storage.is_deleted_vector(old_id) {
+                continue;
+            }
             if let Some(existing) = storage.get_vector_opt::<Random>(old_id) {
                 vectors.insert(vector_name.clone(), existing.to_owned());
             }
@@ -198,14 +206,15 @@ impl Segment {
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
 
-        // 5. Write the payload at new_id. Skipped when empty so we don't
-        //    materialise a no-op payload row or touch the field indexes
-        //    for keys that aren't present.
-        if !payload.is_empty() {
-            self.payload_index
-                .borrow_mut()
-                .overwrite_payload(new_id, &payload, hw_counter)?;
-        }
+        // 5. Write the payload at new_id — always, even when empty. Each
+        //    configured field index needs either an `add_point` (for
+        //    present values) or a `remove_point` (for absent ones) so
+        //    `total_point_count` bumps up to cover new_id; without that
+        //    bump the null index's `is_empty` / `is_null` checks never
+        //    see new_id and the point disappears from filter results.
+        self.payload_index
+            .borrow_mut()
+            .overwrite_payload(new_id, &payload, hw_counter)?;
 
         // 6. Repoint the id tracker. `set_link` auto-tombstones old_id in
         //    the deleted bitslice when external_id was previously mapped to
