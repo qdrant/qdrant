@@ -19,6 +19,10 @@ where
     for<'a> Cow<'a, N>: Into<FacetValueRef<'a>>,
     for<'a> &'a N: Into<FacetValueRef<'a>>,
 {
+    fn unique_values_count(&self) -> usize {
+        MapIndexRead::get_unique_values_count(self)
+    }
+
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
@@ -85,6 +89,10 @@ where
     for<'a> Cow<'a, N>: Into<FacetValueRef<'a>>,
     for<'a> &'a N: Into<FacetValueRef<'a>>,
 {
+    fn unique_values_count(&self) -> usize {
+        MapIndexRead::get_unique_values_count(self)
+    }
+
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,

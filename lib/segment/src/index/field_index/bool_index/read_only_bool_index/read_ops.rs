@@ -89,6 +89,11 @@ impl PayloadFieldIndexRead for ReadOnlyBoolIndex {
 /// `BoolIndex`: every method delegates to a [`BoolIndexRead`] default, so the
 /// body is identical — only the `Self` type differs.
 impl FacetIndex for ReadOnlyBoolIndex {
+    fn unique_values_count(&self) -> usize {
+        // Upper bound; see `BoolIndex::unique_values_count` for rationale.
+        2
+    }
+
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
