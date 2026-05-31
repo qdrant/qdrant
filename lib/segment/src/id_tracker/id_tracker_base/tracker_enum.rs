@@ -42,6 +42,24 @@ impl IdTrackerRead for IdTrackerEnum {
         }
     }
 
+    fn internal_id_with_behavior(
+        &self,
+        external_id: PointIdType,
+        deferred_behavior: common::types::DeferredBehavior,
+    ) -> Option<PointOffsetType> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(t) => {
+                t.internal_id_with_behavior(external_id, deferred_behavior)
+            }
+            IdTrackerEnum::ImmutableIdTracker(t) => {
+                t.internal_id_with_behavior(external_id, deferred_behavior)
+            }
+            IdTrackerEnum::InMemoryIdTracker(t) => {
+                t.internal_id_with_behavior(external_id, deferred_behavior)
+            }
+        }
+    }
+
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),

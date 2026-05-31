@@ -94,13 +94,18 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// `deferred_behavior`:
     /// - [`DeferredBehavior::Exclude`] applies the mapping's own threshold;
     /// - [`DeferredBehavior::IncludeAll`] yields every point regardless of the
-    ///   threshold.
+    ///   threshold, but skips shadowed actives so each external id is
+    ///   yielded at most once (the deferred head takes precedence).
     pub fn iter_internal_with_behavior(
         self,
         deferred_behavior: DeferredBehavior,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         if deferred_behavior.include_all_points() {
-            self.iter_internal()
+            let shadowed = self.shadowed();
+            Box::new(
+                self.iter_internal()
+                    .filter(move |&id| !shadowed.get_bit(id as usize).unwrap_or(false)),
+            )
         } else {
             self.iter_internal_visible()
         }
@@ -116,9 +121,14 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// postings for tombstoned internal IDs (a single bit test per element,
     /// negligible overhead).
     ///
-    /// For [`DeferredBehavior::IncludeAll`] — or when the mapping has no
-    /// deferred threshold — the threshold cutoff is skipped, but the
-    /// deleted-bitslice filter is always applied.
+    /// For [`DeferredBehavior::Exclude`] — points at or above the cutoff are
+    /// dropped on top of the deleted check.
+    /// For [`DeferredBehavior::IncludeAll`] — every non-deleted point is
+    /// yielded, except shadowed actives (an active whose external id has
+    /// been overridden by a deferred mutation). Skipping shadowed actives
+    /// is what gives the IncludeAll consumer a one-yield-per-external
+    /// guarantee in the presence of append-only mutations into a deferred
+    /// segment.
     pub fn filter_deferred_and_deleted<I>(
         self,
         iter: I,
@@ -130,7 +140,11 @@ impl<'a> PointMappingsRefEnum<'a> {
         let deleted = self.deleted();
         match deferred_behavior.apply(self.deferred_internal_id()) {
             None => {
-                Either::Left(iter.filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false)))
+                let shadowed = self.shadowed();
+                Either::Left(iter.filter(move |&id| {
+                    !deleted.get_bit(id as usize).unwrap_or(false)
+                        && !shadowed.get_bit(id as usize).unwrap_or(false)
+                }))
             }
             Some(cutoff) => {
                 Either::Right(iter.filter(move |&id| {
@@ -191,6 +205,15 @@ impl<'a> PointMappingsRefEnum<'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.deleted(),
             PointMappingsRefEnum::Compressed(m) => m.deleted(),
+        }
+    }
+
+    /// Shadowed-active bitslice for this mapping. Empty for compressed
+    /// mappings (immutable trackers can't carry deferred mutations).
+    fn shadowed(self) -> &'a BitSlice {
+        match self {
+            PointMappingsRefEnum::Plain(m) => m.shadowed_bitslice(),
+            PointMappingsRefEnum::Compressed(_) => BitSlice::empty(),
         }
     }
 }
