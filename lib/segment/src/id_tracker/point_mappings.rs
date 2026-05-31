@@ -546,6 +546,14 @@ impl PointMappings {
         &self.shadowed
     }
 
+    /// Number of active heads currently overridden by a deferred mutation.
+    /// Each unit of this count corresponds to one external id whose
+    /// visible state is the (now stale) active version while the latest
+    /// state lives in the deferred map until segment optimisation.
+    pub(crate) fn shadowed_count(&self) -> usize {
+        self.shadowed.count_ones()
+    }
+
     pub(crate) fn total_point_count(&self) -> usize {
         self.internal_to_external.len()
     }
@@ -849,6 +857,40 @@ mod set_link_shadow_tests {
             .filter_deferred_and_deleted(candidates.iter().copied(), DeferredBehavior::IncludeAll)
             .collect();
         assert_eq!(include_all, vec![3, 7, 8]);
+    }
+
+    #[test]
+    fn shadowed_count_tracks_active_overrides() {
+        // Cutoff at 5.
+        let mut m = fresh_mapping(Some(5));
+        assert_eq!(m.shadowed_count(), 0);
+
+        // Active-only writes don't grow the count.
+        m.set_link(ext(8), 3);
+        m.set_link(ext(9), 4);
+        assert_eq!(m.shadowed_count(), 0);
+
+        // Deferred write over an active head adds one shadow.
+        m.set_link(ext(8), 7);
+        assert_eq!(m.shadowed_count(), 1);
+
+        // A second ext with the same pattern increments the count.
+        m.set_link(ext(9), 8);
+        assert_eq!(m.shadowed_count(), 2);
+
+        // A second deferred write over the same ext (supersedes the prior
+        // deferred head) keeps the shadow on the same active, so the
+        // count stays put.
+        m.set_link(ext(8), 9);
+        assert_eq!(m.shadowed_count(), 2);
+
+        // Dropping an ext clears its shadow bit.
+        m.drop(ext(8));
+        assert_eq!(m.shadowed_count(), 1);
+
+        // A deferred-only ext (no active) doesn't add a shadow.
+        m.set_link(ext(99), 10);
+        assert_eq!(m.shadowed_count(), 1);
     }
 
     #[test]

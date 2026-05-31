@@ -223,6 +223,14 @@ pub trait IdTrackerRead {
         0
     }
 
+    /// Number of active heads currently shadowed by a deferred mutation —
+    /// i.e. external ids that have both a visible (active) version and a
+    /// newer hidden (deferred) version. Non-appendable trackers can't
+    /// carry shadowed entries; default is `0`.
+    fn shadowed_point_count(&self) -> usize {
+        0
+    }
+
     /// Translate external point ids into two parallel vectors of `(ids,
     /// offsets)` in a single pass.
     ///

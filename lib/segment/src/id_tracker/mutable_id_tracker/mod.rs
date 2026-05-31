@@ -238,6 +238,10 @@ impl IdTrackerRead for MutableIdTracker {
     fn deferred_deleted_count(&self) -> usize {
         self.mappings.deferred_deleted_count()
     }
+
+    fn shadowed_point_count(&self) -> usize {
+        self.mappings.shadowed_count()
+    }
 }
 
 impl IdTracker for MutableIdTracker {

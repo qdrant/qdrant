@@ -117,6 +117,10 @@ impl IdTrackerRead for InMemoryIdTracker {
         self.mappings.deferred_deleted_count()
     }
 
+    fn shadowed_point_count(&self) -> usize {
+        self.mappings.shadowed_count()
+    }
+
     fn iter_internal_versions(
         &self,
     ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {

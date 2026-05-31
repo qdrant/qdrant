@@ -84,6 +84,7 @@ where
             num_points: self.id_tracker.available_point_count(),
             num_deferred_points: Some(self.deferred_point_count()),
             num_deleted_deferred_points: Some(self.deferred_deleted_count()),
+            num_shadowed_points: is_appendable.then(|| self.shadowed_point_count()),
             num_deleted_vectors: self.id_tracker.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices.
             payloads_size_bytes, // Considers payload storage, but not indices.

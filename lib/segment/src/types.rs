@@ -473,6 +473,12 @@ pub struct SegmentInfo {
     pub num_points: usize,
     pub num_deferred_points: Option<usize>,
     pub num_deleted_deferred_points: Option<usize>,
+    /// Number of active heads currently shadowed by a deferred mutation —
+    /// i.e. external ids whose visible (active) version is stale and the
+    /// latest state lives in the deferred map until segment optimisation
+    /// reconciles them. `None` for non-appendable segments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_shadowed_points: Option<usize>,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
     /// An ESTIMATION of effective amount of bytes used for vectors

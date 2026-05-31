@@ -22,6 +22,10 @@ where
         self.id_tracker.deferred_deleted_count()
     }
 
+    pub(super) fn shadowed_point_count(&self) -> usize {
+        self.id_tracker.shadowed_point_count()
+    }
+
     pub fn deferred_point_count(&self) -> usize {
         match self.deferred_internal_id() {
             Some(internal_id) => self
