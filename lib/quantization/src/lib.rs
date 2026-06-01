@@ -17,6 +17,8 @@ pub use encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 pub use encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 pub use encoded_vectors_pq::{EncodedQueryPQ, EncodedVectorsPQ};
 pub use encoded_vectors_u8::{EncodedQueryU8, EncodedVectorsU8};
+pub use turboquant::quantization::TurboQuantizer;
+pub use turboquant::{EncodedQueryTQ, TQBits, TQMode};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EncodingError {

@@ -259,7 +259,7 @@ where
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector).into())
+            .map(|vector| T::slice_to_float_cow(vector, self.distance).into())
             .expect("Vector not found")
     }
 
@@ -277,7 +277,8 @@ where
             .as_ref()
             .unwrap()
             .for_each_in_batch(&point_offsets, |idx, vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+                let vector =
+                    CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector), self.distance));
                 callback(user_data[idx], point_offsets[idx], vector);
             });
     }
@@ -287,7 +288,7 @@ where
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector).into())
+            .map(|vector| T::slice_to_float_cow(vector, self.distance).into())
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -331,7 +332,7 @@ where
         let mut deleted_ids = vec![];
         for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
             check_process_stopped(stopped)?;
-            let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
+            let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?, self.distance);
             // Safety: T implements zerocopy::IntoBytes.
             #[expect(deprecated, reason = "legacy code")]
             let raw_bites = unsafe { mmap::transmute_to_u8_slice(vector.as_ref()) };

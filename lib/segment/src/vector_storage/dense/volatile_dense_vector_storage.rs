@@ -111,7 +111,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
         // In memory so no optimization to be done for access pattern
         self.vectors
             .get_opt(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into(), self.distance)))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -135,7 +135,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
-        let vector = T::slice_from_float_cow(Cow::from(vector));
+        let vector = T::slice_from_float_cow(Cow::from(vector), self.distance);
         self.vectors
             .insert(key as VectorOffsetType, vector.as_ref())?;
         self.set_deleted(key, false);
@@ -151,7 +151,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
+            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?, self.distance);
             let new_id = self.vectors.push(other_vector.as_ref())? as PointOffsetType;
             self.set_deleted(new_id, other_deleted);
         }

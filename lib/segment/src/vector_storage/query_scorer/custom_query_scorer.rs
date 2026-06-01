@@ -50,9 +50,10 @@ impl<
             .transform(|vector| {
                 dim = vector.len();
                 let preprocessed_vector = TMetric::preprocess(vector);
-                Ok(TElement::query_from_float_cow(Cow::from(
-                    preprocessed_vector,
-                )))
+                Ok(TElement::query_from_float_cow(
+                    Cow::from(preprocessed_vector),
+                    TMetric::distance(),
+                ))
             })
             .unwrap();
 
