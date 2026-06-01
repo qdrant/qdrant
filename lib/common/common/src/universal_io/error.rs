@@ -1,6 +1,28 @@
 use std::io;
 use std::path::PathBuf;
 
+/// `Result` extension for treating `NotFound` as `Ok(None)`
+pub trait OkNotFound {
+    type Ok;
+    type Error;
+
+    /// Treat the not found error as `Ok(None)`
+    fn ok_not_found(self) -> Result<Option<Self::Ok>, Self::Error>;
+}
+
+impl<T> OkNotFound for Result<T, UniversalIoError> {
+    type Ok = T;
+    type Error = UniversalIoError;
+
+    fn ok_not_found(self) -> Result<Option<T>, UniversalIoError> {
+        match self {
+            Ok(t) => Ok(Some(t)),
+            Err(err) if err.is_not_found() => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum UniversalIoError {
     #[error(transparent)]
@@ -61,6 +83,11 @@ impl UniversalIoError {
             _ => Self::Io(err),
         }
     }
+
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Self::NotFound { .. })
+    }
+
     pub fn uninitialized(description: impl Into<String>) -> Self {
         Self::Uninitialized {
             description: description.into(),
