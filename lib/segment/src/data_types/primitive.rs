@@ -228,9 +228,6 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
     }
 }
 
-const TQ_BITS: TQBits = TQBits::Bits4;
-const TQ_MODE: TQMode = TQMode::Normal;
-
 #[derive(
     Clone,
     Copy,
@@ -255,8 +252,8 @@ impl PrimitiveVectorElement for TurboQuantElement {
         let api_dim = vector.len();
         let quantizer = TurboQuantizer::new(
             api_dim,
-            TQ_BITS,
-            TQ_MODE,
+            TQBits::Bits4,
+            TQMode::Normal,
             DistanceType::from(distance),
             None,
         );
@@ -266,7 +263,15 @@ impl PrimitiveVectorElement for TurboQuantElement {
     }
 
     fn slice_to_float_cow(vector: Cow<[Self]>, distance: Distance) -> Cow<[VectorElementType]> {
-        decode_tq(&vector, distance)
+        // Output length is `padded_dim` — caller (storage layer with access to
+        // the original `api_dim`) is expected to trim before exposing to API.
+        let quantizer = quantizer_for_tq_slot(vector.len(), distance);
+        let slice: &[Self] = &vector;
+        let mut deq = quantizer.dequantize(bytemuck::cast_slice(slice));
+        // Revert the Hadamard rotation so the floats come back in the original
+        // (un-rotated) basis expected by the API.
+        quantizer.apply_inverse_rotation(&mut deq);
+        Cow::Owned(deq.into_iter().map(|x| x as f32).collect())
     }
 
     fn query_from_float_cow(
@@ -276,8 +281,8 @@ impl PrimitiveVectorElement for TurboQuantElement {
         let api_dim = vector.len();
         let quantizer = TurboQuantizer::new(
             api_dim,
-            TQ_BITS,
-            TQ_MODE,
+            TQBits::Bits4,
+            TQMode::Normal,
             DistanceType::from(distance),
             None,
         );
@@ -289,7 +294,20 @@ impl PrimitiveVectorElement for TurboQuantElement {
         distance: Distance,
         vector: Cow<'a, [Self]>,
     ) -> Cow<'a, [f32]> {
-        decode_tq(&vector, distance)
+        // Unlike `slice_to_float_cow`, we generally skip the inverse rotation:
+        // the downstream quantizer re-applies its own rotation, so handing it
+        // the already-rotated coordinates avoids a redundant round-trip. This
+        // only holds for rotation-invariant metrics (L2/Cosine/Dot) — Manhattan
+        // (L1) is rotation-sensitive, so there we must revert to the original
+        // basis. Output length is `padded_dim`; the quantization pipeline
+        // truncates to `api_dim` before encoding.
+        let quantizer = quantizer_for_tq_slot(vector.len(), distance);
+        let slice: &[Self] = &vector;
+        let mut deq = quantizer.dequantize(bytemuck::cast_slice(slice));
+        if distance == Distance::Manhattan {
+            quantizer.apply_inverse_rotation(&mut deq);
+        }
+        Cow::Owned(deq.into_iter().map(|x| x as f32).collect())
     }
 
     fn datatype() -> VectorStorageDatatype {
@@ -311,30 +329,24 @@ impl PrimitiveVectorElement for TurboQuantElement {
 
 pub(crate) fn quantizer_for_tq_slot(slot_len: usize, distance: Distance) -> TurboQuantizer {
     let tq_distance = DistanceType::from(distance);
-    let extras_size = TurboQuantizer::quantized_size_for(0, TQ_BITS, tq_distance, TQ_MODE);
+    let extras_size =
+        TurboQuantizer::quantized_size_for(0, TQBits::Bits4, tq_distance, TQMode::Normal);
     let packed_bytes = slot_len
         .checked_sub(extras_size)
         .expect("slot shorter than TurboQuant extras trailer");
     let padded_dim = padded_bytes_to_dim(packed_bytes);
-    TurboQuantizer::new(padded_dim, TQ_BITS, TQ_MODE, tq_distance, None)
-}
-
-fn decode_tq(
-    vector: &[TurboQuantElement],
-    distance: Distance,
-) -> Cow<'static, [VectorElementType]> {
-    let quantizer = quantizer_for_tq_slot(vector.len(), distance);
-    let bytes: &[u8] = bytemuck::cast_slice(vector);
-    let mut deq = quantizer.dequantize(bytes);
-    quantizer.apply_inverse_rotation(&mut deq);
-    Cow::Owned(deq.into_iter().map(|x| x as f32).collect())
+    TurboQuantizer::new(padded_dim, TQBits::Bits4, TQMode::Normal, tq_distance, None)
 }
 
 fn padded_bytes_to_dim(packed_bytes: usize) -> usize {
-    let extras = TurboQuantizer::quantized_size_for(0, TQ_BITS, DistanceType::Cosine, TQ_MODE);
+    let extras =
+        TurboQuantizer::quantized_size_for(0, TQBits::Bits4, DistanceType::Cosine, TQMode::Normal);
     let probe_dim = 64;
-    let probe_packed =
-        TurboQuantizer::quantized_size_for(probe_dim, TQ_BITS, DistanceType::Cosine, TQ_MODE)
-            - extras;
+    let probe_packed = TurboQuantizer::quantized_size_for(
+        probe_dim,
+        TQBits::Bits4,
+        DistanceType::Cosine,
+        TQMode::Normal,
+    ) - extras;
     packed_bytes * probe_dim / probe_packed
 }
