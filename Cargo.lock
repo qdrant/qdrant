@@ -4789,6 +4789,7 @@ dependencies = [
  "rand 0.10.1",
  "reqwest 0.12.28",
  "ring",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_urlencoded",

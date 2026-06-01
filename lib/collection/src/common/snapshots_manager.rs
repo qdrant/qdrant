@@ -5,6 +5,7 @@ use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use object_store::ObjectStoreExt;
 use object_store::aws::AmazonS3Builder;
+use object_store::gcp::GoogleCloudStorageBuilder;
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -22,6 +23,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 pub struct SnapshotsConfig {
     pub snapshots_storage: SnapshotsStorageConfig,
     pub s3_config: Option<S3Config>,
+    pub gcs_config: Option<GcsConfig>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -30,6 +32,7 @@ pub enum SnapshotsStorageConfig {
     #[default]
     Local,
     S3,
+    Gcs,
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
@@ -39,6 +42,12 @@ pub struct S3Config {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub endpoint_url: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Debug, Default)]
+pub struct GcsConfig {
+    pub bucket: String,
+    pub service_account_key: Option<String>,
 }
 
 pub struct SnapshotStorageCloud {
@@ -51,9 +60,9 @@ pub enum SnapshotStorageManager {
     LocalFS(SnapshotStorageLocalFS),
     // Assuming that we can have common operations for all cloud storages
     S3(SnapshotStorageCloud),
+    Gcs(SnapshotStorageCloud),
     // <TODO> : Implement other cloud storage
-    // GCS(SnapshotStorageCloud),
-    // AZURE(SnapshotStorageCloud),
+    // Azure(SnapshotStorageCloud),
 }
 
 impl SnapshotStorageManager {
@@ -90,6 +99,22 @@ impl SnapshotStorageManager {
 
                 Ok(SnapshotStorageManager::S3(SnapshotStorageCloud { client }))
             }
+            SnapshotsStorageConfig::Gcs => {
+                let mut builder = GoogleCloudStorageBuilder::from_env();
+                if let Some(gcs_config) = &snapshots_config.gcs_config {
+                    builder = builder.with_bucket_name(&gcs_config.bucket);
+
+                    if let Some(service_account_key) = &gcs_config.service_account_key {
+                        builder = builder.with_service_account_key(service_account_key);
+                    }
+                }
+                let client: Box<dyn object_store::ObjectStore> =
+                    Box::new(builder.build().map_err(|e| {
+                        CollectionError::service_error(format!("Failed to create GCS client: {e}"))
+                    })?);
+
+                Ok(SnapshotStorageManager::Gcs(SnapshotStorageCloud { client }))
+            }
         }
     }
 
@@ -98,7 +123,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.delete_snapshot(snapshot_name).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::S3(storage_impl) | SnapshotStorageManager::Gcs(storage_impl) => {
                 storage_impl.delete_snapshot(snapshot_name).await
             }
         }
@@ -112,7 +137,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.list_snapshots(directory).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::S3(storage_impl) | SnapshotStorageManager::Gcs(storage_impl) => {
                 storage_impl.list_snapshots(directory).await
             }
         }
@@ -133,7 +158,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.store_file(source_path, target_path).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::S3(storage_impl) | SnapshotStorageManager::Gcs(storage_impl) => {
                 storage_impl.store_file(source_path, target_path).await
             }
         }
@@ -148,7 +173,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.get_stored_file(storage_path, local_path).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::S3(storage_impl) | SnapshotStorageManager::Gcs(storage_impl) => {
                 storage_impl.get_stored_file(storage_path, local_path).await
             }
         }
@@ -163,7 +188,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_snapshot_path(snapshots_path, snapshot_name)
             }
-            SnapshotStorageManager::S3(_storage_impl) => Ok(
+            SnapshotStorageManager::S3(_storage_impl) | SnapshotStorageManager::Gcs(_storage_impl) => Ok(
                 SnapshotStorageCloud::get_snapshot_path(snapshots_path, snapshot_name),
             ),
         }
@@ -178,7 +203,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_full_snapshot_path(snapshots_path, snapshot_name)
             }
-            SnapshotStorageManager::S3(_storage_impl) => Ok(
+            SnapshotStorageManager::S3(_storage_impl) | SnapshotStorageManager::Gcs(_storage_impl) => Ok(
                 SnapshotStorageCloud::get_full_snapshot_path(snapshots_path, snapshot_name),
             ),
         }
@@ -193,7 +218,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_snapshot_file(snapshot_path, temp_dir)
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::S3(storage_impl) | SnapshotStorageManager::Gcs(storage_impl) => {
                 storage_impl
                     .get_snapshot_file(snapshot_path, temp_dir)
                     .await
@@ -209,7 +234,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 Ok(SnapshotStorageLocalFS::get_snapshot_stream(snapshot_path))
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::S3(storage_impl) | SnapshotStorageManager::Gcs(storage_impl) => {
                 storage_impl.get_snapshot_stream(snapshot_path).await
             }
         }

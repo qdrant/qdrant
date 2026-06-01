@@ -22,13 +22,16 @@ storage:
   snapshots_path: ./snapshots
 
   snapshots_config:
-    # "local" or "s3" - where to store snapshots
+    # "local", "s3", or "gcs" - where to store snapshots
     snapshots_storage: local
     # s3_config:
     #   bucket: ""
     #   region: ""
     #   access_key: ""
     #   secret_key: ""
+    # gcs_config:
+    #   bucket: ""
+    #   service_account_key: ""  # path to service account JSON key file, or JSON string
 
   # Where to store temporary files
   # If null, temporary snapshots are stored in: storage/snapshots_temp/
