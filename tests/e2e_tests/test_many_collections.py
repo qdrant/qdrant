@@ -7,6 +7,8 @@ from e2e_tests.client_utils import ClientUtils
 
 class TestManyCollections:
     @pytest.mark.longrunning
+    # Override the global 1920s timeout to leave margin.
+    @pytest.mark.timeout(2700)
     @pytest.mark.parametrize("qdrant_compose", [
         {"compose_file": "3-node-cluster.yaml"}
     ], indirect=True)
