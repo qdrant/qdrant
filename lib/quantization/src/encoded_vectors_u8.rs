@@ -320,6 +320,32 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
         };
+
+        // Validate that each encoded vector in storage has exactly the size our metadata
+        // expects. The hot path in `score_bytes` only requires the slice to be at least this
+        // large, but on consistent data the storage stride and the metadata are both derived
+        // from the same vector parameters, so they must match exactly. Checking it once here at
+        // load time lets the invariant also hold in release builds without paying for the check
+        // on every score.
+        //
+        // The storage uses a fixed stride for every vector, so inspecting the first encoded
+        // vector is enough to validate all of them. An empty storage has no vector data to
+        // score, so there is nothing to check.
+        if result.encoded_vectors.vectors_count() > 0 {
+            let expected_size = ADDITIONAL_CONSTANT_SIZE + result.metadata.actual_dim();
+            let actual_size = result.encoded_vectors.get_vector_data(0).len();
+            if actual_size != expected_size {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "Quantized vector storage is inconsistent with its metadata: \
+                         encoded vector size is {actual_size} bytes, \
+                         but metadata expects {expected_size} bytes",
+                    ),
+                ));
+            }
+        }
+
         Ok(result)
     }
 
@@ -747,6 +773,9 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
             .cpu_counter()
             .incr_delta(self.metadata.vector_parameters().dim);
 
+        // For storage-derived vectors this invariant is validated once at load time (see
+        // `load`), so we only assert it here in debug builds to also cover externally provided
+        // byte slices without adding overhead to this hot path in release builds.
         debug_assert!(bytes.len() >= ADDITIONAL_CONSTANT_SIZE + self.metadata.actual_dim());
 
         #[cfg(target_arch = "x86_64")]
