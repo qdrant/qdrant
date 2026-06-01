@@ -23,10 +23,10 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over all external IDs.
     ///
     /// Excludes soft deleted points.
-    pub fn iter_external(self) -> Box<dyn Iterator<Item = PointIdType> + 'a> {
+    pub fn iter_external(self) -> impl Iterator<Item = PointIdType> + 'a {
         match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_external(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_external(),
+            PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_external()),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_external()),
         }
     }
 

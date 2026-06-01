@@ -415,7 +415,7 @@ impl PointMappings {
         })
     }
 
-    pub(crate) fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+    pub(crate) fn iter_external(&self) -> impl Iterator<Item = PointIdType> + '_ {
         // Merge sorted active + deferred key streams, deduping identical
         // keys (PR B can introduce active+deferred pairs for one ext).
         let iter_num = self
@@ -431,7 +431,7 @@ impl PointMappings {
             .dedup()
             .map(|i| PointIdType::Uuid(*i));
         // order is important here, we want to iterate over the u64 ids first
-        Box::new(iter_num.chain(iter_uuid))
+        iter_num.chain(iter_uuid)
     }
 
     pub(crate) fn iter_internal(&self) -> impl Iterator<Item = PointOffsetType> + '_ {

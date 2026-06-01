@@ -325,7 +325,7 @@ impl Segment {
         let mappings =
             PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings());
         Box::new(IterPointsIterator::new(mappings, |mappings| {
-            mappings.borrow_dependent().iter_external()
+            Box::new(mappings.borrow_dependent().iter_external())
         }))
     }
 }
