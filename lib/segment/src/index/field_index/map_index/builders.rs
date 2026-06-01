@@ -7,6 +7,7 @@ use ahash::HashMap;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use gridstore::Blob;
 use serde_json::Value;
 
@@ -110,6 +111,7 @@ where
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         Ok(MapIndex::Mmap(Box::new(UniversalMapIndex::build(
+            &MmapFs,
             &self.path,
             self.point_to_values,
             self.values_to_points,

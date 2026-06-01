@@ -4,12 +4,14 @@ use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
 use common::bitvec::{BitSlice, BitSliceExt};
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
-use common::stored_bitslice::MmapBitSlice;
+use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate};
+use common::universal_io::{
+    MmapFile, MmapFs, OpenOptions, Populate, UniversalRead, UniversalWrite, read_json_via,
+};
 use fs_err as fs;
 
 use super::super::MapIndexKey;
@@ -20,9 +22,14 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 
-impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
+impl<N, S> UniversalMapIndex<N, S>
+where
+    N: MapIndexKey + Key + ?Sized,
+    S: UniversalRead,
+{
     /// Open and load mmap map index from the given path
     pub fn open(
+        fs: &S::Fs,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
@@ -36,12 +43,12 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             return Ok(None);
         }
 
-        let config: UniversalMapIndexConfig = read_json(&config_path)?;
+        let config: UniversalMapIndexConfig = read_json_via(fs, &config_path)?;
 
         let do_populate = !is_on_disk;
 
         let value_to_points = UniversalHashMap::open(
-            &MmapFs,
+            fs,
             &hashmap_path,
             OpenOptions {
                 writeable: false,
@@ -49,9 +56,9 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
             },
-            (),
+            Default::default(),
         )?;
-        let point_to_values = StoredPointToValues::open(&MmapFs, path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(fs, path, do_populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
@@ -90,8 +97,16 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             is_on_disk,
         }))
     }
+}
 
+impl<N, S> UniversalMapIndex<N, S>
+where
+    N: MapIndexKey + Key + ?Sized,
+    S: UniversalWrite,
+{
+    /// TODO: Use Fs to create config and hashmap files?
     pub fn build(
+        fs: &S::Fs,
         path: &Path,
         point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>>,
         values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
@@ -138,8 +153,8 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                     .next_multiple_of(size_of::<u64>()),
             )?;
 
-            let mut deleted = MmapBitSlice::open(
-                &MmapFs,
+            let mut deleted = StoredBitSlice::<S>::open(
+                fs,
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
@@ -147,7 +162,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                 },
-                (),
+                Default::default(),
             )?;
             deleted.set_ascending_bits_batch(
                 point_to_values
@@ -159,7 +174,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             deleted.flusher()()?;
         }
 
-        Self::open(path, is_on_disk, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, is_on_disk, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalMapIndex after building it")
         })
     }
