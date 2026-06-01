@@ -10,3 +10,13 @@ failure-output = "immediate-final"
 # save junit report
 [profile.ci.junit]
 path = "junit.xml"
+
+# The `test_hw_metrics_cancellation` test relies on a search timeout, which might
+# not be scheduled at all if the CI runner's CPU pressure is too high.
+# This is because `spawn_blocking` sometimes doesn't spawn a new worker thread before
+# the test's search timeout is reached.
+# To trick nextest into not running other tests in parallel, we override this test
+# specifically and force it to get all CPUs allocated.
+[[profile.default.overrides]]
+filter = 'package(collection) and test(test_hw_metrics_cancellation)'
+threads-required = "num-test-threads"
