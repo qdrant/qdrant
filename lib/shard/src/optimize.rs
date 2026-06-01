@@ -111,6 +111,10 @@ pub fn unwrap_proxy(
 /// explicit `drop_data`). A graceful cancellation always happens before the segment is swapped
 /// into the holder, so it is never live at this point and is safe to delete. Best-effort: failures
 /// are logged, not propagated, so they can't mask the original cancellation error.
+///
+/// Note: this in-process cleanup is not crash safe. If the process dies between `build` and this
+/// call, the orphaned segment directory is left on disk and must be reclaimed on restart instead.
+/// See https://github.com/qdrant/qdrant/pull/9217#pullrequestreview-4381966021
 fn cleanup_cancelled_optimized_segment(segments_path: &Path, output_segment_uuid: Uuid) {
     let orphan_path = segments_path.join(output_segment_uuid.to_string());
     if !orphan_path.exists() {
