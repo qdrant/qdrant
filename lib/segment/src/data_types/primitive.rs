@@ -293,7 +293,7 @@ impl PrimitiveVectorElement for TurboQuantElement {
     }
 
     fn datatype() -> VectorStorageDatatype {
-        VectorStorageDatatype::Uint8
+        VectorStorageDatatype::Turbo4
     }
 
     fn from_float_multivector(
