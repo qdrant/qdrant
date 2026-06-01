@@ -105,7 +105,11 @@ impl SnapshotStorageManager {
                     builder = builder.with_bucket_name(&gcs_config.bucket);
 
                     if let Some(service_account_key) = &gcs_config.service_account_key {
-                        builder = builder.with_service_account_key(service_account_key);
+                        if Path::new(service_account_key).is_file() {
+                            builder = builder.with_service_account_path(service_account_key);
+                        } else {
+                            builder = builder.with_service_account_key(service_account_key);
+                        }
                     }
                 }
                 let client: Box<dyn object_store::ObjectStore> =
