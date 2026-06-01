@@ -47,7 +47,7 @@ jobs:
       - name: Run e2e tests
         run: uv --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5 -m "longrunning"
         shell: bash
-        timeout-minutes: 40
+        timeout-minutes: 50
       - name: Upload test logs on failure
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
