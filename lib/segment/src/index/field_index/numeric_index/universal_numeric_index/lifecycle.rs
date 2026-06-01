@@ -8,7 +8,7 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, OpenOptions, Populate, TypedStorage, UniversalRead, read_json_via,
+    MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -125,13 +125,14 @@ where
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
-        // If config doesn't exist, assume the index doesn't exist on disk
-        if !config_path.is_file() {
+        let Some(config) =
+            read_json_via::<_, UniversalNumericIndexConfig>(fs, &config_path).ok_not_found()?
+        else {
+            // If config doesn't exist, assume the index doesn't exist on disk
             return Ok(None);
-        }
+        };
 
         let histogram = Histogram::<T>::load_via(fs, path)?;
-        let config: UniversalNumericIndexConfig = read_json_via(fs, &config_path)?;
         let do_populate = !is_on_disk;
 
         let pairs_options = OpenOptions {
