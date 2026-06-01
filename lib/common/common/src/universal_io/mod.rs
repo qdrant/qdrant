@@ -11,7 +11,7 @@ mod traits;
 mod types;
 mod wrappers;
 
-pub use self::error::UniversalIoError;
+pub use self::error::{OkNotFound, UniversalIoError};
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra};
 pub use self::mmap::{MmapFile, MmapFs};

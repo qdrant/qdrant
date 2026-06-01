@@ -7,10 +7,11 @@ use common::bitvec::{BitSlice, BitSliceExt};
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
-use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
+use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, UniversalRead, UniversalWrite, read_json_via,
+    MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite,
+    read_json_via,
 };
 use fs_err as fs;
 
@@ -38,12 +39,12 @@ where
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
-        // If config doesn't exist, assume the index doesn't exist on disk
-        if !config_path.is_file() {
+        let Some(config) =
+            read_json_via::<_, UniversalMapIndexConfig>(fs, &config_path).ok_not_found()?
+        else {
+            // If config doesn't exist, assume the index doesn't exist on disk
             return Ok(None);
-        }
-
-        let config: UniversalMapIndexConfig = read_json_via(fs, &config_path)?;
+        };
 
         let do_populate = !is_on_disk;
 
@@ -62,8 +63,8 @@ where
 
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = MmapBitSlice::open(
-            &MmapFs,
+        let deleted_payload_mmap = StoredBitSlice::<S>::open(
+            fs,
             &deleted_path,
             OpenOptions {
                 writeable: true,
@@ -71,8 +72,9 @@ where
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
             },
-            (),
+            Default::default(),
         )?;
+
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only
