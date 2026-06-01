@@ -24,6 +24,7 @@ bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 fs-err = { workspace = true }
+fs4 = { workspace = true }
 fs_extra = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
