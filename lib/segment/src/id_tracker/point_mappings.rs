@@ -253,34 +253,37 @@ impl PointMappings {
         for internal_id in [active, deferred].into_iter().flatten() {
             // Reset inverse mapping
             self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
-
-            let was_already_deleted = *self
-                .deleted
-                .get(internal_id as usize)
-                .as_deref()
-                .unwrap_or(&true);
-            self.deleted.set(internal_id as usize, true);
-            // Clearing the shadowed bit on tombstone keeps PR C's read-side
-            // filter from skipping a slot that's already filtered by
-            // `deleted` — no observable change today, but cheap insurance.
-            if (internal_id as usize) < self.shadowed.len() {
-                self.shadowed.set(internal_id as usize, false);
-            }
-
-            // Count newly-deleted deferred points so we can report visible deferred totals
-            // without rescanning the deleted bitslice.
-            if !was_already_deleted
-                && self
-                    .deferred_internal_id
-                    .is_some_and(|deferred_from| internal_id >= deferred_from)
-            {
-                self.deferred_deleted_count += 1;
-            }
+            self.tombstone_slot(internal_id);
         }
 
         // Preserve the prior single-return signature: prefer active (the
         // visible head) when both tracks held this ext.
         active.or(deferred)
+    }
+
+    /// Mark `internal_id` as soft-deleted. Idempotent on the deleted bit, and
+    /// keeps `deferred_deleted_count` in sync — increments only on the
+    /// live → tombstoned transition for slots at or above the cutoff. Also
+    /// clears the shadowed bit so PR C's read-side filter doesn't double-skip
+    /// a slot that's already filtered by `deleted`.
+    fn tombstone_slot(&mut self, internal_id: PointOffsetType) {
+        let internal_id_usize = internal_id as usize;
+        let was_already_deleted = *self
+            .deleted
+            .get(internal_id_usize)
+            .as_deref()
+            .unwrap_or(&true);
+        self.deleted.set(internal_id_usize, true);
+        if internal_id_usize < self.shadowed.len() {
+            self.shadowed.set(internal_id_usize, false);
+        }
+        if !was_already_deleted
+            && self
+                .deferred_internal_id
+                .is_some_and(|deferred_from| internal_id >= deferred_from)
+        {
+            self.deferred_deleted_count += 1;
+        }
     }
 
     /// Sample (external, internal) pairs in random order, with deferred
@@ -562,24 +565,16 @@ impl PointMappings {
                 PointIdType::Uuid(uuid) => self.external_to_internal_uuid_deferred.remove(&uuid),
             };
             if let Some(old) = prior_deferred {
-                let old = old as usize;
-                if old != internal_id_usize {
-                    self.deleted.set(old, true);
-                    if old < self.shadowed.len() {
-                        self.shadowed.set(old, false);
-                    }
+                if old as usize != internal_id_usize {
+                    self.tombstone_slot(old);
                 }
             }
         }
 
         // Tombstone the same-track prior head.
         if let Some(old) = same_track_prior {
-            let old = old as usize;
-            if old != internal_id_usize {
-                self.deleted.set(old, true);
-                if old < self.shadowed.len() {
-                    self.shadowed.set(old, false);
-                }
+            if old as usize != internal_id_usize {
+                self.tombstone_slot(old);
             }
         }
 
