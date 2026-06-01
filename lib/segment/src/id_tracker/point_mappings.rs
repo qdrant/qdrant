@@ -564,18 +564,18 @@ impl PointMappings {
                 PointIdType::NumId(idx) => self.external_to_internal_num_deferred.remove(&idx),
                 PointIdType::Uuid(uuid) => self.external_to_internal_uuid_deferred.remove(&uuid),
             };
-            if let Some(old) = prior_deferred {
-                if old as usize != internal_id_usize {
-                    self.tombstone_slot(old);
-                }
+            if let Some(old) = prior_deferred
+                && old as usize != internal_id_usize
+            {
+                self.tombstone_slot(old);
             }
         }
 
         // Tombstone the same-track prior head.
-        if let Some(old) = same_track_prior {
-            if old as usize != internal_id_usize {
-                self.tombstone_slot(old);
-            }
+        if let Some(old) = same_track_prior
+            && old as usize != internal_id_usize
+        {
+            self.tombstone_slot(old);
         }
 
         self.internal_to_external[internal_id_usize] = external_id;
