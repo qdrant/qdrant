@@ -7,14 +7,15 @@ use common::binary_search::binary_search_by;
 use common::bitvec::{BitSlice, BitSliceExt};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, clear_disk_cache};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -172,13 +173,14 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
-        // If stats file doesn't exist, assume the index doesn't exist on disk
-        if !stats_path.is_file() {
+        let Some(stats) =
+            read_json_via::<_, StoredGeoMapIndexStat>(fs, &stats_path).ok_not_found()?
+        else {
+            // If stats file doesn't exist, assume the index doesn't exist on disk
             return Ok(None);
-        }
+        };
 
         let populate = !is_on_disk;
-        let stats: StoredGeoMapIndexStat = read_json(&stats_path)?;
 
         let open_options = OpenOptions {
             writeable: false,
