@@ -1381,6 +1381,7 @@ dependencies = [
  "criterion",
  "duplicate",
  "fs-err",
+ "fs4 1.1.0",
  "fs_extra",
  "io-uring",
  "itertools 0.14.0",

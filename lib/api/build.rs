@@ -193,6 +193,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("StrictModeConfig.read_rate_limit", "range(min = 1)"),
             ("StrictModeConfig.write_rate_limit", "range(min = 1)"),
             ("StrictModeConfig.max_resident_memory_percent", "range(min = 1, max = 100)"),
+            ("StrictModeConfig.max_disk_usage_percent", "range(min = 1, max = 100)"),
             ("StrictModeConfig.multivector_config", ""),
             ("StrictModeConfig.sparse_config", ""),
             ("StrictModeSparseConfig.sparse_config", ""),

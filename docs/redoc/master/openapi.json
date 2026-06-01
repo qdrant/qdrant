@@ -8189,6 +8189,13 @@
             "format": "uint8",
             "minimum": 0,
             "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming update operations when the storage filesystem exceeds this percentage of total capacity (1-100)",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -10843,6 +10850,14 @@
           },
           "max_resident_memory_percent": {
             "description": "Reject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free memory.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming update operations (e.g. upsert, set payload) when the filesystem hosting Qdrant storage is filled above this percentage of its total capacity. Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free disk space. Free space is sampled with a small TTL cache; the gate may take a few seconds to react.",
             "type": "integer",
             "format": "uint8",
             "maximum": 100,
