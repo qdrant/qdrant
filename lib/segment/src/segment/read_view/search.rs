@@ -114,7 +114,7 @@ where
             self.read_payloads::<Random, _>(
                 point_offsets,
                 |point_id, payload| {
-                    // TODO: `check_stopped`!
+                    check_stopped(is_stopped)?;
 
                     let payload = match &with_payload.payload_selector {
                         Some(selector) => selector.process(payload),
@@ -124,6 +124,8 @@ where
                     if let Some(record) = records.get_mut(&point_id) {
                         record.payload = Some(payload);
                     }
+
+                    Ok(())
                 },
                 hw_counter,
             )?;

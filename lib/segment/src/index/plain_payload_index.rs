@@ -167,7 +167,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn read_payloads<P: AccessPattern, U>(
         &self,
         _point_ids: impl Iterator<Item = (U, PointOffsetType)>,
-        _callback: impl FnMut(U, Payload),
+        _callback: impl FnMut(U, Payload) -> OperationResult<()>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         unimplemented!()

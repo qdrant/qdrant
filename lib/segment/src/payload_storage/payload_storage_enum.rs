@@ -78,7 +78,7 @@ impl PayloadStorageRead for PayloadStorageEnum {
     fn read_payloads<P: AccessPattern, U>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
-        callback: impl FnMut(U, Payload),
+        callback: impl FnMut(U, Payload) -> OperationResult<()>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {

@@ -280,7 +280,7 @@ where
     fn read_payloads<AP: AccessPattern, U>(
         &self,
         point_ids: impl Iterator<Item = (U, PointOffsetType)>,
-        callback: impl FnMut(U, Payload),
+        callback: impl FnMut(U, Payload) -> OperationResult<()>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.payload

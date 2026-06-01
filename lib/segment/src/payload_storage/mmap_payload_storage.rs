@@ -120,7 +120,7 @@ impl PayloadStorageRead for MmapPayloadStorage {
     fn read_payloads<P: AccessPattern, U>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
-        mut callback: impl FnMut(U, Payload),
+        mut callback: impl FnMut(U, Payload) -> OperationResult<()>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // TODO: `hw_counter`!?
