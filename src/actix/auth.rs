@@ -96,8 +96,9 @@ pub struct AuthMiddleware<S> {
 
 impl<S> AuthMiddleware<S> {
     pub fn is_path_whitelisted(&self, req: &ServiceRequest) -> bool {
+        // Resolve request path and find route pattern
+        // If none, we don't know this path
         let Some(pattern) = req.match_pattern() else {
-            // Did not match an endpoint pattern
             return false;
         };
 
