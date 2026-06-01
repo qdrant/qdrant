@@ -253,7 +253,7 @@ impl PrimitiveVectorElement for TurboQuantElement {
 
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>, distance: Distance) -> Cow<[Self]> {
         let api_dim = vector.len();
-        let quantizer = TurboQuantizer::new(
+        let quantizer = TurboQuantizer::new_fast_forward(
             api_dim,
             TQ_BITS,
             TQ_MODE,
@@ -274,7 +274,7 @@ impl PrimitiveVectorElement for TurboQuantElement {
         distance: Distance,
     ) -> Self::QueryType {
         let api_dim = vector.len();
-        let quantizer = TurboQuantizer::new(
+        let quantizer = TurboQuantizer::new_fast_forward(
             api_dim,
             TQ_BITS,
             TQ_MODE,

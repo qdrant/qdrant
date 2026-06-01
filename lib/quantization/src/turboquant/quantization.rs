@@ -121,6 +121,30 @@ impl TurboQuantizer {
         })
     }
 
+    /// Like [`Self::new`], but builds a forward-only rotation that skips the
+    /// O(`dim`) per-permutation warm-up [`Self::new`] pays to enable inversion.
+    /// Cheaper to construct, but the resulting quantizer only supports the
+    /// forward (encode/quantize) path — never call
+    /// [`Self::apply_inverse_rotation`] on it.
+    pub fn new_fast_forward(
+        dim: usize,
+        bits: TQBits,
+        mode: TQMode,
+        distance: DistanceType,
+        error_correction: Option<ErrorCorrection>,
+    ) -> Self {
+        let padded_dim = Self::padded_dim(dim, bits);
+        let rotation = HadamardRotation::new_fast_forward(padded_dim);
+        TurboQuantizer {
+            rotation,
+            bits,
+            mode,
+            distance,
+            padded_dim,
+            error_correction,
+        }
+    }
+
     /// Initialize a new TurboQuantizer.
     pub fn new(
         dim: usize,

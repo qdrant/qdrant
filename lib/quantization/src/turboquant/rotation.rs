@@ -26,6 +26,13 @@ impl HadamardRotation {
         Self { permutations, dim }
     }
 
+    pub fn new_fast_forward(dim: usize) -> Self {
+        let permutations: [_; N_PERMUTATIONS] =
+            std::array::from_fn(|index| Permutation::new_one_way(PERMUTATION_SEEDS[index], dim));
+
+        Self { permutations, dim }
+    }
+
     pub fn apply(&self, x: &mut [f64]) {
         debug_assert_eq!(x.len(), self.dim);
         apply_rotation_with_permutations(x, &self.permutations);
