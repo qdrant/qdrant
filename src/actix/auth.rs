@@ -95,8 +95,13 @@ pub struct AuthMiddleware<S> {
 }
 
 impl<S> AuthMiddleware<S> {
-    pub fn is_path_whitelisted(&self, path: &str) -> bool {
-        self.whitelist.iter().any(|item| item.matches(path))
+    pub fn is_path_whitelisted(&self, req: &ServiceRequest) -> bool {
+        let Some(pattern) = req.match_pattern() else {
+            // Did not match an endpoint pattern
+            return false;
+        };
+
+        self.whitelist.iter().any(|item| item.matches(&pattern))
     }
 }
 
@@ -113,8 +118,8 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        let path = req.path();
-        if self.is_path_whitelisted(path) {
+        let is_whitelisted = self.is_path_whitelisted(&req);
+        if is_whitelisted {
             return Box::pin(self.service.call(req));
         }
 
