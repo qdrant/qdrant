@@ -628,9 +628,6 @@ impl ReadSegmentEntry for ProxySegment {
                     num_deleted_deferred_points.saturating_add(self.deleted_deferred_count)
                 },
             ),
-            // Proxy segments are not appendable themselves; pass through
-            // whatever the wrapped (appendable) segment reports.
-            num_shadowed_points: wrapped_info.num_shadowed_points,
             num_deleted_vectors,
             vectors_size_bytes: wrapped_info.vectors_size_bytes,
             payloads_size_bytes: wrapped_info.payloads_size_bytes,

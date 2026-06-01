@@ -140,10 +140,12 @@ impl CompressedPointMappings {
     pub(crate) fn iter_from(
         &self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + '_ {
         match external_id {
-            None => Box::new(self.external_to_internal.iter()),
-            Some(point_id) => Box::new(self.external_to_internal.iter_from(point_id)),
+            None => itertools::Either::Left(self.external_to_internal.iter()),
+            Some(point_id) => {
+                itertools::Either::Right(self.external_to_internal.iter_from(point_id))
+            }
         }
     }
 

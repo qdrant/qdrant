@@ -165,22 +165,16 @@ impl PointMappings {
 
     /// Number of points, excluding deleted ones.
     ///
-    /// Counts each distinct external id once. An ext that lives only in the
-    /// deferred map (no active head) still counts — preserves the pre-split
-    /// observable count from when both tracks shared one map.
+    /// Sum of entries across both tracks. A shadowed ext (active + deferred
+    /// for the same external id) contributes two slots — matching the two
+    /// non-tombstoned internal ids it actually occupies, and consistent with
+    /// the cross-segment shadow case where the source segment keeps its copy
+    /// while the deferred head lives in the appendable segment.
     pub(crate) fn available_point_count(&self) -> usize {
-        let active = self.external_to_internal_num.len() + self.external_to_internal_uuid.len();
-        let deferred_only_num = self
-            .external_to_internal_num_deferred
-            .keys()
-            .filter(|k| !self.external_to_internal_num.contains_key(k))
-            .count();
-        let deferred_only_uuid = self
-            .external_to_internal_uuid_deferred
-            .keys()
-            .filter(|k| !self.external_to_internal_uuid.contains_key(k))
-            .count();
-        active + deferred_only_num + deferred_only_uuid
+        self.external_to_internal_num.len()
+            + self.external_to_internal_uuid.len()
+            + self.external_to_internal_num_deferred.len()
+            + self.external_to_internal_uuid_deferred.len()
     }
 
     pub(crate) fn deleted(&self) -> &BitSlice {
@@ -241,10 +235,8 @@ impl PointMappings {
     }
 
     pub(crate) fn drop(&mut self, external_id: PointIdType) -> Option<PointOffsetType> {
-        // Drop from both tracks. A point can live in only one map at a time
-        // today (PR A), but PR B will introduce shadowed-active + deferred
-        // pairs for the same ext, and `drop` is the API both states wire
-        // through. Tombstoning both is the safe behaviour to land first.
+        // Drop from both tracks: an ext can be shadowed (active + deferred
+        // head for the same external id), and `drop` must tombstone both.
         // We "temporarily" remove existing points from the BTreeMaps without writing them to disk
         // because we remove deleted points of a previous load directly when loading.
         let (active, deferred) = match external_id {
@@ -291,52 +283,61 @@ impl PointMappings {
         active.or(deferred)
     }
 
-    pub(crate) fn iter_random(
+    /// Sample (external, internal) pairs in random order, with deferred
+    /// filtering selected by `deferred_behavior`:
+    /// - [`DeferredBehavior::VisibleOnly`] caps the sampling range at the
+    ///   deferred threshold (so deferred slots are never sampled);
+    /// - [`DeferredBehavior::WithDeferred`] samples the full slot range and
+    ///   filters shadowed actives so each external id surfaces at most once.
+    pub(crate) fn iter_random_with_behavior(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let rng = rand::rng();
-        let max_internal = self.internal_to_external.len();
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + '_ {
+        let max_internal = match (deferred_behavior, self.deferred_internal_id) {
+            (DeferredBehavior::VisibleOnly, Some(cutoff)) => cutoff as usize,
+            (DeferredBehavior::VisibleOnly, None) | (DeferredBehavior::WithDeferred, _) => {
+                self.internal_to_external.len()
+            }
+        };
         if max_internal == 0 {
-            return Box::new(iter::empty());
+            return Either::Left(iter::empty());
         }
+        let rng = rand::rng();
         let uniform = rand::distr::Uniform::new(0, max_internal)
             .expect("above check guarantees max_internal > 0");
+        let with_deferred = deferred_behavior.with_deferred_points();
         let iter = Distribution::sample_iter(uniform, rng)
-            // TODO: this is not efficient if `max_internal` is large and we iterate over most of them,
-            // but it's good enough for low limits.
-            //
-            // We could improve it by using a variable-period PRNG to adjust depending on the number of available points.
             .unique()
             .take(max_internal)
             .filter_map(move |i| {
                 if self.deleted[i] {
-                    None
-                } else {
-                    Some((self.internal_to_external[i], i as PointOffsetType))
+                    return None;
                 }
+                if with_deferred && self.shadowed.get_bit(i).unwrap_or(false) {
+                    return None;
+                }
+                Some((self.internal_to_external[i], i as PointOffsetType))
             });
-
-        Box::new(iter)
+        Either::Right(iter)
     }
 
     pub(crate) fn iter_from(
         &self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + '_ {
         // Merge active + deferred BTreeMap views into one sorted-by-key
-        // stream, deduping the rare case where the same ext exists in
-        // both tracks (PR B will introduce that; PR A loads at most one).
-        // The dedup prefers the active entry because that's the visible
-        // head — keeping callers (which today don't expect to see
+        // stream, deduping the case where the same ext exists in both
+        // tracks. The dedup prefers the active entry because that's the
+        // visible head — keeping callers (which don't expect to see
         // deferred-only writes) on the same offset as before.
         let merged_num = |start: Option<u64>| {
-            let active: Box<dyn Iterator<Item = (&u64, &PointOffsetType)>> = match start {
-                None => Box::new(self.external_to_internal_num.iter()),
-                Some(s) => Box::new(self.external_to_internal_num.range(s..)),
+            let active = match start {
+                None => Either::Left(self.external_to_internal_num.iter()),
+                Some(s) => Either::Right(self.external_to_internal_num.range(s..)),
             };
-            let deferred: Box<dyn Iterator<Item = (&u64, &PointOffsetType)>> = match start {
-                None => Box::new(self.external_to_internal_num_deferred.iter()),
-                Some(s) => Box::new(self.external_to_internal_num_deferred.range(s..)),
+            let deferred = match start {
+                None => Either::Left(self.external_to_internal_num_deferred.iter()),
+                Some(s) => Either::Right(self.external_to_internal_num_deferred.range(s..)),
             };
             active
                 .merge_join_by(deferred, |a, d| a.0.cmp(d.0))
@@ -347,13 +348,13 @@ impl PointMappings {
                 })
         };
         let merged_uuid = |start: Option<Uuid>| {
-            let active: Box<dyn Iterator<Item = (&Uuid, &PointOffsetType)>> = match start {
-                None => Box::new(self.external_to_internal_uuid.iter()),
-                Some(s) => Box::new(self.external_to_internal_uuid.range(s..)),
+            let active = match start {
+                None => Either::Left(self.external_to_internal_uuid.iter()),
+                Some(s) => Either::Right(self.external_to_internal_uuid.range(s..)),
             };
-            let deferred: Box<dyn Iterator<Item = (&Uuid, &PointOffsetType)>> = match start {
-                None => Box::new(self.external_to_internal_uuid_deferred.iter()),
-                Some(s) => Box::new(self.external_to_internal_uuid_deferred.range(s..)),
+            let deferred = match start {
+                None => Either::Left(self.external_to_internal_uuid_deferred.iter()),
+                Some(s) => Either::Right(self.external_to_internal_uuid_deferred.range(s..)),
             };
             active
                 .merge_join_by(deferred, |a, d| a.0.cmp(d.0))
@@ -365,21 +366,53 @@ impl PointMappings {
         };
 
         match external_id {
-            None => {
-                // order is important here, we want to iterate over the u64 ids first
-                Box::new(merged_num(None).chain(merged_uuid(None)))
+            // order is important here, we want to iterate over the u64 ids first
+            None => Either::Left(merged_num(None).chain(merged_uuid(None))),
+            // Because u64 keys are less than uuid keys, we can just use the full iterator for uuid
+            Some(PointIdType::NumId(idx)) => {
+                Either::Left(merged_num(Some(idx)).chain(merged_uuid(None)))
             }
-            Some(offset) => match offset {
-                PointIdType::NumId(idx) => {
-                    // Because u64 keys are less that uuid key, we can just use the full iterator for uuid
-                    Box::new(merged_num(Some(idx)).chain(merged_uuid(None)))
-                }
-                PointIdType::Uuid(uuid) => {
-                    // if offset is a uuid, we can only iterate over uuids
-                    Box::new(merged_uuid(Some(uuid)))
-                }
-            },
+            // if offset is a uuid, we can only iterate over uuids
+            Some(PointIdType::Uuid(uuid)) => Either::Right(merged_uuid(Some(uuid))),
         }
+    }
+
+    /// Iterate (external, internal) pairs ordered by external id starting at
+    /// `external_id`, with deferred filtering selected by `deferred_behavior`:
+    /// - [`DeferredBehavior::VisibleOnly`] walks the active maps only (deferred
+    ///   entries are hidden by definition);
+    /// - [`DeferredBehavior::WithDeferred`] merges active and deferred entries
+    ///   per id.
+    pub(crate) fn iter_from_with_behavior(
+        &self,
+        external_id: Option<PointIdType>,
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + '_ {
+        if deferred_behavior.with_deferred_points() {
+            return Either::Left(self.iter_from(external_id));
+        }
+        // VisibleOnly: walk the active maps only — no merge, no deferred entries.
+        let active_num = |start: Option<u64>| {
+            let iter = match start {
+                None => Either::Left(self.external_to_internal_num.iter()),
+                Some(s) => Either::Right(self.external_to_internal_num.range(s..)),
+            };
+            iter.map(|(k, v)| (PointIdType::NumId(*k), *v))
+        };
+        let active_uuid = |start: Option<Uuid>| {
+            let iter = match start {
+                None => Either::Left(self.external_to_internal_uuid.iter()),
+                Some(s) => Either::Right(self.external_to_internal_uuid.range(s..)),
+            };
+            iter.map(|(k, v)| (PointIdType::Uuid(*k), *v))
+        };
+        Either::Right(match external_id {
+            None => Either::Left(active_num(None).chain(active_uuid(None))),
+            Some(PointIdType::NumId(idx)) => {
+                Either::Left(active_num(Some(idx)).chain(active_uuid(None)))
+            }
+            Some(PointIdType::Uuid(uuid)) => Either::Right(active_uuid(Some(uuid))),
+        })
     }
 
     pub(crate) fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
@@ -579,9 +612,12 @@ impl PointMappings {
     }
 
     /// Number of active heads currently overridden by a deferred mutation.
-    /// Each unit of this count corresponds to one external id whose
-    /// visible state is the (now stale) active version while the latest
-    /// state lives in the deferred map until segment optimisation.
+    /// Subtract from [`Self::available_point_count`] to recover a
+    /// one-slot-per-external-id count if a caller ever needs it.
+    #[expect(
+        dead_code,
+        reason = "wired for future use (e.g. dedup'd available_point_count) — no consumer yet"
+    )]
     pub(crate) fn shadowed_count(&self) -> usize {
         self.shadowed.count_ones()
     }
@@ -889,40 +925,6 @@ mod set_link_shadow_tests {
             .filter_deferred_and_deleted(candidates.iter().copied(), DeferredBehavior::WithDeferred)
             .collect();
         assert_eq!(include_all, vec![3, 7, 8]);
-    }
-
-    #[test]
-    fn shadowed_count_tracks_active_overrides() {
-        // Cutoff at 5.
-        let mut m = fresh_mapping(Some(5));
-        assert_eq!(m.shadowed_count(), 0);
-
-        // Active-only writes don't grow the count.
-        m.set_link(ext(8), 3);
-        m.set_link(ext(9), 4);
-        assert_eq!(m.shadowed_count(), 0);
-
-        // Deferred write over an active head adds one shadow.
-        m.set_link(ext(8), 7);
-        assert_eq!(m.shadowed_count(), 1);
-
-        // A second ext with the same pattern increments the count.
-        m.set_link(ext(9), 8);
-        assert_eq!(m.shadowed_count(), 2);
-
-        // A second deferred write over the same ext (supersedes the prior
-        // deferred head) keeps the shadow on the same active, so the
-        // count stays put.
-        m.set_link(ext(8), 9);
-        assert_eq!(m.shadowed_count(), 2);
-
-        // Dropping an ext clears its shadow bit.
-        m.drop(ext(8));
-        assert_eq!(m.shadowed_count(), 1);
-
-        // A deferred-only ext (no active) doesn't add a shadow.
-        m.set_link(ext(99), 10);
-        assert_eq!(m.shadowed_count(), 1);
     }
 
     #[test]

@@ -128,11 +128,4 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.deferred_deleted_count(),
         }
     }
-
-    fn shadowed_point_count(&self) -> usize {
-        match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.shadowed_point_count(),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.shadowed_point_count(),
-        }
-    }
 }

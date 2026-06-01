@@ -144,14 +144,6 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
         }
     }
-
-    fn shadowed_point_count(&self) -> usize {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.shadowed_point_count(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.shadowed_point_count(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.shadowed_point_count(),
-        }
-    }
 }
 
 impl IdTracker for IdTrackerEnum {

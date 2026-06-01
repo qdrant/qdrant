@@ -59,14 +59,10 @@ where
         limit: Option<usize>,
         deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
-        let point_mappings = self.id_tracker.point_mappings();
-        let iter = if deferred_behavior.with_deferred_points() {
-            point_mappings.iter_from(offset)
-        } else {
-            point_mappings.iter_from_visible(offset)
-        };
-
-        iter.map(|x| x.0)
+        self.id_tracker
+            .point_mappings()
+            .iter_from_with_behavior(offset, deferred_behavior)
+            .map(|x| x.0)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
     }
@@ -119,14 +115,10 @@ where
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
-        let point_mappings = self.id_tracker.point_mappings();
-        let iter = if deferred_behavior.with_deferred_points() {
-            point_mappings.iter_from(offset)
-        } else {
-            point_mappings.iter_from_visible(offset)
-        };
-
-        Ok(iter
+        Ok(self
+            .id_tracker
+            .point_mappings()
+            .iter_from_with_behavior(offset, deferred_behavior)
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)

@@ -46,20 +46,10 @@ impl<'a> PointMappingsRefEnum<'a> {
     pub fn iter_from(
         self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_from(external_id),
-            PointMappingsRefEnum::Compressed(m) => m.iter_from(external_id),
-        }
-    }
-
-    /// Iterate over internal IDs in a random order.
-    ///
-    /// Excludes soft deleted points.
-    pub fn iter_random(self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_random(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_random(),
+            PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_from(external_id)),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_from(external_id)),
         }
     }
 
@@ -149,35 +139,55 @@ impl<'a> PointMappingsRefEnum<'a> {
         }
     }
 
-    /// Iterate starting from a given ID, filtering deferred points using the
-    /// mapping's own threshold.
-    pub fn iter_from_visible(
+    /// Iterate starting from a given ID, with deferred filtering selected by
+    /// `deferred_behavior`. See [`PointMappings::iter_from_with_behavior`] for
+    /// the per-mode contract. Compressed mappings ignore the parameter (they
+    /// can't hold deferred entries).
+    pub fn iter_from_with_behavior(
         self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        match self.deferred_internal_id() {
-            None => self.iter_from(external_id),
-            Some(deferred_internal_id) => Box::new(
-                self.iter_from(external_id)
-                    .filter(move |&(_, iid)| iid < deferred_internal_id),
-            ),
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        match self {
+            PointMappingsRefEnum::Plain(m) => {
+                Either::Left(m.iter_from_with_behavior(external_id, deferred_behavior))
+            }
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_from(external_id)),
         }
     }
 
-    /// Iterate over internal IDs in random order, filtering deferred points
-    /// using the mapping's own threshold.
-    pub fn iter_random_visible(
+    /// Iterate over internal IDs in random order, with deferred filtering
+    /// selected by `deferred_behavior`. See
+    /// [`PointMappings::iter_random_with_behavior`] for the per-mode contract.
+    /// Compressed mappings ignore the parameter (they can't hold deferred
+    /// entries).
+    pub fn iter_random_with_behavior(
         self,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        match self.deferred_internal_id() {
-            None => self.iter_random(),
-            Some(deferred_internal_id) => Box::new(
-                self.iter_random()
-                    // We _can_ prevent iterating over all points by going down into `iter_random()` and set
-                    // the `max_internal_id` to `deferred_internal_id`.
-                    .filter(move |&(_, iid)| iid < deferred_internal_id),
-            ),
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        match self {
+            PointMappingsRefEnum::Plain(m) => {
+                Either::Left(m.iter_random_with_behavior(deferred_behavior))
+            }
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_random()),
         }
+    }
+
+    /// Iterate starting from a given ID, filtering deferred points using the
+    /// mapping's own threshold. Shorthand for
+    /// [`Self::iter_from_with_behavior`] with [`DeferredBehavior::VisibleOnly`].
+    pub fn iter_from_visible(
+        self,
+        external_id: Option<PointIdType>,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        self.iter_from_with_behavior(external_id, DeferredBehavior::VisibleOnly)
+    }
+
+    /// Iterate over internal IDs in random order, filtering deferred points
+    /// using the mapping's own threshold. Shorthand for
+    /// [`Self::iter_random_with_behavior`] with [`DeferredBehavior::VisibleOnly`].
+    pub fn iter_random_visible(self) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        self.iter_random_with_behavior(DeferredBehavior::VisibleOnly)
     }
 
     /// Deferred threshold attached to this mapping, if any.
