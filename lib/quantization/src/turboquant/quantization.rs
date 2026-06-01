@@ -141,6 +141,14 @@ impl TurboQuantizer {
         }
     }
 
+    pub fn quantize_buffer_len(&self) -> usize {
+        self.padded_dim
+    }
+
+    pub fn apply_inverse_rotation(&self, buf: &mut [f64]) {
+        self.rotation.apply_inverse(buf);
+    }
+
     /// Pad, rotate, and length-rescale `vec` into `buf`. After this call `buf`
     /// holds rotated coordinates whose per-vector L2 norm is `sqrt(padded_dim)`,
     /// matching the Lloyd-Max N(0, 1) centroid grid. Returns the original L2

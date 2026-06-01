@@ -113,14 +113,14 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
             .expect("Vector not found")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -144,7 +144,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
-        let vector = T::slice_from_float_cow(Cow::from(vector));
+        let vector = T::slice_from_float_cow(Cow::from(vector), self.distance);
         self.vectors
             .insert(key as VectorOffsetType, vector.as_ref(), hw_counter)?;
         self.set_deleted(key, false);
@@ -161,7 +161,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
+            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?, self.distance);
             let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
             self.set_deleted(new_id as PointOffsetType, other_deleted);
         }

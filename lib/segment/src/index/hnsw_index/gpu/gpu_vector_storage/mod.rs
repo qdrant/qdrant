@@ -507,6 +507,7 @@ impl GpuVectorStorage {
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_from_float_cow(
                         vector_storage.get_dense::<Random>(id as PointOffsetType),
+                        vector_storage.distance(),
                     )
                 }),
                 None,
@@ -535,6 +536,7 @@ impl GpuVectorStorage {
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_to_float_cow(
                         vector_storage.get_dense::<Random>(id as PointOffsetType),
+                        vector_storage.distance(),
                     )
                 }),
                 None,
@@ -583,9 +585,9 @@ impl GpuVectorStorage {
                     .sum(),
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
-                vector_storage
-                    .iterate_inner_vectors()
-                    .map(|vector| VectorElementTypeHalf::slice_from_float_cow(vector)),
+                vector_storage.iterate_inner_vectors().map(|vector| {
+                    VectorElementTypeHalf::slice_from_float_cow(vector, vector_storage.distance())
+                }),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
                 stopped,
@@ -616,9 +618,9 @@ impl GpuVectorStorage {
                     .sum(),
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
-                vector_storage
-                    .iterate_inner_vectors()
-                    .map(|vector| VectorElementTypeHalf::slice_to_float_cow(vector)),
+                vector_storage.iterate_inner_vectors().map(|vector| {
+                    VectorElementTypeHalf::slice_to_float_cow(vector, vector_storage.distance())
+                }),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
                 stopped,

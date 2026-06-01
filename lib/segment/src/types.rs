@@ -20,6 +20,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use num_derive::FromPrimitive;
 use ordered_float::OrderedFloat;
+use quantization::DistanceType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
@@ -314,6 +315,17 @@ pub enum Distance {
     Dot,
     // <https://simple.wikipedia.org/wiki/Manhattan_distance>
     Manhattan,
+}
+
+impl From<Distance> for DistanceType {
+    fn from(distance: Distance) -> Self {
+        match distance {
+            Distance::Cosine => DistanceType::Cosine,
+            Distance::Dot => DistanceType::Dot,
+            Distance::Euclid => DistanceType::L2,
+            Distance::Manhattan => DistanceType::L1,
+        }
+    }
 }
 
 impl Distance {

@@ -48,7 +48,10 @@ impl<
         }
 
         Self {
-            query: TElement::query_from_float_cow(Cow::from(preprocessed_vector)),
+            query: TElement::query_from_float_cow(
+                Cow::from(preprocessed_vector),
+                TMetric::distance(),
+            ),
             vector_storage,
             metric: PhantomData,
             hardware_counter,
