@@ -39,7 +39,10 @@ pub enum NumericIndexInner<T: Encodable + Numericable + StoredValue + Send + Syn
 where
     Vec<T>: Blob,
 {
+    /// Loaded in RAM, use mutable storage format
     Mutable(MutableNumericIndex<T>),
+    /// Loaded in RAM, use immutable storage format
     Immutable(ImmutableNumericIndex<T>),
-    Mmap(UniversalNumericIndex<T>),
+    /// Served directly from storage (via mmap), use immutable format
+    OnDisk(UniversalNumericIndex<T>),
 }

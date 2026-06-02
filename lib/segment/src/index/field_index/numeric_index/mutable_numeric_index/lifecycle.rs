@@ -60,16 +60,16 @@ impl<T: Encodable + Numericable + Default> FromIterator<(PointOffsetType, T)>
 }
 
 impl<T: Encodable + Numericable + Default + StoredValue> InMemoryNumericIndex<T> {
-    /// Construct in-memroy index from given mmap index
+    /// Construct in-memory index from given on-disk index
     ///
     /// # Warning
     ///
-    /// Expensive because this reads the full mmap index.
-    pub(in super::super) fn from_mmap(mmap_index: &UniversalNumericIndex<T>) -> Self {
-        let point_count = mmap_index.storage.point_to_values.len();
+    /// Expensive because this reads the full on-disk index.
+    pub(in super::super) fn from_on_disk(on_disk_index: &UniversalNumericIndex<T>) -> Self {
+        let point_count = on_disk_index.storage.point_to_values.len();
 
         (0..point_count as PointOffsetType)
-            .filter_map(|idx| mmap_index.get_values(idx).map(|values| (idx, values)))
+            .filter_map(|idx| on_disk_index.get_values(idx).map(|values| (idx, values)))
             .flat_map(|(idx, values)| values.into_iter().map(move |value| (idx, value)))
             .collect::<InMemoryNumericIndex<T>>()
     }

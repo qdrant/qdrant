@@ -82,7 +82,7 @@ where
         match &self.inner {
             NumericIndexInner::Mutable(_) => IndexMutability::Mutable,
             NumericIndexInner::Immutable(_) => IndexMutability::Immutable,
-            NumericIndexInner::Mmap(_) => IndexMutability::Immutable,
+            NumericIndexInner::OnDisk(_) => IndexMutability::Immutable,
         }
     }
 
@@ -90,7 +90,7 @@ where
         match &self.inner {
             NumericIndexInner::Mutable(index) => index.storage_type(),
             NumericIndexInner::Immutable(index) => index.storage_type(),
-            NumericIndexInner::Mmap(index) => StorageType::Mmap {
+            NumericIndexInner::OnDisk(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
         }

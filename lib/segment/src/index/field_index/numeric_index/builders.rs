@@ -36,7 +36,7 @@ where
         match &mut self.0.inner {
             NumericIndexInner::Mutable(index) => index.clear(),
             NumericIndexInner::Immutable(_) => unreachable!(),
-            NumericIndexInner::Mmap(_) => unreachable!(),
+            NumericIndexInner::OnDisk(_) => unreachable!(),
         }
     }
 
@@ -131,7 +131,7 @@ where
             &self.deleted_points,
         )?;
         Ok(NumericIndex {
-            inner: NumericIndexInner::Mmap(inner),
+            inner: NumericIndexInner::OnDisk(inner),
             _phantom: PhantomData,
         })
     }

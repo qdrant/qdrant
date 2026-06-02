@@ -27,7 +27,7 @@ where
     /// Numeric's body has no fallible reads to propagate (`from_mmap` is
     /// infallible; `clear_cache` errors are warn-and-continue, matching the
     /// other variants).
-    pub(in super::super) fn open_mmap(index: UniversalNumericIndex<T>) -> Self {
+    pub(in super::super) fn load_from_on_disk(index: UniversalNumericIndex<T>) -> Self {
         // Load in-memory index from mmap storage
         let InMemoryNumericIndex {
             map,
@@ -35,11 +35,11 @@ where
             points_count,
             max_values_per_point,
             point_to_values,
-        } = InMemoryNumericIndex::from_mmap(&index);
+        } = InMemoryNumericIndex::from_on_disk(&index);
 
-        // Index is now loaded into memory, clear cache of backing mmap storage
+        // Index is now loaded into memory, clear cache of backing storage
         if let Err(err) = index.clear_cache() {
-            log::warn!("Failed to clear mmap cache of ram mmap numeric index: {err}");
+            log::warn!("Failed to clear cache of on-disk numeric index: {err}");
         }
 
         let mut result = Self {

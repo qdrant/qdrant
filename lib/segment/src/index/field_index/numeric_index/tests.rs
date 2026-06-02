@@ -146,11 +146,13 @@ fn random_index(
     let mut index = index_builder.finalize().unwrap();
 
     if matches!(index_type, IndexType::RamMmap) {
-        let NumericIndexInner::Mmap(mmap_index) = index.inner else {
+        let NumericIndexInner::OnDisk(mmap_index) = index.inner else {
             panic!("Expected mmap index");
         };
         index = NumericIndex {
-            inner: NumericIndexInner::Immutable(ImmutableNumericIndex::open_mmap(mmap_index)),
+            inner: NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(
+                mmap_index,
+            )),
             _phantom: Default::default(),
         };
     }

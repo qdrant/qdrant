@@ -35,7 +35,7 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(mmap_index) =
+        let Some(on_disk_index) =
             UniversalNumericIndex::open(&MmapFs, path, effective_is_on_disk, deleted_points)?
         else {
             // Files don't exist, cannot load
@@ -43,12 +43,12 @@ where
         };
 
         if effective_is_on_disk {
-            // Use on mmap directly
-            Ok(Some(NumericIndexInner::Mmap(mmap_index)))
+            // Use on-disk directly
+            Ok(Some(NumericIndexInner::OnDisk(on_disk_index)))
         } else {
-            // Load into RAM, use mmap as backing storage
+            // Load into RAM, use on-disk as backing storage
             Ok(Some(NumericIndexInner::Immutable(
-                ImmutableNumericIndex::open_mmap(mmap_index),
+                ImmutableNumericIndex::load_from_on_disk(on_disk_index),
             )))
         }
     }
@@ -62,7 +62,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.flusher(),
             NumericIndexInner::Immutable(index) => index.flusher(),
-            NumericIndexInner::Mmap(index) => index.flusher(),
+            NumericIndexInner::OnDisk(index) => index.flusher(),
         }
     }
 
@@ -70,7 +70,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.files(),
             NumericIndexInner::Immutable(index) => index.files(),
-            NumericIndexInner::Mmap(index) => index.files(),
+            NumericIndexInner::OnDisk(index) => index.files(),
         }
     }
 
@@ -78,7 +78,7 @@ where
         match self {
             NumericIndexInner::Mutable(_) => vec![],
             NumericIndexInner::Immutable(index) => index.immutable_files(),
-            NumericIndexInner::Mmap(index) => index.immutable_files(),
+            NumericIndexInner::OnDisk(index) => index.immutable_files(),
         }
     }
 
@@ -86,7 +86,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.remove_point(idx)?,
             NumericIndexInner::Immutable(index) => index.remove_point(idx),
-            NumericIndexInner::Mmap(index) => index.remove_point(idx),
+            NumericIndexInner::OnDisk(index) => index.remove_point(idx),
         }
         Ok(())
     }
@@ -97,7 +97,7 @@ where
         match self {
             NumericIndexInner::Mutable(_) => {}   // Not a mmap
             NumericIndexInner::Immutable(_) => {} // Not a mmap
-            NumericIndexInner::Mmap(index) => index.populate()?,
+            NumericIndexInner::OnDisk(index) => index.populate()?,
         }
         Ok(())
     }
@@ -105,11 +105,11 @@ where
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            // Only clears backing mmap storage if used, not in-memory representation
+            // Only clears backing on-disk storage if used, not in-memory representation
             NumericIndexInner::Mutable(index) => index.clear_cache()?,
-            // Only clears backing mmap storage if used, not in-memory representation
+            // Only clears backing on-disk storage if used, not in-memory representation
             NumericIndexInner::Immutable(index) => index.clear_cache()?,
-            NumericIndexInner::Mmap(index) => index.clear_cache()?,
+            NumericIndexInner::OnDisk(index) => index.clear_cache()?,
         }
         Ok(())
     }
