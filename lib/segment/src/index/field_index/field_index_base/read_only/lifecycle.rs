@@ -4,7 +4,7 @@ use common::bitvec::BitSlice;
 use common::universal_io::UniversalRead;
 
 use super::ReadOnlyFieldIndex;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
 use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex;
@@ -18,8 +18,7 @@ use crate::index::field_index::numeric_index::ReadOnlyNumericIndex;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::json_path::JsonPath;
 use crate::types::{
-    DateTimePayloadType, FloatPayloadType, IntPayloadType, PayloadFieldSchema, PayloadSchemaParams,
-    UuidIntType,
+    DateTimePayloadType, FloatPayloadType, IntPayloadType, PayloadFieldSchema, UuidIntType,
 };
 
 impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
@@ -86,7 +85,7 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
                 ReadOnlyGeoMapIndex::open_gridstore(fs, map_dir(dir, field))?.map(Self::GeoIndex)
             }
             PayloadIndexType::FullTextIndex => {
-                let config = text_index_params(payload_schema)?;
+                let config = TextIndexParams::try_from(payload_schema)?;
                 ReadOnlyFullTextIndex::open_appendable(fs, text_dir(dir, field), config)?
                     .map(Self::FullTextIndex)
             }
@@ -185,7 +184,7 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
             )?
             .map(Self::GeoIndex),
             PayloadIndexType::FullTextIndex => {
-                let config = text_index_params(payload_schema)?;
+                let config = TextIndexParams::try_from(payload_schema)?;
                 ReadOnlyFullTextIndex::open_immutable(
                     fs,
                     text_dir(dir, field),
@@ -208,18 +207,4 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
         };
         Ok(index)
     }
-}
-
-/// Extracts the [`TextIndexParams`] a read-only full-text open needs from the
-/// stored payload schema, mirroring the writable selector's
-/// `PayloadSchemaParams::Text(params)` arm.
-#[allow(dead_code)] // only the (currently lib-uncalled) open_* dispatchers reach this
-fn text_index_params(payload_schema: &PayloadFieldSchema) -> OperationResult<TextIndexParams> {
-    let expanded = payload_schema.expand();
-    let PayloadSchemaParams::Text(config) = expanded.as_ref() else {
-        return Err(OperationError::service_error(
-            "read-only full-text index open expected a text payload schema",
-        ));
-    };
-    Ok(config.clone())
 }

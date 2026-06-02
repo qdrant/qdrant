@@ -2364,6 +2364,24 @@ impl Display for PayloadFieldSchema {
     }
 }
 
+impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
+    type Error = OperationError;
+
+    /// Extracts the full-text tokenizer params from a payload schema — used by
+    /// the read-only full-text index `open`, the only index whose read
+    /// behavior depends on its build-time config. Errors if the schema is not
+    /// a text index.
+    fn try_from(schema: &PayloadFieldSchema) -> Result<Self, Self::Error> {
+        let expanded = schema.expand();
+        let PayloadSchemaParams::Text(config) = expanded.as_ref() else {
+            return Err(OperationError::service_error(
+                "expected a text payload schema for a full-text index",
+            ));
+        };
+        Ok(config.clone())
+    }
+}
+
 impl PayloadFieldSchema {
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
