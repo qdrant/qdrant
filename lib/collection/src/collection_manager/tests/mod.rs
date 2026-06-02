@@ -166,8 +166,15 @@ fn test_move_points_to_copy_on_write() {
 
     let num_deleted_points_in_proxy = read_proxy.deleted_point_count();
 
+    let wrapped_delete = read_proxy
+        .wrapped_segment
+        .get_read()
+        .read()
+        .deleted_point_count();
+
     assert_eq!(
-        num_deleted_points_in_proxy, 3,
+        num_deleted_points_in_proxy - wrapped_delete,
+        3,
         "3 points should be deleted in proxy"
     );
 

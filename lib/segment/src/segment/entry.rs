@@ -33,7 +33,7 @@ use crate::types::{
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     VectorName, VectorNameBuf, WithPayload, WithVector,
 };
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
 /// This is a basic implementation of the trait, meaning that it implements the _actual_ operations with data and not
 /// any kind of proxy or wrapping.
@@ -311,6 +311,15 @@ impl ReadSegmentEntry for Segment {
 }
 
 impl Segment {
+    /// Whether mutating ops on this segment should be routed through the
+    /// clone-and-tombstone helper.
+    ///
+    /// Guards on `is_appendable()` — clone-and-tombstone requires growable
+    /// storages — so callers can ignore the underlying flag.
+    pub fn is_append_only(&self) -> bool {
+        self.is_appendable() && self.append_only_mutations
+    }
+
     /// Iterator over all points in segment in ascending order.
     pub fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         let mappings =
@@ -515,6 +524,7 @@ impl NonAppendableSegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let append_only = self.is_append_only();
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
@@ -523,9 +533,16 @@ impl NonAppendableSegmentEntry for Segment {
                 point_id,
                 Some(internal_id),
                 |segment| {
-                    segment.delete_point_internal(internal_id, hw_counter)?;
-
-                    segment.version_tracker.set_payload(Some(op_num));
+                    if append_only {
+                        // Tombstone-only: leave payload row and field
+                        // indexes at `internal_id` untouched so the on-disk
+                        // structures stay append-only. Readers filter via
+                        // the id tracker's deleted bitslice.
+                        segment.delete_point_tombstone_only(internal_id)?;
+                    } else {
+                        segment.delete_point_internal(internal_id, hw_counter)?;
+                        segment.version_tracker.set_payload(Some(op_num));
+                    }
 
                     Ok((true, Some(internal_id)))
                 },
@@ -649,16 +666,27 @@ impl SegmentEntry for Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, point_id, stored_internal_point, |segment| {
-            if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, op_num, &vectors, hw_counter)?;
-                Ok((true, Some(existing_internal_id)))
-            } else {
+        match stored_internal_point {
+            Some(existing_internal_id) => self.handle_point_mutate(
+                op_num,
+                point_id,
+                existing_internal_id,
+                hw_counter,
+                |segment, internal_id| {
+                    segment.replace_all_vectors(internal_id, op_num, &vectors, hw_counter)?;
+                    Ok(true)
+                },
+                |snapshot_vectors, _payload| {
+                    *snapshot_vectors = vectors.clone().into_owned();
+                    Ok(true)
+                },
+            ),
+            None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
                 let new_index =
                     segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
                 Ok((false, Some(new_index)))
-            }
-        })
+            }),
+        }
     }
 
     fn update_vectors(
@@ -671,20 +699,25 @@ impl SegmentEntry for Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        match internal_id {
-            None => Err(OperationError::PointIdError {
+        let Some(internal_id) = internal_id else {
+            return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
-            }),
-            Some(internal_id) => self.handle_point_version_and_failure(
-                op_num,
-                point_id,
-                Some(internal_id),
-                |segment| {
-                    segment.update_vectors(internal_id, op_num, vectors, hw_counter)?;
-                    Ok((true, Some(internal_id)))
-                },
-            ),
-        }
+            });
+        };
+        self.handle_point_mutate(
+            op_num,
+            point_id,
+            internal_id,
+            hw_counter,
+            |segment, internal_id| {
+                segment.update_vectors(internal_id, op_num, vectors.clone(), hw_counter)?;
+                Ok(true)
+            },
+            |snapshot_vectors, _payload| {
+                snapshot_vectors.merge(vectors.clone().into_owned());
+                Ok(true)
+            },
+        )
     }
 
     fn delete_vector(
@@ -695,32 +728,43 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        match internal_id {
-            None => Err(OperationError::PointIdError {
+        let Some(internal_id) = internal_id else {
+            return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
-            }),
-            Some(internal_id) => self.handle_point_version_and_failure(
-                op_num,
-                point_id,
-                Some(internal_id),
-                |segment| {
-                    let vector_data = segment
-                        .vector_data
-                        .get(vector_name)
-                        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    let is_deleted = vector_storage.delete_vector(internal_id)?;
-
-                    if is_deleted {
-                        segment
-                            .version_tracker
-                            .set_vector(vector_name, Some(op_num));
-                    }
-
-                    Ok((is_deleted, Some(internal_id)))
-                },
-            ),
+            });
+        };
+        // Was the vector present at the existing id? Used by both paths to
+        // report `is_deleted` and gate the version_tracker update so we
+        // don't bump it on a no-op.
+        let was_present = !self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?
+            .vector_storage
+            .borrow()
+            .is_deleted_vector(internal_id);
+        let is_deleted = self.handle_point_mutate(
+            op_num,
+            point_id,
+            internal_id,
+            &HardwareCounterCell::disposable(),
+            |segment, internal_id| {
+                let vector_data = segment
+                    .vector_data
+                    .get(vector_name)
+                    .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+                let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                vector_storage.delete_vector(internal_id)
+            },
+            |snapshot_vectors, _payload| {
+                snapshot_vectors.remove_ref(vector_name);
+                Ok(was_present)
+            },
+        )?;
+        if is_deleted {
+            self.version_tracker.set_vector(vector_name, Some(op_num));
         }
+        Ok(is_deleted)
     }
 
     fn set_full_payload(
@@ -731,23 +775,33 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
-            match internal_id {
-                Some(internal_id) => {
-                    segment.payload_index.borrow_mut().overwrite_payload(
-                        internal_id,
-                        full_payload,
-                        hw_counter,
-                    )?;
-                    segment.version_tracker.set_payload(Some(op_num));
-
-                    Ok((true, Some(internal_id)))
-                }
-                None => Err(OperationError::PointIdError {
-                    missed_point_id: point_id,
-                }),
-            }
-        })
+        let Some(internal_id) = internal_id else {
+            return Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            });
+        };
+        let applied = self.handle_point_mutate(
+            op_num,
+            point_id,
+            internal_id,
+            hw_counter,
+            |segment, internal_id| {
+                segment.payload_index.borrow_mut().overwrite_payload(
+                    internal_id,
+                    full_payload,
+                    hw_counter,
+                )?;
+                Ok(true)
+            },
+            |_vectors, snapshot_payload| {
+                *snapshot_payload = full_payload.clone();
+                Ok(true)
+            },
+        )?;
+        if applied {
+            self.version_tracker.set_payload(Some(op_num));
+        }
+        Ok(applied)
     }
 
     fn set_payload(
@@ -759,24 +813,37 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
-            match internal_id {
-                Some(internal_id) => {
-                    segment.payload_index.borrow_mut().set_payload(
-                        internal_id,
-                        payload,
-                        key,
-                        hw_counter,
-                    )?;
-                    segment.version_tracker.set_payload(Some(op_num));
-
-                    Ok((true, Some(internal_id)))
+        let Some(internal_id) = internal_id else {
+            return Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            });
+        };
+        let applied = self.handle_point_mutate(
+            op_num,
+            point_id,
+            internal_id,
+            hw_counter,
+            |segment, internal_id| {
+                segment.payload_index.borrow_mut().set_payload(
+                    internal_id,
+                    payload,
+                    key,
+                    hw_counter,
+                )?;
+                Ok(true)
+            },
+            |_vectors, snapshot_payload| {
+                match key {
+                    Some(k) => snapshot_payload.merge_by_key(payload, k),
+                    None => snapshot_payload.merge(payload),
                 }
-                None => Err(OperationError::PointIdError {
-                    missed_point_id: point_id,
-                }),
-            }
-        })
+                Ok(true)
+            },
+        )?;
+        if applied {
+            self.version_tracker.set_payload(Some(op_num));
+        }
+        Ok(applied)
     }
 
     fn delete_payload(
@@ -787,23 +854,32 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
-            match internal_id {
-                Some(internal_id) => {
-                    segment.payload_index.borrow_mut().delete_payload(
-                        internal_id,
-                        key,
-                        hw_counter,
-                    )?;
-                    segment.version_tracker.set_payload(Some(op_num));
-
-                    Ok((true, Some(internal_id)))
-                }
-                None => Err(OperationError::PointIdError {
-                    missed_point_id: point_id,
-                }),
-            }
-        })
+        let Some(internal_id) = internal_id else {
+            return Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            });
+        };
+        let applied = self.handle_point_mutate(
+            op_num,
+            point_id,
+            internal_id,
+            hw_counter,
+            |segment, internal_id| {
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .delete_payload(internal_id, key, hw_counter)?;
+                Ok(true)
+            },
+            |_vectors, snapshot_payload| {
+                snapshot_payload.remove(key);
+                Ok(true)
+            },
+        )?;
+        if applied {
+            self.version_tracker.set_payload(Some(op_num));
+        }
+        Ok(applied)
     }
 
     fn clear_payload(
@@ -813,22 +889,32 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
-            match internal_id {
-                Some(internal_id) => {
-                    segment
-                        .payload_index
-                        .borrow_mut()
-                        .clear_payload(internal_id, hw_counter)?;
-                    segment.version_tracker.set_payload(Some(op_num));
-
-                    Ok((true, Some(internal_id)))
-                }
-                None => Err(OperationError::PointIdError {
-                    missed_point_id: point_id,
-                }),
-            }
-        })
+        let Some(internal_id) = internal_id else {
+            return Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            });
+        };
+        let applied = self.handle_point_mutate(
+            op_num,
+            point_id,
+            internal_id,
+            hw_counter,
+            |segment, internal_id| {
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .clear_payload(internal_id, hw_counter)?;
+                Ok(true)
+            },
+            |_vectors, snapshot_payload| {
+                *snapshot_payload = Payload::default();
+                Ok(true)
+            },
+        )?;
+        if applied {
+            self.version_tracker.set_payload(Some(op_num));
+        }
+        Ok(applied)
     }
 }
 

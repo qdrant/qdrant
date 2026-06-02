@@ -602,6 +602,10 @@ fn create_segment(
         vector_data,
         segment_type,
         appendable_flag,
+        // Debug-only escape hatch — `QDRANT_APPEND_ONLY_MUTATIONS=1` flips
+        // newly built segments into append-only mode for test runs.
+        append_only_mutations: cfg!(debug_assertions)
+            && std::env::var("QDRANT_APPEND_ONLY_MUTATIONS").ok() == Some("1".to_string()),
         payload_index,
         payload_storage,
         segment_config: config.clone(),
