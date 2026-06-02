@@ -134,8 +134,12 @@ def test_shard_snapshot_transfer_with_missing_point_updates(tmp_path: pathlib.Pa
         peer_api_uris=peer_api_uris,
     )
 
-    # Insert some initial real points
-    upsert_random_points(peer_api_uris[0], INITIAL_POINTS)
+    # Insert some initial real points. Batch the insert: a single 20k-point
+    # request saturates all cores long enough to starve the consensus thread
+    # (cascading leader elections) and to blow past the 2000ms per-shard update
+    # healthcheck deadline, which returns a flaky 408 here before the actual
+    # test even starts.
+    upsert_random_points(peer_api_uris[0], INITIAL_POINTS, batch_size=1000)
 
     # Concurrent background load:
     #  - real insertions of new points
