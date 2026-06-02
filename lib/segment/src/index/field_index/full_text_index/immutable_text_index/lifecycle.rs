@@ -14,10 +14,7 @@ impl ImmutableFullTextIndex {
     /// Open and load the immutable full text index from mmap storage.
     pub fn open_mmap(index: MmapFullTextIndex<MmapFile>) -> OperationResult<Self> {
         let index = Box::new(index);
-        let inverted_index = match ImmutableInvertedIndex::try_from(&index.inverted_index) {
-            Ok(inverted_index) => inverted_index,
-            Err(err) => return Err(err),
-        };
+        let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.inverted_index.clear_cache() {

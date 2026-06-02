@@ -19,16 +19,17 @@ impl ImmutableGeoMapIndex {
     /// Open and load the immutable geo index from mmap storage.
     pub fn open_mmap(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
         let index = Box::new(index);
-        let counts_per_hash = match index.storage.counts_per_hash.read_whole() {
-            Ok(raw) => raw.iter().copied().map(Counts::from).collect(),
-            Err(err) => return Err(err.into()),
-        };
+        let counts_per_hash = index
+            .storage
+            .counts_per_hash
+            .read_whole()?
+            .iter()
+            .copied()
+            .map(Counts::from)
+            .collect();
 
         // Build flat parallel arrays from on-disk points_map + points_map_ids
-        let points_map_entries = match index.storage.points_map.read_whole() {
-            Ok(entries) => entries,
-            Err(err) => return Err(err.into()),
-        };
+        let points_map_entries = index.storage.points_map.read_whole()?;
         let num_entries = points_map_entries.len();
         let mut points_map_hashes = Vec::with_capacity(num_entries);
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
@@ -94,11 +95,8 @@ impl ImmutableGeoMapIndex {
                 };
                 Ok(values)
             })
-            .collect();
-        let point_to_values = match collected {
-            Ok(values) => ImmutablePointToValues::new(values),
-            Err(err) => return Err(err),
-        };
+            .collect::<OperationResult<Vec<_>>>();
+        let point_to_values = ImmutablePointToValues::new(collected?);
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
@@ -128,10 +126,7 @@ impl ImmutableGeoMapIndex {
 
             let mut removed_geo_hashes = Vec::with_capacity(removed_geo_points.len());
             for geo_point in removed_geo_points {
-                match encode_max_precision(geo_point.lon.0, geo_point.lat.0) {
-                    Ok(hash) => removed_geo_hashes.push(hash),
-                    Err(err) => return Err(err.into()),
-                }
+                removed_geo_hashes.push(encode_max_precision(geo_point.lon.0, geo_point.lat.0)?);
             }
             for &removed_geo_hash in &removed_geo_hashes {
                 index.decrement_hash_value_counts(removed_geo_hash);

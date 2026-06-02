@@ -37,7 +37,7 @@ where
         // `remove_idx_from_value_list`: `value_to_points` only ever contains
         // entries with `count > 0`.
         let mut value_to_points_container = Vec::with_capacity(index.get_values_count());
-        let scan = index.for_each_value_map(&hw_counter, |value, ids| {
+        index.for_each_value_map(&hw_counter, |value, ids| {
             let range_start = value_to_points_container.len() as u32;
             for idx in ids {
                 if point_to_values.len() <= idx as usize {
@@ -64,10 +64,7 @@ where
                 );
             }
             Ok(())
-        });
-        if let Err(err) = scan {
-            return Err(err);
-        }
+        })?;
         let point_to_values = ImmutablePointToValues::new(point_to_values);
         value_to_points.shrink_to_fit();
 
