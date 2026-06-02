@@ -17,7 +17,7 @@ mod read_ops;
 ///
 /// Constructed via [`Self::open`] (see [`lifecycle`]); the parent
 /// [`super::super::read_only::ReadOnlyMapIndex`] dispatches into this type
-/// through [`super::super::read_only::ReadOnlyMapIndex::open_gridstore`].
+/// through [`super::super::read_only::ReadOnlyMapIndex::open_appendable`].
 pub struct ReadOnlyAppendableMapIndex<N: MapIndexKey + ?Sized, S: UniversalRead>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,

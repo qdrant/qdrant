@@ -18,10 +18,9 @@ mod read_ops;
 /// - [`Immutable`][Self::Immutable] — reads directly from the immutable mmap
 ///   format.
 ///
-/// Constructed via [`Self::open_gridstore`] (generic over `S`) and
-/// [`Self::open_mmap`] (currently specialised to `S = MmapFile` until
-/// [`UniversalMapIndex::open`] becomes fs-generic); the upstream
-/// [`ReadOnlyFieldIndex`][4] wiring follows in a separate PR.
+/// Constructed via [`Self::open_appendable`] and [`Self::open_immutable`]
+/// (both generic over `S`); the upstream [`ReadOnlyFieldIndex`][4] wiring
+/// follows in a separate PR.
 ///
 /// [1]: super::MapIndex
 /// [2]: super::read_ops::MapIndexRead
@@ -53,12 +52,12 @@ mod tests {
     use crate::types::{FieldCondition, Match};
 
     /// Build an appendable (Gridstore) string map index on disk, then open it
-    /// via the parent enum's [`ReadOnlyMapIndex::open_gridstore`] over the
+    /// via the parent enum's [`ReadOnlyMapIndex::open_appendable`] over the
     /// write-enforced `ReadOnly<MmapFile>` backend. Verifies the dispatcher
     /// wraps into [`ReadOnlyMapIndex::Appendable`] and that the trait
     /// forwarders deliver the same hit set as the values inserted.
     #[test]
-    fn parent_open_gridstore_round_trip() {
+    fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_map_parent_gridstore").unwrap();
         let hw_counter = HardwareCounterCell::new();
 
@@ -86,7 +85,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> =
-            ReadOnlyMapIndex::open_gridstore(&fs, dir.path().to_path_buf())
+            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf())
                 .unwrap()
                 .unwrap();
 

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{MmapFile, UniversalRead};
+use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use super::super::MapIndexKey;
@@ -26,8 +26,35 @@ where
     /// doesn't exist.
     ///
     /// [1]: super::super::MapIndex::new_gridstore
-    pub fn open_gridstore(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
         Ok(ReadOnlyAppendableMapIndex::open(fs, dir)?.map(Self::Appendable))
+    }
+
+    /// Read-only mirror of [`MapIndex::new_mmap`][1]: open the immutable
+    /// (mmap-format) map index read-only through [`UniversalMapIndex::open`],
+    /// threading every file open through the filesystem handle `fs`.
+    ///
+    /// The writable enum has two mmap variants (`Immutable` for in-RAM with
+    /// mmap backing, `Mmap` for on-disk lazy); the read-only side collapses
+    /// to a single [`Self::Immutable`] arm because `is_on_disk` (→ populate)
+    /// already covers the lazy/eager distinction inside [`UniversalMapIndex`].
+    /// `Ok(None)` propagates from the leaf when the on-disk index doesn't
+    /// exist.
+    ///
+    /// [1]: super::super::MapIndex::new_mmap
+    pub fn open_immutable(
+        fs: &S::Fs,
+        path: &Path,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
+        let effective_is_on_disk =
+            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+
+        Ok(
+            UniversalMapIndex::open(fs, path, effective_is_on_disk, deleted_points)?
+                .map(Self::Immutable),
+        )
     }
 
     /// Reports the on-disk format's mutability, mirroring
@@ -46,41 +73,5 @@ where
             Self::Appendable(_) => IndexMutability::Mutable,
             Self::Immutable(_) => IndexMutability::Immutable,
         }
-    }
-}
-
-impl<N: MapIndexKey + ?Sized> ReadOnlyMapIndex<N, MmapFile>
-where
-    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
-{
-    /// Read-only mirror of [`MapIndex::new_mmap`][1]: open the immutable
-    /// (mmap-backed) map index read-only through [`UniversalMapIndex::open`].
-    ///
-    /// The writable enum has two mmap variants (`Immutable` for in-RAM with
-    /// mmap backing, `Mmap` for on-disk lazy); the read-only side collapses
-    /// to a single [`Self::Immutable`] arm because `is_on_disk` (→ populate)
-    /// already covers the lazy/eager distinction inside [`UniversalMapIndex`].
-    /// `Ok(None)` propagates from the leaf when the on-disk index doesn't
-    /// exist.
-    ///
-    /// Specialised to `S = MmapFile` because [`UniversalMapIndex::open`]
-    /// currently hardcodes [`MmapFs`][2] for the sub-opens
-    /// (`UniversalHashMap` / `StoredPointToValues` / `MmapBitSlice`); once
-    /// those become fs-generic, this can fold back into the generic impl.
-    ///
-    /// [1]: super::super::MapIndex::new_mmap
-    /// [2]: common::universal_io::MmapFs
-    pub fn open_mmap(
-        path: &Path,
-        is_on_disk: bool,
-        deleted_points: &BitSlice,
-    ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        Ok(
-            UniversalMapIndex::open(path, effective_is_on_disk, deleted_points)?
-                .map(Self::Immutable),
-        )
     }
 }
