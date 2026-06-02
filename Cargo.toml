@@ -209,6 +209,7 @@ async-trait = "0.1.89"
 atomicwrites = "0.4.4"
 bincode = "1.3.3" # no upgrade because 2.0.x is much slower https://github.com/qdrant/qdrant/pull/6134
 bitpacking = "0.9.3"
+blink-alloc = "0.4.0"
 bytemuck = { version = "1.25.0", features = [
     "derive",
     "extern_crate_alloc",

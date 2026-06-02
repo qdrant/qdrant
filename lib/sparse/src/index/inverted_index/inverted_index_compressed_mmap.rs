@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
+use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::aligned_vec::ACow;
 use common::fs::{atomic_save_json, read_json};
@@ -20,7 +21,6 @@ use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use super::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use super::{INDEX_FILE_NAME, corrupted_index, out_of_bounds};
-use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
@@ -121,7 +121,7 @@ where
     fn get<'a>(
         &'a self,
         id: DimOffset,
-        arena: &'a SearchScratchArena,
+        arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<CompressedPostingListIterator<'a, W>> {
         Ok(self.get(id, arena, hw_counter)?.iter())
@@ -202,7 +202,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     pub fn get<'a>(
         &'a self,
         id: DimId,
-        arena: &'a SearchScratchArena,
+        arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<CompressedPostingListView<'a, W>> {
         let (header, remainders_end) = self.read_posting_header(id, hw_counter)?;
@@ -213,7 +213,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         )?;
         let data = match data_bytes {
             ACow::Borrowed(b) => b,
-            ACow::Owned(avec) => arena.alloc(avec),
+            ACow::Owned(avec) => arena.put(avec),
         };
 
         let ids_len = header.ids_len as usize;
@@ -396,10 +396,10 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
     fn calculate_total_sparse_size(&self, hw_counter: &HardwareCounterCell) -> Result<usize> {
         let mut total = 0;
-        let mut arena = SearchScratchArena::new_slow();
+        let mut arena = Blink::new();
         for id in 0..self.file_header.posting_count as DimId {
             total += self.get(id, &arena, hw_counter)?.store_size().total;
-            arena.gc();
+            arena.reset();
         }
         Ok(total)
     }
@@ -429,7 +429,7 @@ mod tests {
         inverted_index_mmap: &InvertedIndexCompressedMmap<W, S>,
     ) {
         let hw_counter = HardwareCounterCell::new();
-        let arena = SearchScratchArena::new_slow();
+        let arena = Blink::new();
         for id in 0..inverted_index_ram.postings.len() as DimId {
             let posting_list_ram = inverted_index_ram
                 .postings
@@ -508,7 +508,7 @@ mod tests {
 
         compare_indexes(&inverted_index_ram, &index);
 
-        let arena = SearchScratchArena::new_slow();
+        let arena = Blink::new();
         assert!(index.get(0, &arena, &hw_counter).unwrap().is_empty()); // the first entry is always empty as dimension ids start at 1
         assert_eq!(index.get(1, &arena, &hw_counter).unwrap().len(), 9);
         assert_eq!(index.get(2, &arena, &hw_counter).unwrap().len(), 4);

@@ -1,8 +1,7 @@
+use blink_alloc::Blink;
 use common::defaults::POOL_KEEP_LIMIT;
-use common::ext::aligned_vec::{AVec, RuntimeAlign};
 use common::types::ScoreType;
 use parking_lot::Mutex;
-use typed_arena::Arena;
 
 #[derive(Debug)]
 pub struct SearchScratchPool {
@@ -23,7 +22,7 @@ impl SearchScratchPool {
         SearchScratch {
             pool: self,
             scores,
-            arena: SearchScratchArena::new_slow(),
+            arena: Blink::new(),
         }
     }
 }
@@ -35,7 +34,7 @@ pub struct SearchScratch<'a> {
     /// Used for batched scoring.
     pub(crate) scores: SearchScratchScores,
     /// Used to own/store posting list bytes while reading them from the file.
-    pub(crate) arena: SearchScratchArena,
+    pub(crate) arena: Blink,
 }
 
 impl SearchScratch<'_> {
@@ -60,43 +59,5 @@ impl Drop for SearchScratch<'_> {
         if pool.len() < *POOL_KEEP_LIMIT {
             pool.push(std::mem::take(scores));
         }
-    }
-}
-
-/// Hacky wrapper around [`Arena`] with [`Self::gc`] method.
-///
-/// TODO: get rid of this struct once [`Arena`] gets `clear()` method, and use
-/// type alias instead.
-/// https://github.com/thomcc/rust-typed-arena/issues/64
-// pub type SearchScratchArena = Arena<AVec<u8, RuntimeAlign>>;
-pub struct SearchScratchArena(Arena<AVec<u8, RuntimeAlign>>);
-
-impl SearchScratchArena {
-    /// Same as [`Arena::new`].
-    /// Renamed to `new_slow` to point out that [`Arena::new`] allocates.
-    pub fn new_slow() -> SearchScratchArena {
-        SearchScratchArena(Arena::new())
-    }
-
-    /// Free memory if the arena got too big.
-    /// Poor's man version of `Arena::clear()`.
-    pub fn gc(&mut self) {
-        // Too small => frequent reallocations
-        // Too big => memory bloat
-        const ARBITRARY_LIMIT: usize = 256;
-        if self.0.len() > ARBITRARY_LIMIT {
-            self.0 = Arena::new();
-        }
-
-        for vec in self.0.iter_mut() {
-            *vec = AVec::new(1);
-        }
-    }
-}
-
-impl std::ops::Deref for SearchScratchArena {
-    type Target = Arena<AVec<u8, RuntimeAlign>>;
-    fn deref(&self) -> &Arena<AVec<u8, RuntimeAlign>> {
-        &self.0
     }
 }
