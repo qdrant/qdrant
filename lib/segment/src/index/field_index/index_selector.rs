@@ -525,24 +525,17 @@ impl IndexSelector<'_> {
         deleted_points: &BitSlice,
         mutability: IndexMutability,
     ) -> OperationResult<Option<BoolIndex>> {
-        Ok(match self {
-            IndexSelector::NonAppendable { dir, is_on_disk: _ } => {
+        // `MutableBoolIndex` and `ImmutableBoolIndex` share the same on-disk
+        // format; stored mutability picks which in-memory wrapper to build.
+        Ok(match (self, mutability) {
+            (IndexSelector::NonAppendable { dir, is_on_disk: _ }, IndexMutability::Immutable) => {
                 let dir = bool_dir(dir, field);
-                // `MutableBoolIndex` and `ImmutableBoolIndex` share the same on-disk
-                // format; stored mutability picks which in-memory wrapper to build.
-                match mutability {
-                    IndexMutability::Immutable => {
-                        ImmutableBoolIndex::open(&dir, deleted_points)?.map(BoolIndex::Immutable)
-                    }
-                    IndexMutability::Mutable => {
-                        MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mmap)
-                    }
-                }
+                ImmutableBoolIndex::open(&dir, deleted_points)?.map(BoolIndex::Immutable)
             }
-            // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
-            IndexSelector::Appendable { dir } => {
+            (IndexSelector::NonAppendable { dir, is_on_disk: _ }, IndexMutability::Mutable)
+            | (IndexSelector::Appendable { dir }, _) => {
                 let dir = bool_dir(dir, field);
-                MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mmap)
+                MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mutable)
             }
         })
     }
