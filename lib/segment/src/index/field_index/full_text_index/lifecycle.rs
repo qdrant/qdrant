@@ -151,7 +151,6 @@ impl FullTextIndex {
             Self::Mmap(index) => index.immutable_files(),
         }
     }
-
 }
 
 impl ValueIndexer for FullTextIndex {

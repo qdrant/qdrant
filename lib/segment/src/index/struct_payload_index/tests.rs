@@ -106,12 +106,11 @@ fn drop_index_if_incompatible_keeps_index_on_on_disk_only_change() {
 
     // The fixture indexed INT_KEY as `FieldType(Integer)` (on_disk = false).
     // Flip only `on_disk` to true; every other param stays at its default.
-    let on_disk_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(
-        IntegerIndexParams {
+    let on_disk_schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
             on_disk: Some(true),
             ..Default::default()
-        },
-    ));
+        }));
 
     let dropped = index
         .drop_index_if_incompatible(&field, &on_disk_schema)
@@ -178,12 +177,11 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
     assert!(before_count > 0, "fixture should index some integer points");
 
     // Same integer index, but with on_disk flipped to true.
-    let on_disk_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(
-        IntegerIndexParams {
+    let on_disk_schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
             on_disk: Some(true),
             ..Default::default()
-        },
-    ));
+        }));
 
     match index
         .build_index(&field, &on_disk_schema, &hw_counter)

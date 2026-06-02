@@ -89,7 +89,6 @@ impl GeoMapIndex {
             Self::Storage(_) => IndexMutability::Immutable,
         }
     }
-
 }
 
 impl GeoMapIndexRead for GeoMapIndex {

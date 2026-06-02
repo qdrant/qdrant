@@ -1388,4 +1388,3 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     hits.sort();
     assert_eq!(hits, vec![2, 4]);
 }
-

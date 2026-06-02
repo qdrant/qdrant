@@ -992,4 +992,3 @@ fn test_integer_index_fractional_range_bounds() {
         "lte: 1.5 must include integer 1 and exclude 2",
     );
 }
-
