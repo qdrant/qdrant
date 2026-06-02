@@ -124,7 +124,7 @@ impl PayloadIndex for StructPayloadIndex {
             // existing files and reload the index in the new mode during
             // `build_index` instead of dropping and rebuilding from payload.
             SchemaTransition::OnlyOnDiskFlipped { .. }
-                if matches!(self.storage_type, StorageType::GridstoreNonAppendable) =>
+                if matches!(self.storage_type, StorageType::NonAppendable) =>
             {
                 Ok(false)
             }

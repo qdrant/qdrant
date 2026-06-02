@@ -18,9 +18,7 @@ use common::defaults::log_load_timing;
 use fs_err as fs;
 
 use super::field_index::FieldIndex;
-use super::field_index::index_selector::{
-    IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
-};
+use super::field_index::index_selector::IndexSelector;
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;
@@ -33,8 +31,8 @@ use crate::vector_storage::VectorStorageEnum;
 
 #[derive(Debug)]
 enum StorageType {
-    GridstoreAppendable,
-    GridstoreNonAppendable,
+    Appendable,
+    NonAppendable,
 }
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
@@ -204,9 +202,9 @@ impl StructPayloadIndex {
         };
 
         let storage_type = if is_appendable {
-            StorageType::GridstoreAppendable
+            StorageType::Appendable
         } else {
-            StorageType::GridstoreNonAppendable
+            StorageType::NonAppendable
         };
 
         let mut index = StructPayloadIndex {
@@ -276,27 +274,21 @@ impl StructPayloadIndex {
         let is_on_disk = payload_schema.is_on_disk();
 
         match &self.storage_type {
-            StorageType::GridstoreAppendable => {
-                IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
-            }
-            StorageType::GridstoreNonAppendable => IndexSelector::Mmap(IndexSelectorMmap {
+            StorageType::Appendable => IndexSelector::Appendable { dir: &self.path },
+            StorageType::NonAppendable => IndexSelector::NonAppendable {
                 dir: &self.path,
                 is_on_disk,
-            }),
+            },
         }
     }
 
     fn selector_with_type(&self, index_type: &FullPayloadIndexType) -> IndexSelector<'_> {
         match index_type.storage_type {
-            payload_config::StorageType::Gridstore => {
-                IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
-            }
-            payload_config::StorageType::Mmap { is_on_disk } => {
-                IndexSelector::Mmap(IndexSelectorMmap {
-                    dir: &self.path,
-                    is_on_disk,
-                })
-            }
+            payload_config::StorageType::Gridstore => IndexSelector::Appendable { dir: &self.path },
+            payload_config::StorageType::Mmap { is_on_disk } => IndexSelector::NonAppendable {
+                dir: &self.path,
+                is_on_disk,
+            },
         }
     }
 
