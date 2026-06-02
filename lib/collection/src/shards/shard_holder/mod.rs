@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
@@ -39,6 +40,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshot_stream::SnapshotStream;
+use crate::common::timeout_writer::TimeoutWriter;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -64,6 +66,13 @@ use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
+
+/// Abort a streamed snapshot if its consumer reads no data for this long.
+///
+/// The streaming write holds a read lock on the shard's segment holder and
+/// occupies a blocking thread, so a stalled consumer must not be allowed to
+/// block it forever. See [`TimeoutWriter`].
+const SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub struct ShardHolder {
     /// `BTreeMap` for deterministic iteration order by `ShardId` — iteration is externally
@@ -1182,6 +1191,13 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         let (read_half, write_half) = tokio::io::duplex(4096);
+
+        // Abort the snapshot if the consumer stops draining the stream. This
+        // write holds a read lock on the shard's segment holder and occupies a
+        // blocking thread; without a timeout, a stalled consumer (e.g. a slow or
+        // hung client) would block the segment holder and leak the thread
+        // indefinitely, wedging the whole shard.
+        let write_half = TimeoutWriter::new(write_half, SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT);
 
         let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
 
