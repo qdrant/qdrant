@@ -1,12 +1,13 @@
-use crate::common::operation_error::OperationResult;
-use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
-use crate::index::field_index::map_index::MapIndexKey;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
-use gridstore::error::GridstoreError;
 use gridstore::Blob;
+use gridstore::error::GridstoreError;
+
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::map_index::MapIndexKey;
+use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where

@@ -73,10 +73,7 @@ where
     ///
     /// Returns `true` if the point was within the indexed range; callers backed
     /// by a store should delete the on-disk entry only in that case.
-    pub fn remove_point(
-        &mut self,
-        idx: PointOffsetType,
-    ) -> bool {
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> bool {
         if self.point_to_values.len() <= idx as usize {
             return false;
         }

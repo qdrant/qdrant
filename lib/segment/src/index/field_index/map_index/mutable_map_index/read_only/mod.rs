@@ -5,8 +5,8 @@ use super::super::MapIndexKey;
 use super::inner::MutableMapIndexInner;
 
 mod lifecycle;
-mod read_ops;
 mod live_reload;
+mod read_ops;
 
 /// Read-only counterpart to [`super::MutableMapIndex`].
 ///
