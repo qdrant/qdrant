@@ -45,7 +45,7 @@ where
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)
                 },
-                hw_counter.ref_payload_index_io_write_counter(),
+                hw_counter.ref_payload_index_io_read_counter(),
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
