@@ -4,21 +4,53 @@ use std::path::PathBuf;
 /// `Result` extension for treating `NotFound` as `Ok(None)`
 pub trait OkNotFound {
     type Ok;
+
     type Error;
 
     /// Treat the not found error as `Ok(None)`
     fn ok_not_found(self) -> Result<Option<Self::Ok>, Self::Error>;
 }
 
-impl<T> OkNotFound for Result<T, UniversalIoError> {
-    type Ok = T;
-    type Error = UniversalIoError;
+pub trait IsNotFound {
+    fn is_not_found(&self) -> bool;
+}
 
-    fn ok_not_found(self) -> Result<Option<T>, UniversalIoError> {
+impl IsNotFound for io::Error {
+    fn is_not_found(&self) -> bool {
+        self.kind() == io::ErrorKind::NotFound
+    }
+}
+
+impl<T, E: IsNotFound> OkNotFound for Result<T, E> {
+    type Ok = T;
+
+    type Error = E;
+
+    fn ok_not_found(self) -> Result<Option<T>, E> {
         match self {
             Ok(t) => Ok(Some(t)),
             Err(err) if err.is_not_found() => Ok(None),
             Err(err) => Err(err),
+        }
+    }
+}
+
+impl IsNotFound for UniversalIoError {
+    fn is_not_found(&self) -> bool {
+        match self {
+            Self::NotFound { .. } => true,
+            Self::Io(err) | Self::IoUringNotSupported(err) => err.is_not_found(),
+            Self::Mmap(err) => err.is_not_found(),
+            Self::Bincode(_)
+            | Self::BytemuckCast(_)
+            | Self::ZerocopySize(_)
+            | Self::OutOfBounds { .. }
+            | Self::InvalidFileIndex { .. }
+            | Self::Uninitialized { .. }
+            | Self::QueueIsFull
+            | Self::S3(_)
+            | Self::S3Config { .. }
+            | Self::TaskPanicked(_) => false,
         }
     }
 }
@@ -82,10 +114,6 @@ impl UniversalIoError {
             io::ErrorKind::NotFound => Self::NotFound { path: path.into() },
             _ => Self::Io(err),
         }
-    }
-
-    pub fn is_not_found(&self) -> bool {
-        matches!(self, Self::NotFound { .. })
     }
 
     pub fn uninitialized(description: impl Into<String>) -> Self {

@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::UniversalRead;
+use common::universal_io::{OkNotFound, UniversalRead};
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::MapIndexKey;
 use super::super::inner::MutableMapIndexInner;
 use super::ReadOnlyAppendableMapIndex;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
@@ -30,33 +30,25 @@ where
     ///
     /// [1]: super::super::MutableMapIndex::open_gridstore
     pub fn open(fs: &S::Fs, path: PathBuf) -> OperationResult<Option<Self>> {
-        if !path.exists() {
+        let Some(storage) =
+            GridstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(fs, path).ok_not_found()?
+        else {
             // Files don't exist, cannot load
             return Ok(None);
-        }
-
-        let storage = GridstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(fs, path)
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to open read-only appendable map index on gridstore: {err}"
-                ))
-            })?;
+        };
 
         let mut inner = MutableMapIndexInner::<N>::empty();
         let hw_counter = HardwareCounterCell::disposable();
-        storage
-            .iter::<_, GridstoreError>(
-                storage.max_point_offset(),
-                |idx, values: Vec<_>| {
-                    for value in values {
-                        inner.ingest(idx, value);
-                    }
-                    Ok(true)
-                },
-                hw_counter.ref_payload_index_io_write_counter(),
-            )
-            // unwrap safety: never returns an error
-            .unwrap();
+        storage.iter::<_, GridstoreError>(
+            storage.max_point_offset(),
+            |idx, values: Vec<_>| {
+                for value in values {
+                    inner.ingest(idx, value);
+                }
+                Ok(true)
+            },
+            hw_counter.ref_payload_index_io_write_counter(),
+        )?;
 
         Ok(Some(Self { inner, storage }))
     }

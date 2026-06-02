@@ -1,5 +1,5 @@
 use common::mmap;
-use common::universal_io::UniversalIoError;
+use common::universal_io::{IsNotFound, UniversalIoError};
 
 use crate::tracker::{PageId, PointOffset};
 
@@ -35,6 +35,22 @@ impl GridstoreError {
     pub fn validation_error(message: impl Into<String>) -> Self {
         GridstoreError::ValidationError {
             message: message.into(),
+        }
+    }
+}
+
+impl IsNotFound for GridstoreError {
+    fn is_not_found(&self) -> bool {
+        match self {
+            GridstoreError::UniversalIo(err) => err.is_not_found(),
+            GridstoreError::Io(err) => err.is_not_found(),
+            GridstoreError::Mmap(err) => err.is_not_found(),
+            GridstoreError::SerdeJson(_)
+            | GridstoreError::ServiceError { .. }
+            | GridstoreError::FlushCancelled
+            | GridstoreError::ValidationError { .. }
+            | GridstoreError::PageNotFound { .. }
+            | GridstoreError::ValueNotFound { .. } => false,
         }
     }
 }
