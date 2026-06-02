@@ -47,12 +47,14 @@ where
         let mut query = Vec::new();
         for inner_vector in raw_query.multi_vectors() {
             let inner_preprocessed = TMetric::preprocess(inner_vector.to_vec());
+            let inner_dim = inner_preprocessed.len();
             let inner_converted =
                 TElement::slice_from_float_cow(Cow::Owned(inner_preprocessed), TMetric::distance());
             let inner_prequantized = TElement::quantization_preprocess(
                 quantization_config,
                 TMetric::distance(),
                 inner_converted,
+                inner_dim,
             );
             query.extend_from_slice(&inner_prequantized);
         }

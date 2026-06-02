@@ -43,14 +43,24 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
+            .map(|slice| {
+                CowVector::from(T::slice_to_float_cow(
+                    slice,
+                    self.distance,
+                    self.vectors.dim(),
+                ))
+            })
             .expect("Vector not found")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.vectors
-            .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
+        self.vectors.get::<P>(key as VectorOffsetType).map(|slice| {
+            CowVector::from(T::slice_to_float_cow(
+                slice,
+                self.distance,
+                self.vectors.dim(),
+            ))
+        })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {

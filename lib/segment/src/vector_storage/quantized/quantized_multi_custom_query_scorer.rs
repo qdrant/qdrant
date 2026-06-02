@@ -75,6 +75,7 @@ where
                     quantization_config,
                     TMetric::distance(),
                     Cow::Borrowed(&original_vector.flattened_vectors),
+                    original_vector.flattened_vectors.len(),
                 );
                 Ok(quantized_multivector_storage.encode_query(&original_vector_prequantized))
             })

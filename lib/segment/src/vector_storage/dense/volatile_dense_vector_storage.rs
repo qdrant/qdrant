@@ -109,9 +109,13 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
     /// Get vector by key, if it exists.
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         // In memory so no optimization to be done for access pattern
-        self.vectors
-            .get_opt(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into(), self.distance)))
+        self.vectors.get_opt(key as VectorOffsetType).map(|slice| {
+            CowVector::from(T::slice_to_float_cow(
+                slice.into(),
+                self.distance,
+                self.vector_dim(),
+            ))
+        })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {

@@ -757,7 +757,12 @@ impl QuantizedVectors {
         let datatype = vector_storage.datatype();
         let vectors = (0..count as PointOffsetType).map(|i| {
             let vector = vector_storage.get_dense::<Sequential>(i);
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
+            PrimitiveVectorElement::quantization_preprocess(
+                quantization_config,
+                distance,
+                vector,
+                dim,
+            )
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
@@ -856,7 +861,12 @@ impl QuantizedVectors {
         let datatype = vector_storage.datatype();
         let multi_vector_config = *vector_storage.multi_vector_config();
         let vectors = vector_storage.iterate_inner_vectors().map(|vector| {
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
+            PrimitiveVectorElement::quantization_preprocess(
+                quantization_config,
+                distance,
+                vector,
+                dim,
+            )
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();

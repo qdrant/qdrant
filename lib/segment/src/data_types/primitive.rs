@@ -25,7 +25,11 @@ where
 
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>, distance: Distance) -> Cow<[Self]>;
 
-    fn slice_to_float_cow(vector: Cow<[Self]>, distance: Distance) -> Cow<[VectorElementType]>;
+    fn slice_to_float_cow(
+        vector: Cow<[Self]>,
+        distance: Distance,
+        dim: usize,
+    ) -> Cow<[VectorElementType]>;
 
     fn query_from_float_cow(
         vector: Cow<[VectorElementType]>,
@@ -36,6 +40,7 @@ where
         quantization_config: &QuantizationConfig,
         distance: Distance,
         vector: Cow<'a, [Self]>,
+        dim: usize,
     ) -> Cow<'a, [f32]>;
 
     fn datatype() -> VectorStorageDatatype;
@@ -56,7 +61,11 @@ impl PrimitiveVectorElement for VectorElementType {
         vector
     }
 
-    fn slice_to_float_cow(vector: Cow<[Self]>, _distance: Distance) -> Cow<[VectorElementType]> {
+    fn slice_to_float_cow(
+        vector: Cow<[Self]>,
+        _distance: Distance,
+        _dim: usize,
+    ) -> Cow<[VectorElementType]> {
         vector
     }
 
@@ -71,6 +80,7 @@ impl PrimitiveVectorElement for VectorElementType {
         _quantization_config: &QuantizationConfig,
         _distance: Distance,
         vector: Cow<'a, [Self]>,
+        _dim: usize,
     ) -> Cow<'a, [f32]> {
         vector
     }
@@ -99,7 +109,11 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
         Cow::Owned(vector.iter().map(|&x| f16::from_f32(x)).collect())
     }
 
-    fn slice_to_float_cow(vector: Cow<[Self]>, _distance: Distance) -> Cow<[VectorElementType]> {
+    fn slice_to_float_cow(
+        vector: Cow<[Self]>,
+        _distance: Distance,
+        _dim: usize,
+    ) -> Cow<[VectorElementType]> {
         Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
     }
 
@@ -114,6 +128,7 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
         _quantization_config: &QuantizationConfig,
         _distance: Distance,
         vector: Cow<'a, [Self]>,
+        _dim: usize,
     ) -> Cow<'a, [f32]> {
         Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
     }
@@ -158,7 +173,11 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
         Cow::Owned(vector.iter().map(|&x| x as u8).collect())
     }
 
-    fn slice_to_float_cow(vector: Cow<[Self]>, _distance: Distance) -> Cow<[VectorElementType]> {
+    fn slice_to_float_cow(
+        vector: Cow<[Self]>,
+        _distance: Distance,
+        _dim: usize,
+    ) -> Cow<[VectorElementType]> {
         Cow::Owned(
             vector
                 .iter()
@@ -178,6 +197,7 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
         quantization_config: &QuantizationConfig,
         distance: Distance,
         vector: Cow<'a, [Self]>,
+        _dim: usize,
     ) -> Cow<'a, [f32]> {
         if let QuantizationConfig::Binary(_) = quantization_config {
             Cow::Owned(
@@ -262,15 +282,22 @@ impl PrimitiveVectorElement for TurboQuantElement {
         Cow::Owned(bytemuck::allocation::cast_vec(bytes))
     }
 
-    fn slice_to_float_cow(vector: Cow<[Self]>, distance: Distance) -> Cow<[VectorElementType]> {
-        // Output length is `padded_dim` — caller (storage layer with access to
-        // the original `api_dim`) is expected to trim before exposing to API.
-        let quantizer = quantizer_for_tq_slot(vector.len(), distance);
+    fn slice_to_float_cow(
+        vector: Cow<[Self]>,
+        distance: Distance,
+        dim: usize,
+    ) -> Cow<[VectorElementType]> {
+        let quantizer = TurboQuantizer::new(
+            dim,
+            TQBits::Bits4,
+            TQMode::Normal,
+            DistanceType::from(distance),
+            None,
+        );
         let slice: &[Self] = &vector;
         let mut deq = quantizer.dequantize(bytemuck::cast_slice(slice));
-        // Revert the Hadamard rotation so the floats come back in the original
-        // (un-rotated) basis expected by the API.
         quantizer.apply_inverse_rotation(&mut deq);
+        deq.truncate(dim);
         Cow::Owned(deq.into_iter().map(|x| x as f32).collect())
     }
 
@@ -293,15 +320,15 @@ impl PrimitiveVectorElement for TurboQuantElement {
         _quantization_config: &QuantizationConfig,
         distance: Distance,
         vector: Cow<'a, [Self]>,
+        dim: usize,
     ) -> Cow<'a, [f32]> {
-        // Unlike `slice_to_float_cow`, we generally skip the inverse rotation:
-        // the downstream quantizer re-applies its own rotation, so handing it
-        // the already-rotated coordinates avoids a redundant round-trip. This
-        // only holds for rotation-invariant metrics (L2/Cosine/Dot) — Manhattan
-        // (L1) is rotation-sensitive, so there we must revert to the original
-        // basis. Output length is `padded_dim`; the quantization pipeline
-        // truncates to `api_dim` before encoding.
-        let quantizer = quantizer_for_tq_slot(vector.len(), distance);
+        let quantizer = TurboQuantizer::new(
+            dim,
+            TQBits::Bits4,
+            TQMode::Normal,
+            DistanceType::from(distance),
+            None,
+        );
         let slice: &[Self] = &vector;
         let mut deq = quantizer.dequantize(bytemuck::cast_slice(slice));
         if distance == Distance::Manhattan {

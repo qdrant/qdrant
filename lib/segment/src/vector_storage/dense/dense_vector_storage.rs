@@ -259,7 +259,7 @@ where
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector, self.distance).into())
+            .map(|vector| T::slice_to_float_cow(vector, self.distance, self.vector_dim()).into())
             .expect("Vector not found")
     }
 
@@ -277,8 +277,11 @@ where
             .as_ref()
             .unwrap()
             .for_each_in_batch(&point_offsets, |idx, vector| {
-                let vector =
-                    CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector), self.distance));
+                let vector = CowVector::from(T::slice_to_float_cow(
+                    Cow::Borrowed(vector),
+                    self.distance,
+                    self.vector_dim(),
+                ));
                 callback(user_data[idx], point_offsets[idx], vector);
             });
     }
@@ -288,7 +291,7 @@ where
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector, self.distance).into())
+            .map(|vector| T::slice_to_float_cow(vector, self.distance, self.vector_dim()).into())
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {

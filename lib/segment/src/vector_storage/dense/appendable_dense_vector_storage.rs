@@ -113,14 +113,24 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
+            .map(|slice| {
+                CowVector::from(T::slice_to_float_cow(
+                    slice,
+                    self.distance,
+                    self.vector_dim(),
+                ))
+            })
             .expect("Vector not found")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.vectors
-            .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
+        self.vectors.get::<P>(key as VectorOffsetType).map(|slice| {
+            CowVector::from(T::slice_to_float_cow(
+                slice,
+                self.distance,
+                self.vector_dim(),
+            ))
+        })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {

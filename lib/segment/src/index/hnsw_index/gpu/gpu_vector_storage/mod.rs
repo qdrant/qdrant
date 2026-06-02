@@ -537,6 +537,7 @@ impl GpuVectorStorage {
                     VectorElementTypeHalf::slice_to_float_cow(
                         vector_storage.get_dense::<Random>(id as PointOffsetType),
                         vector_storage.distance(),
+                        vector_storage.vector_dim(),
                     )
                 }),
                 None,
@@ -619,7 +620,11 @@ impl GpuVectorStorage {
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 vector_storage.iterate_inner_vectors().map(|vector| {
-                    VectorElementTypeHalf::slice_to_float_cow(vector, vector_storage.distance())
+                    VectorElementTypeHalf::slice_to_float_cow(
+                        vector,
+                        vector_storage.distance(),
+                        vector_storage.vector_dim(),
+                    )
                 }),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),

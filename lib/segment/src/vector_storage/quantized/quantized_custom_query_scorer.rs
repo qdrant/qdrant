@@ -62,6 +62,7 @@ where
                     quantization_config,
                     TMetric::distance(),
                     Cow::Borrowed(&original_vector),
+                    original_vector.len(),
                 );
                 Ok(quantized_storage.encode_query(&original_vector_prequantized))
             })
