@@ -58,7 +58,7 @@ impl StructPayloadIndex {
     /// the representation requested by `payload_schema` (honoring a changed
     /// `on_disk` flag), instead of rebuilding it from payload storage. Falls
     /// back to a full rebuild if the files cannot be loaded.
-    pub(super) fn reuse_existing_index(
+    pub(super) fn reuse_or_build_index(
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,

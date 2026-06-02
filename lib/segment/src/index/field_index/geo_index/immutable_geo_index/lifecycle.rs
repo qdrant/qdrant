@@ -35,7 +35,7 @@ impl ImmutableGeoMapIndex {
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
         let mut points_map_ids = Vec::new();
 
-        let scan = index.storage.points_map_ids.read_batch::<Random, _>(
+        index.storage.points_map_ids.read_batch::<Random, _>(
             points_map_entries
                 .iter()
                 .map(|item| ReadRange {
@@ -58,10 +58,7 @@ impl ImmutableGeoMapIndex {
                 }
                 Ok(())
             },
-        );
-        if let Err(err) = scan {
-            return Err(err.into());
-        }
+        )?;
         points_map_offsets.push(points_map_ids.len() as u32);
         drop(points_map_entries);
 

@@ -31,7 +31,7 @@ impl PayloadIndex for StructPayloadIndex {
                 // Only `on_disk` differs: reuse the existing files (loaded in
                 // the new mode) instead of rebuilding from payload.
                 SchemaTransition::OnlyOnDiskFlipped { .. } => {
-                    self.reuse_existing_index(field, payload_schema, hw_counter)
+                    self.reuse_or_build_index(field, payload_schema, hw_counter)
                 }
                 SchemaTransition::Incompatible => Ok(BuildIndexResult::IncompatibleSchema),
             };

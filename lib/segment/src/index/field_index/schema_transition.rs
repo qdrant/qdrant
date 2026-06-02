@@ -54,13 +54,13 @@ fn only_on_disk_differs(old: &PayloadSchemaParams, new: &PayloadSchemaParams) ->
     // accounted for automatically (any difference makes this `false`, i.e.
     // `Incompatible`, the safe default).
     macro_rules! only_on_disk {
-        ($a:expr, $b:expr) => {{
+        ($a:expr, $b:expr) => {
             $a.on_disk != $b.on_disk && {
                 let mut normalized = $a.clone();
                 normalized.on_disk = $b.on_disk;
                 normalized == *$b
             }
-        }};
+        };
     }
 
     match (old, new) {
