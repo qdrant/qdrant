@@ -291,6 +291,8 @@ impl<S: UniversalRead> Tracker<S> {
     fn open_storage(fs: &S::Fs, path: &Path, writeable: bool) -> Result<S> {
         let storage = match fs.open(path, tracker_open_options(writeable), Default::default()) {
             Err(UniversalIoError::NotFound { .. }) => {
+                // If config exists and storage doesn't,
+                // it should be treated as inconsistent storage rather than a missing one
                 return Err(GridstoreError::service_error(format!(
                     "Tracker file does not exist: {}",
                     path.display()
