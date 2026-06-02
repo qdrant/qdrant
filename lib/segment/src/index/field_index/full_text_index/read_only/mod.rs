@@ -19,8 +19,8 @@ mod read_ops;
 /// Mirrors [`ReadOnlyMapIndex`][4]; the [`PayloadFieldIndexRead`] body (filter /
 /// cardinality / payload blocks / condition checker) is shared with the
 /// writable variant through the [`FullTextIndexRead`] trait and the free
-/// functions in [`read_ops`][5]. Constructed via [`Self::open_gridstore`] /
-/// [`Self::open_mmap`] (see [`lifecycle`]); the upstream
+/// functions in [`read_ops`][5]. Constructed via [`Self::open_appendable`] /
+/// [`Self::open_immutable`] (see [`lifecycle`]); the upstream
 /// [`ReadOnlyFieldIndex`][6] wiring follows in a separate PR.
 ///
 /// [1]: super::FullTextIndex
@@ -68,12 +68,12 @@ mod tests {
     }
 
     /// Build an appendable (Gridstore) full-text index on disk, then open it
-    /// via the parent enum's [`ReadOnlyFullTextIndex::open_gridstore`] over
+    /// via the parent enum's [`ReadOnlyFullTextIndex::open_appendable`] over
     /// the write-enforced `ReadOnly<MmapFile>` backend. Verifies the
     /// dispatcher wraps into [`ReadOnlyFullTextIndex::Appendable`] and that
     /// the trait forwarders return the same hit set as the documents inserted.
     #[test]
-    fn parent_open_gridstore_round_trip() {
+    fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_fulltext_parent_gridstore").unwrap();
         let config = test_config();
         let hw_counter = HardwareCounterCell::new();
@@ -103,7 +103,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_gridstore(&fs, dir.path().to_path_buf(), config)
+            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
                 .unwrap()
                 .unwrap();
 

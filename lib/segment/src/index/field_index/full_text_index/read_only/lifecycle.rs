@@ -22,7 +22,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     /// doesn't exist.
     ///
     /// [1]: super::super::FullTextIndex::new_gridstore
-    pub fn open_gridstore(
+    pub fn open_appendable(
         fs: &S::Fs,
         dir: PathBuf,
         config: TextIndexParams,
@@ -31,7 +31,8 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     }
 
     /// Read-only mirror of [`FullTextIndex::new_mmap`][1]: open the immutable
-    /// (mmap-backed) full-text index read-only through [`MmapFullTextIndex::open`].
+    /// (mmap-format) full-text index read-only through [`MmapFullTextIndex::open`],
+    /// threading every file open through the filesystem handle `fs`.
     ///
     /// The writable enum splits the mmap path into two variants (`Immutable`
     /// for in-RAM with mmap backing, `Mmap` for on-disk lazy); the read-only
@@ -41,7 +42,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     /// the on-disk index doesn't exist.
     ///
     /// [1]: super::super::FullTextIndex::new_mmap
-    pub fn open_mmap(
+    pub fn open_immutable(
         fs: &S::Fs,
         path: PathBuf,
         config: TextIndexParams,

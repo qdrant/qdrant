@@ -16,7 +16,7 @@ mod read_ops;
 ///
 /// Constructed via [`Self::open`] (see [`lifecycle`]); the parent
 /// [`super::super::read_only::ReadOnlyFullTextIndex`] dispatches into this
-/// type through [`super::super::read_only::ReadOnlyFullTextIndex::open_gridstore`].
+/// type through [`super::super::read_only::ReadOnlyFullTextIndex::open_appendable`].
 pub struct ReadOnlyAppendableFullTextIndex<S: UniversalRead> {
     pub(super) inner: MutableFullTextIndexInner,
     /// Backing Gridstore reader, populated by [`Self::open`]. Held to keep the
