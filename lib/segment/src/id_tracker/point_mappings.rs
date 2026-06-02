@@ -606,16 +606,6 @@ impl PointMappings {
         &self.shadowed
     }
 
-    /// Number of active heads currently overridden by a deferred mutation.
-    /// Subtract from [`Self::available_point_count`] to recover a
-    /// one-slot-per-external-id count if a caller ever needs it.
-    #[expect(
-        dead_code,
-        reason = "wired for future use (e.g. dedup'd available_point_count) — no consumer yet"
-    )]
-    pub(crate) fn shadowed_count(&self) -> usize {
-        self.shadowed.count_ones()
-    }
 
     pub(crate) fn total_point_count(&self) -> usize {
         self.internal_to_external.len()
