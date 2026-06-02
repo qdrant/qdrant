@@ -14,15 +14,15 @@ use crate::common::operation_error::OperationResult;
 ///
 /// Loads the persisted flags into an in-memory roaring bitmap on open. No
 /// write path: there is no buffer, no [`BufferedDynamicFlags`][2], no
-/// [`DynamicStoredFlags`][3] — the storage backend is bound to
-/// [`UniversalRead`] only. Everything is in RAM after construction, so
-/// `populate` / `clear_cache` from [`RoaringFlagsRead`] use their default
-/// no-op behavior.
+/// [`DynamicStoredFlags`][3]. After construction nothing on the struct
+/// depends on the storage backend — `S` only appears on [`Self::open`],
+/// so consumers don't have to thread the backend type through the index
+/// stack just to hold an in-memory bitmap.
 ///
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::buffered_dynamic_flags::BufferedDynamicFlags
 /// [3]: super::dynamic_stored_flags::DynamicStoredFlags
-pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
+pub struct ReadOnlyRoaringFlags {
     /// In-memory bitmap of true flags, materialized from the backing file on open.
     bitmap: RoaringBitmap,
 
@@ -30,11 +30,9 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     len: usize,
 
     directory: PathBuf,
-
-    _marker: std::marker::PhantomData<S>,
 }
 
-impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
+impl ReadOnlyRoaringFlags {
     /// Open persisted flags read-only and materialize them into an in-memory
     /// roaring bitmap.
     ///
@@ -45,7 +43,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     /// writable path via [`StoredBitSlice::iter_ones`].
     ///
     /// [1]: super::roaring_flags::RoaringFlags::new
-    pub fn open(fs: &S::Fs, directory: &Path) -> OperationResult<Self> {
+    pub fn open<S: UniversalRead>(fs: &S::Fs, directory: &Path) -> OperationResult<Self> {
         // Logical length: read the status struct directly. `StoredStruct` is
         // write-bound, so go through the read-only `TypedStorage`.
         let status_path = status_file(directory);
@@ -87,12 +85,11 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             bitmap,
             len,
             directory: directory.to_path_buf(),
-            _marker: std::marker::PhantomData,
         })
     }
 }
 
-impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
+impl RoaringFlagsRead for ReadOnlyRoaringFlags {
     fn len(&self) -> usize {
         self.len
     }

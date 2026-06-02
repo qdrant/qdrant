@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use common::universal_io::UniversalRead;
-
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::index::payload_config::IndexMutability;
 
@@ -11,29 +9,33 @@ mod read_ops;
 /// Read-only counterpart of [`MutableBoolIndex`][1] / [`ImmutableBoolIndex`][2].
 ///
 /// All flags are loaded into in-memory roaring bitmaps on open. The backing
-/// storage is bound to [`UniversalRead`] only — no buffer, no flusher,
+/// storage is bound to [`UniversalRead`][3] only — no buffer, no flusher,
 /// no write path. Query logic (filter / cardinality / payload blocks /
 /// condition checker / faceting) is shared with the writable variants via
-/// [`BoolIndexRead`][3].
+/// [`BoolIndexRead`][4].
+///
+/// The backend type only appears on [`Self::open`]; once the bitmaps are in
+/// memory the struct is backend-agnostic.
 ///
 /// [1]: super::mutable_bool_index::MutableBoolIndex
 /// [2]: super::immutable_bool_index::ImmutableBoolIndex
-/// [3]: super::read_ops::BoolIndexRead
-pub struct ReadOnlyBoolIndex<S: UniversalRead> {
+/// [3]: common::universal_io::UniversalRead
+/// [4]: super::read_ops::BoolIndexRead
+pub struct ReadOnlyBoolIndex {
     #[allow(dead_code)]
     pub(super) _base_dir: PathBuf,
-    pub(super) storage: ReadOnlyStorage<S>,
+    pub(super) storage: ReadOnlyStorage,
     pub(super) indexed_count: usize,
 }
 
-pub(super) struct ReadOnlyStorage<S: UniversalRead> {
+pub(super) struct ReadOnlyStorage {
     /// Points which have at least one `true` value
-    pub(super) trues_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) trues_flags: ReadOnlyRoaringFlags,
     /// Points which have at least one `false` value
-    pub(super) falses_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) falses_flags: ReadOnlyRoaringFlags,
 }
 
-impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
+impl ReadOnlyBoolIndex {
     /// Reports the on-disk format's mutability, mirroring
     /// [`BoolIndex::get_mutability_type`][1].
     ///
@@ -123,8 +125,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index: ReadOnlyBoolIndex<ReadOnly<MmapFile>> =
-            ReadOnlyBoolIndex::open(&fs, dir.path()).unwrap();
+        let index = ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path()).unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();

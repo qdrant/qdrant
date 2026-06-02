@@ -1,7 +1,6 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 
 use super::super::read_ops::{self, BoolIndexRead};
 use super::ReadOnlyBoolIndex;
@@ -16,7 +15,7 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
+impl ReadOnlyBoolIndex {
     /// Produce a closure that maps a point id to its indexed bool
     /// values as JSON `Value`s. Used by `ReadOnlyFieldIndex::value_retriever`.
     pub fn value_retriever<'a>(
@@ -27,8 +26,8 @@ impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
     }
 }
 
-impl<S: UniversalRead> BoolIndexRead for ReadOnlyBoolIndex<S> {
-    type Flags = ReadOnlyRoaringFlags<S>;
+impl BoolIndexRead for ReadOnlyBoolIndex {
+    type Flags = ReadOnlyRoaringFlags;
 
     fn trues_flags(&self) -> &Self::Flags {
         &self.storage.trues_flags
@@ -47,7 +46,7 @@ impl<S: UniversalRead> BoolIndexRead for ReadOnlyBoolIndex<S> {
     }
 }
 
-impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyBoolIndex<S> {
+impl PayloadFieldIndexRead for ReadOnlyBoolIndex {
     fn count_indexed_points(&self) -> usize {
         self.indexed_count()
     }
@@ -89,7 +88,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyBoolIndex<S> {
 /// Faceting over the read-only bool index mirrors the `FacetIndex` impl for
 /// `BoolIndex`: every method delegates to a [`BoolIndexRead`] default, so the
 /// body is identical — only the `Self` type differs.
-impl<S: UniversalRead> FacetIndex for ReadOnlyBoolIndex<S> {
+impl FacetIndex for ReadOnlyBoolIndex {
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
