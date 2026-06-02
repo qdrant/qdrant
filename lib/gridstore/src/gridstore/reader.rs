@@ -171,11 +171,7 @@ where
 {
     let config_path = base_path.join(CONFIG_FILENAME);
     let config: StorageConfig =
-        read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(|err| {
-            GridstoreError::service_error(format!(
-                "Failed to read config from '{config_path:?}': {err}"
-            ))
-        })?;
+        read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
 
     let tracker = Tracker::<S>::open(fs, base_path, writeable)?;
 
