@@ -68,7 +68,7 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use super::super::mutable_bool_index::MutableBoolIndex;
+    use super::super::mutable_bool_index::{FALSES_DIRNAME, MutableBoolIndex, TRUES_DIRNAME};
     use super::ReadOnlyBoolIndex;
     use crate::index::field_index::{
         FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
@@ -124,7 +124,9 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path()).unwrap();
+        let index = ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path())
+            .unwrap()
+            .unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -147,5 +149,35 @@ mod tests {
         );
         // `indexed_count = |trues ∪ falses|`, derived from the two bitmaps on open.
         assert_eq!(index.count_indexed_points(), 9);
+    }
+
+    /// A partial on-disk layout — exactly one of the `trues` / `falses` flag
+    /// directories present — is corrupt storage: `open` surfaces an error in
+    /// either direction, rather than silently reporting a missing index.
+    #[test]
+    fn open_inconsistent_storage_errors() {
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        let build = || {
+            let dir = TempDir::with_prefix("read_only_bool_inconsistent").unwrap();
+            let hw_counter = HardwareCounterCell::new();
+            let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+            let value = json!(true);
+            builder.add_point(0, &[&value], &hw_counter).unwrap();
+            let index = builder.finalize().unwrap();
+            index.flusher()().unwrap();
+            dir
+        };
+
+        // `trues` present, `falses` removed.
+        let dir = build();
+        fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
+        assert!(ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path()).is_err());
+
+        // `falses` present, `trues` removed.
+        let dir = build();
+        fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
+        assert!(ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path()).is_err());
     }
 }
