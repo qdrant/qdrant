@@ -24,7 +24,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.tokenizer(),
             Self::Immutable(index) => index.tokenizer(),
-            Self::Mmap(index) => index.tokenizer(),
+            Self::OnDisk(index) => index.tokenizer(),
         }
     }
 
@@ -32,7 +32,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.telemetry_index_type(),
             Self::Immutable(index) => index.telemetry_index_type(),
-            Self::Mmap(index) => index.telemetry_index_type(),
+            Self::OnDisk(index) => index.telemetry_index_type(),
         }
     }
 
@@ -40,7 +40,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.points_count(),
             Self::Immutable(index) => index.points_count(),
-            Self::Mmap(index) => index.points_count(),
+            Self::OnDisk(index) => index.points_count(),
         }
     }
 
@@ -48,7 +48,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.values_count(point_id),
             Self::Immutable(index) => index.values_count(point_id),
-            Self::Mmap(index) => index.values_count(point_id),
+            Self::OnDisk(index) => index.values_count(point_id),
         }
     }
 
@@ -56,7 +56,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.values_is_empty(point_id),
             Self::Immutable(index) => index.values_is_empty(point_id),
-            Self::Mmap(index) => index.values_is_empty(point_id),
+            Self::OnDisk(index) => index.values_is_empty(point_id),
         }
     }
 
@@ -69,7 +69,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.for_each_token_id(iter, hw_counter, f),
             Self::Immutable(index) => index.for_each_token_id(iter, hw_counter, f),
-            Self::Mmap(index) => index.for_each_token_id(iter, hw_counter, f),
+            Self::OnDisk(index) => index.for_each_token_id(iter, hw_counter, f),
         }
     }
 
@@ -81,7 +81,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.filter_query(query, hw_counter),
             Self::Immutable(index) => index.filter_query(query, hw_counter),
-            Self::Mmap(index) => index.filter_query(query, hw_counter),
+            Self::OnDisk(index) => index.filter_query(query, hw_counter),
         }
     }
 
@@ -96,7 +96,7 @@ impl FullTextIndexRead for FullTextIndex {
             Self::Immutable(index) => {
                 index.estimate_query_cardinality(query, condition, hw_counter)
             }
-            Self::Mmap(index) => index.estimate_query_cardinality(query, condition, hw_counter),
+            Self::OnDisk(index) => index.estimate_query_cardinality(query, condition, hw_counter),
         }
     }
 
@@ -104,7 +104,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.check_match(query, point_id),
             Self::Immutable(index) => index.check_match(query, point_id),
-            Self::Mmap(index) => index.check_match(query, point_id),
+            Self::OnDisk(index) => index.check_match(query, point_id),
         }
     }
 
@@ -117,7 +117,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => index.for_each_payload_block_inner(threshold, key, f),
             Self::Immutable(index) => index.for_each_payload_block_inner(threshold, key, f),
-            Self::Mmap(index) => index.for_each_payload_block_inner(threshold, key, f),
+            Self::OnDisk(index) => index.for_each_payload_block_inner(threshold, key, f),
         }
     }
 
@@ -125,7 +125,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => FullTextIndexRead::get_storage_type(index),
             Self::Immutable(index) => FullTextIndexRead::get_storage_type(index),
-            Self::Mmap(index) => FullTextIndexRead::get_storage_type(index.as_ref()),
+            Self::OnDisk(index) => FullTextIndexRead::get_storage_type(index.as_ref()),
         }
     }
 
@@ -133,7 +133,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => FullTextIndexRead::ram_usage_bytes(index),
             Self::Immutable(index) => FullTextIndexRead::ram_usage_bytes(index),
-            Self::Mmap(index) => FullTextIndexRead::ram_usage_bytes(index.as_ref()),
+            Self::OnDisk(index) => FullTextIndexRead::ram_usage_bytes(index.as_ref()),
         }
     }
 
@@ -141,7 +141,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => FullTextIndexRead::is_on_disk(index),
             Self::Immutable(index) => FullTextIndexRead::is_on_disk(index),
-            Self::Mmap(index) => FullTextIndexRead::is_on_disk(index.as_ref()),
+            Self::OnDisk(index) => FullTextIndexRead::is_on_disk(index.as_ref()),
         }
     }
 }
