@@ -44,7 +44,7 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoMapIndex<S> {
                 },
                 // Same counter the writable `open_gridstore` load uses; this is
                 // a disposable counter, so the exact metric is unobservable.
-                hw_counter.ref_payload_index_io_write_counter(),
+                hw_counter.ref_payload_index_io_read_counter(),
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
