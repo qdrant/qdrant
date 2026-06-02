@@ -64,7 +64,7 @@ mod tests {
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
-    use super::super::mutable_null_index::MutableNullIndex;
+    use super::super::mutable_null_index::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME, MutableNullIndex};
     use super::super::read_ops::NullIndexRead;
     use super::ReadOnlyNullIndex;
     use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndexRead};
@@ -163,5 +163,34 @@ mod tests {
         assert!(index.values_is_null(0));
         assert!(index.values_is_null(1));
         assert!(!index.values_is_null(3));
+    }
+
+    /// A partial on-disk layout — exactly one of the `has_values` / `is_null`
+    /// flag directories present — is corrupt storage: `open` surfaces an error
+    /// in either direction, rather than silently reporting a missing index.
+    #[test]
+    fn open_inconsistent_storage_errors() {
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        let build = || {
+            let dir = TempDir::with_prefix("read_only_null_inconsistent").unwrap();
+            let hw_counter = HardwareCounterCell::new();
+            let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
+            let value = json!(true);
+            builder.add_point(0, &[&value], &hw_counter).unwrap();
+            builder.finalize().unwrap();
+            dir
+        };
+
+        // `has_values` present, `is_null` removed.
+        let dir = build();
+        fs_err::remove_dir_all(dir.path().join(IS_NULL_DIRNAME)).unwrap();
+        assert!(ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), 1).is_err());
+
+        // `is_null` present, `has_values` removed.
+        let dir = build();
+        fs_err::remove_dir_all(dir.path().join(HAS_VALUES_DIRNAME)).unwrap();
+        assert!(ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), 1).is_err());
     }
 }
