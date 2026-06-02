@@ -4,7 +4,8 @@ use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs, UniversalWrite,
+    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+    UniversalWrite,
 };
 use smallvec::SmallVec;
 
@@ -288,7 +289,17 @@ impl<S: UniversalRead> Tracker<S> {
     }
 
     fn open_storage(fs: &S::Fs, path: &Path, writeable: bool) -> Result<S> {
-        let storage = fs.open(path, tracker_open_options(writeable), Default::default())?;
+        let storage = match fs.open(path, tracker_open_options(writeable), Default::default()) {
+            Err(UniversalIoError::NotFound { .. }) => {
+                // If config exists and storage doesn't,
+                // it should be treated as inconsistent storage rather than a missing one
+                return Err(GridstoreError::service_error(format!(
+                    "Tracker file does not exist: {}",
+                    path.display()
+                )));
+            }
+            other => other?,
+        };
         Ok(storage)
     }
 
