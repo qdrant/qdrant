@@ -54,16 +54,6 @@ impl ImmutableFullTextIndex {
         self.storage.wipe()
     }
 
-    /// Surrender the backing mmap and drop the derived in-RAM inverted
-    /// index.
-    ///
-    /// Inverse of [`Self::open_mmap`]: lets callers swap the wrapper back
-    /// into [`super::super::FullTextIndex::Mmap`] without touching the
-    /// persisted files.
-    pub fn into_inner_mmap(self) -> MmapFullTextIndex<MmapFile> {
-        *self.storage
-    }
-
     pub fn flusher(&self) -> Flusher {
         self.storage.flusher()
     }

@@ -51,18 +51,6 @@ impl BoolIndex {
         }
     }
 
-    /// Schema-only swap when the `on_disk` flag changes.
-    ///
-    /// The bool index does not honor `on_disk` at the storage layer:
-    /// [`BoolIndexRead::is_on_disk`] is hard-coded `false` and the builder
-    /// takes no `is_on_disk` argument, so flipping the flag yields a
-    /// bit-identical index. The swap is a pure no-op here — it only spares
-    /// the caller a wasteful drop-and-rebuild; persisting the new schema is
-    /// the caller's responsibility.
-    pub fn swap_on_disk(&mut self, _new_on_disk: bool) -> OperationResult<bool> {
-        Ok(true)
-    }
-
     /// Produce a closure that maps a point id to its indexed bool
     /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
     pub fn value_retriever<'a>(

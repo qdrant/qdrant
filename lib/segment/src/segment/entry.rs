@@ -24,7 +24,6 @@ use crate::entry::entry_point::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
 };
 use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
-use crate::index::field_index::schema_transition::{SchemaTransition, classify};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
@@ -576,39 +575,6 @@ impl NonAppendableSegmentEntry for Segment {
             }
 
             Ok(true)
-        })
-    }
-
-    fn try_swap_field_index(
-        &mut self,
-        op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
-        field_schema: &PayloadFieldSchema,
-    ) -> OperationResult<bool> {
-        self.handle_segment_version_and_failure(op_num, |segment| {
-            let mut payload_index = segment.payload_index.borrow_mut();
-
-            let transition = match payload_index.config().indices.get(key) {
-                Some(prev) => classify(&prev.schema, field_schema),
-                None => return Ok(false),
-            };
-
-            match transition {
-                // Not a swap case — leave it to the legacy drop+rebuild
-                // path (which handles Identical via `AlreadyExists` and
-                // Incompatible via the normal flow).
-                SchemaTransition::Identical | SchemaTransition::Incompatible => Ok(false),
-                SchemaTransition::OnlyOnDiskFlipped { new_on_disk } => {
-                    let swapped = payload_index.try_swap_on_disk(key, new_on_disk, field_schema)?;
-                    if swapped {
-                        drop(payload_index);
-                        segment
-                            .version_tracker
-                            .set_payload_index_schema(key, Some(op_num));
-                    }
-                    Ok(swapped)
-                }
-            }
         })
     }
 

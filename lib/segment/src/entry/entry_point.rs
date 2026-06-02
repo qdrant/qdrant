@@ -331,26 +331,6 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<bool>;
 
-    /// Attempt an in-place fast path for `create_field_index` when the new
-    /// schema differs from the previously persisted one only in `on_disk`.
-    ///
-    /// Returns `Ok(true)` when the swap (or a config-only update on an
-    /// appendable Gridstore segment) succeeded and the caller should skip
-    /// the legacy drop-and-rebuild path. Returns `Ok(false)` when the
-    /// transition is not eligible for swap (no prior schema, Identical,
-    /// Incompatible, or any sibling `FieldIndex` variant doesn't support
-    /// in-place swap yet) — callers must fall through to the legacy path.
-    ///
-    /// Default impl is a no-op (`Ok(false)`); `Segment` overrides it.
-    fn try_swap_field_index(
-        &mut self,
-        _op_num: SeqNumberType,
-        _key: PayloadKeyTypeRef,
-        _field_schema: &PayloadFieldSchema,
-    ) -> OperationResult<bool> {
-        Ok(false)
-    }
-
     /// Create index for a payload field, if not exists
     fn create_field_index(
         &mut self,
@@ -366,12 +346,6 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
                 field_name: key.clone(),
             });
         };
-
-        // Fast path: in-place swap when only `on_disk` flipped. Skips
-        // delete+build+apply when applicable.
-        if self.try_swap_field_index(op_num, key, field_schema)? {
-            return Ok(true);
-        }
 
         self.delete_field_index_if_incompatible(op_num, key, field_schema)?;
 

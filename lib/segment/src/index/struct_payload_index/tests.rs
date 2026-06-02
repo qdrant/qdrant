@@ -91,3 +91,120 @@ fn test_load_payload_index() {
     let schema = payload_config.indices.get(&key).unwrap();
     assert!(check_index_types(&schema.types));
 }
+
+#[test]
+fn drop_index_if_incompatible_keeps_index_on_on_disk_only_change() {
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::create_struct_payload_index;
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::PayloadIndex;
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let mut index = create_struct_payload_index(dir.path(), 100, 42);
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+
+    // The fixture indexed INT_KEY as `FieldType(Integer)` (on_disk = false).
+    // Flip only `on_disk` to true; every other param stays at its default.
+    let on_disk_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(
+        IntegerIndexParams {
+            on_disk: Some(true),
+            ..Default::default()
+        },
+    ));
+
+    let dropped = index
+        .drop_index_if_incompatible(&field, &on_disk_schema)
+        .unwrap();
+
+    assert!(
+        !dropped,
+        "an on_disk-only change must be treated as compatible, not dropped",
+    );
+    assert!(
+        index.field_indexes.contains_key(&field),
+        "the index must remain present after an on_disk-only change",
+    );
+}
+
+#[test]
+fn build_index_reloads_in_new_mode_on_on_disk_change() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use atomic_refcell::AtomicRefCell;
+
+    use super::StructPayloadIndex;
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::{
+        create_id_tracker_fixture, create_payload_storage_fixture,
+    };
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::field_index::PayloadFieldIndexRead;
+    use crate::index::{BuildIndexResult, PayloadIndex};
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let payload_storage = Arc::new(AtomicRefCell::new(
+        create_payload_storage_fixture(100, 42).into(),
+    ));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(100)));
+
+    // Non-appendable: indexes are mmap-backed, so `on_disk` is meaningful.
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        HashMap::new(),
+        dir.path(),
+        false,
+        true,
+    )
+    .unwrap();
+
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    index
+        .set_indexed(&field, PayloadSchemaType::Integer, &hw_counter)
+        .unwrap();
+
+    // Indexed-point count of the freshly built (on_disk = false) index.
+    let before_count: usize = index
+        .field_indexes
+        .get(&field)
+        .unwrap()
+        .iter()
+        .map(|i| i.count_indexed_points())
+        .sum();
+    assert!(before_count > 0, "fixture should index some integer points");
+
+    // Same integer index, but with on_disk flipped to true.
+    let on_disk_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(
+        IntegerIndexParams {
+            on_disk: Some(true),
+            ..Default::default()
+        },
+    ));
+
+    match index
+        .build_index(&field, &on_disk_schema, &hw_counter)
+        .unwrap()
+    {
+        BuildIndexResult::Built(indexes) => {
+            assert!(
+                indexes.iter().any(|i| i.is_on_disk()),
+                "an on_disk-only change must reload the existing index in on-disk mode",
+            );
+            let after_count: usize = indexes.iter().map(|i| i.count_indexed_points()).sum();
+            assert_eq!(
+                after_count, before_count,
+                "reloading in the new mode must preserve the indexed points",
+            );
+        }
+        BuildIndexResult::AlreadyBuilt => {
+            panic!("expected Built (reloaded from files), got AlreadyBuilt")
+        }
+        BuildIndexResult::IncompatibleSchema => {
+            panic!("expected Built (reloaded from files), got IncompatibleSchema")
+        }
+    }
+}

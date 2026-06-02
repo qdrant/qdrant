@@ -245,17 +245,6 @@ where
         }
     }
 
-    /// Surrender the backing mmap and drop the derived in-RAM structures.
-    ///
-    /// Inverse of [`Self::open_mmap`]: lets callers swap the wrapper back
-    /// into [`super::super::MapIndex::Mmap`] without touching the
-    /// persisted files.
-    pub(in super::super) fn into_inner_mmap(self) -> UniversalMapIndex<N> {
-        match self.storage {
-            Storage::Mmap(index) => *index,
-        }
-    }
-
     /// Clear cache
     ///
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of

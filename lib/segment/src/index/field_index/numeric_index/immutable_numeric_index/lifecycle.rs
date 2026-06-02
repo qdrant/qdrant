@@ -60,15 +60,6 @@ where
         self.storage.wipe()
     }
 
-    /// Surrender the backing mmap and drop the derived in-RAM structures.
-    ///
-    /// Inverse of [`Self::open_mmap`]: lets callers swap the wrapper back
-    /// into [`super::super::storage::NumericIndexInner::Mmap`] without
-    /// touching the persisted files.
-    pub(in super::super) fn into_inner_mmap(self) -> UniversalNumericIndex<T> {
-        *self.storage
-    }
-
     /// Clear cache
     ///
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
