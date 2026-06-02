@@ -1077,7 +1077,6 @@ unsafe extern "C" {
     ) -> u32;
 }
 
-#[allow(missing_docs)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512vl")]
 #[target_feature(enable = "avx512vpopcntdq")]

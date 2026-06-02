@@ -187,7 +187,6 @@ where
                 deleted_value_to_points_container.resize(pos + 1, false);
             }
 
-            #[allow(unused_variables)]
             let did_exist = !deleted_value_to_points_container.replace(pos, true);
             debug_assert!(did_exist, "value {value} was already deleted");
         }

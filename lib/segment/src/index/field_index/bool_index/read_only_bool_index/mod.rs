@@ -22,7 +22,6 @@ mod read_ops;
 /// [3]: common::universal_io::UniversalRead
 /// [4]: super::read_ops::BoolIndexRead
 pub struct ReadOnlyBoolIndex {
-    #[allow(dead_code)]
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage,
     pub(super) indexed_count: usize,

@@ -3,7 +3,6 @@ mod config;
 mod read;
 mod write;
 
-#[allow(unused_imports)]
 pub use read::ChunkedVectorsRead;
 pub use write::ChunkedVectors;
 

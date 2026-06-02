@@ -75,7 +75,6 @@ impl Segment {
     /// # Warning
     ///
     /// Available for appendable segments only.
-    #[allow(clippy::needless_pass_by_ref_mut)] // ensure single access to AtomicRefCell vector_index
     pub(super) fn update_vectors(
         &mut self,
         internal_id: PointOffsetType,

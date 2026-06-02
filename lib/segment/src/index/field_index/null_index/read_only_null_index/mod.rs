@@ -21,7 +21,6 @@ mod read_ops;
 /// [3]: common::universal_io::UniversalRead
 /// [4]: super::read_ops::NullIndexRead
 pub struct ReadOnlyNullIndex {
-    #[allow(dead_code)]
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage,
     pub(super) total_point_count: usize,
