@@ -14,7 +14,9 @@ use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
 };
-use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer};
+use crate::types::{
+    AnyVariants, Condition, FieldCondition, Match, MatchExcept, OwnedPayloadRef, PayloadContainer,
+};
 use crate::vector_storage::VectorStorageRead;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
@@ -33,15 +35,55 @@ where
         let id_tracker = self.id_tracker;
         let field_indexes = self.field_indexes;
         match condition {
-            Condition::Field(field_condition) => field_indexes
-                .get(&field_condition.key)
-                .and_then(|indexes| {
+            Condition::Field(field_condition) => {
+                let indexed_checker = field_indexes.get(&field_condition.key).and_then(|indexes| {
                     indexes.iter().find_map(move |index| {
                         let hw_acc = hw_counter.new_accumulator();
                         index.condition_checker(field_condition, hw_acc)
                     })
-                })
-                .unwrap_or_else(|| {
+                });
+
+                if let Some(indexed_checker) = indexed_checker {
+                    if is_match_except_strings(field_condition) {
+                        let has_values_condition =
+                            FieldCondition::new_is_empty(field_condition.key.clone(), false);
+                        let has_values_checker =
+                            field_indexes.get(&field_condition.key).and_then(|indexes| {
+                                indexes.iter().find_map(|index| {
+                                    let hw_acc = hw_counter.new_accumulator();
+                                    index.condition_checker(&has_values_condition, hw_acc)
+                                })
+                            });
+
+                        let hw = hw_counter.fork();
+                        Box::new(move |point_id| {
+                            if indexed_checker(point_id) {
+                                return true;
+                            }
+                            if has_values_checker
+                                .as_ref()
+                                .is_some_and(|has_values| !has_values(point_id))
+                            {
+                                return false;
+                            }
+                            payload_provider.with_payload(
+                                point_id,
+                                |payload| {
+                                    check_field_condition(
+                                        field_condition,
+                                        &payload,
+                                        field_indexes,
+                                        &hw,
+                                    )
+                                    .unwrap(/* TODO(uio): handle errors */)
+                                },
+                                &hw,
+                            )
+                        })
+                    } else {
+                        indexed_checker
+                    }
+                } else {
                     let hw = hw_counter.fork();
                     Box::new(move |point_id| {
                         payload_provider.with_payload(
@@ -53,7 +95,8 @@ where
                             &hw,
                         )
                     })
-                }),
+                }
+            }
             // is_empty / is_null are served by NullIndex via
             // `condition_checker`. NullIndex is built alongside every
             // index from #6088 (released in v1.13.5) onwards, so the
@@ -196,4 +239,13 @@ where
             Condition::Filter(_) => unreachable!(),
         }
     }
+}
+
+fn is_match_except_strings(condition: &FieldCondition) -> bool {
+    matches!(
+        &condition.r#match,
+        Some(Match::Except(MatchExcept {
+            except: AnyVariants::Strings(_)
+        }))
+    )
 }

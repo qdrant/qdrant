@@ -289,21 +289,26 @@ fn condition_checker_impl<'a, T: MapIndexRead<str> + 'a>(
                 }))
             }
         }
-        // When a keyword index exists for this field, points with non-string
-        // payload values (e.g. bool, number) have no entries in the index.
-        // `check_values_any` returns false for such points, but `except`
-        // semantics require returning true: a non-string value is never equal
-        // to any string in the except list.  We can't distinguish "no keyword
-        // values because the payload is a bool" from "no payload at all" using
-        // only the keyword index, so fall back to the payload condition checker
-        // which correctly handles all value types.
         Match::Except(MatchExcept {
-            except: AnyVariants::Strings(_),
-        })
+            except: AnyVariants::Strings(list),
+        }) => {
+            let list = list.clone();
+            if list.len() < INDEXSET_ITER_THRESHOLD {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index.check_values_any(point_id, &hw_counter, |value| {
+                        !list.iter().any(|s| s.as_str() == value)
+                    })
+                }))
+            } else {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
+                }))
+            }
+        }
         // Conditions this index can't serve: Match::Text/TextAny/Phrase
         // (handled by FullTextIndex) and value-type mismatches (e.g.
         // Match::Value(Integer) against a string-keyed map).
-        | Match::Value(MatchValue {
+        Match::Value(MatchValue {
             value: ValueVariants::Integer(_) | ValueVariants::Bool(_),
         })
         | Match::Any(MatchAny {

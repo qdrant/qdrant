@@ -12,7 +12,10 @@ use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
-use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition};
+use crate::types::{
+    AnyVariants, Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Match,
+    MatchExcept,
+};
 use crate::vector_storage::VectorStorageRead;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
@@ -37,11 +40,16 @@ where
             key: full_path,
             ..condition.clone()
         };
+        let primary_condition = if is_match_except_strings(&full_path_condition) {
+            FieldCondition::new_is_empty(full_path_condition.key.clone(), false)
+        } else {
+            full_path_condition
+        };
         indexes
             .iter()
             .find_map(|index| {
                 index
-                    .estimate_cardinality(&full_path_condition, hw_counter)
+                    .estimate_cardinality(&primary_condition, hw_counter)
                     .transpose()
             })
             .transpose()
@@ -152,4 +160,13 @@ where
             }
         })
     }
+}
+
+fn is_match_except_strings(condition: &FieldCondition) -> bool {
+    matches!(
+        &condition.r#match,
+        Some(Match::Except(MatchExcept {
+            except: AnyVariants::Strings(_)
+        }))
+    )
 }
