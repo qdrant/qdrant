@@ -11,6 +11,7 @@ use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 
 mod lifecycle;
 mod read_ops;
+mod live_reload;
 
 pub(super) const DELETED_PATH: &str = "deleted.bin";
 pub(super) const HASHMAP_PATH: &str = "values_to_points.bin";
