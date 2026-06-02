@@ -102,24 +102,24 @@ impl PointMappings {
         // Shadowed bits: any active id whose external also has a deferred
         // head. Impossible from a fresh load (each ext was in a single map),
         // but compute it so mutations land on a consistent starting state.
-        // Out-of-bounds bits are treated as `false` by readers, so the
-        // BitVec only needs to span up to the highest shadowed active id.
-        // Collect the shadowed active ids first so we can size the BitVec
-        // once (to the highest offset) instead of reallocating while growing.
-        let shadowed_active_ids = external_to_internal_num_deferred
-            .keys()
-            .filter_map(|k| external_to_internal_num.get(k).copied())
-            .chain(
-                external_to_internal_uuid_deferred
-                    .keys()
-                    .filter_map(|k| external_to_internal_uuid.get(k).copied()),
-            )
-            .collect::<Vec<_>>();
+        // Grown lazily — out-of-bounds bits are treated as `false` by
+        // readers, so the empty default is a valid no-shadow state.
         let mut shadowed = BitVec::new();
-        if let Some(&max_active_id) = shadowed_active_ids.iter().max() {
-            shadowed.resize(max_active_id as usize + 1, false);
-            for active_id in shadowed_active_ids {
-                shadowed.set(active_id as usize, true);
+        let mut mark_shadow = |active_id: PointOffsetType| {
+            let active_id = active_id as usize;
+            if active_id >= shadowed.len() {
+                shadowed.resize(active_id + 1, false);
+            }
+            shadowed.set(active_id, true);
+        };
+        for k in external_to_internal_num_deferred.keys() {
+            if let Some(active_id) = external_to_internal_num.get(k) {
+                mark_shadow(*active_id);
+            }
+        }
+        for k in external_to_internal_uuid_deferred.keys() {
+            if let Some(active_id) = external_to_internal_uuid.get(k) {
+                mark_shadow(*active_id);
             }
         }
 
