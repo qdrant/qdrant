@@ -96,7 +96,9 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), total).unwrap();
+        let index = ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), total)
+            .unwrap()
+            .unwrap();
 
         let key = JsonPath::new("test");
         let is_null = FieldCondition::new_is_null(key.clone(), true);

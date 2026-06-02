@@ -125,7 +125,9 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path()).unwrap();
+        let index = ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path())
+            .unwrap()
+            .unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();

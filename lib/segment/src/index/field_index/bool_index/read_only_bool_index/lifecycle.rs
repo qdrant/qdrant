@@ -19,22 +19,33 @@ impl ReadOnlyBoolIndex {
     /// (`|trues ∪ falses|`) is derived from the two bitmaps, so `open` takes
     /// only `fs` and the directory.
     ///
+    /// Returns [`Ok(None)`] when the on-disk flag directories don't exist,
+    /// matching the writable counterpart's missing-index handling — the read
+    /// path never creates.
+    ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
-    pub fn open<S: UniversalRead>(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
-        let trues_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(TRUES_DIRNAME))?;
-        let falses_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(FALSES_DIRNAME))?;
+    pub fn open<S: UniversalRead>(fs: &S::Fs, path: &Path) -> OperationResult<Option<Self>> {
+        let Some(trues_flags) = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(TRUES_DIRNAME))?
+        else {
+            // Files don't exist, cannot load
+            return Ok(None);
+        };
+        let Some(falses_flags) = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(FALSES_DIRNAME))?
+        else {
+            return Ok(None);
+        };
 
         let indexed_count = trues_flags
             .get_bitmap()
             .union_len(falses_flags.get_bitmap()) as usize;
 
-        Ok(Self {
+        Ok(Some(Self {
             _base_dir: path.to_path_buf(),
             storage: ReadOnlyStorage {
                 trues_flags,
                 falses_flags,
             },
             indexed_count,
-        })
+        }))
     }
 }

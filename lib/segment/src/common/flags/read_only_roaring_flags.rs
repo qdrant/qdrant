@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, TypedStorage, UniversalRead};
+use common::universal_io::{OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead};
 use roaring::RoaringBitmap;
 
 use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
@@ -42,12 +42,16 @@ impl ReadOnlyRoaringFlags {
     /// past it), and the set positions from the flags file — shared with the
     /// writable path via [`StoredBitSlice::iter_ones`].
     ///
+    /// Returns [`Ok(None)`] when the flag directory doesn't exist (the status
+    /// file is absent), matching the read path's never-create contract.
+    ///
     /// [1]: super::roaring_flags::RoaringFlags::new
-    pub fn open<S: UniversalRead>(fs: &S::Fs, directory: &Path) -> OperationResult<Self> {
+    pub fn open<S: UniversalRead>(fs: &S::Fs, directory: &Path) -> OperationResult<Option<Self>> {
         // Logical length: read the status struct directly. `StoredStruct` is
-        // write-bound, so go through the read-only `TypedStorage`.
+        // write-bound, so go through the read-only `TypedStorage`. A missing
+        // status file means the index isn't present, so map not-found to `None`.
         let status_path = status_file(directory);
-        let status = TypedStorage::<S, DynamicFlagsStatus>::open(
+        let Some(status) = TypedStorage::<S, DynamicFlagsStatus>::open(
             fs,
             &status_path,
             OpenOptions {
@@ -57,7 +61,11 @@ impl ReadOnlyRoaringFlags {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )
+        .ok_not_found()?
+        else {
+            return Ok(None);
+        };
         let len = status.read_whole()?[0].len();
 
         // Set positions: open the flags file and build the bitmap. The
@@ -81,11 +89,11 @@ impl ReadOnlyRoaringFlags {
         )
         .expect("iter_ones iterates in sorted order");
 
-        Ok(Self {
+        Ok(Some(Self {
             bitmap,
             len,
             directory: directory.to_path_buf(),
-        })
+        }))
     }
 }
 

@@ -126,7 +126,9 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyGeoMapIndex<ReadOnly<MmapFile>> =
-            ReadOnlyGeoMapIndex::open_gridstore(&fs, dir.path().to_path_buf()).unwrap();
+            ReadOnlyGeoMapIndex::open_gridstore(&fs, dir.path().to_path_buf())
+                .unwrap()
+                .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyGeoMapIndex::Appendable(_)));

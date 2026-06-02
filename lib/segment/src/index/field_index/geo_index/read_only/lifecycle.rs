@@ -18,10 +18,8 @@ impl<S: UniversalRead> ReadOnlyGeoMapIndex<S> {
     /// uniformly. No `create_if_missing`: the read path never creates.
     ///
     /// [1]: super::super::GeoMapIndex::new_gridstore
-    pub fn open_gridstore(fs: &S::Fs, dir: PathBuf) -> OperationResult<Self> {
-        Ok(Self::Appendable(ReadOnlyAppendableGeoMapIndex::open(
-            fs, dir,
-        )?))
+    pub fn open_gridstore(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+        Ok(ReadOnlyAppendableGeoMapIndex::open(fs, dir)?.map(Self::Appendable))
     }
 
     /// Read-only mirror of [`GeoMapIndex::new_mmap`][1]: open the immutable

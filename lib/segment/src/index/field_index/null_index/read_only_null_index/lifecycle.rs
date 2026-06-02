@@ -18,22 +18,35 @@ impl ReadOnlyNullIndex {
     /// writable [`MutableNullIndex::open`][1] receives; it is not derivable from
     /// the index files alone.
     ///
+    /// Returns [`Ok(None)`] when the on-disk flag directories don't exist,
+    /// matching the writable counterpart's missing-index handling — the read
+    /// path never creates.
+    ///
     /// [1]: super::super::mutable_null_index::MutableNullIndex::open
     pub fn open<S: UniversalRead>(
         fs: &S::Fs,
         path: &Path,
         total_point_count: usize,
-    ) -> OperationResult<Self> {
-        let has_values_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(HAS_VALUES_DIRNAME))?;
-        let is_null_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(IS_NULL_DIRNAME))?;
+    ) -> OperationResult<Option<Self>> {
+        let Some(has_values_flags) =
+            ReadOnlyRoaringFlags::open::<S>(fs, &path.join(HAS_VALUES_DIRNAME))?
+        else {
+            // Files don't exist, cannot load
+            return Ok(None);
+        };
+        let Some(is_null_flags) =
+            ReadOnlyRoaringFlags::open::<S>(fs, &path.join(IS_NULL_DIRNAME))?
+        else {
+            return Ok(None);
+        };
 
-        Ok(Self {
+        Ok(Some(Self {
             _base_dir: path.to_path_buf(),
             storage: ReadOnlyStorage {
                 has_values_flags,
                 is_null_flags,
             },
             total_point_count,
-        })
+        }))
     }
 }
