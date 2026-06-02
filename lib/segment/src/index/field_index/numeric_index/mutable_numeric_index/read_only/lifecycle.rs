@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::UniversalRead;
+use common::universal_io::{OkNotFound, UniversalRead};
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::InMemoryNumericIndex;
@@ -25,13 +25,16 @@ where
     /// writable `Gridstore`. No write path; the reader is retained for
     /// `files` / `clear_cache`.
     ///
+    /// Returns [`Ok(None)`] when the on-disk directory doesn't exist, matching
+    /// the `create_if_missing == false` branch of the writable counterpart —
+    /// the read path never creates.
+    ///
     /// [1]: super::super::MutableNumericIndex::open_gridstore
-    pub fn open(fs: &S::Fs, path: PathBuf) -> OperationResult<Self> {
-        let storage = GridstoreReader::<Vec<T>, S>::open(fs, path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to open read-only appendable numeric index on gridstore: {err}"
-            ))
-        })?;
+    pub fn open(fs: &S::Fs, path: PathBuf) -> OperationResult<Option<Self>> {
+        let Some(storage) = GridstoreReader::<Vec<T>, S>::open(fs, path).ok_not_found()? else {
+            // Files don't exist, cannot load
+            return Ok(None);
+        };
 
         let mut in_memory_index = InMemoryNumericIndex::default();
         let hw_counter = HardwareCounterCell::disposable();
@@ -50,9 +53,9 @@ where
                 ))
             })?;
 
-        Ok(Self {
+        Ok(Some(Self {
             in_memory_index,
             storage,
-        })
+        }))
     }
 }

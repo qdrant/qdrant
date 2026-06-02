@@ -23,11 +23,13 @@ where
     /// the typed payload-value phantom `P`.
     ///
     /// [1]: super::super::NumericIndex::new_gridstore
-    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Self> {
-        Ok(Self {
-            inner: ReadOnlyNumericIndexInner::open_appendable(fs, dir)?,
-            _phantom: PhantomData,
-        })
+    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+        Ok(
+            ReadOnlyNumericIndexInner::open_appendable(fs, dir)?.map(|inner| Self {
+                inner,
+                _phantom: PhantomData,
+            }),
+        )
     }
 
     /// Read-only mirror of [`NumericIndex::new_mmap`][1]: forwards to

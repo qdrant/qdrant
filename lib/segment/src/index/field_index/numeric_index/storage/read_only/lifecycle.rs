@@ -27,10 +27,8 @@ where
     /// uniformly. No `create_if_missing`: the read path never creates.
     ///
     /// [1]: super::super::NumericIndexInner::new_gridstore
-    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Self> {
-        Ok(Self::Appendable(ReadOnlyAppendableNumericIndex::open(
-            fs, dir,
-        )?))
+    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+        Ok(ReadOnlyAppendableNumericIndex::open(fs, dir)?.map(Self::Appendable))
     }
 
     /// Read-only mirror of [`NumericIndexInner::new_mmap`][1]: open the
