@@ -7,7 +7,7 @@ use super::{ReadOnlyNullIndex, ReadOnlyStorage};
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::operation_error::OperationResult;
 
-impl<S: UniversalRead> ReadOnlyNullIndex<S> {
+impl ReadOnlyNullIndex {
     /// Open a read-only null index at `path`, threading every file open through
     /// the filesystem handle `fs`.
     ///
@@ -19,9 +19,13 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
     /// the index files alone.
     ///
     /// [1]: super::super::mutable_null_index::MutableNullIndex::open
-    pub fn open(fs: &S::Fs, path: &Path, total_point_count: usize) -> OperationResult<Self> {
-        let has_values_flags = ReadOnlyRoaringFlags::open(fs, &path.join(HAS_VALUES_DIRNAME))?;
-        let is_null_flags = ReadOnlyRoaringFlags::open(fs, &path.join(IS_NULL_DIRNAME))?;
+    pub fn open<S: UniversalRead>(
+        fs: &S::Fs,
+        path: &Path,
+        total_point_count: usize,
+    ) -> OperationResult<Self> {
+        let has_values_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(HAS_VALUES_DIRNAME))?;
+        let is_null_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(IS_NULL_DIRNAME))?;
 
         Ok(Self {
             _base_dir: path.to_path_buf(),

@@ -24,8 +24,8 @@ pub enum ReadOnlyFieldIndex<S: UniversalRead> {
     FloatIndex(ReadOnlyNumericIndex<FloatPayloadType, FloatPayloadType, S>),
     GeoIndex(ReadOnlyGeoMapIndex<S>),
     FullTextIndex(ReadOnlyFullTextIndex<S>),
-    BoolIndex(ReadOnlyBoolIndex<S>),
+    BoolIndex(ReadOnlyBoolIndex),
     UuidIndex(ReadOnlyNumericIndex<UuidIntType, UuidPayloadType, S>),
     UuidMapIndex(ReadOnlyMapIndex<UuidIntType, S>),
-    NullIndex(ReadOnlyNullIndex<S>),
+    NullIndex(ReadOnlyNullIndex),
 }
