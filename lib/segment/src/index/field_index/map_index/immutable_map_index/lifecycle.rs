@@ -12,24 +12,16 @@ use super::super::read_ops::MapIndexRead;
 use super::super::universal_map_index::UniversalMapIndex;
 use super::{ContainerSegment, ImmutableMapIndex, Storage};
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
 impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    /// Open and load immutable map index from mmap storage
+    /// Open and load the immutable map index from mmap storage.
     pub(in super::super) fn open_mmap(index: UniversalMapIndex<N>) -> OperationResult<Self> {
-        Self::try_open_mmap(Box::new(index)).map_err(|(_, err)| err)
-    }
-
-    /// Like [`Self::open_mmap`] but returns the (unconsumed) mmap alongside
-    /// the error on failure, so an in-place swap can restore it instead of
-    /// aborting.
-    pub(in super::super) fn try_open_mmap(
-        index: Box<UniversalMapIndex<N>>,
-    ) -> Result<Self, (Box<UniversalMapIndex<N>>, OperationError)> {
+        let index = Box::new(index);
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 
         let mut indexed_points = 0;
@@ -74,7 +66,7 @@ where
             Ok(())
         });
         if let Err(err) = scan {
-            return Err((index, err));
+            return Err(err);
         }
         let point_to_values = ImmutablePointToValues::new(point_to_values);
         value_to_points.shrink_to_fit();

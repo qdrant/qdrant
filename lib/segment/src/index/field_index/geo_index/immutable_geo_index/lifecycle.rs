@@ -16,26 +16,18 @@ use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
 impl ImmutableGeoMapIndex {
-    /// Open and load immutable geo index from mmap storage
+    /// Open and load the immutable geo index from mmap storage.
     pub fn open_mmap(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
-        Self::try_open_mmap(Box::new(index)).map_err(|(_, err)| err)
-    }
-
-    /// Like [`Self::open_mmap`] but returns the (unconsumed) mmap alongside
-    /// the error on failure, so an in-place swap can restore it instead of
-    /// aborting.
-    pub fn try_open_mmap(
-        index: Box<StoredGeoMapIndex<MmapFile>>,
-    ) -> Result<Self, (Box<StoredGeoMapIndex<MmapFile>>, OperationError)> {
+        let index = Box::new(index);
         let counts_per_hash = match index.storage.counts_per_hash.read_whole() {
             Ok(raw) => raw.iter().copied().map(Counts::from).collect(),
-            Err(err) => return Err((index, err.into())),
+            Err(err) => return Err(err.into()),
         };
 
         // Build flat parallel arrays from on-disk points_map + points_map_ids
         let points_map_entries = match index.storage.points_map.read_whole() {
             Ok(entries) => entries,
-            Err(err) => return Err((index, err.into())),
+            Err(err) => return Err(err.into()),
         };
         let num_entries = points_map_entries.len();
         let mut points_map_hashes = Vec::with_capacity(num_entries);
@@ -67,7 +59,7 @@ impl ImmutableGeoMapIndex {
             },
         );
         if let Err(err) = scan {
-            return Err((index, err.into()));
+            return Err(err.into());
         }
         points_map_offsets.push(points_map_ids.len() as u32);
         drop(points_map_entries);
@@ -105,7 +97,7 @@ impl ImmutableGeoMapIndex {
             .collect();
         let point_to_values = match collected {
             Ok(values) => ImmutablePointToValues::new(values),
-            Err(err) => return Err((index, err)),
+            Err(err) => return Err(err),
         };
 
         // Index is now loaded into memory, clear cache of backing mmap storage
@@ -138,9 +130,7 @@ impl ImmutableGeoMapIndex {
             for geo_point in removed_geo_points {
                 match encode_max_precision(geo_point.lon.0, geo_point.lat.0) {
                     Ok(hash) => removed_geo_hashes.push(hash),
-                    // Derived structures only; the mmap files are intact.
-                    // Hand the backing mmap back so the swap can restore it.
-                    Err(err) => return Err((index.storage, err.into())),
+                    Err(err) => return Err(err.into()),
                 }
             }
             for &removed_geo_hash in &removed_geo_hashes {

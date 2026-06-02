@@ -11,20 +11,12 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 impl ImmutableFullTextIndex {
-    /// Open and load immutable full text index from mmap storage
+    /// Open and load the immutable full text index from mmap storage.
     pub fn open_mmap(index: MmapFullTextIndex<MmapFile>) -> OperationResult<Self> {
-        Self::try_open_mmap(Box::new(index)).map_err(|(_, err)| err)
-    }
-
-    /// Like [`Self::open_mmap`] but returns the (unconsumed) mmap alongside
-    /// the error on failure, so an in-place swap can restore it instead of
-    /// aborting.
-    pub fn try_open_mmap(
-        index: Box<MmapFullTextIndex<MmapFile>>,
-    ) -> Result<Self, (Box<MmapFullTextIndex<MmapFile>>, OperationError)> {
+        let index = Box::new(index);
         let inverted_index = match ImmutableInvertedIndex::try_from(&index.inverted_index) {
             Ok(inverted_index) => inverted_index,
-            Err(err) => return Err((index, err)),
+            Err(err) => return Err(err),
         };
 
         // Index is now loaded into memory, clear cache of backing mmap storage
