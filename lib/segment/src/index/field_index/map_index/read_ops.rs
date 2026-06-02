@@ -209,7 +209,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
             MapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
-            MapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::OnDisk(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
     }
 
@@ -224,7 +224,7 @@ where
         let boxed: Box<dyn Iterator<Item = Cow<'a, N>> + 'a> = match self {
             MapIndex::Mutable(index) => Box::new(index.get_values(idx, hw_counter)?),
             MapIndex::Immutable(index) => Box::new(index.get_values(idx, hw_counter)?),
-            MapIndex::Mmap(index) => Box::new(index.get_values(idx, hw_counter)?),
+            MapIndex::OnDisk(index) => Box::new(index.get_values(idx, hw_counter)?),
         };
         Some(boxed)
     }
@@ -233,7 +233,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.values_count(idx),
             MapIndex::Immutable(index) => index.values_count(idx),
-            MapIndex::Mmap(index) => index.values_count(idx),
+            MapIndex::OnDisk(index) => index.values_count(idx),
         }
     }
 
@@ -241,7 +241,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.get_indexed_points(),
             MapIndex::Immutable(index) => index.get_indexed_points(),
-            MapIndex::Mmap(index) => index.get_indexed_points(),
+            MapIndex::OnDisk(index) => index.get_indexed_points(),
         }
     }
 
@@ -249,7 +249,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.get_values_count(),
             MapIndex::Immutable(index) => index.get_values_count(),
-            MapIndex::Mmap(index) => index.get_values_count(),
+            MapIndex::OnDisk(index) => index.get_values_count(),
         }
     }
 
@@ -257,7 +257,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.get_unique_values_count(),
             MapIndex::Immutable(index) => index.get_unique_values_count(),
-            MapIndex::Mmap(index) => index.get_unique_values_count(),
+            MapIndex::OnDisk(index) => index.get_unique_values_count(),
         }
     }
 
@@ -265,7 +265,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.get_count_for_value(value, hw_counter),
             MapIndex::Immutable(index) => index.get_count_for_value(value, hw_counter),
-            MapIndex::Mmap(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::OnDisk(index) => index.get_count_for_value(value, hw_counter),
         }
     }
 
@@ -273,7 +273,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
             MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
-            MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
+            MapIndex::OnDisk(index) => index.get_iterator(value, hw_counter),
         }
     }
 
@@ -281,7 +281,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.for_each_value(f),
             MapIndex::Immutable(index) => index.for_each_value(f),
-            MapIndex::Mmap(index) => index.for_each_value(f),
+            MapIndex::OnDisk(index) => index.for_each_value(f),
         }
     }
 
@@ -299,7 +299,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
             MapIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            MapIndex::Mmap(index) => index.for_each_count_per_value(deferred_internal_id, f),
+            MapIndex::OnDisk(index) => index.for_each_count_per_value(deferred_internal_id, f),
         }
     }
 
@@ -311,7 +311,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.for_each_value_map(hw_counter, f),
             MapIndex::Immutable(index) => index.for_each_value_map(hw_counter, f),
-            MapIndex::Mmap(index) => index.for_each_value_map(hw_counter, f),
+            MapIndex::OnDisk(index) => index.for_each_value_map(hw_counter, f),
         }
     }
 
@@ -319,7 +319,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.storage_type(),
             MapIndex::Immutable(index) => index.storage_type(),
-            MapIndex::Mmap(index) => index.storage_type(),
+            MapIndex::OnDisk(index) => index.storage_type(),
         }
     }
 
@@ -327,7 +327,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.ram_usage_bytes(),
             MapIndex::Immutable(index) => index.ram_usage_bytes(),
-            MapIndex::Mmap(index) => index.ram_usage_bytes(),
+            MapIndex::OnDisk(index) => index.ram_usage_bytes(),
         }
     }
 
@@ -335,7 +335,7 @@ where
         match self {
             MapIndex::Mutable(_) => "mutable_map",
             MapIndex::Immutable(_) => "immutable_map",
-            MapIndex::Mmap(_) => "mmap_map",
+            MapIndex::OnDisk(_) => "mmap_map",
         }
     }
 }
@@ -353,7 +353,7 @@ where
             index_type: match self {
                 MapIndex::Mutable(_) => "mutable_map",
                 MapIndex::Immutable(_) => "immutable_map",
-                MapIndex::Mmap(_) => "mmap_map",
+                MapIndex::OnDisk(_) => "mmap_map",
             },
         }
     }
@@ -393,7 +393,7 @@ where
         match self {
             MapIndex::Mutable(_) => false,
             MapIndex::Immutable(_) => false,
-            MapIndex::Mmap(index) => index.is_on_disk(),
+            MapIndex::OnDisk(index) => index.is_on_disk(),
         }
     }
 
@@ -401,7 +401,7 @@ where
         match self {
             Self::Mutable(_) => IndexMutability::Mutable,
             Self::Immutable(_) => IndexMutability::Immutable,
-            Self::Mmap(_) => IndexMutability::Immutable,
+            Self::OnDisk(_) => IndexMutability::Immutable,
         }
     }
 
@@ -409,7 +409,7 @@ where
         match self {
             Self::Mutable(index) => index.storage_type(),
             Self::Immutable(index) => index.storage_type(),
-            Self::Mmap(index) => index.storage_type(),
+            Self::OnDisk(index) => index.storage_type(),
         }
     }
 }
