@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::universal_io::MmapFs;
 
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
@@ -68,30 +69,31 @@ impl HNSWIndex {
         } = args;
 
         let config_path = HnswGraphConfig::get_config_path(path);
-        let config = if config_path.exists() {
-            HnswGraphConfig::load(&config_path)?
-        } else {
-            let vector_storage = vector_storage.borrow();
-            let available_vectors = vector_storage.available_vector_count();
-            let full_scan_threshold = vector_storage
-                .size_of_available_vectors_in_bytes()
-                .checked_div(available_vectors)
-                .and_then(|avg_vector_size| {
-                    hnsw_config
-                        .full_scan_threshold
-                        .saturating_mul(BYTES_IN_KB)
-                        .checked_div(avg_vector_size)
-                })
-                .unwrap_or(1);
+        let config = match HnswGraphConfig::load_via(&MmapFs, &config_path)? {
+            Some(config) => config,
+            None => {
+                let vector_storage = vector_storage.borrow();
+                let available_vectors = vector_storage.available_vector_count();
+                let full_scan_threshold = vector_storage
+                    .size_of_available_vectors_in_bytes()
+                    .checked_div(available_vectors)
+                    .and_then(|avg_vector_size| {
+                        hnsw_config
+                            .full_scan_threshold
+                            .saturating_mul(BYTES_IN_KB)
+                            .checked_div(avg_vector_size)
+                    })
+                    .unwrap_or(1);
 
-            HnswGraphConfig::new(
-                hnsw_config.m,
-                hnsw_config.ef_construct,
-                full_scan_threshold,
-                hnsw_config.max_indexing_threads,
-                hnsw_config.payload_m,
-                available_vectors,
-            )
+                HnswGraphConfig::new(
+                    hnsw_config.m,
+                    hnsw_config.ef_construct,
+                    full_scan_threshold,
+                    hnsw_config.max_indexing_threads,
+                    hnsw_config.payload_m,
+                    available_vectors,
+                )
+            }
         };
 
         let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;

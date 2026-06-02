@@ -165,30 +165,31 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
-        // If postings don't exist, assume the index doesn't exist on disk
-        if !postings_path.is_file() {
-            return Ok(None);
-        }
-
         let postings_open_options = OpenOptions {
             writeable: false,
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Advice(Advice::Normal),
         };
-        let postings = match has_positions {
-            false => MmapPostingsEnum::Ids(UniversalPostings::<(), S>::open(
+
+        let Some(postings) = (match has_positions {
+            false => UniversalPostings::<(), S>::open(
                 fs,
                 &postings_path,
                 postings_open_options,
                 Default::default(),
-            )?),
-            true => MmapPostingsEnum::WithPositions(UniversalPostings::<Positions, S>::open(
+            )?
+            .map(MmapPostingsEnum::Ids),
+            true => UniversalPostings::<Positions, S>::open(
                 fs,
                 &postings_path,
                 postings_open_options,
                 Default::default(),
-            )?),
+            )?
+            .map(MmapPostingsEnum::WithPositions),
+        }) else {
+            // If postings don't exist, assume the index doesn't exist on disk
+            return Ok(None);
         };
         let vocab = UniversalHashMap::<str, TokenId, S>::open(
             fs,
