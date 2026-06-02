@@ -561,22 +561,22 @@ impl IndexSelector<'_> {
     }
 }
 
-fn map_dir(dir: &Path, field: &JsonPath) -> PathBuf {
+pub(crate) fn map_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-map", &field.filename()))
 }
 
-fn numeric_dir(dir: &Path, field: &JsonPath) -> PathBuf {
+pub(crate) fn numeric_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-numeric", &field.filename()))
 }
 
-fn text_dir(dir: &Path, field: &JsonPath) -> PathBuf {
+pub(crate) fn text_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-text", &field.filename()))
 }
 
-fn bool_dir(dir: &Path, field: &JsonPath) -> PathBuf {
+pub(crate) fn bool_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-bool", &field.filename()))
 }
 
-fn null_dir(dir: &Path, field: &JsonPath) -> PathBuf {
+pub(crate) fn null_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-null", &field.filename()))
 }

@@ -20,11 +20,9 @@ use crate::types::{
     DateTimePayloadType, FloatPayloadType, IntPayloadType, UuidIntType, UuidPayloadType,
 };
 
-// `lifecycle::open_gridstore` / `open_mmap` only constructs the four
-// map-backed variants in this skeleton PR; the seven non-map variants are
-// still unreachable from constructors (their arms are `todo!`
-// placeholders) and trip `dead_code` until the per-index parent opens
-// merge. Allow at the enum level until then.
+// `lifecycle::open_gridstore` / `open_mmap` construct every variant, but they
+// have no in-lib caller yet, so the variants would trip `dead_code`. Allow at
+// the enum level until a read-only segment wires the opens in.
 #[allow(dead_code, clippy::enum_variant_names)]
 pub enum ReadOnlyFieldIndex<S: UniversalRead> {
     IntIndex(ReadOnlyNumericIndex<IntPayloadType, IntPayloadType, S>),
