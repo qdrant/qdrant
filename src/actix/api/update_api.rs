@@ -30,7 +30,6 @@ struct FieldPath {
 }
 
 #[put("/collections/{collection_name}/points")]
-#[allow(clippy::too_many_arguments)]
 async fn upsert_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -111,7 +110,6 @@ async fn delete_points(
 }
 
 #[put("/collections/{collection_name}/points/vectors")]
-#[allow(clippy::too_many_arguments)]
 async fn update_vectors(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -323,7 +321,6 @@ async fn clear_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[allow(clippy::too_many_arguments)]
 #[post("/collections/{collection_name}/points/batch")]
 async fn update_batch(
     dispatcher: web::Data<Dispatcher>,

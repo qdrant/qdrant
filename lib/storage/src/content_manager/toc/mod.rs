@@ -110,7 +110,6 @@ pub struct TableOfContent {
 
 impl TableOfContent {
     /// PeerId does not change during execution so it is ok to copy it here.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
         optimizer_resource_budget: ResourceBudget,

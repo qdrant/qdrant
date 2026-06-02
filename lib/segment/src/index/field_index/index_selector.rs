@@ -49,7 +49,6 @@ pub struct IndexSelectorGridstore<'a> {
 
 impl IndexSelector<'_> {
     /// Loads the correct index based on `index_type`.
-    #[allow(clippy::too_many_arguments)]
     pub fn new_index_with_type(
         &self,
         field: &JsonPath,

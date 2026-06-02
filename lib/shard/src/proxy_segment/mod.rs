@@ -215,7 +215,6 @@ impl ProxySegment {
         filter: Option<Cow<'_, Filter>>,
         deleted_points: impl IntoIterator<Item = PointIdType>,
     ) -> Filter {
-        #[allow(clippy::from_iter_instead_of_collect)]
         let wrapper_condition = Condition::HasId(HasIdCondition::from_iter(deleted_points));
         match filter {
             None => Filter::new_must_not(wrapper_condition),

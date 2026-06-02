@@ -106,7 +106,6 @@ pub(super) fn build_filtered_graph_on_gpu(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_graph_on_gpu<'a, 'b>(
     gpu_insert_context: Option<&mut GpuInsertContext<'b>>,
     graph_layers_builder: &GraphLayersBuilder,

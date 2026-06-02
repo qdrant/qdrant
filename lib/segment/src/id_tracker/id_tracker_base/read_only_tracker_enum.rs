@@ -7,7 +7,6 @@ use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracke
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
-#[allow(clippy::large_enum_variant)]
 pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
     Appendable(ReadOnlyAppendableIdTracker),
     Immutable(ReadOnlyImmutableIdTracker<S>),

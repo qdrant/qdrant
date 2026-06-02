@@ -15,7 +15,6 @@ mod read_ops;
 ///
 /// Loading / lifecycle (constructor, `files`, `populate`, `clear_cache`, …)
 /// will be added in a follow-up; until then the type is not yet constructed.
-#[allow(dead_code)]
 pub struct ReadOnlyAppendableFullTextIndex<S: UniversalRead> {
     pub(super) inner: MutableFullTextIndexInner,
     // Read once the lifecycle layer lands; until then the field is held to
