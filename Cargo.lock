@@ -3739,16 +3739,12 @@ version = "0.0.0"
 dependencies = [
  "ahash",
  "aligned-vec",
- "bytemuck",
  "bytes",
  "common",
  "futures",
- "log",
- "num_cpus",
  "object_store",
  "slab",
  "tempfile",
- "thiserror 2.0.18",
  "tokio",
 ]
 
@@ -5799,7 +5795,6 @@ dependencies = [
  "jsonwebtoken",
  "log",
  "mockito",
- "murmur3_32",
  "nix 0.31.3",
  "ordered-float 5.3.0",
  "parking_lot",
@@ -7007,7 +7002,6 @@ dependencies = [
  "seahash",
  "segment",
  "self_cell",
- "semver",
  "serde",
  "serde-untagged",
  "serde-value",

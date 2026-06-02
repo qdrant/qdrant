@@ -72,7 +72,6 @@ num-cmp = "0.1.0"
 rand = { workspace = true }
 bitvec = { workspace = true }
 seahash = "4.1.0"
-semver = { workspace = true }
 fs_extra = { workspace = true }
 tinyvec = { workspace = true }
 validator = { workspace = true }
