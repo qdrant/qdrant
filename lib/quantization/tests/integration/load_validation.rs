@@ -69,4 +69,90 @@ mod tests {
             }
         }
     }
+
+    /// Regression test for BBP-827 (vulnerability 1): heap out-of-bounds read via crafted
+    /// quantization metadata in a malicious snapshot.
+    ///
+    /// A snapshot's `quantized.meta.json` is attacker-controlled. The scalar-quantization SIMD
+    /// scoring functions use `metadata.actual_dim` as the iteration count for raw pointer
+    /// arithmetic over each stored vector (e.g. `impl_score_dot(q_ptr, v_ptr, actual_dim)`). If
+    /// `actual_dim` is inflated far beyond the real vector size, every score reads heap memory
+    /// past the end of the (small) stored vector — leaking adjacent heap data into scores, or
+    /// crashing outright for large enough values.
+    ///
+    /// This crafts that malicious snapshot: a storage honestly encoded for dimension 128 whose
+    /// `quantized.meta.json` is then patched to claim a far larger `actual_dim`, exactly as an
+    /// attacker would inside the snapshot archive. It asserts that `load` rejects the inconsistent
+    /// storage, so search queries can never reach the out-of-bounds read.
+    #[test]
+    fn bbp_827_load_rejects_inflated_actual_dim() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+        let vectors_count = 4;
+        let vector_dim = 128;
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Cosine,
+            invert: false,
+        };
+        let vector_data: Vec<Vec<f32>> = (0..vectors_count)
+            .map(|i| vec![i as f32; vector_dim])
+            .collect();
+
+        let data_path = dir.path().join("data.bin");
+        let meta_path = dir.path().join("quantized.meta.json");
+        let quantized_vector_size =
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
+        EncodedVectorsU8::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
+            &vector_parameters,
+            vectors_count,
+            None,
+            ScalarQuantizationMethod::Int8,
+            Some(meta_path.as_path()),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let load = || {
+            EncodedVectorsU8::<TestEncodedStorage>::load(
+                TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
+                meta_path.as_path(),
+            )
+        };
+
+        // The honest snapshot loads fine.
+        load().unwrap();
+
+        // Sanity check: the encoded metadata records the real dimension under `actual_dim`. This
+        // guards against the field being renamed, which would silently make the patch below (and
+        // thus this regression test) a no-op.
+        let original = std::fs::read_to_string(&meta_path).unwrap();
+        let metadata: serde_json::Value = serde_json::from_str(&original).unwrap();
+        assert_eq!(metadata["actual_dim"].as_u64(), Some(vector_dim as u64));
+
+        let patch_actual_dim = |actual_dim: u64| {
+            let contents = std::fs::read_to_string(&meta_path).unwrap();
+            let mut metadata: serde_json::Value = serde_json::from_str(&contents).unwrap();
+            metadata["actual_dim"] = serde_json::Value::from(actual_dim);
+            std::fs::write(&meta_path, serde_json::to_string(&metadata).unwrap()).unwrap();
+        };
+
+        // Each stored vector is only `quantized_vector_size` bytes, but the patched metadata
+        // claims `actual_dim` per vector — so scoring would iterate `actual_dim` times over that
+        // small buffer, reading well past its allocation. `8192` is the report's score-inflation
+        // value; `10_000_000` is its crash value. Both must be rejected at load time.
+        for inflated_actual_dim in [8192, 10_000_000] {
+            patch_actual_dim(inflated_actual_dim);
+            match load() {
+                Ok(_) => panic!(
+                    "malicious snapshot with actual_dim={inflated_actual_dim} was accepted — \
+                     heap OOB read is reachable (BBP-827 regression)"
+                ),
+                Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::InvalidData),
+            }
+        }
+    }
 }
