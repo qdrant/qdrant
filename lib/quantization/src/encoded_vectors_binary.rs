@@ -15,6 +15,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
+use crate::encoded_storage::validate_storage_vector_size;
 use crate::encoded_vectors::validate_vector_parameters;
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
@@ -514,6 +515,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             encoded_vectors,
             bits_store_type: PhantomData,
         };
+
+        // Validate the storage's vector size against the metadata once here, so the size
+        // invariant the scoring hot path relies on (it XORs the stored vector against an
+        // equally-sized query) also holds in release builds without a per-score check.
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+
         Ok(result)
     }
 

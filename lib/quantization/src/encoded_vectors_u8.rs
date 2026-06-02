@@ -12,7 +12,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
-use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
+use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
@@ -321,30 +321,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             metadata_path: Some(meta_path.to_path_buf()),
         };
 
-        // Validate that each encoded vector in storage has exactly the size our metadata
-        // expects. The hot path in `score_bytes` only requires the slice to be at least this
-        // large, but on consistent data the storage stride and the metadata are both derived
-        // from the same vector parameters, so they must match exactly. Checking it once here at
-        // load time lets the invariant also hold in release builds without paying for the check
-        // on every score.
-        //
-        // The storage uses a fixed stride for every vector, so inspecting the first encoded
-        // vector is enough to validate all of them. An empty storage has no vector data to
-        // score, so there is nothing to check.
-        if result.encoded_vectors.vectors_count() > 0 {
-            let expected_size = ADDITIONAL_CONSTANT_SIZE + result.metadata.actual_dim();
-            let actual_size = result.encoded_vectors.get_vector_data(0).len();
-            if actual_size != expected_size {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!(
-                        "Quantized vector storage is inconsistent with its metadata: \
-                         encoded vector size is {actual_size} bytes, \
-                         but metadata expects {expected_size} bytes",
-                    ),
-                ));
-            }
-        }
+        // Validate the storage's vector size against the metadata once here, so the size
+        // invariant the hot path in `score_bytes` relies on (it reads `actual_dim` bytes past a
+        // fixed offset) also holds in release builds without a per-score check.
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
 
         Ok(result)
     }
