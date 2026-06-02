@@ -295,7 +295,6 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     }
 }
 
-#[allow(dead_code)] // pending: read-only vector storage enum will use this
 fn read_status_len(status_file: &Path) -> OperationResult<usize> {
     let bytes = fs::read(status_file)?;
     let needed = std::mem::size_of::<usize>();

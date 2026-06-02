@@ -96,7 +96,6 @@ impl ShaderBuilderParameters for GpuInsertResources {
 }
 
 impl GpuInsertResources {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         gpu_vector_storage: &GpuVectorStorage,
         groups_count: usize,
@@ -180,7 +179,6 @@ impl GpuInsertResources {
 }
 
 impl<'a> GpuInsertContext<'a> {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         gpu_vector_storage: &'a GpuVectorStorage,
         // Parallel inserts count.

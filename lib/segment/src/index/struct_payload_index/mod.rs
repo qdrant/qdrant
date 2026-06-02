@@ -32,7 +32,6 @@ use crate::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 
 #[derive(Debug)]
-#[allow(clippy::enum_variant_names)]
 enum StorageType {
     GridstoreAppendable,
     GridstoreNonAppendable,

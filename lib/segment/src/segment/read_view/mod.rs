@@ -28,7 +28,6 @@ use crate::vector_storage::VectorStorageEnum;
 ///
 /// The motivation for this is to unify the read code between
 /// regular `Segment` and `ReadOnlySegment`.
-#[allow(unused, dead_code)]
 pub struct SegmentReadView<'s, TIdTracker, TPayloadIndex, TPayloadStorage, TVectorData>
 where
     TIdTracker: IdTrackerRead,
@@ -61,7 +60,6 @@ pub type SegmentReadViewFor<'s> = SegmentReadView<
     VectorData,
 >;
 
-#[allow(unused, dead_code)]
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
 where
     TIdT: IdTrackerRead,

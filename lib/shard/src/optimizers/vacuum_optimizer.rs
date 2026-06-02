@@ -33,7 +33,6 @@ pub struct VacuumOptimizer {
 }
 
 impl VacuumOptimizer {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         deleted_threshold: f64,
         min_vectors_number: usize,

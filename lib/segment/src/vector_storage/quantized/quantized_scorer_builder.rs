@@ -34,7 +34,6 @@ pub(super) struct QuantizedScorerBuilder<'a> {
 }
 
 impl<'a> QuantizedScorerBuilder<'a> {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         quantized_storage: &'a QuantizedVectorStorage,
         quantization_config: &'a QuantizationConfig,

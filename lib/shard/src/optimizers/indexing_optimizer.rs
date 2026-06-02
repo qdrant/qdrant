@@ -31,7 +31,6 @@ pub struct IndexingOptimizer {
 }
 
 impl IndexingOptimizer {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         default_segments_number: usize,
         thresholds_config: OptimizerThresholds,

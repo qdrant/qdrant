@@ -8,7 +8,6 @@ pub mod mmap_payload_storage;
 mod payload_storage_base;
 pub mod payload_storage_enum;
 pub mod query_checker;
-#[allow(dead_code)]
 pub mod read_only;
 #[cfg(test)]
 mod tests;

@@ -295,7 +295,6 @@ pub async fn do_query_points(
         .ok_or_else(|| StorageError::service_error("Empty query result"))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_query_batch_points(
     toc: &TableOfContent,
     collection_name: &str,

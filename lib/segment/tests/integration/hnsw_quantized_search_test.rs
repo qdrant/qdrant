@@ -801,7 +801,7 @@ fn hnsw_quantized_low_bit_compare_test(
 
 /// Caller must keep the returned tempdirs alive for as long as the segment
 /// and HNSW index are used.
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn build_quantized_hnsw_for_compare(
     vectors: &[Vec<f32>],
     distance: Distance,
