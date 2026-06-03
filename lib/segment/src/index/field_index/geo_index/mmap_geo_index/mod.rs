@@ -10,6 +10,7 @@ use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 use crate::types::GeoPoint;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 pub(super) const DELETED_PATH: &str = "deleted.bin";
