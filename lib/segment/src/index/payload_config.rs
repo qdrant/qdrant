@@ -172,7 +172,6 @@ pub enum IndexMutability {
 #[serde(rename_all = "snake_case")]
 pub enum StorageType {
     Gridstore,
-    RocksDb,
     Mmap { is_on_disk: bool },
 }
 

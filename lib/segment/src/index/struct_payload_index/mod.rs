@@ -22,7 +22,7 @@ use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::payload_config::{self, PayloadConfig};
@@ -147,16 +147,15 @@ impl StructPayloadIndex {
                 .iter()
                 // Load each index
                 .map(|index| {
-                    self.selector_with_type(index).and_then(|selector| {
-                        selector.new_index_with_type(
-                            field,
-                            &payload_schema.schema,
-                            index,
-                            create_if_missing,
-                            &id_tracker_borrow,
-                            deleted_points,
-                        )
-                    })
+                    let selector = self.selector_with_type(index);
+                    selector.new_index_with_type(
+                        field,
+                        &payload_schema.schema,
+                        index,
+                        create_if_missing,
+                        &id_tracker_borrow,
+                        deleted_points,
+                    )
                 })
                 // Interrupt loading indices if one fails to load
                 // Set rebuild flag if any index fails to load
@@ -287,18 +286,10 @@ impl StructPayloadIndex {
         }
     }
 
-    fn selector_with_type(
-        &self,
-        index_type: &FullPayloadIndexType,
-    ) -> OperationResult<IndexSelector<'_>> {
-        let selector = match index_type.storage_type {
+    fn selector_with_type(&self, index_type: &FullPayloadIndexType) -> IndexSelector<'_> {
+        match index_type.storage_type {
             payload_config::StorageType::Gridstore => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
-            }
-            payload_config::StorageType::RocksDb => {
-                return Err(OperationError::service_error(
-                    "Loading payload index failed: Index is RocksDB but RocksDB feature is disabled.",
-                ));
             }
             payload_config::StorageType::Mmap { is_on_disk } => {
                 IndexSelector::Mmap(IndexSelectorMmap {
@@ -306,9 +297,7 @@ impl StructPayloadIndex {
                     is_on_disk,
                 })
             }
-        };
-
-        Ok(selector)
+        }
     }
 
     pub fn populate(&self) -> OperationResult<()> {
