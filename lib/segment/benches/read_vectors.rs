@@ -18,13 +18,16 @@ use segment::vector_storage::dense::appendable_dense_vector_storage::{
 use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     AppendableMmapMultiDenseVectorStorage, open_appendable_memmap_multi_vector_storage_impl,
 };
+use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use segment::vector_storage::{VectorStorage, VectorStorageRead};
+use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use tempfile::{Builder, TempDir};
 
 const RNG_SEED: u64 = 42;
 const POINT_COUNT: usize = 10_000;
 const MAX_VECTORS_PER_POINT: usize = 8;
 const VECTOR_DIM: usize = 128;
+const SPARSE_MAX_DIM: usize = 1000;
 const READ_BATCH_SIZE: usize = 1024;
 
 criterion_main!(benches);
@@ -66,6 +69,19 @@ fn bench(c: &mut Criterion) {
         });
 
         group.bench_function("appendable-mmap-multi-dense/random", |b| {
+            b.iter(|| read_vectors::<Random, _>(storage.deref(), &random_keys));
+        });
+    }
+
+    {
+        let tmpdir = tmpdir();
+        let storage = LazyCell::new(|| storage_sparse(tmpdir.path()));
+
+        group.bench_function("mmap-sparse/sequential", |b| {
+            b.iter(|| read_vectors::<Sequential, _>(storage.deref(), &sequential_keys));
+        });
+
+        group.bench_function("mmap-sparse/random", |b| {
             b.iter(|| read_vectors::<Random, _>(storage.deref(), &random_keys));
         });
     }
@@ -130,6 +146,27 @@ fn storage_multi(path: &Path) -> AppendableMmapMultiDenseVectorStorage<VectorEle
 
         storage
             .insert_vector(point_id, VectorRef::from(vector), &hw_counter)
+            .expect("vector inserted");
+    }
+
+    storage.flusher()().expect("storage flushed");
+    storage.populate().expect("storage populated");
+
+    storage
+}
+
+fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
+    let mut storage =
+        MmapSparseVectorStorage::open_or_create(path).expect("mmap sparse storage opened");
+
+    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let hw_counter = HardwareCounterCell::disposable();
+
+    for point_id in 0..POINT_COUNT as PointOffsetType {
+        let vector = random_sparse_vector(&mut rng, SPARSE_MAX_DIM);
+
+        storage
+            .insert_vector(point_id, VectorRef::from(&vector), &hw_counter)
             .expect("vector inserted");
     }
 
