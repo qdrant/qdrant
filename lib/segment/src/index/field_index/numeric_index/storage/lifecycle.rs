@@ -11,7 +11,7 @@ use gridstore::Blob;
 use super::super::Encodable;
 use super::super::immutable_numeric_index::ImmutableNumericIndex;
 use super::super::mutable_numeric_index::MutableNumericIndex;
-use super::super::universal_numeric_index::UniversalNumericIndex;
+use super::super::universal_numeric_index::OnDiskNumericIndex;
 use super::NumericIndexInner;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -36,7 +36,7 @@ where
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let Some(on_disk_index) =
-            UniversalNumericIndex::open(&MmapFs, path, !effective_is_on_disk, deleted_points)?
+            OnDiskNumericIndex::open(&MmapFs, path, !effective_is_on_disk, deleted_points)?
         else {
             // Files don't exist, cannot load
             return Ok(None);

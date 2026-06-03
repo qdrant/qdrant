@@ -10,7 +10,7 @@ use gridstore::{Blob, Gridstore};
 use super::super::Encodable;
 use super::super::lifecycle::{HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use super::super::numeric_index_read::NumericIndexRead;
-use super::super::universal_numeric_index::UniversalNumericIndex;
+use super::super::universal_numeric_index::OnDiskNumericIndex;
 use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -65,7 +65,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> InMemoryNumericIndex<T>
     /// # Warning
     ///
     /// Expensive because this reads the full on-disk index.
-    pub(in super::super) fn from_on_disk(on_disk_index: &UniversalNumericIndex<T>) -> Self {
+    pub(in super::super) fn from_on_disk(on_disk_index: &OnDiskNumericIndex<T>) -> Self {
         let point_count = on_disk_index.storage.point_to_values.len();
 
         (0..point_count as PointOffsetType)

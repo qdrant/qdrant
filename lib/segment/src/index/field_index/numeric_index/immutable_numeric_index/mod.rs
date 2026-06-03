@@ -3,7 +3,7 @@ use std::ops::Bound;
 use common::bitvec::{BitSliceExt as _, BitVec};
 
 use super::Encodable;
-use super::universal_numeric_index::UniversalNumericIndex;
+use super::universal_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::field_index::numeric_point::{Numericable, Point};
@@ -19,7 +19,7 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + StoredValue + Defa
     pub(super) max_values_per_point: usize,
     pub(super) point_to_values: ImmutablePointToValues<T>,
     // Backing storage, source of state, persists deletions
-    pub(super) storage: Box<UniversalNumericIndex<T>>,
+    pub(super) storage: Box<OnDiskNumericIndex<T>>,
     /// Snapshot of approximate RAM usage at construction time.
     /// Not refreshed on `remove_point`.
     pub(super) cached_ram_usage_bytes: usize,

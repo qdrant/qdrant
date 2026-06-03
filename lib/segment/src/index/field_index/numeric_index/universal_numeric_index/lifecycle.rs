@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::{CONFIG_PATH, DELETED_PATH, PAIRS_PATH, Storage, UniversalNumericIndex};
+use super::{CONFIG_PATH, DELETED_PATH, OnDiskNumericIndex, PAIRS_PATH, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
@@ -28,7 +28,7 @@ struct UniversalNumericIndexConfig {
     max_values_per_point: usize,
 }
 
-impl<T, S> UniversalNumericIndex<T, S>
+impl<T, S> OnDiskNumericIndex<T, S>
 where
     T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod,
     S: UniversalRead,
@@ -182,7 +182,7 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + Default + StoredValue + 'static> UniversalNumericIndex<T> {
+impl<T: Encodable + Numericable + Default + StoredValue + 'static> OnDiskNumericIndex<T> {
     pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let path = self.path.clone();

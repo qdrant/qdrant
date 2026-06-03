@@ -8,7 +8,7 @@ use super::super::super::Encodable;
 use super::super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
 use super::ReadOnlyNumericIndexInner;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::numeric_index::universal_numeric_index::UniversalNumericIndex;
+use crate::index::field_index::numeric_index::universal_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::IndexMutability;
@@ -54,7 +54,7 @@ where
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let Some(mmap_index) =
-            UniversalNumericIndex::open(fs, path, !effective_is_on_disk, deleted_points)?
+            OnDiskNumericIndex::open(fs, path, !effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };

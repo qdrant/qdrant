@@ -6,7 +6,7 @@ use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::super::universal_numeric_index::UniversalNumericIndex;
+use super::super::universal_numeric_index::OnDiskNumericIndex;
 use super::{ImmutableNumericIndex, NumericKeySortedVec};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -27,7 +27,7 @@ where
     /// Numeric's body has no fallible reads to propagate (`from_mmap` is
     /// infallible; `clear_cache` errors are warn-and-continue, matching the
     /// other variants).
-    pub(in super::super) fn load_from_on_disk(index: UniversalNumericIndex<T>) -> Self {
+    pub(in super::super) fn load_from_on_disk(index: OnDiskNumericIndex<T>) -> Self {
         // Load in-memory index from mmap storage
         let InMemoryNumericIndex {
             map,

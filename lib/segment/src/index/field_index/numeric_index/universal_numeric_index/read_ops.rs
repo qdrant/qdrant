@@ -12,7 +12,7 @@ use itertools::Either;
 
 use super::super::Encodable;
 use super::super::numeric_index_read::NumericIndexRead;
-use super::UniversalNumericIndex;
+use super::OnDiskNumericIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
@@ -20,7 +20,7 @@ use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
-    NumericIndexRead<T> for UniversalNumericIndex<T, S>
+    NumericIndexRead<T> for OnDiskNumericIndex<T, S>
 {
     fn check_values_any(
         &self,
@@ -139,7 +139,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
 }
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
-    UniversalNumericIndex<T, S>
+    OnDiskNumericIndex<T, S>
 {
     /// Binary search within `[lo, hi)` range of `pairs` storage.
     ///

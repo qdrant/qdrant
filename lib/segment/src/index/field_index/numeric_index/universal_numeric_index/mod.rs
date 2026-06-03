@@ -30,7 +30,7 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct UniversalNumericIndex<
+pub struct OnDiskNumericIndex<
     T: Encodable + Numericable + Default + StoredValue + 'static,
     S: UniversalRead = MmapFile,
 > {
