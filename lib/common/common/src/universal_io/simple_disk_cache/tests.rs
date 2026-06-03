@@ -230,12 +230,9 @@ mod tests_mod {
                 length: 100,
             })
             .unwrap_err();
-        assert!(
-            matches!(
-                err,
-                crate::universal_io::UniversalIoError::OutOfBounds { .. }
-            ),
-            "expected OutOfBounds, got {err:?}",
+        assert_matches!(
+            err,
+            crate::universal_io::UniversalIoError::OutOfBounds { .. },
         );
     }
 
@@ -313,13 +310,10 @@ mod tests_mod {
         scn.truncate_remote(BLOCK_SIZE * 2);
 
         let err = cache.reopen().unwrap_err();
-        assert!(
-            matches!(
-                &err,
-                crate::universal_io::UniversalIoError::Io(io_err)
-                    if io_err.kind() == ErrorKind::UnexpectedEof,
-            ),
-            "expected Io(UnexpectedEof), got: {err:?}",
+        assert_matches!(
+            &err,
+            crate::universal_io::UniversalIoError::Io(io_err)
+                if io_err.kind() == ErrorKind::UnexpectedEof,
         );
     }
 
@@ -347,12 +341,9 @@ mod tests_mod {
                 length: BLOCK_SIZE as u64,
             })
             .unwrap_err();
-        assert!(
-            matches!(
-                err,
-                crate::universal_io::UniversalIoError::OutOfBounds { .. },
-            ),
-            "expected OutOfBounds before reopen, got: {err:?}",
+        assert_matches!(
+            err,
+            crate::universal_io::UniversalIoError::OutOfBounds { .. },
         );
 
         cache.reopen().unwrap();

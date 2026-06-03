@@ -1196,6 +1196,7 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
     use std::sync::{Arc, mpsc};
 
     use collection::shards::shard::PeerId;
@@ -1610,11 +1611,9 @@ mod tests {
 
         consensus.apply_snapshot(&snapshot).unwrap().unwrap();
 
-        assert!(
-            matches!(
-                rx.try_recv(),
-                Err(tokio::sync::broadcast::error::TryRecvError::Empty),
-            ),
+        assert_matches!(
+            rx.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty),
             "awaiter must not be notified when snapshot does not satisfy the operation",
         );
         assert!(

@@ -397,6 +397,7 @@ pub fn check_grouping_field(
 
 #[cfg(test)]
 mod test {
+    use std::assert_matches;
     use std::sync::Arc;
 
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
@@ -564,10 +565,7 @@ mod test {
             ..StrictModeConfig::default()
         };
         let res = check_resident_memory(&cfg, || Some(usize::MAX));
-        assert!(
-            matches!(res, Err(CollectionError::StrictMode { .. })),
-            "expected StrictMode error but got {res:?}",
-        );
+        assert_matches!(res, Err(CollectionError::StrictMode { .. }));
     }
 
     #[test]
