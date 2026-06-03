@@ -27,7 +27,6 @@ use shard::search::CoreSearchRequestBatch;
 use super::TableOfContent;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::rbac::Auth;
-use crate::rbac::auditable_operation::AuditableOperation;
 
 impl TableOfContent {
     /// Recommend points using positive and negative example from the request

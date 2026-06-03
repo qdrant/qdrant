@@ -793,7 +793,7 @@ impl LocalShard {
 
             // Capture the operation type before `update.operation` is moved, so we can
             // report it if applying this operation turns out to be slow.
-            let op_label = update.operation.label();
+            let op_name = update.operation.operation_name();
             let op_started = Instant::now();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
@@ -833,7 +833,7 @@ impl LocalShard {
             let op_elapsed = op_started.elapsed();
             if op_elapsed >= WAL_SLOW_OP_REPORT_THRESHOLD {
                 log::warn!(
-                    "Slow WAL operation during recovery: {op_label} took {op_elapsed:.2?}, \
+                    "Slow WAL operation during recovery: {op_name} took {op_elapsed:.2?}, \
                      collection: {collection_id}, \
                      op_num: {op_num}"
                 );
