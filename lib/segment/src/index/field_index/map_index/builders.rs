@@ -122,7 +122,7 @@ where
         )?;
 
         let index = if self.is_on_disk {
-            MapIndex::OnDisk(Box::new(on_disk_index))
+            MapIndex::OnDisk(on_disk_index)
         } else {
             MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
         };

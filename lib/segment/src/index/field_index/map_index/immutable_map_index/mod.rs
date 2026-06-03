@@ -4,6 +4,7 @@ use std::ops::Range;
 use bitvec::vec::BitVec;
 use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, UniversalRead};
 
 use super::MapIndexKey;
 use super::on_disk_map_index::OnDiskMapIndex;
@@ -12,7 +13,11 @@ use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues
 mod lifecycle;
 mod read_ops;
 
-pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
+pub struct ImmutableMapIndex<N, S = MmapFile>
+where
+    N: MapIndexKey + Key + ?Sized,
+    S: UniversalRead,
+{
     pub(super) value_to_points: HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
     /// Container holding a slice of point IDs per value. `value_to_point` holds the range per value.
     /// Each slice MUST be sorted so that we can binary search over it.
@@ -23,14 +28,10 @@ pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
     pub(super) indexed_points: usize,
     pub(super) values_count: usize,
     // Backing storage, source of state, persists deletions
-    pub(super) storage: Storage<N>,
+    pub(super) storage: OnDiskMapIndex<N, S>,
     /// Snapshot of approximate RAM usage at construction time.
     /// Not refreshed on `remove_point`.
     pub(super) cached_ram_usage_bytes: usize,
-}
-
-pub(super) enum Storage<N: MapIndexKey + Key + ?Sized> {
-    Mmap(Box<OnDiskMapIndex<N>>),
 }
 
 pub(super) struct ContainerSegment {

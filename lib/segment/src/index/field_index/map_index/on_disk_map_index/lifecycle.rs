@@ -17,7 +17,7 @@ use fs_err as fs;
 
 use super::super::MapIndexKey;
 use super::{
-    CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, Storage, OnDiskMapIndex, UniversalMapIndexConfig,
+    CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, OnDiskMapIndex, Storage, UniversalMapIndexConfig,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -108,6 +108,57 @@ where
             self.deleted_count += 1;
         }
     }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        let mut files = vec![
+            self.path.join(HASHMAP_PATH),
+            self.path.join(DELETED_PATH),
+            self.path.join(CONFIG_PATH),
+        ];
+        files.extend(self.storage.point_to_values.files());
+        files
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![
+            self.path.join(HASHMAP_PATH),
+            self.path.join(DELETED_PATH),
+            self.path.join(CONFIG_PATH),
+        ];
+        files.extend(self.storage.point_to_values.immutable_files());
+        files
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.storage.value_to_points.populate()?;
+        self.storage.point_to_values.populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            path,
+            storage,
+            deleted_count: _,
+            total_key_value_pairs: _,
+        } = self;
+        let Storage {
+            value_to_points,
+            point_to_values,
+            deleted: _,
+        } = storage;
+        value_to_points.clear_ram_cache()?;
+        clear_disk_cache(&path.join(DELETED_PATH))?;
+        point_to_values.clear_cache()?;
+        Ok(())
+    }
+
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        self.storage.ram_usage_bytes()
+    }
 }
 
 impl<N, S> OnDiskMapIndex<N, S>
@@ -191,7 +242,7 @@ where
     }
 
     /// No-op flusher: the on-disk state is build-time only. See the type-level
-    /// docs on [`UniversalMapIndex`] for the deletion durability contract.
+    /// docs on [`OnDiskMapIndex`] for the deletion durability contract.
     pub fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }
@@ -206,56 +257,5 @@ where
         }
         let _ = fs::remove_dir(path);
         Ok(())
-    }
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![
-            self.path.join(HASHMAP_PATH),
-            self.path.join(DELETED_PATH),
-            self.path.join(CONFIG_PATH),
-        ];
-        files.extend(self.storage.point_to_values.files());
-        files
-    }
-
-    pub fn immutable_files(&self) -> Vec<PathBuf> {
-        let mut files = vec![
-            self.path.join(HASHMAP_PATH),
-            self.path.join(DELETED_PATH),
-            self.path.join(CONFIG_PATH),
-        ];
-        files.extend(self.storage.point_to_values.immutable_files());
-        files
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage.value_to_points.populate()?;
-        self.storage.point_to_values.populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        let Self {
-            path,
-            storage,
-            deleted_count: _,
-            total_key_value_pairs: _,
-        } = self;
-        let Storage {
-            value_to_points,
-            point_to_values,
-            deleted: _,
-        } = storage;
-        value_to_points.clear_ram_cache()?;
-        clear_disk_cache(&path.join(DELETED_PATH))?;
-        point_to_values.clear_cache()?;
-        Ok(())
-    }
-
-    pub(crate) fn ram_usage_bytes(&self) -> usize {
-        self.storage.ram_usage_bytes()
     }
 }

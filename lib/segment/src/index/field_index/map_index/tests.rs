@@ -351,9 +351,11 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
                 .unwrap()
                 .unwrap()
         }
-        IndexType::Mmap => MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &deleted)
-            .unwrap()
-            .unwrap(),
+        IndexType::Mmap => {
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &deleted)
+                .unwrap()
+                .unwrap()
+        }
         IndexType::RamMmap => {
             MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), false, &deleted)
                 .unwrap()

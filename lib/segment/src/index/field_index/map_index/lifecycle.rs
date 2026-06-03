@@ -31,17 +31,17 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(universal_index) =
+        let Some(on_disk_index) =
             OnDiskMapIndex::open(&MmapFs, path, !effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };
 
         let index = if effective_is_on_disk {
-            MapIndex::OnDisk(Box::new(universal_index))
+            MapIndex::OnDisk(on_disk_index)
         } else {
             // Load into RAM, use mmap as backing storage
-            MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(universal_index)?)
+            MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
         };
         Ok(Some(index))
     }

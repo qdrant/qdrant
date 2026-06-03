@@ -313,11 +313,9 @@ impl IndexSelector<'_> {
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         match self {
-            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(MapIndex::builder_immutable(
-                &map_dir(dir, field),
-                *is_on_disk,
-                deleted_points,
-            )),
+            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(
+                MapIndex::builder_immutable(&map_dir(dir, field), *is_on_disk, deleted_points),
+            ),
             IndexSelector::Appendable { dir } => {
                 make_gridstore(MapIndex::builder_mutable(map_dir(dir, field)))
             }

@@ -5,23 +5,27 @@ use std::path::PathBuf;
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalRead, UniversalWrite};
 use gridstore::Blob;
 
 use super::super::MapIndexKey;
-use super::super::read_ops::MapIndexRead;
 use super::super::on_disk_map_index::OnDiskMapIndex;
-use super::{ContainerSegment, ImmutableMapIndex, Storage};
+use super::super::read_ops::MapIndexRead;
+use super::{ContainerSegment, ImmutableMapIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
-impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
+impl<N, S> ImmutableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    N: MapIndexKey + ?Sized,
+    S: UniversalRead,
 {
     /// Open and load the immutable map index from mmap storage.
-    pub(in super::super) fn load_from_on_disk(index: OnDiskMapIndex<N>) -> OperationResult<Self> {
-        let index = Box::new(index);
+    pub(in super::super) fn load_from_on_disk(
+        index: OnDiskMapIndex<N, S>,
+    ) -> OperationResult<Self> {
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 
         let mut indexed_points = 0;
@@ -97,7 +101,7 @@ where
             point_to_values,
             indexed_points,
             values_count,
-            storage: Storage::Mmap(index),
+            storage: index,
             cached_ram_usage_bytes: 0,
         };
         result.cached_ram_usage_bytes = result.compute_ram_usage_bytes();
@@ -137,7 +141,14 @@ where
         }
         false
     }
+}
 
+impl<N, S> ImmutableMapIndex<N, S>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    N: MapIndexKey + ?Sized,
+    S: UniversalWrite,
+{
     /// Removes `idx` from values-to-points-container.
     /// It is implemented by shrinking the range of values-to-points by one and moving the removed element
     /// out of the range.
@@ -209,12 +220,8 @@ where
                     idx,
                 );
 
-                // Update persisted storage
-                match self.storage {
-                    Storage::Mmap(ref mut index) => {
-                        index.remove_point(idx);
-                    }
-                }
+                // Update storage
+                self.storage.remove_point(idx);
                 removed_values_count += 1;
             }
 
@@ -229,9 +236,7 @@ where
 
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Mmap(index) => index.wipe(),
-        }
+        self.storage.wipe()
     }
 
     /// Clear cache
@@ -239,29 +244,21 @@ where
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Mmap(ref index) => index.clear_cache(),
-        }
+        self.storage.clear_cache()
     }
 
     #[inline]
     pub(in super::super) fn files(&self) -> Vec<PathBuf> {
-        match self.storage {
-            Storage::Mmap(ref index) => index.files(),
-        }
+        self.storage.files()
     }
 
     #[inline]
     pub(in super::super) fn immutable_files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Mmap(index) => index.immutable_files(),
-        }
+        self.storage.immutable_files()
     }
 
     #[inline]
     pub(in super::super) fn flusher(&self) -> Flusher {
-        match self.storage {
-            Storage::Mmap(ref index) => index.flusher(),
-        }
+        self.storage.flusher()
     }
 }

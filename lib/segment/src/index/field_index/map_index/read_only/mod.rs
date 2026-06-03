@@ -2,6 +2,7 @@ use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use crate::index::field_index::map_index::MapIndexKey;
+use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
 use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
 use crate::index::field_index::map_index::on_disk_map_index::OnDiskMapIndex;
 
@@ -32,8 +33,9 @@ where
 {
     /// Loads into RAM from appendable storage format
     Appendable(ReadOnlyAppendableMapIndex<N, S>),
+    Immutable(ImmutableMapIndex<N, S>),
     /// Directly reads from storage in immutable format
-    Immutable(OnDiskMapIndex<N, S>),
+    OnDisk(OnDiskMapIndex<N, S>),
 }
 
 #[cfg(test)]

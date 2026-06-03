@@ -13,11 +13,11 @@ pub mod immutable_map_index;
 pub mod key;
 mod lifecycle;
 pub mod mutable_map_index;
+pub mod on_disk_map_index;
 mod payload_index_impl;
 pub mod read_ops;
 #[cfg(test)]
 mod tests;
-pub mod on_disk_map_index;
 mod value_indexer_impl;
 
 pub mod read_only;
@@ -40,5 +40,5 @@ where
     /// Loaded in RAM, use immutable storage format
     Immutable(ImmutableMapIndex<N>),
     /// Served directly from storage (via mmap), use immutable format
-    OnDisk(Box<OnDiskMapIndex<N>>),
+    OnDisk(OnDiskMapIndex<N>),
 }
