@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
 
@@ -65,7 +66,9 @@ impl<T: Encodable + Numericable + Default + StoredValue> InMemoryNumericIndex<T>
     /// # Warning
     ///
     /// Expensive because this reads the full on-disk index.
-    pub(in super::super) fn from_on_disk(on_disk_index: &OnDiskNumericIndex<T>) -> Self {
+    pub(in super::super) fn from_on_disk<S: UniversalRead>(
+        on_disk_index: &OnDiskNumericIndex<T, S>,
+    ) -> Self {
         let point_count = on_disk_index.storage.point_to_values.len();
 
         (0..point_count as PointOffsetType)

@@ -182,7 +182,11 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + Default + StoredValue + 'static> OnDiskNumericIndex<T> {
+impl<T, S> OnDiskNumericIndex<T, S>
+where
+    T: Encodable + Numericable + Default + StoredValue + 'static,
+    S: UniversalRead,
+{
     pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let path = self.path.clone();

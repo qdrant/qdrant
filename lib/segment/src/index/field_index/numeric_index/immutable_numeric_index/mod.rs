@@ -1,6 +1,7 @@
 use std::ops::Bound;
 
 use common::bitvec::{BitSliceExt as _, BitVec};
+use common::universal_io::{MmapFile, UniversalRead};
 
 use super::Encodable;
 use super::on_disk_numeric_index::OnDiskNumericIndex;
@@ -12,14 +13,17 @@ use crate::index::field_index::stored_point_to_values::StoredValue;
 mod lifecycle;
 mod read_ops;
 
-pub struct ImmutableNumericIndex<T: Encodable + Numericable + StoredValue + Default> {
+pub struct ImmutableNumericIndex<
+    T: Encodable + Numericable + StoredValue + Default,
+    S: UniversalRead = MmapFile,
+> {
     pub(super) map: NumericKeySortedVec<T>,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
     pub(super) max_values_per_point: usize,
     pub(super) point_to_values: ImmutablePointToValues<T>,
     // Backing storage, source of state, persists deletions
-    pub(super) storage: Box<OnDiskNumericIndex<T>>,
+    pub(super) storage: Box<OnDiskNumericIndex<T, S>>,
     /// Snapshot of approximate RAM usage at construction time.
     /// Not refreshed on `remove_point`.
     pub(super) cached_ram_usage_bytes: usize,

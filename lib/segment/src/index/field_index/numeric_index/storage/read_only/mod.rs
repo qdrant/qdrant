@@ -27,7 +27,7 @@ pub enum ReadOnlyNumericIndexInner<
     /// Loads into RAM from appendable (Gridstore) storage format
     Appendable(ReadOnlyAppendableNumericIndex<T, S>),
     /// Loads into RAM from storage in immutable format
-    Immutable(ImmutableNumericIndex<T>),
+    Immutable(ImmutableNumericIndex<T, S>),
     /// Directly reads from storage in immutable format
     OnDisk(OnDiskNumericIndex<T, S>),
 }
