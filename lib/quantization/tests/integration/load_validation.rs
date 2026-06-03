@@ -129,15 +129,15 @@ mod tests {
         // Sanity check: the encoded metadata records the real dimension under `actual_dim`. This
         // guards against the field being renamed, which would silently make the patch below (and
         // thus this regression test) a no-op.
-        let original = std::fs::read_to_string(&meta_path).unwrap();
+        let original = fs_err::read_to_string(&meta_path).unwrap();
         let metadata: serde_json::Value = serde_json::from_str(&original).unwrap();
         assert_eq!(metadata["actual_dim"].as_u64(), Some(vector_dim as u64));
 
         let patch_actual_dim = |actual_dim: u64| {
-            let contents = std::fs::read_to_string(&meta_path).unwrap();
+            let contents = fs_err::read_to_string(&meta_path).unwrap();
             let mut metadata: serde_json::Value = serde_json::from_str(&contents).unwrap();
             metadata["actual_dim"] = serde_json::Value::from(actual_dim);
-            std::fs::write(&meta_path, serde_json::to_string(&metadata).unwrap()).unwrap();
+            fs_err::write(&meta_path, serde_json::to_string(&metadata).unwrap()).unwrap();
         };
 
         // Each stored vector is only `quantized_vector_size` bytes, but the patched metadata
