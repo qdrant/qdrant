@@ -1,11 +1,12 @@
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 
 use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracker;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
-impl IdTrackerRead for ReadOnlyAppendableIdTracker {
+impl<S: UniversalRead> IdTrackerRead for ReadOnlyAppendableIdTracker<S> {
     fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
         PointMappingsRefEnum::Plain(&self.mappings)
     }
