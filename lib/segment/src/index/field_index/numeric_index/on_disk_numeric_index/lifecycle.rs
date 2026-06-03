@@ -228,18 +228,6 @@ where
         Box::new(|| Ok(()))
     }
 
-    /// Marks `idx` as deleted in the in-memory deletion bitvec.
-    ///
-    /// Not persisted: on reopen, deletions must be re-supplied via the
-    /// `deleted_points` argument to [`Self::open`].
-    pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let idx = idx as usize;
-        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
-            self.storage.deleted.set(idx, true);
-            self.deleted_count += 1;
-        }
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
