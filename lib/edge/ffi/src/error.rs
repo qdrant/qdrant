@@ -1,4 +1,5 @@
 use segment::common::operation_error::OperationError;
+use segment::json_path::JsonPath;
 
 /// The error type returned from fallible `EdgeShard` operations and
 /// `UpdateOperation` constructors.
@@ -49,6 +50,20 @@ impl EdgeError {
             message: message.into(),
         }
     }
+}
+
+/// Parse a payload key into a `JsonPath`, returning a typed error for invalid keys.
+///
+/// Centralizes the (identical) parse-or-EdgeError logic used across
+/// filter/query/update. `JsonPath`'s `FromStr::Err` is `()`, so the upstream
+/// error carries no additional information; the formatted message is as
+/// informative as possible.
+pub(crate) fn parse_json_path(key: &str) -> Result<JsonPath, EdgeError> {
+    key.parse().map_err(|_: ()| {
+        EdgeError::invalid_argument(format!(
+            "invalid payload key {key:?}: not a valid JSON path"
+        ))
+    })
 }
 
 pub type Result<T, E = EdgeError> = std::result::Result<T, E>;

@@ -157,7 +157,7 @@ impl EdgeShard {
         let shard = guard.as_ref().ok_or(EdgeError::OperationError {
             message: "EdgeShard is closed".into(),
         })?;
-        let points = shard.query(request.into())?;
+        let points = shard.query(request.try_into()?)?;
         Ok(points.into_iter().map(ScoredPoint::from).collect())
     }
 
@@ -177,7 +177,7 @@ impl EdgeShard {
         let shard = guard.as_ref().ok_or(EdgeError::OperationError {
             message: "EdgeShard is closed".into(),
         })?;
-        let points = shard.search(request.into())?;
+        let points = shard.search(request.try_into()?)?;
         Ok(points.into_iter().map(ScoredPoint::from).collect())
     }
 
@@ -200,7 +200,7 @@ impl EdgeShard {
         let shard = guard.as_ref().ok_or(EdgeError::OperationError {
             message: "EdgeShard is closed".into(),
         })?;
-        let (records, next_offset) = shard.scroll(request.into())?;
+        let (records, next_offset) = shard.scroll(request.try_into()?)?;
         Ok(ScrollResponse {
             records: records.into_iter().map(Record::from).collect(),
             next_offset: next_offset.map(PointId::from),
@@ -221,7 +221,7 @@ impl EdgeShard {
         let shard = guard.as_ref().ok_or(EdgeError::OperationError {
             message: "EdgeShard is closed".into(),
         })?;
-        let count = shard.count(request.into())?;
+        let count = shard.count(request.try_into()?)?;
         Ok(count as u64)
     }
 
@@ -239,7 +239,7 @@ impl EdgeShard {
         let shard = guard.as_ref().ok_or(EdgeError::OperationError {
             message: "EdgeShard is closed".into(),
         })?;
-        let response = shard.facet(request.into())?;
+        let response = shard.facet(request.try_into()?)?;
         let hits = response
             .hits
             .into_iter()
@@ -276,7 +276,10 @@ impl EdgeShard {
         let shard = guard.as_ref().ok_or(EdgeError::OperationError {
             message: "EdgeShard is closed".into(),
         })?;
-        let ids: Vec<PointIdType> = point_ids.into_iter().map(PointIdType::from).collect();
+        let ids: Vec<PointIdType> = point_ids
+            .into_iter()
+            .map(PointIdType::try_from)
+            .collect::<crate::error::Result<Vec<_>>>()?;
         let records = shard.retrieve(
             &ids,
             with_payload.map(WithPayloadInterface::from),

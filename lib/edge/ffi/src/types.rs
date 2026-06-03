@@ -26,12 +26,20 @@ pub enum PointId {
     Uuid { value: String },
 }
 
-impl From<PointId> for PointIdType {
-    fn from(id: PointId) -> Self {
+impl TryFrom<PointId> for PointIdType {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(id: PointId) -> Result<Self, Self::Error> {
         match id {
-            PointId::NumId { value } => PointIdType::NumId(value),
+            PointId::NumId { value } => Ok(PointIdType::NumId(value)),
             PointId::Uuid { value } => {
-                PointIdType::Uuid(uuid::Uuid::parse_str(&value).expect("valid UUID"))
+                let uuid = uuid::Uuid::parse_str(&value).map_err(|e| {
+                    crate::error::EdgeError::invalid_argument(format!(
+                        "invalid point UUID {:?}: {e}",
+                        value
+                    ))
+                })?;
+                Ok(PointIdType::Uuid(uuid))
             }
         }
     }
@@ -273,13 +281,15 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn into_internal(self) -> std::result::Result<PointStructPersisted, String> {
+    pub fn into_internal(self) -> std::result::Result<PointStructPersisted, crate::error::EdgeError> {
         let payload = match self.payload {
-            Some(json) => Some(json_to_payload(&json)?),
+            Some(json) => Some(json_to_payload(&json).map_err(|e| {
+                crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}"))
+            })?),
             None => None,
         };
         Ok(PointStructPersisted {
-            id: PointIdType::from(self.id),
+            id: PointIdType::try_from(self.id)?,
             vector: VectorStructPersisted::from(self.vector),
             payload,
         })

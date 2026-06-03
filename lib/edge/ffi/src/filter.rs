@@ -25,9 +25,16 @@ pub struct GeoPoint {
     pub lat: f64,
 }
 
-impl From<GeoPoint> for SegmentGeoPoint {
-    fn from(p: GeoPoint) -> Self {
-        SegmentGeoPoint::new(p.lon, p.lat).expect("valid geo point")
+impl TryFrom<GeoPoint> for SegmentGeoPoint {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(p: GeoPoint) -> Result<Self, Self::Error> {
+        SegmentGeoPoint::new(p.lon, p.lat).map_err(|e| {
+            crate::error::EdgeError::invalid_argument(format!(
+                "invalid geo point (lon={}, lat={}): {e}",
+                p.lon, p.lat
+            ))
+        })
     }
 }
 
@@ -51,12 +58,14 @@ pub struct GeoBoundingBox {
     pub bottom_right: GeoPoint,
 }
 
-impl From<GeoBoundingBox> for SegmentGeoBoundingBox {
-    fn from(b: GeoBoundingBox) -> Self {
-        SegmentGeoBoundingBox {
-            top_left: SegmentGeoPoint::from(b.top_left),
-            bottom_right: SegmentGeoPoint::from(b.bottom_right),
-        }
+impl TryFrom<GeoBoundingBox> for SegmentGeoBoundingBox {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(b: GeoBoundingBox) -> Result<Self, Self::Error> {
+        Ok(SegmentGeoBoundingBox {
+            top_left: SegmentGeoPoint::try_from(b.top_left)?,
+            bottom_right: SegmentGeoPoint::try_from(b.bottom_right)?,
+        })
     }
 }
 
@@ -71,12 +80,14 @@ pub struct GeoRadius {
     pub radius: f64,
 }
 
-impl From<GeoRadius> for SegmentGeoRadius {
-    fn from(r: GeoRadius) -> Self {
-        SegmentGeoRadius {
-            center: SegmentGeoPoint::from(r.center),
+impl TryFrom<GeoRadius> for SegmentGeoRadius {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: GeoRadius) -> Result<Self, Self::Error> {
+        Ok(SegmentGeoRadius {
+            center: SegmentGeoPoint::try_from(r.center)?,
             radius: ordered_float::OrderedFloat(r.radius),
-        }
+        })
     }
 }
 
@@ -225,10 +236,21 @@ pub struct FieldCondition {
     pub values_count: Option<ValuesCount>,
 }
 
-impl From<FieldCondition> for SegmentFieldCondition {
-    fn from(c: FieldCondition) -> Self {
-        SegmentFieldCondition {
-            key: c.key.parse().expect("valid json path"),
+impl TryFrom<FieldCondition> for SegmentFieldCondition {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(c: FieldCondition) -> Result<Self, Self::Error> {
+        let key = crate::error::parse_json_path(&c.key)?;
+        let geo_bounding_box = c
+            .geo_bounding_box
+            .map(SegmentGeoBoundingBox::try_from)
+            .transpose()?;
+        let geo_radius = c
+            .geo_radius
+            .map(SegmentGeoRadius::try_from)
+            .transpose()?;
+        Ok(SegmentFieldCondition {
+            key,
             r#match: c.r#match.map(SegmentMatch::from),
             range: c.range.map(|r| {
                 RangeInterface::Float(Range {
@@ -238,13 +260,13 @@ impl From<FieldCondition> for SegmentFieldCondition {
                     lt: r.lt.map(ordered_float::OrderedFloat),
                 })
             }),
-            geo_bounding_box: c.geo_bounding_box.map(SegmentGeoBoundingBox::from),
-            geo_radius: c.geo_radius.map(SegmentGeoRadius::from),
+            geo_bounding_box,
+            geo_radius,
             geo_polygon: None,
             values_count: c.values_count.map(SegmentValuesCount::from),
             is_empty: None,
             is_null: None,
-        }
+        })
     }
 }
 
@@ -268,33 +290,41 @@ pub enum Condition {
     Filter { filter: Filter },
 }
 
-impl From<Condition> for SegmentCondition {
-    fn from(c: Condition) -> Self {
+impl TryFrom<Condition> for SegmentCondition {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(c: Condition) -> Result<Self, Self::Error> {
         match c {
-            Condition::Field { condition } => SegmentCondition::Field(SegmentFieldCondition::from(condition)),
-            Condition::IsEmpty { key } => SegmentCondition::IsEmpty(IsEmptyCondition {
-                is_empty: PayloadField {
-                    key: key.parse().expect("valid json path"),
-                },
-            }),
-            Condition::IsNull { key } => SegmentCondition::IsNull(IsNullCondition {
-                is_null: PayloadField {
-                    key: key.parse().expect("valid json path"),
-                },
-            }),
+            Condition::Field { condition } => {
+                Ok(SegmentCondition::Field(SegmentFieldCondition::try_from(condition)?))
+            }
+            Condition::IsEmpty { key } => {
+                let parsed_key = crate::error::parse_json_path(&key)?;
+                Ok(SegmentCondition::IsEmpty(IsEmptyCondition {
+                    is_empty: PayloadField { key: parsed_key },
+                }))
+            }
+            Condition::IsNull { key } => {
+                let parsed_key = crate::error::parse_json_path(&key)?;
+                Ok(SegmentCondition::IsNull(IsNullCondition {
+                    is_null: PayloadField { key: parsed_key },
+                }))
+            }
             Condition::HasId { ids } => {
-                let id_set: AHashSet<PointIdType> =
-                    ids.into_iter().map(PointIdType::from).collect();
-                SegmentCondition::HasId(HasIdCondition {
-                    has_id: MaybeArc::NoArc(id_set),
-                })
+                let id_set: Result<AHashSet<PointIdType>, crate::error::EdgeError> =
+                    ids.into_iter().map(PointIdType::try_from).collect();
+                Ok(SegmentCondition::HasId(HasIdCondition {
+                    has_id: MaybeArc::NoArc(id_set?),
+                }))
             }
             Condition::HasVector { vector_name } => {
-                SegmentCondition::HasVector(HasVectorCondition {
+                Ok(SegmentCondition::HasVector(HasVectorCondition {
                     has_vector: vector_name,
-                })
+                }))
             }
-            Condition::Filter { filter } => SegmentCondition::Filter(SegmentFilter::from(filter)),
+            Condition::Filter { filter } => {
+                Ok(SegmentCondition::Filter(SegmentFilter::try_from(filter)?))
+            }
         }
     }
 }
@@ -346,17 +376,27 @@ pub struct Filter {
     pub must_not: Option<Vec<Condition>>,
 }
 
-impl From<Filter> for SegmentFilter {
-    fn from(f: Filter) -> Self {
-        SegmentFilter {
-            must: f.must.map(|v| v.into_iter().map(SegmentCondition::from).collect()),
-            should: f
-                .should
-                .map(|v| v.into_iter().map(SegmentCondition::from).collect()),
-            must_not: f
-                .must_not
-                .map(|v| v.into_iter().map(SegmentCondition::from).collect()),
+impl TryFrom<Filter> for SegmentFilter {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(f: Filter) -> Result<Self, Self::Error> {
+        let must = f
+            .must
+            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .transpose()?;
+        let should = f
+            .should
+            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .transpose()?;
+        let must_not = f
+            .must_not
+            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .transpose()?;
+        Ok(SegmentFilter {
+            must,
+            should,
+            must_not,
             min_should: None,
-        }
+        })
     }
 }
