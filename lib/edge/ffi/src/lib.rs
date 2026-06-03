@@ -106,7 +106,7 @@ impl EdgeShard {
         let shard = guard.as_ref().ok_or(EdgeError::OperationError {
             message: "EdgeShard is closed".into(),
         })?;
-        shard.flush();
+        shard.flush()?;
         Ok(())
     }
 

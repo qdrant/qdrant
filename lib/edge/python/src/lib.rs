@@ -119,7 +119,7 @@ impl PyEdgeShard {
     }
 
     pub fn flush(&self) -> Result<()> {
-        self.get_shard()?.flush();
+        self.get_shard()?.flush()?;
         Ok(())
     }
 
