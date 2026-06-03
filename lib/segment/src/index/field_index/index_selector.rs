@@ -12,7 +12,7 @@ use super::null_index::{ImmutableNullIndex, NullIndex};
 use super::numeric_index::{
     Encodable, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
 };
-use super::stored_point_to_values::StoredValue;
+use super::on_disk_point_to_values::StoredValue;
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;

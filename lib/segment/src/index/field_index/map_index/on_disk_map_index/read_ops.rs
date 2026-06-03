@@ -14,7 +14,7 @@ use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::OnDiskMapIndex;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::stored_point_to_values::ValuesIter;
+use crate::index::field_index::on_disk_point_to_values::ValuesIter;
 use crate::index::payload_config::StorageType;
 
 impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for OnDiskMapIndex<N, S> {

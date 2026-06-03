@@ -21,7 +21,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
-use crate::index::field_index::stored_point_to_values::{OnDiskPointToValues, StoredValue};
+use crate::index::field_index::on_disk_point_to_values::{OnDiskPointToValues, StoredValue};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UniversalNumericIndexConfig {

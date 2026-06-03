@@ -17,7 +17,7 @@ use super::{
 };
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;

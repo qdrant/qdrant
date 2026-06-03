@@ -28,7 +28,7 @@ use super::{
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, GeoHashRaw};
-use crate::index::field_index::stored_point_to_values::OnDiskPointToValues;
+use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 use crate::types::GeoPoint;
 
 impl<S: UniversalRead> StoredGeoMapIndex<S> {

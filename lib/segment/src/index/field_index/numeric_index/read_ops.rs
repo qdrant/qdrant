@@ -14,7 +14,7 @@ use serde_json::Value;
 use super::{Encodable, NumericIndex};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::{Numericable, Point};
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };

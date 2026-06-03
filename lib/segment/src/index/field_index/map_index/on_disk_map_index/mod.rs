@@ -7,7 +7,7 @@ use common::universal_io::{MmapFile, UniversalRead};
 use serde::{Deserialize, Serialize};
 
 use super::MapIndexKey;
-use crate::index::field_index::stored_point_to_values::OnDiskPointToValues;
+use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 
 mod lifecycle;
 mod live_reload;
