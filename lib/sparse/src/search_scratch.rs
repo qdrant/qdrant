@@ -1,11 +1,18 @@
+use std::fmt::Debug;
+
 use blink_alloc::Blink;
 use common::defaults::POOL_KEEP_LIMIT;
 use common::types::ScoreType;
 use parking_lot::Mutex;
 
-#[derive(Debug)]
 pub struct SearchScratchPool {
-    pool: Mutex<Vec<SearchScratchScores>>,
+    pool: Mutex<Vec<(SearchScratchScores, Blink)>>,
+}
+
+impl Debug for SearchScratchPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearchScratchPool").finish_non_exhaustive()
+    }
 }
 
 impl SearchScratchPool {
@@ -18,11 +25,11 @@ impl SearchScratchPool {
 
     /// Take a single [`SearchScratch`] from the pool.
     pub fn get(&self) -> SearchScratch<'_> {
-        let scores = self.pool.lock().pop().unwrap_or_default();
+        let (scores, arena) = self.pool.lock().pop().unwrap_or_default();
         SearchScratch {
             pool: self,
             scores,
-            arena: Blink::new(),
+            arena,
         }
     }
 }
@@ -53,11 +60,14 @@ impl Drop for SearchScratch<'_> {
         let SearchScratch {
             pool: SearchScratchPool { pool },
             scores,
-            arena: _,
+            arena,
         } = self;
         let mut pool = pool.lock();
         if pool.len() < *POOL_KEEP_LIMIT {
-            pool.push(std::mem::take(scores));
+            let scores = std::mem::take(scores);
+            let mut arena = std::mem::take(arena);
+            arena.reset();
+            pool.push((scores, arena));
         }
     }
 }

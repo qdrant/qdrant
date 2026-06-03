@@ -6966,6 +6966,7 @@ dependencies = [
  "atomicwrites",
  "bincode 1.3.3",
  "bitvec",
+ "blink-alloc",
  "bytemuck",
  "byteorder",
  "cc",
