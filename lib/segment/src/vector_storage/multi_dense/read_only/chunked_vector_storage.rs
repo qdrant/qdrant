@@ -55,25 +55,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     ) {
         let point_offsets = keys
             .into_iter()
-            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset as _, 1));
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
-        let vector_offsets = self.offsets.iter_vectors::<P, _>(point_offsets).map(
-            |((user_data, point_offset), multi_offset)| {
-                let &[multi_offset] = multi_offset.as_ref() else {
-                    unreachable!("multi-vector offsets are stored as vectors of length 1");
-                };
-
-                let MultivectorMmapOffset {
-                    offset,
-                    count,
-                    capacity: _,
-                } = multi_offset;
-
-                ((user_data, point_offset), offset, count)
-            },
-        );
-
-        let vectors = self.vectors.iter_vectors::<P, _>(vector_offsets);
+        let vectors =
+            super::iter_vectors::<P, _, _, _>(&self.offsets, &self.vectors, point_offsets);
 
         for ((user_data, point_offset), flattened) in vectors {
             let vector = CowVector::MultiDense(T::into_float_multivector(
