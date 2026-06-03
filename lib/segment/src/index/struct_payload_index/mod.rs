@@ -287,7 +287,7 @@ impl StructPayloadIndex {
     }
 
     fn selector_with_type(&self, index_type: &FullPayloadIndexType) -> IndexSelector<'_> {
-        let selector = match index_type.storage_type {
+        match index_type.storage_type {
             payload_config::StorageType::Gridstore => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
             }
@@ -297,9 +297,7 @@ impl StructPayloadIndex {
                     is_on_disk,
                 })
             }
-        };
-
-        selector
+        }
     }
 
     pub fn populate(&self) -> OperationResult<()> {
