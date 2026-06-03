@@ -169,6 +169,8 @@ pub trait SegmentOptimizer: Sync {
         // }
         let mut bytes_count_by_vector_name = HashMap::new();
 
+        let mut any_has_deferred = false;
+
         for segment in optimizing_segments {
             let segment = match segment {
                 LockedSegment::Original(segment) => segment,
@@ -179,6 +181,8 @@ pub trait SegmentOptimizer: Sync {
                 }
             };
             let locked_segment = segment.read();
+
+            any_has_deferred |= locked_segment.has_deferred_points();
 
             for vector_name in locked_segment.vector_names() {
                 let vector_size = locked_segment.available_vectors_size_in_bytes(&vector_name)?;
@@ -207,7 +211,13 @@ pub trait SegmentOptimizer: Sync {
         let mut sparse_vector_data = segment_optimizer_config.plain_sparse_vector_config.clone();
 
         // If indexing, change to HNSW index and quantization
-        if threshold_is_indexed {
+        // We must always create an HNSW index if we have deferred points to be able to promote them
+        if threshold_is_indexed || any_has_deferred {
+            if !threshold_is_indexed {
+                log::info!(
+                    "Segment has deferred points, but doesn't exceed indexing threshold. It will be optimized with HNSW index and quantization."
+                );
+            }
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 if let Some(vector_cfg) = segment_optimizer_config.dense_vector.get(vector_name) {
                     // Assign HNSW index
