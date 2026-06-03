@@ -9,7 +9,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::change::MappingChange;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::read_mappings_iter;
 use crate::id_tracker::mutable_id_tracker::versions_storage::VERSION_ELEMENT_SIZE;
-use crate::types::SeqNumberType;
+use crate::types::{PointIdType, SeqNumberType};
 
 /// Set of point offsets that changed during a [`ReadOnlyAppendableIdTracker::live_reload`].
 ///
@@ -37,41 +37,55 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Deletes are driven by the mapping and need no version, a deleted point's version is
     /// considered gone.
     pub fn live_reload(&mut self) -> OperationResult<LiveReloadResult> {
-        // Number of committed versions before this reload. Offsets below this were already reported.
-        let committed_before = self.internal_to_version.len() as PointOffsetType;
+        // Append versions flushed since the last reload (mappings are flushed before versions).
+        // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
+        let committed = self.reload_versions()? as PointOffsetType;
 
-        // Apply new mapping changes, collecting offsets that a delete removed from the mapping.
+        // Consume new mapping changes. Inserts are buffered until committed (their version exists);
+        // deletes act on the committed mapping immediately, or cancel a still-pending insert.
         let changes = self.read_new_mapping_changes()?;
         let mut deleted = Vec::new();
         for change in &changes {
             match *change {
                 MappingChange::Insert(external_id, internal_id) => {
-                    self.mappings.set_link(external_id, internal_id);
+                    self.pending_inserts.insert(external_id, internal_id);
                 }
                 MappingChange::Delete(external_id) => {
-                    // Resolve the internal id before dropping, the mapping is gone afterwards.
-                    // A successful resolve means the point was live right before this delete.
-                    if let Some(internal_id) = self.mappings.internal_id(&external_id) {
-                        self.mappings.drop(external_id);
+                    // A point can be both committed (an old offset) and pending (a not-yet-committed
+                    // re-insert at a new offset). A delete removes it from both. Report the deleted
+                    // offset only if it was committed (and therefore previously reported).
+                    self.pending_inserts.remove(&external_id);
+                    if let Some(internal_id) = self.mappings.drop(external_id) {
                         deleted.push(internal_id);
                     }
                 }
             }
         }
 
-        // Append versions flushed since the last reload (mappings are flushed before versions).
-        let committed_now = self.reload_versions()? as PointOffsetType;
-
-        // Inserts: offsets whose version just became readable and that are live in the mapping.
-        let inserted: Vec<PointOffsetType> = (committed_before..committed_now)
-            .filter(|&internal_id| !self.mappings.is_deleted_point(internal_id))
+        // Link in pending inserts whose offset is now covered by the versions file. These are the
+        // newly-committed points and form the reported inserts. Apply in ascending offset order so
+        // `set_link`'s resize never leaves a just-linked offset behind a gap.
+        let mut drained: Vec<(PointOffsetType, PointIdType)> = self
+            .pending_inserts
+            .iter()
+            .filter(|&(_, &internal_id)| internal_id < committed)
+            .map(|(&external_id, &internal_id)| (internal_id, external_id))
             .collect();
+        drained.sort_unstable_by_key(|&(internal_id, _)| internal_id);
 
-        // Deletes: keep only offsets that were previously committed (so we reported them as
-        // inserted) and are still deleted after applying the whole batch (guards re-inserts).
-        deleted.retain(|&internal_id| {
-            internal_id < committed_before && self.mappings.is_deleted_point(internal_id)
-        });
+        let mut inserted = Vec::with_capacity(drained.len());
+        for (internal_id, external_id) in drained {
+            self.pending_inserts.remove(&external_id);
+            // An upsert re-links an existing external id to a new offset; the previously-committed
+            // offset it displaces is now dead and must be reported as deleted.
+            if let Some(previous) = self.mappings.set_link(external_id, internal_id)
+                && previous != internal_id
+            {
+                deleted.push(previous);
+            }
+            inserted.push(internal_id);
+        }
+
         deleted.sort_unstable();
         deleted.dedup();
 
@@ -137,6 +151,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             segment_path: _,
             internal_to_version,
             mappings: _,
+            pending_inserts: _,
             mappings_read_to: _,
             mappings_file: _,
             versions_file,

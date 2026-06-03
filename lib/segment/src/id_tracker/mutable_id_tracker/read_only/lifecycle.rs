@@ -1,18 +1,14 @@
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead};
+use common::universal_io::{OkNotFound, OpenOptions, Populate, UniversalRead};
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::mutable_id_tracker::mappings_storage::{mappings_path, read_mappings};
-use crate::id_tracker::mutable_id_tracker::versions_storage::{
-    VERSION_ELEMENT_SIZE, versions_path,
-};
-use crate::types::SeqNumberType;
+use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
+use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
+use crate::id_tracker::point_mappings::PointMappings;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Open a read-only view over the appendable ID tracker data at `segment_path`, threading every
@@ -22,9 +18,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// storage and never creates one. A missing file is an error rather than an empty tracker.
     ///
     /// Unlike [`MutableIdTracker::open`](crate::id_tracker::mutable_id_tracker::MutableIdTracker::open)
-    /// this never writes to the storage: a partial trailing mapping entry is simply not consumed
-    /// (rather than truncated), so it can be picked up later via [`Self::live_reload`] once the
-    /// writer finished flushing it.
+    /// this never writes to the storage. The initial state is loaded by running the same
+    /// reconciliation as [`Self::live_reload`] from an empty tracker: the whole mappings log and
+    /// versions file are consumed, applying only committed points (a partial trailing entry is
+    /// simply not consumed and picked up on a later reload).
     pub fn open(
         fs: &S::Fs,
         segment_path: impl Into<PathBuf>,
@@ -48,50 +45,30 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             ))
         })?;
 
-        let (mappings, mappings_read_to) = {
-            let bytes = mappings_file.read_whole::<u8>()?;
-            let mut reader = Cursor::new(bytes.as_ref());
-            let mappings = read_mappings(&mut reader, deferred_internal_id).map_err(|err| {
-                OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
-            })?;
-            (mappings, reader.position())
-        };
-
-        // Floor the raw byte length to whole elements so a partial trailing entry (from a torn
-        // flush) is ignored, only fully-written versions are loaded. Reading the byte length avoids
-        // `len::<SeqNumberType>()`, which some backends debug-assert is a whole number of elements.
-        let versions_count = versions_file.len::<u8>()? / VERSION_ELEMENT_SIZE;
-        let internal_to_version = versions_file
-            .read::<Sequential, SeqNumberType>(ReadRange {
-                byte_offset: 0,
-                length: versions_count,
-            })?
-            .into_owned();
-
-        // Compare internal point mappings and versions count, report warning if we don't
-        debug_assert!(
-            mappings.total_point_count() >= internal_to_version.len(),
-            "can never have more versions than internal point mappings",
-        );
-        if mappings.total_point_count() != internal_to_version.len() {
-            log::warn!(
-                "Read-only appendable ID tracker mappings and versions count mismatch, could have been partially flushed, assuming automatic recovery by WAL ({} mappings, {} versions)",
-                mappings.total_point_count(),
-                internal_to_version.len(),
-            );
-        }
-
-        #[cfg(debug_assertions)]
-        mappings.assert_mappings();
-
-        Ok(Self {
+        let mut tracker = Self {
             segment_path,
-            internal_to_version,
-            mappings,
-            mappings_read_to,
+            internal_to_version: Vec::new(),
+            mappings: PointMappings::new(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                deferred_internal_id,
+            ),
+            pending_inserts: Default::default(),
+            mappings_read_to: 0,
             mappings_file,
             versions_file,
-        })
+        };
+
+        // Load the existing data the same way a live-reload consumes appended data. The reported
+        // delta (the whole committed set as inserts) is irrelevant for an initial open.
+        tracker.live_reload()?;
+
+        #[cfg(debug_assertions)]
+        tracker.mappings.assert_mappings();
+
+        Ok(tracker)
     }
 }
 

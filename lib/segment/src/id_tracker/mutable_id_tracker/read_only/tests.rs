@@ -31,9 +31,12 @@ fn insert(
     tracker.set_internal_version(internal, version).unwrap();
 }
 
-/// Assert that the read-only tracker exposes the same mappings and versions as the mutable one.
+/// Assert that the read-only tracker exposes the same live points and versions as the mutable one.
+///
+/// Note `total_point_count` is not compared: a point inserted and deleted before its version was
+/// committed never enters the read-only mapping, while the mutable tracker keeps it as a deleted
+/// slot, so the read-only total can legitimately be smaller. The live points must still match.
 fn assert_in_sync(read_only: &ReadOnlyTracker, mutable: &MutableIdTracker) {
-    assert_eq!(read_only.total_point_count(), mutable.total_point_count());
     assert_eq!(
         read_only.available_point_count(),
         mutable.available_point_count(),
@@ -166,6 +169,34 @@ fn test_live_reload_insert_then_delete_within_batch() {
     assert!(read_only.is_deleted_point(1));
 }
 
+/// Upserting an existing point re-links its external id to a new offset and marks the old offset
+/// deleted (append-only storage). A reload must report the new offset as inserted and the old one
+/// as deleted, and resolve the external id to the new offset.
+#[test]
+fn test_live_reload_upsert_relinks_to_new_offset() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(read_only.internal_id(100.into()), Some(0));
+
+    // Upsert point 100: it moves to a new offset, the old offset is marked deleted.
+    mutable.set_link(100.into(), 1).unwrap();
+    mutable.set_internal_version(1, 20).unwrap();
+    flush(&mutable);
+
+    let result = read_only.live_reload().unwrap();
+    assert_eq!(result.inserted, vec![1]);
+    assert_eq!(result.deleted, vec![0]);
+    assert_eq!(read_only.internal_id(100.into()), Some(1));
+    assert_eq!(read_only.internal_version(1), Some(20));
+    assert!(read_only.is_deleted_point(0));
+    assert_in_sync(&read_only, &mutable);
+}
+
 /// The writer flushes mappings before data before versions. A point whose mapping is flushed but
 /// whose version is not yet on disk must NOT be reported as inserted (its data may be partially
 /// written). It is reported on a later reload, once its version lands, even if no new mapping
@@ -185,18 +216,21 @@ fn test_live_reload_withholds_insert_until_version_present() {
     insert(&mut mutable, 200.into(), 1, 11);
     mutable.mapping_flusher()().unwrap();
 
-    // The version is not flushed yet, so the point is withheld from the result.
+    // The version is not flushed yet, so the point is withheld from the result and, crucially, is
+    // not present in the mapping at all (its data may be partially written).
     let result = read_only.live_reload().unwrap();
     assert_eq!(result, LiveReloadResult::default());
+    assert_eq!(read_only.internal_id(200.into()), None);
     assert_eq!(read_only.internal_version(1), None);
 
     // The writer flushes the versions afterwards. A reload with no new mapping changes now reports
-    // the insert and reconciles the version.
+    // the insert, links it into the mapping, and reconciles the version.
     mutable.versions_flusher()().unwrap();
 
     let result = read_only.live_reload().unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
+    assert_eq!(read_only.internal_id(200.into()), Some(1));
     assert_eq!(read_only.internal_version(1), Some(11));
     assert_in_sync(&read_only, &mutable);
 }
