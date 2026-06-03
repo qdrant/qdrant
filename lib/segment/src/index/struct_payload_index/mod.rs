@@ -22,7 +22,7 @@ use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::payload_config::{self, PayloadConfig};
@@ -294,11 +294,6 @@ impl StructPayloadIndex {
         let selector = match index_type.storage_type {
             payload_config::StorageType::Gridstore => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
-            }
-            payload_config::StorageType::RocksDb => {
-                return Err(OperationError::service_error(
-                    "Loading payload index failed: Index is RocksDB but RocksDB feature is disabled.",
-                ));
             }
             payload_config::StorageType::Mmap { is_on_disk } => {
                 IndexSelector::Mmap(IndexSelectorMmap {
