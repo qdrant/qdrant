@@ -9,7 +9,7 @@ use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::read_ops::MapIndexRead;
-use super::super::universal_map_index::UniversalMapIndex;
+use super::super::universal_map_index::OnDiskMapIndex;
 use super::{ContainerSegment, ImmutableMapIndex, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -20,7 +20,7 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     /// Open and load the immutable map index from mmap storage.
-    pub(in super::super) fn open_mmap(index: UniversalMapIndex<N>) -> OperationResult<Self> {
+    pub(in super::super) fn open_mmap(index: OnDiskMapIndex<N>) -> OperationResult<Self> {
         let index = Box::new(index);
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 

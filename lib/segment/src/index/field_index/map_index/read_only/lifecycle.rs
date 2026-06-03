@@ -6,7 +6,7 @@ use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
-use super::super::universal_map_index::UniversalMapIndex;
+use super::super::universal_map_index::OnDiskMapIndex;
 use super::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::IndexMutability;
@@ -52,7 +52,7 @@ where
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         Ok(
-            UniversalMapIndex::open(fs, path, effective_is_on_disk, deleted_points)?
+            OnDiskMapIndex::open(fs, path, effective_is_on_disk, deleted_points)?
                 .map(Self::Immutable),
         )
     }

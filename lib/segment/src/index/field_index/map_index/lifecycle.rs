@@ -10,7 +10,7 @@ use super::builders::MapIndexMmapBuilder;
 use super::immutable_map_index::ImmutableMapIndex;
 use super::key::MapIndexKey;
 use super::mutable_map_index::MutableMapIndex;
-use super::universal_map_index::UniversalMapIndex;
+use super::universal_map_index::OnDiskMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 
@@ -32,7 +32,7 @@ where
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let Some(universal_index) =
-            UniversalMapIndex::open(&MmapFs, path, effective_is_on_disk, deleted_points)?
+            OnDiskMapIndex::open(&MmapFs, path, effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };

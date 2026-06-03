@@ -17,13 +17,13 @@ use fs_err as fs;
 
 use super::super::MapIndexKey;
 use super::{
-    CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, Storage, UniversalMapIndex, UniversalMapIndexConfig,
+    CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, Storage, OnDiskMapIndex, UniversalMapIndexConfig,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 
-impl<N, S> UniversalMapIndex<N, S>
+impl<N, S> OnDiskMapIndex<N, S>
 where
     N: MapIndexKey + Key + ?Sized,
     S: UniversalRead,
@@ -113,7 +113,7 @@ where
     }
 }
 
-impl<N, S> UniversalMapIndex<N, S>
+impl<N, S> OnDiskMapIndex<N, S>
 where
     N: MapIndexKey + Key + ?Sized,
     S: UniversalWrite,

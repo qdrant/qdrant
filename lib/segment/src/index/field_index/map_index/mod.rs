@@ -5,7 +5,7 @@ pub use self::builders::{MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexMmap
 use self::immutable_map_index::ImmutableMapIndex;
 pub use self::key::MapIndexKey;
 use self::mutable_map_index::MutableMapIndex;
-use self::universal_map_index::UniversalMapIndex;
+use self::universal_map_index::OnDiskMapIndex;
 
 mod builders;
 mod facet_index_impl;
@@ -40,5 +40,5 @@ where
     /// Loaded in RAM, use immutable storage format
     Immutable(ImmutableMapIndex<N>),
     /// Served directly from storage (via mmap), use immutable format
-    OnDisk(Box<UniversalMapIndex<N>>),
+    OnDisk(Box<OnDiskMapIndex<N>>),
 }
