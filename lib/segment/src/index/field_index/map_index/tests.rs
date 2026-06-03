@@ -152,11 +152,13 @@ fn test_uuid_payload_index() {
         .unwrap();
 }
 
-#[test]
-fn test_index_non_ascending_insertion() {
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
     let mut builder =
-        MapIndex::<IntPayloadType>::builder_immutable(temp_dir.path(), false, &empty_deleted());
+        MapIndex::<IntPayloadType>::builder_immutable(temp_dir.path(), on_disk, &empty_deleted());
     builder.init().unwrap();
 
     let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
@@ -173,13 +175,16 @@ fn test_index_non_ascending_insertion() {
 
     let index = builder.finalize().unwrap();
     let hw_counter = HardwareCounterCell::new();
-    for (idx, values) in data.iter().enumerate().rev() {
-        let res: Vec<_> = index
+    for (idx, values) in data.into_iter().enumerate().rev() {
+        // values themselves don't promise any particular order
+        // so we only compare the set of values.
+        let values = HashSet::from_iter(values);
+        let res: HashSet<_> = index
             .get_values(idx as u32, &hw_counter)
             .unwrap()
             .map(|i| *i as i32)
             .collect();
-        assert_eq!(res, *values);
+        assert_eq!(res, values);
     }
 }
 
