@@ -18,9 +18,6 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 /// Immutable numeric index served directly from a [`UniversalRead`] storage
 /// backend.
 ///
-/// The storage parameter `S` defaults to [`MmapFile`], but any `UniversalRead`
-/// implementation works — e.g. io_uring or disk-cache wrappers.
-///
 /// On-disk state (`data.bin`, `deleted.bin`, `point_to_values.*`, etc.) is
 /// written once during [`Self::build`] and not mutated afterwards: `deleted.bin`
 /// records only the points whose payload was empty at build time.

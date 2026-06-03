@@ -3,7 +3,7 @@ use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
-use super::super::universal_numeric_index::OnDiskNumericIndex;
+use super::super::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;

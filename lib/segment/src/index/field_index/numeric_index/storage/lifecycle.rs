@@ -11,7 +11,7 @@ use gridstore::Blob;
 use super::super::Encodable;
 use super::super::immutable_numeric_index::ImmutableNumericIndex;
 use super::super::mutable_numeric_index::MutableNumericIndex;
-use super::super::universal_numeric_index::OnDiskNumericIndex;
+use super::super::on_disk_numeric_index::OnDiskNumericIndex;
 use super::NumericIndexInner;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;

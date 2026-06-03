@@ -10,7 +10,7 @@ use gridstore::{Blob, Gridstore};
 use super::super::Encodable;
 use super::super::lifecycle::{HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use super::super::numeric_index_read::NumericIndexRead;
-use super::super::universal_numeric_index::OnDiskNumericIndex;
+use super::super::on_disk_numeric_index::OnDiskNumericIndex;
 use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};

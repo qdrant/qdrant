@@ -3,7 +3,7 @@ use std::ops::Bound;
 use common::bitvec::{BitSliceExt as _, BitVec};
 
 use super::Encodable;
-use super::universal_numeric_index::OnDiskNumericIndex;
+use super::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::field_index::numeric_point::{Numericable, Point};

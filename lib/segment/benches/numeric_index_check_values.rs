@@ -8,7 +8,7 @@ use rand::{RngExt, SeedableRng};
 use segment::common::operation_error::OperationResult;
 use segment::index::field_index::numeric_index::NumericIndexRead;
 use segment::index::field_index::numeric_index::mutable_numeric_index::InMemoryNumericIndex;
-use segment::index::field_index::numeric_index::universal_numeric_index::OnDiskNumericIndex;
+use segment::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;
 use tempfile::Builder;
 
 mod prof;

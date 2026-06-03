@@ -5,11 +5,11 @@ mod lifecycle;
 pub mod mutable_numeric_index;
 mod numeric_field_index;
 pub mod numeric_index_read;
+pub mod on_disk_numeric_index;
 mod query;
 mod read_only;
 mod read_ops;
 mod storage;
-pub mod universal_numeric_index;
 mod value_indexer;
 
 use std::marker::PhantomData;

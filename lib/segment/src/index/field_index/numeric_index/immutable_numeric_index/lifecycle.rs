@@ -6,7 +6,7 @@ use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::super::universal_numeric_index::OnDiskNumericIndex;
+use super::super::on_disk_numeric_index::OnDiskNumericIndex;
 use super::{ImmutableNumericIndex, NumericKeySortedVec};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
