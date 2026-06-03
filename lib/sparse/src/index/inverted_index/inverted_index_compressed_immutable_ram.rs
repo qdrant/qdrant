@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Result};
@@ -8,7 +9,6 @@ use common::universal_io::{MmapFs, Result};
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
 use super::{InvertedIndex, out_of_bounds};
-use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
@@ -44,11 +44,11 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 
         let hw_counter = HardwareCounterCell::disposable();
 
-        let mut arena = SearchScratchArena::new_slow();
+        let mut arena = Blink::new();
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
             let posting_list = mmap_inverted_index.get(i, &arena, &hw_counter)?;
             inverted_index.postings.push(posting_list.to_owned());
-            arena.gc();
+            arena.reset();
         }
 
         mmap_inverted_index.clear_cache()?;
@@ -64,7 +64,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     fn get<'a>(
         &'a self,
         id: DimOffset,
-        _arena: &'a SearchScratchArena,
+        _arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell, // Ignored for in-ram index
     ) -> Result<Self::Iter<'a>> {
         Ok(self.get(id, hw_counter)?.iter())

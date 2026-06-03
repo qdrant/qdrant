@@ -171,7 +171,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
             .iter()
             .zip(remapped_vector.values.iter())
         {
-            let arena = sparse::SearchScratchArena::new_slow();
+            let arena = blink_alloc::Blink::new();
             let posting_list = sparse_vector_index
                 .inverted_index()
                 .get(*dim_id, &arena, &hw_counter)
