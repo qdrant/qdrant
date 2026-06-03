@@ -152,34 +152,6 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         deleted.clear_cache()?;
         Ok(())
     }
-
-    fn iter_vectors<P: AccessPattern, U>(
-        &self,
-        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-    ) -> impl Iterator<Item = (U, Cow<'_, [T]>)> {
-        let point_offsets = keys
-            .into_iter()
-            .map(|(user_data, point_offset)| (user_data, point_offset as _, 1));
-
-        let vector_offsets =
-            self.offsets
-                .iter_vectors::<P, _>(point_offsets)
-                .map(|(user_data, multi_offset)| {
-                    let &[multi_offset] = multi_offset.as_ref() else {
-                        unreachable!("multi-vector offsets are stored as vectors of length 1");
-                    };
-
-                    let MultivectorMmapOffset {
-                        offset,
-                        count,
-                        capacity: _,
-                    } = multi_offset;
-
-                    (user_data, offset, count)
-                });
-
-        self.vectors.iter_vectors::<P, _>(vector_offsets)
-    }
 }
 
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T> {
@@ -206,7 +178,13 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
     {
         let point_offsets = keys.iter().copied().enumerate();
 
-        for (index, flattened) in self.iter_vectors::<Sequential, _>(point_offsets) {
+        let vectors = super::read_only::iter_vectors::<Sequential, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+        );
+
+        for (index, flattened) in vectors {
             let vector = TypedMultiDenseVectorRef::new(&flattened, self.vector_dim());
             callback(index, vector)
         }
@@ -274,7 +252,13 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
-        for ((user_data, point_offset), flattened) in self.iter_vectors::<P, _>(point_offsets) {
+        let vectors = super::read_only::iter_vectors::<P, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+        );
+
+        for ((user_data, point_offset), flattened) in vectors {
             let vector = CowVector::MultiDense(T::into_float_multivector(
                 flattened_to_multi_vector(flattened, self.vectors.dim()),
             ));
