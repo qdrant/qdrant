@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
+use common::universal_io::MmapFs;
 use fs_err::File;
 use itertools::Itertools;
 use rand::distr::Uniform;
@@ -639,7 +640,7 @@ fn test_storage_persistence_basic() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     {
-        let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
+        let mut storage = Gridstore::<_>::new(path.clone(), Default::default()).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
         assert_eq!(storage.pages.read().num_pages(), 1);
 
@@ -809,7 +810,7 @@ fn test_different_block_sizes(#[case] block_size_bytes: usize) {
         block_size_bytes: Some(block_size_bytes),
         ..Default::default()
     };
-    let mut storage = Gridstore::new(dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Gridstore::<_>::new(dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -1119,7 +1120,7 @@ fn test_live_reload() {
     };
 
     // Step 1: Write initial data and flush
-    let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
+    let mut storage = Gridstore::<_>::new(path.clone(), Default::default()).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
     let payload_1 = make_payload("key", "value_1");
@@ -1189,7 +1190,7 @@ fn test_live_reload_across_pages() {
         page_size_bytes: Some(page_size),
         ..Default::default()
     };
-    let mut storage = Gridstore::new(path.clone(), options).unwrap();
+    let mut storage = Gridstore::<_>::new(path.clone(), options).unwrap();
 
     let payload = minimal_payload();
 

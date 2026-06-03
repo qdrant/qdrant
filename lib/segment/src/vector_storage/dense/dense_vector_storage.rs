@@ -116,7 +116,7 @@ pub fn open_dense_vector_storage_with_uring(
                 return Ok(VectorStorageEnum::DenseUring(Box::new(uring_storage)));
             }
             Err(err) => {
-                log::error!("failed to open io_uring based vector storage: {err}");
+                log::error!("Failed to open io_uring based vector storage: {err}");
             }
         }
     }
@@ -144,7 +144,7 @@ pub fn open_dense_vector_storage_half(
                 return Ok(VectorStorageEnum::DenseUringHalf(Box::new(uring_storage)));
             }
             Err(err) => {
-                log::error!("failed to open io_uring based vector storage: {err}");
+                log::error!("Failed to open io_uring based vector storage: {err}");
             }
         }
     }
@@ -172,7 +172,7 @@ pub fn open_dense_vector_storage_byte(
                 return Ok(VectorStorageEnum::DenseUringByte(Box::new(uring_storage)));
             }
             Err(err) => {
-                log::error!("failed to open io_uring based vector storage: {err}");
+                log::error!("Failed to open io_uring based vector storage: {err}");
             }
         }
     }

@@ -285,10 +285,15 @@ impl ConditionChecker for SimpleConditionChecker {
             Box::new(|| {
                 if payload_ref_cell.borrow().is_none() {
                     let payload_ptr = match payload_storage_guard.deref() {
-                        PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                            s.payload_ptr(point_id).map(Into::into)
+                        PayloadStorageEnum::InMemory(s) => s.payload_ptr(point_id).map(Into::into),
+                        PayloadStorageEnum::Mmap(s) => {
+                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
+                                panic!("Payload storage is corrupted: {err}")
+                            });
+                            Some(OwnedPayloadRef::from(payload))
                         }
-                        PayloadStorageEnum::MmapPayloadStorage(s) => {
+                        #[cfg(target_os = "linux")]
+                        PayloadStorageEnum::IoUring(s) => {
                             let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
                                 panic!("Payload storage is corrupted: {err}")
                             });
@@ -351,7 +356,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let mut payload_storage: PayloadStorageEnum =
-            PayloadStorageEnum::InMemoryPayloadStorage(InMemoryPayloadStorage::default());
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
         let mut id_tracker = InMemoryIdTracker::new();
 
         id_tracker.set_link(0.into(), 0).unwrap();

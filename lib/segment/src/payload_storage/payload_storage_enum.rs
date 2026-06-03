@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
+#[cfg(target_os = "linux")]
+use common::universal_io::IoUringFile;
 use serde_json::Value;
 
 use crate::common::Flusher;
@@ -10,27 +12,36 @@ use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 #[cfg(feature = "testing")]
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::types::{OwnedPayloadRef, Payload};
 
 #[derive(Debug)]
 pub enum PayloadStorageEnum {
     #[cfg(feature = "testing")]
-    InMemoryPayloadStorage(InMemoryPayloadStorage),
-    MmapPayloadStorage(MmapPayloadStorage),
+    InMemory(InMemoryPayloadStorage),
+    Mmap(PayloadStorageImpl),
+    #[cfg(target_os = "linux")]
+    IoUring(PayloadStorageImpl<IoUringFile>),
 }
 
 #[cfg(feature = "testing")]
 impl From<InMemoryPayloadStorage> for PayloadStorageEnum {
     fn from(a: InMemoryPayloadStorage) -> Self {
-        PayloadStorageEnum::InMemoryPayloadStorage(a)
+        PayloadStorageEnum::InMemory(a)
     }
 }
 
-impl From<MmapPayloadStorage> for PayloadStorageEnum {
-    fn from(a: MmapPayloadStorage) -> Self {
-        PayloadStorageEnum::MmapPayloadStorage(a)
+impl From<PayloadStorageImpl> for PayloadStorageEnum {
+    fn from(a: PayloadStorageImpl) -> Self {
+        PayloadStorageEnum::Mmap(a)
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<PayloadStorageImpl<IoUringFile>> for PayloadStorageEnum {
+    fn from(a: PayloadStorageImpl<IoUringFile>) -> Self {
+        PayloadStorageEnum::IoUring(a)
     }
 }
 
@@ -42,8 +53,10 @@ impl PayloadStorageRead for PayloadStorageEnum {
     ) -> OperationResult<Payload> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_offset, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_offset, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.get(point_offset, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.get(point_offset, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.get(point_offset, hw_counter),
         }
     }
 
@@ -54,10 +67,10 @@ impl PayloadStorageRead for PayloadStorageEnum {
     ) -> OperationResult<Payload> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                s.get_sequential(point_offset, hw_counter)
-            }
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_offset, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.get_sequential(point_offset, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.get_sequential(point_offset, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.get_sequential(point_offset, hw_counter),
         }
     }
 
@@ -68,10 +81,10 @@ impl PayloadStorageRead for PayloadStorageEnum {
     ) -> OperationResult<OwnedPayloadRef<'_>> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                s.payload_ref(point_offset, hw_counter)
-            }
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.payload_ref(point_offset, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.payload_ref(point_offset, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.payload_ref(point_offset, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.payload_ref(point_offset, hw_counter),
         }
     }
 
@@ -83,11 +96,15 @@ impl PayloadStorageRead for PayloadStorageEnum {
     ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+            PayloadStorageEnum::InMemory(s) => {
                 s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
             }
 
-            PayloadStorageEnum::MmapPayloadStorage(s) => {
+            PayloadStorageEnum::Mmap(s) => {
+                s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
+            }
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => {
                 s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
             }
         }
@@ -99,24 +116,30 @@ impl PayloadStorageRead for PayloadStorageEnum {
     {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.iter(callback, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.iter(callback, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.iter(callback, hw_counter),
         }
     }
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_storage_size_bytes(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::InMemory(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::Mmap(s) => s.get_storage_size_bytes(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.get_storage_size_bytes(),
         }
     }
 
     fn is_on_disk(&self) -> bool {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.is_on_disk(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.is_on_disk(),
+            PayloadStorageEnum::InMemory(s) => s.is_on_disk(),
+            PayloadStorageEnum::Mmap(s) => s.is_on_disk(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.is_on_disk(),
         }
     }
 }
@@ -130,10 +153,10 @@ impl PayloadStorage for PayloadStorageEnum {
     ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                s.overwrite(point_id, payload, hw_counter)
-            }
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.overwrite(point_id, payload, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.overwrite(point_id, payload, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.overwrite(point_id, payload, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.overwrite(point_id, payload, hw_counter),
         }
     }
 
@@ -145,8 +168,10 @@ impl PayloadStorage for PayloadStorageEnum {
     ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set(point_id, payload, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.set(point_id, payload, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.set(point_id, payload, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.set(point_id, payload, hw_counter),
         }
     }
 
@@ -159,12 +184,10 @@ impl PayloadStorage for PayloadStorageEnum {
     ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                s.set_by_key(point_id, payload, key, hw_counter)
-            }
-            PayloadStorageEnum::MmapPayloadStorage(s) => {
-                s.set_by_key(point_id, payload, key, hw_counter)
-            }
+            PayloadStorageEnum::InMemory(s) => s.set_by_key(point_id, payload, key, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.set_by_key(point_id, payload, key, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.set_by_key(point_id, payload, key, hw_counter),
         }
     }
 
@@ -176,8 +199,10 @@ impl PayloadStorage for PayloadStorageEnum {
     ) -> OperationResult<Vec<Value>> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.delete(point_id, key, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.delete(point_id, key, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.delete(point_id, key, hw_counter),
         }
     }
 
@@ -188,8 +213,10 @@ impl PayloadStorage for PayloadStorageEnum {
     ) -> OperationResult<Option<Payload>> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id, hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.clear(point_id, hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.clear(point_id, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.clear(point_id, hw_counter),
         }
     }
 
@@ -197,32 +224,40 @@ impl PayloadStorage for PayloadStorageEnum {
     fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear_all(hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_all(hw_counter),
+            PayloadStorageEnum::InMemory(s) => s.clear_all(hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.clear_all(hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.clear_all(hw_counter),
         }
     }
 
     fn flusher(&self) -> Flusher {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.flusher(),
+            PayloadStorageEnum::InMemory(s) => s.flusher(),
+            PayloadStorageEnum::Mmap(s) => s.flusher(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.flusher(),
         }
     }
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.files(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.files(),
+            PayloadStorageEnum::InMemory(s) => s.files(),
+            PayloadStorageEnum::Mmap(s) => s.files(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.files(),
         }
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.immutable_files(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.immutable_files(),
+            PayloadStorageEnum::InMemory(s) => s.immutable_files(),
+            PayloadStorageEnum::Mmap(s) => s.immutable_files(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.immutable_files(),
         }
     }
 }
@@ -233,8 +268,10 @@ impl PayloadStorageEnum {
     pub fn populate(&self) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.populate()?,
+            PayloadStorageEnum::InMemory(_) => {}
+            PayloadStorageEnum::Mmap(s) => s.populate()?,
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.populate()?,
         }
         Ok(())
     }
@@ -243,8 +280,10 @@ impl PayloadStorageEnum {
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_cache()?,
+            PayloadStorageEnum::InMemory(_) => {}
+            PayloadStorageEnum::Mmap(s) => s.clear_cache()?,
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.clear_cache()?,
         }
         Ok(())
     }
@@ -252,6 +291,7 @@ impl PayloadStorageEnum {
 
 #[cfg(test)]
 mod tests {
+    use common::universal_io::MmapFile;
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -265,7 +305,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let mut storage: PayloadStorageEnum =
-            MmapPayloadStorage::open_or_create(dir.path().to_path_buf(), populate)
+            PayloadStorageImpl::<MmapFile>::open_or_create(dir.path().to_path_buf(), populate)
                 .unwrap()
                 .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();

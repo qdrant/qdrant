@@ -38,14 +38,16 @@ use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
 use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadStorageType, SegmentConfig, SegmentState,
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
     VectorStorageDatatype, VectorStorageType,
 };
+#[cfg(target_os = "linux")]
+use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::dense_vector_storage::{
     open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
 };
@@ -213,16 +215,30 @@ pub(crate) fn create_payload_storage(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
-    let payload_storage = match config.payload_storage_type {
-        PayloadStorageType::Mmap => PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
-            segment_path.to_path_buf(),
-            false,
-        )?),
-        PayloadStorageType::InRamMmap => PayloadStorageEnum::from(
-            MmapPayloadStorage::open_or_create(segment_path.to_path_buf(), true)?,
-        ),
+    #[cfg(target_os = "linux")]
+    match config.payload_storage_type {
+        PayloadStorageType::Mmap if get_async_scorer() => {
+            let storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), false);
+
+            match storage {
+                Ok(storage) => return Ok(PayloadStorageEnum::IoUring(storage)),
+                Err(err) => {
+                    log::error!("Failed to open io_uring based payload storage: {err}");
+                }
+            }
+        }
+
+        PayloadStorageType::Mmap => (),
+        PayloadStorageType::InRamMmap => (),
+    }
+
+    let populate = match config.payload_storage_type {
+        PayloadStorageType::Mmap => false,
+        PayloadStorageType::InRamMmap => true,
     };
-    Ok(payload_storage)
+
+    let payload_storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate)?;
+    Ok(PayloadStorageEnum::Mmap(payload_storage))
 }
 
 pub(crate) fn create_mutable_id_tracker(

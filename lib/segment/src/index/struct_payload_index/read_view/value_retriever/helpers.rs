@@ -140,7 +140,7 @@ mod tests {
         in_memory_storage.payload.insert(3, payload3);
 
         // Wrap the in-memory storage in a PayloadStorageEnum.
-        let storage_enum = PayloadStorageEnum::InMemoryPayloadStorage(in_memory_storage);
+        let storage_enum = PayloadStorageEnum::InMemory(in_memory_storage);
 
         let arc_storage = Arc::new(AtomicRefCell::new(storage_enum));
         PayloadProvider::new(arc_storage)
@@ -196,7 +196,7 @@ mod tests {
     fn test_variable_retriever_from_index() {
         // Empty payload provider.
         let payload_provider = PayloadProvider::new(Arc::new(AtomicRefCell::new(
-            PayloadStorageEnum::InMemoryPayloadStorage(InMemoryPayloadStorage::default()),
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default()),
         )));
         let hw_counter = HardwareCounterCell::new();
         // No deletions in this test — sized to comfortably exceed the
