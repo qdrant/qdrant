@@ -217,7 +217,7 @@ pub(crate) fn create_payload_storage(
     if config.payload_storage_type == PayloadStorageType::Mmap {
         match PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), false) {
             Ok(payload_storage) => {
-                return Ok(PayloadStorageEnum::IoUringPayloadStorage(payload_storage));
+                return Ok(PayloadStorageEnum::IoUring(payload_storage));
             }
             Err(err) => {
                 log::error!("Failed to open io_uring based payload storage: {err}");
@@ -231,7 +231,7 @@ pub(crate) fn create_payload_storage(
     };
 
     let payload_storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate)?;
-    Ok(PayloadStorageEnum::MmapPayloadStorage(payload_storage))
+    Ok(PayloadStorageEnum::Mmap(payload_storage))
 }
 
 pub(crate) fn create_mutable_id_tracker(

@@ -6,11 +6,11 @@ impl MemoryReporter for PayloadStorageEnum {
     fn memory_usage(&self) -> ComponentMemoryUsage {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+            PayloadStorageEnum::InMemory(s) => {
                 // Purely in-memory, no files. Approximate RAM from storage size.
                 ComponentMemoryUsage::ram_only(s.get_storage_size_bytes().unwrap_or(0) as u64)
             }
-            PayloadStorageEnum::MmapPayloadStorage(s) => {
+            PayloadStorageEnum::Mmap(s) => {
                 let intent = if s.is_on_disk() {
                     FileStorageIntent::OnDisk
                 } else {
@@ -20,7 +20,7 @@ impl MemoryReporter for PayloadStorageEnum {
                 ComponentMemoryUsage::from_files(s.files(), intent)
             }
             #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUringPayloadStorage(s) => {
+            PayloadStorageEnum::IoUring(s) => {
                 debug_assert!(s.is_on_disk());
                 ComponentMemoryUsage::from_files(s.files(), FileStorageIntent::OnDisk)
             }
