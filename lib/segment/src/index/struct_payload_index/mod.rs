@@ -147,16 +147,15 @@ impl StructPayloadIndex {
                 .iter()
                 // Load each index
                 .map(|index| {
-                    self.selector_with_type(index).and_then(|selector| {
-                        selector.new_index_with_type(
-                            field,
-                            &payload_schema.schema,
-                            index,
-                            create_if_missing,
-                            &id_tracker_borrow,
-                            deleted_points,
-                        )
-                    })
+                    let selector = self.selector_with_type(index);
+                    selector.new_index_with_type(
+                        field,
+                        &payload_schema.schema,
+                        index,
+                        create_if_missing,
+                        &id_tracker_borrow,
+                        deleted_points,
+                    )
                 })
                 // Interrupt loading indices if one fails to load
                 // Set rebuild flag if any index fails to load
@@ -287,10 +286,7 @@ impl StructPayloadIndex {
         }
     }
 
-    fn selector_with_type(
-        &self,
-        index_type: &FullPayloadIndexType,
-    ) -> OperationResult<IndexSelector<'_>> {
+    fn selector_with_type(&self, index_type: &FullPayloadIndexType) -> IndexSelector<'_> {
         let selector = match index_type.storage_type {
             payload_config::StorageType::Gridstore => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
@@ -303,7 +299,7 @@ impl StructPayloadIndex {
             }
         };
 
-        Ok(selector)
+        selector
     }
 
     pub fn populate(&self) -> OperationResult<()> {
