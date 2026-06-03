@@ -8,12 +8,8 @@ mod pages;
 mod tracker;
 
 pub use blob::Blob;
-use common::universal_io::MmapFile;
 pub use gridstore::{Gridstore, GridstoreReader, GridstoreView};
 
 use crate::error::GridstoreError;
 
 pub(crate) type Result<T, E = GridstoreError> = std::result::Result<T, E>;
-
-/// Concrete tracker type used by gridstore (universal io over mmap).
-pub(crate) type TrackerMmap = tracker::Tracker<MmapFile>;

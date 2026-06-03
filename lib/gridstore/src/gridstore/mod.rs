@@ -23,13 +23,13 @@ use reader::CONFIG_FILENAME;
 pub use reader::GridstoreReader;
 pub use view::GridstoreView;
 
+use crate::Result;
 use crate::bitmask::MmapBitmask;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::pages::{Pages, page_path};
-use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, ValuePointer};
-use crate::{Result, TrackerMmap};
+use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 
 pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
 
@@ -38,10 +38,10 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 /// Uses `Arc<RwLock<...>>` for pages and tracker to support concurrent flushing.
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
-pub struct Gridstore<V> {
+pub struct Gridstore<V, S = MmapFile> {
     pub(super) config: StorageConfig,
-    pub(super) tracker: Arc<RwLock<TrackerMmap>>,
-    pub(super) pages: Arc<RwLock<Pages<MmapFile>>>,
+    pub(super) tracker: Arc<RwLock<Tracker<S>>>,
+    pub(super) pages: Arc<RwLock<Pages<S>>>,
     /// MmapBitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
@@ -113,7 +113,7 @@ impl<V: Blob> Gridstore<V> {
         let bitmask = MmapBitmask::create(&MmapFs, &base_path, config.clone())?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(TrackerMmap::new(&MmapFs, &base_path, None)?)),
+            tracker: Arc::new(RwLock::new(Tracker::new(&MmapFs, &base_path, None)?)),
             pages: Arc::new(RwLock::new(Pages::new(base_path.clone(), true))),
             base_path,
             config,
@@ -483,7 +483,7 @@ impl<V> Gridstore<V> {
 
     /// Write pending updates to the tracker and flush it.
     fn flush_tracker(
-        tracker: &Arc<RwLock<TrackerMmap>>,
+        tracker: &Arc<RwLock<Tracker<MmapFile>>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
