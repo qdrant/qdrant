@@ -1,10 +1,11 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::universal_io::MmapFile;
 use rstest::rstest;
 
 use super::PayloadStorage;
-use super::mmap_payload_storage::MmapPayloadStorage;
+use super::payload_storage_impl::PayloadStorageImpl;
 use crate::payload_json;
 
 fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
@@ -127,6 +128,6 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
 #[rstest]
 fn test_mmap_storage(#[values(false, true)] populate: bool) {
     test_trait_impl(|path| {
-        MmapPayloadStorage::open_or_create(path.to_path_buf(), populate).unwrap()
+        PayloadStorageImpl::<MmapFile>::open_or_create(path.to_path_buf(), populate).unwrap()
     });
 }

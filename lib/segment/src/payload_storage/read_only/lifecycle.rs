@@ -5,7 +5,7 @@ use gridstore::GridstoreReader;
 
 use super::ReadOnlyPayloadStorage;
 use crate::common::operation_error::OperationResult;
-use crate::payload_storage::mmap_payload_storage::storage_dir;
+use crate::payload_storage::payload_storage_impl::storage_dir;
 use crate::types::Payload;
 
 impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
