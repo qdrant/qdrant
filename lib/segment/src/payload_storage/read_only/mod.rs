@@ -29,7 +29,7 @@ mod tests {
 
     use super::ReadOnlyPayloadStorage;
     use crate::payload_json;
-    use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+    use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
     use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 
     /// Write payloads through the writable mmap storage, then reopen the same
@@ -46,8 +46,8 @@ mod tests {
         };
 
         {
-            let mut storage =
-                MmapPayloadStorage::open_or_create(dir.path().to_path_buf(), false).unwrap();
+            let mut storage: PayloadStorageImpl =
+                PayloadStorageImpl::open_or_create(dir.path().to_path_buf(), false).unwrap();
             for i in 0..5 {
                 storage.set(i, &payload, &hw_counter).unwrap();
             }

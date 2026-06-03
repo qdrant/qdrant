@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, UniversalWrite};
 use fs_err as fs;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
@@ -27,12 +28,16 @@ impl Blob for Payload {
 }
 
 #[derive(Debug)]
-pub struct MmapPayloadStorage {
-    storage: Gridstore<Payload>,
+pub struct PayloadStorageImpl<S = MmapFile> {
+    storage: Gridstore<Payload, S>,
     populate: bool,
 }
 
-impl MmapPayloadStorage {
+impl<S> PayloadStorageImpl<S>
+where
+    S: UniversalWrite + 'static,
+    S::Fs: Default,
+{
     pub fn open_or_create(path: PathBuf, populate: bool) -> OperationResult<Self> {
         let path = storage_dir(path);
         if path.exists() {
@@ -82,7 +87,11 @@ impl MmapPayloadStorage {
     }
 }
 
-impl PayloadStorageRead for MmapPayloadStorage {
+impl<S> PayloadStorageRead for PayloadStorageImpl<S>
+where
+    S: UniversalWrite + 'static,
+    S::Fs: Default,
+{
     fn get(
         &self,
         point_offset: PointOffsetType,
@@ -152,7 +161,11 @@ impl PayloadStorageRead for MmapPayloadStorage {
     }
 }
 
-impl PayloadStorage for MmapPayloadStorage {
+impl<S> PayloadStorage for PayloadStorageImpl<S>
+where
+    S: UniversalWrite + 'static,
+    S::Fs: Default,
+{
     fn overwrite(
         &mut self,
         point_id: PointOffsetType,
