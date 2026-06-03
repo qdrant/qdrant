@@ -165,6 +165,28 @@ impl TurboQuantizer {
         }
     }
 
+    /// Initialize a quantizer for vectors already encoded into fixed-size slots
+    /// of `quantized_size` bytes (packed codebook data plus the metric-specific
+    /// extras trailer). Recovers the padded dimension from the slot size — for
+    /// scoring paths that only carry the on-storage slot, not the logical
+    /// vector dimension.
+    pub fn new_from_quantized_size(
+        quantized_size: usize,
+        bits: TQBits,
+        mode: TQMode,
+        distance: DistanceType,
+    ) -> Self {
+        let extras_size = TqVectorExtras::size_for(bits, distance, mode);
+        let packed_bytes = quantized_size
+            .checked_sub(extras_size)
+            .expect("quantized size shorter than TurboQuant extras trailer");
+        // `packed_bytes = padded_dim * bit_size / 8`; invert to recover the
+        // padded dimension (exact, since `padded_dim * bit_size` is a multiple
+        // of 8 by construction).
+        let padded_dim = packed_bytes * u8::BITS as usize / bits.bit_size() as usize;
+        Self::new(padded_dim, bits, mode, distance, None)
+    }
+
     pub fn quantize_buffer_len(&self) -> usize {
         self.padded_dim
     }

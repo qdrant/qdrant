@@ -353,27 +353,3 @@ impl PrimitiveVectorElement for TurboQuantElement {
         unimplemented!("TurboQuantElement::into_float_multivector")
     }
 }
-
-pub(crate) fn quantizer_for_tq_slot(slot_len: usize, distance: Distance) -> TurboQuantizer {
-    let tq_distance = DistanceType::from(distance);
-    let extras_size =
-        TurboQuantizer::quantized_size_for(0, TQBits::Bits4, tq_distance, TQMode::Normal);
-    let packed_bytes = slot_len
-        .checked_sub(extras_size)
-        .expect("slot shorter than TurboQuant extras trailer");
-    let padded_dim = padded_bytes_to_dim(packed_bytes);
-    TurboQuantizer::new(padded_dim, TQBits::Bits4, TQMode::Normal, tq_distance, None)
-}
-
-fn padded_bytes_to_dim(packed_bytes: usize) -> usize {
-    let extras =
-        TurboQuantizer::quantized_size_for(0, TQBits::Bits4, DistanceType::Cosine, TQMode::Normal);
-    let probe_dim = 64;
-    let probe_packed = TurboQuantizer::quantized_size_for(
-        probe_dim,
-        TQBits::Bits4,
-        DistanceType::Cosine,
-        TQMode::Normal,
-    ) - extras;
-    packed_bytes * probe_dim / probe_packed
-}

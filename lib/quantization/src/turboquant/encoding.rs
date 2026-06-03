@@ -176,7 +176,7 @@ impl TurboQuantizer {
 
     /// Total size in bytes of a quantized vector, including both the packed
     /// dimensions and any extras..
-    pub fn quantized_size_for(
+    pub(crate) fn quantized_size_for(
         dim: usize,
         bits: TQBits,
         distance: DistanceType,

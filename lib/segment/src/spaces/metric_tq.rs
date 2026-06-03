@@ -1,7 +1,7 @@
 use common::types::ScoreType;
-use quantization::EncodedQueryTQ;
+use quantization::{DistanceType, EncodedQueryTQ, TQBits, TQMode, TurboQuantizer};
 
-use crate::data_types::primitive::{TurboQuantElement, quantizer_for_tq_slot};
+use crate::data_types::primitive::TurboQuantElement;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -17,7 +17,12 @@ fn turbo_score_symmetric(
         v2.len(),
         "TurboQuant symmetric score requires matching slot lengths"
     );
-    let quantizer = quantizer_for_tq_slot(v1.len(), distance);
+    let quantizer = TurboQuantizer::new_from_quantized_size(
+        v1.len(),
+        TQBits::Bits4,
+        TQMode::Normal,
+        DistanceType::from(distance),
+    );
     let v1_bytes: &[u8] = bytemuck::cast_slice(v1);
     let v2_bytes: &[u8] = bytemuck::cast_slice(v2);
     quantizer.score_symmetric(v1_bytes, v2_bytes)
@@ -28,7 +33,12 @@ fn turbo_score_precomputed(
     vector: &[TurboQuantElement],
     distance: Distance,
 ) -> ScoreType {
-    let quantizer = quantizer_for_tq_slot(vector.len(), distance);
+    let quantizer = TurboQuantizer::new_from_quantized_size(
+        vector.len(),
+        TQBits::Bits4,
+        TQMode::Normal,
+        DistanceType::from(distance),
+    );
     let bytes: &[u8] = bytemuck::cast_slice(vector);
     quantizer.score_precomputed(query, bytes)
 }
