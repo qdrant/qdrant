@@ -8,21 +8,27 @@ pub use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use fs_err as fs;
     use itertools::Itertools;
     use rand::rng;
-    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+    use segment::data_types::named_vectors::NamedVectors;
+    use segment::data_types::vectors::{
+        DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal,
+    };
     use segment::entry::ReadSegmentEntry;
+    use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::json_path::JsonPath;
     use segment::payload_json;
+    use segment::segment_constructor::build_segment;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{
-        Distance, HnswConfig, HnswGlobalConfig, PayloadSchemaType, QuantizationConfig, SegmentType,
-        VectorNameBuf,
+        Distance, HnswConfig, HnswGlobalConfig, Indexes, MultiVectorComparator, MultiVectorConfig,
+        PayloadSchemaType, QuantizationConfig, SegmentType, VectorNameBuf,
     };
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::segment_optimizer::SegmentOptimizer;
@@ -746,5 +752,172 @@ mod tests {
                     "segment must be on disk with mmap",
                 );
             });
+    }
+
+    /// Multi vectors with deferred points below the indexing threshold must not cause an
+    /// infinite optimization loop.
+    ///
+    /// Deferred points are tracked with a static internal-id offset (`deferred_internal_id`).
+    /// For multi vectors this offset is computed assuming a fixed number of sub vectors per
+    /// point (see [`CollectionParams::get_deferred_point_id`] and its `MULTIVECTOR_SIZE`
+    /// constant). When a user uploads small multi vectors (e.g. a single sub vector per
+    /// point), the real storage size stays well below the indexing threshold, yet the segment
+    /// still ends up with deferred points because the offset was sized for much larger points.
+    ///
+    /// The indexing optimizer always triggers for segments that have deferred points, so it
+    /// can promote them quickly by building an HNSW index. Before commit "Always optimize
+    /// deferred points", the optimizer skipped building the HNSW index while the segment was
+    /// still below the indexing threshold. Because building the index is what promotes
+    /// deferred points, they stayed deferred, the optimizer kept being triggered, and the
+    /// same segment was re-optimized forever -- an infinite loop.
+    ///
+    /// This test reproduces that scenario. Before the fix it loops forever (and hits the
+    /// iteration limit, failing the test); after the fix the optimizer builds an HNSW index,
+    /// promotes the deferred points, and terminates.
+    #[test]
+    fn test_deferred_multivector_below_indexing_threshold_no_infinite_loop() {
+        init();
+
+        let dim = 4;
+        let indexing_threshold_kb = 10;
+        let indexing_threshold_bytes = indexing_threshold_kb * 1024;
+
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+        let segments_temp_dir = Builder::new()
+            .prefix("segments_temp_dir")
+            .tempdir()
+            .unwrap();
+
+        // A single multi vector (one vector configured as a multivector).
+        let mut multi_params = VectorParamsBuilder::new(dim as u64, Distance::Dot).build();
+        multi_params.multivector_config = Some(MultiVectorConfig {
+            comparator: MultiVectorComparator::MaxSim,
+        });
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(multi_params),
+            ..CollectionParams::empty()
+        };
+
+        let hnsw_config = HnswConfig::default();
+
+        // The deferred offset, computed exactly like production does. For multi vectors this
+        // assumes a fixed (large) number of sub vectors per point, so the offset is small
+        // relative to the number of points even when each point holds a single sub vector.
+        let deferred_internal_id = collection_params
+            .get_deferred_point_id(&hnsw_config, NonZeroUsize::new(indexing_threshold_bytes))
+            .expect("a multi vector with HNSW indexing should produce a deferred offset");
+
+        // Upload more points than the deferred offset (so we get deferred points), while each
+        // point stores only a single sub vector so the real storage size stays well below the
+        // indexing threshold.
+        let num_points = u64::from(deferred_internal_id) * 2;
+        assert!(
+            num_points > u64::from(deferred_internal_id),
+            "test must upload more points than the deferred offset to create deferred points",
+        );
+
+        // Build a plain, appendable segment for this collection with the deferred offset set,
+        // mimicking a live appendable segment that has accumulated deferred points.
+        let segment_optimizer_config =
+            build_segment_optimizer_config(&collection_params, &hnsw_config, &None);
+        let segment_config = segment_optimizer_config.plain_segment_config();
+
+        let hw_counter = HardwareCounterCell::new();
+        let mut segment = build_segment(
+            segments_dir.path(),
+            &segment_config,
+            Some(deferred_internal_id),
+            true,
+        )
+        .unwrap();
+
+        for i in 0..num_points {
+            let mut vectors = NamedVectors::default();
+            vectors.insert(
+                DEFAULT_VECTOR_NAME.into(),
+                VectorInternal::MultiDense(
+                    MultiDenseVectorInternal::try_from_matrix(vec![vec![0.5; dim]]).unwrap(),
+                ),
+            );
+            segment
+                .upsert_point(100, (i + 1).into(), vectors, &hw_counter)
+                .unwrap();
+        }
+
+        // Sanity: the segment has deferred points but stays below the indexing threshold.
+        assert!(
+            segment.has_deferred_points(),
+            "segment should have deferred points",
+        );
+        let stored_bytes = segment
+            .available_vectors_size_in_bytes(DEFAULT_VECTOR_NAME)
+            .unwrap();
+        assert!(
+            stored_bytes < indexing_threshold_bytes,
+            "segment must stay below the indexing threshold \
+             ({stored_bytes} >= {indexing_threshold_bytes})",
+        );
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(segment);
+        let locked_holder = LockedSegmentHolder::new(holder);
+
+        let index_optimizer = new_indexing_optimizer(
+            2,
+            OptimizerThresholds {
+                max_segment_size_kb: 1000,
+                memmap_threshold_kb: 1_000_000, // never put on disk
+                indexing_threshold_kb,          // real size stays below this
+                deferred_internal_id: Some(deferred_internal_id),
+            },
+            segments_dir.path().to_owned(),
+            segments_temp_dir.path().to_owned(),
+            collection_params.clone(),
+            hnsw_config,
+            HnswGlobalConfig::default(),
+            Default::default(),
+        );
+
+        // Drive the optimizer until there is nothing left to do. Before the fix the optimizer
+        // re-optimizes the same segment forever because the deferred points are never
+        // promoted; the iteration limit turns that infinite loop into a test failure.
+        const MAX_ITERATIONS: usize = 16;
+        let mut iterations = 0;
+        loop {
+            let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+            if suggested_to_optimize.is_empty() {
+                break;
+            }
+            assert!(
+                iterations < MAX_ITERATIONS,
+                "indexing optimizer is stuck in an infinite loop: deferred points below the \
+                 indexing threshold are never promoted",
+            );
+            let batch = suggested_to_optimize.into_iter().next().unwrap();
+            index_optimizer.optimize_for_test(locked_holder.clone(), batch);
+            iterations += 1;
+        }
+
+        // The deferred points must have been promoted: no segment has deferred points left,
+        // and an HNSW index was built to make them searchable.
+        let holder = locked_holder.read();
+        let any_deferred = holder
+            .iter()
+            .any(|(_, segment)| segment.get().read().has_deferred_points());
+        assert!(!any_deferred, "deferred points should have been promoted");
+
+        let any_hnsw = holder.iter().any(|(_, segment)| {
+            segment
+                .get()
+                .read()
+                .config()
+                .vector_data
+                .values()
+                .any(|vector| matches!(vector.index, Indexes::Hnsw(_)))
+        });
+        assert!(
+            any_hnsw,
+            "an HNSW index should have been created to promote the deferred points",
+        );
     }
 }
