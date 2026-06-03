@@ -15,7 +15,7 @@ use common::fs::atomic_save_json;
 use common::generic_consts::{AccessPattern, Random};
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::create_and_ensure_length;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, UniversalReadFs, UniversalWrite};
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -52,9 +52,14 @@ pub struct Gridstore<V, S = MmapFile> {
     is_alive_flush_lock: IsAliveLock,
 }
 
-impl<V: Blob> Gridstore<V> {
+impl<V, S> Gridstore<V, S>
+where
+    V: Blob,
+    S: UniversalWrite + 'static,
+    S::Fs: Default,
+{
     /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
-    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapFile>) -> R) -> R {
+    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, S>) -> R) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
         f(GridstoreView::new(&self.config, &tracker, &pages))
@@ -110,10 +115,10 @@ impl<V: Blob> Gridstore<V> {
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let bitmask = MmapBitmask::create(&MmapFs, &base_path, config.clone())?;
+        let bitmask = MmapBitmask::create(&default_fs(), &base_path, config.clone())?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(Tracker::new(&MmapFs, &base_path, None)?)),
+            tracker: Arc::new(RwLock::new(Tracker::new(&default_fs(), &base_path, None)?)),
             pages: Arc::new(RwLock::new(Pages::new(base_path.clone(), true))),
             base_path,
             config,
@@ -125,7 +130,7 @@ impl<V: Blob> Gridstore<V> {
         let new_page_id = storage.next_page_id();
         let path = page_path(&storage.base_path, new_page_id);
         create_and_ensure_length(&path, storage.config.page_size_bytes)?;
-        storage.pages.write().attach_page(&MmapFs, &path)?;
+        storage.pages.write().attach_page(&default_fs(), &path)?;
 
         atomic_save_json(&config_path, &storage.config)
             .map_err(|err| GridstoreError::service_error(err.to_string()))?;
@@ -138,11 +143,11 @@ impl<V: Blob> Gridstore<V> {
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(base_path: PathBuf) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
-        let (config, tracker) = reader::read_config_and_tracker(&MmapFs, &base_path, true)?;
-        let bitmask = MmapBitmask::open(&MmapFs, &base_path, config.clone())?;
+        let (config, tracker) = reader::read_config_and_tracker(&default_fs(), &base_path, true)?;
+        let bitmask = MmapBitmask::open(&default_fs(), &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let pages = Pages::open(&MmapFs, &base_path, true)?;
+        let pages = Pages::open(&default_fs(), &base_path, true)?;
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {
@@ -168,7 +173,7 @@ impl<V: Blob> Gridstore<V> {
         let new_page_id = self.next_page_id();
         let path = page_path(&self.base_path, new_page_id);
         create_and_ensure_length(&path, self.config.page_size_bytes)?;
-        self.pages.write().attach_page(&MmapFs, &path)?;
+        self.pages.write().attach_page(&default_fs(), &path)?;
 
         self.bitmask.write().cover_new_page()?;
 
@@ -429,7 +434,7 @@ impl<V: Blob> Gridstore<V> {
     }
 }
 
-impl<V> Gridstore<V> {
+impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn next_page_id(&self) -> PageId {
         self.pages.read().num_pages() as PageId
     }
@@ -483,7 +488,7 @@ impl<V> Gridstore<V> {
 
     /// Write pending updates to the tracker and flush it.
     fn flush_tracker(
-        tracker: &Arc<RwLock<Tracker<MmapFile>>>,
+        tracker: &Arc<RwLock<Tracker<S>>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
@@ -544,4 +549,8 @@ impl<V> Gridstore<V> {
         bitmask.read().clear_cache()?;
         Ok(())
     }
+}
+
+fn default_fs<T: UniversalReadFs + Default>() -> T {
+    T::default()
 }
