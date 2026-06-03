@@ -141,7 +141,11 @@ impl Validate for FormulaQuery {
             }
         }
 
-        Ok(())
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
@@ -292,4 +296,45 @@ pub fn validate_relevance_feedback_input(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn formula_query_with_defaults(defaults: serde_json::Value) -> FormulaQuery {
+        serde_json::from_value(serde_json::json!({
+            "formula": "$score",
+            "defaults": defaults,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn formula_query_rejects_invalid_default_variable_name() {
+        let query = formula_query_with_defaults(serde_json::json!({
+            "$unknown": 1.0,
+        }));
+
+        assert!(query.validate().is_err());
+    }
+
+    #[test]
+    fn formula_query_rejects_non_numeric_score_default() {
+        let query = formula_query_with_defaults(serde_json::json!({
+            "$score": "not-a-number",
+        }));
+
+        assert!(query.validate().is_err());
+    }
+
+    #[test]
+    fn formula_query_accepts_numeric_score_and_payload_defaults() {
+        let query = formula_query_with_defaults(serde_json::json!({
+            "$score": 0.0,
+            "price": 0.0,
+        }));
+
+        assert!(query.validate().is_ok());
+    }
 }
