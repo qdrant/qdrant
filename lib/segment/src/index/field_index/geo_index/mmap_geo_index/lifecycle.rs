@@ -48,7 +48,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
         // Create the point-to-value mapping and persist in the file
-        OnDiskPointToValues::<GeoPoint, MmapFile>::from_iter(
+        OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
             &MmapFs,
             path,
             dynamic_index
@@ -56,6 +56,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 .iter()
                 .enumerate()
                 .map(|(idx, values)| (idx as PointOffsetType, values.iter())),
+            !is_on_disk,
         )?;
 
         {

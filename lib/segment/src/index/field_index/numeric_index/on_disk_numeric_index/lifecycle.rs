@@ -56,7 +56,7 @@ where
 
         in_memory_index.histogram.save(path)?;
 
-        OnDiskPointToValues::<T, S>::from_iter(
+        OnDiskPointToValues::<T, S>::build_from_iter(
             fs,
             path,
             in_memory_index
@@ -64,6 +64,7 @@ where
                 .iter()
                 .enumerate()
                 .map(|(idx, values)| (idx as PointOffsetType, values.iter().map(|v| v.borrow()))),
+            populate,
         )?;
 
         {

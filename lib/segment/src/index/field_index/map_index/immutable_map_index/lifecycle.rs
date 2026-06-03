@@ -91,7 +91,7 @@ where
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
-            log::warn!("Failed to clear mmap cache of ram mmap map index: {err}");
+            log::warn!("Failed to clear mmap cache of immutable map index: {err}");
         }
 
         let mut result = Self {

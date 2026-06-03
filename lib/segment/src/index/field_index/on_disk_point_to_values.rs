@@ -97,10 +97,11 @@ where
     T: StoredValue + ?Sized,
     S: UniversalRead,
 {
-    pub fn from_iter<'a>(
+    pub fn build_from_iter<'a>(
         fs: &S::Fs,
         path: &Path,
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = &'a T>)> + Clone,
+        populate: bool,
     ) -> OperationResult<Self>
     where
         T: 'a,
@@ -160,7 +161,7 @@ where
         mmap.flush()?;
         drop(mmap);
 
-        Self::open(fs, path, true)
+        Self::open(fs, path, populate)
     }
 
     pub fn open(fs: &S::Fs, path: &Path, populate: bool) -> OperationResult<Self> {
@@ -432,13 +433,14 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        OnDiskPointToValues::<str, MmapFile>::from_iter(
+        OnDiskPointToValues::<str, MmapFile>::build_from_iter(
             &MmapFs,
             dir.path(),
             values
                 .iter()
                 .enumerate()
                 .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.as_str()))),
+            true,
         )
         .unwrap();
         let point_to_values =
@@ -493,13 +495,14 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        OnDiskPointToValues::<GeoPoint, MmapFile>::from_iter(
+        OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
             &MmapFs,
             dir.path(),
             values
                 .iter()
                 .enumerate()
                 .map(|(id, values)| (id as PointOffsetType, values.iter())),
+            true,
         )
         .unwrap();
         let point_to_values =

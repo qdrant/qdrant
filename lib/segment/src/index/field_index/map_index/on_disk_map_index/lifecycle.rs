@@ -195,7 +195,7 @@ where
                 .map(|(value, ids)| (value.borrow(), ids.iter().copied())),
         )?;
 
-        OnDiskPointToValues::<N, MmapFile>::from_iter(
+        OnDiskPointToValues::<N, MmapFile>::build_from_iter(
             &MmapFs,
             path,
             point_to_values.iter().enumerate().map(|(idx, values)| {
@@ -204,6 +204,7 @@ where
                     values.iter().map(|value| value.borrow()),
                 )
             }),
+            populate,
         )?;
 
         {
