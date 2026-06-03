@@ -4,7 +4,7 @@ use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use serde_json::Value;
 
-use super::StructPayloadIndexReadView;
+use super::{StructPayloadIndexReadView, is_match_except_strings};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
@@ -14,9 +14,7 @@ use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
 };
-use crate::types::{
-    AnyVariants, Condition, FieldCondition, Match, MatchExcept, OwnedPayloadRef, PayloadContainer,
-};
+use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer};
 use crate::vector_storage::VectorStorageRead;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
@@ -239,13 +237,4 @@ where
             Condition::Filter(_) => unreachable!(),
         }
     }
-}
-
-fn is_match_except_strings(condition: &FieldCondition) -> bool {
-    matches!(
-        &condition.r#match,
-        Some(Match::Except(MatchExcept {
-            except: AnyVariants::Strings(_)
-        }))
-    )
 }

@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use super::StructPayloadIndexReadView;
+use super::{StructPayloadIndexReadView, is_match_except_strings};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
@@ -12,10 +12,7 @@ use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
-use crate::types::{
-    AnyVariants, Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Match,
-    MatchExcept,
-};
+use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition};
 use crate::vector_storage::VectorStorageRead;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
@@ -160,13 +157,4 @@ where
             }
         })
     }
-}
-
-fn is_match_except_strings(condition: &FieldCondition) -> bool {
-    matches!(
-        &condition.r#match,
-        Some(Match::Except(MatchExcept {
-            except: AnyVariants::Strings(_)
-        }))
-    )
 }

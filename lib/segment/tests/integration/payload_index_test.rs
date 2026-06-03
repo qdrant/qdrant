@@ -1439,10 +1439,23 @@ fn test_keyword_except_matches_non_string_payloads() {
 
     let excluded: IndexSet<String, FnvBuildHasher> = ["drop".to_owned()].into_iter().collect();
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        key,
+        key.clone(),
         Match::new_except(AnyVariants::Strings(excluded)),
     )));
     let is_stopped = AtomicBool::new(false);
+
+    let estimation = segment
+        .payload_index
+        .borrow()
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
+        .unwrap();
+    assert_eq!(estimation.primary_clauses.len(), 1);
+    match estimation.primary_clauses.first().unwrap() {
+        PrimaryCondition::Condition(field_condition) => {
+            assert_eq!(**field_condition, FieldCondition::new_is_empty(key, false));
+        }
+        clause => panic!("unexpected primary clause: {clause:?}"),
+    }
 
     let mut queried = segment
         .payload_index
