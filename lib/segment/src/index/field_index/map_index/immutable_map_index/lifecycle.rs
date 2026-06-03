@@ -20,7 +20,7 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     /// Open and load the immutable map index from mmap storage.
-    pub(in super::super) fn open_mmap(index: OnDiskMapIndex<N>) -> OperationResult<Self> {
+    pub(in super::super) fn load_from_on_disk(index: OnDiskMapIndex<N>) -> OperationResult<Self> {
         let index = Box::new(index);
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 

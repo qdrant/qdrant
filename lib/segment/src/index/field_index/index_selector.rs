@@ -294,10 +294,10 @@ impl IndexSelector<'_> {
     {
         Ok(match self {
             IndexSelector::NonAppendable { dir, is_on_disk } => {
-                MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk, deleted_points)?
+                MapIndex::new_immutable(&map_dir(dir, field), *is_on_disk, deleted_points)?
             }
             IndexSelector::Appendable { dir } => {
-                MapIndex::new_gridstore(map_dir(dir, field), create_if_missing)?
+                MapIndex::new_mutable(map_dir(dir, field), create_if_missing)?
             }
         })
     }
@@ -313,13 +313,13 @@ impl IndexSelector<'_> {
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         match self {
-            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(MapIndex::builder_mmap(
+            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(MapIndex::builder_immutable(
                 &map_dir(dir, field),
                 *is_on_disk,
                 deleted_points,
             )),
             IndexSelector::Appendable { dir } => {
-                make_gridstore(MapIndex::builder_gridstore(map_dir(dir, field)))
+                make_gridstore(MapIndex::builder_mutable(map_dir(dir, field)))
             }
         }
     }

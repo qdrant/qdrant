@@ -19,9 +19,6 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 /// Immutable map index served directly from a [`UniversalRead`] storage backend.
 ///
-/// The storage parameter `S` defaults to [`MmapFile`], but any `UniversalRead`
-/// implementation works — e.g. io_uring or disk-cache wrappers.
-///
 /// On-disk state (`values_to_points.bin`, `deleted.bin`, `point_to_values.*`,
 /// `mmap_field_index_config.json`) is written once during [`Self::build`] and
 /// not mutated afterwards: `deleted.bin` records only the points whose payload
@@ -37,7 +34,6 @@ pub struct OnDiskMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
     pub(super) storage: Storage<N, S>,
     pub(super) deleted_count: usize,
     pub(super) total_key_value_pairs: usize,
-    pub(super) is_on_disk: bool,
 }
 
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {

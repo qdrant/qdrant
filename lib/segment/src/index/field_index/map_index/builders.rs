@@ -15,6 +15,7 @@ use super::MapIndex;
 use super::key::MapIndexKey;
 use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 
 pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(pub(super) MapIndex<N>)
@@ -110,14 +111,23 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(MapIndex::OnDisk(Box::new(OnDiskMapIndex::build(
+        let populate = !self.is_on_disk;
+        let on_disk_index = OnDiskMapIndex::build(
             &MmapFs,
             &self.path,
             self.point_to_values,
             self.values_to_points,
-            self.is_on_disk,
+            populate,
             &self.deleted_points,
-        )?)))
+        )?;
+
+        let index = if self.is_on_disk {
+            MapIndex::OnDisk(Box::new(on_disk_index))
+        } else {
+            MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
+        };
+
+        Ok(index)
     }
 }
 
@@ -152,7 +162,7 @@ where
             "index must be initialized exactly once",
         );
         self.index.replace(
-            MapIndex::new_gridstore(self.dir.clone(), true)?.ok_or_else(|| {
+            MapIndex::new_mutable(self.dir.clone(), true)?.ok_or_else(|| {
                 OperationError::service_error("Failed to create mutable map index")
             })?,
         );

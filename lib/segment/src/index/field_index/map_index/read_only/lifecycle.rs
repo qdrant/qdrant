@@ -52,7 +52,7 @@ where
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         Ok(
-            OnDiskMapIndex::open(fs, path, effective_is_on_disk, deleted_points)?
+            OnDiskMapIndex::open(fs, path, !effective_is_on_disk, deleted_points)?
                 .map(Self::Immutable),
         )
     }

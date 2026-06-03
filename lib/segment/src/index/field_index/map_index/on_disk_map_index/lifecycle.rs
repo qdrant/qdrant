@@ -32,7 +32,7 @@ where
     pub fn open(
         fs: &S::Fs,
         path: &Path,
-        is_on_disk: bool,
+        populate: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let hashmap_path = path.join(HASHMAP_PATH);
@@ -46,20 +46,18 @@ where
             return Ok(None);
         };
 
-        let do_populate = !is_on_disk;
-
         let value_to_points = UniversalHashMap::open(
             fs,
             &hashmap_path,
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                populate: Populate::from(do_populate),
+                populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
             },
             Default::default(),
         )?;
-        let point_to_values = StoredPointToValues::open(fs, path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
@@ -69,7 +67,7 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: Populate::from(do_populate),
+                populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -96,7 +94,6 @@ where
             },
             deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
-            is_on_disk,
         }))
     }
 
@@ -124,7 +121,7 @@ where
         path: &Path,
         point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>>,
         values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
-        is_on_disk: bool,
+        populate: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
@@ -188,7 +185,7 @@ where
             deleted.flusher()()?;
         }
 
-        Self::open(fs, path, is_on_disk, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalMapIndex after building it")
         })
     }
@@ -246,7 +243,6 @@ where
             storage,
             deleted_count: _,
             total_key_value_pairs: _,
-            is_on_disk: _,
         } = self;
         let Storage {
             value_to_points,

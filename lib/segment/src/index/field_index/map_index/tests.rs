@@ -64,7 +64,7 @@ fn save_map_index<N>(
 
     match index_type {
         IndexType::MutableGridstore => {
-            let mut builder = MapIndex::<N>::builder_gridstore(path.to_path_buf());
+            let mut builder = MapIndex::<N>::builder_mutable(path.to_path_buf());
             builder.init().unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -76,7 +76,7 @@ fn save_map_index<N>(
             builder.finalize().unwrap();
         }
         IndexType::Mmap | IndexType::RamMmap => {
-            let mut builder = MapIndex::<N>::builder_mmap(path, false, &empty_deleted());
+            let mut builder = MapIndex::<N>::builder_immutable(path, false, &empty_deleted());
             builder.init().unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -99,13 +99,13 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     let index = match index_type {
-        IndexType::MutableGridstore => MapIndex::<N>::new_gridstore(path.to_path_buf(), true)
+        IndexType::MutableGridstore => MapIndex::<N>::new_mutable(path.to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::Mmap => MapIndex::<N>::new_mmap(path, true, &empty_deleted())
+        IndexType::Mmap => MapIndex::<N>::new_immutable(path, true, &empty_deleted())
             .unwrap()
             .unwrap(),
-        IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false, &empty_deleted())
+        IndexType::RamMmap => MapIndex::<N>::new_immutable(path, false, &empty_deleted())
             .unwrap()
             .unwrap(),
     };
@@ -128,7 +128,7 @@ where
 fn test_uuid_payload_index() {
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
     let mut builder =
-        MapIndex::<UuidIntType>::builder_mmap(temp_dir.path(), false, &empty_deleted());
+        MapIndex::<UuidIntType>::builder_immutable(temp_dir.path(), false, &empty_deleted());
 
     builder.init().unwrap();
 
@@ -156,7 +156,7 @@ fn test_uuid_payload_index() {
 fn test_index_non_ascending_insertion() {
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
     let mut builder =
-        MapIndex::<IntPayloadType>::builder_mmap(temp_dir.path(), false, &empty_deleted());
+        MapIndex::<IntPayloadType>::builder_immutable(temp_dir.path(), false, &empty_deleted());
     builder.init().unwrap();
 
     let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
@@ -347,15 +347,15 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
     let deleted = deleted_with(&[1, 2, 5]);
     let new_index = match index_type {
         IndexType::MutableGridstore => {
-            MapIndex::<IntPayloadType>::new_gridstore(temp_dir.path().to_path_buf(), true)
+            MapIndex::<IntPayloadType>::new_mutable(temp_dir.path().to_path_buf(), true)
                 .unwrap()
                 .unwrap()
         }
-        IndexType::Mmap => MapIndex::<IntPayloadType>::new_mmap(temp_dir.path(), true, &deleted)
+        IndexType::Mmap => MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &deleted)
             .unwrap()
             .unwrap(),
         IndexType::RamMmap => {
-            MapIndex::<IntPayloadType>::new_mmap(temp_dir.path(), false, &deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), false, &deleted)
                 .unwrap()
                 .unwrap()
         }
@@ -417,12 +417,12 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
 
     let new_index = match index_type {
         IndexType::Mmap => {
-            MapIndex::<IntPayloadType>::new_mmap(temp_dir.path(), true, &short_deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &short_deleted)
                 .unwrap()
                 .unwrap()
         }
         IndexType::RamMmap => {
-            MapIndex::<IntPayloadType>::new_mmap(temp_dir.path(), false, &short_deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), false, &short_deleted)
                 .unwrap()
                 .unwrap()
         }
