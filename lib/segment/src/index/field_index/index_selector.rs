@@ -452,13 +452,16 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::NullIndex))
             }
             (IndexSelector::NonAppendable { dir, is_on_disk: _ }, IndexMutability::Mutable)
-            | (IndexSelector::Appendable { dir }, _) => Ok(MutableNullIndex::open(
-                &null_dir(dir, field),
-                total_point_count,
-                create_if_missing,
-            )?
-            .map(NullIndex::Mutable)
-            .map(FieldIndex::NullIndex)),
+            | (IndexSelector::Appendable { dir }, IndexMutability::Mutable)
+            | (IndexSelector::Appendable { dir }, IndexMutability::Immutable) => {
+                Ok(MutableNullIndex::open(
+                    &null_dir(dir, field),
+                    total_point_count,
+                    create_if_missing,
+                )?
+                .map(NullIndex::Mutable)
+                .map(FieldIndex::NullIndex))
+            }
         }
     }
 

@@ -31,7 +31,7 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
                 "Can't add values to immutable numeric index",
             )),
             NumericIndexInner::OnDisk(_) => Err(OperationError::service_error(
-                "Can't add values to mmap numeric index",
+                "Can't add values to on-disk numeric index",
             )),
         }
     }

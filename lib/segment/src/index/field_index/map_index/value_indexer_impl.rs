@@ -31,7 +31,7 @@ impl ValueIndexer for MapIndex<str> {
                 "Can't add values to immutable map index",
             )),
             MapIndex::OnDisk(_) => Err(OperationError::service_error(
-                "Can't add values to mmap map index",
+                "Can't add values to on-disk map index",
             )),
         }
     }
