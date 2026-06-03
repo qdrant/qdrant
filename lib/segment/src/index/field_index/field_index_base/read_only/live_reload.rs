@@ -7,7 +7,7 @@ use crate::common::operation_error::OperationResult;
 ///
 /// A read-only index is opened over a [`UniversalRead`] backend while a writer
 /// keeps appending to the same files. `live_reload` refreshes the in-memory
-/// view to the current on-disk state without a full re-open. Implementors fall
+/// view to the current on-disk state without a full re-open. Implementers fall
 /// into two shapes:
 ///
 /// - immutable mmap variants only re-apply the authoritative `deleted_points`
@@ -21,7 +21,7 @@ use crate::common::operation_error::OperationResult;
 /// segment's id-tracker diff accumulated since the previous reload).
 ///
 /// [`UniversalRead`]: common::universal_io::UniversalRead
-// No in-crate implementor on the trait-only branch; the per-index impls land
+// No in-crate implementer on the trait-only branch; the per-index impls land
 // on the sibling branches that fork from here.
 #[allow(dead_code)]
 pub(crate) trait LiveReload {
