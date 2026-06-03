@@ -7,7 +7,7 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::Result;
+use common::universal_io::{Result, UserData};
 #[cfg(feature = "testing")]
 use fs_err as fs;
 #[cfg(feature = "testing")]
@@ -57,21 +57,33 @@ impl InvertedIndex for InvertedIndexRam {
         panic!("InvertedIndexRam is not supposed to be saved");
     }
 
-    fn get<'a>(
+    fn get_batch<'a, U: UserData>(
         &'a self,
-        id: DimOffset,
+        ids: impl Iterator<Item = (U, DimOffset)>,
         _arena: &'a Blink,
         _hw_counter: &'a HardwareCounterCell,
-    ) -> Result<PostingListIterator<'a>> {
-        Ok(self.get(id)?.iter())
+        mut callback: impl FnMut(U, PostingListIterator<'a>) -> Result<()>,
+    ) -> Result<()> {
+        for (user_data, id) in ids {
+            callback(user_data, self.get(id)?.iter())?;
+        }
+        Ok(())
     }
 
     fn len(&self) -> usize {
         self.postings.len()
     }
 
-    fn posting_list_len(&self, id: DimOffset, _hw_counter: &HardwareCounterCell) -> Result<usize> {
-        Ok(self.get(id)?.elements.len())
+    fn posting_list_len_batch<U: UserData>(
+        &self,
+        ids: impl Iterator<Item = (U, DimOffset)>,
+        _hw_counter: &HardwareCounterCell,
+        mut callback: impl FnMut(U, usize) -> Result<()>,
+    ) -> Result<()> {
+        for (user_data, id) in ids {
+            callback(user_data, self.get(id)?.elements.len())?;
+        }
+        Ok(())
     }
 
     fn files(_path: &Path) -> Vec<PathBuf> {

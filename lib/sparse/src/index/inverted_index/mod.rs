@@ -6,7 +6,7 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Result, UniversalIoError};
+use common::universal_io::{Result, UniversalIoError, UserData};
 
 use super::posting_list_common::PostingListIter;
 use crate::common::sparse_vector::RemappedSparseVector;
@@ -39,13 +39,14 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     /// Save index
     fn save(&self, path: &Path) -> Result<()>;
 
-    /// Get posting list for dimension id
-    fn get<'a>(
+    /// Get the posting lists for the given dimension ids.
+    fn get_batch<'a, U: UserData>(
         &'a self,
-        id: DimOffset,
+        ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Result<Self::Iter<'a>>;
+        callback: impl FnMut(U, Self::Iter<'a>) -> Result<()>,
+    ) -> Result<()>;
 
     /// Get number of posting lists
     fn len(&self) -> usize;
@@ -55,8 +56,13 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         self.len() == 0
     }
 
-    /// Get number of posting lists for dimension id
-    fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize>;
+    /// Number of elements in each given posting list, in a single batched access.
+    fn posting_list_len_batch<U: UserData>(
+        &self,
+        ids: impl Iterator<Item = (U, DimOffset)>,
+        hw_counter: &HardwareCounterCell,
+        callback: impl FnMut(U, usize) -> Result<()>,
+    ) -> Result<()>;
 
     /// Files used by this index
     fn files(path: &Path) -> Vec<PathBuf>;
@@ -86,7 +92,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn max_index(&self) -> Option<DimOffset>;
 }
 
-/// Error returned from [`InvertedIndex::get`] and [`InvertedIndex::posting_list_len`].
+/// Error returned from [`InvertedIndex::get_batch`] and [`InvertedIndex::posting_list_len_batch`].
 ///
 /// Should never happen for valid index as `IndicesTracker` filters unknown
 /// dimension ids.

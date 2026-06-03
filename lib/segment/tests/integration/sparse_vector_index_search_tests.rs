@@ -166,31 +166,32 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
             .indices_tracker()
             .remap_vector(vector.to_owned());
         // check posting lists are consistent with storage
-        for (dim_id, dim_value) in remapped_vector
+        let arena = blink_alloc::Blink::new();
+        let ids = remapped_vector
             .indices
             .iter()
             .zip(remapped_vector.values.iter())
-        {
-            let arena = blink_alloc::Blink::new();
-            let posting_list = sparse_vector_index
-                .inverted_index()
-                .get(*dim_id, &arena, &hw_counter)
-                .unwrap();
-            // assert posting list sorted by record id
-            assert!(
-                posting_list
-                    .clone()
-                    .into_std_iter()
-                    .tuple_windows()
-                    .all(|(w0, w1)| w0.record_id < w1.record_id),
-            );
-            // assert posted list contains record id
-            assert!(
-                posting_list
-                    .into_std_iter()
-                    .any(|e| e.record_id == id && e.weight == *dim_value),
-            );
-        }
+            .map(|(dim_id, dim_value)| (*dim_value, *dim_id));
+        sparse_vector_index
+            .inverted_index()
+            .get_batch(ids, &arena, &hw_counter, |dim_value, posting_list| {
+                // assert posting list sorted by record id
+                assert!(
+                    posting_list
+                        .clone()
+                        .into_std_iter()
+                        .tuple_windows()
+                        .all(|(w0, w1)| w0.record_id < w1.record_id),
+                );
+                // assert posted list contains record id
+                assert!(
+                    posting_list
+                        .into_std_iter()
+                        .any(|e| e.record_id == id && e.weight == dim_value),
+                );
+                Ok(())
+            })
+            .unwrap();
         // check the vector can be found via search using large top
         let top = sparse_vector_index.max_result_count(vector).unwrap();
         let query_vector: QueryVector = vector.to_owned().into();
