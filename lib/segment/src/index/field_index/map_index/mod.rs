@@ -5,7 +5,7 @@ pub use self::builders::{MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexMmap
 use self::immutable_map_index::ImmutableMapIndex;
 pub use self::key::MapIndexKey;
 use self::mutable_map_index::MutableMapIndex;
-use self::universal_map_index::OnDiskMapIndex;
+use self::on_disk_map_index::OnDiskMapIndex;
 
 mod builders;
 mod facet_index_impl;
@@ -17,7 +17,7 @@ mod payload_index_impl;
 pub mod read_ops;
 #[cfg(test)]
 mod tests;
-pub mod universal_map_index;
+pub mod on_disk_map_index;
 mod value_indexer_impl;
 
 pub mod read_only;

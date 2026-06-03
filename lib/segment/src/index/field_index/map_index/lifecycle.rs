@@ -10,7 +10,7 @@ use super::builders::MapIndexMmapBuilder;
 use super::immutable_map_index::ImmutableMapIndex;
 use super::key::MapIndexKey;
 use super::mutable_map_index::MutableMapIndex;
-use super::universal_map_index::OnDiskMapIndex;
+use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 

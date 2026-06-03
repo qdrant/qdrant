@@ -3,7 +3,7 @@ use gridstore::Blob;
 
 use crate::index::field_index::map_index::MapIndexKey;
 use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
-use crate::index::field_index::map_index::universal_map_index::OnDiskMapIndex;
+use crate::index::field_index::map_index::on_disk_map_index::OnDiskMapIndex;
 
 mod lifecycle;
 mod read_ops;

@@ -9,7 +9,7 @@ use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::read_ops::MapIndexRead;
-use super::super::universal_map_index::OnDiskMapIndex;
+use super::super::on_disk_map_index::OnDiskMapIndex;
 use super::{ContainerSegment, ImmutableMapIndex, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;

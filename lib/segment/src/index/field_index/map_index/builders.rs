@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use super::MapIndex;
 use super::key::MapIndexKey;
-use super::universal_map_index::OnDiskMapIndex;
+use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 

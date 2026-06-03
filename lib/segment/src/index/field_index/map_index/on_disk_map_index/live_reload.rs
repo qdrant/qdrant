@@ -5,7 +5,7 @@ use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::map_index::MapIndexKey;
-use crate::index::field_index::map_index::universal_map_index::OnDiskMapIndex;
+use crate::index::field_index::map_index::on_disk_map_index::OnDiskMapIndex;
 
 impl<N, S> OnDiskMapIndex<N, S>
 where

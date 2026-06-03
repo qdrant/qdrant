@@ -6,7 +6,7 @@ use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
-use super::super::universal_map_index::OnDiskMapIndex;
+use super::super::on_disk_map_index::OnDiskMapIndex;
 use super::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::IndexMutability;

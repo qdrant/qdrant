@@ -6,7 +6,7 @@ use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
 
 use super::MapIndexKey;
-use super::universal_map_index::OnDiskMapIndex;
+use super::on_disk_map_index::OnDiskMapIndex;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
 mod lifecycle;
