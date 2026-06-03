@@ -16,8 +16,9 @@ use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
 impl ImmutableGeoMapIndex {
-    /// Open and load immutable geo index from mmap storage
+    /// Open and load the immutable geo index from mmap storage.
     pub fn open_mmap(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
+        let index = Box::new(index);
         let counts_per_hash = index
             .storage
             .counts_per_hash
@@ -65,35 +66,34 @@ impl ImmutableGeoMapIndex {
         // Track deleted points to adjust point and value counts after loading
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
             Vec::with_capacity(index.deleted_count);
-        let point_to_values = ImmutablePointToValues::new(
-            index
-                .storage
-                .point_to_values
-                .iter()
-                .map(|id_values| {
-                    let (id, values) = id_values?;
-                    let is_deleted = index
-                        .storage
-                        .deleted
-                        .get_bit(id as usize)
-                        .unwrap_or_default();
-                    let values = match (is_deleted, values) {
-                        (false, Some(values)) => values.map(Cow::into_owned).collect(),
-                        (false, None) => vec![],
-                        (true, Some(values)) => {
-                            let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
-                            deleted_points.push((id, geo_points));
-                            vec![]
-                        }
-                        (true, None) => {
-                            deleted_points.push((id, vec![]));
-                            vec![]
-                        }
-                    };
-                    Ok(values)
-                })
-                .collect::<OperationResult<_>>()?,
-        );
+        let collected = index
+            .storage
+            .point_to_values
+            .iter()
+            .map(|id_values| {
+                let (id, values) = id_values?;
+                let is_deleted = index
+                    .storage
+                    .deleted
+                    .get_bit(id as usize)
+                    .unwrap_or_default();
+                let values = match (is_deleted, values) {
+                    (false, Some(values)) => values.map(Cow::into_owned).collect(),
+                    (false, None) => vec![],
+                    (true, Some(values)) => {
+                        let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
+                        deleted_points.push((id, geo_points));
+                        vec![]
+                    }
+                    (true, None) => {
+                        deleted_points.push((id, vec![]));
+                        vec![]
+                    }
+                };
+                Ok(values)
+            })
+            .collect::<OperationResult<Vec<_>>>();
+        let point_to_values = ImmutablePointToValues::new(collected?);
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
@@ -111,7 +111,7 @@ impl ImmutableGeoMapIndex {
             points_count: index.points_count(),
             points_values_count: index.points_values_count(),
             max_values_per_point: index.max_values_per_point(),
-            storage: Box::new(index),
+            storage: index,
             cached_ram_usage_bytes: 0,
         };
 

@@ -19,8 +19,9 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    /// Open and load immutable map index from mmap storage
+    /// Open and load the immutable map index from mmap storage.
     pub(in super::super) fn open_mmap(index: UniversalMapIndex<N>) -> OperationResult<Self> {
+        let index = Box::new(index);
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 
         let mut indexed_points = 0;
@@ -96,7 +97,7 @@ where
             point_to_values,
             indexed_points,
             values_count,
-            storage: Storage::Mmap(Box::new(index)),
+            storage: Storage::Mmap(index),
             cached_ram_usage_bytes: 0,
         };
         result.cached_ram_usage_bytes = result.compute_ram_usage_bytes();

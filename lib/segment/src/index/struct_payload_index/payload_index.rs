@@ -4,10 +4,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::StructPayloadIndex;
+use super::{StorageType, StructPayloadIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::FieldIndex;
+use crate::index::field_index::schema_transition::{SchemaTransition, classify};
 use crate::index::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
@@ -24,12 +25,15 @@ impl PayloadIndex for StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
         if let Some(prev_schema) = self.config().indices.get(field) {
-            // the field is already indexed with the same schema
-            // no need to rebuild index and to save the config
-            return if prev_schema.schema == *payload_schema {
-                Ok(BuildIndexResult::AlreadyBuilt)
-            } else {
-                Ok(BuildIndexResult::IncompatibleSchema)
+            let transition = classify(&prev_schema.schema, payload_schema);
+            return match transition {
+                SchemaTransition::Identical => Ok(BuildIndexResult::AlreadyBuilt),
+                // Only `on_disk` differs: reuse the existing files (loaded in
+                // the new mode) instead of rebuilding from payload.
+                SchemaTransition::OnlyOnDiskFlipped { .. } => {
+                    self.reuse_or_build_index(field, payload_schema, hw_counter)
+                }
+                SchemaTransition::Incompatible => Ok(BuildIndexResult::IncompatibleSchema),
             };
         }
         let indexes = self.build_field_indexes(field, payload_schema, hw_counter)?;
@@ -114,13 +118,23 @@ impl PayloadIndex for StructPayloadIndex {
             return Ok(false);
         };
 
-        // the field is already indexed with the same schema
-        // no need to rebuild index and to save the config
-        if current_schema.schema == *new_payload_schema {
-            return Ok(false);
+        match classify(&current_schema.schema, new_payload_schema) {
+            SchemaTransition::Identical => Ok(false),
+            // Only `on_disk` flipped on a non-appendable (mmap) segment: keep the
+            // existing files and reload the index in the new mode during
+            // `build_index` instead of dropping and rebuilding from payload.
+            SchemaTransition::OnlyOnDiskFlipped { .. }
+                if matches!(self.storage_type, StorageType::GridstoreNonAppendable) =>
+            {
+                Ok(false)
+            }
+            // Appendable Gridstore (its `on_disk` change goes through the normal
+            // drop-and-rebuild path) or any incompatible change: drop so
+            // `build_index` rebuilds.
+            SchemaTransition::OnlyOnDiskFlipped { .. } | SchemaTransition::Incompatible => {
+                self.drop_index(field)
+            }
         }
-
-        self.drop_index(field)
     }
 
     fn overwrite_payload(
