@@ -13,6 +13,7 @@ use super::on_disk_numeric_index::OnDiskNumericIndex;
 use super::storage::NumericIndexInner;
 use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
@@ -123,15 +124,23 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let inner = OnDiskNumericIndex::build(
+        let populate = !self.is_on_disk;
+        let on_disk_index = OnDiskNumericIndex::build(
             &MmapFs,
             self.in_memory_index,
             &self.path,
-            self.is_on_disk,
+            populate,
             &self.deleted_points,
         )?;
+
+        let inner = if self.is_on_disk {
+            NumericIndexInner::OnDisk(on_disk_index)
+        } else {
+            NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(on_disk_index))
+        };
+
         Ok(NumericIndex {
-            inner: NumericIndexInner::OnDisk(inner),
+            inner,
             _phantom: PhantomData,
         })
     }
@@ -173,7 +182,7 @@ where
             "index must be initialized exactly once",
         );
         self.index.replace(
-            NumericIndex::new_gridstore(self.dir.clone(), true)?
+            NumericIndex::new_mutable(self.dir.clone(), true)?
                 // unwrap safety: cannot fail because create_if_missing is true
                 .unwrap(),
         );

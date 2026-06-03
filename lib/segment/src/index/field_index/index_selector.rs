@@ -335,10 +335,10 @@ impl IndexSelector<'_> {
     {
         Ok(match self {
             IndexSelector::NonAppendable { dir, is_on_disk } => {
-                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk, deleted_points)?
+                NumericIndex::new_immutable(&numeric_dir(dir, field), *is_on_disk, deleted_points)?
             }
             IndexSelector::Appendable { dir } => {
-                NumericIndex::new_gridstore(numeric_dir(dir, field), create_if_missing)?
+                NumericIndex::new_mutable(numeric_dir(dir, field), create_if_missing)?
             }
         })
     }

@@ -30,7 +30,7 @@ where
     Vec<T>: Blob,
 {
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(
+    pub fn new_immutable(
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
@@ -43,7 +43,7 @@ where
         }))
     }
 
-    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    pub fn new_mutable(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let index = NumericIndexInner::new_gridstore(dir, create_if_missing)?;
 
         Ok(index.map(|inner| Self {

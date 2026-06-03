@@ -38,7 +38,7 @@ where
         fs: &S::Fs,
         in_memory_index: InMemoryNumericIndex<T>,
         path: &Path,
-        is_on_disk: bool,
+        populate: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
@@ -109,7 +109,7 @@ where
             deleted.flusher()()?;
         }
 
-        Self::open(fs, path, is_on_disk, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalNumericIndex after building it")
         })
     }

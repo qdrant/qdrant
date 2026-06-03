@@ -13,7 +13,6 @@ use rstest::rstest;
 use serde_json::Value;
 use tempfile::{Builder, TempDir};
 
-use super::immutable_numeric_index::ImmutableNumericIndex;
 use super::*;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
@@ -112,13 +111,13 @@ fn open_index_from_disk(
     deleted: &BitSlice,
 ) -> NumericIndex<FloatPayloadType, FloatPayloadType> {
     match index_type {
-        IndexType::MutableGridstore => NumericIndex::new_gridstore(temp_dir.to_path_buf(), true)
+        IndexType::MutableGridstore => NumericIndex::new_mutable(temp_dir.to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::Mmap => NumericIndex::new_mmap(temp_dir, true, deleted)
+        IndexType::Mmap => NumericIndex::new_immutable(temp_dir, true, deleted)
             .unwrap()
             .unwrap(),
-        IndexType::RamMmap => NumericIndex::new_mmap(temp_dir, false, deleted)
+        IndexType::RamMmap => NumericIndex::new_immutable(temp_dir, false, deleted)
             .unwrap()
             .unwrap(),
     }
@@ -143,19 +142,7 @@ fn random_index(
             .add_point(i as PointOffsetType, &values, &hw_counter)
             .unwrap();
     }
-    let mut index = index_builder.finalize().unwrap();
-
-    if matches!(index_type, IndexType::RamMmap) {
-        let NumericIndexInner::OnDisk(mmap_index) = index.inner else {
-            panic!("Expected mmap index");
-        };
-        index = NumericIndex {
-            inner: NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(
-                mmap_index,
-            )),
-            _phantom: Default::default(),
-        };
-    }
+    let index = index_builder.finalize().unwrap();
 
     (temp_dir, index)
 }

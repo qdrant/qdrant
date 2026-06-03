@@ -61,7 +61,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         &MmapFs,
         mutable_index,
         dir.path(),
-        false,
+        true,
         &deleted_points,
     )
     .unwrap();
