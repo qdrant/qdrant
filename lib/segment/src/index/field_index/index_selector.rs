@@ -372,10 +372,10 @@ impl IndexSelector<'_> {
     ) -> OperationResult<Option<GeoMapIndex>> {
         Ok(match self {
             IndexSelector::NonAppendable { dir, is_on_disk } => {
-                GeoMapIndex::new_mmap(&map_dir(dir, field), *is_on_disk, deleted_points)?
+                GeoMapIndex::new_on_disk(&map_dir(dir, field), *is_on_disk, deleted_points)?
             }
             IndexSelector::Appendable { dir } => {
-                GeoMapIndex::new_gridstore(map_dir(dir, field), create_if_missing)?
+                GeoMapIndex::new_mutable(map_dir(dir, field), create_if_missing)?
             }
         })
     }
