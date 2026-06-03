@@ -189,7 +189,7 @@ mod tests {
 
         assert_matches!(
             JwtParser::new("wrong-secret").decode(&token),
-            Some(Err(AuthError::Forbidden(_)))
+            Some(Err(AuthError::Forbidden(_))),
         );
 
         assert!(JwtParser::new("secret").decode("foo.bar.baz").is_none());

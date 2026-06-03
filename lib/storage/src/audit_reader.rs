@@ -410,7 +410,7 @@ mod tests {
         );
         assert_matches!(
             matches_query_result(&event, &query_before),
-            MatchResult::NoMatch
+            MatchResult::NoMatch,
         );
     }
 

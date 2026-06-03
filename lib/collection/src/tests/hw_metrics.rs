@@ -100,7 +100,7 @@ async fn test_hw_metrics_cancellation() {
         // Ensure we triggered a timeout and the search didn't exit too early.
         assert_matches!(
             search_res.unwrap_err(),
-            CollectionError::Timeout { description: _ }
+            CollectionError::Timeout { description: _ },
         );
     }
 

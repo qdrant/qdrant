@@ -488,7 +488,7 @@ mod tests {
         // Some errors can't be corrected
         assert_matches!(
             wal.append_entries(broken_entry),
-            Err(StorageError::ServiceError { .. })
+            Err(StorageError::ServiceError { .. }),
         );
     }
 
