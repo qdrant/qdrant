@@ -118,7 +118,7 @@ where
     pub fn open(
         fs: &S::Fs,
         path: &Path,
-        is_on_disk: bool,
+        populate: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let pairs_path = path.join(PAIRS_PATH);
@@ -133,17 +133,16 @@ where
         };
 
         let histogram = Histogram::<T>::load_via(fs, path)?;
-        let do_populate = !is_on_disk;
 
         let pairs_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::from(do_populate),
+            populate: Populate::from(populate),
             advice: AdviceSetting::Global,
         };
         let pairs = TypedStorage::open(fs, pairs_path, pairs_options, Default::default())?;
 
-        let point_to_values = StoredPointToValues::open(fs, path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
         let deleted_payload_mmap = StoredBitSlice::<S>::open(
@@ -179,7 +178,6 @@ where
             histogram,
             deleted_count,
             max_values_per_point: config.max_values_per_point,
-            is_on_disk,
         }))
     }
 }
@@ -253,7 +251,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> UniversalNume
             histogram: _,
             deleted_count: _,
             max_values_per_point: _,
-            is_on_disk: _,
         } = self;
         let Storage {
             deleted: _,
@@ -273,7 +270,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> UniversalNume
             histogram,
             deleted_count: _,
             max_values_per_point: _,
-            is_on_disk: _,
         } = self;
 
         histogram.ram_usage_bytes() + storage.ram_usage_bytes()

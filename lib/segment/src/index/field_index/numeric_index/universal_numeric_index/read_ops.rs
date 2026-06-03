@@ -30,7 +30,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     ) -> bool {
         // FIXME: don't silently ignore error — propagate it once
         // [`NumericIndexRead::check_values_any`] returns `OperationResult`.
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             self.storage
@@ -77,7 +77,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         end_bound: Bound<Point<T>>,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         Ok(self
             .values_range_iterator(start_bound, end_bound)?
@@ -126,9 +126,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.is_on_disk,
-        }
+        StorageType::Mmap { is_on_disk: true }
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -236,14 +234,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         Ok(iter.filter(move |point| !deleted.get_bit(point.idx as usize).unwrap_or(true)))
     }
 
-    fn make_conditioned_counter<'a>(
-        &self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> ConditionedCounter<'a> {
-        ConditionedCounter::new(self.is_on_disk, hw_counter)
-    }
-
     pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+        true
     }
 }

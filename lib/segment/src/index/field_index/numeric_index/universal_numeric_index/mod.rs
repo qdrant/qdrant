@@ -39,7 +39,6 @@ pub struct UniversalNumericIndex<
     pub(super) histogram: Histogram<T>,
     pub(super) deleted_count: usize,
     pub(super) max_values_per_point: usize,
-    pub(super) is_on_disk: bool,
 }
 
 pub(in super::super) struct Storage<

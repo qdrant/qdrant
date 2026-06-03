@@ -104,9 +104,7 @@ where
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.storage.is_on_disk(),
-        }
+        StorageType::Mmap { is_on_disk: false }
     }
 
     /// Approximate RAM usage in bytes for in-memory structures (cached at construction).

@@ -54,7 +54,7 @@ where
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let Some(mmap_index) =
-            UniversalNumericIndex::open(fs, path, effective_is_on_disk, deleted_points)?
+            UniversalNumericIndex::open(fs, path, !effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };
