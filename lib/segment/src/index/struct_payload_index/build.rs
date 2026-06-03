@@ -4,6 +4,7 @@ use common::types::PointOffsetType;
 use super::StructPayloadIndex;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
+use crate::index::BuildIndexResult;
 use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait as _};
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{PayloadContainer, PayloadFieldSchema, PayloadKeyTypeRef};
@@ -51,6 +52,46 @@ impl StructPayloadIndex {
             .into_iter()
             .map(|builder| builder.finalize())
             .collect()
+    }
+
+    /// Build a field index by reusing its already-persisted files, loaded in
+    /// the representation requested by `payload_schema` (honoring a changed
+    /// `on_disk` flag), instead of rebuilding it from payload storage. Falls
+    /// back to a full rebuild if the files cannot be loaded.
+    pub(super) fn reuse_or_build_index(
+        &self,
+        field: PayloadKeyTypeRef,
+        payload_schema: &PayloadFieldSchema,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BuildIndexResult> {
+        let loaded = {
+            let selector = self.selector(payload_schema);
+            let id_tracker = self.id_tracker.borrow();
+            let deleted_points = id_tracker.deleted_point_bitslice();
+            match selector.new_index(field, payload_schema, false, deleted_points)? {
+                Some(mut indexes) => {
+                    if let Some(null_index) = selector.new_null_index(
+                        field,
+                        false,
+                        &id_tracker,
+                        selector.default_mutability(),
+                    )? {
+                        indexes.push(null_index);
+                    }
+                    Some(indexes)
+                }
+                None => None,
+            }
+        };
+
+        match loaded {
+            Some(indexes) => Ok(BuildIndexResult::Built(indexes)),
+            None => Ok(BuildIndexResult::Built(self.build_field_indexes(
+                field,
+                payload_schema,
+                hw_counter,
+            )?)),
+        }
     }
 
     pub(super) fn clear_index_for_point(
