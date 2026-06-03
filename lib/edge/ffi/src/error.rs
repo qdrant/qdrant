@@ -40,4 +40,15 @@ impl From<OperationError> for EdgeError {
     }
 }
 
+impl EdgeError {
+    /// Build an `OperationError` from a borrowed message — used by fallible
+    /// FFI-boundary conversions for invalid host input (bad UUID, out-of-range
+    /// coordinate, malformed payload key).
+    pub(crate) fn invalid_argument(message: impl Into<String>) -> Self {
+        EdgeError::OperationError {
+            message: message.into(),
+        }
+    }
+}
+
 pub type Result<T, E = EdgeError> = std::result::Result<T, E>;
