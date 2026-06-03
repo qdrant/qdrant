@@ -102,7 +102,6 @@ pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     deleted_count: usize,
-    _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
@@ -144,7 +143,6 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
             distance: _,
             multi_vector_config: _,
             deleted_count: _,
-            _phantom,
         } = self;
 
         vectors.clear_cache()?;
@@ -566,7 +564,6 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         distance,
         multi_vector_config,
         deleted_count,
-        _phantom: Default::default(),
     })
 }
 
