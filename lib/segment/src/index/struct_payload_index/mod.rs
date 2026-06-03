@@ -340,28 +340,6 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    /// Re-persist the schema for an already-existing field without
-    /// rebuilding its index. The on-disk index files are untouched; only
-    /// `config.indices[field]` is updated to reflect the new schema and
-    /// (re-derived) per-index types.
-    fn update_indexed_schema(
-        &mut self,
-        field: &PayloadKeyType,
-        new_schema: PayloadFieldSchema,
-    ) -> OperationResult<()> {
-        let index_types: Vec<_> = self
-            .field_indexes
-            .get(field)
-            .map(|indexes| indexes.iter().map(|i| i.get_full_index_type()).collect())
-            .unwrap_or_default();
-        self.config.indices.insert(
-            field.clone(),
-            PayloadFieldSchemaWithIndexType::new(new_schema, index_types),
-        );
-        self.save_config()?;
-        Ok(())
-    }
-
     /// Run a closure with a borrowed read-only view of this index.
     ///
     /// The view borrows `id_tracker` (and the payload `Arc`) for the
