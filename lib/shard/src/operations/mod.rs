@@ -7,8 +7,10 @@ pub mod staging;
 pub mod vector_name_ops;
 pub mod vector_ops;
 
+use std::collections::HashSet;
+
 use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, PointIdType};
+use segment::types::{PayloadFieldSchema, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
@@ -89,6 +91,27 @@ impl CollectionUpdateOperations {
             Self::PointOperation(op) => op.retain_point_ids(filter),
             Self::VectorOperation(op) => op.retain_point_ids(filter),
             Self::PayloadOperation(op) => op.retain_point_ids(filter),
+            Self::FieldIndexOperation(_) => (),
+            Self::VectorNameOperation(_) => (),
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => (),
+        }
+    }
+
+    /// Drop named-vector references to vector names not in `valid`.
+    ///
+    /// Used during WAL replay: a historical operation may reference a vector name that was
+    /// since removed by `delete_named_vector`. Without this, such an operation fails segment
+    /// validation (`VectorNameNotExists`) and is dropped wholesale on reload, taking its
+    /// points with it. Stripping the dead names lets the rest of the operation apply, matching
+    /// the live outcome (the point survives, just without the deleted vector).
+    ///
+    /// Only affects the named-vector variants; the default (unnamed) vector is left untouched.
+    pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
+        match self {
+            Self::PointOperation(op) => op.retain_vector_names(valid),
+            Self::VectorOperation(op) => op.retain_vector_names(valid),
+            Self::PayloadOperation(_) => (),
             Self::FieldIndexOperation(_) => (),
             Self::VectorNameOperation(_) => (),
             #[cfg(feature = "staging")]

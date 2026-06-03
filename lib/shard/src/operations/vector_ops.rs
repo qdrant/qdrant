@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use segment::types::{Filter, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
@@ -33,6 +35,21 @@ impl VectorOperations {
             Self::UpdateVectors(op) => op.points.retain(|point| filter(&point.id)),
             Self::DeleteVectors(points, _) => points.points.retain(filter),
             Self::DeleteVectorsByFilter(_, _) => (),
+        }
+    }
+
+    /// Drop named-vector references to names not in `valid`. See
+    /// [`super::CollectionUpdateOperations::retain_vector_names`].
+    pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
+        match self {
+            Self::UpdateVectors(op) => {
+                for point in &mut op.points {
+                    point.vector.retain_vector_names(valid);
+                }
+            }
+            Self::DeleteVectors(_, names) | Self::DeleteVectorsByFilter(_, names) => {
+                names.retain(|name| valid.contains(name));
+            }
         }
     }
 }

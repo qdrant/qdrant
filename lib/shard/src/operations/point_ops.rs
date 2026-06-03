@@ -143,6 +143,21 @@ impl PointOperations {
             Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
         }
     }
+
+    /// Drop named-vector references to names not in `valid`. See
+    /// [`CollectionUpdateOperations::retain_vector_names`].
+    pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
+        match self {
+            Self::UpsertPoints(op) => op.retain_vector_names(valid),
+            Self::UpsertPointsConditional(op) => op.points_op.retain_vector_names(valid),
+            Self::SyncPoints(op) => {
+                for point in &mut op.points {
+                    point.vector.retain_vector_names(valid);
+                }
+            }
+            Self::DeletePoints { .. } | Self::DeletePointsByFilter(_) => (),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants, Hash)]
@@ -190,6 +205,19 @@ impl PointInsertOperationsInternal {
                 }
             }
             PointInsertOperationsInternal::PointsList(points) => points,
+        }
+    }
+
+    /// Drop named-vector references to names not in `valid`. See
+    /// [`CollectionUpdateOperations::retain_vector_names`].
+    pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
+        match self {
+            Self::PointsBatch(batch) => batch.vectors.retain_vector_names(valid),
+            Self::PointsList(points) => {
+                for point in points {
+                    point.vector.retain_vector_names(valid);
+                }
+            }
         }
     }
 
@@ -317,6 +345,16 @@ pub enum BatchVectorStructPersisted {
     Single(Vec<DenseVector>),
     MultiDense(Vec<MultiDenseVector>),
     Named(HashMap<VectorNameBuf, Vec<VectorPersisted>>),
+}
+
+impl BatchVectorStructPersisted {
+    /// Drop named-vector references to names not in `valid`. See
+    /// [`CollectionUpdateOperations::retain_vector_names`].
+    pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
+        if let BatchVectorStructPersisted::Named(named) = self {
+            named.retain(|name, _| valid.contains(name));
+        }
+    }
 }
 
 impl Hash for BatchVectorStructPersisted {
@@ -492,6 +530,16 @@ pub enum VectorStructPersisted {
     Single(DenseVector),
     MultiDense(MultiDenseVector),
     Named(HashMap<VectorNameBuf, VectorPersisted>),
+}
+
+impl VectorStructPersisted {
+    /// Drop named-vector references to names not in `valid`. See
+    /// [`CollectionUpdateOperations::retain_vector_names`].
+    pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
+        if let VectorStructPersisted::Named(named) = self {
+            named.retain(|name, _| valid.contains(name));
+        }
+    }
 }
 
 impl std::hash::Hash for VectorStructPersisted {
@@ -801,4 +849,69 @@ where
         index += 1;
         retain
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dense(v: f32) -> VectorPersisted {
+        VectorPersisted::Dense(vec![v])
+    }
+
+    #[test]
+    fn retain_vector_names_strips_list_batch_and_delete() {
+        let valid: HashSet<VectorNameBuf> = ["a".to_string()].into_iter().collect();
+
+        // PointsList: the deleted name `b` is stripped, `a` survives.
+        let mut list =
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
+                PointStructPersisted {
+                    id: 1.into(),
+                    vector: VectorStructPersisted::Named(
+                        [("a".to_string(), dense(0.1)), ("b".to_string(), dense(0.2))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                    payload: None,
+                },
+            ]));
+        list.retain_vector_names(&valid);
+        let PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points)) =
+            &list
+        else {
+            unreachable!()
+        };
+        let VectorStructPersisted::Named(named) = &points[0].vector else {
+            unreachable!()
+        };
+        assert_eq!(named.keys().cloned().collect::<Vec<_>>(), vec!["a"]);
+
+        // PointsBatch: per-name entries are dropped, ids/payloads length untouched.
+        let mut batch = PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(
+            BatchPersisted {
+                ids: vec![1.into(), 2.into()],
+                vectors: BatchVectorStructPersisted::Named(
+                    [
+                        ("a".to_string(), vec![dense(0.1), dense(0.2)]),
+                        ("b".to_string(), vec![dense(0.3), dense(0.4)]),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                payloads: None,
+            },
+        ));
+        batch.retain_vector_names(&valid);
+        let PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(batch)) =
+            &batch
+        else {
+            unreachable!()
+        };
+        let BatchVectorStructPersisted::Named(named) = &batch.vectors else {
+            unreachable!()
+        };
+        assert_eq!(named.keys().cloned().collect::<Vec<_>>(), vec!["a"]);
+        assert_eq!(batch.ids.len(), 2);
+    }
 }
