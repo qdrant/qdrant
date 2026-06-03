@@ -59,7 +59,7 @@ where
             return Ok(None);
         };
 
-        Ok(Some(Self::Immutable(mmap_index)))
+        Ok(Some(Self::OnDisk(mmap_index)))
     }
 
     /// Reports the on-disk format's mutability, mirroring
@@ -80,6 +80,7 @@ where
         match self {
             Self::Appendable(_) => IndexMutability::Mutable,
             Self::Immutable(_) => IndexMutability::Immutable,
+            Self::OnDisk(_) => IndexMutability::Immutable,
         }
     }
 }
