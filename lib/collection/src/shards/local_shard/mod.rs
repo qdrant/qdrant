@@ -92,6 +92,9 @@ use crate::wal_delta::RecoverableWal;
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
 
+/// Log a warning if applying a single WAL operation during recovery takes longer than this.
+const WAL_SLOW_OP_REPORT_THRESHOLD: Duration = Duration::from_secs(30);
+
 /// LocalShard
 ///
 /// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
@@ -788,6 +791,11 @@ impl LocalShard {
                 newest_clocks.advance_clock(clock_tag);
             }
 
+            // Capture the operation type before `update.operation` is moved, so we can
+            // report it if applying this operation turns out to be slow.
+            let op_label = update.operation.label();
+            let op_started = Instant::now();
+
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
                 &self.segments,
@@ -820,6 +828,15 @@ impl LocalShard {
                 Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
+            }
+
+            let op_elapsed = op_started.elapsed();
+            if op_elapsed >= WAL_SLOW_OP_REPORT_THRESHOLD {
+                log::warn!(
+                    "Slow WAL operation during recovery: {op_label} took {op_elapsed:.2?}, \
+                     collection: {collection_id}, \
+                     op_num: {op_num}"
+                );
             }
 
             // Update progress bar or show text progress every WAL_LOAD_REPORT_EVERY
