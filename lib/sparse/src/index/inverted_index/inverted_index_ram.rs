@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
@@ -59,7 +60,7 @@ impl InvertedIndex for InvertedIndexRam {
     fn get<'a>(
         &'a self,
         id: DimOffset,
-        _arena: &'a crate::SearchScratchArena,
+        _arena: &'a Blink,
         _hw_counter: &'a HardwareCounterCell,
     ) -> Result<PostingListIterator<'a>> {
         Ok(self.get(id)?.iter())

@@ -16,6 +16,7 @@ testing = ["common/testing"]
 
 [dependencies]
 bitpacking = { workspace = true }
+blink-alloc = { workspace = true }
 gridstore = { path = "../gridstore" }
 bincode = { workspace = true }
 common = { path = "../common/common" }
@@ -33,7 +34,6 @@ itertools = { workspace = true }
 parking_lot = { workspace = true }
 log = { workspace = true }
 zerocopy = { workspace = true }
-typed-arena = "2.0.2"
 
 [dev-dependencies]
 criterion = { workspace = true }
