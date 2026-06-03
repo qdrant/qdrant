@@ -19,6 +19,16 @@
 
 set -euo pipefail
 
+# Fail fast with a clear message if a required tool is missing, instead of
+# erroring cryptically deep inside the build (e.g. at xcodebuild).
+for tool in cargo rustup xcodebuild lipo perl; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "ERROR: required tool '$tool' not found in PATH." >&2
+        echo "       Run 'make setup' (or install Xcode command-line tools) first." >&2
+        exit 1
+    }
+done
+
 # Force the default target directory; a stray env var from the parent shell
 # would otherwise send outputs somewhere this script doesn't expect.
 unset CARGO_TARGET_DIR CARGO_BUILD_TARGET_DIR

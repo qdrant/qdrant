@@ -50,6 +50,13 @@ build-all: ## Build the XCFramework (all platforms incl. tvOS/visionOS)
 build-debug: ## Build the XCFramework (debug, iOS + macOS)
 	@bash $(SCRIPT_DIR)build-xcframework.sh --debug
 
+.PHONY: run-example
+run-example: build ## Build the XCFramework, then run the Swift example
+	# The example's Package.swift references the local out/ XCFramework via
+	# path:, so it only resolves after `build` has produced it — hence the
+	# `build` prerequisite above.
+	@cd $(SCRIPT_DIR)example && swift run
+
 # ── Info ─────────────────────────────────────────────────────────────────────
 
 .PHONY: size
