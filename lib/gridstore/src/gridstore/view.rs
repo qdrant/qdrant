@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::ops::ControlFlow;
 
+use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
@@ -112,7 +113,7 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
         &self,
         point_offsets: &[PointOffset],
         mut callback: F,
-        hw_counter: &HardwareCounterCell,
+        hw_counter_cell: &CounterCell,
     ) -> std::result::Result<(), E>
     where
         P: AccessPattern,
@@ -129,7 +130,7 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
         self.pages
             .read_batch_from_pages::<P, _, E>(pointers, self.config, |idx, raw_opt| {
                 let value = raw_opt.map(|raw| {
-                    hw_counter.payload_io_read_counter().incr_delta(raw.len());
+                    hw_counter_cell.incr_delta(raw.len());
                     let decompressed = self.decompress(raw);
                     V::from_bytes(&decompressed)
                 });

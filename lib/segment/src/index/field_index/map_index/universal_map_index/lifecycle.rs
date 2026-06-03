@@ -99,6 +99,18 @@ where
             is_on_disk,
         }))
     }
+
+    /// Marks `idx` as deleted in the in-memory deletion bitvec.
+    ///
+    /// Not persisted: on reopen, deletions must be re-supplied via the
+    /// `deleted_points` argument to [`Self::open`].
+    pub fn remove_point(&mut self, idx: PointOffsetType) {
+        let idx = idx as usize;
+        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
+            self.storage.deleted.set(idx, true);
+            self.deleted_count += 1;
+        }
+    }
 }
 
 impl<N, S> UniversalMapIndex<N, S>
@@ -217,18 +229,6 @@ where
         ];
         files.extend(self.storage.point_to_values.immutable_files());
         files
-    }
-
-    /// Marks `idx` as deleted in the in-memory deletion bitvec.
-    ///
-    /// Not persisted: on reopen, deletions must be re-supplied via the
-    /// `deleted_points` argument to [`Self::open`].
-    pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let idx = idx as usize;
-        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
-            self.storage.deleted.set(idx, true);
-            self.deleted_count += 1;
-        }
     }
 
     /// Populate all pages in the mmap.

@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -120,21 +119,8 @@ where
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if self.inner.point_to_values.len() <= idx as usize {
+        if !self.inner.remove_point(idx) {
             return Ok(());
-        }
-
-        let removed_values = std::mem::take(&mut self.inner.point_to_values[idx as usize]);
-
-        if !removed_values.is_empty() {
-            self.inner.indexed_points -= 1;
-        }
-        self.inner.values_count -= removed_values.len();
-
-        for value in &removed_values {
-            if let Some(vals) = self.inner.map.get_mut(value.borrow()) {
-                vals.remove(idx);
-            }
         }
 
         self.storage.delete_value(idx)?;
