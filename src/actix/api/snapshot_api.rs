@@ -507,7 +507,7 @@ async fn upload_shard_snapshot(
     early_auth: ActixAccessManage,
     dispatcher: web::Data<Dispatcher>,
     path: valid::Path<CollectionShardPath>,
-    query: web::Query<SnapshotUploadingParam>,
+    query: valid::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
     let ActixAccessManage { auth, multipass } = early_auth;
@@ -675,7 +675,7 @@ async fn recover_partial_snapshot(
     early_auth: ActixAccessManage,
     dispatcher: web::Data<Dispatcher>,
     path: valid::Path<CollectionShardPath>,
-    query: web::Query<SnapshotUploadingParam>,
+    query: valid::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
     let ActixAccessManage { auth, multipass } = early_auth;
