@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::atomic_save_json;
@@ -380,14 +381,14 @@ impl<V: Blob> Gridstore<V> {
         &self,
         offsets: &[PointOffset],
         callback: F,
-        hw_counter: &HardwareCounterCell,
+        hw_counter_cell: &CounterCell,
     ) -> std::result::Result<(), E>
     where
         P: AccessPattern,
         F: FnMut(usize, Option<V>) -> std::result::Result<(), E>,
         E: From<GridstoreError>,
     {
-        self.with_view(|view| view.for_each_in_batch::<P, F, E>(offsets, callback, hw_counter))
+        self.with_view(|view| view.for_each_in_batch::<P, F, E>(offsets, callback, hw_counter_cell))
     }
 
     #[cfg(test)]

@@ -1380,7 +1380,7 @@ fn test_for_each_in_batch_congruent_with_get_value() {
                 batch_results[idx] = value;
                 Ok(())
             },
-            &hw_counter,
+            hw_counter.payload_io_read_counter(),
         )
         .unwrap();
 

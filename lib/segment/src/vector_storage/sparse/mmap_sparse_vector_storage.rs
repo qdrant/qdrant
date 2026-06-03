@@ -218,7 +218,7 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
                 }
                 Ok(())
             },
-            &HardwareCounterCell::disposable(),
+            HardwareCounterCell::disposable().vector_io_read(),
         )
     }
 }

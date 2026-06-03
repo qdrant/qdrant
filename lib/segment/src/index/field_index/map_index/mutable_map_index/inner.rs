@@ -68,6 +68,32 @@ where
         self.map.entry(value).or_default().insert(idx);
     }
 
+    /// Remove a point from the in-memory state, updating the value map and
+    /// counters accordingly.
+    ///
+    /// Returns `true` if the point was within the indexed range; callers backed
+    /// by a store should delete the on-disk entry only in that case.
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> bool {
+        if self.point_to_values.len() <= idx as usize {
+            return false;
+        }
+
+        let removed_values = std::mem::take(&mut self.point_to_values[idx as usize]);
+
+        if !removed_values.is_empty() {
+            self.indexed_points -= 1;
+        }
+        self.values_count -= removed_values.len();
+
+        for value in &removed_values {
+            if let Some(vals) = self.map.get_mut(value.borrow()) {
+                vals.remove(idx);
+            }
+        }
+
+        true
+    }
+
     pub(in crate::index::field_index::map_index) fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
