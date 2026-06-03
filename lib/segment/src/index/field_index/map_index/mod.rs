@@ -40,5 +40,5 @@ where
     /// Loaded in RAM, use immutable storage format
     Immutable(ImmutableMapIndex<N>),
     /// Served directly from storage (via mmap), use immutable format
-    Mmap(Box<UniversalMapIndex<N>>),
+    OnDisk(Box<UniversalMapIndex<N>>),
 }

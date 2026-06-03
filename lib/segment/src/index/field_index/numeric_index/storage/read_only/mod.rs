@@ -3,7 +3,8 @@ use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
-use super::super::universal_numeric_index::UniversalNumericIndex;
+use super::super::on_disk_numeric_index::OnDiskNumericIndex;
+use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 
@@ -25,6 +26,8 @@ pub enum ReadOnlyNumericIndexInner<
 {
     /// Loads into RAM from appendable (Gridstore) storage format
     Appendable(ReadOnlyAppendableNumericIndex<T, S>),
+    /// Loads into RAM from storage in immutable format
+    Immutable(ImmutableNumericIndex<T, S>),
     /// Directly reads from storage in immutable format
-    Immutable(UniversalNumericIndex<T, S>),
+    OnDisk(OnDiskNumericIndex<T, S>),
 }

@@ -25,7 +25,7 @@ mod tests;
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),
-    Mmap(Box<MmapFullTextIndex<MmapFile>>),
+    OnDisk(Box<MmapFullTextIndex<MmapFile>>),
 }
 
 pub struct FullTextGridstoreIndexBuilder {

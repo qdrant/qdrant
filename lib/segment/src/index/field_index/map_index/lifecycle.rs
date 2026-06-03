@@ -38,7 +38,7 @@ where
         };
 
         let index = if effective_is_on_disk {
-            MapIndex::Mmap(Box::new(universal_index))
+            MapIndex::OnDisk(Box::new(universal_index))
         } else {
             // Load into RAM, use mmap as backing storage
             MapIndex::Immutable(ImmutableMapIndex::open_mmap(universal_index)?)
@@ -73,7 +73,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.flusher(),
             MapIndex::Immutable(index) => index.flusher(),
-            MapIndex::Mmap(index) => index.flusher(),
+            MapIndex::OnDisk(index) => index.flusher(),
         }
     }
 
@@ -81,7 +81,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.wipe(),
             MapIndex::Immutable(index) => index.wipe(),
-            MapIndex::Mmap(index) => index.wipe(),
+            MapIndex::OnDisk(index) => index.wipe(),
         }
     }
 
@@ -89,7 +89,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.remove_point(id),
             MapIndex::Immutable(index) => index.remove_point(id),
-            MapIndex::Mmap(index) => {
+            MapIndex::OnDisk(index) => {
                 index.remove_point(id);
                 Ok(())
             }
@@ -100,7 +100,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.files(),
             MapIndex::Immutable(index) => index.files(),
-            MapIndex::Mmap(index) => index.files(),
+            MapIndex::OnDisk(index) => index.files(),
         }
     }
 
@@ -108,7 +108,7 @@ where
         match self {
             MapIndex::Mutable(_) => vec![],
             MapIndex::Immutable(index) => index.immutable_files(),
-            MapIndex::Mmap(index) => index.immutable_files(),
+            MapIndex::OnDisk(index) => index.immutable_files(),
         }
     }
 
@@ -118,7 +118,7 @@ where
         match self {
             MapIndex::Mutable(_) => {}
             MapIndex::Immutable(_) => {}
-            MapIndex::Mmap(index) => index.populate()?,
+            MapIndex::OnDisk(index) => index.populate()?,
         }
         Ok(())
     }
@@ -128,7 +128,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.clear_cache()?,
             MapIndex::Immutable(index) => index.clear_cache()?,
-            MapIndex::Mmap(index) => index.clear_cache()?,
+            MapIndex::OnDisk(index) => index.clear_cache()?,
         }
         Ok(())
     }

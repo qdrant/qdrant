@@ -41,7 +41,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(GeoMapIndex::Storage(Box::new(StoredGeoMapIndex::build(
+        Ok(GeoMapIndex::OnDisk(Box::new(StoredGeoMapIndex::build(
             &MmapFs,
             self.in_memory_index,
             &self.path,
@@ -71,7 +71,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
             "index must be initialized exactly once",
         );
         self.index.replace(
-            GeoMapIndex::new_gridstore(self.dir.clone(), true)?.ok_or_else(|| {
+            GeoMapIndex::new_mutable(self.dir.clone(), true)?.ok_or_else(|| {
                 OperationError::service_error("Failed to open GeoMapIndex after creating it")
             })?,
         );

@@ -28,7 +28,7 @@ impl MutableGeoMapIndex {
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
     /// not exist. If false and files don't exist, the load function will indicate nothing could be
     /// loaded.
-    pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    pub fn open(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
                 OperationError::service_error(format!(

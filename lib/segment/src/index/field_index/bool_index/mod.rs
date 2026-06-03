@@ -24,14 +24,14 @@ use crate::index::query_optimization::rescore_formula::value_retriever::Variable
 use crate::types::FieldCondition;
 
 pub enum BoolIndex {
-    Mmap(MutableBoolIndex),
+    Mutable(MutableBoolIndex),
     Immutable(ImmutableBoolIndex),
 }
 
 impl From<MutableBoolIndex> for BoolIndex {
     #[inline]
     fn from(index: MutableBoolIndex) -> Self {
-        BoolIndex::Mmap(index)
+        BoolIndex::Mutable(index)
     }
 }
 
@@ -45,8 +45,7 @@ impl From<ImmutableBoolIndex> for BoolIndex {
 impl BoolIndex {
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
-            // Mmap bool index can be both mutable and immutable, so we pick mutable
-            BoolIndex::Mmap(_) => IndexMutability::Mutable,
+            BoolIndex::Mutable(_) => IndexMutability::Mutable,
             BoolIndex::Immutable(_) => IndexMutability::Immutable,
         }
     }
@@ -66,42 +65,42 @@ impl BoolIndexRead for BoolIndex {
 
     fn trues_flags(&self) -> &Self::Flags {
         match self {
-            BoolIndex::Mmap(index) => index.trues_flags(),
+            BoolIndex::Mutable(index) => index.trues_flags(),
             BoolIndex::Immutable(index) => index.trues_flags(),
         }
     }
 
     fn falses_flags(&self) -> &Self::Flags {
         match self {
-            BoolIndex::Mmap(index) => index.falses_flags(),
+            BoolIndex::Mutable(index) => index.falses_flags(),
             BoolIndex::Immutable(index) => index.falses_flags(),
         }
     }
 
     fn indexed_count(&self) -> usize {
         match self {
-            BoolIndex::Mmap(index) => index.indexed_count(),
+            BoolIndex::Mutable(index) => index.indexed_count(),
             BoolIndex::Immutable(index) => index.indexed_count(),
         }
     }
 
     fn telemetry_index_type(&self) -> &'static str {
         match self {
-            BoolIndex::Mmap(index) => index.telemetry_index_type(),
+            BoolIndex::Mutable(index) => index.telemetry_index_type(),
             BoolIndex::Immutable(index) => index.telemetry_index_type(),
         }
     }
 
     fn trues_count(&self) -> usize {
         match self {
-            BoolIndex::Mmap(index) => index.trues_count(),
+            BoolIndex::Mutable(index) => index.trues_count(),
             BoolIndex::Immutable(index) => index.trues_count(),
         }
     }
 
     fn falses_count(&self) -> usize {
         match self {
-            BoolIndex::Mmap(index) => index.falses_count(),
+            BoolIndex::Mutable(index) => index.falses_count(),
             BoolIndex::Immutable(index) => index.falses_count(),
         }
     }
@@ -149,14 +148,14 @@ impl PayloadFieldIndexRead for BoolIndex {
 impl PayloadFieldIndex for BoolIndex {
     fn wipe(self) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => index.wipe(),
+            BoolIndex::Mutable(index) => index.wipe(),
             BoolIndex::Immutable(index) => index.wipe(),
         }
     }
 
     fn flusher(&self) -> crate::common::Flusher {
         match self {
-            BoolIndex::Mmap(index) => index.flusher(),
+            BoolIndex::Mutable(index) => index.flusher(),
             BoolIndex::Immutable(index) => index.flusher(),
         }
     }
@@ -167,7 +166,7 @@ impl PayloadFieldIndex for BoolIndex {
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
         match self {
-            BoolIndex::Mmap(index) => index.immutable_files(),
+            BoolIndex::Mutable(index) => index.immutable_files(),
             BoolIndex::Immutable(index) => index.immutable_files(),
         }
     }
@@ -231,7 +230,7 @@ impl ValueIndexer for BoolIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => index.add_many(id, values, hw_counter),
+            BoolIndex::Mutable(index) => index.add_many(id, values, hw_counter),
             BoolIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable bool index",
             )),
@@ -251,7 +250,7 @@ impl ValueIndexer for BoolIndex {
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => index.remove_point(id),
+            BoolIndex::Mutable(index) => index.remove_point(id),
             BoolIndex::Immutable(index) => index.remove_point(id),
         }
     }

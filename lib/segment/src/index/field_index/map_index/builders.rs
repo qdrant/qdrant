@@ -32,7 +32,7 @@ where
         match &mut self.0 {
             MapIndex::Mutable(index) => index.clear(),
             MapIndex::Immutable(_) => unreachable!(),
-            MapIndex::Mmap(_) => unreachable!(),
+            MapIndex::OnDisk(_) => unreachable!(),
         }
     }
 
@@ -110,7 +110,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(MapIndex::Mmap(Box::new(UniversalMapIndex::build(
+        Ok(MapIndex::OnDisk(Box::new(UniversalMapIndex::build(
             &MmapFs,
             &self.path,
             self.point_to_values,

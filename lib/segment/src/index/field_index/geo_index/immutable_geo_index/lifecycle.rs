@@ -17,7 +17,7 @@ use crate::types::GeoPoint;
 
 impl ImmutableGeoMapIndex {
     /// Open and load the immutable geo index from mmap storage.
-    pub fn open_mmap(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
+    pub fn load_from_on_disk(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
         let index = Box::new(index);
         let counts_per_hash = index
             .storage

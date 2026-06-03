@@ -32,7 +32,7 @@ impl ValueIndexer for GeoMapIndex {
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable geo index",
             )),
-            GeoMapIndex::Storage(_) => Err(OperationError::service_error(
+            GeoMapIndex::OnDisk(_) => Err(OperationError::service_error(
                 "Can't add values to mmap geo index",
             )),
         }
@@ -61,7 +61,7 @@ impl ValueIndexer for GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.remove_point(id),
             GeoMapIndex::Immutable(index) => index.remove_point(id),
-            GeoMapIndex::Storage(index) => {
+            GeoMapIndex::OnDisk(index) => {
                 index.remove_point(id);
                 Ok(())
             }
@@ -89,7 +89,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.wipe(),
             GeoMapIndex::Immutable(index) => index.wipe(),
-            GeoMapIndex::Storage(index) => index.wipe(),
+            GeoMapIndex::OnDisk(index) => index.wipe(),
         }
     }
 
@@ -97,7 +97,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.flusher(),
             GeoMapIndex::Immutable(index) => index.flusher(),
-            GeoMapIndex::Storage(index) => index.flusher(),
+            GeoMapIndex::OnDisk(index) => index.flusher(),
         }
     }
 
