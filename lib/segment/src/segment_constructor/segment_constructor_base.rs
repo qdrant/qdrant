@@ -213,16 +213,25 @@ pub(crate) fn create_payload_storage(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
-    let payload_storage = match config.payload_storage_type {
-        PayloadStorageType::Mmap => PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
-            segment_path.to_path_buf(),
-            false,
-        )?),
-        PayloadStorageType::InRamMmap => PayloadStorageEnum::from(
-            MmapPayloadStorage::open_or_create(segment_path.to_path_buf(), true)?,
-        ),
+    #[cfg(target_os = "linux")]
+    if config.payload_storage_type == PayloadStorageType::Mmap {
+        match MmapPayloadStorage::open_or_create(segment_path.to_path_buf(), false) {
+            Ok(payload_storage) => {
+                return Ok(PayloadStorageEnum::IoUringPayloadStorage(payload_storage));
+            }
+            Err(err) => {
+                log::error!("Failed to open io_uring based payload storage: {err}");
+            }
+        }
+    }
+
+    let populate = match config.payload_storage_type {
+        PayloadStorageType::Mmap => false,
+        PayloadStorageType::InRamMmap => true,
     };
-    Ok(payload_storage)
+
+    let payload_storage = MmapPayloadStorage::open_or_create(segment_path.to_path_buf(), populate)?;
+    Ok(PayloadStorageEnum::MmapPayloadStorage(payload_storage))
 }
 
 pub(crate) fn create_mutable_id_tracker(
