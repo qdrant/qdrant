@@ -1,6 +1,8 @@
 #[cfg(test)]
 pub mod empty_storage;
 #[cfg(test)]
+pub mod load_validation;
+#[cfg(test)]
 pub mod metrics;
 #[cfg(test)]
 pub mod stop_condition;

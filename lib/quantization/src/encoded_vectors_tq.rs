@@ -12,7 +12,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
-use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
+use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
@@ -288,6 +288,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoding_buffer: vec![0.0f64; quantizer.padded_dim],
             quantizer,
         };
+
+        // Validate the storage's vector size against the metadata once here, so the size
+        // invariant the scoring hot path relies on (it splits each stored vector into packed
+        // dimensions plus a fixed-size trailer) also holds in release builds without a per-score
+        // check.
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
 
         Ok(result)
     }

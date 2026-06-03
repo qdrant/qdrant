@@ -62,6 +62,39 @@ pub trait EncodedStorageBuilder {
     fn push_vector_data(&mut self, other: &[u8]) -> Result<(), Self::Error>;
 }
 
+/// Validate that every encoded vector in `storage` has exactly `expected_size` bytes — the
+/// per-vector size the quantizer derives from its metadata.
+///
+/// The scoring hot paths assume each stored vector has this exact size: the storage stride and
+/// the quantizer metadata are both derived from the same vector parameters, so on consistent data
+/// they always match. Verifying it once here at load time keeps that invariant guaranteed in
+/// release builds, without paying for a bounds check on every score.
+///
+/// The storage uses a fixed stride for every vector, so inspecting the first encoded vector is
+/// enough to validate all of them. An empty storage has no vector data to score, so there is
+/// nothing to check.
+pub(crate) fn validate_storage_vector_size(
+    storage: &impl EncodedStorage,
+    expected_size: usize,
+) -> std::io::Result<()> {
+    if storage.vectors_count() == 0 {
+        return Ok(());
+    }
+
+    let actual_size = storage.get_vector_data(0).len();
+    if actual_size != expected_size {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "Quantized vector storage is inconsistent with its metadata: encoded vector size \
+                 is {actual_size} bytes, but metadata expects {expected_size} bytes",
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "testing")]
 pub struct TestEncodedStorage {
     data: Vec<u8>,
@@ -230,5 +263,42 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
         debug_assert_eq!(other.len(), self.quantized_vector_size.get());
         self.data.extend_from_slice(other);
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "testing"))]
+mod tests {
+    use super::*;
+
+    fn storage_with_stride(stride: usize, count: usize) -> TestEncodedStorage {
+        let mut builder = TestEncodedStorageBuilder::new(None, stride);
+        let vector = vec![0u8; stride];
+        for _ in 0..count {
+            builder.push_vector_data(&vector).unwrap();
+        }
+        builder.build().unwrap()
+    }
+
+    #[test]
+    fn accepts_matching_size() {
+        let storage = storage_with_stride(260, 4);
+        validate_storage_vector_size(&storage, 260).unwrap();
+    }
+
+    #[test]
+    fn rejects_mismatched_size() {
+        let storage = storage_with_stride(260, 4);
+        // Both a smaller and a larger expected size must be rejected (exact match required).
+        for expected_size in [130, 520] {
+            let err = validate_storage_vector_size(&storage, expected_size).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        }
+    }
+
+    #[test]
+    fn skips_empty_storage() {
+        let storage = storage_with_stride(260, 0);
+        // With no stored vectors there is nothing to check, so any size is accepted.
+        validate_storage_vector_size(&storage, 999).unwrap();
     }
 }
