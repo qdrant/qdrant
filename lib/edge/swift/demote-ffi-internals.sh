@@ -49,6 +49,16 @@ perl -i -pe '
 
 echo "==> Demoted $DEMOTED public declarations to internal ($PUBLIC_BEFORE → $PUBLIC_AFTER)."
 
+# Fail closed: if nothing was demoted, the UniFFI symbol vocabulary likely changed
+# (e.g. a version bump renamed FfiConverter*/RustBuffer/Uniffi* prefixes). Shipping with
+# zero demotions would leave the FFI plumbing `public` in the consumer-facing module.
+if [ "$DEMOTED" -eq 0 ]; then
+    echo "ERROR: demote-ffi-internals.sh demoted 0 declarations." >&2
+    echo "       The UniFFI-generated symbol vocabulary may have changed — update the" >&2
+    echo "       demote patterns above so internal plumbing stays out of the public API." >&2
+    exit 1
+fi
+
 if command -v swift-format >/dev/null 2>&1; then
     echo "==> Running swift-format..."
     swift-format --in-place "$SWIFT_FILE"

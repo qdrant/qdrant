@@ -34,7 +34,9 @@ LIB_NAME="lib${CRATE_NAME}.a"
 PACKAGE_NAME="qdrant-edge-ffi"
 
 # Release builds use the `release-mobile` Cargo profile (thin LTO,
-# `strip = "symbols"`, `panic = "abort"`) defined in the workspace Cargo.toml.
+# `strip = "symbols"`, `panic = "unwind"`) defined in the workspace Cargo.toml.
+# (unwind, NOT abort: keeps UniFFI's catch_unwind working so a panic becomes a
+# catchable error instead of aborting the host — important for an on-device DB.)
 PROFILE="release-mobile"
 CARGO_FLAGS="--profile release-mobile"
 ALL_PLATFORMS=false
@@ -85,7 +87,7 @@ done
 echo "==> Building static libraries..."
 for target in "${STABLE_TARGETS[@]}"; do
     echo "    Building for $target (stable)..."
-    cargo build $CARGO_FLAGS \
+    cargo build --locked $CARGO_FLAGS \
         --lib \
         --package "$PACKAGE_NAME" \
         --target "$target" \
@@ -93,7 +95,7 @@ for target in "${STABLE_TARGETS[@]}"; do
 done
 for target in ${TIER3_TARGETS[@]+"${TIER3_TARGETS[@]}"}; do
     echo "    Building for $target (nightly + build-std)..."
-    cargo +nightly build $CARGO_FLAGS \
+    cargo +nightly build --locked $CARGO_FLAGS \
         --lib \
         --package "$PACKAGE_NAME" \
         --target "$target" \
@@ -134,7 +136,7 @@ fi
 echo "==> Generating Swift bindings..."
 mkdir -p "$BINDINGS_DIR"
 
-cargo run \
+cargo run --locked \
     --package "qdrant-edge-ffi-bindgen" \
     --bin uniffi-bindgen \
     --manifest-path "$WORKSPACE_ROOT/Cargo.toml" \

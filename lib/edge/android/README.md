@@ -50,18 +50,22 @@ includeBuild("path/to/qdrant/lib/edge/android") {
 }
 ```
 
-### As an AAR
+### From Maven Central (once published)
 
-1. `make aar` → `qdrant-edge/build/outputs/aar/qdrant-edge-release.aar`
-2. Drop the AAR into your app's `libs/` directory.
-3. In `build.gradle.kts`:
+```kotlin
+dependencies {
+    implementation("tech.qdrant:qdrant-edge:<version>")
+}
+```
 
-   ```kotlin
-   dependencies {
-       implementation(files("libs/qdrant-edge-release.aar"))
-       implementation("net.java.dev.jna:jna:5.14.0@aar")
-   }
-   ```
+> **Note:** there is no supported "single flat AAR" path. A plain
+> `implementation(files("…/qdrant-edge-release.aar"))` does **not** work: an
+> Android library module's `assembleRelease` produces an AAR that bundles
+> neither the `:qdrant-edge-ffi` module's native `.so`/generated bindings nor
+> the JNA `@aar` dependency, so it fails at runtime with `UnsatisfiedLinkError`
+> / `NoClassDefFoundError`. Use the composite build above for local development,
+> or the published Maven artifact (which carries the correct transitive
+> dependencies via its POM).
 
 ## Module layout
 

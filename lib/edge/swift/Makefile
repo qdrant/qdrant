@@ -20,7 +20,7 @@ setup-rust: ## Install Rust toolchain (stable + nightly for tier-3 targets)
 	@if ! command -v rustup >/dev/null 2>&1; then \
 		echo "Installing rustup..."; \
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
-		echo 'source "$$HOME/.cargo/env"' >> ~/.zshrc; \
+		echo 'NOTE: add  source "$$HOME/.cargo/env"  to your shell profile, or restart your shell.'; \
 	fi
 	rustup toolchain install nightly --profile minimal
 	rustup component add rust-src --toolchain nightly

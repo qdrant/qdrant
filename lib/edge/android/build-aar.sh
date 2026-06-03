@@ -13,7 +13,9 @@
 #   --debug   Build in debug mode (faster compile, larger binary)
 #
 # Release builds use the `release-mobile` Cargo profile (thin LTO, symbol
-# stripping, panic=abort) defined in the workspace Cargo.toml.
+# stripping, panic=unwind) defined in the workspace Cargo.toml.
+# (unwind, NOT abort: keeps UniFFI's catch_unwind working so a panic becomes a
+# catchable error instead of aborting the host — important for an on-device DB.)
 #
 # Output:
 #   qdrant-edge-ffi/src/main/jniLibs/<abi>/   Native .so per Android ABI
@@ -99,7 +101,7 @@ for i in "${!TARGETS[@]}"; do
     cargo ndk \
         --target "$target" \
         --platform 24 \
-        -- build $CARGO_FLAGS \
+        -- build --locked $CARGO_FLAGS \
         --lib \
         --package "$PACKAGE_NAME" \
         --manifest-path "$WORKSPACE_ROOT/Cargo.toml"
@@ -125,7 +127,7 @@ echo "==> Generating Kotlin bindings..."
 # creates the `tech/qdrant/edge/ffi/` package subtree as set in uniffi.toml.
 mkdir -p "$KOTLIN_SRC_DIR"
 FIRST_TARGET="${TARGETS[0]}"
-cargo run \
+cargo run --locked \
     --package "qdrant-edge-ffi-bindgen" \
     --bin uniffi-bindgen \
     --manifest-path "$WORKSPACE_ROOT/Cargo.toml" \
