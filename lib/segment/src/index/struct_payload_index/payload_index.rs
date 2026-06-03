@@ -118,22 +118,22 @@ impl PayloadIndex for StructPayloadIndex {
             return Ok(false);
         };
 
-        match classify(&current_schema.schema, new_payload_schema) {
+        let transition = classify(&current_schema.schema, new_payload_schema);
+        match transition {
             SchemaTransition::Identical => Ok(false),
-            // Only `on_disk` flipped on a non-appendable (mmap) segment: keep the
-            // existing files and reload the index in the new mode during
-            // `build_index` instead of dropping and rebuilding from payload.
-            SchemaTransition::OnlyOnDiskFlipped { .. }
-                if matches!(self.storage_type, StorageType::GridstoreNonAppendable) =>
-            {
+            // Only `on_disk` flipped: keep the existing index files instead of
+            // dropping and rebuilding. Non-appendable reloads in the new mode
+            // during `build_index`. Appendable Gridstore ignores `on_disk` at
+            // the storage layer and is unsafe to reload while mutable, so just
+            // persist the new schema and leave the live index untouched (the
+            // optimizer applies `on_disk` when converting to non-appendable).
+            SchemaTransition::OnlyOnDiskFlipped { .. } => {
+                if matches!(self.storage_type, StorageType::GridstoreAppendable) {
+                    self.update_indexed_schema(field, new_payload_schema.clone())?;
+                }
                 Ok(false)
             }
-            // Appendable Gridstore (its `on_disk` change goes through the normal
-            // drop-and-rebuild path) or any incompatible change: drop so
-            // `build_index` rebuilds.
-            SchemaTransition::OnlyOnDiskFlipped { .. } | SchemaTransition::Incompatible => {
-                self.drop_index(field)
-            }
+            SchemaTransition::Incompatible => self.drop_index(field),
         }
     }
 
