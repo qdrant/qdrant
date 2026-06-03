@@ -6,7 +6,7 @@ use common::universal_io::{MmapFile, TypedStorage, UniversalRead};
 use serde::{Deserialize, Serialize};
 
 use crate::index::field_index::geo_hash::GeoHashRaw;
-use crate::index::field_index::stored_point_to_values::StoredPointToValues;
+use crate::index::field_index::stored_point_to_values::OnDiskPointToValues;
 use crate::types::GeoPoint;
 
 mod lifecycle;
@@ -79,7 +79,7 @@ pub(in super::super) struct Storage<S: UniversalRead = MmapFile> {
     /// A storage of associations between geo-hashes and point ids. (See the diagram above)
     pub(in super::super) points_map_ids: TypedStorage<S, PointOffsetType>,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
-    pub(in super::super) point_to_values: StoredPointToValues<GeoPoint, S>,
+    pub(in super::super) point_to_values: OnDiskPointToValues<GeoPoint, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
     /// the build-time empty-payload bits read from `deleted.bin` and the
     /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.

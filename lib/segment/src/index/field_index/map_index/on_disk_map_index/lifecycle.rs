@@ -21,7 +21,7 @@ use super::{
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::stored_point_to_values::StoredPointToValues;
+use crate::index::field_index::stored_point_to_values::OnDiskPointToValues;
 
 impl<N, S> OnDiskMapIndex<N, S>
 where
@@ -57,7 +57,7 @@ where
             },
             Default::default(),
         )?;
-        let point_to_values = StoredPointToValues::open(fs, path, populate)?;
+        let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
@@ -195,7 +195,7 @@ where
                 .map(|(value, ids)| (value.borrow(), ids.iter().copied())),
         )?;
 
-        StoredPointToValues::<N, MmapFile>::from_iter(
+        OnDiskPointToValues::<N, MmapFile>::from_iter(
             &MmapFs,
             path,
             point_to_values.iter().enumerate().map(|(idx, values)| {

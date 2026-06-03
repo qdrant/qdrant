@@ -21,7 +21,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
-use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
+use crate::index::field_index::stored_point_to_values::{OnDiskPointToValues, StoredValue};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UniversalNumericIndexConfig {
@@ -56,7 +56,7 @@ where
 
         in_memory_index.histogram.save(path)?;
 
-        StoredPointToValues::<T, S>::from_iter(
+        OnDiskPointToValues::<T, S>::from_iter(
             fs,
             path,
             in_memory_index
@@ -142,7 +142,7 @@ where
         };
         let pairs = TypedStorage::open(fs, pairs_path, pairs_options, Default::default())?;
 
-        let point_to_values = StoredPointToValues::open(fs, path, populate)?;
+        let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
         let deleted_payload_mmap = StoredBitSlice::<S>::open(

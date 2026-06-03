@@ -68,7 +68,7 @@ impl StoredValue for str {
 /// This structure is immutable.
 /// It's used in mmap field indices like `UniversalMapIndex`, `UniversalNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
-pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
+pub struct OnDiskPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     file_name: PathBuf,
     store: ReadOnly<S>,
     header: Header,
@@ -92,7 +92,7 @@ struct Header {
     points_count: u64,
 }
 
-impl<T, S> StoredPointToValues<T, S>
+impl<T, S> OnDiskPointToValues<T, S>
 where
     T: StoredValue + ?Sized,
     S: UniversalRead,
@@ -432,7 +432,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        StoredPointToValues::<str, MmapFile>::from_iter(
+        OnDiskPointToValues::<str, MmapFile>::from_iter(
             &MmapFs,
             dir.path(),
             values
@@ -442,7 +442,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
+            OnDiskPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
@@ -493,7 +493,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
+        OnDiskPointToValues::<GeoPoint, MmapFile>::from_iter(
             &MmapFs,
             dir.path(),
             values
@@ -503,7 +503,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
+            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values

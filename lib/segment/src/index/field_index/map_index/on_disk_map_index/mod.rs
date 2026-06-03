@@ -7,7 +7,7 @@ use common::universal_io::{MmapFile, UniversalRead};
 use serde::{Deserialize, Serialize};
 
 use super::MapIndexKey;
-use crate::index::field_index::stored_point_to_values::StoredPointToValues;
+use crate::index::field_index::stored_point_to_values::OnDiskPointToValues;
 
 mod lifecycle;
 mod live_reload;
@@ -38,7 +38,7 @@ pub struct OnDiskMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
 
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) value_to_points: UniversalHashMap<N, PointOffsetType, S>,
-    pub(super) point_to_values: StoredPointToValues<N, S>,
+    pub(super) point_to_values: OnDiskPointToValues<N, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
     /// the build-time empty-payload bits read from `deleted.bin` and the
     /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
