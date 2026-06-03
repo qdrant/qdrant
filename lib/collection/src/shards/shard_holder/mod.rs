@@ -3,6 +3,7 @@ pub(crate) mod shard_mapping;
 pub mod shared_shard_holder;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::debug_assert_matches;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -305,11 +306,9 @@ impl ShardHolder {
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
             let shard_key = ids_to_key.get(shard_id).cloned();
-            debug_assert!(
-                matches!(
-                    (self.sharding_method, &shard_key),
-                    (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)),
-                ),
+            debug_assert_matches!(
+                (self.sharding_method, &shard_key),
+                (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)),
                 "auto sharding cannot have shard key, custom sharding must have shard key ({:?}, {shard_key:?})",
                 self.sharding_method,
             );
