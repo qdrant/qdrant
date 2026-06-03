@@ -9,8 +9,8 @@ use gridstore::Blob;
 use serde_json::Value;
 
 use super::mutable_numeric_index::InMemoryNumericIndex;
+use super::on_disk_numeric_index::OnDiskNumericIndex;
 use super::storage::NumericIndexInner;
-use super::universal_numeric_index::UniversalNumericIndex;
 use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::numeric_point::Numericable;
@@ -123,7 +123,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let inner = UniversalNumericIndex::build(
+        let inner = OnDiskNumericIndex::build(
             &MmapFs,
             self.in_memory_index,
             &self.path,
