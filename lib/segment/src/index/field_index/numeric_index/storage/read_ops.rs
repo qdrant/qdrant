@@ -38,7 +38,7 @@ where
             NumericIndexInner::Immutable(index) => {
                 index.check_values_any(idx, check_fn, hw_counter)
             }
-            NumericIndexInner::Mmap(index) => index.check_values_any(idx, check_fn, hw_counter),
+            NumericIndexInner::OnDisk(index) => index.check_values_any(idx, check_fn, hw_counter),
         }
     }
 
@@ -46,7 +46,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.get_values(idx),
             NumericIndexInner::Immutable(index) => index.get_values(idx),
-            NumericIndexInner::Mmap(index) => index.get_values(idx),
+            NumericIndexInner::OnDisk(index) => index.get_values(idx),
         }
     }
 
@@ -54,7 +54,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.values_count(idx),
             NumericIndexInner::Immutable(index) => index.values_count(idx),
-            NumericIndexInner::Mmap(index) => index.values_count(idx),
+            NumericIndexInner::OnDisk(index) => index.values_count(idx),
         }
     }
 
@@ -62,7 +62,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
             NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
-            NumericIndexInner::Mmap(index) => index.total_unique_values_count(),
+            NumericIndexInner::OnDisk(index) => index.total_unique_values_count(),
         }
     }
 
@@ -79,7 +79,7 @@ where
             NumericIndexInner::Immutable(index) => {
                 Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
             }
-            NumericIndexInner::Mmap(index) => {
+            NumericIndexInner::OnDisk(index) => {
                 Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
             }
         };
@@ -98,7 +98,7 @@ where
             NumericIndexInner::Immutable(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound)?)
             }
-            NumericIndexInner::Mmap(index) => {
+            NumericIndexInner::OnDisk(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound)?)
             }
         };
@@ -109,7 +109,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.get_histogram(),
             NumericIndexInner::Immutable(index) => index.get_histogram(),
-            NumericIndexInner::Mmap(index) => index.get_histogram(),
+            NumericIndexInner::OnDisk(index) => index.get_histogram(),
         }
     }
 
@@ -117,7 +117,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.get_points_count(),
             NumericIndexInner::Immutable(index) => index.get_points_count(),
-            NumericIndexInner::Mmap(index) => index.get_points_count(),
+            NumericIndexInner::OnDisk(index) => index.get_points_count(),
         }
     }
 
@@ -125,7 +125,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.get_max_values_per_point(),
             NumericIndexInner::Immutable(index) => index.get_max_values_per_point(),
-            NumericIndexInner::Mmap(index) => index.get_max_values_per_point(),
+            NumericIndexInner::OnDisk(index) => index.get_max_values_per_point(),
         }
     }
 
@@ -133,7 +133,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.storage_type(),
             NumericIndexInner::Immutable(index) => index.storage_type(),
-            NumericIndexInner::Mmap(index) => index.storage_type(),
+            NumericIndexInner::OnDisk(index) => index.storage_type(),
         }
     }
 
@@ -142,7 +142,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.ram_usage_bytes(),
             NumericIndexInner::Immutable(index) => index.ram_usage_bytes(),
-            NumericIndexInner::Mmap(index) => index.ram_usage_bytes(),
+            NumericIndexInner::OnDisk(index) => index.ram_usage_bytes(),
         }
     }
 
@@ -150,7 +150,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.telemetry_index_type(),
             NumericIndexInner::Immutable(index) => index.telemetry_index_type(),
-            NumericIndexInner::Mmap(index) => index.telemetry_index_type(),
+            NumericIndexInner::OnDisk(index) => index.telemetry_index_type(),
         }
     }
 }
@@ -177,7 +177,7 @@ where
         match self {
             NumericIndexInner::Mutable(_) => false,
             NumericIndexInner::Immutable(_) => false,
-            NumericIndexInner::Mmap(index) => index.is_on_disk(),
+            NumericIndexInner::OnDisk(index) => index.is_on_disk(),
         }
     }
 }

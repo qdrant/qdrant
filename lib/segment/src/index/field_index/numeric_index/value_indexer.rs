@@ -30,8 +30,8 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
-            NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
-                "Can't add values to mmap numeric index",
+            NumericIndexInner::OnDisk(_) => Err(OperationError::service_error(
+                "Can't add values to on-disk numeric index",
             )),
         }
     }
@@ -71,7 +71,7 @@ impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
-            NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
+            NumericIndexInner::OnDisk(_) => Err(OperationError::service_error(
                 "Can't add values to mmap numeric index",
             )),
         }
@@ -108,7 +108,7 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
-            NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
+            NumericIndexInner::OnDisk(_) => Err(OperationError::service_error(
                 "Can't add values to mmap numeric index",
             )),
         }
@@ -148,7 +148,7 @@ impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
-            NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
+            NumericIndexInner::OnDisk(_) => Err(OperationError::service_error(
                 "Can't add values to mmap numeric index",
             )),
         }

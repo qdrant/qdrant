@@ -12,7 +12,7 @@ use itertools::Either;
 
 use super::super::Encodable;
 use super::super::numeric_index_read::NumericIndexRead;
-use super::UniversalNumericIndex;
+use super::OnDiskNumericIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
@@ -20,7 +20,7 @@ use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
-    NumericIndexRead<T> for UniversalNumericIndex<T, S>
+    NumericIndexRead<T> for OnDiskNumericIndex<T, S>
 {
     fn check_values_any(
         &self,
@@ -30,7 +30,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     ) -> bool {
         // FIXME: don't silently ignore error — propagate it once
         // [`NumericIndexRead::check_values_any`] returns `OperationResult`.
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             self.storage
@@ -77,7 +77,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         end_bound: Bound<Point<T>>,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         Ok(self
             .values_range_iterator(start_bound, end_bound)?
@@ -126,9 +126,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.is_on_disk,
-        }
+        StorageType::Mmap { is_on_disk: true }
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -141,7 +139,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
 }
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
-    UniversalNumericIndex<T, S>
+    OnDiskNumericIndex<T, S>
 {
     /// Binary search within `[lo, hi)` range of `pairs` storage.
     ///
@@ -236,14 +234,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         Ok(iter.filter(move |point| !deleted.get_bit(point.idx as usize).unwrap_or(true)))
     }
 
-    fn make_conditioned_counter<'a>(
-        &self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> ConditionedCounter<'a> {
-        ConditionedCounter::new(self.is_on_disk, hw_counter)
-    }
-
     pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+        true
     }
 }

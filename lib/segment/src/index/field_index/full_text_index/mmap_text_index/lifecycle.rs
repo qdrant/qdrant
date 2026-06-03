@@ -207,7 +207,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         };
 
         let text_index = if is_on_disk {
-            FullTextIndex::Mmap(Box::new(mmap_index))
+            FullTextIndex::OnDisk(Box::new(mmap_index))
         } else {
             FullTextIndex::Immutable(ImmutableFullTextIndex::open_mmap(mmap_index)?)
         };

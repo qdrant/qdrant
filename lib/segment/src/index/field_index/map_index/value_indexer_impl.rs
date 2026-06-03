@@ -30,8 +30,8 @@ impl ValueIndexer for MapIndex<str> {
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
-            MapIndex::Mmap(_) => Err(OperationError::service_error(
-                "Can't add values to mmap map index",
+            MapIndex::OnDisk(_) => Err(OperationError::service_error(
+                "Can't add values to on-disk map index",
             )),
         }
     }
@@ -62,7 +62,7 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
-            MapIndex::Mmap(_) => Err(OperationError::service_error(
+            MapIndex::OnDisk(_) => Err(OperationError::service_error(
                 "Can't add values to mmap map index",
             )),
         }
@@ -91,7 +91,7 @@ impl ValueIndexer for MapIndex<UuidIntType> {
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
-            MapIndex::Mmap(_) => Err(OperationError::service_error(
+            MapIndex::OnDisk(_) => Err(OperationError::service_error(
                 "Can't add values to mmap map index",
             )),
         }

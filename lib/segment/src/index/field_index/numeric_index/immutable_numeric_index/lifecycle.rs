@@ -2,11 +2,12 @@ use std::ops::Bound;
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::super::universal_numeric_index::UniversalNumericIndex;
+use super::super::on_disk_numeric_index::OnDiskNumericIndex;
 use super::{ImmutableNumericIndex, NumericKeySortedVec};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -15,9 +16,11 @@ use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> ImmutableNumericIndex<T>
+impl<T, S> ImmutableNumericIndex<T, S>
 where
     Vec<T>: Blob,
+    T: Encodable + Numericable + StoredValue + Send + Sync + Default,
+    S: UniversalRead,
 {
     /// Open and load immutable numeric index from mmap storage.
     ///
@@ -27,7 +30,7 @@ where
     /// Numeric's body has no fallible reads to propagate (`from_mmap` is
     /// infallible; `clear_cache` errors are warn-and-continue, matching the
     /// other variants).
-    pub(in super::super) fn open_mmap(index: UniversalNumericIndex<T>) -> Self {
+    pub(in super::super) fn load_from_on_disk(index: OnDiskNumericIndex<T, S>) -> Self {
         // Load in-memory index from mmap storage
         let InMemoryNumericIndex {
             map,
@@ -35,11 +38,11 @@ where
             points_count,
             max_values_per_point,
             point_to_values,
-        } = InMemoryNumericIndex::from_mmap(&index);
+        } = InMemoryNumericIndex::from_on_disk(&index);
 
-        // Index is now loaded into memory, clear cache of backing mmap storage
+        // Index is now loaded into memory, clear cache of backing storage
         if let Err(err) = index.clear_cache() {
-            log::warn!("Failed to clear mmap cache of ram mmap numeric index: {err}");
+            log::warn!("Failed to clear cache of on-disk numeric index: {err}");
         }
 
         let mut result = Self {

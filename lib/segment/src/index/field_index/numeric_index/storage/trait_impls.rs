@@ -40,7 +40,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.wipe(),
             NumericIndexInner::Immutable(index) => index.wipe(),
-            NumericIndexInner::Mmap(index) => index.wipe(),
+            NumericIndexInner::OnDisk(index) => index.wipe(),
         }
     }
 

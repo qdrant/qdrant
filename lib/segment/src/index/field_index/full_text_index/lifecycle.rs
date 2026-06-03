@@ -38,8 +38,8 @@ impl FullTextIndex {
         };
 
         let index = if effective_is_on_disk {
-            // Use on mmap directly
-            Some(Self::Mmap(Box::new(mmap_index)))
+            // Use on-disk directly
+            Some(Self::OnDisk(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
             Some(Self::Immutable(ImmutableFullTextIndex::open_mmap(
@@ -65,8 +65,8 @@ impl FullTextIndex {
                 debug_assert!(false, "Immutable index should be initialized before use");
                 Ok(())
             }
-            Self::Mmap(_) => {
-                debug_assert!(false, "Mmap index should be initialized before use");
+            Self::OnDisk(_) => {
+                debug_assert!(false, "On-disk index should be initialized before use");
                 Ok(())
             }
         }
@@ -115,7 +115,7 @@ impl FullTextIndex {
         match self {
             FullTextIndex::Mutable(_) => IndexMutability::Mutable,
             FullTextIndex::Immutable(_) => IndexMutability::Immutable,
-            FullTextIndex::Mmap(_) => IndexMutability::Immutable,
+            FullTextIndex::OnDisk(_) => IndexMutability::Immutable,
         }
     }
 
@@ -124,7 +124,7 @@ impl FullTextIndex {
             // Mutable / Immutable keep their inverted index fully in RAM —
             // there is nothing to populate.
             Self::Mutable(_) | Self::Immutable(_) => Ok(()),
-            Self::Mmap(index) => index.populate(),
+            Self::OnDisk(index) => index.populate(),
         }
     }
 
@@ -132,7 +132,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.clear_cache(),
             Self::Immutable(index) => index.clear_cache(),
-            Self::Mmap(index) => index.clear_cache(),
+            Self::OnDisk(index) => index.clear_cache(),
         }
     }
 
@@ -140,7 +140,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.files(),
             Self::Immutable(index) => index.files(),
-            Self::Mmap(index) => index.files(),
+            Self::OnDisk(index) => index.files(),
         }
     }
 
@@ -148,7 +148,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(_) => Vec::new(),
             Self::Immutable(index) => index.immutable_files(),
-            Self::Mmap(index) => index.immutable_files(),
+            Self::OnDisk(index) => index.immutable_files(),
         }
     }
 }
@@ -167,8 +167,8 @@ impl ValueIndexer for FullTextIndex {
             Self::Immutable(_) => Err(OperationError::service_error(
                 "Cannot add values to immutable text index",
             )),
-            Self::Mmap(_) => Err(OperationError::service_error(
-                "Cannot add values to mmap text index",
+            Self::OnDisk(_) => Err(OperationError::service_error(
+                "Cannot add values to on-disk text index",
             )),
         }
     }
@@ -181,7 +181,7 @@ impl ValueIndexer for FullTextIndex {
         match self {
             FullTextIndex::Mutable(index) => index.remove_point(id)?,
             FullTextIndex::Immutable(index) => index.remove_point(id),
-            FullTextIndex::Mmap(index) => index.remove_point(id),
+            FullTextIndex::OnDisk(index) => index.remove_point(id),
         }
         Ok(())
     }
@@ -192,7 +192,7 @@ impl PayloadFieldIndex for FullTextIndex {
         match self {
             Self::Mutable(index) => index.wipe(),
             Self::Immutable(index) => index.wipe(),
-            Self::Mmap(index) => index.wipe(),
+            Self::OnDisk(index) => index.wipe(),
         }
     }
 
@@ -200,7 +200,7 @@ impl PayloadFieldIndex for FullTextIndex {
         match self {
             Self::Mutable(index) => index.flusher(),
             Self::Immutable(index) => index.flusher(),
-            Self::Mmap(index) => index.flusher(),
+            Self::OnDisk(index) => index.flusher(),
         }
     }
 

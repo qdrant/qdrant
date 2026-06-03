@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::{CONFIG_PATH, DELETED_PATH, PAIRS_PATH, Storage, UniversalNumericIndex};
+use super::{CONFIG_PATH, DELETED_PATH, OnDiskNumericIndex, PAIRS_PATH, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
@@ -28,7 +28,7 @@ struct UniversalNumericIndexConfig {
     max_values_per_point: usize,
 }
 
-impl<T, S> UniversalNumericIndex<T, S>
+impl<T, S> OnDiskNumericIndex<T, S>
 where
     T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod,
     S: UniversalRead,
@@ -38,7 +38,7 @@ where
         fs: &S::Fs,
         in_memory_index: InMemoryNumericIndex<T>,
         path: &Path,
-        is_on_disk: bool,
+        populate: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
@@ -109,7 +109,7 @@ where
             deleted.flusher()()?;
         }
 
-        Self::open(fs, path, is_on_disk, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalNumericIndex after building it")
         })
     }
@@ -118,7 +118,7 @@ where
     pub fn open(
         fs: &S::Fs,
         path: &Path,
-        is_on_disk: bool,
+        populate: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let pairs_path = path.join(PAIRS_PATH);
@@ -133,17 +133,16 @@ where
         };
 
         let histogram = Histogram::<T>::load_via(fs, path)?;
-        let do_populate = !is_on_disk;
 
         let pairs_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::from(do_populate),
+            populate: Populate::from(populate),
             advice: AdviceSetting::Global,
         };
         let pairs = TypedStorage::open(fs, pairs_path, pairs_options, Default::default())?;
 
-        let point_to_values = StoredPointToValues::open(fs, path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
         let deleted_payload_mmap = StoredBitSlice::<S>::open(
@@ -179,12 +178,15 @@ where
             histogram,
             deleted_count,
             max_values_per_point: config.max_values_per_point,
-            is_on_disk,
         }))
     }
 }
 
-impl<T: Encodable + Numericable + Default + StoredValue + 'static> UniversalNumericIndex<T> {
+impl<T, S> OnDiskNumericIndex<T, S>
+where
+    T: Encodable + Numericable + Default + StoredValue + 'static,
+    S: UniversalRead,
+{
     pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let path = self.path.clone();
@@ -253,7 +255,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> UniversalNume
             histogram: _,
             deleted_count: _,
             max_values_per_point: _,
-            is_on_disk: _,
         } = self;
         let Storage {
             deleted: _,
@@ -273,7 +274,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> UniversalNume
             histogram,
             deleted_count: _,
             max_values_per_point: _,
-            is_on_disk: _,
         } = self;
 
         histogram.ram_usage_bytes() + storage.ram_usage_bytes()

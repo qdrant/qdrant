@@ -32,9 +32,11 @@ where
             MapIndex::Immutable(index) => index.for_points_values(points, |idx, slice| {
                 f(idx, &mut slice.iter().map(|v| v.borrow().into()));
             }),
-            MapIndex::Mmap(index) => index.for_points_values(points, hw_counter, |idx, vals| {
-                f(idx, &mut vals.map(|v| v.into()));
-            })?,
+            MapIndex::OnDisk(index) => {
+                index.for_points_values(points, hw_counter, |idx, vals| {
+                    f(idx, &mut vals.map(|v| v.into()));
+                })?
+            }
         }
         Ok(())
     }

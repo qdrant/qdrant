@@ -101,7 +101,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let mut mutable = MutableGeoMapIndex::open_gridstore(dir.path().to_path_buf(), true)
+            let mut mutable = MutableGeoMapIndex::open(dir.path().to_path_buf(), true)
                 .unwrap()
                 .unwrap();
             mutable
