@@ -15,6 +15,29 @@ def setup(on_disk_vectors, collection_name):
     drop_collection(collection_name=collection_name)
 
 
+def assert_malformed_checksum_rejected_before_upload(endpoint):
+    response = requests.post(
+        f"{QDRANT_HOST}{endpoint}",
+        params={'checksum': 'abc'},
+        files={'snapshot': ('snapshot.tar', b'not a snapshot', 'application/octet-stream')},
+        headers=qdrant_host_headers(),
+    )
+    assert response.status_code == 422
+    assert 'invalid_sha256_hash' in response.text
+
+
+def test_upload_shard_snapshot_rejects_malformed_checksum(collection_name):
+    assert_malformed_checksum_rejected_before_upload(
+        f"/collections/{collection_name}/shards/0/snapshots/upload",
+    )
+
+
+def test_recover_partial_snapshot_rejects_malformed_checksum(collection_name):
+    assert_malformed_checksum_rejected_before_upload(
+        f"/collections/{collection_name}/shards/0/snapshot/partial/recover",
+    )
+
+
 def test_shard_snapshot_operations(http_server, collection_name):
     (srv_dir, srv_url) = http_server
 
