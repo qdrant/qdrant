@@ -6,7 +6,7 @@ use gridstore::error::GridstoreError;
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::MapIndexKey;
-use super::super::inner::InMemoryMapIndex;
+use super::super::in_memory::InMemoryMapIndex;
 use super::ReadOnlyAppendableMapIndex;
 use crate::common::operation_error::OperationResult;
 

@@ -1,9 +1,9 @@
 use gridstore::{Blob, Gridstore};
 
-use self::inner::InMemoryMapIndex;
+use self::in_memory::InMemoryMapIndex;
 use super::MapIndexKey;
 
-pub(super) mod inner;
+pub(super) mod in_memory;
 mod lifecycle;
 pub mod read_only;
 mod read_ops;

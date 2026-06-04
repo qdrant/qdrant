@@ -8,7 +8,7 @@ use gridstore::{Blob, Gridstore};
 
 use super::super::MapIndexKey;
 use super::MutableMapIndex;
-use super::inner::InMemoryMapIndex;
+use super::in_memory::InMemoryMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 

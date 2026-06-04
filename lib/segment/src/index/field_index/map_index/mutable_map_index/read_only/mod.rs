@@ -2,7 +2,7 @@ use common::universal_io::UniversalRead;
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::MapIndexKey;
-use super::inner::InMemoryMapIndex;
+use super::in_memory::InMemoryMapIndex;
 
 mod lifecycle;
 mod live_reload;

@@ -44,10 +44,6 @@ where
     }
 
     pub fn add_many_to_map(&mut self, idx: u32, values: Vec<<N as MapIndexKey>::Owned>) {
-        if values.is_empty() {
-            return;
-        }
-
         self.values_count += values.len();
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize_with(idx as usize + 1, Vec::new)
