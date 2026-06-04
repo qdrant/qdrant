@@ -6,7 +6,7 @@ use gridstore::Blob;
 use super::Encodable;
 use super::storage::read_only::ReadOnlyNumericIndexInner;
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 
 mod lifecycle;
 mod read_ops;

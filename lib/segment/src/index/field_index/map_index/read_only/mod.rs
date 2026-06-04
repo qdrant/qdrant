@@ -2,8 +2,9 @@ use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use crate::index::field_index::map_index::MapIndexKey;
+use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
 use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
-use crate::index::field_index::map_index::universal_map_index::UniversalMapIndex;
+use crate::index::field_index::map_index::on_disk_map_index::OnDiskMapIndex;
 
 mod lifecycle;
 mod read_ops;
@@ -32,8 +33,9 @@ where
 {
     /// Loads into RAM from appendable storage format
     Appendable(ReadOnlyAppendableMapIndex<N, S>),
+    Immutable(ImmutableMapIndex<N, S>),
     /// Directly reads from storage in immutable format
-    Immutable(UniversalMapIndex<N, S>),
+    OnDisk(OnDiskMapIndex<N, S>),
 }
 
 #[cfg(test)]
@@ -64,7 +66,7 @@ mod tests {
         // Build via the writable gridstore builder (matches the existing map
         // tests' `IndexType::MutableGridstore` path).
         {
-            let mut builder = MapIndex::<str>::builder_gridstore(dir.path().to_path_buf());
+            let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf());
             builder.init().unwrap();
             let entries: &[(PointOffsetType, &[&str])] = &[
                 (0, &["red", "green"]),

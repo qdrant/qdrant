@@ -11,7 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::payload_config::IndexMutability;
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, S: UniversalRead>

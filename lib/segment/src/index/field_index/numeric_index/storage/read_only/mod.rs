@@ -6,7 +6,7 @@ use super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericInd
 use super::super::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 
 mod lifecycle;
 mod read_ops;

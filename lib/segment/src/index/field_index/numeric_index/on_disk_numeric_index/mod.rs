@@ -6,7 +6,7 @@ use common::universal_io::{MmapFile, TypedStorage, UniversalRead};
 use super::Encodable;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
-use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
+use crate::index::field_index::on_disk_point_to_values::{OnDiskPointToValues, StoredValue};
 
 mod lifecycle;
 mod read_ops;
@@ -45,7 +45,7 @@ pub(in super::super) struct Storage<
     pub(super) deleted: BitVec,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pub(super) pairs: TypedStorage<S, Point<T>>,
-    pub(in super::super) point_to_values: StoredPointToValues<T, S>,
+    pub(in super::super) point_to_values: OnDiskPointToValues<T, S>,
 }
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead> Storage<T, S> {

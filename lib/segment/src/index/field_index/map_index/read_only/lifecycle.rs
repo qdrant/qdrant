@@ -6,9 +6,10 @@ use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
-use super::super::universal_map_index::UniversalMapIndex;
+use super::super::on_disk_map_index::OnDiskMapIndex;
 use super::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
 use crate::index::payload_config::IndexMutability;
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyMapIndex<N, S>
@@ -51,10 +52,19 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        Ok(
-            UniversalMapIndex::open(fs, path, effective_is_on_disk, deleted_points)?
-                .map(Self::Immutable),
-        )
+        let Some(on_disk_index) =
+            OnDiskMapIndex::open(fs, path, !effective_is_on_disk, deleted_points)?
+        else {
+            return Ok(None);
+        };
+
+        if effective_is_on_disk {
+            Ok(Some(Self::OnDisk(on_disk_index)))
+        } else {
+            Ok(Some(Self::Immutable(ImmutableMapIndex::load_from_on_disk(
+                on_disk_index,
+            )?)))
+        }
     }
 
     /// Reports the on-disk format's mutability, mirroring
@@ -72,6 +82,7 @@ where
         match self {
             Self::Appendable(_) => IndexMutability::Mutable,
             Self::Immutable(_) => IndexMutability::Immutable,
+            Self::OnDisk(_) => IndexMutability::Immutable,
         }
     }
 }

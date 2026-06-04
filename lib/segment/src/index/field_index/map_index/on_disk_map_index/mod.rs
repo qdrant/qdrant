@@ -7,7 +7,7 @@ use common::universal_io::{MmapFile, UniversalRead};
 use serde::{Deserialize, Serialize};
 
 use super::MapIndexKey;
-use crate::index::field_index::stored_point_to_values::StoredPointToValues;
+use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 
 mod lifecycle;
 mod live_reload;
@@ -19,9 +19,6 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 /// Immutable map index served directly from a [`UniversalRead`] storage backend.
 ///
-/// The storage parameter `S` defaults to [`MmapFile`], but any `UniversalRead`
-/// implementation works — e.g. io_uring or disk-cache wrappers.
-///
 /// On-disk state (`values_to_points.bin`, `deleted.bin`, `point_to_values.*`,
 /// `mmap_field_index_config.json`) is written once during [`Self::build`] and
 /// not mutated afterwards: `deleted.bin` records only the points whose payload
@@ -32,17 +29,16 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct UniversalMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
+pub struct OnDiskMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) path: PathBuf,
     pub(super) storage: Storage<N, S>,
     pub(super) deleted_count: usize,
     pub(super) total_key_value_pairs: usize,
-    pub(super) is_on_disk: bool,
 }
 
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) value_to_points: UniversalHashMap<N, PointOffsetType, S>,
-    pub(super) point_to_values: StoredPointToValues<N, S>,
+    pub(super) point_to_values: OnDiskPointToValues<N, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
     /// the build-time empty-payload bits read from `deleted.bin` and the
     /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.

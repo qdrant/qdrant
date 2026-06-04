@@ -19,9 +19,9 @@ mod memory_reporter;
 pub mod null_index;
 pub mod numeric_index;
 mod numeric_point;
+mod on_disk_point_to_values;
 pub mod schema_transition;
 mod stat_tools;
-mod stored_point_to_values;
 #[cfg(test)]
 mod tests;
 mod utils;
