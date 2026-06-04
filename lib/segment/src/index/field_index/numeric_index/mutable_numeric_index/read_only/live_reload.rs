@@ -40,7 +40,7 @@ where
                 |idx, maybe_values: Option<Vec<T>>| {
                     let values = maybe_values.unwrap_or_default();
                     let point_offset = new_points[idx];
-                    in_memory_index.remove_point(point_offsets);
+                    in_memory_index.remove_point(point_offset);
                     in_memory_index.add_many_to_list(point_offset, values);
                     Ok(())
                 },
