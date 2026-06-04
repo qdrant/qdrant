@@ -294,6 +294,13 @@ impl ConditionChecker for SimpleConditionChecker {
                             });
                             Some(OwnedPayloadRef::from(payload))
                         }
+                        #[cfg(target_os = "linux")]
+                        PayloadStorageEnum::IoUringPayloadStorage(s) => {
+                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
+                                panic!("Payload storage is corrupted: {err}")
+                            });
+                            Some(OwnedPayloadRef::from(payload))
+                        }
                     };
 
                     payload_ref_cell

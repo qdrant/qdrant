@@ -19,6 +19,11 @@ impl MemoryReporter for PayloadStorageEnum {
 
                 ComponentMemoryUsage::from_files(s.files(), intent)
             }
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => {
+                debug_assert!(s.is_on_disk());
+                ComponentMemoryUsage::from_files(s.files(), FileStorageIntent::OnDisk)
+            }
         }
     }
 }

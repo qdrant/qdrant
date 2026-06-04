@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
+#[cfg(target_os = "linux")]
+use common::universal_io::IoUringFile;
 use serde_json::Value;
 
 use crate::common::Flusher;
@@ -19,6 +21,8 @@ pub enum PayloadStorageEnum {
     #[cfg(feature = "testing")]
     InMemoryPayloadStorage(InMemoryPayloadStorage),
     MmapPayloadStorage(MmapPayloadStorage),
+    #[cfg(target_os = "linux")]
+    IoUringPayloadStorage(MmapPayloadStorage<IoUringFile>),
 }
 
 #[cfg(feature = "testing")]
@@ -34,6 +38,13 @@ impl From<MmapPayloadStorage> for PayloadStorageEnum {
     }
 }
 
+#[cfg(target_os = "linux")]
+impl From<MmapPayloadStorage<IoUringFile>> for PayloadStorageEnum {
+    fn from(a: MmapPayloadStorage<IoUringFile>) -> Self {
+        PayloadStorageEnum::IoUringPayloadStorage(a)
+    }
+}
+
 impl PayloadStorageRead for PayloadStorageEnum {
     fn get(
         &self,
@@ -44,6 +55,8 @@ impl PayloadStorageRead for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_offset, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_offset, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.get(point_offset, hw_counter),
         }
     }
 
@@ -58,6 +71,10 @@ impl PayloadStorageRead for PayloadStorageEnum {
                 s.get_sequential(point_offset, hw_counter)
             }
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_offset, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => {
+                s.get_sequential(point_offset, hw_counter)
+            }
         }
     }
 
@@ -72,6 +89,8 @@ impl PayloadStorageRead for PayloadStorageEnum {
                 s.payload_ref(point_offset, hw_counter)
             }
             PayloadStorageEnum::MmapPayloadStorage(s) => s.payload_ref(point_offset, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.payload_ref(point_offset, hw_counter),
         }
     }
 
@@ -90,6 +109,10 @@ impl PayloadStorageRead for PayloadStorageEnum {
             PayloadStorageEnum::MmapPayloadStorage(s) => {
                 s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
             }
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => {
+                s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
+            }
         }
     }
 
@@ -101,6 +124,8 @@ impl PayloadStorageRead for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.iter(callback, hw_counter),
         }
     }
 
@@ -109,6 +134,8 @@ impl PayloadStorageRead for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_storage_size_bytes(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.get_storage_size_bytes(),
         }
     }
 
@@ -117,6 +144,8 @@ impl PayloadStorageRead for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.is_on_disk(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.is_on_disk(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.is_on_disk(),
         }
     }
 }
@@ -134,6 +163,10 @@ impl PayloadStorage for PayloadStorageEnum {
                 s.overwrite(point_id, payload, hw_counter)
             }
             PayloadStorageEnum::MmapPayloadStorage(s) => s.overwrite(point_id, payload, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => {
+                s.overwrite(point_id, payload, hw_counter)
+            }
         }
     }
 
@@ -147,6 +180,8 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set(point_id, payload, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.set(point_id, payload, hw_counter),
         }
     }
 
@@ -165,6 +200,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::MmapPayloadStorage(s) => {
                 s.set_by_key(point_id, payload, key, hw_counter)
             }
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => {
+                s.set_by_key(point_id, payload, key, hw_counter)
+            }
         }
     }
 
@@ -178,6 +217,8 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.delete(point_id, key, hw_counter),
         }
     }
 
@@ -190,6 +231,8 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id, hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.clear(point_id, hw_counter),
         }
     }
 
@@ -199,6 +242,8 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear_all(hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_all(hw_counter),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.clear_all(hw_counter),
         }
     }
 
@@ -207,6 +252,8 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.flusher(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.flusher(),
         }
     }
 
@@ -215,6 +262,8 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.files(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.files(),
         }
     }
 
@@ -223,6 +272,8 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.immutable_files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.immutable_files(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.immutable_files(),
         }
     }
 }
@@ -235,6 +286,8 @@ impl PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
             PayloadStorageEnum::MmapPayloadStorage(s) => s.populate()?,
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.populate()?,
         }
         Ok(())
     }
@@ -245,6 +298,8 @@ impl PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_cache()?,
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUringPayloadStorage(s) => s.clear_cache()?,
         }
         Ok(())
     }
