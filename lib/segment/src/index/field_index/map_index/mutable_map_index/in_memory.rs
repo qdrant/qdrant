@@ -52,7 +52,7 @@ where
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
 
         for value in values {
-            let entry = self.map.entry(value.into());
+            let entry = self.map.entry(value);
             self.point_to_values[idx as usize].push(entry.key().clone());
             entry.or_default().insert(idx);
         }
