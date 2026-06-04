@@ -32,4 +32,7 @@ android {
 
 dependencies {
     api(project(":qdrant-edge-ffi"))
+    // For the optional `suspend` convenience wrappers (Coroutines.kt). `api` so
+    // consumers calling the suspend functions also get the coroutines types.
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 }

@@ -77,3 +77,22 @@ Swift module; the plumbing is only referenced from within that file, and
 Every public type and method carries doc comments authored in Rust that
 UniFFI propagates to Swift Quick Help. ⌥-click in Xcode for summaries,
 error notes, and examples.
+
+## Threading
+
+All `EdgeShard` calls are **synchronous and blocking** — `search`, `query`,
+`scroll`, `upsert`, etc. run on the calling thread. **Never call them on the
+main thread**; a large search will freeze the UI.
+
+The SDK does not impose a thread for you (you choose where the work runs). The
+idiomatic way to run a call off the main thread with Swift concurrency:
+
+```swift
+let hits = try await Task.detached(priority: .userInitiated) {
+    try shard.search(request: request)
+}.value
+```
+
+If you wrap the shard in an `actor` (a natural pattern for a database), the
+generated value types (`Point`, `Filter`, `SearchRequest`, …) are `Sendable`,
+so they cross the actor boundary cleanly under Swift 6 strict concurrency.

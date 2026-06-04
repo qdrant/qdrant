@@ -109,3 +109,40 @@ summaries, error notes, and examples.
 | `size`        | Show per-ABI .so sizes + AAR size                  |
 | `clean`       | Remove build artifacts                             |
 | `help`        | Show available targets                             |
+
+## Threading
+
+All `EdgeShard` calls are **synchronous and blocking** (`search`, `query`,
+`scroll`, `update`, …) and run on the calling thread. **Never call them on the
+main thread** — a large search will trigger an ANR.
+
+The SDK does not impose a dispatcher (you choose where the work runs). For the
+heavy operations there are optional `suspend` wrappers in
+`tech.qdrant.edge.*` that run the call on a background dispatcher within your
+coroutine (default `Dispatchers.IO`, overridable):
+
+```kotlin
+import tech.qdrant.edge.searchAsync   // also: queryAsync, scrollAsync, retrieveAsync
+
+val hits = shard.searchAsync(request)            // suspends, runs on Dispatchers.IO
+val hits = shard.searchAsync(request, myDispatcher)  // or your own pool
+```
+
+If you manage your own thread pool, call the plain blocking `shard.search(request)`
+instead.
+
+## Lifecycle
+
+`EdgeShard` is `AutoCloseable`; the idiomatic way to scope it is `use { }`,
+which releases the native resources when the block exits:
+
+```kotlin
+EdgeShard.load(path, config).use { shard ->
+    shard.update(UpdateOperation.upsertPoints(points))
+    val hits = shard.search(request)
+}   // shard disposed here
+```
+
+To release *before* disposal (e.g. at app-suspend), call `shard.unload()`
+(typically after `shard.flush()`). Do not confuse it with `close()` /
+`destroy()`, which dispose the object itself.

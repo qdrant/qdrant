@@ -11,8 +11,12 @@ let package = Package(
     ],
     products: [
         .library(
+            // Only `QdrantEdge` is exposed to consumers. The binary FFI target
+            // is a private dependency of `QdrantEdge` (linked, not importable),
+            // so `import qdrant_edge_ffiFFI` is not available downstream — the
+            // demoted C plumbing stays internal.
             name: "QdrantEdge",
-            targets: ["QdrantEdge", "qdrant_edge_ffiFFI"]
+            targets: ["QdrantEdge"]
         ),
     ],
     targets: [
