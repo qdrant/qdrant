@@ -42,9 +42,7 @@ where
         storage.iter::<_, GridstoreError>(
             storage.max_point_offset(),
             |idx, values: Vec<_>| {
-                for value in values {
-                    inner.ingest(idx, value);
-                }
+                inner.add_many_to_map(idx, values);
                 Ok(true)
             },
             hw_counter.ref_payload_index_io_write_counter(),

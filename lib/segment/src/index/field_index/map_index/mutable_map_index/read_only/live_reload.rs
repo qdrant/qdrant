@@ -36,10 +36,10 @@ where
             .read_values::<Random, _, GridstoreError>(
                 new_points.iter().copied().enumerate(),
                 |_, point_offset, maybe_values: Option<Vec<_>>| {
+                    in_memory_storage.remove_point(point_offset);
+
                     let values = maybe_values.unwrap_or_default();
-                    for value in values {
-                        in_memory_storage.ingest(point_offset, value);
-                    }
+                    in_memory_storage.add_many_to_map(point_offset, values);
                     Ok(())
                 },
                 hw_counter.payload_index_io_read_counter(),
