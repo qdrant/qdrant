@@ -6,7 +6,13 @@ import android.util.Log
 import java.io.File
 import java.util.UUID
 
-import tech.qdrant.edge.*
+// Import the generated package directly. The public `tech.qdrant.edge.*`
+// facade re-exports types via typealias, but a Kotlin typealias does NOT carry
+// a sealed class's nested variants (`PointId.NumId`, `Vector.Single`,
+// `Query.Nearest`), and mixing both wildcard imports causes overload-resolution
+// ambiguity. Using only the ffi package keeps every type from one source.
+// (Tracked as backlog I11: the Kotlin facade doesn't fully re-export ffi.)
+import tech.qdrant.edge.ffi.*
 
 private const val TAG = "QdrantEdge"
 
