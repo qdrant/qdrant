@@ -5,6 +5,7 @@ use super::inner::InMemoryGeoMapIndex;
 use crate::types::RawGeoPoint;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart to [`super::MutableGeoMapIndex`].

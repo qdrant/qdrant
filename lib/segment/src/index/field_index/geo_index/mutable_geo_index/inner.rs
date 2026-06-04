@@ -177,7 +177,7 @@ impl InMemoryGeoMapIndex {
     ///
     /// [1]: super::MutableGeoMapIndex::open_gridstore
     /// [2]: super::read_only::ReadOnlyAppendableGeoMapIndex::open
-    pub fn ingest_raw_points(
+    pub fn ingest(
         &mut self,
         idx: PointOffsetType,
         values: Vec<RawGeoPoint>,
