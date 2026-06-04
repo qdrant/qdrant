@@ -1,4 +1,6 @@
-//! A collection of functions for updating points and payloads stored in segments
+block to address this issue:
+
+**SEARCH:**/! A collection of functions for updating points and payloads stored in segments
 
 use std::sync::atomic::AtomicBool;
 
