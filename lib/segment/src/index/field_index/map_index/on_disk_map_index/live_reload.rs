@@ -4,15 +4,18 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::LiveReload;
 use crate::index::field_index::map_index::MapIndexKey;
 use crate::index::field_index::map_index::on_disk_map_index::OnDiskMapIndex;
 
-impl<N, S> OnDiskMapIndex<N, S>
+impl<N, S> LiveReload for OnDiskMapIndex<N, S>
 where
     N: MapIndexKey + Key + ?Sized,
     S: UniversalRead,
 {
-    pub fn live_reload(
+    type Fs = S::Fs;
+
+    fn live_reload(
         &mut self,
         _fs: &S::Fs,
         deleted_points: &[PointOffsetType],

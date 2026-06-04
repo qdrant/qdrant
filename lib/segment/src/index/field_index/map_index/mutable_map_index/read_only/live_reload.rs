@@ -6,14 +6,17 @@ use gridstore::Blob;
 use gridstore::error::GridstoreError;
 
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::LiveReload;
 use crate::index::field_index::map_index::MapIndexKey;
 use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
 
-impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
+impl<N: MapIndexKey + ?Sized, S: UniversalRead> LiveReload for ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub fn live_reload(
+    type Fs = S::Fs;
+
+    fn live_reload(
         &mut self,
         fs: &S::Fs,
         deleted_points: &[PointOffsetType],
