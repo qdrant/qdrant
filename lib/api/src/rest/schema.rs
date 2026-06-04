@@ -293,6 +293,8 @@ pub enum DocumentOptions {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::*;
 
     #[test]
@@ -304,7 +306,7 @@ mod tests {
         let valid_bm25_config = serde_json::to_string(&json).unwrap();
         let options: DocumentOptions = serde_json::from_str(&valid_bm25_config).unwrap();
         // Bm25 option is used only for schema, actual deserialization will happen in specialized code
-        assert!(matches!(options, DocumentOptions::Common(_)));
+        assert_matches!(options, DocumentOptions::Common(_));
     }
 }
 

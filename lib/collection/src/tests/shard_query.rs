@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
@@ -86,7 +87,7 @@ async fn test_shard_query_rrf_rescoring() {
     let expected_error = CollectionError::bad_input(
         "Validation failed: cannot apply Fusion without prefetches".to_string(),
     );
-    assert!(matches!(sources_scores, Err(err) if err == expected_error));
+    assert_matches!(sources_scores, Err(err) if err == expected_error);
 
     // RRF query with single prefetch
     let nearest_query = QueryEnum::Nearest(NamedQuery::new(

@@ -4,6 +4,7 @@
 //! The collection layer provides the strategy via `OptimizationStrategy`.
 
 use std::collections::HashSet;
+use std::debug_assert_matches;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -785,9 +786,10 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // Also helps to ensure the delete propagation behavior in
             // `optimize_segment_propagate_changes` remains  sound.
             // See: <https://github.com/qdrant/qdrant/pull/7208>
-            debug_assert!(
-                matches!(proxy.wrapped_segment(), LockedSegment::Original(_)),
-                "during optimization, wrapped segment must not be another proxy segment"
+            debug_assert_matches!(
+                proxy.wrapped_segment(),
+                LockedSegment::Original(_),
+                "during optimization, wrapped segment must not be another proxy segment",
             );
 
             // Now that this write lock froze the wrapped segment, finalize the proxy: this syncs

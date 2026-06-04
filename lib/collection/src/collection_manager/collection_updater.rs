@@ -105,6 +105,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -213,7 +214,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let res = upsert_points(&segments.read(), 100, &points, &hw_counter);
-        assert!(matches!(res, Ok(1)));
+        assert_matches!(res, Ok(1));
 
         let records = retrieve_blocking(
             segments.clone(),

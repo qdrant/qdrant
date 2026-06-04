@@ -397,6 +397,7 @@ fn merge_position_items<I>(
 
 #[cfg(test)]
 mod test {
+    use std::assert_matches;
     use std::collections::HashMap;
 
     use api::rest::Bm25Config;
@@ -505,7 +506,7 @@ mod test {
             if input.model == BM25_LOCAL_MODEL_NAME {
                 // In our test-setup, only BM25 returns sparse vectors. Normal inference is mocked
                 // and always returns dense vectors.
-                assert!(matches!(response, VectorPersisted::Sparse(..)));
+                assert_matches!(response, VectorPersisted::Sparse(..));
                 let bm25_config = InferenceInput::parse_bm25_config(input.options).unwrap();
 
                 // Re-run bm25 and check that response is correct.

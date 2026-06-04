@@ -224,6 +224,8 @@ fn build_tokens_processor(
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::*;
 
     #[test]
@@ -268,7 +270,7 @@ mod tests {
             ..Default::default()
         };
         let err = EdgeBm25::new(cfg).expect_err("klingon should not be accepted");
-        assert!(matches!(err, EdgeBm25Error::UnsupportedLanguage(ref s) if s == "klingon"));
+        assert_matches!(err, EdgeBm25Error::UnsupportedLanguage(ref s) if s == "klingon");
     }
 
     #[test]
@@ -278,6 +280,6 @@ mod tests {
             ..Default::default()
         };
         let err = EdgeBm25::new(cfg).expect_err("avg_len=0 should not be accepted");
-        assert!(matches!(err, EdgeBm25Error::Bm25(_)));
+        assert_matches!(err, EdgeBm25Error::Bm25(_));
     }
 }

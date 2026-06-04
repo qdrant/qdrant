@@ -1,3 +1,4 @@
+use std::debug_assert_matches;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 
@@ -102,7 +103,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
             .iter(0, max_id, usize::MAX, callback, hw_counter)?;
 
         // we set usize::MAX as the max iteration, so we should always iterate the entire thing.
-        debug_assert!(matches!(control_flow, ControlFlow::Break(())));
+        debug_assert_matches!(control_flow, ControlFlow::Break(()));
 
         Ok(())
     }

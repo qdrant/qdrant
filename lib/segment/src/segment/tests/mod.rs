@@ -1,6 +1,7 @@
 mod test_immutable_payload_index_files;
 mod test_vector_name_ops;
 
+use std::assert_matches;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
@@ -378,8 +379,9 @@ fn test_check_consistency() {
     assert_eq!(search_result[0].id, 4.into());
 
     // querying by external id is broken
-    assert!(
-        matches!(segment.vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter), Err(PointIdError {missed_point_id }) if missed_point_id == 6.into())
+    assert_matches!(
+        segment.vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter),
+        Err(PointIdError { missed_point_id }) if missed_point_id == 6.into(),
     );
 
     // but querying by internal id still works

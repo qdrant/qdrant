@@ -54,6 +54,8 @@ impl DiskCacheConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use fs_err as fs;
 
     use super::DiskCacheConfig;
@@ -99,9 +101,6 @@ mod tests {
         let cfg = DiskCacheConfig::new(remote_dir, local_dir).unwrap();
         let err = cfg.local_path_for(&outside).unwrap_err();
 
-        assert!(
-            matches!(err, crate::universal_io::UniversalIoError::NotFound { .. }),
-            "expected NotFound, got {err:?}",
-        );
+        assert_matches!(err, crate::universal_io::UniversalIoError::NotFound { .. });
     }
 }

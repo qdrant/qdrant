@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -62,7 +63,7 @@ async fn test_shard_telemetry() {
         let telemetry = shard
             .get_telemetry_data(details, Duration::from_millis(10))
             .await;
-        assert!(matches!(telemetry, Err(CollectionError::Timeout { .. })));
+        assert_matches!(telemetry, Err(CollectionError::Timeout { .. }));
 
         drop(write_segment_holder_guard);
         let telemetry = shard

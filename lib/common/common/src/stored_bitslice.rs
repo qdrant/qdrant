@@ -367,6 +367,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
     use std::io::Write;
 
     use tempfile::NamedTempFile;
@@ -633,7 +634,7 @@ mod tests {
         let bs = storage.read_all().unwrap();
         assert_eq!(bs.len(), storage.bit_len() as usize);
         // With mmap backend, read_all returns Cow::Borrowed (zero-copy)
-        assert!(matches!(bs, Cow::Borrowed(_)));
+        assert_matches!(bs, Cow::Borrowed(_));
     }
 
     #[test]
