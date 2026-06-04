@@ -342,12 +342,14 @@ fn test_live_reload_withholds_partially_written_version() {
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(read_only.internal_version(2), None);
 
-    // Completing the version flush (which truncates the torn bytes and writes the full entry)
-    // makes the point appear on the next reload.
+    // Completing the version flush truncates the torn bytes (a `set_len`) and writes the full entry.
+    // On Windows a file with an open memory mapping cannot be resized, so drop the read-only view
+    // first (it has the versions file mapped) and then reopen it to observe the completed version.
+    drop(read_only);
     mutable.versions_flusher()().unwrap();
 
-    let result = read_only.live_reload().unwrap();
-    assert_eq!(result.inserted, vec![2]);
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(read_only.internal_id(300.into()), Some(2));
     assert_eq!(read_only.internal_version(2), Some(12));
     assert_in_sync(&read_only, &mutable);
 }
