@@ -137,6 +137,7 @@ class MainActivity : Activity() {
                         range = null,
                         geoBoundingBox = null,
                         geoRadius = null,
+                        geoPolygon = null,
                         valuesCount = null,
                     )
                 ),
@@ -147,6 +148,7 @@ class MainActivity : Activity() {
                         range = RangeFloat(gte = 500.0, gt = null, lte = null, lt = null),
                         geoBoundingBox = null,
                         geoRadius = null,
+                        geoPolygon = null,
                         valuesCount = null,
                     )
                 ),

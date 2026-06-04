@@ -1,5 +1,14 @@
 // Public facade module. Re-exports `tech.qdrant.edge.ffi.*` (UniFFI-generated)
-// as `tech.qdrant.edge.*` via typealiases, hiding FFI plumbing from consumers.
+// as `tech.qdrant.edge.*` via typealiases for a clean import surface.
+//
+// NOTE: this does NOT fully hide the ffi package. The dependency below is
+// `api(...)` (required so the public typealiases resolve), which transitively
+// exposes `tech.qdrant.edge.ffi.*` on the consumer's compile classpath. A
+// Kotlin typealias also cannot carry a sealed class's nested variants
+// (`PointId.NumId`, `Query.Nearest`), so code constructing those still imports
+// `tech.qdrant.edge.ffi.*` directly. Treat the facade as an ergonomic alias
+// layer, not an enforced encapsulation boundary. (The Swift SDK *does* enforce
+// hiding via the demote pass + the SwiftPM product exposing only `QdrantEdge`.)
 
 plugins {
     id("com.android.library")

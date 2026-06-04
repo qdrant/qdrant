@@ -5,11 +5,17 @@ package tech.qdrant.edge
 // Public API for Qdrant Edge on Android.
 //
 // Every symbol below is a compile-time typealias onto the UniFFI-generated
-// bindings in `:qdrant-edge-ffi`. Consumers import `tech.qdrant.edge.*` and
-// never see FFI plumbing (`FfiConverter*`, `RustBuffer`, …).
+// bindings in `:qdrant-edge-ffi`, giving a clean `tech.qdrant.edge.*` import
+// surface.
 //
-// When a new public type is added to the Rust FFI crate, add a typealias
-// here. Types that should stay internal simply don't get an alias.
+// This is an alias layer, NOT an enforced boundary: `:qdrant-edge` depends on
+// `:qdrant-edge-ffi` via `api(...)` (needed for the typealiases to resolve),
+// so `tech.qdrant.edge.ffi.*` is still reachable on the consumer classpath, and
+// sealed-class variants (e.g. `PointId.NumId`) must be imported from there
+// directly since a typealias can't re-export them. (Swift enforces hiding via
+// the demote pass + SwiftPM product; Kotlin does not.)
+//
+// When a new public type is added to the Rust FFI crate, add a typealias here.
 
 // ---- Shards & operations --------------------------------------------------
 

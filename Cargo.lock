@@ -5900,6 +5900,7 @@ dependencies = [
  "serde_json",
  "shard",
  "sparse",
+ "tempfile",
  "thiserror 2.0.18",
  "uniffi",
  "uuid",

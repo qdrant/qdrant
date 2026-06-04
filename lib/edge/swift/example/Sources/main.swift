@@ -174,6 +174,7 @@ let searchFilter = Filter(
             range: nil,
             geoBoundingBox: nil,
             geoRadius: nil,
+            geoPolygon: nil,
             valuesCount: nil
         )),
         .field(condition: FieldCondition(
@@ -182,6 +183,7 @@ let searchFilter = Filter(
             range: RangeFloat(gte: 500.0, gt: nil, lte: nil, lt: nil),
             geoBoundingBox: nil,
             geoRadius: nil,
+            geoPolygon: nil,
             valuesCount: nil
         )),
     ],
