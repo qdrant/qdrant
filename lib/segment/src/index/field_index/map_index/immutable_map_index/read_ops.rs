@@ -3,17 +3,20 @@ use std::iter;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
-use super::{ContainerSegment, ImmutableMapIndex, Storage};
+use super::{ContainerSegment, ImmutableMapIndex};
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for ImmutableMapIndex<N>
+impl<N, S> MapIndexRead<N> for ImmutableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    N: MapIndexKey + ?Sized,
+    S: UniversalRead,
 {
     fn check_values_any(
         &self,
@@ -99,11 +102,7 @@ where
     }
 
     fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
-        }
+        StorageType::Mmap { is_on_disk: false }
     }
 
     /// Approximate RAM usage in bytes (cached at construction).
@@ -116,9 +115,11 @@ where
     }
 }
 
-impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
+impl<N, S> ImmutableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    N: MapIndexKey + ?Sized,
+    S: UniversalRead,
 {
     pub fn for_points_values(
         &self,

@@ -7,7 +7,7 @@ use common::persisted_hashmap::Key;
 use ecow::EcoString;
 
 use super::BLOCK_SIZE_KEYWORD;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::types::{IntPayloadType, UuidIntType};
 
 pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug {

@@ -11,7 +11,7 @@ use super::ReadOnlyAppendableNumericIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
 
 impl<T: Encodable + Numericable + Send + Sync + Default + StoredValue, S: UniversalRead>

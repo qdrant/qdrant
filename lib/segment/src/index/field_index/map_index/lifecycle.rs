@@ -10,7 +10,7 @@ use super::builders::MapIndexMmapBuilder;
 use super::immutable_map_index::ImmutableMapIndex;
 use super::key::MapIndexKey;
 use super::mutable_map_index::MutableMapIndex;
-use super::universal_map_index::UniversalMapIndex;
+use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 
@@ -19,7 +19,7 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(
+    pub fn new_immutable(
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
@@ -31,27 +31,27 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(universal_index) =
-            UniversalMapIndex::open(&MmapFs, path, effective_is_on_disk, deleted_points)?
+        let Some(on_disk_index) =
+            OnDiskMapIndex::open(&MmapFs, path, !effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };
 
         let index = if effective_is_on_disk {
-            MapIndex::OnDisk(Box::new(universal_index))
+            MapIndex::OnDisk(on_disk_index)
         } else {
             // Load into RAM, use mmap as backing storage
-            MapIndex::Immutable(ImmutableMapIndex::open_mmap(universal_index)?)
+            MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
         };
         Ok(Some(index))
     }
 
-    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    pub fn new_mutable(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let index = MutableMapIndex::open_gridstore(dir, create_if_missing)?;
         Ok(index.map(MapIndex::Mutable))
     }
 
-    pub fn builder_mmap(
+    pub fn builder_immutable(
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
@@ -65,7 +65,7 @@ where
         }
     }
 
-    pub fn builder_gridstore(dir: PathBuf) -> super::builders::MapIndexGridstoreBuilder<N> {
+    pub fn builder_mutable(dir: PathBuf) -> super::builders::MapIndexGridstoreBuilder<N> {
         super::builders::MapIndexGridstoreBuilder::new(dir)
     }
 

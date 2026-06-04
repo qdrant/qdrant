@@ -27,7 +27,7 @@ pub use storage::NumericIndexInner;
 pub use storage::read_only::ReadOnlyNumericIndexInner;
 
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 
 #[cfg(test)]
 mod tests;

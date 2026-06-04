@@ -15,7 +15,7 @@ use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 pub struct NumericIndexBuilder<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(

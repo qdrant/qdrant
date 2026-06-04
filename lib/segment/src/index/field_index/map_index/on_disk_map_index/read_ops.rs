@@ -12,19 +12,19 @@ use itertools::Itertools;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
-use super::UniversalMapIndex;
+use super::OnDiskMapIndex;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::stored_point_to_values::ValuesIter;
+use crate::index::field_index::on_disk_point_to_values::ValuesIter;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for UniversalMapIndex<N, S> {
+impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for OnDiskMapIndex<N, S> {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         // Measure self.deleted access.
         hw_counter
@@ -56,7 +56,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for Univer
     where
         N: 'a,
     {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         // We can account cost of reading `bool`, but it will likely be more expensive, than
         // actually reading bool itself.
@@ -98,7 +98,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for Univer
     }
 
     fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         // Since `value_to_points.get` doesn't actually force read from disk for all values
         // we need to only account for the overhead of hashmap lookup
@@ -125,7 +125,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for Univer
     }
 
     fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         match self.storage.value_to_points.unbatched_get(value) {
             Ok(Some(values)) => {
@@ -188,7 +188,8 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for Univer
         hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
+
         let deleted = &self.storage.deleted;
 
         self.storage.value_to_points.for_each_entry(|k, v| {
@@ -211,9 +212,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for Univer
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.is_on_disk,
-        }
+        StorageType::Mmap { is_on_disk: true }
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -225,14 +224,14 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for Univer
     }
 }
 
-impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> UniversalMapIndex<N, S> {
+impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> OnDiskMapIndex<N, S> {
     pub fn for_points_values(
         &self,
         mut points: impl Iterator<Item = PointOffsetType>,
         hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
     ) -> OperationResult<()> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
 
         points.try_for_each(|idx| {
             if self.storage.deleted.get_bit(idx as usize) != Some(false) {
@@ -245,14 +244,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> UniversalMapIndex<N, S> {
         })
     }
 
-    pub(super) fn make_conditioned_counter<'a>(
-        &self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> ConditionedCounter<'a> {
-        ConditionedCounter::new(self.is_on_disk, hw_counter)
-    }
-
     pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+        true
     }
 }
