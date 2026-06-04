@@ -755,3 +755,57 @@ fn test_store_versions_extends_without_set_len() {
     assert_eq!(versions[4], 0);
     assert_eq!(versions[5], 500);
 }
+
+/// Review finding (shadow durability): PR-B keeps a mutated point's active
+/// (visible) head alive and shadows it with the deferred head. But the
+/// persisted format is a single combined map, and `PointMappings::new` (the
+/// load entry point) cannot reconstruct a shadow — each ext is partitioned
+/// into exactly one track. The append-only change journal records only
+/// `Insert(ext, internal_id)`, so on reload the later deferred insert
+/// overwrites the active entry and the combined map collapses to
+/// deferred-only.
+///
+/// Result: after a plain mappings flush + reload (no WAL replay), the visible
+/// (active) head is gone — `VisibleOnly` readers, which saw the point live,
+/// no longer resolve it. This isolates the persistence layer; in the full
+/// system the active head is only restored if the deferred op is still in the
+/// WAL and gets re-applied, so durability hinges on flush-vs-WAL-truncate
+/// ordering.
+#[test]
+fn shadow_visible_head_survives_mapping_flush_reload() {
+    use common::types::DeferredBehavior;
+
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let cutoff = Some(5 as PointOffsetType);
+    let p7 = PointIdType::NumId(7);
+
+    {
+        let mut id_tracker = MutableIdTracker::open(segment_dir.path(), cutoff).unwrap();
+        // Active head below the cutoff — the visible version.
+        id_tracker.set_link(p7, 2).unwrap();
+        id_tracker.set_internal_version(2, 1).unwrap();
+        // Deferred head above the cutoff (in-place mutation) shadows the active.
+        id_tracker.set_link(p7, 9).unwrap();
+        id_tracker.set_internal_version(9, 2).unwrap();
+
+        // Live: VisibleOnly readers still resolve the point to its active head.
+        assert_eq!(
+            id_tracker.internal_id_with_behavior(p7, DeferredBehavior::VisibleOnly),
+            Some(2),
+            "live: the visible (active) head should resolve",
+        );
+
+        id_tracker.mapping_flusher()().unwrap();
+        id_tracker.versions_flusher()().unwrap();
+    }
+
+    // Reload from disk only (no WAL replay).
+    let id_tracker = MutableIdTracker::open(segment_dir.path(), cutoff).unwrap();
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::VisibleOnly),
+        Some(2),
+        "reload: the visible (active) head was lost — the single-map on-disk \
+         format collapsed the shadow to deferred-only, so VisibleOnly readers \
+         no longer see a point that was live before the flush",
+    );
+}
