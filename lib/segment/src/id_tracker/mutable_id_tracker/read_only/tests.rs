@@ -274,16 +274,19 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
     );
 
     // The writer's next flush truncates the torn bytes (the file is longer than its persisted size)
-    // and appends the real next entry. That truncation is a `set_len`, which on Windows fails while
-    // the read-only view keeps the mappings file mapped, so drop it first and reopen to observe the
-    // appended point.
-    drop(read_only);
-    insert(&mut mutable, 300.into(), 2, 12);
-    flush(&mutable);
+    // and appends the real next entry, and a later live-reload resumes from the preserved position
+    // and picks it up. That truncation is a `set_len`, which Windows forbids while the read-only
+    // view keeps the file mapped, so the resume check only runs off Windows.
+    #[cfg(not(target_os = "windows"))]
+    {
+        insert(&mut mutable, 300.into(), 2, 12);
+        flush(&mutable);
 
-    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
-    assert_eq!(read_only.internal_id(300.into()), Some(2));
-    assert_in_sync(&read_only, &mutable);
+        let result = read_only.live_reload().unwrap();
+        assert_eq!(result.inserted, vec![2]);
+        assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
+        assert_in_sync(&read_only, &mutable);
+    }
 }
 
 /// A partially-written trailing versions entry (a u64 that isn't fully flushed) must be ignored
@@ -344,14 +347,18 @@ fn test_live_reload_withholds_partially_written_version() {
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(read_only.internal_version(2), None);
 
-    // Completing the version flush truncates the torn bytes (a `set_len`) and writes the full entry.
-    // On Windows a file with an open memory mapping cannot be resized, so drop the read-only view
-    // first (it has the versions file mapped) and then reopen it to observe the completed version.
-    drop(read_only);
-    mutable.versions_flusher()().unwrap();
+    // Completing the version flush truncates the torn bytes (a `set_len`) and writes the full entry,
+    // and a later live-reload picks up the now-complete version. That truncation is a `set_len`,
+    // which Windows forbids while the read-only view keeps the versions file mapped, so this resume
+    // check only runs off Windows.
+    #[cfg(not(target_os = "windows"))]
+    {
+        mutable.versions_flusher()().unwrap();
 
-    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
-    assert_eq!(read_only.internal_id(300.into()), Some(2));
-    assert_eq!(read_only.internal_version(2), Some(12));
-    assert_in_sync(&read_only, &mutable);
+        let result = read_only.live_reload().unwrap();
+        assert_eq!(result.inserted, vec![2]);
+        assert_eq!(read_only.internal_id(300.into()), Some(2));
+        assert_eq!(read_only.internal_version(2), Some(12));
+        assert_in_sync(&read_only, &mutable);
+    }
 }

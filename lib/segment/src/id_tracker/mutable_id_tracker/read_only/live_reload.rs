@@ -77,6 +77,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             inserted.push(internal_id);
         }
 
+        // `extract_if` drains in arbitrary hash order; both result lists are sorted ascending.
+        inserted.sort_unstable();
         deleted.sort_unstable();
         deleted.dedup();
 
