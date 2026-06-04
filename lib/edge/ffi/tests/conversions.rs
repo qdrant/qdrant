@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
-use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, Match};
+use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, Match};
 use qdrant_edge_ffi::query::CountRequest;
 use qdrant_edge_ffi::types::{PointId, WithPayload};
 use qdrant_edge_ffi::EdgeShard;
@@ -68,6 +68,7 @@ fn bad_payload_key_in_field_condition_returns_error() {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         },
     };
@@ -84,6 +85,7 @@ fn valid_payload_key_in_field_condition_converts() {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         },
     };
@@ -143,6 +145,7 @@ fn field_with_match(m: Match) -> Condition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         },
     }
@@ -247,5 +250,92 @@ fn closed_shard_returns_shard_closed() {
     assert!(
         matches!(result.unwrap_err(), EdgeError::ShardClosed),
         "expected ShardClosed after unload"
+    );
+}
+
+// ── GeoPolygon filter ─────────────────────────────────────────────────────────
+
+/// A valid GeoPolygon FieldCondition (exterior with 4 points forming a closed
+/// ring) must convert successfully to the segment type.
+#[test]
+fn geo_polygon_field_condition_converts() {
+    let polygon = GeoPolygon {
+        exterior: GeoLineString {
+            points: vec![
+                GeoPoint { lon: 0.0, lat: 0.0 },
+                GeoPoint { lon: 0.0, lat: 1.0 },
+                GeoPoint { lon: 1.0, lat: 1.0 },
+                GeoPoint { lon: 0.0, lat: 0.0 },
+            ],
+        },
+        interiors: None,
+    };
+    let cond = Condition::Field {
+        condition: FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(polygon),
+            values_count: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_ok(), "expected Ok, got: {:?}", r.unwrap_err());
+}
+
+/// A polygon whose exterior contains an out-of-range coordinate must propagate
+/// the error from GeoPoint validation.
+#[test]
+fn geo_polygon_bad_coordinate_returns_error() {
+    let polygon = GeoPolygon {
+        exterior: GeoLineString {
+            points: vec![
+                GeoPoint { lon: 0.0, lat: 999.0 }, // lat out of range
+                GeoPoint { lon: 0.0, lat: 1.0 },
+                GeoPoint { lon: 1.0, lat: 1.0 },
+                GeoPoint { lon: 0.0, lat: 999.0 },
+            ],
+        },
+        interiors: None,
+    };
+    let cond = Condition::Field {
+        condition: FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(polygon),
+            values_count: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err(), "expected Err for out-of-range coordinate");
+}
+
+// ── Turbo4 datatype round-trip ────────────────────────────────────────────────
+
+/// VectorStorageDatatype::Turbo4 must round-trip through the segment type
+/// without loss.
+#[test]
+fn turbo4_datatype_round_trips() {
+    use qdrant_edge_ffi::config::VectorStorageDatatype;
+    use segment::types::VectorStorageDatatype as SegmentVectorStorageDatatype;
+
+    let ffi_turbo = VectorStorageDatatype::Turbo4;
+    let seg: SegmentVectorStorageDatatype = ffi_turbo.into();
+    assert!(
+        matches!(seg, SegmentVectorStorageDatatype::Turbo4),
+        "expected SegmentVectorStorageDatatype::Turbo4, got {:?}",
+        seg
+    );
+
+    let back: VectorStorageDatatype = seg.into();
+    assert!(
+        matches!(back, VectorStorageDatatype::Turbo4),
+        "expected VectorStorageDatatype::Turbo4 back, got {:?}",
+        back
     );
 }

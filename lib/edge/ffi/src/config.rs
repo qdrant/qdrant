@@ -76,6 +76,9 @@ pub enum VectorStorageDatatype {
     Float16,
     /// Unsigned 8-bit integers. Requires pre-quantized embeddings.
     Uint8,
+    /// Turbo quantization storage (read-only via config(); not configurable
+    /// through this SDK's quantization options yet).
+    Turbo4,
 }
 
 impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
@@ -84,6 +87,7 @@ impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
             VectorStorageDatatype::Float32 => SegmentVectorStorageDatatype::Float32,
             VectorStorageDatatype::Float16 => SegmentVectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8 => SegmentVectorStorageDatatype::Uint8,
+            VectorStorageDatatype::Turbo4 => SegmentVectorStorageDatatype::Turbo4,
         }
     }
 }
@@ -94,13 +98,7 @@ impl From<SegmentVectorStorageDatatype> for VectorStorageDatatype {
             SegmentVectorStorageDatatype::Float32 => VectorStorageDatatype::Float32,
             SegmentVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
             SegmentVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
-            // `Turbo4` is the TurboQuant datatype added to `edge` after this PR's base.
-            // Turbo quantization is intentionally outside the v1 FFI surface (see design
-            // §6), but a shard created by the engine with this datatype must still be
-            // readable via `config()`. Report it as its base storage width (`Uint8`)
-            // rather than panicking. TODO(Phase 5): expose Turbo properly or make this
-            // conversion fallible so the host learns the datatype isn't representable.
-            SegmentVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Uint8,
+            SegmentVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Turbo4,
         }
     }
 }

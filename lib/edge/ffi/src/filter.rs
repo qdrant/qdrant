@@ -2,7 +2,8 @@ use ahash::AHashSet;
 use segment::types::{
     AnyVariants, Condition as SegmentCondition, FieldCondition as SegmentFieldCondition,
     Filter as SegmentFilter, GeoPoint as SegmentGeoPoint,
-    GeoBoundingBox as SegmentGeoBoundingBox, GeoRadius as SegmentGeoRadius,
+    GeoBoundingBox as SegmentGeoBoundingBox, GeoLineString as SegmentGeoLineString,
+    GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius,
     HasIdCondition, HasVectorCondition, IsEmptyCondition, IsNullCondition,
     Match as SegmentMatch, MatchAny, MatchExcept, MatchText, MatchValue,
     PayloadField, PointIdType, Range, RangeInterface,
@@ -88,6 +89,61 @@ impl TryFrom<GeoRadius> for SegmentGeoRadius {
             center: SegmentGeoPoint::try_from(r.center)?,
             radius: ordered_float::OrderedFloat(r.radius),
         })
+    }
+}
+
+// ── GeoLineString ────────────────────────────────────────────────────────────
+
+/// A closed ring of geographic points. The first and last point must be equal
+/// and a ring needs at least 4 points (Qdrant validates this engine-side).
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct GeoLineString {
+    pub points: Vec<GeoPoint>,
+}
+
+impl TryFrom<GeoLineString> for SegmentGeoLineString {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(ls: GeoLineString) -> Result<Self, Self::Error> {
+        let points = ls
+            .points
+            .into_iter()
+            .map(SegmentGeoPoint::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(SegmentGeoLineString { points })
+    }
+}
+
+// ── GeoPolygon ───────────────────────────────────────────────────────────────
+
+/// A polygon geo filter: points inside `exterior` and outside every `interior`
+/// hole match.
+///
+/// Each line string must form a closed ring (first == last point) with at
+/// least 4 points; Qdrant enforces this at the engine level.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct GeoPolygon {
+    /// The exterior ring that bounds the surface.
+    pub exterior: GeoLineString,
+    /// Optional interior rings (holes). Points inside a hole are excluded.
+    pub interiors: Option<Vec<GeoLineString>>,
+}
+
+impl TryFrom<GeoPolygon> for SegmentGeoPolygon {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(p: GeoPolygon) -> Result<Self, Self::Error> {
+        let exterior = SegmentGeoLineString::try_from(p.exterior)?;
+        let interiors = p
+            .interiors
+            .map(|rings| {
+                rings
+                    .into_iter()
+                    .map(SegmentGeoLineString::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        Ok(SegmentGeoPolygon { exterior, interiors })
     }
 }
 
@@ -232,9 +288,9 @@ impl From<ValuesCount> for SegmentValuesCount {
 
 /// A filter condition applied to a single payload field.
 ///
-/// Exactly one of `match`, `range`, `geo_bounding_box`, `geo_radius`, or
-/// `values_count` should be set; setting more than one is an error. The
-/// payload `key` uses JSON-path syntax for nested fields (e.g.
+/// Exactly one of `match`, `range`, `geo_bounding_box`, `geo_radius`,
+/// `geo_polygon`, or `values_count` should be set; setting more than one is
+/// an error. The payload `key` uses JSON-path syntax for nested fields (e.g.
 /// `"meta.location"`).
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct FieldCondition {
@@ -248,6 +304,8 @@ pub struct FieldCondition {
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Geographic radius containment.
     pub geo_radius: Option<GeoRadius>,
+    /// Geographic polygon containment.
+    pub geo_polygon: Option<GeoPolygon>,
     /// Cardinality filter over array-valued payloads.
     pub values_count: Option<ValuesCount>,
 }
@@ -265,6 +323,10 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
             .geo_radius
             .map(SegmentGeoRadius::try_from)
             .transpose()?;
+        let geo_polygon = c
+            .geo_polygon
+            .map(SegmentGeoPolygon::try_from)
+            .transpose()?;
         let r#match = c.r#match.map(SegmentMatch::try_from).transpose()?;
         Ok(SegmentFieldCondition {
             key,
@@ -279,7 +341,7 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
             }),
             geo_bounding_box,
             geo_radius,
-            geo_polygon: None,
+            geo_polygon,
             values_count: c.values_count.map(SegmentValuesCount::from),
             is_empty: None,
             is_null: None,
