@@ -4,6 +4,7 @@ use gridstore::GridstoreReader;
 use super::inner::MutableFullTextIndexInner;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart to [`super::MutableFullTextIndex`].
