@@ -153,6 +153,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use ahash::AHashMap;
 
     use super::*;
@@ -183,7 +185,7 @@ mod tests {
         let err = inner
             .schedule(&runtime, 999, async { Ok(avec(&[0])) })
             .unwrap_err();
-        assert!(matches!(err, UniversalIoError::QueueIsFull));
+        assert_matches!(err, UniversalIoError::QueueIsFull);
     }
 
     #[test]
@@ -237,7 +239,7 @@ mod tests {
             })
             .expect("schedule");
         let err = inner.wait().unwrap_err();
-        assert!(matches!(err, UniversalIoError::TaskPanicked(msg) if msg == "boom"));
+        assert_matches!(err, UniversalIoError::TaskPanicked(msg) if msg == "boom");
     }
 
     /// Two distinct runtimes feed reply responses into one pipeline; both

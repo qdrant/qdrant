@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -106,11 +107,11 @@ fn test_byte_storage_hnsw(
             .vector_storage
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
-        assert!(matches!(
+        assert_matches!(
             raw_storage,
             &VectorStorageEnum::DenseAppendableMemmapByte(_)
                 | &VectorStorageEnum::DenseAppendableMemmapHalf(_),
-        ));
+        );
     }
 
     for n in 0..num_vectors {

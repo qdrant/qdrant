@@ -207,6 +207,8 @@ impl fmt::Display for PointsSelectorValidationError {
 mod tests {
     #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
+    use std::assert_matches;
+
     use segment::types::{Payload, PayloadContainer};
     use serde_json::Value;
 
@@ -276,7 +278,7 @@ mod tests {
                     .next()
                     .cloned();
 
-                assert!(matches!(payload_type_json, Some(Value::Object(_))))
+                assert_matches!(payload_type_json, Some(Value::Object(_)))
             }
             _ => panic!("Wrong operation"),
         }

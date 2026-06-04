@@ -4136,6 +4136,8 @@ pub(crate) mod test_utils {
 mod tests {
     #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
+    use std::assert_matches;
+
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json;
@@ -4244,17 +4246,17 @@ mod tests {
         // IsEmptyCondition (no "key" field at top level, uses "is_empty" instead)
         let is_empty_json = r#"{"is_empty": {"key": "optional_field"}}"#;
         let condition: Condition = serde_json::from_str(is_empty_json).unwrap();
-        assert!(matches!(condition, Condition::IsEmpty(_)));
+        assert_matches!(condition, Condition::IsEmpty(_));
 
         // HasIdCondition
         let has_id_json = r#"{"has_id": [1, 2, 3]}"#;
         let condition: Condition = serde_json::from_str(has_id_json).unwrap();
-        assert!(matches!(condition, Condition::HasId(_)));
+        assert_matches!(condition, Condition::HasId(_));
 
         // Nested Filter
         let nested_json = r#"{"nested": {"key": "items", "filter": {"must": []}}}"#;
         let condition: Condition = serde_json::from_str(nested_json).unwrap();
-        assert!(matches!(condition, Condition::Nested(_)));
+        assert_matches!(condition, Condition::Nested(_));
     }
 
     #[test]
