@@ -61,7 +61,11 @@ fi
 
 if command -v swift-format >/dev/null 2>&1; then
     echo "==> Running swift-format..."
-    swift-format --in-place "$SWIFT_FILE"
+    # Cosmetic only — never fail the build on it. A non-Apple `swift-format` may
+    # be first in PATH (e.g. Chromium's depot_tools variant) and exit non-zero;
+    # the generated bindings are already correct without formatting.
+    swift-format --in-place "$SWIFT_FILE" || \
+        echo "==> swift-format failed (non-fatal); leaving bindings unformatted." >&2
 else
     echo "==> swift-format not found; skipping format pass."
 fi
