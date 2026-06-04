@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
-
+use common::mmap::Advice::Normal;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound, OpenOptions, Populate, UniversalRead};
+use common::universal_io::{OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs};
+use std::path::{Path, PathBuf};
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -32,18 +32,15 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let mappings_path = mappings_path(&segment_path);
         let versions_path = versions_path(&segment_path);
 
-        let mappings_file = open_read_only::<S>(fs, &mappings_path)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Cannot open read-only appendable ID tracker, mappings file is missing: {}",
-                mappings_path.display(),
-            ))
-        })?;
-        let versions_file = open_read_only::<S>(fs, &versions_path)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Cannot open read-only appendable ID tracker, versions file is missing: {}",
-                versions_path.display(),
-            ))
-        })?;
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Normal),
+        };
+
+        let mappings_file = fs.open(mappings_path, options, Default::default())?;
+        let versions_file = fs.open(versions_path, options, Default::default())?;
 
         let mut tracker = Self {
             segment_path,
@@ -70,20 +67,4 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         Ok(tracker)
     }
-}
-
-/// Open a file for reading, returning [`None`] if it does not exist yet.
-pub(super) fn open_read_only<S: UniversalRead>(
-    fs: &S::Fs,
-    path: &Path,
-) -> OperationResult<Option<S>> {
-    use common::universal_io::UniversalReadFs;
-
-    let options = OpenOptions {
-        writeable: false,
-        need_sequential: false,
-        populate: Populate::No,
-        advice: AdviceSetting::Global,
-    };
-    Ok(fs.open(path, options, Default::default()).ok_not_found()?)
 }
