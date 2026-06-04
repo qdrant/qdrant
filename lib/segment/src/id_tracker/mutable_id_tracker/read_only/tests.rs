@@ -273,14 +273,16 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
         "must not consume the partial trailing entry",
     );
 
-    // The writer's next flush truncates the torn bytes (file is longer than its persisted size)
-    // and appends the real next entry. The read-only view picks it up from the proper position.
+    // The writer's next flush truncates the torn bytes (the file is longer than its persisted size)
+    // and appends the real next entry. That truncation is a `set_len`, which on Windows fails while
+    // the read-only view keeps the mappings file mapped, so drop it first and reopen to observe the
+    // appended point.
+    drop(read_only);
     insert(&mut mutable, 300.into(), 2, 12);
     flush(&mutable);
 
-    let result = read_only.live_reload().unwrap();
-    assert_eq!(result.inserted, vec![2]);
-    assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(read_only.internal_id(300.into()), Some(2));
     assert_in_sync(&read_only, &mutable);
 }
 
