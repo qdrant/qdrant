@@ -757,7 +757,8 @@ fn test_store_versions_extends_without_set_len() {
 }
 
 /// Review finding (shadow durability): PR-B keeps a mutated point's active
-/// (visible) head alive and shadows it with the deferred head. But the
+/// (visible) head alive and shadows it with the deferred head, so a
+/// deferred-mutated point stays visible to `VisibleOnly` readers. But the
 /// persisted format is a single combined map, and `PointMappings::new` (the
 /// load entry point) cannot reconstruct a shadow — each ext is partitioned
 /// into exactly one track. The append-only change journal records only
@@ -765,12 +766,16 @@ fn test_store_versions_extends_without_set_len() {
 /// overwrites the active entry and the combined map collapses to
 /// deferred-only.
 ///
-/// Result: after a plain mappings flush + reload (no WAL replay), the visible
-/// (active) head is gone — `VisibleOnly` readers, which saw the point live,
-/// no longer resolve it. This isolates the persistence layer; in the full
-/// system the active head is only restored if the deferred op is still in the
-/// WAL and gets re-applied, so durability hinges on flush-vs-WAL-truncate
-/// ordering.
+/// This is a live-vs-reload divergence the PR introduces: on `dev` a deferred
+/// write tombstones the active, so the point is `None` for `VisibleOnly` both
+/// live and after reload (consistent). Here it is `Some(2)` live but `None`
+/// after a plain mappings flush + reload. The reload state is also *torn*: the
+/// active slot survives as a live orphan in the inverse map (so a `VisibleOnly`
+/// scroll still surfaces the stale copy), while by-id resolution is broken.
+///
+/// The test isolates the persistence layer (no WAL replay); in the full system
+/// the active head is only restored if the deferred op is still in the WAL and
+/// gets re-applied, so durability hinges on flush-vs-WAL-truncate ordering.
 #[test]
 fn shadow_visible_head_survives_mapping_flush_reload() {
     use common::types::DeferredBehavior;
@@ -801,11 +806,29 @@ fn shadow_visible_head_survives_mapping_flush_reload() {
 
     // Reload from disk only (no WAL replay).
     let id_tracker = MutableIdTracker::open(segment_dir.path(), cutoff).unwrap();
+
+    // The mapping collapsed to deferred-only: the combined map kept only the
+    // last-written head (9), so a plain lookup resolves the deferred slot.
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::WithDeferred),
+        Some(9)
+    );
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::WithDeferred),
+        Some(9),
+    );
+    // Torn state: the active slot survived as a live orphan in the inverse map
+    // (a VisibleOnly scroll would still surface this stale copy)...
+    assert_eq!(id_tracker.external_id(2), Some(p7));
+    assert!(!id_tracker.is_deleted_point(2));
+
+    // ...but the active forward entry is gone, so by-id VisibleOnly resolution
+    // that returned Some(2) live now returns None. The PR-B visible head did
+    // not survive the flush+reload — a live-vs-reload divergence.
     assert_eq!(
         id_tracker.internal_id_with_behavior(p7, DeferredBehavior::VisibleOnly),
         Some(2),
         "reload: the visible (active) head was lost — the single-map on-disk \
-         format collapsed the shadow to deferred-only, so VisibleOnly readers \
-         no longer see a point that was live before the flush",
+         format collapsed the shadow to deferred-only",
     );
 }
