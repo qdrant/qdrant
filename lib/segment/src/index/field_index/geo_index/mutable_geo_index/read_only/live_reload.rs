@@ -28,13 +28,10 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoMapIndex<S> {
 
         self.storage
             .view()
-            .for_each_in_batch::<Random, _, OperationError>(
-                new_points,
-                |idx, maybe_values: Option<Vec<RawGeoPoint>>| {
-                    let Some(values) = maybe_values else {
-                        return Ok(());
-                    };
-                    let point_offset = new_points[idx];
+            .read_values::<Random, _, OperationError>(
+                new_points.iter().copied().enumerate(),
+                |_, point_offset, maybe_values: Option<Vec<RawGeoPoint>>| {
+                    let values = maybe_values.unwrap_or_default();
                     in_memory_index.ingest(point_offset, values)?;
                     Ok(())
                 },
