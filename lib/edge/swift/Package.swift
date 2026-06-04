@@ -30,5 +30,10 @@ let package = Package(
             name: "qdrant_edge_ffiFFI",
             path: "out/QdrantEdge.xcframework"
         ),
+        .testTarget(
+            name: "QdrantEdgeTests",
+            dependencies: ["QdrantEdge"],
+            path: "Tests/QdrantEdgeTests"
+        ),
     ]
 )

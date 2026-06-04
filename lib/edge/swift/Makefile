@@ -57,6 +57,12 @@ run-example: build ## Build the XCFramework, then run the Swift example
 	# `build` prerequisite above.
 	@cd $(SCRIPT_DIR)example && swift run
 
+.PHONY: test
+test: build ## Build the XCFramework, then run the Swift package tests
+	# Tests/QdrantEdgeTests/ imports only QdrantEdge (not the raw FFI module),
+	# verifying that the public API surface is self-contained.
+	@cd $(SCRIPT_DIR) && swift test
+
 # ── Info ─────────────────────────────────────────────────────────────────────
 
 .PHONY: size
