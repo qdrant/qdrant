@@ -35,7 +35,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoMapIndex<S> {
                         return Ok(());
                     };
                     let point_offset = new_points[idx];
-                    in_memory_index.ingest_raw_points(point_offset, values)?;
+                    in_memory_index.ingest(point_offset, values)?;
                     Ok(())
                 },
                 hw_counter.payload_index_io_read_counter(),

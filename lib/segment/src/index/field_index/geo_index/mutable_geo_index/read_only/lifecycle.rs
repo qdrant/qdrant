@@ -39,7 +39,7 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoMapIndex<S> {
             .iter::<_, OperationError>(
                 storage.max_point_offset(),
                 |idx, values: Vec<RawGeoPoint>| {
-                    in_memory_index.ingest_raw_points(idx, values)?;
+                    in_memory_index.ingest(idx, values)?;
                     Ok(true)
                 },
                 // Same counter the writable `open_gridstore` load uses; this is
