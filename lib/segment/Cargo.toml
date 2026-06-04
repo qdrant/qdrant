@@ -127,6 +127,10 @@ name = "read_vectors"
 harness = false
 
 [[bench]]
+name = "read_payloads"
+harness = false
+
+[[bench]]
 name = "hnsw_build_graph"
 harness = false
 
