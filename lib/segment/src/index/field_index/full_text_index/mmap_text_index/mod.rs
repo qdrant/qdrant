@@ -9,6 +9,7 @@ use super::tokenizers::Tokenizer;
 use crate::data_types::index::TextIndexParams;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 pub struct MmapFullTextIndex<S: UniversalRead = MmapFile> {
