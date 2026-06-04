@@ -1,4 +1,5 @@
 mod lifecycle;
+mod live_reload;
 mod payload_storage_read;
 
 use common::universal_io::UniversalRead;
