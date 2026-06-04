@@ -1,16 +1,17 @@
-use std::cell::LazyCell;
 use std::hint::black_box;
-use std::ops::Deref as _;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
+#[cfg(target_os = "linux")]
+use common::universal_io::IoUringFile;
+use common::universal_io::{MmapFile, UniversalWrite};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::{SliceRandom, StdRng};
 use rand::{RngExt, SeedableRng};
 use segment::payload_json;
-use segment::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+use segment::payload_storage::mmap_payload_storage::{MmapPayloadStorage, storage_dir};
 use segment::payload_storage::{PayloadStorage, PayloadStorageRead};
 use segment::types::Payload;
 use tempfile::{Builder, TempDir};
@@ -37,16 +38,31 @@ fn bench(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("read-payloads");
 
-    {
-        let tmpdir = tmpdir();
-        let storage = LazyCell::new(|| storage(tmpdir.path()));
+    // Shared dir to reuse the same storage setup
+    let tmpdir = tmpdir();
 
+    {
         group.bench_function("mmap/sequential", |b| {
-            b.iter(|| read_payloads::<Sequential, _>(storage.deref(), &sequential_keys));
+            let storage = storage::<MmapFile>(tmpdir.path());
+            b.iter(|| read_payloads::<Sequential, _>(&storage, &sequential_keys));
         });
 
         group.bench_function("mmap/random", |b| {
-            b.iter(|| read_payloads::<Random, _>(storage.deref(), &random_keys));
+            let storage = storage::<MmapFile>(tmpdir.path());
+            b.iter(|| read_payloads::<Random, _>(&storage, &random_keys));
+        });
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        group.bench_function("io-uring/sequential", |b| {
+            let storage = storage::<IoUringFile>(tmpdir.path());
+            b.iter(|| read_payloads::<Sequential, _>(&storage, &sequential_keys));
+        });
+
+        group.bench_function("io-uring/random", |b| {
+            let storage = storage::<IoUringFile>(tmpdir.path());
+            b.iter(|| read_payloads::<Random, _>(&storage, &random_keys));
         });
     }
 
@@ -60,24 +76,31 @@ fn tmpdir() -> TempDir {
         .expect("tempdir created")
 }
 
-fn storage(path: &Path) -> MmapPayloadStorage {
-    let mut storage = MmapPayloadStorage::open_or_create(path.to_path_buf(), true)
-        .expect("mmap payload storage opened");
+fn storage<S>(path: &Path) -> MmapPayloadStorage<S>
+where
+    S: UniversalWrite + 'static,
+    S::Fs: Default,
+{
+    let storage_exists = storage_dir(path).exists();
+    let mut storage = MmapPayloadStorage::open_or_create(path.to_path_buf(), false)
+        .expect("payload storage opened");
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
-    let hw_counter = HardwareCounterCell::disposable();
+    if !storage_exists {
+        let mut rng = StdRng::seed_from_u64(RNG_SEED);
+        let hw_counter = HardwareCounterCell::disposable();
 
-    for point_id in 0..POINT_COUNT as PointOffsetType {
-        let payload = random_payload(&mut rng, point_id);
+        for point_id in 0..POINT_COUNT as PointOffsetType {
+            let payload = random_payload(&mut rng, point_id);
 
-        storage
-            .overwrite(point_id, &payload, &hw_counter)
-            .expect("payload inserted");
+            storage
+                .overwrite(point_id, &payload, &hw_counter)
+                .expect("payload inserted");
+        }
+
+        storage.flusher()().expect("storage flushed");
     }
 
-    storage.flusher()().expect("storage flushed");
     storage.populate().expect("storage populated");
-
     storage
 }
 
