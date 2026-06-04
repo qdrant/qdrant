@@ -88,7 +88,7 @@ final class QdrantEdgeTests: XCTestCase {
             XCTFail("First result id should be numId(1)")
         }
 
-        shard.close()
+        shard.unload()
     }
 
     // MARK: - testPersistenceAcrossReload
@@ -117,13 +117,13 @@ final class QdrantEdgeTests: XCTestCase {
             ])
             try shard.update(operation: upsertOp)
             try shard.flush()
-            shard.close()
+            shard.unload()
         }
 
         // Re-open the same path without supplying a config
         let reopened = try EdgeShard.load(path: shardPath, config: nil)
         let info = try reopened.info()
-        reopened.close()
+        reopened.unload()
 
         XCTAssertEqual(info.pointsCount, 2, "Persisted shard should contain exactly 2 points after reload")
     }
@@ -141,10 +141,11 @@ final class QdrantEdgeTests: XCTestCase {
                 error is EdgeError,
                 "Expected EdgeError, got \(type(of: error)): \(error)"
             )
-            if case let EdgeError.OperationError(message) = error {
-                XCTAssertFalse(message.isEmpty, "EdgeError.OperationError should carry a non-empty message")
+            // A malformed UUID is host-supplied bad input → InvalidArgument (C5).
+            if case let EdgeError.InvalidArgument(reason) = error {
+                XCTAssertFalse(reason.isEmpty, "EdgeError.InvalidArgument should carry a non-empty reason")
             } else {
-                XCTFail("Expected EdgeError.OperationError, got \(error)")
+                XCTFail("Expected EdgeError.InvalidArgument, got \(error)")
             }
         }
     }
