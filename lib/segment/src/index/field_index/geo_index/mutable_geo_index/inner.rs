@@ -10,7 +10,7 @@ use super::super::read_ops::GeoMapIndexRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::payload_config::StorageType;
-use crate::types::{GeoPoint, RawGeoPoint};
+use crate::types::GeoPoint;
 
 /// In-memory state shared by [`super::MutableGeoMapIndex`] and
 /// [`super::read_only::ReadOnlyAppendableGeoMapIndex`].
@@ -116,39 +116,37 @@ impl InMemoryGeoMapIndex {
         Ok(())
     }
 
+    /// Assign these geo points to the point offset.
     pub fn add_many_geo_points(
         &mut self,
         idx: PointOffsetType,
-        values: &[GeoPoint],
+        geo_points: Vec<GeoPoint>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        if values.is_empty() {
+        if geo_points.is_empty() {
             return Ok(());
         }
-
-        if self.point_to_values.len() <= idx as usize {
-            // That's a smart reallocation
-            self.point_to_values.resize_with(idx as usize + 1, Vec::new);
-        }
-
-        self.point_to_values[idx as usize] = values.to_vec();
-
-        let mut geo_hashes = vec![];
 
         let mut hw_cell_wb = hw_counter
             .payload_index_io_write_counter()
             .write_back_counter();
 
-        for added_point in values {
-            let added_geo_hash: GeoHash =
-                encode_max_precision(added_point.lon.0, added_point.lat.0).map_err(|e| {
+        let geo_hashes = geo_points
+            .iter()
+            .map(|geo_point| {
+                hw_cell_wb.incr_delta(size_of_val(geo_point));
+                encode_max_precision(geo_point.lon.0, geo_point.lat.0).map_err(|e| {
                     OperationError::service_error(format!("Malformed geo points: {e}"))
-                })?;
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-            hw_cell_wb.incr_delta(size_of_val(&added_geo_hash));
-
-            geo_hashes.push(added_geo_hash);
+        if self.point_to_values.len() <= idx as usize {
+            self.point_to_values.resize_with(idx as usize + 1, Vec::new);
         }
+
+        let num_geo_points = geo_points.len();
+        self.point_to_values[idx as usize] = geo_points;
 
         for &geo_hash in &geo_hashes {
             self.points_map.entry(geo_hash).or_default().insert(idx);
@@ -157,61 +155,11 @@ impl InMemoryGeoMapIndex {
         }
 
         hw_cell_wb.incr_delta(geo_hashes.len() * size_of::<PointOffsetType>());
-
         self.increment_hash_point_counts(&geo_hashes);
 
-        self.points_values_count += values.len();
+        self.points_values_count += num_geo_points;
         self.points_count += 1;
-        self.max_values_per_point = self.max_values_per_point.max(values.len());
-        Ok(())
-    }
-
-    /// Ingest one point's persisted geo values (as read back from Gridstore)
-    /// into the in-memory maps.
-    ///
-    /// Shared by the writable [`MutableGeoMapIndex::open_gridstore`][1] load
-    /// path and the read-only [`ReadOnlyAppendableGeoMapIndex::open`][2]: both
-    /// iterate their backend (`Gridstore` / `GridstoreReader`) and feed each
-    /// stored `(idx, Vec<RawGeoPoint>)` here, so the geohash-bucket
-    /// reconstruction lives in exactly one place.
-    ///
-    /// [1]: super::MutableGeoMapIndex::open_gridstore
-    /// [2]: super::read_only::ReadOnlyAppendableGeoMapIndex::open
-    pub fn ingest(
-        &mut self,
-        idx: PointOffsetType,
-        values: Vec<RawGeoPoint>,
-    ) -> OperationResult<()> {
-        let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
-        let geo_hashes = geo_points
-            .iter()
-            .map(|geo_point| {
-                encode_max_precision(geo_point.lon.0, geo_point.lat.0).map_err(|e| {
-                    OperationError::service_error(format!("Malformed geo points: {e}"))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        for geo_point in geo_points {
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize_with(idx as usize + 1, Vec::new);
-            }
-
-            if self.point_to_values[idx as usize].is_empty() {
-                self.points_count += 1;
-            }
-
-            self.point_to_values[idx as usize].push(geo_point);
-            self.points_values_count += 1;
-        }
-
-        self.max_values_per_point = self.max_values_per_point.max(geo_hashes.len());
-        self.increment_hash_point_counts(&geo_hashes);
-        for geo_hash in geo_hashes {
-            self.increment_hash_value_counts(geo_hash);
-            self.points_map.entry(geo_hash).or_default().insert(idx);
-        }
-
+        self.max_values_per_point = self.max_values_per_point.max(num_geo_points);
         Ok(())
     }
 
