@@ -62,6 +62,16 @@ for arg in "$@"; do
     esac
 done
 
+# Pin per-platform minimum deployment targets (must match Package.swift).
+# Without these, rustc defaults Apple targets to a very old OS (e.g. iOS 10.0)
+# while the C dependencies (zstd-sys etc.) are compiled against the current SDK,
+# producing link errors like "Undefined symbols: ___chkstk_darwin". cc-rs and
+# rustc both honour these *_DEPLOYMENT_TARGET env vars per target.
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-13.0}"
+export TVOS_DEPLOYMENT_TARGET="${TVOS_DEPLOYMENT_TARGET:-15.0}"
+export XROS_DEPLOYMENT_TARGET="${XROS_DEPLOYMENT_TARGET:-1.0}"
+
 # ── Targets ──────────────────────────────────────────────────────────────────
 
 # Tier 1/2 — build with stable toolchain
