@@ -4,9 +4,12 @@ use segment::json_path::JsonPath;
 /// The error type returned from fallible `EdgeShard` operations and
 /// `UpdateOperation` constructors.
 ///
-/// All error variants carry a human-readable `reason` describing the cause.
-/// On the Swift side this surfaces as a throwing error; on the Kotlin side as
-/// a checked exception.
+/// Three branchable variants let Swift/Kotlin hosts pattern-match on the error
+/// category:
+///
+/// - `ShardClosed` — the shard has been unloaded; reopen it via `load`.
+/// - `InvalidArgument` — host-supplied input was invalid; fix it and retry.
+/// - `OperationError` — any other engine failure (I/O, missing index, etc.).
 ///
 /// NOTE: the field is named `reason`, not `message`, on purpose. UniFFI
 /// generates the Kotlin error as a subclass of `kotlin.Exception` (→ `Throwable`),
@@ -19,22 +22,40 @@ use segment::json_path::JsonPath;
 /// ```swift
 /// do {
 ///     let shard = try EdgeShard.load(path: dataDir, config: nil)
+/// } catch EdgeError.shardClosed {
+///     print("Shard is closed — reopen it first")
+/// } catch let EdgeError.invalidArgument(reason) {
+///     print("Bad input: \(reason)")
 /// } catch let error as EdgeError {
-///     print("Failed to load shard: \(error)")
+///     print("Engine error: \(error)")
 /// }
 /// ```
 ///
 /// ```kotlin
 /// try {
 ///     val shard = EdgeShard.load(path = dataDir, config = null)
+/// } catch (e: EdgeException.ShardClosed) {
+///     println("Shard is closed — reopen it first")
+/// } catch (e: EdgeException.InvalidArgument) {
+///     println("Bad input: ${e.reason}")
 /// } catch (e: EdgeException.OperationException) {
-///     println("Failed to load shard: ${e.reason}")
+///     println("Engine error: ${e.reason}")
 /// }
 /// ```
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum EdgeError {
-    /// A recoverable operation failure (I/O error, invalid input, missing
-    /// configuration, corrupted segment, etc.).
+    /// The shard has been unloaded/disposed; reopen it via `load` to continue.
+    #[error("shard is closed")]
+    ShardClosed,
+
+    /// Host-supplied input was invalid (bad UUID, out-of-range coordinate,
+    /// malformed payload key/JSON, contradictory match filter, …). Fix the
+    /// input and retry; retrying unchanged will fail again.
+    #[error("invalid argument: {reason}")]
+    InvalidArgument { reason: String },
+
+    /// Any other failure from the engine (I/O, missing index, dimension
+    /// mismatch, resource exhaustion, internal error, …).
     #[error("{reason}")]
     OperationError { reason: String },
 }
@@ -48,11 +69,11 @@ impl From<OperationError> for EdgeError {
 }
 
 impl EdgeError {
-    /// Build an `OperationError` from a borrowed message — used by fallible
+    /// Build an `InvalidArgument` from a borrowed message — used by fallible
     /// FFI-boundary conversions for invalid host input (bad UUID, out-of-range
     /// coordinate, malformed payload key).
     pub(crate) fn invalid_argument(reason: impl Into<String>) -> Self {
-        EdgeError::OperationError {
+        EdgeError::InvalidArgument {
             reason: reason.into(),
         }
     }

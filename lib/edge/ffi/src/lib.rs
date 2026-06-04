@@ -100,13 +100,11 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard has already been
-    /// closed via [`EdgeShard::close`].
+    /// Returns an [`EdgeError::ShardClosed`] if the shard has already been
+    /// unloaded via [`EdgeShard::unload`].
     pub fn flush(&self) -> Result<()> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         shard.flush()?;
         Ok(())
     }
@@ -115,7 +113,7 @@ impl EdgeShard {
     /// pending data.
     ///
     /// After this call returns, any further operation on the shard fails with
-    /// [`EdgeError::OperationError`]. Calling `unload` on an already-unloaded
+    /// [`EdgeError::ShardClosed`]. Calling `unload` on an already-unloaded
     /// shard is a no-op.
     ///
     /// NOTE: this is named `unload`, not `close`, on purpose. UniFFI makes the
@@ -142,13 +140,12 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed, the
-    /// operation is malformed, or the underlying WAL write fails.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded,
+    /// or [`EdgeError::OperationError`] if the operation is malformed or the
+    /// underlying WAL write fails.
     pub fn update(&self, operation: Arc<UpdateOperation>) -> Result<()> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         shard.update(operation.inner.clone())?;
         Ok(())
     }
@@ -161,13 +158,12 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed, the
-    /// request is invalid, or a required payload index is missing.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded,
+    /// or [`EdgeError::OperationError`] if the request is invalid or a
+    /// required payload index is missing.
     pub fn query(&self, request: QueryRequest) -> Result<Vec<ScoredPoint>> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let points = shard.query(request.try_into()?)?;
         Ok(points.into_iter().map(ScoredPoint::from).collect())
     }
@@ -180,14 +176,13 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed, the
-    /// vector dimensionality does not match the configured vector field, or
-    /// the filter references a payload key without an index.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded,
+    /// or [`EdgeError::OperationError`] if the vector dimensionality does not
+    /// match the configured vector field or the filter references a payload key
+    /// without an index.
     pub fn search(&self, request: SearchRequest) -> Result<Vec<ScoredPoint>> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let points = shard.search(request.try_into()?)?;
         Ok(points.into_iter().map(ScoredPoint::from).collect())
     }
@@ -201,16 +196,14 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed or
-    /// the request is malformed.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded,
+    /// or [`EdgeError::OperationError`] if the request is malformed.
     pub fn scroll(
         &self,
         request: ScrollRequest,
     ) -> Result<ScrollResponse> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let (records, next_offset) = shard.scroll(request.try_into()?)?;
         Ok(ScrollResponse {
             records: records.into_iter().map(Record::from).collect(),
@@ -225,13 +218,12 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed or
-    /// the filter references a payload key without an index.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded,
+    /// or [`EdgeError::OperationError`] if the filter references a payload key
+    /// without an index.
     pub fn count(&self, request: CountRequest) -> Result<u64> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let count = shard.count(request.try_into()?)?;
         Ok(count as u64)
     }
@@ -243,13 +235,11 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed or
-    /// the payload key is not indexed.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded,
+    /// or [`EdgeError::OperationError`] if the payload key is not indexed.
     pub fn facet(&self, request: FacetRequest) -> Result<FacetResponse> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let response = shard.facet(request.try_into()?)?;
         let hits = response
             .hits
@@ -276,7 +266,7 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded.
     pub fn retrieve(
         &self,
         point_ids: Vec<PointId>,
@@ -284,9 +274,7 @@ impl EdgeShard {
         with_vector: Option<WithVector>,
     ) -> Result<Vec<Record>> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let ids: Vec<PointIdType> = point_ids
             .into_iter()
             .map(PointIdType::try_from)
@@ -307,12 +295,10 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded.
     pub fn info(&self) -> Result<ShardInfo> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let info = shard.info();
         Ok(ShardInfo {
             segments_count: info.segments_count as u64,
@@ -329,12 +315,10 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`] if the shard is closed.
+    /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded.
     pub fn config(&self) -> Result<EdgeConfig> {
         let guard = self.inner.lock();
-        let shard = guard.as_ref().ok_or(EdgeError::OperationError {
-            reason: "EdgeShard is closed".into(),
-        })?;
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         Ok(EdgeConfig::from(shard.config().plain_segment_config()))
     }
 }

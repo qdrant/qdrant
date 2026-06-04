@@ -1,5 +1,12 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
+use qdrant_edge_ffi::error::EdgeError;
 use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, Match};
+use qdrant_edge_ffi::query::CountRequest;
 use qdrant_edge_ffi::types::{PointId, WithPayload};
+use qdrant_edge_ffi::EdgeShard;
 use segment::types::{
     Condition as SegmentCondition, Filter as SegmentFilter, PointIdType,
     WithPayloadInterface,
@@ -193,4 +200,52 @@ fn with_payload_good_fields_ok() {
     };
     let r: Result<WithPayloadInterface, _> = wp.try_into();
     assert!(r.is_ok());
+}
+
+// ── C5: branchable EdgeError variants ────────────────────────────────────────
+
+/// A bad UUID at the FFI boundary must produce `EdgeError::InvalidArgument`,
+/// not the generic `OperationError`.
+#[test]
+fn bad_uuid_is_invalid_argument() {
+    let bad = PointId::Uuid { value: "nope".to_string() };
+    let r: Result<PointIdType, _> = bad.try_into();
+    assert!(r.is_err());
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+/// After unloading a shard, every operation must return `EdgeError::ShardClosed`.
+#[test]
+fn closed_shard_returns_shard_closed() {
+    let dir = tempfile::tempdir().expect("failed to create tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+
+    // Build a minimal one-field config (size 4, Dot distance).
+    let config = EdgeConfig {
+        vector_data: HashMap::from([(
+            "vec".to_string(),
+            VectorDataConfig {
+                size: 4,
+                distance: Distance::Dot,
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    };
+
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(config))
+        .expect("EdgeShard::load failed");
+
+    // Eagerly release all file handles.
+    shard.unload();
+
+    // Any operation on the unloaded shard must yield ShardClosed.
+    let result = shard.count(CountRequest { filter: None, exact: false });
+    assert!(result.is_err());
+    assert!(
+        matches!(result.unwrap_err(), EdgeError::ShardClosed),
+        "expected ShardClosed after unload"
+    );
 }

@@ -26,5 +26,8 @@ parking_lot = { workspace = true }
 serde_json = { workspace = true }
 ordered-float = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [build-dependencies]
 uniffi = { version = "0.31", features = ["build"] }
