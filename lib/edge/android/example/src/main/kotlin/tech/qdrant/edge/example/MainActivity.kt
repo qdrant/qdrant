@@ -248,14 +248,14 @@ class MainActivity : Activity() {
         // ── Close and reopen ────────────────────────────────────────────
         Log.i(TAG, "---- Close and reopen shard ----")
 
-        shard.close()
+        shard.unload()
         Log.i(TAG, "Shard closed.")
 
         val reopenedShard = EdgeShard.load(path = dataDir.absolutePath, config = null)
         val reopenedInfo = reopenedShard.info()
         Log.i(TAG, "Reopened shard - Segments: ${reopenedInfo.segmentsCount}, Points: ${reopenedInfo.pointsCount}, Indexed vectors: ${reopenedInfo.indexedVectorsCount}")
 
-        reopenedShard.close()
+        reopenedShard.unload()
         Log.i(TAG, "Done!")
     }
 

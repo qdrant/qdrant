@@ -292,12 +292,12 @@ print("Segments: \(info.segmentsCount), Points: \(info.pointsCount), Indexed vec
 
 print("\n---- Close and reopen shard ----")
 
-shard.close()
+shard.unload()
 print("Shard closed.")
 
 let reopenedShard = try EdgeShard.load(path: dataDir, config: nil)
 let reopenedInfo = try reopenedShard.info()
 print("Reopened shard - Segments: \(reopenedInfo.segmentsCount), Points: \(reopenedInfo.pointsCount), Indexed vectors: \(reopenedInfo.indexedVectorsCount)")
 
-reopenedShard.close()
+reopenedShard.unload()
 print("\nDone!")
