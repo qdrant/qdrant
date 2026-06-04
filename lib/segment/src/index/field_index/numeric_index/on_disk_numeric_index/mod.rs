@@ -9,6 +9,7 @@ use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::{OnDiskPointToValues, StoredValue};
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 pub(super) const PAIRS_PATH: &str = "data.bin";

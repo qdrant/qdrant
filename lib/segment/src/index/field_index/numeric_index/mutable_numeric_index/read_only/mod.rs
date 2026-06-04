@@ -6,6 +6,7 @@ use super::InMemoryNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart to [`super::MutableNumericIndex`].
