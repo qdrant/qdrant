@@ -8,7 +8,7 @@ use gridstore::{Blob, Gridstore};
 
 use super::super::MapIndexKey;
 use super::MutableMapIndex;
-use super::inner::MutableMapIndexInner;
+use super::inner::InMemoryMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -52,14 +52,14 @@ where
         };
 
         // Load in-memory index from Gridstore
-        let mut inner = MutableMapIndexInner::<N>::empty();
+        let mut in_memory_index = InMemoryMapIndex::<N>::empty();
 
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .iter::<_, GridstoreError>(
                 |idx, values: Vec<_>| {
-                    inner.add_many_to_map(idx, values);
+                    in_memory_index.add_many_to_map(idx, values);
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -68,7 +68,7 @@ where
             .unwrap();
 
         Ok(Some(Self {
-            inner,
+            in_memory_index,
             storage: store,
         }))
     }
@@ -97,13 +97,13 @@ where
                 ))
             })?;
 
-        self.inner.add_many_to_map(idx, values);
+        self.in_memory_index.add_many_to_map(idx, values);
 
         Ok(())
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if !self.inner.remove_point(idx) {
+        if !self.in_memory_index.remove_point(idx) {
             return Ok(());
         }
 

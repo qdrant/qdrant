@@ -2,7 +2,7 @@ use common::universal_io::UniversalRead;
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::MapIndexKey;
-use super::inner::MutableMapIndexInner;
+use super::inner::InMemoryMapIndex;
 
 mod lifecycle;
 mod live_reload;
@@ -23,7 +23,7 @@ pub struct ReadOnlyAppendableMapIndex<N: MapIndexKey + ?Sized, S: UniversalRead>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub(super) inner: MutableMapIndexInner<N>,
+    pub(super) in_memory_index: InMemoryMapIndex<N>,
     /// Backing Gridstore reader, populated by [`Self::open`]. Held to keep the
     /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
     /// reads it lands with the parent dispatcher (it isn't part of the

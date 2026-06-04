@@ -1,6 +1,6 @@
 use gridstore::{Blob, Gridstore};
 
-use self::inner::MutableMapIndexInner;
+use self::inner::InMemoryMapIndex;
 use super::MapIndexKey;
 
 pub(super) mod inner;
@@ -12,6 +12,6 @@ pub struct MutableMapIndex<N: MapIndexKey + ?Sized>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub(super) inner: MutableMapIndexInner<N>,
+    pub(super) in_memory_index: InMemoryMapIndex<N>,
     pub(super) storage: Gridstore<Vec<<N as MapIndexKey>::Owned>>,
 }

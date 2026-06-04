@@ -25,10 +25,10 @@ where
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
 
-        let in_memory_storage = &mut self.inner;
+        let in_memory_index = &mut self.in_memory_index;
 
         for deleted_point in deleted_points {
-            in_memory_storage.remove_point(*deleted_point);
+            in_memory_index.remove_point(*deleted_point);
         }
 
         self.storage
@@ -36,10 +36,8 @@ where
             .read_values::<Random, _, GridstoreError>(
                 new_points.iter().copied().enumerate(),
                 |_, point_offset, maybe_values: Option<Vec<_>>| {
-                    in_memory_storage.remove_point(point_offset);
-
                     let values = maybe_values.unwrap_or_default();
-                    in_memory_storage.add_many_to_map(point_offset, values);
+                    in_memory_index.add_many_to_map(point_offset, values);
                     Ok(())
                 },
                 hw_counter.payload_index_io_read_counter(),

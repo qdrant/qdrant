@@ -17,7 +17,7 @@ use crate::index::payload_config::StorageType;
 /// Both wrappers add a different backing storage (`Gridstore` vs
 /// `GridstoreReader`); the in-memory layout that serves every
 /// [`MapIndexRead`] method is the same, so it lives here once.
-pub(in crate::index::field_index::map_index) struct MutableMapIndexInner<N: MapIndexKey + ?Sized>
+pub(in crate::index::field_index::map_index) struct InMemoryMapIndex<N: MapIndexKey + ?Sized>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -30,7 +30,7 @@ where
     pub(in crate::index::field_index::map_index) values_count: usize,
 }
 
-impl<N: MapIndexKey + ?Sized> MutableMapIndexInner<N>
+impl<N: MapIndexKey + ?Sized> InMemoryMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -44,6 +44,10 @@ where
     }
 
     pub fn add_many_to_map(&mut self, idx: u32, values: Vec<<N as MapIndexKey>::Owned>) {
+        if values.is_empty() {
+            return;
+        }
+
         self.values_count += values.len();
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize_with(idx as usize + 1, Vec::new)
@@ -99,7 +103,7 @@ where
     }
 }
 
-impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for MutableMapIndexInner<N>
+impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for InMemoryMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
