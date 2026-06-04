@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 use serde_json::Value;
 
@@ -138,6 +139,13 @@ pub trait PayloadIndexRead {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
+
+    fn read_payloads<P: AccessPattern, U>(
+        &self,
+        point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Payload) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 }
 
 /// Trait for payload index with mutating operations.

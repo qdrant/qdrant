@@ -27,8 +27,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::{
-    MultiVectorStorage, VectorOffset, VectorOffsetType, VectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -38,18 +37,24 @@ const DELETED_DIR_PATH: &str = "deleted";
 #[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct MultivectorMmapOffset {
-    offset: u32,
-    count: u32,
-    capacity: u32,
+    pub offset: u32,
+    pub count: u32,
+    pub capacity: u32,
 }
 
-impl VectorOffset for MultivectorMmapOffset {
-    fn offset(self) -> VectorOffsetType {
-        self.offset as _
-    }
-
-    fn multi_vector_count(self) -> usize {
-        self.count as _
+pub(crate) fn flattened_to_multi_vector<T: PrimitiveVectorElement>(
+    flattened: Cow<'_, [T]>,
+    dim: usize,
+) -> CowMultiVector<'_, T> {
+    match flattened {
+        Cow::Borrowed(flattened_vectors) => CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
+            flattened_vectors,
+            dim,
+        }),
+        Cow::Owned(flattened_vectors) => CowMultiVector::Owned(TypedMultiDenseVector {
+            flattened_vectors,
+            dim,
+        }),
     }
 }
 
@@ -70,22 +75,19 @@ where
     P: AccessPattern,
     S: UniversalRead,
 {
-    let mmap_offset = *offsets
-        .get::<P>(key as VectorOffsetType)?
-        .first()
-        .expect("mmap_offset must not be empty");
-    let flattened =
-        vectors.get_many::<P>(mmap_offset.offset(), mmap_offset.multi_vector_count())?;
-    Some(match flattened {
-        Cow::Borrowed(slice) => CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
-            flattened_vectors: slice,
-            dim: vectors.dim(),
-        }),
-        Cow::Owned(vec) => CowMultiVector::Owned(TypedMultiDenseVector {
-            flattened_vectors: vec,
-            dim: vectors.dim(),
-        }),
-    })
+    let &[multi_offset] = offsets.get::<P>(key as VectorOffsetType)?.as_ref() else {
+        unreachable!("multi-vector offsets are stored as vectors of length 1");
+    };
+
+    let MultivectorMmapOffset {
+        offset,
+        count,
+        capacity: _,
+    } = multi_offset;
+
+    let flattened = vectors.get_many::<P>(offset as _, count as _)?;
+
+    Some(flattened_to_multi_vector(flattened, vectors.dim()))
 }
 
 #[derive(Debug)]
@@ -100,7 +102,6 @@ pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     deleted_count: usize,
-    _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
@@ -142,7 +143,6 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
             distance: _,
             multi_vector_config: _,
             deleted_count: _,
-            _phantom,
         } = self;
 
         vectors.clear_cache()?;
@@ -174,32 +174,23 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
-        // Collect multi-vector offsets
-        let mut point_indexes = Vec::with_capacity(keys.len());
-        let mut offsets = Vec::with_capacity(keys.len());
+        let point_offsets = keys.iter().copied().enumerate();
 
-        for (point_index, offset) in self.offsets.iter(keys) {
-            // `PointOffsetType::multi_vector_count` is always 1, and `self.offsets` is `ChunkedVectors`
-            // with vector dimension set to 1, so we expect to get an `offset` "vector" of exactly 1 value
-            let &[offset] = offset.as_ref() else {
-                unreachable!();
-            };
+        let vectors = super::read_only::iter_vectors::<Sequential, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+        );
 
-            point_indexes.push(point_index);
-            offsets.push(offset);
+        for (index, flattened) in vectors {
+            let vector = TypedMultiDenseVectorRef::new(&flattened, self.vector_dim());
+            callback(index, vector)
         }
-
-        // Fetch multi-vectors
-        self.vectors
-            .for_each_in_batch(&offsets, |offset_index, vectors| {
-                let point_index = point_indexes[offset_index];
-                let vector = TypedMultiDenseVectorRef::new(vectors, self.vector_dim());
-
-                callback(point_index, vector);
-            });
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
+        // TODO: Implement based on `iter_vectors`!?
+
         (0..self.total_vector_count()).flat_map(move |key| {
             let mmap_offset = self
                 .offsets
@@ -250,6 +241,30 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector_opt::<P>(key).expect("vector not found")
+    }
+
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let point_offsets = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+
+        let vectors = super::read_only::iter_vectors::<P, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+        );
+
+        for ((user_data, point_offset), flattened) in vectors {
+            let vector = CowVector::MultiDense(T::into_float_multivector(
+                flattened_to_multi_vector(flattened, self.vectors.dim()),
+            ));
+
+            callback(user_data, point_offset, vector);
+        }
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -551,7 +566,6 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         distance,
         multi_vector_config,
         deleted_count,
-        _phantom: Default::default(),
     })
 }
 

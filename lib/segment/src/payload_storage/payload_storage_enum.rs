@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -71,6 +72,24 @@ impl PayloadStorageRead for PayloadStorageEnum {
                 s.payload_ref(point_offset, hw_counter)
             }
             PayloadStorageEnum::MmapPayloadStorage(s) => s.payload_ref(point_offset, hw_counter),
+        }
+    }
+
+    fn read_payloads<P: AccessPattern, U>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Payload) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
+            }
+
+            PayloadStorageEnum::MmapPayloadStorage(s) => {
+                s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
+            }
         }
     }
 

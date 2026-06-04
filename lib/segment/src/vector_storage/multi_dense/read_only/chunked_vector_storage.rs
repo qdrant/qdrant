@@ -9,7 +9,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
-    MultivectorMmapOffset, read_multi_vector,
+    MultivectorMmapOffset, flattened_to_multi_vector, read_multi_vector,
 };
 
 #[derive(Debug)]
@@ -46,6 +46,27 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector_opt::<P>(key).expect("vector not found")
+    }
+
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let point_offsets = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+
+        let vectors =
+            super::iter_vectors::<P, _, _, _>(&self.offsets, &self.vectors, point_offsets);
+
+        for ((user_data, point_offset), flattened) in vectors {
+            let vector = CowVector::MultiDense(T::into_float_multivector(
+                flattened_to_multi_vector(flattened, self.vectors.dim()),
+            ));
+
+            callback(user_data, point_offset, vector);
+        }
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

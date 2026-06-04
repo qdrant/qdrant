@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -53,6 +54,20 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
                 return Ok(());
             }
         }
+        Ok(())
+    }
+
+    fn read_payloads<P: AccessPattern, U>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Payload) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        for (user_data, point_offset) in point_offsets {
+            let payload = self.get(point_offset, hw_counter)?;
+            callback(user_data, payload)?;
+        }
+
         Ok(())
     }
 
