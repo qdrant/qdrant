@@ -106,6 +106,8 @@ impl CollectionUpdateOperations {
     /// points with it. Stripping the dead names lets the rest of the operation apply, matching
     /// the live outcome (the point survives, just without the deleted vector).
     ///
+    /// This does not touch `VectorNameOperation` responsible for creating/deleting a named vector.
+    ///
     /// Only affects the named-vector variants; the default (unnamed) vector is left untouched.
     pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
         match self {
