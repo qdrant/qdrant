@@ -36,9 +36,7 @@ where
             .read_values::<Random, _, GridstoreError>(
                 new_points.iter().copied().enumerate(),
                 |_, point_offset, maybe_values: Option<Vec<_>>| {
-                    let Some(values) = maybe_values else {
-                        return Ok(());
-                    };
+                    let values = maybe_values.unwrap_or_default();
                     for value in values {
                         in_memory_storage.ingest(point_offset, value);
                     }

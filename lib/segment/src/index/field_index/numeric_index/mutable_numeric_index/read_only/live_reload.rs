@@ -35,11 +35,10 @@ where
 
         self.storage
             .view()
-            .for_each_in_batch::<Random, _, GridstoreError>(
-                new_points,
-                |idx, maybe_values: Option<Vec<T>>| {
+            .read_values::<Random, _, GridstoreError>(
+                new_points.iter().copied().enumerate(),
+                |_, point_offset, maybe_values: Option<Vec<T>>| {
                     let values = maybe_values.unwrap_or_default();
-                    let point_offset = new_points[idx];
                     in_memory_index.remove_point(point_offset);
                     in_memory_index.add_many_to_list(point_offset, values);
                     Ok(())
