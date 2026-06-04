@@ -42,7 +42,9 @@ where
                         return Ok(());
                     };
                     let point_offset = new_points[idx];
-                    in_memory_index.add_many_to_list(point_offset, values);
+                    for value in values {
+                        in_memory_index.ingest(point_offset, value);
+                    }
                     Ok(())
                 },
                 hw_counter.payload_index_io_read_counter(),

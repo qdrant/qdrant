@@ -5,12 +5,12 @@ use common::universal_io::UniversalRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
 use crate::index::field_index::numeric_index::Encodable;
-use crate::index::field_index::numeric_index::universal_numeric_index::UniversalNumericIndex;
+use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::on_disk_point_to_values::StoredValue;
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead> LiveReload
-    for UniversalNumericIndex<T, S>
+    for OnDiskNumericIndex<T, S>
 {
     type Fs = S::Fs;
 
