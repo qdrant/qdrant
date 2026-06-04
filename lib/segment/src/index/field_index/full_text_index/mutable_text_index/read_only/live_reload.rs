@@ -23,7 +23,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
 
-        // Pulled out before the `&mut self.inner` borrow taken below.
         let phrase_matching = self.inner.config.phrase_matching.unwrap_or_default();
         let inner = &mut self.inner;
 
