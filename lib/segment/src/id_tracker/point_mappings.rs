@@ -330,9 +330,14 @@ impl PointMappings {
     ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + '_ {
         // Merge active + deferred BTreeMap views into one sorted-by-key
         // stream, deduping the case where the same ext exists in both
-        // tracks. The dedup prefers the active entry because that's the
-        // visible head — keeping callers (which don't expect to see
-        // deferred-only writes) on the same offset as before.
+        // tracks. The dedup prefers the deferred entry — it's the latest
+        // mutation (the deferred head shadows the stale active slot), which
+        // keeps this merge consistent with the rest of the WithDeferred
+        // contract: `internal_id_with_behavior` and `iter_random_with_behavior`
+        // both surface the deferred head over the shadowed active. Consumers
+        // that use the returned internal id (e.g. payload-filter checks, the
+        // optimizer's version merge, HNSW old→new mapping) therefore see the
+        // latest copy; consumers that keep only the external id are unaffected.
         let merged_num = |start: Option<u64>| {
             let active = match start {
                 None => Either::Left(self.external_to_internal_num.iter()),
@@ -345,7 +350,9 @@ impl PointMappings {
             active
                 .merge_join_by(deferred, |a, d| a.0.cmp(d.0))
                 .map(|either| match either {
-                    itertools::EitherOrBoth::Both((k, v), _)
+                    // Both tracks hold this ext: take the deferred head (the
+                    // second operand) — it's the latest mutation.
+                    itertools::EitherOrBoth::Both(_, (k, v))
                     | itertools::EitherOrBoth::Left((k, v))
                     | itertools::EitherOrBoth::Right((k, v)) => (PointIdType::NumId(*k), *v),
                 })
@@ -362,7 +369,9 @@ impl PointMappings {
             active
                 .merge_join_by(deferred, |a, d| a.0.cmp(d.0))
                 .map(|either| match either {
-                    itertools::EitherOrBoth::Both((k, v), _)
+                    // Both tracks hold this ext: take the deferred head (the
+                    // second operand) — it's the latest mutation.
+                    itertools::EitherOrBoth::Both(_, (k, v))
                     | itertools::EitherOrBoth::Left((k, v))
                     | itertools::EitherOrBoth::Right((k, v)) => (PointIdType::Uuid(*k), *v),
                 })
