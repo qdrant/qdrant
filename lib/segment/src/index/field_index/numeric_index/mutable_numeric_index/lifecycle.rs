@@ -94,26 +94,6 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         self.point_to_values[idx as usize] = values;
     }
 
-    /// Apply one `(point_id, value)` pair from a backing-store iteration.
-    ///
-    /// Append-and-guard counterpart of [`Self::add_many_to_list`]: bumps
-    /// `points_count` only when the point was previously empty, so re-applying
-    /// values to an already-loaded point can't double-count it (mirrors the map
-    /// index's per-value `ingest`).
-    pub fn ingest(&mut self, idx: PointOffsetType, value: T) {
-        if self.point_to_values.len() <= idx as usize {
-            self.point_to_values.resize_with(idx as usize + 1, Vec::new);
-        }
-        if self.point_to_values[idx as usize].is_empty() {
-            self.points_count += 1;
-        }
-        self.point_to_values[idx as usize].push(value);
-        self.max_values_per_point = self
-            .max_values_per_point
-            .max(self.point_to_values[idx as usize].len());
-        Self::add_to_map(&mut self.map, &mut self.histogram, Point::new(value, idx));
-    }
-
     pub fn remove_point(&mut self, idx: PointOffsetType) {
         if let Some(values) = self.point_to_values.get_mut(idx as usize) {
             if !values.is_empty() {

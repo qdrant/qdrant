@@ -38,13 +38,10 @@ where
             .for_each_in_batch::<Random, _, GridstoreError>(
                 new_points,
                 |idx, maybe_values: Option<Vec<T>>| {
-                    let Some(values) = maybe_values else {
-                        return Ok(());
-                    };
+                    let values = maybe_values.unwrap_or_default();
                     let point_offset = new_points[idx];
-                    for value in values {
-                        in_memory_index.ingest(point_offset, value);
-                    }
+                    in_memory_index.remove_point(point_offsets);
+                    in_memory_index.add_many_to_list(point_offset, values);
                     Ok(())
                 },
                 hw_counter.payload_index_io_read_counter(),
