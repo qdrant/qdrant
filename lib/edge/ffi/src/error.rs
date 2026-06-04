@@ -72,4 +72,26 @@ pub(crate) fn parse_json_path(key: &str) -> Result<JsonPath, EdgeError> {
     })
 }
 
+/// Clamp a host-supplied u64 count to usize, saturating instead of truncating.
+/// On 64-bit this is a no-op; on 32-bit it avoids silent wrap. Callers that
+/// want a hard upper bound should validate before calling.
+pub(crate) fn clamp_usize(v: u64) -> usize {
+    usize::try_from(v).unwrap_or(usize::MAX)
+}
+
 pub type Result<T, E = EdgeError> = std::result::Result<T, E>;
+
+#[cfg(test)]
+mod tests {
+    use super::clamp_usize;
+
+    #[test]
+    fn clamp_usize_small_value() {
+        assert_eq!(clamp_usize(5), 5);
+    }
+
+    #[test]
+    fn clamp_usize_max_saturates() {
+        assert_eq!(clamp_usize(u64::MAX), usize::MAX);
+    }
+}

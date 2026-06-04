@@ -1,6 +1,9 @@
-use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter};
-use qdrant_edge_ffi::types::PointId;
-use segment::types::{Condition as SegmentCondition, Filter as SegmentFilter, PointIdType};
+use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, Match};
+use qdrant_edge_ffi::types::{PointId, WithPayload};
+use segment::types::{
+    Condition as SegmentCondition, Filter as SegmentFilter, PointIdType,
+    WithPayloadInterface,
+};
 
 // ── PointId / UUID ────────────────────────────────────────────────────────────
 
@@ -121,4 +124,73 @@ fn filter_must_with_bad_key_returns_error() {
     };
     let r: Result<SegmentFilter, _> = filter.try_into();
     assert!(r.is_err());
+}
+
+// ── Match::Any / Match::Except fallibility (C1) ───────────────────────────────
+
+fn field_with_match(m: Match) -> Condition {
+    Condition::Field {
+        condition: FieldCondition {
+            key: "k".to_string(),
+            r#match: Some(m),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None,
+        },
+    }
+}
+
+#[test]
+fn match_any_both_none_returns_error() {
+    let cond = field_with_match(Match::Any { strings: None, integers: None });
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err());
+}
+
+#[test]
+fn match_any_both_set_returns_error() {
+    let cond = field_with_match(Match::Any {
+        strings: Some(vec!["a".to_string()]),
+        integers: Some(vec![1]),
+    });
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err());
+}
+
+#[test]
+fn match_any_strings_only_ok() {
+    let cond = field_with_match(Match::Any {
+        strings: Some(vec!["hello".to_string()]),
+        integers: None,
+    });
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_ok());
+}
+
+#[test]
+fn match_except_neither_returns_error() {
+    let cond = field_with_match(Match::Except { strings: None, integers: None });
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err());
+}
+
+// ── WithPayload::Fields bad key (I2) ─────────────────────────────────────────
+
+#[test]
+fn with_payload_bad_field_returns_error() {
+    let wp = WithPayload::Fields {
+        fields: vec!["valid_key".to_string(), "bad key with spaces".to_string()],
+    };
+    let r: Result<WithPayloadInterface, _> = wp.try_into();
+    assert!(r.is_err());
+}
+
+#[test]
+fn with_payload_good_fields_ok() {
+    let wp = WithPayload::Fields {
+        fields: vec!["meta.author".to_string(), "title".to_string()],
+    };
+    let r: Result<WithPayloadInterface, _> = wp.try_into();
+    assert!(r.is_ok());
 }

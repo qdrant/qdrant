@@ -40,7 +40,7 @@ pub struct SearchParams {
 impl From<SearchParams> for SegmentSearchParams {
     fn from(p: SearchParams) -> Self {
         SegmentSearchParams {
-            hnsw_ef: p.hnsw_ef.map(|v| v as usize),
+            hnsw_ef: p.hnsw_ef.map(crate::error::clamp_usize),
             exact: p.exact,
             quantization: None,
             indexed_only: p.indexed_only,
@@ -138,7 +138,7 @@ impl From<Fusion> for FusionInternal {
     fn from(f: Fusion) -> Self {
         match f {
             Fusion::Rrf { k } => FusionInternal::Rrf {
-                k: k as usize,
+                k: crate::error::clamp_usize(k),
                 weights: None,
             },
             Fusion::Dbsf => FusionInternal::Dbsf,
@@ -249,7 +249,7 @@ impl TryFrom<Prefetch> for ShardPrefetch {
             .transpose()?;
         Ok(ShardPrefetch {
             prefetches,
-            limit: p.limit as usize,
+            limit: crate::error::clamp_usize(p.limit),
             query,
             params: p.params.map(SegmentSearchParams::from),
             filter,
@@ -304,12 +304,13 @@ impl TryFrom<QueryRequest> for ShardQueryRequest {
             .transpose()?;
         Ok(ShardQueryRequest {
             prefetches,
-            limit: r.limit as usize,
-            offset: r.offset.unwrap_or(0) as usize,
+            limit: crate::error::clamp_usize(r.limit),
+            offset: crate::error::clamp_usize(r.offset.unwrap_or(0)),
             with_vector: r.with_vector.map(SegmentWithVector::from).unwrap_or_default(),
             with_payload: r
                 .with_payload
-                .map(WithPayloadInterface::from)
+                .map(WithPayloadInterface::try_from)
+                .transpose()?
                 .unwrap_or_default(),
             query,
             filter,
@@ -353,12 +354,15 @@ impl TryFrom<SearchRequest> for CoreSearchRequest {
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
         Ok(CoreSearchRequest {
             query: QueryEnum::from(r.query),
-            limit: r.limit as usize,
-            offset: r.offset.unwrap_or(0) as usize,
+            limit: crate::error::clamp_usize(r.limit),
+            offset: crate::error::clamp_usize(r.offset.unwrap_or(0)),
             filter,
             params: r.params.map(SegmentSearchParams::from),
             with_vector: r.with_vector.map(SegmentWithVector::from),
-            with_payload: r.with_payload.map(WithPayloadInterface::from),
+            with_payload: r
+                .with_payload
+                .map(WithPayloadInterface::try_from)
+                .transpose()?,
             score_threshold: r.score_threshold,
         })
     }
@@ -401,9 +405,12 @@ impl TryFrom<ScrollRequest> for ScrollRequestInternal {
             .transpose()?;
         Ok(ScrollRequestInternal {
             offset,
-            limit: r.limit.map(|v| v as usize),
+            limit: r.limit.map(crate::error::clamp_usize),
             filter,
-            with_payload: r.with_payload.map(WithPayloadInterface::from),
+            with_payload: r
+                .with_payload
+                .map(WithPayloadInterface::try_from)
+                .transpose()?,
             with_vector: r.with_vector.map(SegmentWithVector::from).unwrap_or_default(),
             order_by,
         })
@@ -461,7 +468,7 @@ impl TryFrom<FacetRequest> for FacetRequestInternal {
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
         Ok(FacetRequestInternal {
             key,
-            limit: r.limit as usize,
+            limit: crate::error::clamp_usize(r.limit),
             filter,
             exact: r.exact,
         })

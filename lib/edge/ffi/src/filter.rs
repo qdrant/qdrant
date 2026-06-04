@@ -152,32 +152,48 @@ pub enum Match {
     Except { strings: Option<Vec<String>>, integers: Option<Vec<i64>> },
 }
 
-impl From<Match> for SegmentMatch {
-    fn from(m: Match) -> Self {
+impl TryFrom<Match> for SegmentMatch {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(m: Match) -> Result<Self, Self::Error> {
         match m {
-            Match::Value { value } => SegmentMatch::Value(MatchValue {
+            Match::Value { value } => Ok(SegmentMatch::Value(MatchValue {
                 value: SegmentValueVariants::from(value),
-            }),
-            Match::Text { text } => SegmentMatch::Text(MatchText { text }),
+            })),
+            Match::Text { text } => Ok(SegmentMatch::Text(MatchText { text })),
             Match::Any { strings, integers } => {
-                let any = if let Some(strings) = strings {
-                    AnyVariants::Strings(strings.into_iter().collect())
-                } else if let Some(integers) = integers {
-                    AnyVariants::Integers(integers.into_iter().collect())
-                } else {
-                    AnyVariants::Strings(Default::default())
+                let any = match (strings, integers) {
+                    (None, None) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Any requires either `strings` or `integers`",
+                        ));
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Any: set either `strings` or `integers`, not both",
+                        ));
+                    }
+                    (Some(strings), None) => AnyVariants::Strings(strings.into_iter().collect()),
+                    (None, Some(integers)) => AnyVariants::Integers(integers.into_iter().collect()),
                 };
-                SegmentMatch::Any(MatchAny { any })
+                Ok(SegmentMatch::Any(MatchAny { any }))
             }
             Match::Except { strings, integers } => {
-                let except = if let Some(strings) = strings {
-                    AnyVariants::Strings(strings.into_iter().collect())
-                } else if let Some(integers) = integers {
-                    AnyVariants::Integers(integers.into_iter().collect())
-                } else {
-                    AnyVariants::Strings(Default::default())
+                let except = match (strings, integers) {
+                    (None, None) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Except requires either `strings` or `integers`",
+                        ));
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Except: set either `strings` or `integers`, not both",
+                        ));
+                    }
+                    (Some(strings), None) => AnyVariants::Strings(strings.into_iter().collect()),
+                    (None, Some(integers)) => AnyVariants::Integers(integers.into_iter().collect()),
                 };
-                SegmentMatch::Except(MatchExcept { except })
+                Ok(SegmentMatch::Except(MatchExcept { except }))
             }
         }
     }
@@ -204,10 +220,10 @@ pub struct ValuesCount {
 impl From<ValuesCount> for SegmentValuesCount {
     fn from(v: ValuesCount) -> Self {
         SegmentValuesCount {
-            lt: v.lt.map(|x| x as usize),
-            gt: v.gt.map(|x| x as usize),
-            gte: v.gte.map(|x| x as usize),
-            lte: v.lte.map(|x| x as usize),
+            lt: v.lt.map(crate::error::clamp_usize),
+            gt: v.gt.map(crate::error::clamp_usize),
+            gte: v.gte.map(crate::error::clamp_usize),
+            lte: v.lte.map(crate::error::clamp_usize),
         }
     }
 }
@@ -249,9 +265,10 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
             .geo_radius
             .map(SegmentGeoRadius::try_from)
             .transpose()?;
+        let r#match = c.r#match.map(SegmentMatch::try_from).transpose()?;
         Ok(SegmentFieldCondition {
             key,
-            r#match: c.r#match.map(SegmentMatch::from),
+            r#match,
             range: c.range.map(|r| {
                 RangeInterface::Float(Range {
                     gte: r.gte.map(ordered_float::OrderedFloat),

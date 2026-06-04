@@ -476,7 +476,7 @@ pub struct VectorDataConfig {
 impl From<VectorDataConfig> for SegmentVectorDataConfig {
     fn from(c: VectorDataConfig) -> Self {
         SegmentVectorDataConfig {
-            size: c.size as usize,
+            size: crate::error::clamp_usize(c.size),
             distance: SegmentDistance::from(c.distance),
             storage_type: VectorStorageType::InRamChunkedMmap,
             index: Indexes::Plain {},
@@ -582,7 +582,7 @@ impl From<SparseVectorDataConfig> for SegmentSparseVectorDataConfig {
         SegmentSparseVectorDataConfig {
             index: SparseIndexConfig {
                 index_type: SegmentSparseIndexType::MutableRam,
-                full_scan_threshold: c.full_scan_threshold.map(|v| v as usize),
+                full_scan_threshold: c.full_scan_threshold.map(crate::error::clamp_usize),
                 datatype: c.datatype.map(SegmentVectorStorageDatatype::from),
             },
             storage_type: SparseVectorStorageType::Mmap,

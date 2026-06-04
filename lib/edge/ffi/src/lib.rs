@@ -293,7 +293,7 @@ impl EdgeShard {
             .collect::<crate::error::Result<Vec<_>>>()?;
         let records = shard.retrieve(
             &ids,
-            with_payload.map(WithPayloadInterface::from),
+            with_payload.map(WithPayloadInterface::try_from).transpose()?,
             with_vector.map(SegmentWithVector::from),
         )?;
         Ok(records.into_iter().map(Record::from).collect())

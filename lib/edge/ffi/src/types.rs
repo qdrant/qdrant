@@ -219,12 +219,18 @@ pub enum WithPayload {
     Fields { fields: Vec<String> },
 }
 
-impl From<WithPayload> for WithPayloadInterface {
-    fn from(w: WithPayload) -> Self {
+impl TryFrom<WithPayload> for WithPayloadInterface {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(w: WithPayload) -> Result<Self, Self::Error> {
         match w {
-            WithPayload::Bool { enable } => WithPayloadInterface::Bool(enable),
+            WithPayload::Bool { enable } => Ok(WithPayloadInterface::Bool(enable)),
             WithPayload::Fields { fields } => {
-                WithPayloadInterface::Fields(fields.into_iter().filter_map(|f| f.parse().ok()).collect())
+                let parsed: Result<Vec<_>, _> = fields
+                    .iter()
+                    .map(|f| crate::error::parse_json_path(f))
+                    .collect();
+                Ok(WithPayloadInterface::Fields(parsed?))
             }
         }
     }
