@@ -48,6 +48,9 @@ where
             hw_counter.ref_payload_index_io_write_counter(),
         )?;
 
-        Ok(Some(Self { in_memory_index, storage }))
+        Ok(Some(Self {
+            in_memory_index,
+            storage,
+        }))
     }
 }

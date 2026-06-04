@@ -20,7 +20,8 @@ where
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
-        self.in_memory_index.check_values_any(idx, hw_counter, check_fn)
+        self.in_memory_index
+            .check_values_any(idx, hw_counter, check_fn)
     }
 
     fn get_values<'a>(
@@ -67,7 +68,8 @@ where
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(&N, usize) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.in_memory_index.for_each_count_per_value(deferred_internal_id, f)
+        self.in_memory_index
+            .for_each_count_per_value(deferred_internal_id, f)
     }
 
     fn for_each_value_map(
