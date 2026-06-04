@@ -98,13 +98,17 @@ for i in "${!TARGETS[@]}"; do
     target="${TARGETS[$i]}"
     abi="${ABIS[$i]}"
     echo "    Building for $target ($abi)..."
-    cargo ndk \
+    # Run from the workspace root so cargo-ndk locates the manifest via cwd.
+    # cargo-ndk 3.5.x loads the manifest relative to cwd BEFORE forwarding args
+    # to cargo, so a `--manifest-path` pointing elsewhere fails with
+    # "Failed loading manifest" when invoked from this directory. cd-ing in a
+    # subshell keeps the rest of the script's cwd intact.
+    ( cd "$WORKSPACE_ROOT" && cargo ndk \
         --target "$target" \
         --platform 24 \
         -- build --locked $CARGO_FLAGS \
         --lib \
-        --package "$PACKAGE_NAME" \
-        --manifest-path "$WORKSPACE_ROOT/Cargo.toml"
+        --package "$PACKAGE_NAME" )
 done
 
 # ── Copy .so files to jniLibs ───────────────────────────────────────────────
@@ -126,13 +130,22 @@ echo "==> Generating Kotlin bindings..."
 # Generate straight into the FFI module's Kotlin source tree — uniffi-bindgen
 # creates the `tech/qdrant/edge/ffi/` package subtree as set in uniffi.toml.
 mkdir -p "$KOTLIN_SRC_DIR"
-FIRST_TARGET="${TARGETS[0]}"
+
+# uniffi-bindgen --library extracts the interface by reading the library's
+# symbols ON THE HOST. An Android .so is a cross-architecture ELF that the
+# host's bindgen cannot parse — it silently emits zero files. The UniFFI
+# metadata is identical across targets (same Rust code), so we build a HOST
+# library and point bindgen at that. (Build is cheap: the workspace deps are
+# already compiled for the host from earlier steps.)
+echo "    Building host library for bindgen metadata..."
+HOST_LIB_NAME="libqdrant_edge_ffi.dylib"   # host is macOS here; cdylib → .dylib
+( cd "$WORKSPACE_ROOT" && cargo build --locked $CARGO_FLAGS --lib --package "$PACKAGE_NAME" )
 cargo run --locked \
     --package "qdrant-edge-ffi-bindgen" \
     --bin uniffi-bindgen \
     --manifest-path "$WORKSPACE_ROOT/Cargo.toml" \
     -- generate \
-    --library "$WORKSPACE_ROOT/target/$FIRST_TARGET/$PROFILE/$LIB_NAME" \
+    --library "$WORKSPACE_ROOT/target/$PROFILE/$HOST_LIB_NAME" \
     --language kotlin \
     --config "$WORKSPACE_ROOT/lib/edge/ffi/uniffi.toml" \
     --out-dir "$KOTLIN_SRC_DIR"
