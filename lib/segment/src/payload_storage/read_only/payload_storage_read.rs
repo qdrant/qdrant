@@ -1,5 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::{Random, Sequential};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -41,6 +41,21 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     ) -> OperationResult<OwnedPayloadRef<'_>> {
         let payload = self.get(point_offset, hw_counter)?;
         Ok(OwnedPayloadRef::from(payload))
+    }
+
+    fn read_payloads<P: AccessPattern, U>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Payload) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // TODO: `hw_counter`!?
+
+        self.storage
+            .read_values::<P, _, _>(point_offsets, |user_data, _, payload| {
+                let payload = payload.unwrap_or_default();
+                callback(user_data, payload)
+            })
     }
 
     fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
