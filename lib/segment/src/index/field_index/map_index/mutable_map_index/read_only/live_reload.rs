@@ -33,13 +33,12 @@ where
 
         self.storage
             .view()
-            .for_each_in_batch::<Random, _, GridstoreError>(
-                new_points,
-                |idx, maybe_values: Option<Vec<_>>| {
+            .read_values::<Random, _, GridstoreError>(
+                new_points.iter().copied().enumerate(),
+                |_, point_offset, maybe_values: Option<Vec<_>>| {
                     let Some(values) = maybe_values else {
                         return Ok(());
                     };
-                    let point_offset = new_points[idx];
                     for value in values {
                         in_memory_storage.ingest(point_offset, value);
                     }

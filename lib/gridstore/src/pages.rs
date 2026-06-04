@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
@@ -236,108 +237,113 @@ impl<S: UniversalRead> Pages<S> {
         Ok(Cow::Owned(unsafe { assume_init_vec(buffer) }))
     }
 
-    /// Batch-read values pointed to by `pointers`, invoking `callback` for each
-    /// input slot.
-    ///
-    /// The callback is invoked once per slot in `pointers`, receiving the slot
-    /// index and `Some(bytes)` for set pointers (in arbitrary order — io_uring
-    /// completions may interleave) or `None` for empty slots (after all data
-    /// arrives). The callback's error type `E` flows back through the function
-    /// so callers don't have to bridge it themselves.
-    pub fn read_batch_from_pages<P, F, E>(
+    /// Batch-read values and execute callback for each value
+    pub fn read_batch_from_pages<P, U, E>(
         &self,
-        pointers: Vec<Option<ValuePointer>>,
         config: &StorageConfig,
-        mut callback: F,
-    ) -> std::result::Result<(), E>
+        pointers: impl Iterator<Item = (U, ValuePointer)>,
+        mut callback: impl FnMut(U, Cow<'_, [u8]>) -> Result<(), E>,
+    ) -> Result<(), E>
     where
         P: AccessPattern,
-        F: FnMut(usize, Option<Cow<'_, [u8]>>) -> std::result::Result<(), E>,
         E: From<GridstoreError>,
     {
-        struct ReadMeta {
-            value_idx: usize,
-            buffer_offset: usize,
-            len_bytes: usize,
-            len_pages: usize,
+        struct Progress<U> {
+            buffer: Vec<MaybeUninit<u8>>,
+            pages_read: usize,
+            pages_len: usize,
+            user_data: U,
         }
 
-        let mut empty_values = Vec::new(); // expect (almost) no values
+        struct ReadMeta<U> {
+            value_idx: usize,
+            buffer_offset: usize,
+            user_data: Option<U>,
+        }
+
+        // Multi-page values need buffering, because chunks for the same value may arrive out-of-order
+        // or interleaved with chunks for other values.
+        //
+        // Single-page reads (common case) bypass this map entirely.
+        let pending = RefCell::new(AHashMap::new());
 
         let reads = pointers
-            .iter()
-            .copied()
             .enumerate()
-            .flat_map(|(value_idx, pointer_opt)| {
-                if pointer_opt.is_none() {
-                    empty_values.push(value_idx);
-                }
-                pointer_opt.into_iter().flat_map(move |pointer| {
-                    let len_bytes = pointer.length as usize;
-                    let len_pages = Self::value_len_pages(pointer, config);
+            .flat_map(|(value_idx, (user_data, pointer))| {
+                let ranges = Self::get_page_value_ranges(pointer, config);
 
-                    Self::get_page_value_ranges(pointer, config).map(
-                        move |(buffer_offset, page_idx, range)| {
-                            let meta = ReadMeta {
-                                value_idx,
-                                buffer_offset,
-                                len_bytes,
-                                len_pages,
-                            };
+                let bytes_len = pointer.length as usize;
+                let pages_len = Self::value_len_pages(pointer, config);
 
-                            let page = &self.pages[page_idx as usize];
-                            (meta, page, range)
+                let mut user_data = if pages_len <= 1 {
+                    Some(user_data)
+                } else {
+                    pending.borrow_mut().insert(
+                        value_idx,
+                        Progress {
+                            buffer: vec![MaybeUninit::uninit(); bytes_len],
+                            pages_read: 0,
+                            pages_len,
+                            user_data,
                         },
-                    )
+                    );
+
+                    None
+                };
+
+                ranges.map(move |(buffer_offset, page_idx, range)| {
+                    let meta = ReadMeta {
+                        value_idx,
+                        buffer_offset,
+                        user_data: user_data.take(),
+                    };
+
+                    let page = &self.pages[page_idx as usize];
+                    (meta, page, range)
                 })
             });
 
-        let chunks = S::read_multi_iter::<P, u8, _>(reads).map_err(GridstoreError::from)?;
-
-        // Multi-page values need buffering since chunks for the same value may
-        // arrive interleaved with chunks for other values. Single-page reads
-        // (the common case, including zero-length) bypass this map entirely.
-        let mut pending: AHashMap<usize, (Vec<MaybeUninit<u8>>, usize)> = AHashMap::new();
-
-        for result in chunks {
+        for result in S::read_multi_iter::<P, _, _>(reads).map_err(GridstoreError::from)? {
             let (meta, bytes) = result.map_err(GridstoreError::from)?;
 
             let ReadMeta {
                 value_idx,
                 buffer_offset,
-                len_bytes,
-                len_pages,
+                user_data,
             } = meta;
 
-            if len_pages <= 1 {
-                callback(value_idx, Some(bytes))?;
+            if let Some(user_data) = user_data {
+                debug_assert!(
+                    !pending.borrow().contains_key(&value_idx),
+                    "single-page value"
+                );
+
+                callback(user_data, bytes)?;
                 continue;
             }
 
-            let (value_buffer, pages_read) = pending
-                .entry(value_idx)
-                .or_insert_with(|| (vec![MaybeUninit::uninit(); len_bytes], 0));
+            let mut pending = pending.borrow_mut();
 
-            value_buffer[buffer_offset..buffer_offset + bytes.len()].write_copy_of_slice(&bytes);
+            let progress = pending.get_mut(&value_idx).expect("multi-page value");
+            progress.buffer[buffer_offset..buffer_offset + bytes.len()].write_copy_of_slice(&bytes);
+            progress.pages_read += 1;
 
-            *pages_read += 1;
+            if progress.pages_read >= progress.pages_len {
+                let progress = pending.remove(&value_idx).expect("multi-page value");
 
-            if *pages_read >= len_pages {
-                let (value_buffer, _) = pending.remove(&value_idx).expect("value exists");
-                let value_buffer = unsafe { assume_init_vec(value_buffer) };
+                let Progress {
+                    buffer, user_data, ..
+                } = progress;
 
-                callback(value_idx, Some(Cow::Owned(value_buffer)))?;
+                let buffer = unsafe { assume_init_vec(buffer) };
+                callback(user_data, Cow::Owned(buffer))?;
             }
         }
 
         debug_assert!(
-            pending.is_empty(),
-            "all valid pointers should have been delivered",
+            pending.borrow().is_empty(),
+            "all multi-page values have been read"
         );
-
-        for idx in empty_values {
-            callback(idx, None)?;
-        }
 
         Ok(())
     }
