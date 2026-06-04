@@ -646,6 +646,37 @@ pub struct EdgeConfig {
     pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
 }
 
+impl EdgeConfig {
+    /// Reject quantization strategies that the Edge engine cannot apply, so a
+    /// host gets a catchable error instead of silently-ignored config.
+    ///
+    /// Edge only ever creates *appendable* segments, and appendable segments
+    /// support only `Binary` quantization in v1 (`Scalar`/`Product` are dropped
+    /// by the engine's `for_appendable_segment` filter). Accepting them would
+    /// be a false capability: the host would set `Scalar`, get no error, and
+    /// silently store full-precision vectors. Reject them up front instead.
+    pub(crate) fn validate_quantization(&self) -> crate::error::Result<()> {
+        for (name, vd) in &self.vector_data {
+            match &vd.quantization_config {
+                Some(QuantizationConfig::Scalar { .. }) => {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: Scalar quantization is not supported on Qdrant Edge \
+                         (appendable segments support only Binary quantization in v1)"
+                    )));
+                }
+                Some(QuantizationConfig::Product { .. }) => {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: Product quantization is not supported on Qdrant Edge \
+                         (appendable segments support only Binary quantization in v1)"
+                    )));
+                }
+                Some(QuantizationConfig::Binary { .. }) | None => {}
+            }
+        }
+        Ok(())
+    }
+}
+
 impl From<EdgeConfig> for SegmentConfig {
     fn from(c: EdgeConfig) -> Self {
         SegmentConfig {

@@ -278,7 +278,11 @@ impl EdgeShard {
         })?;
 
         let mut rng = rand::make_rng::<StdRng>();
-        let mut random_point_ids = HashSet::with_capacity(limit);
+        // Grow on demand rather than pre-allocating `limit` buckets: an
+        // unbounded/huge `limit` would otherwise request an enormous allocation
+        // up front (a DoS / allocator-abort vector). The loop below is bounded
+        // by the actual point count, so capacity grows only to what's inserted.
+        let mut random_point_ids = HashSet::new();
 
         // Randomly sample points in two stages
         //

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
-use qdrant_edge_ffi::query::CountRequest;
+use qdrant_edge_ffi::query::{CountRequest, ScrollRequest};
 use qdrant_edge_ffi::types::{PointId, Vector, Point, WithPayload, WithVector};
 use qdrant_edge_ffi::update::UpdateOperation;
 use qdrant_edge_ffi::EdgeShard;
@@ -324,3 +324,113 @@ fn retrieve_missing_ids_omitted() {
 //   2. Call `shard.create_snapshot(snapshot_path)`.
 //   3. Call `unpack_snapshot(snapshot_path, target_path)`.
 //   4. `EdgeShard::load(target_path, None)` and assert `info().points_count`.
+
+// ── Test 7: unsupported_quantization_rejected_at_load ─────────────────────────
+
+/// C-Quant regression: Edge only creates appendable segments, which support
+/// only `Binary` quantization in v1. `Scalar`/`Product` are silently dropped by
+/// the engine's `for_appendable_segment` filter, so a host that asked for them
+/// would believe its vectors are quantized while they are stored full-precision.
+/// `EdgeConfig::validate_quantization` (called from `load`) must reject them as a
+/// catchable `InvalidArgument` instead of accepting a false capability.
+#[test]
+fn unsupported_quantization_rejected_at_load() {
+    use qdrant_edge_ffi::config::{QuantizationConfig, ScalarQuantizationParams, ScalarType};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+
+    // A config identical to `make_config()` but with Scalar quantization on the
+    // single "vec" field — the exact shape a host would write expecting Int8.
+    let config = EdgeConfig {
+        vector_data: HashMap::from([(
+            "vec".to_string(),
+            VectorDataConfig {
+                size: 4,
+                distance: Distance::Dot,
+                quantization_config: Some(QuantizationConfig::Scalar {
+                    config: ScalarQuantizationParams {
+                        r#type: ScalarType::Int8,
+                        quantile: Some(0.99),
+                        always_ram: Some(true),
+                    },
+                }),
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    };
+
+    // `.err().expect()` rather than `.expect_err()`: the Ok type is
+    // `Arc<EdgeShard>`, and `EdgeShard` is a UniFFI object that intentionally
+    // does not implement `Debug`, so `expect_err` (which formats the Ok value)
+    // does not compile here.
+    #[allow(clippy::err_expect)]
+    let err = EdgeShard::load(path, Some(config))
+        .err()
+        .expect("load with Scalar quantization should fail, not silently drop it");
+
+    // Branchable contract (C5): the host must be able to catch this as bad input.
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for unsupported quantization, got {err:?}"
+    );
+}
+
+// ── Test 8: oversized_limit_rejected_not_allocated ────────────────────────────
+
+/// C7 regression: a host-supplied `limit` flows into eager engine allocations
+/// (e.g. `HashSet::with_capacity(limit)` on the random-scroll path). An
+/// unbounded value like `u64::MAX` would request a multi-terabyte allocation and
+/// *abort* the process — an abort that `panic = "unwind"` cannot catch. The
+/// `bounded_limit` guard on the FFI boundary must reject it as a catchable
+/// `InvalidArgument` BEFORE it reaches the engine.
+///
+/// Reaching the assertion at all is the primary proof (no abort); the
+/// `InvalidArgument` check confirms it fails cleanly rather than some other way.
+#[test]
+fn oversized_limit_rejected_not_allocated() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let request = ScrollRequest {
+        offset: None,
+        limit: Some(u64::MAX),
+        filter: None,
+        with_payload: None,
+        with_vector: None,
+        order_by: None,
+    };
+
+    // `.err().expect()` rather than `.expect_err()`: see note in
+    // `unsupported_quantization_rejected_at_load` — the Ok type involves a
+    // non-`Debug` UniFFI object, so `expect_err` does not compile.
+    #[allow(clippy::err_expect)]
+    let err = shard
+        .scroll(request)
+        .err()
+        .expect("scroll with u64::MAX limit should be rejected, not allocated");
+
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for oversized limit, got {err:?}"
+    );
+
+    // The shard must still be usable after a rejected request — the guard fails
+    // the single call, it does not poison the shard.
+    let ok = shard
+        .scroll(ScrollRequest {
+            offset: None,
+            limit: Some(10),
+            filter: None,
+            with_payload: None,
+            with_vector: None,
+            order_by: None,
+        })
+        .expect("scroll with a sane limit should succeed after a rejected one");
+    assert_eq!(ok.records.len(), 3, "all three points should scroll back");
+}

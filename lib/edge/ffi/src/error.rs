@@ -94,17 +94,42 @@ pub(crate) fn parse_json_path(key: &str) -> Result<JsonPath, EdgeError> {
 }
 
 /// Clamp a host-supplied u64 count to usize, saturating instead of truncating.
-/// On 64-bit this is a no-op; on 32-bit it avoids silent wrap. Callers that
-/// want a hard upper bound should validate before calling.
+/// On 64-bit this is a no-op; on 32-bit it avoids silent wrap. Use this for
+/// tuning knobs where a huge value is merely slow (e.g. `hnsw_ef`,
+/// `full_scan_threshold`), NOT for counts that drive an eager allocation —
+/// those must go through [`bounded_limit`].
 pub(crate) fn clamp_usize(v: u64) -> usize {
     usize::try_from(v).unwrap_or(usize::MAX)
+}
+
+/// Hard upper bound for host-supplied result counts (`limit`/`offset`).
+///
+/// An unbounded `limit` flows into eager allocations in the engine (e.g.
+/// `HashSet::with_capacity(limit)` on the random-scroll path), so a value like
+/// `u64::MAX` would request a multi-terabyte allocation and abort the host
+/// process — an abort that `panic = "unwind"` cannot catch. On a single-user
+/// on-device database a request for more than a million results is a bug or an
+/// attack, so we reject it as a catchable error rather than let it allocate.
+pub(crate) const MAX_RESULT_COUNT: u64 = 1_048_576; // 1 Mi
+
+/// Validate and convert a host-supplied result count (`limit`/`offset`) to
+/// `usize`, rejecting values above [`MAX_RESULT_COUNT`] with `InvalidArgument`
+/// instead of letting them drive an unbounded allocation.
+pub(crate) fn bounded_limit(field: &str, v: u64) -> Result<usize> {
+    if v > MAX_RESULT_COUNT {
+        return Err(EdgeError::invalid_argument(format!(
+            "{field} ({v}) exceeds the maximum of {MAX_RESULT_COUNT}"
+        )));
+    }
+    // v <= MAX_RESULT_COUNT <= usize::MAX on every supported target.
+    Ok(v as usize)
 }
 
 pub type Result<T, E = EdgeError> = std::result::Result<T, E>;
 
 #[cfg(test)]
 mod tests {
-    use super::clamp_usize;
+    use super::{bounded_limit, clamp_usize, MAX_RESULT_COUNT};
 
     #[test]
     fn clamp_usize_small_value() {
@@ -114,5 +139,17 @@ mod tests {
     #[test]
     fn clamp_usize_max_saturates() {
         assert_eq!(clamp_usize(u64::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn bounded_limit_accepts_within_cap() {
+        assert_eq!(bounded_limit("limit", 100).unwrap(), 100);
+        assert_eq!(bounded_limit("limit", MAX_RESULT_COUNT).unwrap(), MAX_RESULT_COUNT as usize);
+    }
+
+    #[test]
+    fn bounded_limit_rejects_above_cap() {
+        assert!(bounded_limit("limit", MAX_RESULT_COUNT + 1).is_err());
+        assert!(bounded_limit("limit", u64::MAX).is_err());
     }
 }

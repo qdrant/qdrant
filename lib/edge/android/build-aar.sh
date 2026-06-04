@@ -138,7 +138,14 @@ mkdir -p "$KOTLIN_SRC_DIR"
 # library and point bindgen at that. (Build is cheap: the workspace deps are
 # already compiled for the host from earlier steps.)
 echo "    Building host library for bindgen metadata..."
-HOST_LIB_NAME="libqdrant_edge_ffi.dylib"   # host is macOS here; cdylib → .dylib
+# The host cdylib extension depends on the OS (macOS .dylib, Linux .so,
+# Windows .dll). Detect it so the bindgen step works on CI runners too,
+# not just on a macOS dev machine.
+case "$(uname -s)" in
+    Darwin*)            HOST_LIB_NAME="libqdrant_edge_ffi.dylib" ;;
+    MINGW*|MSYS*|CYGWIN*) HOST_LIB_NAME="qdrant_edge_ffi.dll" ;;
+    *)                  HOST_LIB_NAME="libqdrant_edge_ffi.so" ;;
+esac
 ( cd "$WORKSPACE_ROOT" && cargo build --locked $CARGO_FLAGS --lib --package "$PACKAGE_NAME" )
 cargo run --locked \
     --package "qdrant-edge-ffi-bindgen" \

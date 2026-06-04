@@ -249,7 +249,7 @@ impl TryFrom<Prefetch> for ShardPrefetch {
             .transpose()?;
         Ok(ShardPrefetch {
             prefetches,
-            limit: crate::error::clamp_usize(p.limit),
+            limit: crate::error::bounded_limit("prefetch limit", p.limit)?,
             query,
             params: p.params.map(SegmentSearchParams::from),
             filter,
@@ -304,8 +304,8 @@ impl TryFrom<QueryRequest> for ShardQueryRequest {
             .transpose()?;
         Ok(ShardQueryRequest {
             prefetches,
-            limit: crate::error::clamp_usize(r.limit),
-            offset: crate::error::clamp_usize(r.offset.unwrap_or(0)),
+            limit: crate::error::bounded_limit("limit", r.limit)?,
+            offset: crate::error::bounded_limit("offset", r.offset.unwrap_or(0))?,
             with_vector: r.with_vector.map(SegmentWithVector::from).unwrap_or_default(),
             with_payload: r
                 .with_payload
@@ -354,8 +354,8 @@ impl TryFrom<SearchRequest> for CoreSearchRequest {
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
         Ok(CoreSearchRequest {
             query: QueryEnum::from(r.query),
-            limit: crate::error::clamp_usize(r.limit),
-            offset: crate::error::clamp_usize(r.offset.unwrap_or(0)),
+            limit: crate::error::bounded_limit("limit", r.limit)?,
+            offset: crate::error::bounded_limit("offset", r.offset.unwrap_or(0))?,
             filter,
             params: r.params.map(SegmentSearchParams::from),
             with_vector: r.with_vector.map(SegmentWithVector::from),
@@ -405,7 +405,7 @@ impl TryFrom<ScrollRequest> for ScrollRequestInternal {
             .transpose()?;
         Ok(ScrollRequestInternal {
             offset,
-            limit: r.limit.map(crate::error::clamp_usize),
+            limit: r.limit.map(|v| crate::error::bounded_limit("limit", v)).transpose()?,
             filter,
             with_payload: r
                 .with_payload
@@ -468,7 +468,7 @@ impl TryFrom<FacetRequest> for FacetRequestInternal {
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
         Ok(FacetRequestInternal {
             key,
-            limit: crate::error::clamp_usize(r.limit),
+            limit: crate::error::bounded_limit("limit", r.limit)?,
             filter,
             exact: r.exact,
         })
