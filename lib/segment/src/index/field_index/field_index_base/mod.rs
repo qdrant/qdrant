@@ -10,4 +10,6 @@ pub use builder::{FieldIndexBuilder, FieldIndexBuilderTrait};
 pub use field_index::FieldIndex;
 pub use field_index_read::FieldIndexRead;
 pub use payload_field_index::{PayloadFieldIndex, PayloadFieldIndexRead};
+#[allow(unused_imports)]
+pub(crate) use read_only::LiveReload;
 pub use value_indexer::ValueIndexer;
