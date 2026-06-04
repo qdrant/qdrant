@@ -281,10 +281,18 @@ impl Validate for grpc::FieldCondition {
                 "match",
                 ValidationError::new("At least one field condition must be specified"),
             );
-            Err(errors)
-        } else {
-            Ok(())
+            return Err(errors);
         }
+
+        // Recurse into the geo polygon's own validator. Otherwise FieldCondition
+        // only checks that some field is set, so a malformed polygon (empty,
+        // fewer than 4 points, or an unclosed exterior/interior) is accepted here
+        // and later panics when the geo index processes it.
+        if let Some(geo_polygon) = geo_polygon {
+            geo_polygon.validate()?;
+        }
+
+        Ok(())
     }
 }
 
@@ -757,6 +765,45 @@ mod tests {
             good_polygon.validate().is_ok(),
             "good polygon should not error on validation"
         );
+    }
+
+    #[test]
+    fn test_field_condition_validates_geo_polygon() {
+        use crate::grpc::qdrant::FieldCondition;
+
+        // FieldCondition::validate only checks that at least one field is set; it
+        // must also reject a malformed geo polygon, otherwise the invalid shape
+        // reaches the geo index and panics. An empty exterior is invalid.
+        let bad = FieldCondition {
+            key: "location".into(),
+            geo_polygon: Some(GeoPolygon {
+                exterior: Some(GeoLineString { points: vec![] }),
+                interiors: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(
+            bad.validate().is_err(),
+            "field condition with an empty polygon exterior should error"
+        );
+
+        // A well-formed polygon still passes.
+        let good = FieldCondition {
+            key: "location".into(),
+            geo_polygon: Some(GeoPolygon {
+                exterior: Some(GeoLineString {
+                    points: vec![
+                        GeoPoint { lat: 1., lon: 1. },
+                        GeoPoint { lat: 2., lon: 2. },
+                        GeoPoint { lat: 3., lon: 3. },
+                        GeoPoint { lat: 1., lon: 1. },
+                    ],
+                }),
+                interiors: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(good.validate().is_ok());
     }
 
     #[test]
