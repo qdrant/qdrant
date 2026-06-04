@@ -62,20 +62,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             }
         }
 
-        // Link in pending inserts whose offset is now covered by the versions file. These are the
-        // newly-committed points and form the reported inserts. Apply in ascending offset order so
-        // `set_link`'s resize never leaves a just-linked offset behind a gap.
-        let mut drained: Vec<(PointOffsetType, PointIdType)> = self
+        let drained = self
             .pending_inserts
-            .iter()
-            .filter(|&(_, &internal_id)| internal_id < committed)
-            .map(|(&external_id, &internal_id)| (internal_id, external_id))
-            .collect();
-        drained.sort_unstable_by_key(|&(internal_id, _)| internal_id);
-
-        let mut inserted = Vec::with_capacity(drained.len());
-        for (internal_id, external_id) in drained {
-            self.pending_inserts.remove(&external_id);
+            .extract_if(|_, &mut internal_id| internal_id < committed);
+        let mut inserted = Vec::new();
+        for (external_id, internal_id) in drained {
             // An upsert re-links an existing external id to a new offset; the previously-committed
             // offset it displaces is now dead and must be reported as deleted.
             if let Some(previous) = self.mappings.set_link(external_id, internal_id)
