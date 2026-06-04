@@ -39,7 +39,6 @@ where
                 new_points.iter().copied().enumerate(),
                 |_, point_offset, maybe_values: Option<Vec<T>>| {
                     let values = maybe_values.unwrap_or_default();
-                    in_memory_index.remove_point(point_offset);
                     in_memory_index.add_many_to_list(point_offset, values);
                     Ok(())
                 },
