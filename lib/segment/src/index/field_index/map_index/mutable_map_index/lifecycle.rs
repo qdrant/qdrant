@@ -8,7 +8,7 @@ use gridstore::{Blob, Gridstore};
 
 use super::super::MapIndexKey;
 use super::MutableMapIndex;
-use super::inner::MutableMapIndexInner;
+use super::in_memory::InMemoryMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -52,16 +52,14 @@ where
         };
 
         // Load in-memory index from Gridstore
-        let mut inner = MutableMapIndexInner::<N>::empty();
+        let mut in_memory_index = InMemoryMapIndex::<N>::empty();
 
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .iter::<_, GridstoreError>(
                 |idx, values: Vec<_>| {
-                    for value in values {
-                        inner.ingest(idx, value);
-                    }
+                    in_memory_index.add_many_to_map(idx, values);
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -70,7 +68,7 @@ where
             .unwrap();
 
         Ok(Some(Self {
-            inner,
+            in_memory_index,
             storage: store,
         }))
     }
@@ -88,22 +86,7 @@ where
             return Ok(());
         }
 
-        self.inner.values_count += values.len();
-        if self.inner.point_to_values.len() <= idx as usize {
-            self.inner
-                .point_to_values
-                .resize_with(idx as usize + 1, Vec::new)
-        }
-
-        self.inner.point_to_values[idx as usize] = Vec::with_capacity(values.len());
-
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
-
-        for value in values.clone() {
-            let entry = self.inner.map.entry(value.into());
-            self.inner.point_to_values[idx as usize].push(entry.key().clone());
-            entry.or_default().insert(idx);
-        }
 
         let values = values.into_iter().map(Into::into).collect::<Vec<_>>();
         self.storage
@@ -114,12 +97,13 @@ where
                 ))
             })?;
 
-        self.inner.indexed_points += 1;
+        self.in_memory_index.add_many_to_map(idx, values);
+
         Ok(())
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if !self.inner.remove_point(idx) {
+        if !self.in_memory_index.remove_point(idx) {
             return Ok(());
         }
 

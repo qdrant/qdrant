@@ -6,7 +6,7 @@ use gridstore::error::GridstoreError;
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::MapIndexKey;
-use super::super::inner::MutableMapIndexInner;
+use super::super::in_memory::InMemoryMapIndex;
 use super::ReadOnlyAppendableMapIndex;
 use crate::common::operation_error::OperationResult;
 
@@ -37,19 +37,20 @@ where
             return Ok(None);
         };
 
-        let mut inner = MutableMapIndexInner::<N>::empty();
+        let mut in_memory_index = InMemoryMapIndex::<N>::empty();
         let hw_counter = HardwareCounterCell::disposable();
         storage.iter::<_, GridstoreError>(
             storage.max_point_offset(),
             |idx, values: Vec<_>| {
-                for value in values {
-                    inner.ingest(idx, value);
-                }
+                in_memory_index.add_many_to_map(idx, values);
                 Ok(true)
             },
             hw_counter.ref_payload_index_io_write_counter(),
         )?;
 
-        Ok(Some(Self { inner, storage }))
+        Ok(Some(Self {
+            in_memory_index,
+            storage,
+        }))
     }
 }
