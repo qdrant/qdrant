@@ -53,7 +53,7 @@ impl MutableGeoMapIndex {
         store
             .iter::<_, OperationError>(
                 |idx, values: Vec<RawGeoPoint>| {
-                    in_memory_index.ingest_raw_points(idx, values)?;
+                    in_memory_index.ingest(idx, values)?;
                     Ok(true)
                 },
                 hw_counter_ref,
