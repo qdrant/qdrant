@@ -1,12 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use common::mmap::Advice::Normal;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyAppendableIdTracker;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
 use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
 use crate::id_tracker::point_mappings::PointMappings;

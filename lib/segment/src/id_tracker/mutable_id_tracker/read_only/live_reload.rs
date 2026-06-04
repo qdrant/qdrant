@@ -9,7 +9,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::change::MappingChange;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::read_mappings_iter;
 use crate::id_tracker::mutable_id_tracker::versions_storage::VERSION_ELEMENT_SIZE;
-use crate::types::{PointIdType, SeqNumberType};
+use crate::types::SeqNumberType;
 
 /// Set of point offsets that changed during a [`ReadOnlyAppendableIdTracker::live_reload`].
 ///
