@@ -96,6 +96,16 @@ impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
         // flag from `is_deleted_vector` keeps the placeholder from being read.
         Cow::Owned(vec![0.0; self.dim])
     }
+
+    fn update_from<'a>(
+        &mut self,
+        _other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        Err(OperationError::service_error(
+            "Cannot update empty vector storage",
+        ))
+    }
 }
 
 impl VectorStorageRead for EmptyDenseVectorStorage {
@@ -146,16 +156,6 @@ impl VectorStorage for EmptyDenseVectorStorage {
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Cannot insert into empty vector storage",
-        ))
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        _other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        _stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        Err(OperationError::service_error(
-            "Cannot update empty vector storage",
         ))
     }
 

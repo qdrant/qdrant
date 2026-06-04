@@ -16,7 +16,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::VectorRef;
+use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::common::get_async_scorer;
@@ -231,6 +231,63 @@ where
         let mmap_store = self.vectors.as_ref().unwrap();
         mmap_store.for_each_in_batch(keys, f);
     }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let dim = self.vector_dim();
+        let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
+        let mut end_index = start_index;
+
+        // Extend vectors file, write other vectors into it
+        let mut vectors_file = BufWriter::new(open_append(&self.vectors_path)?);
+        let mut deleted_ids = vec![];
+        for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
+            check_process_stopped(stopped)?;
+            let vector = T::slice_from_float_cow(other_vector);
+            // Safety: T implements zerocopy::IntoBytes.
+            #[expect(deprecated, reason = "legacy code")]
+            let raw_bites = unsafe { mmap::transmute_to_u8_slice(vector.as_ref()) };
+            vectors_file.write_all(raw_bites)?;
+            end_index += 1;
+
+            // Remember deleted IDs so we can propagate deletions later
+            if other_deleted {
+                deleted_ids.push(start_index as PointOffsetType + offset as PointOffsetType);
+            }
+        }
+
+        // Explicitly fsync file contents to ensure durability
+        vectors_file.flush()?;
+        vectors_file
+            .into_inner()
+            .map_err(io::IntoInnerError::into_error)?
+            .sync_data()?;
+
+        // Load store with updated files
+        self.vectors.replace(ImmutableDenseVectors::open(
+            &self.fs,
+            &self.vectors_path,
+            &self.deleted_path,
+            dim,
+            false, // No need to populate
+        )?);
+
+        // Flush deleted flags into store
+        // We must do that in the updated store, and cannot do it in the previous loop. That is
+        // because the file backing delete storage must be resized, and for that we'd need to know
+        // the exact number of vectors beforehand. When opening the store it is done automatically.
+        let store = self.vectors.as_mut().unwrap();
+        for id in deleted_ids {
+            check_process_stopped(stopped)?;
+            store.delete(id);
+        }
+        store.flusher()()?;
+
+        Ok(start_index..end_index)
+    }
 }
 
 impl<T, S> VectorStorageRead for DenseVectorStorageImpl<T, S>
@@ -315,63 +372,6 @@ where
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         panic!("Can't directly update vector in mmap storage")
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let dim = self.vector_dim();
-        let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
-        let mut end_index = start_index;
-
-        // Extend vectors file, write other vectors into it
-        let mut vectors_file = BufWriter::new(open_append(&self.vectors_path)?);
-        let mut deleted_ids = vec![];
-        for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
-            check_process_stopped(stopped)?;
-            let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
-            // Safety: T implements zerocopy::IntoBytes.
-            #[expect(deprecated, reason = "legacy code")]
-            let raw_bites = unsafe { mmap::transmute_to_u8_slice(vector.as_ref()) };
-            vectors_file.write_all(raw_bites)?;
-            end_index += 1;
-
-            // Remember deleted IDs so we can propagate deletions later
-            if other_deleted {
-                deleted_ids.push(start_index as PointOffsetType + offset as PointOffsetType);
-            }
-        }
-
-        // Explicitly fsync file contents to ensure durability
-        vectors_file.flush()?;
-        vectors_file
-            .into_inner()
-            .map_err(io::IntoInnerError::into_error)?
-            .sync_data()?;
-
-        // Load store with updated files
-        self.vectors.replace(ImmutableDenseVectors::open(
-            &self.fs,
-            &self.vectors_path,
-            &self.deleted_path,
-            dim,
-            false, // No need to populate
-        )?);
-
-        // Flush deleted flags into store
-        // We must do that in the updated store, and cannot do it in the previous loop. That is
-        // because the file backing delete storage must be resized, and for that we'd need to know
-        // the exact number of vectors beforehand. When opening the store it is done automatically.
-        let store = self.vectors.as_mut().unwrap();
-        for id in deleted_ids {
-            check_process_stopped(stopped)?;
-            store.delete(id);
-        }
-        store.flusher()()?;
-
-        Ok(start_index..end_index)
     }
 
     fn flusher(&self) -> Flusher {

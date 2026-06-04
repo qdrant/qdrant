@@ -236,6 +236,28 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
             0
         }
     }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, VectorElementType>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let start_index = self.vectors_metadata.len() as PointOffsetType;
+        for (other_vector, other_deleted) in other_vectors {
+            check_process_stopped(stopped)?;
+            // Do not perform preprocessing - vectors should be already processed
+            let other_vector = VectorRef::MultiDense(other_vector.as_ref());
+            let new_id = self.vectors_metadata.len() as PointOffsetType;
+            self.insert_vector_impl(
+                new_id,
+                other_vector,
+                other_deleted,
+                &HardwareCounterCell::disposable(), // This function is only used by internal operations
+            )?;
+        }
+        let end_index = self.vectors_metadata.len() as PointOffsetType;
+        Ok(start_index..end_index)
+    }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorStorage<T> {
@@ -286,28 +308,6 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileMultiDenseVectorStorag
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.insert_vector_impl(key, vector, false, hw_counter)
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.vectors_metadata.len() as PointOffsetType;
-        for (other_vector, other_deleted) in other_vectors {
-            check_process_stopped(stopped)?;
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector: VectorRef = other_vector.as_vec_ref();
-            let new_id = self.vectors_metadata.len() as PointOffsetType;
-            self.insert_vector_impl(
-                new_id,
-                other_vector,
-                other_deleted,
-                &HardwareCounterCell::disposable(), // This function is only used by internal operations
-            )?;
-        }
-        let end_index = self.vectors_metadata.len() as PointOffsetType;
-        Ok(start_index..end_index)
     }
 
     fn flusher(&self) -> Flusher {
