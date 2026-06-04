@@ -11,7 +11,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::{SliceRandom, StdRng};
 use rand::{RngExt, SeedableRng};
 use segment::payload_json;
-use segment::payload_storage::mmap_payload_storage::{MmapPayloadStorage, storage_dir};
+use segment::payload_storage::payload_storage_impl::{PayloadStorageImpl, storage_dir};
 use segment::payload_storage::{PayloadStorage, PayloadStorageRead};
 use segment::types::Payload;
 use tempfile::{Builder, TempDir};
@@ -76,13 +76,13 @@ fn tmpdir() -> TempDir {
         .expect("tempdir created")
 }
 
-fn storage<S>(path: &Path) -> MmapPayloadStorage<S>
+fn storage<S>(path: &Path) -> PayloadStorageImpl<S>
 where
     S: UniversalWrite + 'static,
     S::Fs: Default,
 {
     let storage_exists = storage_dir(path).exists();
-    let mut storage = MmapPayloadStorage::open_or_create(path.to_path_buf(), false)
+    let mut storage = PayloadStorageImpl::open_or_create(path.to_path_buf(), false)
         .expect("payload storage opened");
 
     if !storage_exists {

@@ -38,8 +38,8 @@ use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
 use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadStorageType, SegmentConfig, SegmentState,
@@ -215,7 +215,7 @@ pub(crate) fn create_payload_storage(
 ) -> OperationResult<PayloadStorageEnum> {
     #[cfg(target_os = "linux")]
     if config.payload_storage_type == PayloadStorageType::Mmap {
-        match MmapPayloadStorage::open_or_create(segment_path.to_path_buf(), false) {
+        match PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), false) {
             Ok(payload_storage) => {
                 return Ok(PayloadStorageEnum::IoUringPayloadStorage(payload_storage));
             }
@@ -230,7 +230,7 @@ pub(crate) fn create_payload_storage(
         PayloadStorageType::InRamMmap => true,
     };
 
-    let payload_storage = MmapPayloadStorage::open_or_create(segment_path.to_path_buf(), populate)?;
+    let payload_storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate)?;
     Ok(PayloadStorageEnum::MmapPayloadStorage(payload_storage))
 }
 

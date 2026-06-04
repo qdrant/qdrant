@@ -12,7 +12,7 @@ use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 #[cfg(feature = "testing")]
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::types::{OwnedPayloadRef, Payload};
 
@@ -20,9 +20,9 @@ use crate::types::{OwnedPayloadRef, Payload};
 pub enum PayloadStorageEnum {
     #[cfg(feature = "testing")]
     InMemoryPayloadStorage(InMemoryPayloadStorage),
-    MmapPayloadStorage(MmapPayloadStorage),
+    MmapPayloadStorage(PayloadStorageImpl),
     #[cfg(target_os = "linux")]
-    IoUringPayloadStorage(MmapPayloadStorage<IoUringFile>),
+    IoUringPayloadStorage(PayloadStorageImpl<IoUringFile>),
 }
 
 #[cfg(feature = "testing")]
@@ -32,15 +32,15 @@ impl From<InMemoryPayloadStorage> for PayloadStorageEnum {
     }
 }
 
-impl From<MmapPayloadStorage> for PayloadStorageEnum {
-    fn from(a: MmapPayloadStorage) -> Self {
+impl From<PayloadStorageImpl> for PayloadStorageEnum {
+    fn from(a: PayloadStorageImpl) -> Self {
         PayloadStorageEnum::MmapPayloadStorage(a)
     }
 }
 
 #[cfg(target_os = "linux")]
-impl From<MmapPayloadStorage<IoUringFile>> for PayloadStorageEnum {
-    fn from(a: MmapPayloadStorage<IoUringFile>) -> Self {
+impl From<PayloadStorageImpl<IoUringFile>> for PayloadStorageEnum {
+    fn from(a: PayloadStorageImpl<IoUringFile>) -> Self {
         PayloadStorageEnum::IoUringPayloadStorage(a)
     }
 }
@@ -321,7 +321,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let mut storage: PayloadStorageEnum =
-            MmapPayloadStorage::<MmapFile>::open_or_create(dir.path().to_path_buf(), populate)
+            PayloadStorageImpl::<MmapFile>::open_or_create(dir.path().to_path_buf(), populate)
                 .unwrap()
                 .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();

@@ -28,12 +28,12 @@ impl Blob for Payload {
 }
 
 #[derive(Debug)]
-pub struct MmapPayloadStorage<S = MmapFile> {
+pub struct PayloadStorageImpl<S = MmapFile> {
     storage: Gridstore<Payload, S>,
     populate: bool,
 }
 
-impl<S> MmapPayloadStorage<S>
+impl<S> PayloadStorageImpl<S>
 where
     S: UniversalWrite + 'static,
     S::Fs: Default,
@@ -87,7 +87,7 @@ where
     }
 }
 
-impl<S> PayloadStorageRead for MmapPayloadStorage<S>
+impl<S> PayloadStorageRead for PayloadStorageImpl<S>
 where
     S: UniversalWrite + 'static,
     S::Fs: Default,
@@ -161,7 +161,7 @@ where
     }
 }
 
-impl<S> PayloadStorage for MmapPayloadStorage<S>
+impl<S> PayloadStorage for PayloadStorageImpl<S>
 where
     S: UniversalWrite + 'static,
     S::Fs: Default,
