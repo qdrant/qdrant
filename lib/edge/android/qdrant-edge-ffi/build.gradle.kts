@@ -13,6 +13,7 @@ android {
     defaultConfig {
         minSdk = 24
         consumerProguardFiles("proguard-rules.pro")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -35,4 +36,7 @@ dependencies {
     // `api` so consuming modules can reach into `tech.qdrant.edge.ffi.*` if
     // they need the raw UniFFI types (advanced use only).
     api("net.java.dev.jna:jna:5.14.0@aar")
+
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }
