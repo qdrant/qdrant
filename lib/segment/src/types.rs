@@ -591,6 +591,7 @@ pub struct SearchParams {
     /// Params relevant to HNSW index
     /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub hnsw_ef: Option<usize>,
 
     /// Search without approximation. If set to true, search may run long but with exact results.
@@ -4141,9 +4142,27 @@ mod tests {
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json;
+    use validator::Validate;
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
+
+    #[test]
+    fn test_search_params_rejects_zero_hnsw_ef() {
+        let params = SearchParams {
+            hnsw_ef: Some(0),
+            ..Default::default()
+        };
+
+        let err = params.validate().unwrap_err().to_string();
+        assert!(err.contains("hnsw_ef"), "error was: {err}");
+
+        let params = SearchParams {
+            hnsw_ef: Some(1),
+            ..Default::default()
+        };
+        params.validate().unwrap();
+    }
 
     #[test]
     #[ignore]
