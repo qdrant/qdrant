@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
+use common::types::PointOffsetType;
 use common::universal_io::{
-    ReadRange, TypedStorage, UniversalIoError, UniversalRead, read_json_via,
+    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UserData, read_json_via,
 };
 use fs_err as fs;
 use num_traits::AsPrimitive;
@@ -178,11 +179,20 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
     }
 
-    pub fn for_each_in_batch<F: FnMut(usize, &[T]), O: VectorOffset>(&self, keys: &[O], mut f: F) {
+    pub fn for_each_in_batch<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    where
+        F: FnMut(usize, &[T]),
+    {
         #[cfg(target_os = "linux")]
         if TypedStorage::<S, T>::kind() == common::universal_io::UniversalKind::IoUring {
-            for (idx, vectors) in self.iter(keys) {
-                f(idx, &vectors);
+            let point_offsets = keys
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, point_offset)| (index, point_offset, 1));
+
+            for (idx, vectors) in self.iter_vectors::<Random, _>(point_offsets) {
+                callback(idx, &vectors);
             }
 
             return;
@@ -199,7 +209,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             let (vectors, _) = maybe_uninit_fill_from(
                 &mut vectors_buffer,
                 keys.iter().map(|&key| {
-                    self.get_many_impl(key.offset(), key.multi_vector_count(), force_sequential)
+                    self.get_many_impl(key.offset(), 1, force_sequential)
                         .expect("vectors read")
                 }),
             );
@@ -207,26 +217,31 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
             for (vector_idx, vec) in vectors.iter().enumerate() {
-                f(batch_offset + vector_idx, vec.as_ref());
+                callback(batch_offset + vector_idx, vec.as_ref());
             }
         }
     }
 
-    pub fn iter<O>(&self, offsets: &[O]) -> impl Iterator<Item = (usize, Cow<'_, [T]>)>
+    /// Iterate over flattened multi-vectors
+    pub fn iter_vectors<P, U>(
+        &self,
+        offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
+    ) -> impl Iterator<Item = (U, Cow<'_, [T]>)>
     where
-        O: VectorOffset,
+        P: AccessPattern,
+        U: UserData,
     {
-        let reads = offsets.iter().enumerate().map(|(idx, offset)| {
+        let reads = offsets.map(|(user_data, offset, count)| {
             let (chunk_idx, range) = self
-                .read_range(offset.offset(), offset.multi_vector_count())
+                .read_range(offset as _, count as _)
                 .expect("vectors exist");
 
             let chunk = &self.chunks[chunk_idx];
-            (idx, chunk, range)
+            (user_data, chunk, range)
         });
 
         // access pattern does not matter for io_uring
-        TypedStorage::<S, T>::read_multi_iter::<Random, _>(reads)
+        TypedStorage::read_multi_iter::<P, _>(reads)
             .expect("iterator initialized")
             .map(|result| result.expect("vector read"))
     }

@@ -6,6 +6,7 @@ use common::universal_io::UniversalRead;
 use gridstore::GridstoreReader;
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::VectorStorageRead;
@@ -44,6 +45,30 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector_opt::<P>(key)
             .unwrap_or_else(CowVector::default_sparse)
+    }
+
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
+            let Some(sparse_vector) = sparse_vector else {
+                return Ok(());
+            };
+
+            let sparse_vector = SparseVector::try_from(sparse_vector)?;
+            callback(user_data, point_offset, CowVector::from(sparse_vector));
+            Ok(())
+        };
+
+        self.storage
+            .read_values::<P, _, _>(
+                keys.into_iter(),
+                callback,
+                HardwareCounterCell::disposable().vector_io_read(),
+            )
+            .expect("sparse vectors read")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

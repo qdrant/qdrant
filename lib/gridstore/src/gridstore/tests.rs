@@ -1313,13 +1313,12 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
 
     let mut batch_results: Vec<Option<Vec<u8>>> = vec![None; pointers.len()];
 
-    let pointers_opt: Vec<_> = pointers.into_iter().map(Some).collect();
     pages
         .read_batch_from_pages::<Random, _, GridstoreError>(
-            pointers_opt,
             &storage.config,
-            |idx, raw_opt| {
-                batch_results[idx] = raw_opt.map(|raw| raw.into_owned());
+            pointers.into_iter().enumerate(),
+            |idx, bytes| {
+                batch_results[idx] = Some(bytes.into_owned());
                 Ok(())
             },
         )
@@ -1374,9 +1373,9 @@ fn test_for_each_in_batch_congruent_with_get_value() {
 
     let mut batch_results: Vec<Option<Payload>> = vec![None; offsets.len()];
     storage
-        .for_each_in_batch::<Random, _, GridstoreError>(
-            &offsets,
-            |idx, value| {
+        .read_values::<Random, _, GridstoreError>(
+            offsets.iter().copied().enumerate(),
+            |idx, _, value| {
                 batch_results[idx] = value;
                 Ok(())
             },

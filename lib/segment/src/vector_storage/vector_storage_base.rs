@@ -39,10 +39,6 @@ pub type VectorOffsetType = usize;
 /// Generalized vector offset.
 pub trait VectorOffset: Copy + fmt::Debug {
     fn offset(self) -> VectorOffsetType;
-
-    fn multi_vector_count(self) -> usize {
-        1
-    }
 }
 
 impl VectorOffset for PointOffsetType {

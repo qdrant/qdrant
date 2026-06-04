@@ -88,8 +88,11 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
             .expect("mmap vector not found")
     }
 
-    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
-        self.vectors.for_each_in_batch(keys, f);
+    fn for_each_in_dense_batch<F>(&self, keys: &[PointOffsetType], callback: F)
+    where
+        F: FnMut(usize, &[T]),
+    {
+        self.vectors.for_each_in_batch(keys, callback);
     }
 }
 
@@ -115,6 +118,21 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
             .get::<P>(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
             .expect("Vector not found")
+    }
+
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let keys = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
+
+        for ((user_data, point_offset), vector) in self.vectors.iter_vectors::<P, _>(keys) {
+            let vector = CowVector::from(T::slice_to_float_cow(vector));
+            callback(user_data, point_offset, vector);
+        }
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

@@ -53,7 +53,12 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
         &self,
         offsets: &[PointOffsetType],
     ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
-        self.data.iter(offsets)
+        let offsets = offsets
+            .iter()
+            .enumerate()
+            .map(|(index, &offset)| (index, offset, 1));
+
+        self.data.iter_vectors::<Random, _>(offsets)
     }
 
     fn upsert_vector(

@@ -335,13 +335,20 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
         &self,
         ids: &[PointOffsetType],
     ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
-        self.data.iter(ids).map(|(idx, offset)| {
-            let [offset] = offset.as_ref() else {
-                unreachable!("multi-vector offsets are stored as a single-element slice");
-            };
+        let point_offsets = ids
+            .iter()
+            .enumerate()
+            .map(|(idx, &point_offset)| (idx, point_offset, 1));
 
-            (idx, *offset)
-        })
+        self.data
+            .iter_vectors::<Random, _>(point_offsets)
+            .map(|(idx, multi_offset)| {
+                let &[multi_offset] = multi_offset.as_ref() else {
+                    unreachable!("multi-vector offsets are stored as vectors of length 1");
+                };
+
+                (idx, multi_offset)
+            })
     }
 
     fn len(&self) -> usize {

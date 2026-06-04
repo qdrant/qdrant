@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
@@ -98,6 +99,23 @@ impl ValuePointer {
             page_id,
             block_offset,
             length,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ValuePointersBatch<U> {
+    pub valid: Vec<(U, ValuePointer)>,
+    pub empty: Vec<U>,
+    pub out_of_range: Vec<U>,
+}
+
+impl<U> Default for ValuePointersBatch<U> {
+    fn default() -> Self {
+        Self {
+            valid: Vec::new(),
+            empty: Vec::new(),
+            out_of_range: Vec::new(),
         }
     }
 }
@@ -368,49 +386,56 @@ impl<S: UniversalRead> Tracker<S> {
 
     /// Get the page pointers for a batch of point offsets.
     ///
-    /// Issues a single batched read against the underlying storage so async
-    /// backends (e.g. io_uring) can fetch all entries in parallel. Pending
-    /// updates and out-of-range offsets are handled before/after the batch
-    /// read, mirroring [`get`](Self::get).
-    pub fn get_batch(&self, point_offsets: &[PointOffset]) -> Result<Vec<Option<ValuePointer>>> {
-        let item_size = std::mem::size_of::<OptionalPointer>();
-        let header_size = std::mem::size_of::<TrackerHeader>();
+    /// Issues a single batched read against the underlying storage, so async backends can fetch
+    /// all entries in parallel.
+    pub fn get_batch<U>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+    ) -> Result<ValuePointersBatch<U>> {
+        let header_size = size_of::<TrackerHeader>();
+        let item_size = size_of::<OptionalPointer>();
+
         let storage_len = self.storage.len::<u8>()?;
 
-        let mut result: Vec<Option<ValuePointer>> = vec![None; point_offsets.len()];
-        let mut storage_reads: Vec<(usize, ReadRange)> = Vec::with_capacity(point_offsets.len());
+        let pointers = RefCell::new(ValuePointersBatch::default());
 
-        for (i, &point_offset) in point_offsets.iter().enumerate() {
-            // Pending updates take precedence over storage.
+        let ranges = point_offsets.filter_map(|(user_data, point_offset)| {
             if let Some(pending) = self.pending_updates.get(&point_offset) {
-                if pending.is_empty() {
-                    debug_assert!(false, "pending updates must not be empty");
-                } else {
-                    result[i] = pending.current;
-                    continue;
+                debug_assert!(!pending.is_empty(), "pending updates must not be empty");
+
+                if let Some(pointer) = pending.current {
+                    pointers.borrow_mut().valid.push((user_data, pointer));
+                    return None;
                 }
             }
 
-            let start_offset = header_size + point_offset as usize * item_size;
-            let end_offset = start_offset + item_size;
-            if end_offset as u64 > storage_len {
-                // Out of range, leave as None.
-                continue;
+            let byte_offset = header_size + item_size * point_offset as usize;
+
+            if storage_len < (byte_offset + item_size) as _ {
+                pointers.borrow_mut().out_of_range.push(user_data);
+                return None;
             }
 
-            storage_reads.push((i, ReadRange::one(start_offset as u64)));
+            Some((user_data, ReadRange::one(byte_offset as _)))
+        });
+
+        let pointers_iter = self
+            .storage
+            .read_iter::<Random, OptionalPointer, _>(ranges)?;
+
+        for result in pointers_iter {
+            let (user_data, pointer) = result?;
+            let &[pointer] = pointer.as_ref() else {
+                unreachable!();
+            };
+
+            match pointer.to_option() {
+                Some(pointer) => pointers.borrow_mut().valid.push((user_data, pointer)),
+                None => pointers.borrow_mut().empty.push(user_data),
+            }
         }
 
-        let reads = storage_reads
-            .iter()
-            .map(|(i, range)| (*i, &self.storage, *range));
-
-        for read_result in S::read_multi_iter::<Random, OptionalPointer, _>(reads)? {
-            let (i, opt_slice) = read_result?;
-            result[i] = opt_slice[0].to_option();
-        }
-
-        Ok(result)
+        Ok(pointers.into_inner())
     }
 
     /// Iterate over the pointers in the tracker
