@@ -1,13 +1,12 @@
 mod lifecycle;
-mod live_reload;
 mod read_ops;
 
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 
 use common::universal_io::UniversalRead;
-pub(crate) use live_reload::LiveReload;
 
+pub(crate) use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
 use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex;
