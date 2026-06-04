@@ -302,6 +302,14 @@ pub fn validate_multi_vector_len(
         return Err(errors);
     }
 
+    if flatten_dense_vector.is_empty() {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("empty_multi_vector");
+        err.add_param(Cow::from("message"), &"multi vector must not be empty");
+        errors.add("data", err);
+        return Err(errors);
+    }
+
     let dense_vector_len = flatten_dense_vector.len();
     if dense_vector_len >= MAX_MULTIVECTOR_FLATTENED_LEN {
         let mut errors = ValidationErrors::default();
@@ -327,6 +335,17 @@ pub fn validate_multi_vector_len(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_multi_vector_len_rejects_empty_data() {
+        // Regression: empty flattened data with a positive vectors_count must be
+        // rejected. Previously this returned Ok (0.is_multiple_of(N) == true), and
+        // the value then reached convert_to_plain_multi_vector, which builds
+        // chunks(dim) with dim == 0 and panics on the gRPC upsert path.
+        assert!(validate_multi_vector_len(2, &[]).is_err());
+        // A non-empty, consistent multivector still validates.
+        assert!(validate_multi_vector_len(2, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+    }
 
     #[test]
     fn test_validate_range_generic() {
