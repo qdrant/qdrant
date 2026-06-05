@@ -4,14 +4,14 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use super::super::read_ops::GeoMapIndexRead;
+use super::super::read_ops::GeoIndexRead;
 use super::OnDiskGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
-impl<S: UniversalRead> GeoMapIndexRead for OnDiskGeoIndex<S> {
+impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
     fn points_count(&self) -> usize {
         OnDiskGeoIndex::points_count(self)
     }

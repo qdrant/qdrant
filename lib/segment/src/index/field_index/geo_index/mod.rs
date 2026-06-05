@@ -14,14 +14,14 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate};
-use mutable_geo_index::InMemoryGeoMapIndex;
+use mutable_geo_index::InMemoryGeoIndex;
 
-pub use self::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
+pub use self::builders::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
 use self::immutable_geo_index::ImmutableGeoIndex;
 use self::mutable_geo_index::MutableGeoIndex;
 use self::on_disk_geo_index::OnDiskGeoIndex;
-pub use self::read_only::ReadOnlyGeoMapIndex;
-pub use self::read_ops::GeoMapIndexRead;
+pub use self::read_only::ReadOnlyGeoIndex;
+pub use self::read_ops::GeoIndexRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::{IndexMutability, StorageType};
@@ -72,17 +72,17 @@ impl GeoIndex {
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
-    ) -> GeoMapIndexMmapBuilder {
-        GeoMapIndexMmapBuilder {
+    ) -> GeoIndexMmapBuilder {
+        GeoIndexMmapBuilder {
             path: path.to_owned(),
-            in_memory_index: InMemoryGeoMapIndex::new(),
+            in_memory_index: InMemoryGeoIndex::new(),
             is_on_disk,
             deleted_points: deleted_points.to_owned(),
         }
     }
 
-    pub fn builder_gridstore(dir: PathBuf) -> GeoMapIndexGridstoreBuilder {
-        GeoMapIndexGridstoreBuilder::new(dir)
+    pub fn builder_gridstore(dir: PathBuf) -> GeoIndexGridstoreBuilder {
+        GeoIndexGridstoreBuilder::new(dir)
     }
 
     pub fn get_mutability_type(&self) -> IndexMutability {
@@ -94,7 +94,7 @@ impl GeoIndex {
     }
 }
 
-impl GeoMapIndexRead for GeoIndex {
+impl GeoIndexRead for GeoIndex {
     fn points_count(&self) -> usize {
         match self {
             GeoIndex::Mutable(index) => index.points_count(),
@@ -125,8 +125,8 @@ impl GeoMapIndexRead for GeoIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::points_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::points_of_hash(index, hash, hw_counter),
+            GeoIndex::Mutable(index) => GeoIndexRead::points_of_hash(index, hash, hw_counter),
+            GeoIndex::Immutable(index) => GeoIndexRead::points_of_hash(index, hash, hw_counter),
             GeoIndex::OnDisk(index) => index.points_of_hash(hash, hw_counter),
         }
     }
@@ -137,8 +137,8 @@ impl GeoMapIndexRead for GeoIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::values_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::values_of_hash(index, hash, hw_counter),
+            GeoIndex::Mutable(index) => GeoIndexRead::values_of_hash(index, hash, hw_counter),
+            GeoIndex::Immutable(index) => GeoIndexRead::values_of_hash(index, hash, hw_counter),
             GeoIndex::OnDisk(index) => index.values_of_hash(hash, hw_counter),
         }
     }
@@ -151,10 +151,10 @@ impl GeoMapIndexRead for GeoIndex {
     ) -> bool {
         match self {
             GeoIndex::Mutable(index) => {
-                GeoMapIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
             }
             GeoIndex::Immutable(index) => {
-                GeoMapIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
             }
             GeoIndex::OnDisk(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
@@ -162,17 +162,17 @@ impl GeoMapIndexRead for GeoIndex {
 
     fn values_count(&self, idx: PointOffsetType) -> usize {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::values_count(index, idx),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::values_count(index, idx),
+            GeoIndex::Mutable(index) => GeoIndexRead::values_count(index, idx),
+            GeoIndex::Immutable(index) => GeoIndexRead::values_count(index, idx),
             GeoIndex::OnDisk(index) => index.values_count(idx),
         }
     }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::get_values(index, idx),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::get_values(index, idx),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::get_values(index, idx),
+            GeoIndex::Mutable(index) => GeoIndexRead::get_values(index, idx),
+            GeoIndex::Immutable(index) => GeoIndexRead::get_values(index, idx),
+            GeoIndex::OnDisk(index) => GeoIndexRead::get_values(index, idx),
         }
     }
 
@@ -181,9 +181,9 @@ impl GeoMapIndexRead for GeoIndex {
         values: Vec<GeoHash>,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::iterator(index, values),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::iterator(index, values),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::iterator(index, values),
+            GeoIndex::Mutable(index) => GeoIndexRead::iterator(index, values),
+            GeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values),
+            GeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values),
         }
     }
 
@@ -200,17 +200,17 @@ impl GeoMapIndexRead for GeoIndex {
 
     fn get_storage_type(&self) -> StorageType {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::get_storage_type(index),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::get_storage_type(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::get_storage_type(index),
+            GeoIndex::Mutable(index) => GeoIndexRead::get_storage_type(index),
+            GeoIndex::Immutable(index) => GeoIndexRead::get_storage_type(index),
+            GeoIndex::OnDisk(index) => GeoIndexRead::get_storage_type(index),
         }
     }
 
     fn ram_usage_bytes(&self) -> usize {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::ram_usage_bytes(index),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::ram_usage_bytes(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::ram_usage_bytes(index),
+            GeoIndex::Mutable(index) => GeoIndexRead::ram_usage_bytes(index),
+            GeoIndex::Immutable(index) => GeoIndexRead::ram_usage_bytes(index),
+            GeoIndex::OnDisk(index) => GeoIndexRead::ram_usage_bytes(index),
         }
     }
 
@@ -231,25 +231,25 @@ impl GeoMapIndexRead for GeoIndex {
 
     fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::clear_cache(index),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::clear_cache(index),
+            GeoIndex::Mutable(index) => GeoIndexRead::clear_cache(index),
+            GeoIndex::Immutable(index) => GeoIndexRead::clear_cache(index),
             GeoIndex::OnDisk(index) => index.clear_cache(),
         }
     }
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
-            GeoIndex::Mutable(index) => GeoMapIndexRead::files(index),
-            GeoIndex::Immutable(index) => GeoMapIndexRead::files(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::files(index),
+            GeoIndex::Mutable(index) => GeoIndexRead::files(index),
+            GeoIndex::Immutable(index) => GeoIndexRead::files(index),
+            GeoIndex::OnDisk(index) => GeoIndexRead::files(index),
         }
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         match self {
             GeoIndex::Mutable(_) => vec![],
-            GeoIndex::Immutable(index) => GeoMapIndexRead::immutable_files(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::immutable_files(index),
+            GeoIndex::Immutable(index) => GeoIndexRead::immutable_files(index),
+            GeoIndex::OnDisk(index) => GeoIndexRead::immutable_files(index),
         }
     }
 

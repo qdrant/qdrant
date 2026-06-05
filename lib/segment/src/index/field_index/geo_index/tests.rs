@@ -14,9 +14,9 @@ use rstest::rstest;
 use serde_json::json;
 use tempfile::{Builder, TempDir};
 
-use super::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
+use super::builders::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
 use super::on_disk_geo_index::OnDiskGeoIndex;
-use super::read_ops::GeoMapIndexRead;
+use super::read_ops::GeoIndexRead;
 use super::{GEO_QUERY_MAX_REGION, GeoIndex};
 use crate::fixtures::payload_fixtures::random_geo_payload;
 use crate::index::field_index::geo_hash::{GeoHash, circle_hashes, polygon_hashes};
@@ -60,10 +60,11 @@ enum IndexType {
     Immutable,
 }
 
+#[expect(clippy::large_enum_variant)]
 enum IndexBuilder {
-    MutableGridstore(GeoMapIndexGridstoreBuilder),
-    Mmap(GeoMapIndexMmapBuilder),
-    Immutable(GeoMapIndexMmapBuilder),
+    MutableGridstore(GeoIndexGridstoreBuilder),
+    Mmap(GeoIndexMmapBuilder),
+    Immutable(GeoIndexMmapBuilder),
 }
 
 impl IndexBuilder {
@@ -1142,7 +1143,7 @@ fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
     }
 }
 
-/// Cross-check that [`StoredGeoMapIndex::all_points`] produces the same
+/// Cross-check that [`OnDiskGeoIndex::all_points`] produces the same
 /// point set as the mutable and immutable index implementations.
 #[test]
 fn test_all_points_congruence() {

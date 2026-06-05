@@ -5,14 +5,14 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use itertools::Itertools;
 
-use super::super::read_ops::GeoMapIndexRead;
+use super::super::read_ops::GeoIndexRead;
 use super::ImmutableGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
-impl<S: UniversalRead> GeoMapIndexRead for ImmutableGeoIndex<S> {
+impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
     fn points_count(&self) -> usize {
         ImmutableGeoIndex::points_count(self)
     }

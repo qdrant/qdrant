@@ -6,7 +6,7 @@ use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
 
 use super::MutableGeoIndex;
-use super::inner::InMemoryGeoMapIndex;
+use super::inner::InMemoryGeoIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoPoint, RawGeoPoint};
@@ -47,7 +47,7 @@ impl MutableGeoIndex {
         };
 
         // Load in-memory index from Gridstore
-        let mut in_memory_index = InMemoryGeoMapIndex::new();
+        let mut in_memory_index = InMemoryGeoIndex::new();
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
@@ -146,7 +146,7 @@ impl MutableGeoIndex {
         self.in_memory_index.remove_point(idx)
     }
 
-    pub fn into_in_memory_index(self) -> InMemoryGeoMapIndex {
+    pub fn into_in_memory_index(self) -> InMemoryGeoIndex {
         self.in_memory_index
     }
 }

@@ -6,7 +6,7 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::GeoIndex;
-use super::read_ops::{self, GeoMapIndexRead};
+use super::read_ops::{self, GeoIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
@@ -75,7 +75,7 @@ impl GeoIndex {
         _hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            GeoMapIndexRead::get_values(self, point_id)
+            GeoIndexRead::get_values(self, point_id)
                 .into_iter()
                 .flatten()
                 .filter_map(|v| serde_json::to_value(v).ok())
@@ -102,11 +102,11 @@ impl PayloadFieldIndex for GeoIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        GeoMapIndexRead::files(self)
+        GeoIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        GeoMapIndexRead::immutable_files(self)
+        GeoIndexRead::immutable_files(self)
     }
 }
 

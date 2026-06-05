@@ -8,7 +8,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
 use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex;
-use crate::index::field_index::geo_index::ReadOnlyGeoMapIndex;
+use crate::index::field_index::geo_index::ReadOnlyGeoIndex;
 use crate::index::field_index::index_selector::{
     bool_dir, map_dir, null_dir, numeric_dir, text_dir,
 };
@@ -168,10 +168,8 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
             .map(Self::FloatIndex),
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyGeoMapIndex::open_gridstore(fs, map_dir(dir, field))?
-                }
-                ReadMode::Immutable { is_on_disk } => ReadOnlyGeoMapIndex::open_mmap(
+                ReadMode::Appendable => ReadOnlyGeoIndex::open_gridstore(fs, map_dir(dir, field))?,
+                ReadMode::Immutable { is_on_disk } => ReadOnlyGeoIndex::open_mmap(
                     fs,
                     &map_dir(dir, field),
                     is_on_disk,

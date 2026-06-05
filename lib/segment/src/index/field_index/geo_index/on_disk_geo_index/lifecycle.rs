@@ -20,10 +20,10 @@ use common::universal_io::{
 use fs_err as fs;
 use memmap2::MmapMut;
 
-use super::super::mutable_geo_index::InMemoryGeoMapIndex;
+use super::super::mutable_geo_index::InMemoryGeoIndex;
 use super::{
     COUNTS_PER_HASH, Counts, DELETED_PATH, OnDiskGeoIndex, POINTS_MAP, POINTS_MAP_IDS,
-    PointKeyValue, STATS_PATH, Storage, StoredGeoMapIndexStat,
+    PointKeyValue, STATS_PATH, Storage, StoredGeoIndexStat,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -34,7 +34,7 @@ use crate::types::GeoPoint;
 impl<S: UniversalRead> OnDiskGeoIndex<S> {
     pub fn build(
         fs: &S::Fs,
-        dynamic_index: InMemoryGeoMapIndex,
+        dynamic_index: InMemoryGeoIndex,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
@@ -149,14 +149,14 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
 
         atomic_save_json(
             &stats_path,
-            &StoredGeoMapIndexStat {
+            &StoredGeoIndexStat {
                 points_values_count: dynamic_index.points_values_count,
                 max_values_per_point: dynamic_index.max_values_per_point,
             },
         )?;
 
         Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
-            OperationError::service_error("Failed to open StoredGeoMapIndex after building it")
+            OperationError::service_error("Failed to open OnDiskGeoIndex after building it")
         })
     }
 
@@ -172,8 +172,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
-        let Some(stats) =
-            read_json_via::<_, StoredGeoMapIndexStat>(fs, &stats_path).ok_not_found()?
+        let Some(stats) = read_json_via::<_, StoredGeoIndexStat>(fs, &stats_path).ok_not_found()?
         else {
             // If stats file doesn't exist, assume the index doesn't exist on disk
             return Ok(None);
@@ -381,7 +380,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     }
 
     /// No-op flusher: the on-disk state is build-time only. See the type-level
-    /// docs on [`StoredGeoMapIndex`] for the deletion durability contract.
+    /// docs on [`OnDiskGeoIndex`] for the deletion durability contract.
     pub fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }

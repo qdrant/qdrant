@@ -8,7 +8,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex;
 use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
-use crate::index::field_index::geo_index::GeoMapIndexRead;
+use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{
@@ -207,7 +207,7 @@ impl<S: UniversalRead> FieldIndexRead for ReadOnlyFieldIndex<S> {
                 NumericIndexRead::values_count(idx, point_id).unwrap_or(0)
             }
             ReadOnlyFieldIndex::BoolIndex(idx) => BoolIndexRead::values_count(idx, point_id),
-            ReadOnlyFieldIndex::GeoIndex(idx) => GeoMapIndexRead::values_count(idx, point_id),
+            ReadOnlyFieldIndex::GeoIndex(idx) => GeoIndexRead::values_count(idx, point_id),
             ReadOnlyFieldIndex::UuidIndex(idx) => {
                 NumericIndexRead::values_count(idx, point_id).unwrap_or(0)
             }
@@ -231,7 +231,7 @@ impl<S: UniversalRead> FieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::KeywordIndex(idx) => MapIndexRead::values_is_empty(idx, point_id),
             ReadOnlyFieldIndex::FloatIndex(idx) => NumericIndexRead::values_is_empty(idx, point_id),
             ReadOnlyFieldIndex::BoolIndex(idx) => BoolIndexRead::values_is_empty(idx, point_id),
-            ReadOnlyFieldIndex::GeoIndex(idx) => GeoMapIndexRead::values_is_empty(idx, point_id),
+            ReadOnlyFieldIndex::GeoIndex(idx) => GeoIndexRead::values_is_empty(idx, point_id),
             ReadOnlyFieldIndex::UuidIndex(idx) => NumericIndexRead::values_is_empty(idx, point_id),
             ReadOnlyFieldIndex::FullTextIndex(idx) => {
                 FullTextIndexRead::values_is_empty(idx, point_id)

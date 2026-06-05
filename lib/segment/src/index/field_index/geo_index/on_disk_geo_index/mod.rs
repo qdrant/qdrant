@@ -105,7 +105,7 @@ impl<S: UniversalRead> Storage<S> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct StoredGeoMapIndexStat {
+pub(super) struct StoredGeoIndexStat {
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
 }

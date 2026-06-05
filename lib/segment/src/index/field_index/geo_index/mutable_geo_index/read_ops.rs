@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use super::super::read_ops::GeoMapIndexRead;
+use super::super::read_ops::GeoIndexRead;
 use super::MutableGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
-impl GeoMapIndexRead for MutableGeoIndex {
+impl GeoIndexRead for MutableGeoIndex {
     fn points_count(&self) -> usize {
         self.in_memory_index.points_count()
     }

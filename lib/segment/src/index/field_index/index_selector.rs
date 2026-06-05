@@ -6,7 +6,7 @@ use gridstore::Blob;
 use super::bool_index::BoolIndex;
 use super::bool_index::immutable_bool_index::ImmutableBoolIndex;
 use super::bool_index::mutable_bool_index::MutableBoolIndex;
-use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
+use super::geo_index::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder};
 use super::null_index::{ImmutableNullIndex, NullIndex};
 use super::numeric_index::{
@@ -381,8 +381,8 @@ impl IndexSelector<'_> {
     fn geo_builder(
         &self,
         field: &JsonPath,
-        make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
-        make_gridstore: fn(GeoMapIndexGridstoreBuilder) -> FieldIndexBuilder,
+        make_mmap: fn(GeoIndexMmapBuilder) -> FieldIndexBuilder,
+        make_gridstore: fn(GeoIndexGridstoreBuilder) -> FieldIndexBuilder,
         deleted_points: &BitSlice,
     ) -> FieldIndexBuilder {
         match self {

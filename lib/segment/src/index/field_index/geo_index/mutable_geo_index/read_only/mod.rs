@@ -1,25 +1,25 @@
 use common::universal_io::UniversalRead;
 use gridstore::GridstoreReader;
 
-use super::inner::InMemoryGeoMapIndex;
+use super::inner::InMemoryGeoIndex;
 use crate::types::RawGeoPoint;
 
 mod lifecycle;
 mod live_reload;
 mod read_ops;
 
-/// Read-only counterpart to [`super::MutableGeoMapIndex`].
+/// Read-only counterpart to [`super::MutableGeoIndex`].
 ///
-/// Owns the same in-memory state ([`InMemoryGeoMapIndex`]) but is backed by
+/// Owns the same in-memory state ([`InMemoryGeoIndex`]) but is backed by
 /// [`GridstoreReader`] over generic [`UniversalRead`] instead of a writable
 /// [`gridstore::Gridstore`]. Implements
-/// [`super::super::read_ops::GeoMapIndexRead`] by forwarding to the inner;
+/// [`super::super::read_ops::GeoIndexRead`] by forwarding to the inner;
 /// provides no mutation surface.
 ///
 /// Opened via [`Self::open`], which rebuilds the in-memory state by iterating
 /// the Gridstore on disk.
-pub struct ReadOnlyAppendableGeoMapIndex<S: UniversalRead> {
-    pub(super) in_memory_index: InMemoryGeoMapIndex,
+pub struct ReadOnlyAppendableGeoIndex<S: UniversalRead> {
+    pub(super) in_memory_index: InMemoryGeoIndex,
     /// Backing Gridstore reader. Kept open after the in-memory state is built
     /// so `files` / `clear_cache` can drive the underlying storage.
     pub(super) storage: GridstoreReader<Vec<RawGeoPoint>, S>,
@@ -32,8 +32,8 @@ mod tests {
     use tempfile::TempDir;
 
     use super::super::MutableGeoIndex;
-    use super::ReadOnlyAppendableGeoMapIndex;
-    use crate::index::field_index::geo_index::GeoMapIndexRead;
+    use super::ReadOnlyAppendableGeoIndex;
+    use crate::index::field_index::geo_index::GeoIndexRead;
     use crate::types::GeoPoint;
 
     /// Build an appendable (Gridstore) geo index on disk, then open it read-only
@@ -76,8 +76,8 @@ mod tests {
         // tracker read-only.
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
-        let index: ReadOnlyAppendableGeoMapIndex<ReadOnly<MmapFile>> =
-            ReadOnlyAppendableGeoMapIndex::open(&fs, dir.path().to_path_buf())
+        let index: ReadOnlyAppendableGeoIndex<ReadOnly<MmapFile>> =
+            ReadOnlyAppendableGeoIndex::open(&fs, dir.path().to_path_buf())
                 .unwrap()
                 .unwrap();
 

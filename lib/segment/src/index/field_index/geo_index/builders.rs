@@ -7,20 +7,20 @@ use common::universal_io::{MmapFs, Populate};
 use serde_json::Value;
 
 use super::GeoIndex;
-use super::mutable_geo_index::InMemoryGeoMapIndex;
+use super::mutable_geo_index::InMemoryGeoIndex;
 use super::on_disk_geo_index::OnDiskGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 
-pub struct GeoMapIndexMmapBuilder {
+pub struct GeoIndexMmapBuilder {
     pub(super) path: PathBuf,
-    pub(super) in_memory_index: InMemoryGeoMapIndex,
+    pub(super) in_memory_index: InMemoryGeoIndex,
     pub(super) is_on_disk: bool,
     pub(super) deleted_points: BitVec,
 }
 
-impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
+impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
     type FieldIndexType = GeoIndex;
 
     fn init(&mut self) -> OperationResult<()> {
@@ -60,18 +60,18 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     }
 }
 
-pub struct GeoMapIndexGridstoreBuilder {
+pub struct GeoIndexGridstoreBuilder {
     dir: PathBuf,
     index: Option<GeoIndex>,
 }
 
-impl GeoMapIndexGridstoreBuilder {
+impl GeoIndexGridstoreBuilder {
     pub(super) fn new(dir: PathBuf) -> Self {
         Self { dir, index: None }
     }
 }
 
-impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
+impl FieldIndexBuilderTrait for GeoIndexGridstoreBuilder {
     type FieldIndexType = GeoIndex;
 
     fn init(&mut self) -> OperationResult<()> {
@@ -81,7 +81,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
         );
         self.index.replace(
             GeoIndex::new_mutable(self.dir.clone(), true)?.ok_or_else(|| {
-                OperationError::service_error("Failed to open GeoMapIndex after creating it")
+                OperationError::service_error("Failed to open GeoIndex after creating it")
             })?,
         );
         Ok(())
@@ -95,7 +95,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
     ) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
-                "GeoMapIndexGridstoreBuilder: index must be initialized before adding points",
+                "GeoIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
         index.add_point(id, payload, hw_counter)
@@ -104,7 +104,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
         let Some(index) = self.index.take() else {
             return Err(OperationError::service_error(
-                "GeoMapIndexGridstoreBuilder: index must be initialized to finalize",
+                "GeoIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
         index.flusher()()?;
