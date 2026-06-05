@@ -308,6 +308,33 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
 
         0
     }
+
+    /// Refresh the read-only view to the current on-disk state: pick up vectors
+    /// (and any newly created chunk files) appended by a concurrent writer since
+    /// the last open or reload. A cheap no-op when the persisted length is
+    /// unchanged.
+    ///
+    /// `advice`/`populate` should match what the storage was opened with so the
+    /// refreshed chunks keep the same residency.
+    #[allow(dead_code)] // pending: read-only chunked vector storages will use this
+    pub fn live_reload(
+        &mut self,
+        fs: &S::Fs,
+        advice: AdviceSetting,
+        populate: bool,
+    ) -> OperationResult<()> {
+        let new_len = read_status_len(&Self::status_file(&self.directory))?;
+        if new_len == self.len {
+            return Ok(());
+        }
+
+        // The status grew: re-scan the directory so newly created chunk files
+        // become visible, then adopt the new length. Vectors written into
+        // already-mapped chunks are visible through the shared mapping.
+        self.chunks = read_chunks(fs, &self.directory, advice, populate, false)?;
+        self.len = new_len;
+        Ok(())
+    }
 }
 
 fn read_status_len(status_file: &Path) -> OperationResult<usize> {
@@ -323,4 +350,70 @@ fn read_status_len(status_file: &Path) -> OperationResult<usize> {
     Ok(usize::from_ne_bytes(
         bytes[..needed].try_into().expect("size matches"),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Random;
+    use common::universal_io::{MmapFile, MmapFs};
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::vector_storage::chunked_vectors::ChunkedVectors;
+
+    fn make_vec(seed: usize, dim: usize) -> Vec<f32> {
+        (0..dim).map(|i| (seed * dim + i) as f32).collect()
+    }
+
+    /// A read-only view picks up vectors a writer appends after it was opened,
+    /// once `live_reload` is called.
+    #[test]
+    fn live_reload_picks_up_appended_vectors() {
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let first: Vec<Vec<f32>> = (0..100).map(|s| make_vec(s, DIM)).collect();
+        let second: Vec<Vec<f32>> = (100..250).map(|s| make_vec(s, DIM)).collect();
+
+        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
+            MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        for vector in &first {
+            writer.push(vector.as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        assert_eq!(reader.len(), first.len());
+
+        // Append more through the writer, then reload the read-only view.
+        for vector in &second {
+            writer.push(vector.as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        reader
+            .live_reload(&MmapFs, AdviceSetting::Global, false)
+            .unwrap();
+
+        assert_eq!(reader.len(), first.len() + second.len());
+        let got = reader
+            .get::<Random>(first.len() as VectorOffsetType)
+            .unwrap();
+        assert_eq!(got.as_ref(), second[0].as_slice());
+    }
 }
