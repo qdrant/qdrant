@@ -40,6 +40,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             local_only,
         )
@@ -90,6 +91,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             true,
         )
@@ -117,6 +119,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             local_only,
         )
@@ -151,6 +154,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             local_only,
         )
@@ -196,6 +200,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             local_only,
         )
@@ -205,6 +210,7 @@ impl ShardReplicaSet {
     pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
         self.execute_read_operation(
             |shard| async move { shard.info().await }.boxed(),
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             local_only,
         )
@@ -260,6 +266,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             local_only,
         )
@@ -283,6 +290,7 @@ impl ShardReplicaSet {
                 async move { shard.facet(request, &search_runtime, timeout, hw_acc).await }.boxed()
             },
             read_consistency,
+            // TODO(route_token): optional deterministic routing to be exposed through read API
             None,
             local_only,
         )
