@@ -10,7 +10,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 
 impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
-    /// Read-only mirror of [`GeoIndex::new_gridstore`][1]: open the
+    /// Read-only mirror of [`GeoIndex::new_mutable`][1]: open the
     /// appendable (Gridstore-backed) geo index read-only, threading every
     /// file open through the filesystem handle `fs`.
     ///
@@ -18,12 +18,12 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     /// the leaf in [`Self::Appendable`] so callers can hold the parent enum
     /// uniformly. No `create_if_missing`: the read path never creates.
     ///
-    /// [1]: super::super::GeoIndex::new_gridstore
-    pub fn open_gridstore(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+    /// [1]: super::super::GeoIndex::new_mutable
+    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
         Ok(ReadOnlyAppendableGeoIndex::open(fs, dir)?.map(Self::Appendable))
     }
 
-    /// Read-only mirror of [`GeoIndex::new_mmap`][1]: open the immutable
+    /// Read-only mirror of [`GeoIndex::new_immutable`][1]: open the immutable
     /// (mmap-backed) geo index read-only through [`OnDiskGeoIndex::open`].
     ///
     /// The writable enum has two mmap variants (`Storage` for on-disk lazy,
@@ -38,10 +38,10 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     /// [`MmapFile`][2] but not on the write-enforced [`ReadOnly<MmapFile>`][3]
     /// backend.
     ///
-    /// [1]: super::super::GeoIndex::new_mmap
+    /// [1]: super::super::GeoIndex::new_immutable
     /// [2]: common::universal_io::MmapFile
     /// [3]: common::universal_io::ReadOnly
-    pub fn open_mmap(
+    pub fn open_immutable(
         fs: &S::Fs,
         path: &Path,
         is_on_disk: bool,

@@ -130,7 +130,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyGeoIndex<ReadOnly<MmapFile>> =
-            ReadOnlyGeoIndex::open_gridstore(&fs, dir.path().to_path_buf())
+            ReadOnlyGeoIndex::open_appendable(&fs, dir.path().to_path_buf())
                 .unwrap()
                 .unwrap();
 

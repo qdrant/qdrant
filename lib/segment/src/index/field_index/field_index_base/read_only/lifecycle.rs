@@ -168,8 +168,8 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
             .map(Self::FloatIndex),
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
-                ReadMode::Appendable => ReadOnlyGeoIndex::open_gridstore(fs, map_dir(dir, field))?,
-                ReadMode::Immutable { is_on_disk } => ReadOnlyGeoIndex::open_mmap(
+                ReadMode::Appendable => ReadOnlyGeoIndex::open_appendable(fs, map_dir(dir, field))?,
+                ReadMode::Immutable { is_on_disk } => ReadOnlyGeoIndex::open_immutable(
                     fs,
                     &map_dir(dir, field),
                     is_on_disk,
