@@ -3,12 +3,12 @@ use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use super::ReadOnlyAppendableGeoMapIndex;
+use super::ReadOnlyAppendableGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::LiveReload;
 use crate::types::{GeoPoint, RawGeoPoint};
 
-impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoMapIndex<S> {
+impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
     type Fs = S::Fs;
 
     fn live_reload(

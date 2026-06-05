@@ -10,7 +10,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
 use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
-use crate::index::field_index::geo_index::GeoMapIndexRead;
+use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};

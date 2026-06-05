@@ -1,7 +1,7 @@
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, UniversalRead};
 
-use super::mmap_geo_index::StoredGeoMapIndex;
+use super::on_disk_geo_index::OnDiskGeoIndex;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::types::GeoPoint;
@@ -18,10 +18,10 @@ pub(super) struct Counts {
     pub(super) values: u32,
 }
 
-impl From<super::mmap_geo_index::Counts> for Counts {
+impl From<super::on_disk_geo_index::Counts> for Counts {
     #[inline]
-    fn from(counts: super::mmap_geo_index::Counts) -> Self {
-        let super::mmap_geo_index::Counts {
+    fn from(counts: super::on_disk_geo_index::Counts) -> Self {
+        let super::on_disk_geo_index::Counts {
             hash,
             points,
             values,
@@ -41,7 +41,7 @@ impl From<super::mmap_geo_index::Counts> for Counts {
 /// - `points_map_offsets[i]..points_map_offsets[i+1]` is the range in
 ///   `points_map_ids` holding the point IDs for that hash.
 /// - Deleted entries in `points_map_ids` are marked with `DELETED_SENTINEL`.
-pub struct ImmutableGeoMapIndex {
+pub struct ImmutableGeoIndex<S: UniversalRead = MmapFile> {
     pub(super) counts_per_hash: Vec<Counts>,
     pub(super) points_map_hashes: Vec<GeoHash>,
     pub(super) points_map_offsets: Vec<u32>,
@@ -50,6 +50,6 @@ pub struct ImmutableGeoMapIndex {
     pub(super) points_count: usize,
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
-    pub(super) storage: Box<StoredGeoMapIndex<MmapFile>>,
+    pub(super) storage: OnDiskGeoIndex<S>,
     pub(super) cached_ram_usage_bytes: usize,
 }

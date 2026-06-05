@@ -10,7 +10,7 @@ pub(crate) use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
 use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex;
-use crate::index::field_index::geo_index::ReadOnlyGeoMapIndex;
+use crate::index::field_index::geo_index::ReadOnlyGeoIndex;
 use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
 use crate::index::field_index::null_index::ReadOnlyNullIndex;
 use crate::index::field_index::numeric_index::ReadOnlyNumericIndex;
@@ -31,7 +31,7 @@ pub enum ReadOnlyFieldIndex<S: UniversalRead> {
     IntMapIndex(ReadOnlyMapIndex<IntPayloadType, S>),
     KeywordIndex(ReadOnlyMapIndex<str, S>),
     FloatIndex(ReadOnlyNumericIndex<FloatPayloadType, FloatPayloadType, S>),
-    GeoIndex(ReadOnlyGeoMapIndex<S>),
+    GeoIndex(ReadOnlyGeoIndex<S>),
     FullTextIndex(ReadOnlyFullTextIndex<S>),
     BoolIndex(ReadOnlyBoolIndex<S>),
     UuidIndex(ReadOnlyNumericIndex<UuidIntType, UuidPayloadType, S>),

@@ -38,7 +38,7 @@ where
         fs: &S::Fs,
         in_memory_index: InMemoryNumericIndex<T>,
         path: &Path,
-        populate: bool,
+        populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
@@ -57,14 +57,12 @@ where
         in_memory_index.histogram.save(path)?;
 
         OnDiskPointToValues::<T, S>::build_from_iter(
-            fs,
             path,
             in_memory_index
                 .point_to_values
                 .iter()
                 .enumerate()
                 .map(|(idx, values)| (idx as PointOffsetType, values.iter().map(|v| v.borrow()))),
-            populate,
         )?;
 
         {
@@ -119,7 +117,7 @@ where
     pub fn open(
         fs: &S::Fs,
         path: &Path,
-        populate: bool,
+        populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let pairs_path = path.join(PAIRS_PATH);
@@ -138,7 +136,7 @@ where
         let pairs_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Global,
         };
         let pairs = TypedStorage::open(fs, pairs_path, pairs_options, Default::default())?;

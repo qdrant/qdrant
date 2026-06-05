@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 use gridstore::Blob;
 
 use super::super::MapIndexKey;
@@ -52,9 +52,8 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(on_disk_index) =
-            OnDiskMapIndex::open(fs, path, !effective_is_on_disk, deleted_points)?
-        else {
+        let populate = Populate::from(!effective_is_on_disk);
+        let Some(on_disk_index) = OnDiskMapIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
 

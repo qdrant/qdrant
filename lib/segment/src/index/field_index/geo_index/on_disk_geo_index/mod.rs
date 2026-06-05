@@ -61,13 +61,12 @@ pub(in super::super) struct PointKeyValue {
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct StoredGeoMapIndex<S: UniversalRead = MmapFile> {
+pub struct OnDiskGeoIndex<S: UniversalRead = MmapFile> {
     pub(super) path: PathBuf,
     pub(in super::super) storage: Storage<S>,
     pub(in super::super) deleted_count: usize,
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
-    pub(super) is_on_disk: bool,
 }
 
 pub(in super::super) struct Storage<S: UniversalRead = MmapFile> {
@@ -106,7 +105,7 @@ impl<S: UniversalRead> Storage<S> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct StoredGeoMapIndexStat {
+pub(super) struct StoredGeoIndexStat {
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
 }

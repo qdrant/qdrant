@@ -2,11 +2,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use super::StoredGeoMapIndex;
+use super::OnDiskGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
 
-impl<S: UniversalRead> LiveReload for StoredGeoMapIndex<S> {
+impl<S: UniversalRead> LiveReload for OnDiskGeoIndex<S> {
     type Fs = S::Fs;
 
     fn live_reload(

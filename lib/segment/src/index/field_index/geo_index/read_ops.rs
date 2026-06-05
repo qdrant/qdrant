@@ -1,17 +1,17 @@
 //! Read operations shared by all geo index variants.
 //!
-//! The three concrete geo index types ([`MutableGeoMapIndex`],
-//! [`ImmutableGeoMapIndex`], [`StoredGeoMapIndex`]) — and the upcoming
-//! [`ReadOnlyGeoMapIndex`] — all expose the same read API on top of the same
-//! geohash-bucket layout. The [`GeoMapIndexRead`] trait captures that layout
+//! The three concrete geo index types ([`MutableGeoIndex`],
+//! [`ImmutableGeoIndex`], [`OnDiskGeoIndex`]) — and the upcoming
+//! [`ReadOnlyGeoIndex`] — all expose the same read API on top of the same
+//! geohash-bucket layout. The [`GeoIndexRead`] trait captures that layout
 //! via per-variant accessors; query / cardinality / payload-block logic lives
-//! as free functions over `&impl GeoMapIndexRead`, matching the
+//! as free functions over `&impl GeoIndexRead`, matching the
 //! [`NullIndexRead`] / [`BoolIndexRead`] pattern.
 //!
-//! [`MutableGeoMapIndex`]: super::mutable_geo_index::MutableGeoMapIndex
-//! [`ImmutableGeoMapIndex`]: super::immutable_geo_index::ImmutableGeoMapIndex
-//! [`StoredGeoMapIndex`]: super::mmap_geo_index::StoredGeoMapIndex
-//! [`ReadOnlyGeoMapIndex`]: super::read_only_geo_index::ReadOnlyGeoMapIndex
+//! [`MutableGeoIndex`]: super::mutable_geo_index::MutableGeoIndex
+//! [`ImmutableGeoIndex`]: super::immutable_geo_index::ImmutableGeoIndex
+//! [`OnDiskGeoIndex`]: super::mmap_geo_index::OnDiskGeoIndex
+//! [`ReadOnlyGeoIndex`]: super::read_only_geo_index::ReadOnlyGeoIndex
 //! [`NullIndexRead`]: super::super::null_index::NullIndexRead
 //! [`BoolIndexRead`]: super::super::bool_index::BoolIndexRead
 
@@ -41,7 +41,7 @@ use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 /// retrieval, iteration over hash regions); every higher-level read operation
 /// (`match_cardinality`, `large_hashes`, telemetry, populate / clear_cache /
 /// files) is a default impl derived from those.
-pub trait GeoMapIndexRead {
+pub trait GeoIndexRead {
     fn points_count(&self) -> usize;
 
     fn points_values_count(&self) -> usize;
@@ -110,7 +110,7 @@ pub trait GeoMapIndexRead {
     }
 
     /// Cardinality estimation for a set of geo-hash regions. Mirrors the
-    /// previous inherent method on `GeoMapIndex`; depends only on the trait's
+    /// previous inherent method on `GeoIndex`; depends only on the trait's
     /// required accessors so every variant gets the same estimation logic.
     fn match_cardinality(
         &self,
@@ -199,7 +199,7 @@ pub trait GeoMapIndexRead {
     }
 }
 
-pub(super) fn filter<'a, G: GeoMapIndexRead + ?Sized>(
+pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     geo: &'a G,
     condition: &FieldCondition,
     hw_counter: &'a HardwareCounterCell,
@@ -243,7 +243,7 @@ pub(super) fn filter<'a, G: GeoMapIndexRead + ?Sized>(
     Ok(None)
 }
 
-pub(super) fn estimate_cardinality<G: GeoMapIndexRead + ?Sized>(
+pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
     geo: &G,
     condition: &FieldCondition,
     hw_counter: &HardwareCounterCell,
@@ -303,7 +303,7 @@ pub(super) fn estimate_cardinality<G: GeoMapIndexRead + ?Sized>(
     Ok(None)
 }
 
-pub(super) fn for_each_payload_block<G: GeoMapIndexRead + ?Sized>(
+pub(super) fn for_each_payload_block<G: GeoIndexRead + ?Sized>(
     geo: &G,
     threshold: usize,
     key: PayloadKeyType,
@@ -321,7 +321,7 @@ pub(super) fn for_each_payload_block<G: GeoMapIndexRead + ?Sized>(
         })
 }
 
-pub(super) fn condition_checker<'a, G: GeoMapIndexRead + ?Sized>(
+pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
     geo: &'a G,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,

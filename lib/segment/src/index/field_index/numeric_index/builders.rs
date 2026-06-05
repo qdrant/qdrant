@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use gridstore::Blob;
 use serde_json::Value;
 
@@ -124,7 +124,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = !self.is_on_disk;
+        let populate = Populate::from(!self.is_on_disk);
         let on_disk_index = OnDiskNumericIndex::build(
             &MmapFs,
             self.in_memory_index,
