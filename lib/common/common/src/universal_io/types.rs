@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::Range;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -6,6 +7,7 @@ use serde::de::DeserializeOwned;
 use super::UniversalIoError;
 use super::traits::UniversalReadFs;
 use crate::mmap::{Advice, AdviceSetting};
+use crate::universal_io::UserData;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UniversalKind {
@@ -138,6 +140,12 @@ impl ReadRange {
 
         byte_offset..byte_end
     }
+}
+
+pub struct ReadBytesItem<U: UserData> {
+    pub user_data: U,
+    pub range: Range<u64>,
+    pub align: usize,
 }
 
 pub type ByteOffset = u64;

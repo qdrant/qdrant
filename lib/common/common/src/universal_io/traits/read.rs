@@ -5,7 +5,7 @@ use std::ops::Range;
 use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadRange, Result, UniversalKind};
+use crate::universal_io::{ReadBytesItem, ReadRange, Result, UniversalKind};
 
 /// Per-file handle for universal read access.
 ///
@@ -114,6 +114,35 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
             .map(move |(user_data, range)| (user_data, self, range));
 
         Self::read_multi_iter::<P, T, U>(reads)
+    }
+
+    fn read_bytes_iter<P, U>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
+    ) -> Result<impl Iterator<Item = Result<(U, ACow<'_>)>>>
+    where
+        P: AccessPattern,
+        U: UserData,
+    {
+        let mut pipeline = Self::BorrowedReadPipeline::<'_, U>::new()?;
+        let mut ranges = ranges.into_iter();
+
+        Ok(std::iter::from_fn(move || {
+            while pipeline.can_schedule()
+                && let Some(item) = ranges.next()
+            {
+                let ReadBytesItem {
+                    user_data,
+                    range,
+                    align,
+                } = item;
+                if let Err(err) = pipeline.schedule::<P>(user_data, self, range, align) {
+                    return Some(Err(err));
+                }
+            }
+
+            pipeline.wait().transpose()
+        }))
     }
 
     fn len<T>(&self) -> Result<u64>;
