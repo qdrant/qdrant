@@ -7,7 +7,7 @@ use gridstore::GridstoreReader;
 use super::super::inner::InMemoryGeoMapIndex;
 use super::ReadOnlyAppendableGeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::types::RawGeoPoint;
+use crate::types::{GeoPoint, RawGeoPoint};
 
 impl<S: UniversalRead> ReadOnlyAppendableGeoMapIndex<S> {
     /// Open the appendable (Gridstore) geo index read-only, threading every
@@ -39,7 +39,8 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoMapIndex<S> {
             .iter::<_, OperationError>(
                 storage.max_point_offset(),
                 |idx, values: Vec<RawGeoPoint>| {
-                    in_memory_index.ingest(idx, values)?;
+                    let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
+                    in_memory_index.add_many_geo_points(idx, geo_points, &hw_counter)?;
                     Ok(true)
                 },
                 // Same counter the writable `open_gridstore` load uses; this is
