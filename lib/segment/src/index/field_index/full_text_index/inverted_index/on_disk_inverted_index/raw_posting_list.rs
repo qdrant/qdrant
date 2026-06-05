@@ -5,7 +5,7 @@ use posting_list::{PostingChunk, PostingListView, RemainderPosting, SizedTypeFor
 use zerocopy::FromBytes;
 
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::types::{
+use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::types::{
     PostingListHeader, ZerocopyPostingValue,
 };
 

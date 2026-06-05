@@ -1,6 +1,6 @@
 pub(super) mod immutable_inverted_index;
 pub mod immutable_postings_enum;
-pub(super) mod mmap_inverted_index;
+pub(super) mod on_disk_inverted_index;
 pub(super) mod mutable_inverted_index;
 pub(super) mod mutable_inverted_index_builder;
 mod positions;
@@ -421,7 +421,7 @@ mod tests {
 
     use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-    use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::MmapInvertedIndex;
+    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::MmapInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 
     fn generate_word() -> String {

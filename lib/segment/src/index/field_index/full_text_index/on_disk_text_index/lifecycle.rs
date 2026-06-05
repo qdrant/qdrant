@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::super::FullTextIndex;
 use super::super::immutable_text_index::ImmutableFullTextIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
+use super::super::inverted_index::on_disk_inverted_index::MmapInvertedIndex;
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
