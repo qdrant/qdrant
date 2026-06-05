@@ -25,7 +25,7 @@ where
     /// Open and load immutable numeric index from mmap storage.
     ///
     /// NOTE: returns `Self` (infallible) while sibling
-    /// `ImmutableMapIndex::open_mmap` / `ImmutableGeoMapIndex::open_mmap` /
+    /// `ImmutableMapIndex::open_mmap` / `ImmutableGeoIndex::open_mmap` /
     /// `ImmutableFullTextIndex::open_mmap` return `OperationResult<Self>`.
     /// Numeric's body has no fallible reads to propagate (`from_mmap` is
     /// infallible; `clear_cache` errors are warn-and-continue, matching the

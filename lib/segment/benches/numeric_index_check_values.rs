@@ -1,7 +1,7 @@
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, Populate};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -61,7 +61,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         &MmapFs,
         mutable_index,
         dir.path(),
-        true,
+        Populate::Blocking,
         &deleted_points,
     )
     .unwrap();

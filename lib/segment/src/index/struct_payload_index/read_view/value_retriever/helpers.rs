@@ -86,7 +86,7 @@ mod tests {
 
     use super::variable_retriever;
     use crate::common::utils::MultiValue;
-    use crate::index::field_index::geo_index::GeoMapIndex;
+    use crate::index::field_index::geo_index::GeoIndex;
     use crate::index::field_index::numeric_index::NumericIndex;
     use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait};
     use crate::index::query_optimization::payload_provider::PayloadProvider;
@@ -216,7 +216,7 @@ mod tests {
 
         // Create a field index for a geo point.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = GeoMapIndex::builder_mmap(dir.path(), false, &deleted_points);
+        let mut builder = GeoIndex::builder_mmap(dir.path(), false, &deleted_points);
 
         builder.add_point(0, &[], &hw_counter).unwrap();
         builder

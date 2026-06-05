@@ -6,19 +6,19 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
-use super::super::read_ops::GeoMapIndexRead;
+use super::super::read_ops::GeoIndexRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
-/// In-memory state shared by [`super::MutableGeoMapIndex`] and
-/// [`super::read_only::ReadOnlyAppendableGeoMapIndex`].
+/// In-memory state shared by [`super::MutableGeoIndex`] and
+/// [`super::read_only::ReadOnlyAppendableGeoIndex`].
 ///
 /// Both wrappers add a different backing storage (`Gridstore` vs
 /// `GridstoreReader`); the in-memory layout that serves every
-/// [`GeoMapIndexRead`] method is the same, so it lives here once.
-pub struct InMemoryGeoMapIndex {
+/// [`GeoIndexRead`] method is the same, so it lives here once.
+pub struct InMemoryGeoIndex {
     /*
     {
         "d": 10,
@@ -46,13 +46,13 @@ pub struct InMemoryGeoMapIndex {
     pub max_values_per_point: usize,
 }
 
-impl Default for InMemoryGeoMapIndex {
+impl Default for InMemoryGeoIndex {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl InMemoryGeoMapIndex {
+impl InMemoryGeoIndex {
     pub fn new() -> Self {
         Self {
             points_per_hash: Default::default(),
@@ -252,7 +252,7 @@ impl InMemoryGeoMapIndex {
     }
 }
 
-impl GeoMapIndexRead for InMemoryGeoMapIndex {
+impl GeoIndexRead for InMemoryGeoIndex {
     fn points_count(&self) -> usize {
         self.points_count
     }
@@ -330,11 +330,11 @@ impl GeoMapIndexRead for InMemoryGeoMapIndex {
             .collect())
     }
 
-    /// Placeholder — both wrappers ([`super::MutableGeoMapIndex`] and
-    /// [`super::read_only::ReadOnlyAppendableGeoMapIndex`]) override this
-    /// on their own [`GeoMapIndexRead`] impls to report the concrete
+    /// Placeholder — both wrappers ([`super::MutableGeoIndex`] and
+    /// [`super::read_only::ReadOnlyAppendableGeoIndex`]) override this
+    /// on their own [`GeoIndexRead`] impls to report the concrete
     /// storage. The inner is never consumed as a bare
-    /// `&dyn GeoMapIndexRead`, so this value is unobservable in practice.
+    /// `&dyn GeoIndexRead`, so this value is unobservable in practice.
     fn get_storage_type(&self) -> StorageType {
         StorageType::Gridstore
     }

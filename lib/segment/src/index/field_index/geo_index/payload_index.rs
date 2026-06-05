@@ -5,8 +5,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::GeoMapIndex;
-use super::read_ops::{self, GeoMapIndexRead};
+use super::GeoIndex;
+use super::read_ops::{self, GeoIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
@@ -18,7 +18,7 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
-impl ValueIndexer for GeoMapIndex {
+impl ValueIndexer for GeoIndex {
     type ValueType = GeoPoint;
 
     fn add_many(
@@ -28,11 +28,11 @@ impl ValueIndexer for GeoMapIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, values, hw_counter),
-            GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
+            GeoIndex::Mutable(index) => index.add_many_geo_points(id, values, hw_counter),
+            GeoIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable geo index",
             )),
-            GeoMapIndex::OnDisk(_) => Err(OperationError::service_error(
+            GeoIndex::OnDisk(_) => Err(OperationError::service_error(
                 "Can't add values to mmap geo index",
             )),
         }
@@ -59,9 +59,9 @@ impl ValueIndexer for GeoMapIndex {
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.remove_point(id),
-            GeoMapIndex::Immutable(index) => index.remove_point(id),
-            GeoMapIndex::OnDisk(index) => {
+            GeoIndex::Mutable(index) => index.remove_point(id),
+            GeoIndex::Immutable(index) => index.remove_point(id),
+            GeoIndex::OnDisk(index) => {
                 index.remove_point(id);
                 Ok(())
             }
@@ -69,13 +69,13 @@ impl ValueIndexer for GeoMapIndex {
     }
 }
 
-impl GeoMapIndex {
+impl GeoIndex {
     pub fn value_retriever<'a>(
         &'a self,
         _hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            GeoMapIndexRead::get_values(self, point_id)
+            GeoIndexRead::get_values(self, point_id)
                 .into_iter()
                 .flatten()
                 .filter_map(|v| serde_json::to_value(v).ok())
@@ -84,33 +84,33 @@ impl GeoMapIndex {
     }
 }
 
-impl PayloadFieldIndex for GeoMapIndex {
+impl PayloadFieldIndex for GeoIndex {
     fn wipe(self) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.wipe(),
-            GeoMapIndex::Immutable(index) => index.wipe(),
-            GeoMapIndex::OnDisk(index) => index.wipe(),
+            GeoIndex::Mutable(index) => index.wipe(),
+            GeoIndex::Immutable(index) => index.wipe(),
+            GeoIndex::OnDisk(index) => index.wipe(),
         }
     }
 
     fn flusher(&self) -> Flusher {
         match self {
-            GeoMapIndex::Mutable(index) => index.flusher(),
-            GeoMapIndex::Immutable(index) => index.flusher(),
-            GeoMapIndex::OnDisk(index) => index.flusher(),
+            GeoIndex::Mutable(index) => index.flusher(),
+            GeoIndex::Immutable(index) => index.flusher(),
+            GeoIndex::OnDisk(index) => index.flusher(),
         }
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        GeoMapIndexRead::files(self)
+        GeoIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        GeoMapIndexRead::immutable_files(self)
+        GeoIndexRead::immutable_files(self)
     }
 }
 
-impl PayloadFieldIndexRead for GeoMapIndex {
+impl PayloadFieldIndexRead for GeoIndex {
     fn count_indexed_points(&self) -> usize {
         self.points_count()
     }

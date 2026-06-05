@@ -6,7 +6,7 @@ use gridstore::Blob;
 use super::bool_index::BoolIndex;
 use super::bool_index::immutable_bool_index::ImmutableBoolIndex;
 use super::bool_index::mutable_bool_index::MutableBoolIndex;
-use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
+use super::geo_index::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder};
 use super::null_index::{ImmutableNullIndex, NullIndex};
 use super::numeric_index::{
@@ -19,7 +19,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::FullTextIndex;
-use crate::index::field_index::geo_index::GeoMapIndex;
+use crate::index::field_index::geo_index::GeoIndex;
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
@@ -367,13 +367,13 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         create_if_missing: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Option<GeoMapIndex>> {
+    ) -> OperationResult<Option<GeoIndex>> {
         Ok(match self {
             IndexSelector::NonAppendable { dir, is_on_disk } => {
-                GeoMapIndex::new_on_disk(&map_dir(dir, field), *is_on_disk, deleted_points)?
+                GeoIndex::new_immutable(&map_dir(dir, field), *is_on_disk, deleted_points)?
             }
             IndexSelector::Appendable { dir } => {
-                GeoMapIndex::new_mutable(map_dir(dir, field), create_if_missing)?
+                GeoIndex::new_mutable(map_dir(dir, field), create_if_missing)?
             }
         })
     }
@@ -381,16 +381,18 @@ impl IndexSelector<'_> {
     fn geo_builder(
         &self,
         field: &JsonPath,
-        make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
-        make_gridstore: fn(GeoMapIndexGridstoreBuilder) -> FieldIndexBuilder,
+        make_mmap: fn(GeoIndexMmapBuilder) -> FieldIndexBuilder,
+        make_gridstore: fn(GeoIndexGridstoreBuilder) -> FieldIndexBuilder,
         deleted_points: &BitSlice,
     ) -> FieldIndexBuilder {
         match self {
-            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(
-                GeoMapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk, deleted_points),
-            ),
+            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(GeoIndex::builder_mmap(
+                &map_dir(dir, field),
+                *is_on_disk,
+                deleted_points,
+            )),
             IndexSelector::Appendable { dir } => {
-                make_gridstore(GeoMapIndex::builder_gridstore(map_dir(dir, field)))
+                make_gridstore(GeoIndex::builder_gridstore(map_dir(dir, field)))
             }
         }
     }
