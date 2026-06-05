@@ -206,8 +206,7 @@ mod tests {
     /// Build a flags directory whose set ("true") positions are exactly `trues`
     /// with logical length `len`, via the writable `DynamicStoredFlags`.
     fn build_flags(dir: &std::path::Path, trues: &[u32], len: usize) {
-        let mut flags =
-            DynamicStoredFlags::<MmapFile>::open(&MmapFs, dir, false).unwrap();
+        let mut flags = DynamicStoredFlags::<MmapFile>::open(&MmapFs, dir, false).unwrap();
         flags.set_len(&MmapFs, len).unwrap();
         flags
             .set_ascending_bits(trues.iter().map(|&i| (u64::from(i), true)))
