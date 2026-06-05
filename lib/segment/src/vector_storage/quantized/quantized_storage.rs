@@ -86,6 +86,10 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index).expect("vector exists")
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
         let start = (self.quantized_vector_size.get() * index as usize) as u64;
         let length = self.quantized_vector_size.get() as u64;
         self.storage
@@ -93,7 +97,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
                 byte_offset: start,
                 length,
             })
-            .expect("vector exists")
+            .ok()
     }
 
     fn upsert_vector(

@@ -14,7 +14,6 @@
 
 mod turbo_encoded_vectors;
 
-use std::alloc::Layout;
 use std::borrow::Cow;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -63,14 +62,7 @@ pub struct TurboVectorStorage {
 impl TurboVectorStorage {
     /// Bytes used by all available (non-deleted) vectors in their encoded form.
     pub fn size_of_available_vectors_in_bytes(&self) -> usize {
-        // TODO: available_vector_count() * quantizer.quantized_size().
-        unimplemented!("TODO: encoded size of available vectors")
-    }
-
-    /// Memory layout of a single encoded vector.
-    pub fn quantized_vector_layout(&self) -> OperationResult<Layout> {
-        // TODO: build from quantized_vector_size() with the encoding alignment.
-        unimplemented!("TODO: layout of one encoded vector")
+        self.available_vector_count() * self.quantizer.quantized_size()
     }
 
     /// Raw encoded vector blob for one vector (no dequantization/lloyd lookup).
@@ -105,7 +97,7 @@ impl VectorStorageRead for TurboVectorStorage {
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        unimplemented!("TODO: datatype of TurboVectorStorage not yet decided")
+        VectorStorageDatatype::Turbo4
     }
 
     fn is_on_disk(&self) -> bool {
@@ -116,14 +108,18 @@ impl VectorStorageRead for TurboVectorStorage {
         self.storage.vectors_count()
     }
 
-    fn get_vector<P: AccessPattern>(&self, _key: PointOffsetType) -> CowVector<'_> {
-        // TODO: dequantize the encoded blob into `dim` f32 -> CowVector::Dense.
-        unimplemented!("TODO: dequantize encoded vector to f32")
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        let quantized = self.storage.get_quantized_vector(key);
+        // TODO(TQDT): use the new simd dequantization method instead.
+        CowVector::Dense(Cow::Owned(self.quantizer.dequantize(&quantized)))
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, _key: PointOffsetType) -> Option<CowVector<'_>> {
-        // TODO: as get_vector, returning None when the key is out of range.
-        unimplemented!("TODO: dequantize encoded vector to f32 (optional)")
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        let quantized = self.storage.get_quantized_vector_opt(key)?;
+        // TODO(TQDT): use the new simd dequantization method instead.
+        Some(CowVector::Dense(Cow::Owned(
+            self.quantizer.dequantize(&quantized),
+        )))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -151,8 +147,14 @@ impl VectorStorage for TurboVectorStorage {
     }
 
     fn flusher(&self) -> Flusher {
-        // TODO: combine `self.encoded.flusher()` and `self.deleted.flusher()`.
-        unimplemented!("TODO: flush encoded storage + deleted flags")
+        let storage_flusher = self.storage.flusher();
+        let deleted_flusher = self.deleted.flusher();
+
+        Box::new(move || {
+            storage_flusher()?;
+            deleted_flusher()?;
+            Ok(())
+        })
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -167,9 +169,12 @@ impl VectorStorage for TurboVectorStorage {
         self.storage.immutable_files()
     }
 
-    fn delete_vector(&mut self, _key: PointOffsetType) -> OperationResult<bool> {
-        // TODO: set the bit in `self.deleted` and bump `self.deleted_count`.
-        unimplemented!("TODO: flag a vector as deleted")
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+        let now_deleted = !self.deleted.set(key, true);
+        if now_deleted {
+            self.deleted_count += 1;
+        }
+        Ok(now_deleted)
     }
 }
 

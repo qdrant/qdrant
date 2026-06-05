@@ -30,6 +30,15 @@ impl TurboEncodedVectorStorage {
         }
     }
 
+    /// Raw encoded blob for one vector (no dequantization).
+    pub(super) fn get_quantized_vector_opt(&self, key: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        match self {
+            Self::Ram(s) => s.get_vector_data_opt(key),
+            Self::Mmap(s) => s.get_vector_data_opt(key),
+            Self::ChunkedMmap(s) => s.get_vector_data_opt(key),
+        }
+    }
+
     /// Number of encoded vectors (including soft-deleted).
     pub(super) fn vectors_count(&self) -> usize {
         match self {

@@ -71,6 +71,12 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
     }
 
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        Some(Cow::Borrowed(
+            self.vectors.get_opt(index as VectorOffsetType)?,
+        ))
+    }
+
     fn upsert_vector(
         &mut self,
         id: PointOffsetType,

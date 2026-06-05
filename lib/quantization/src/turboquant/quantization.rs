@@ -1,3 +1,5 @@
+use num_traits::AsPrimitive;
+
 use crate::DistanceType;
 use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
@@ -284,7 +286,11 @@ impl TurboQuantizer {
         norm
     }
 
-    pub fn dequantize(&self, quantized: &[u8]) -> Vec<f64> {
+    pub fn dequantize<T>(&self, quantized: &[u8]) -> Vec<T>
+    where
+        T: Copy + 'static,
+        f64: AsPrimitive<T>,
+    {
         let (unpacked_iter, extras) = self.unpack_vector(quantized);
         let scaling_factor = f64::from(extras.scaling_factor());
         // Materialize the unpacked centroids once. `unpack_vector` returns a
@@ -329,10 +335,10 @@ impl TurboQuantizer {
                 .enumerate()
                 .map(|(i, x)| {
                     let rescaled = x / f64::from(ec.scale[i]) - f64::from(ec.shift[i]);
-                    rescaled * scale
+                    (rescaled * scale).as_()
                 })
                 .collect(),
-            None => unpacked.into_iter().map(|x| x * scale).collect(),
+            None => unpacked.into_iter().map(|x| (x * scale).as_()).collect(),
         }
     }
 
