@@ -1,7 +1,9 @@
 import pytest
+import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
+from .helpers.settings import QDRANT_HOST
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -162,4 +164,49 @@ def test_validation_empty_vector_batch_upsert(collection_name, wait):
     assert not response.ok, (
         f"empty vector accepted in batch upsert with wait={wait}: "
         f"status={response.status_code}, body={response.text}"
+    )
+
+
+# Regression for https://github.com/qdrant/qdrant/issues/9149
+#
+# `shard_number`, `replication_factor`, and `write_consistency_factor` must be
+# at least 1. Bypasses `request_with_validation` (which short-circuits on the
+# client-side OpenAPI minimum) so the server-side `Validate` derive is what
+# actually rejects the request — that's the contract we care about.
+@pytest.mark.parametrize(
+    "field",
+    ["shard_number", "replication_factor", "write_consistency_factor"],
+)
+def test_validation_positive_integer_zero(field):
+    name = f"test_validation_{field}_zero"
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{name}",
+        json={
+            "vectors": {"size": 4, "distance": "Dot"},
+            field: 0,
+        },
+    )
+    assert response.status_code == 422, (
+        f"expected 422 for {field}=0, got {response.status_code}: {response.text}"
+    )
+    assert field in response.json()["status"]["error"]
+
+
+# Negative integers can't fit in `u32`, so serde rejects them at deserialization
+# (HTTP 400) before the `Validate` derive runs — different status, same outcome.
+@pytest.mark.parametrize(
+    "field",
+    ["shard_number", "replication_factor", "write_consistency_factor"],
+)
+def test_validation_positive_integer_negative(field):
+    name = f"test_validation_{field}_neg"
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{name}",
+        json={
+            "vectors": {"size": 4, "distance": "Dot"},
+            field: -1,
+        },
+    )
+    assert response.status_code == 400, (
+        f"expected 400 for {field}=-1, got {response.status_code}: {response.text}"
     )
