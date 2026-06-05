@@ -45,6 +45,14 @@ impl<S: UniversalRead> BoolIndexRead for ReadOnlyBoolIndex<S> {
     fn telemetry_index_type(&self) -> &'static str {
         "read_only_bool_index"
     }
+
+    fn trues_count(&self) -> usize {
+        self.trues_count
+    }
+
+    fn falses_count(&self) -> usize {
+        self.falses_count
+    }
 }
 
 impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyBoolIndex<S> {

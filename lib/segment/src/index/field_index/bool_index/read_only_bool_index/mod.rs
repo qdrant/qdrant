@@ -6,6 +6,7 @@ use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::index::payload_config::IndexMutability;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart of [`MutableBoolIndex`][1] / [`ImmutableBoolIndex`][2].
@@ -29,6 +30,8 @@ pub struct ReadOnlyBoolIndex<S: UniversalRead> {
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage<S>,
     pub(super) indexed_count: usize,
+    pub(super) trues_count: usize,
+    pub(super) falses_count: usize,
 }
 
 pub(super) struct ReadOnlyStorage<S: UniversalRead> {
@@ -75,7 +78,7 @@ mod tests {
     use super::super::mutable_bool_index::{FALSES_DIRNAME, MutableBoolIndex, TRUES_DIRNAME};
     use super::ReadOnlyBoolIndex;
     use crate::index::field_index::{
-        FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
+        FieldIndexBuilderTrait, LiveReload, PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer,
     };
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, Match, MatchValue, ValueVariants};
@@ -153,6 +156,121 @@ mod tests {
         );
         // `indexed_count = |trues ∪ falses|`, derived from the two bitmaps on open.
         assert_eq!(index.count_indexed_points(), 9);
+    }
+
+    /// The incremental `LiveReload` path must land on exactly the same in-memory
+    /// state as a fresh `ReadOnlyBoolIndex::open` over the post-write files.
+    ///
+    /// A writer keeps mutating the on-disk flags after the read-only view is
+    /// open. The id-tracker producer is append-only — a value change allocates a
+    /// fresh offset and retires the old one — so `new_points` only ever carry
+    /// brand-new offsets and `deleted_points` only ever retire existing ones; no
+    /// offset is rewritten in place. `live_reload` is handed just that delta, yet
+    /// its bitmaps, `filter` results, `indexed_count`, and cached per-variant
+    /// counts must match the authoritative re-open.
+    ///
+    /// Offset 1100 lands past the 128-byte minimum mmap (1024 flags), growing the
+    /// flags file, so it is observed only because `live_reload` reopens the
+    /// bitslice — a stale mapping cannot see the grown region.
+    #[test]
+    fn live_reload_matches_fresh_open() {
+        let dir = TempDir::with_prefix("read_only_bool_index_live_reload").unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        // Initial on-disk state: points 0..=5.
+        let initial = [
+            json!(true),          // 0: true
+            json!(false),         // 1: false
+            json!([true, false]), // 2: both
+            json!(true),          // 3: true
+            json!(false),         // 4: false
+            json!([true, false]), // 5: both
+        ];
+        let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+        for (i, value) in initial.iter().enumerate() {
+            builder.add_point(i as u32, &[value], &hw_counter).unwrap();
+        }
+        let mut index = builder.finalize().unwrap();
+        index.flusher()().unwrap();
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        // Read-only view of points 0..=5, taken before the writer continues.
+        let mut reloaded = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+            .unwrap()
+            .unwrap();
+
+        // Writer's append-only delta: retire points 1 (false) and 2 (both), then
+        // append fresh offsets 6 (true), 7 (false) and 1100 (true). Offset 1100
+        // grows the flags file past its 128-byte minimum, so the reload sees it
+        // only through the reopened bitslice.
+        index.remove_point(1).unwrap();
+        index.remove_point(2).unwrap();
+        index.add_point(6, &[&json!(true)], &hw_counter).unwrap();
+        index.add_point(7, &[&json!(false)], &hw_counter).unwrap();
+        index.add_point(1100, &[&json!(true)], &hw_counter).unwrap();
+        index.flusher()().unwrap();
+
+        reloaded
+            .live_reload(&fs, &[1, 2], &[6, 7, 1100], &hw_counter)
+            .unwrap();
+
+        let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+            .unwrap()
+            .unwrap();
+
+        let hw_acc = HwMeasurementAcc::new();
+        let hw = hw_acc.get_counter_cell();
+
+        let reloaded_true = reloaded
+            .filter(&match_bool(true), &hw)
+            .unwrap()
+            .unwrap()
+            .collect_vec();
+        let reloaded_false = reloaded
+            .filter(&match_bool(false), &hw)
+            .unwrap()
+            .unwrap()
+            .collect_vec();
+        let fresh_true = fresh
+            .filter(&match_bool(true), &hw)
+            .unwrap()
+            .unwrap()
+            .collect_vec();
+        let fresh_false = fresh
+            .filter(&match_bool(false), &hw)
+            .unwrap()
+            .unwrap()
+            .collect_vec();
+
+        // Exact cardinality reads the cached `trues_count` / `falses_count`, so
+        // it proves those were refreshed on reload (not just the bitmaps).
+        let card = |idx: &ReadOnlyBoolIndex<ReadOnly<MmapFile>>, value| {
+            idx.estimate_cardinality(&match_bool(value), &hw)
+                .unwrap()
+                .unwrap()
+                .exp
+        };
+
+        // Parity with the authoritative re-open …
+        assert_eq!(reloaded_true, fresh_true);
+        assert_eq!(reloaded_false, fresh_false);
+        assert_eq!(
+            reloaded.count_indexed_points(),
+            fresh.count_indexed_points()
+        );
+        assert_eq!(card(&reloaded, true), card(&fresh, true));
+        assert_eq!(card(&reloaded, false), card(&fresh, false));
+
+        // … and the concrete expected sets, so the test pins behavior on its
+        // own. Points 1 and 2 are retired; 6 and 1100 are appended as `true`, 7
+        // as `false` — 1100 only via the reopened, freshly-grown bitslice.
+        assert_eq!(reloaded_true, vec![0, 3, 5, 6, 1100]);
+        assert_eq!(reloaded_false, vec![4, 5, 7]);
+        assert_eq!(reloaded.count_indexed_points(), 7);
+        assert_eq!(card(&reloaded, true), 5);
+        assert_eq!(card(&reloaded, false), 3);
     }
 
     /// A partial on-disk layout — exactly one of the `trues` / `falses` flag
