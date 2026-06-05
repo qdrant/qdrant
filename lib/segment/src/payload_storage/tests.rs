@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::universal_io::MmapFile;
 use rstest::rstest;
 
 use super::PayloadStorage;
@@ -127,6 +128,6 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
 #[rstest]
 fn test_mmap_storage(#[values(false, true)] populate: bool) {
     test_trait_impl(|path| {
-        MmapPayloadStorage::open_or_create(path.to_path_buf(), populate).unwrap()
+        MmapPayloadStorage::<MmapFile>::open_or_create(path.to_path_buf(), populate).unwrap()
     });
 }

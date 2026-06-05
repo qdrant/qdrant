@@ -252,6 +252,7 @@ impl PayloadStorageEnum {
 
 #[cfg(test)]
 mod tests {
+    use common::universal_io::MmapFile;
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -265,7 +266,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let mut storage: PayloadStorageEnum =
-            MmapPayloadStorage::open_or_create(dir.path().to_path_buf(), populate)
+            MmapPayloadStorage::<MmapFile>::open_or_create(dir.path().to_path_buf(), populate)
                 .unwrap()
                 .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
