@@ -98,11 +98,9 @@ where
     S: UniversalRead,
 {
     pub fn build_from_iter<'a>(
-        fs: &S::Fs,
         path: &Path,
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = &'a T>)> + Clone,
-        populate: bool,
-    ) -> OperationResult<Self>
+    ) -> OperationResult<()>
     where
         T: 'a,
     {
@@ -159,18 +157,17 @@ where
         }
 
         mmap.flush()?;
-        drop(mmap);
 
-        Self::open(fs, path, populate)
+        Ok(())
     }
 
-    pub fn open(fs: &S::Fs, path: &Path, populate: bool) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, path: &Path, populate: Populate) -> OperationResult<Self> {
         let file_name = path.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Global,
         };
 
@@ -434,17 +431,15 @@ mod tests {
             .tempdir()
             .unwrap();
         OnDiskPointToValues::<str, MmapFile>::build_from_iter(
-            &MmapFs,
             dir.path(),
             values
                 .iter()
                 .enumerate()
                 .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.as_str()))),
-            true,
         )
         .unwrap();
         let point_to_values =
-            OnDiskPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
+            OnDiskPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
@@ -496,17 +491,15 @@ mod tests {
             .tempdir()
             .unwrap();
         OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
-            &MmapFs,
             dir.path(),
             values
                 .iter()
                 .enumerate()
                 .map(|(id, values)| (id as PointOffsetType, values.iter())),
-            true,
         )
         .unwrap();
         let point_to_values =
-            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
+            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values

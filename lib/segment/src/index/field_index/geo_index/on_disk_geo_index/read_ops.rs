@@ -84,7 +84,7 @@ impl<S: UniversalRead> GeoMapIndexRead for OnDiskGeoIndex<S> {
     }
 
     fn is_on_disk(&self) -> bool {
-        OnDiskGeoIndex::is_on_disk(self)
+        true
     }
 
     fn populate(&self) -> OperationResult<()> {

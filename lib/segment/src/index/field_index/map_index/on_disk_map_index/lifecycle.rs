@@ -10,8 +10,7 @@ use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite,
-    read_json_via,
+    MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite, read_json_via,
 };
 use fs_err as fs;
 
@@ -32,7 +31,7 @@ where
     pub fn open(
         fs: &S::Fs,
         path: &Path,
-        populate: bool,
+        populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let hashmap_path = path.join(HASHMAP_PATH);
@@ -52,7 +51,7 @@ where
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -67,7 +66,7 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -172,7 +171,7 @@ where
         path: &Path,
         point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>>,
         values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
-        populate: bool,
+        populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
@@ -196,7 +195,6 @@ where
         )?;
 
         OnDiskPointToValues::<N, MmapFile>::build_from_iter(
-            &MmapFs,
             path,
             point_to_values.iter().enumerate().map(|(idx, values)| {
                 (
@@ -204,7 +202,6 @@ where
                     values.iter().map(|value| value.borrow()),
                 )
             }),
-            populate,
         )?;
 
         {

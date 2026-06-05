@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use serde_json::Value;
 
 use super::GeoIndex;
 use super::mutable_geo_index::InMemoryGeoMapIndex;
 use super::on_disk_geo_index::OnDiskGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 
 pub struct GeoMapIndexMmapBuilder {
@@ -41,13 +42,21 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(GeoIndex::OnDisk(OnDiskGeoIndex::build(
+        let populate = Populate::from(!self.is_on_disk);
+        let on_disk_index = OnDiskGeoIndex::build(
             &MmapFs,
             self.in_memory_index,
             &self.path,
-            self.is_on_disk,
+            populate,
             &self.deleted_points,
-        )?))
+        )?;
+
+        let index = if self.is_on_disk {
+            GeoIndex::OnDisk(on_disk_index)
+        } else {
+            GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+        };
+        Ok(index)
     }
 }
 

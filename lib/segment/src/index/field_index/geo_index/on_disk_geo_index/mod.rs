@@ -67,7 +67,6 @@ pub struct OnDiskGeoIndex<S: UniversalRead = MmapFile> {
     pub(in super::super) deleted_count: usize,
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
-    pub(super) is_on_disk: bool,
 }
 
 pub(in super::super) struct Storage<S: UniversalRead = MmapFile> {

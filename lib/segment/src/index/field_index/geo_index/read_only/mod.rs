@@ -39,7 +39,7 @@ pub enum ReadOnlyGeoMapIndex<S: UniversalRead> {
     /// Loads into RAM from appendable Gridstore storage format.
     Appendable(ReadOnlyAppendableGeoMapIndex<S>),
     /// Loads into RAM in immutable format.
-    Immutable(ImmutableGeoIndex),
+    Immutable(ImmutableGeoIndex<S>),
     /// Directly reads from storage in immutable format.
     OnDisk(OnDiskGeoIndex<S>),
 }

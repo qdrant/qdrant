@@ -22,8 +22,8 @@ use memmap2::MmapMut;
 
 use super::super::mutable_geo_index::InMemoryGeoMapIndex;
 use super::{
-    COUNTS_PER_HASH, Counts, DELETED_PATH, OnDiskGeoIndex, POINTS_MAP, POINTS_MAP_IDS,
-    PointKeyValue, STATS_PATH, Storage, StoredGeoMapIndexStat,
+    COUNTS_PER_HASH, Counts, DELETED_PATH, POINTS_MAP, POINTS_MAP_IDS, PointKeyValue, STATS_PATH,
+    Storage, OnDiskGeoIndex, StoredGeoMapIndexStat,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -36,7 +36,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         fs: &S::Fs,
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
-        is_on_disk: bool,
+        populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
@@ -49,14 +49,12 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
 
         // Create the point-to-value mapping and persist in the file
         OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
-            &MmapFs,
             path,
             dynamic_index
                 .point_to_values
                 .iter()
                 .enumerate()
                 .map(|(idx, values)| (idx as PointOffsetType, values.iter())),
-            !is_on_disk,
         )?;
 
         {
@@ -157,7 +155,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             },
         )?;
 
-        Self::open(fs, path, is_on_disk, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open StoredGeoMapIndex after building it")
         })
     }
@@ -165,7 +163,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     pub fn open(
         fs: &S::Fs,
         path: &Path,
-        is_on_disk: bool,
+        populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let deleted_path = path.join(DELETED_PATH);
@@ -181,12 +179,10 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             return Ok(None);
         };
 
-        let populate = !is_on_disk;
-
         let open_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Global,
         };
 
@@ -196,7 +192,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             TypedStorage::open(fs, &points_map_path, open_options, Default::default())?;
         let points_map_ids =
             TypedStorage::open(fs, &points_map_ids_path, open_options, Default::default())?;
-        let point_to_values = OnDiskPointToValues::open(fs, path, true)?;
+        let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
@@ -206,7 +202,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -235,7 +231,6 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             deleted_count,
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
-            is_on_disk,
         }))
     }
 
@@ -245,7 +240,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             self.storage
                 .point_to_values
@@ -324,7 +319,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         hash: GeoHash,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Counts>> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        let hw_counter = ConditionedCounter::always(hw_counter);
         let len = self.storage.counts_per_hash.len()? as usize;
 
         hw_counter
@@ -532,17 +527,6 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         self.max_values_per_point
     }
 
-    fn make_conditioned_counter<'a>(
-        &self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> ConditionedCounter<'a> {
-        ConditionedCounter::new(self.is_on_disk, hw_counter)
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
-    }
-
     /// Populate all pages in the storage.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -561,7 +545,6 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             deleted_count: _,
             points_values_count: _,
             max_values_per_point: _,
-            is_on_disk: _,
         } = self;
         let Storage {
             counts_per_hash,

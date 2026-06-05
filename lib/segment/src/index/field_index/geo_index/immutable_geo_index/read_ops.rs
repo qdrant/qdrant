@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use itertools::Itertools;
 
 use super::super::read_ops::GeoMapIndexRead;
@@ -11,7 +12,7 @@ use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
-impl GeoMapIndexRead for ImmutableGeoIndex {
+impl<S: UniversalRead> GeoMapIndexRead for ImmutableGeoIndex<S> {
     fn points_count(&self) -> usize {
         ImmutableGeoIndex::points_count(self)
     }

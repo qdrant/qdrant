@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
 use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoMapIndex;
 use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::ReadOnlyGeoMapIndex;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 
 impl<S: UniversalRead> ReadOnlyGeoMapIndex<S> {
     /// Read-only mirror of [`GeoMapIndex::new_gridstore`][1]: open the
@@ -49,12 +50,18 @@ impl<S: UniversalRead> ReadOnlyGeoMapIndex<S> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(mmap_index) =
-            OnDiskGeoIndex::open(fs, path, effective_is_on_disk, deleted_points)?
-        else {
+        let populate = Populate::from(!effective_is_on_disk);
+
+        let Some(on_disk_index) = OnDiskGeoIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
 
-        Ok(Some(Self::Immutable(mmap_index)))
+        let index = if is_on_disk {
+            Self::OnDisk(on_disk_index)
+        } else {
+            Self::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+        };
+
+        Ok(Some(index))
     }
 }

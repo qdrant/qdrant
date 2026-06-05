@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSliceExt;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, ReadRange};
+use common::universal_io::{ReadRange, UniversalRead};
 
 use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::{Counts, DELETED_SENTINEL, ImmutableGeoIndex};
@@ -15,10 +15,9 @@ use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
-impl ImmutableGeoIndex {
+impl<S: UniversalRead> ImmutableGeoIndex<S> {
     /// Open and load the immutable geo index from mmap storage.
-    pub fn load_from_on_disk(index: OnDiskGeoIndex<MmapFile>) -> OperationResult<Self> {
-        let index = Box::new(index);
+    pub fn load_from_on_disk(index: OnDiskGeoIndex<S>) -> OperationResult<Self> {
         let counts_per_hash = index
             .storage
             .counts_per_hash
@@ -337,7 +336,7 @@ impl ImmutableGeoIndex {
 
     pub fn storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: self.storage.is_on_disk(),
+            is_on_disk: false,
         }
     }
 
