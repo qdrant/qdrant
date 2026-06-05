@@ -30,13 +30,6 @@ pub struct ReadOnlyBoolIndex<S: UniversalRead> {
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage<S>,
     pub(super) indexed_count: usize,
-    /// Cardinalities of the `trues` / `falses` bitmaps, cached like
-    /// [`MutableBoolIndex`][1]'s counts and refreshed on every [`LiveReload`][2],
-    /// so cardinality estimation / payload blocks / telemetry don't rescan the
-    /// bitmaps on each read.
-    ///
-    /// [1]: super::mutable_bool_index::MutableBoolIndex
-    /// [2]: crate::index::field_index::LiveReload
     pub(super) trues_count: usize,
     pub(super) falses_count: usize,
 }
