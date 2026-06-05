@@ -309,13 +309,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         0
     }
 
-    /// Refresh the read-only view to the current on-disk state: pick up vectors
-    /// (and any newly created chunk files) appended by a concurrent writer since
-    /// the last open or reload. A cheap no-op when the persisted length is
-    /// unchanged.
-    ///
-    /// `advice`/`populate` should match what the storage was opened with so the
-    /// refreshed chunks keep the same residency.
+    /// Refresh to the current on-disk state, picking up vectors and chunk files a
+    /// writer appended; a no-op when the length is unchanged. `advice`/`populate`
+    /// should match what the storage was opened with.
     #[allow(dead_code)] // pending: read-only chunked vector storages will use this
     pub fn live_reload(
         &mut self,
@@ -328,9 +324,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             return Ok(());
         }
 
-        // The status grew: re-scan the directory so newly created chunk files
-        // become visible, then adopt the new length. Vectors written into
-        // already-mapped chunks are visible through the shared mapping.
+        // Status grew: re-scan for new chunk files and adopt the new length.
         self.chunks = read_chunks(fs, &self.directory, advice, populate, false)?;
         self.len = new_len;
         Ok(())
@@ -366,8 +360,7 @@ mod tests {
         (0..dim).map(|i| (seed * dim + i) as f32).collect()
     }
 
-    /// A read-only view picks up vectors a writer appends after it was opened,
-    /// once `live_reload` is called.
+    /// A read-only view picks up writer-appended vectors after `live_reload`.
     #[test]
     fn live_reload_picks_up_appended_vectors() {
         const DIM: usize = 32;

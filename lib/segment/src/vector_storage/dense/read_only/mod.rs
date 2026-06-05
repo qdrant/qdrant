@@ -1,3 +1,4 @@
+use common::mmap::AdviceSetting;
 use common::universal_io::UniversalRead;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -6,6 +7,7 @@ use crate::types::Distance;
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 #[derive(Debug)]
@@ -14,6 +16,9 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
+    /// Chunk-open settings, reused by live-reload.
+    advice: AdviceSetting,
+    populate: bool,
 }
 
 #[cfg(test)]
@@ -28,6 +33,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::live_reload::LiveReload;
     use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
     use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage_impl;
     use crate::vector_storage::{VectorStorage, VectorStorageRead};
@@ -99,5 +105,88 @@ mod tests {
                 .unwrap();
             assert_eq!(got, vectors[id as usize], "vector {id} mismatch");
         }
+    }
+
+    /// After `live_reload`, the read-only view reflects appends and deletions.
+    #[test]
+    fn live_reload_picks_up_appends_and_deletions() {
+        const DIM: usize = 64;
+        let dir = Builder::new().prefix("ro_dense_reload").tempdir().unwrap();
+        let mut rng = StdRng::seed_from_u64(7);
+        let hw = HardwareCounterCell::disposable();
+
+        let rand_vec = |rng: &mut StdRng| -> DenseVector {
+            std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                .take(DIM)
+                .collect()
+        };
+        let first: Vec<DenseVector> = (0..200).map(|_| rand_vec(&mut rng)).collect();
+        let second: Vec<DenseVector> = (0..150).map(|_| rand_vec(&mut rng)).collect();
+
+        let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        for (id, vector) in first.iter().enumerate() {
+            writer
+                .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                .unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        assert_eq!(reader.total_vector_count(), first.len());
+
+        // Append new vectors and delete a few existing ones through the writer.
+        for (offset, vector) in second.iter().enumerate() {
+            writer
+                .insert_vector(
+                    (first.len() + offset) as PointOffsetType,
+                    VectorRef::from(vector),
+                    &hw,
+                )
+                .unwrap();
+        }
+        let deleted_ids: Vec<PointOffsetType> = vec![3, 50, 199];
+        for &id in &deleted_ids {
+            writer.delete_vector(id).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
+            .map(|offset| offset as PointOffsetType)
+            .collect();
+        reader
+            .live_reload(&MmapFs, &deleted_ids, &new_ids, &hw)
+            .unwrap();
+
+        assert_eq!(reader.total_vector_count(), first.len() + second.len());
+        assert_eq!(reader.deleted_vector_count(), deleted_ids.len());
+
+        // The appended vector is now visible and correct.
+        let got: DenseVector = reader
+            .get_vector::<Random>(first.len() as PointOffsetType)
+            .to_owned()
+            .try_into()
+            .unwrap();
+        assert_eq!(got, second[0]);
+
+        // Deletions are reflected; untouched points stay live.
+        for &id in &deleted_ids {
+            assert!(reader.is_deleted_vector(id));
+        }
+        assert!(!reader.is_deleted_vector(0));
     }
 }

@@ -40,6 +40,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
             vectors,
             deleted,
             distance,
+            advice,
+            populate,
         })
     }
 }
