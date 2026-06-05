@@ -92,7 +92,7 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     }
 
     fn is_on_disk(&self) -> bool {
-        true
+        self.data.is_on_disk()
     }
 
     fn vectors_count(&self) -> usize {
