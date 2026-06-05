@@ -1,6 +1,7 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 
 use super::super::read_ops::{self, NullIndexRead};
 use super::ReadOnlyNullIndex;
@@ -12,8 +13,8 @@ use crate::index::field_index::{
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl NullIndexRead for ReadOnlyNullIndex {
-    type Flags = ReadOnlyRoaringFlags;
+impl<S: UniversalRead> NullIndexRead for ReadOnlyNullIndex<S> {
+    type Flags = ReadOnlyRoaringFlags<S>;
 
     fn has_values_flags(&self) -> &Self::Flags {
         &self.storage.has_values_flags
@@ -32,7 +33,7 @@ impl NullIndexRead for ReadOnlyNullIndex {
     }
 }
 
-impl PayloadFieldIndexRead for ReadOnlyNullIndex {
+impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
     fn count_indexed_points(&self) -> usize {
         self.indexed_points_count()
     }

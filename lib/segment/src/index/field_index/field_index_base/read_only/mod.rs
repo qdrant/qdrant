@@ -33,10 +33,10 @@ pub enum ReadOnlyFieldIndex<S: UniversalRead> {
     FloatIndex(ReadOnlyNumericIndex<FloatPayloadType, FloatPayloadType, S>),
     GeoIndex(ReadOnlyGeoMapIndex<S>),
     FullTextIndex(ReadOnlyFullTextIndex<S>),
-    BoolIndex(ReadOnlyBoolIndex),
+    BoolIndex(ReadOnlyBoolIndex<S>),
     UuidIndex(ReadOnlyNumericIndex<UuidIntType, UuidPayloadType, S>),
     UuidMapIndex(ReadOnlyMapIndex<UuidIntType, S>),
-    NullIndex(ReadOnlyNullIndex),
+    NullIndex(ReadOnlyNullIndex<S>),
 }
 
 /// Mirrors [`impl Debug for FieldIndex`][1] one-for-one: each arm prints

@@ -7,7 +7,7 @@ use super::{ReadOnlyNullIndex, ReadOnlyStorage};
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-impl ReadOnlyNullIndex {
+impl<S: UniversalRead> ReadOnlyNullIndex<S> {
     /// Open a read-only null index at `path`, threading every file open through
     /// the filesystem handle `fs`.
     ///
@@ -24,15 +24,15 @@ impl ReadOnlyNullIndex {
     /// index that would drop the persisted postings of the present half.
     ///
     /// [1]: super::super::mutable_null_index::MutableNullIndex::open
-    pub fn open<S: UniversalRead>(
+    pub fn open(
         fs: &S::Fs,
         path: &Path,
         total_point_count: usize,
     ) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
-        let has_values_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(HAS_VALUES_DIRNAME))?;
-        let is_null_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(IS_NULL_DIRNAME))?;
+        let has_values_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(HAS_VALUES_DIRNAME))?;
+        let is_null_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(IS_NULL_DIRNAME))?;
 
         match (has_values_flags, is_null_flags) {
             // Neither directory exists: the index isn't present on disk.
