@@ -127,6 +127,34 @@ fn test_try_from_double_rescore() {
 }
 
 #[test]
+fn test_try_from_limit_offset_saturates_on_overflow() {
+    // Regression: folding `offset` into the fetch `limit` must saturate instead
+    // of overflowing. With limit = usize::MAX and offset > 0, the previous
+    // `limit + offset` panicked in debug (overflow check) and wrapped to a tiny
+    // value in release; `saturating_add` clamps it to usize::MAX.
+    let dummy_vector = vec![1.0, 2.0, 3.0];
+    let request = ShardQueryRequest {
+        prefetches: vec![], // No prefetch
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(dummy_vector),
+            "full",
+        )))),
+        filter: None,
+        score_threshold: None,
+        limit: usize::MAX,
+        offset: 10,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+
+    let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
+
+    assert_eq!(planned_query.searches.len(), 1);
+    assert_eq!(planned_query.searches[0].limit, usize::MAX);
+}
+
+#[test]
 fn test_try_from_no_prefetch() {
     let dummy_vector = vec![1.0, 2.0, 3.0];
     let request = ShardQueryRequest {
