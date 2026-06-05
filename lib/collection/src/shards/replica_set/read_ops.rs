@@ -40,6 +40,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            None,
             local_only,
         )
         .await
@@ -89,6 +90,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            None,
             true,
         )
         .await
@@ -115,6 +117,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            None,
             local_only,
         )
         .await
@@ -148,6 +151,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            None,
             local_only,
         )
         .await
@@ -192,6 +196,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            None,
             local_only,
         )
         .await
@@ -200,6 +205,7 @@ impl ShardReplicaSet {
     pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
         self.execute_read_operation(
             |shard| async move { shard.info().await }.boxed(),
+            None,
             local_only,
         )
         .await
@@ -254,6 +260,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            None,
             local_only,
         )
         .await
@@ -276,6 +283,7 @@ impl ShardReplicaSet {
                 async move { shard.facet(request, &search_runtime, timeout, hw_acc).await }.boxed()
             },
             read_consistency,
+            None,
             local_only,
         )
         .await
