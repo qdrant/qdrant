@@ -13,7 +13,6 @@ use crate::common::operation_error::{OperationError, OperationResult};
 impl ImmutableFullTextIndex {
     /// Open and load the immutable full text index from mmap storage.
     pub fn load_from_on_disk(index: OnDiskFullTextIndex<MmapFile>) -> OperationResult<Self> {
-        let index = Box::new(index);
         let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 
         // Index is now loaded into memory, clear cache of backing mmap storage

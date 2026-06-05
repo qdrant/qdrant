@@ -1,7 +1,7 @@
 use common::universal_io::UniversalRead;
 
-use super::on_disk_text_index::OnDiskFullTextIndex;
 use super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
+use super::on_disk_text_index::OnDiskFullTextIndex;
 
 mod lifecycle;
 mod read_ops;

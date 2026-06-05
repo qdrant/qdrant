@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
-use super::on_disk_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
+use super::on_disk_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use super::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -39,7 +39,7 @@ impl FullTextIndex {
 
         let index = if effective_is_on_disk {
             // Use on-disk directly
-            Some(Self::OnDisk(Box::new(mmap_index)))
+            Some(Self::OnDisk(mmap_index))
         } else {
             // Load into RAM, use mmap as backing storage
             Some(Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(

@@ -10,8 +10,8 @@ use serde_json::Value;
 use super::super::FullTextIndex;
 use super::super::immutable_text_index::ImmutableFullTextIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+use super::super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
 use super::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
@@ -207,7 +207,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         };
 
         let text_index = if is_on_disk {
-            FullTextIndex::OnDisk(Box::new(mmap_index))
+            FullTextIndex::OnDisk(mmap_index)
         } else {
             FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(mmap_index)?)
         };

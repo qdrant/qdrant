@@ -13,8 +13,8 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UserData,
 };
-use types::ZerocopyPostingValue;
 use on_disk_postings::OnDiskPostings;
+use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
@@ -33,10 +33,10 @@ use crate::index::field_index::full_text_index::inverted_index::postings_iterato
 };
 
 mod create_postings;
+mod on_disk_postings;
 pub mod on_disk_postings_enum;
 mod raw_posting_list;
 pub(in crate::index::field_index::full_text_index) mod types;
-mod on_disk_postings;
 
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";

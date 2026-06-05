@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use common::universal_io::MmapFile;
 
 use self::immutable_text_index::ImmutableFullTextIndex;
-use self::on_disk_text_index::OnDiskFullTextIndex;
 use self::mutable_text_index::MutableFullTextIndex;
+use self::on_disk_text_index::OnDiskFullTextIndex;
 use crate::data_types::index::TextIndexParams;
 
 pub mod full_text_index_read;
 mod immutable_text_index;
 mod inverted_index;
 mod lifecycle;
-pub mod on_disk_text_index;
 mod mutable_text_index;
+pub mod on_disk_text_index;
 pub mod read_only;
 mod read_ops;
 pub mod stop_words;
@@ -25,7 +25,7 @@ mod tests;
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),
-    OnDisk(Box<OnDiskFullTextIndex<MmapFile>>), // todo: remove box
+    OnDisk(OnDiskFullTextIndex<MmapFile>),
 }
 
 pub struct FullTextGridstoreIndexBuilder {
