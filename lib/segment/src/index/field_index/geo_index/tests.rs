@@ -16,7 +16,7 @@ use tempfile::{Builder, TempDir};
 
 use super::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::immutable_geo_index::ImmutableGeoIndex;
-use super::mmap_geo_index::OnDiskGeoIndex;
+use super::on_disk_geo_index::OnDiskGeoIndex;
 use super::read_ops::GeoMapIndexRead;
 use super::{GEO_QUERY_MAX_REGION, GeoIndex};
 use crate::fixtures::payload_fixtures::random_geo_payload;

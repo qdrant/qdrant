@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use serde_json::Value;
 
-use super::mmap_geo_index::OnDiskGeoIndex;
+use super::on_disk_geo_index::OnDiskGeoIndex;
 use super::mutable_geo_index::read_only::ReadOnlyAppendableGeoMapIndex;
 use super::read_ops::GeoMapIndexRead;
 use crate::common::utils::MultiValue;

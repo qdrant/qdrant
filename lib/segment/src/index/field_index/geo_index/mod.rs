@@ -1,6 +1,6 @@
 mod builders;
 pub mod immutable_geo_index;
-pub mod mmap_geo_index;
+pub mod on_disk_geo_index;
 pub mod mutable_geo_index;
 mod payload_index;
 pub mod read_only;
@@ -18,7 +18,7 @@ use mutable_geo_index::InMemoryGeoMapIndex;
 
 pub use self::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use self::immutable_geo_index::ImmutableGeoIndex;
-use self::mmap_geo_index::OnDiskGeoIndex;
+use self::on_disk_geo_index::OnDiskGeoIndex;
 use self::mutable_geo_index::MutableGeoIndex;
 pub use self::read_only::ReadOnlyGeoMapIndex;
 pub use self::read_ops::GeoMapIndexRead;

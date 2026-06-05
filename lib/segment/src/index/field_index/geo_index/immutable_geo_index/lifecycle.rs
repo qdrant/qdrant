@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, ReadRange};
 
-use super::super::mmap_geo_index::OnDiskGeoIndex;
+use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::{Counts, DELETED_SENTINEL, ImmutableGeoIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};

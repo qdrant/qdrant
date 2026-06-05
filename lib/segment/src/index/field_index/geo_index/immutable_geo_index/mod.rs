@@ -1,7 +1,7 @@
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 
-use super::mmap_geo_index::OnDiskGeoIndex;
+use super::on_disk_geo_index::OnDiskGeoIndex;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::types::GeoPoint;
@@ -18,10 +18,10 @@ pub(super) struct Counts {
     pub(super) values: u32,
 }
 
-impl From<super::mmap_geo_index::Counts> for Counts {
+impl From<super::on_disk_geo_index::Counts> for Counts {
     #[inline]
-    fn from(counts: super::mmap_geo_index::Counts) -> Self {
-        let super::mmap_geo_index::Counts {
+    fn from(counts: super::on_disk_geo_index::Counts) -> Self {
+        let super::on_disk_geo_index::Counts {
             hash,
             points,
             values,
