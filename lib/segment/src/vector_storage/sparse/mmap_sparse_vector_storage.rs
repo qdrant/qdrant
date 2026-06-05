@@ -23,8 +23,8 @@ use crate::types::VectorStorageDatatype;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
 use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageRead};
 
-const DELETED_DIRNAME: &str = "deleted";
-const STORAGE_DIRNAME: &str = "store";
+pub(crate) const DELETED_DIRNAME: &str = "deleted";
+pub(crate) const STORAGE_DIRNAME: &str = "store";
 
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
