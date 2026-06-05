@@ -199,10 +199,10 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
             // serves both modes (neither consumes the immutable-only
             // `is_on_disk` / `deleted_points`).
             PayloadIndexType::BoolIndex => {
-                ReadOnlyBoolIndex::open::<S>(fs, &bool_dir(dir, field))?.map(Self::BoolIndex)
+                ReadOnlyBoolIndex::<S>::open(fs, &bool_dir(dir, field))?.map(Self::BoolIndex)
             }
             PayloadIndexType::NullIndex => {
-                ReadOnlyNullIndex::open::<S>(fs, &null_dir(dir, field), total_point_count)?
+                ReadOnlyNullIndex::<S>::open(fs, &null_dir(dir, field), total_point_count)?
                     .map(Self::NullIndex)
             }
         };
