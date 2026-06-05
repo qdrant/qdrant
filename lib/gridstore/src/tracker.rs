@@ -403,10 +403,15 @@ impl<S: UniversalRead> Tracker<S> {
             if let Some(pending) = self.pending_updates.get(&point_offset) {
                 debug_assert!(!pending.is_empty(), "pending updates must not be empty");
 
-                if let Some(pointer) = pending.current {
-                    pointers.borrow_mut().valid.push((user_data, pointer));
-                    return None;
+                // Honor the pending update either way: `Some` is the in-memory pointer, `None`
+                // is a pending unset. Falling through to the persisted pointer on `None` would
+                // resurrect the stale on-disk value (see `get`, which returns `pending.current`
+                // directly).
+                match pending.current {
+                    Some(pointer) => pointers.borrow_mut().valid.push((user_data, pointer)),
+                    None => pointers.borrow_mut().empty.push(user_data),
                 }
+                return None;
             }
 
             let byte_offset = header_size + item_size * point_offset as usize;
