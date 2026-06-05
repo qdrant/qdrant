@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use common::universal_io::UniversalRead;
+
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::index::payload_config::IndexMutability;
 
@@ -14,27 +16,29 @@ mod read_ops;
 /// condition checker / faceting) is shared with the writable variants via
 /// [`BoolIndexRead`][4].
 ///
-/// The backend type only appears on [`Self::open`]; once the bitmaps are in
-/// memory the struct is backend-agnostic.
+/// Each [`ReadOnlyRoaringFlags`] retains its backend `S` so a [`LiveReload`][5]
+/// can reopen the bitslice and apply only the changed positions, instead of
+/// re-materializing the bitmaps from scratch.
 ///
 /// [1]: super::mutable_bool_index::MutableBoolIndex
 /// [2]: super::immutable_bool_index::ImmutableBoolIndex
 /// [3]: common::universal_io::UniversalRead
 /// [4]: super::read_ops::BoolIndexRead
-pub struct ReadOnlyBoolIndex {
+/// [5]: crate::index::field_index::LiveReload
+pub struct ReadOnlyBoolIndex<S: UniversalRead> {
     pub(super) _base_dir: PathBuf,
-    pub(super) storage: ReadOnlyStorage,
+    pub(super) storage: ReadOnlyStorage<S>,
     pub(super) indexed_count: usize,
 }
 
-pub(super) struct ReadOnlyStorage {
+pub(super) struct ReadOnlyStorage<S: UniversalRead> {
     /// Points which have at least one `true` value
-    pub(super) trues_flags: ReadOnlyRoaringFlags,
+    pub(super) trues_flags: ReadOnlyRoaringFlags<S>,
     /// Points which have at least one `false` value
-    pub(super) falses_flags: ReadOnlyRoaringFlags,
+    pub(super) falses_flags: ReadOnlyRoaringFlags<S>,
 }
 
-impl ReadOnlyBoolIndex {
+impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
     /// Reports the on-disk format's mutability, mirroring
     /// [`BoolIndex::get_mutability_type`][1].
     ///
@@ -124,7 +128,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path())
+        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
             .unwrap()
             .unwrap();
 
@@ -173,11 +177,11 @@ mod tests {
         // `trues` present, `falses` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
-        assert!(ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path()).is_err());
+        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
 
         // `falses` present, `trues` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
-        assert!(ReadOnlyBoolIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path()).is_err());
+        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
     }
 }

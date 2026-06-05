@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use common::universal_io::UniversalRead;
+
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::index::payload_config::IndexMutability;
 
@@ -13,27 +15,29 @@ mod read_ops;
 /// no write path. Query logic (filter / cardinality / condition checker) is
 /// shared with the writable variant via the [`NullIndexRead`][4] trait.
 ///
-/// The backend type only appears on [`Self::open`]; once the bitmaps are in
-/// memory the struct is backend-agnostic.
+/// Each [`ReadOnlyRoaringFlags`] retains its backend `S` so a [`LiveReload`][5]
+/// can reopen the bitslice and apply only the changed positions on reload,
+/// instead of re-materializing the bitmaps from scratch.
 ///
 /// [1]: super::mutable_null_index::MutableNullIndex
 /// [2]: super::immutable_null_index::ImmutableNullIndex
 /// [3]: common::universal_io::UniversalRead
 /// [4]: super::read_ops::NullIndexRead
-pub struct ReadOnlyNullIndex {
+/// [5]: crate::index::field_index::LiveReload
+pub struct ReadOnlyNullIndex<S: UniversalRead> {
     pub(super) _base_dir: PathBuf,
-    pub(super) storage: ReadOnlyStorage,
+    pub(super) storage: ReadOnlyStorage<S>,
     pub(super) total_point_count: usize,
 }
 
-pub(super) struct ReadOnlyStorage {
+pub(super) struct ReadOnlyStorage<S: UniversalRead> {
     /// Points which have at least one value
-    pub(super) has_values_flags: ReadOnlyRoaringFlags,
+    pub(super) has_values_flags: ReadOnlyRoaringFlags<S>,
     /// Points which have null values
-    pub(super) is_null_flags: ReadOnlyRoaringFlags,
+    pub(super) is_null_flags: ReadOnlyRoaringFlags<S>,
 }
 
-impl ReadOnlyNullIndex {
+impl<S: UniversalRead> ReadOnlyNullIndex<S> {
     /// Reports the on-disk format's mutability, mirroring
     /// [`NullIndex::get_mutability_type`][1].
     ///
@@ -95,7 +99,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), total)
+        let index = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total)
             .unwrap()
             .unwrap();
 
@@ -185,11 +189,11 @@ mod tests {
         // `has_values` present, `is_null` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(IS_NULL_DIRNAME)).unwrap();
-        assert!(ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), 1).is_err());
+        assert!(ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 1).is_err());
 
         // `is_null` present, `has_values` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(HAS_VALUES_DIRNAME)).unwrap();
-        assert!(ReadOnlyNullIndex::open::<ReadOnly<MmapFile>>(&fs, dir.path(), 1).is_err());
+        assert!(ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 1).is_err());
     }
 }

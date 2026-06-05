@@ -8,7 +8,7 @@ use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-impl ReadOnlyBoolIndex {
+impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
     /// Open a read-only bool index at `path`, threading every file open through
     /// the filesystem handle `fs`.
     ///
@@ -25,11 +25,11 @@ impl ReadOnlyBoolIndex {
     /// index that would drop the persisted postings of the present half.
     ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
-    pub fn open<S: UniversalRead>(fs: &S::Fs, path: &Path) -> OperationResult<Option<Self>> {
+    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
-        let trues_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(TRUES_DIRNAME))?;
-        let falses_flags = ReadOnlyRoaringFlags::open::<S>(fs, &path.join(FALSES_DIRNAME))?;
+        let trues_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
+        let falses_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(FALSES_DIRNAME))?;
 
         match (trues_flags, falses_flags) {
             // Neither directory exists: the index isn't present on disk.
