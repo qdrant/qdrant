@@ -6,7 +6,7 @@ use common::universal_io::UniversalRead;
 use super::ReadOnlyAppendableGeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::LiveReload;
-use crate::types::RawGeoPoint;
+use crate::types::{GeoPoint, RawGeoPoint};
 
 impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoMapIndex<S> {
     type Fs = S::Fs;
@@ -31,8 +31,12 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoMapIndex<S> {
             .read_values::<Random, _, OperationError>(
                 new_points.iter().copied().enumerate(),
                 |_, point_offset, maybe_values: Option<Vec<RawGeoPoint>>| {
-                    let values = maybe_values.unwrap_or_default();
-                    in_memory_index.ingest(point_offset, values)?;
+                    let geo_points = maybe_values
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(GeoPoint::from)
+                        .collect::<Vec<_>>();
+                    in_memory_index.add_many_geo_points(point_offset, geo_points, hw_counter)?;
                     Ok(())
                 },
                 hw_counter.payload_index_io_read_counter(),

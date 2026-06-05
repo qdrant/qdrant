@@ -28,7 +28,7 @@ impl ValueIndexer for GeoMapIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, &values, hw_counter),
+            GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, values, hw_counter),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable geo index",
             )),

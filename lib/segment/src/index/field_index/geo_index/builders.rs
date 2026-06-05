@@ -37,7 +37,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
             .flat_map(|value| <GeoMapIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
         self.in_memory_index
-            .add_many_geo_points(id, &values, hw_counter)
+            .add_many_geo_points(id, values, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {

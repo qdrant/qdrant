@@ -53,7 +53,8 @@ impl MutableGeoMapIndex {
         store
             .iter::<_, OperationError>(
                 |idx, values: Vec<RawGeoPoint>| {
-                    in_memory_index.ingest(idx, values)?;
+                    let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
+                    in_memory_index.add_many_geo_points(idx, geo_points, &hw_counter)?;
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -111,7 +112,7 @@ impl MutableGeoMapIndex {
     pub fn add_many_geo_points(
         &mut self,
         idx: PointOffsetType,
-        values: &[GeoPoint],
+        values: Vec<GeoPoint>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Update persisted storage

@@ -105,15 +105,15 @@ mod tests {
                 .unwrap()
                 .unwrap();
             mutable
-                .add_many_geo_points(0, &[GeoPoint::new_unchecked(13.41, 52.52)], &hw_counter)
+                .add_many_geo_points(0, vec![GeoPoint::new_unchecked(13.41, 52.52)], &hw_counter)
                 .unwrap();
             mutable
-                .add_many_geo_points(1, &[GeoPoint::new_unchecked(2.35, 48.85)], &hw_counter)
+                .add_many_geo_points(1, vec![GeoPoint::new_unchecked(2.35, 48.85)], &hw_counter)
                 .unwrap();
             mutable
                 .add_many_geo_points(
                     2,
-                    &[
+                    vec![
                         GeoPoint::new_unchecked(1.0, 1.0),
                         GeoPoint::new_unchecked(2.0, 2.0),
                     ],
