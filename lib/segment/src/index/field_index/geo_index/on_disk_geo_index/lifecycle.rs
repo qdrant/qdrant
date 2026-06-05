@@ -22,8 +22,8 @@ use memmap2::MmapMut;
 
 use super::super::mutable_geo_index::InMemoryGeoMapIndex;
 use super::{
-    COUNTS_PER_HASH, Counts, DELETED_PATH, POINTS_MAP, POINTS_MAP_IDS, PointKeyValue, STATS_PATH,
-    Storage, OnDiskGeoIndex, StoredGeoMapIndexStat,
+    COUNTS_PER_HASH, Counts, DELETED_PATH, OnDiskGeoIndex, POINTS_MAP, POINTS_MAP_IDS,
+    PointKeyValue, STATS_PATH, Storage, StoredGeoMapIndexStat,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};

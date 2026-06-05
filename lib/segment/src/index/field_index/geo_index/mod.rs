@@ -32,13 +32,16 @@ use crate::types::GeoPoint;
 const GEO_QUERY_MAX_REGION: usize = 12;
 
 pub enum GeoIndex {
+    /// Loads into RAM from mutable Gridstore storage format.
     Mutable(MutableGeoIndex),
+    /// Loads into RAM in immutable format.
     Immutable(ImmutableGeoIndex),
+    /// Directly reads from mmap in immutable format.
     OnDisk(OnDiskGeoIndex<MmapFile>),
 }
 
 impl GeoIndex {
-    pub fn new_on_disk(
+    pub fn new_immutable(
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,

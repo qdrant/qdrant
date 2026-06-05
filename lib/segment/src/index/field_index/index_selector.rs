@@ -370,7 +370,7 @@ impl IndexSelector<'_> {
     ) -> OperationResult<Option<GeoIndex>> {
         Ok(match self {
             IndexSelector::NonAppendable { dir, is_on_disk } => {
-                GeoIndex::new_on_disk(&map_dir(dir, field), *is_on_disk, deleted_points)?
+                GeoIndex::new_immutable(&map_dir(dir, field), *is_on_disk, deleted_points)?
             }
             IndexSelector::Appendable { dir } => {
                 GeoIndex::new_mutable(map_dir(dir, field), create_if_missing)?

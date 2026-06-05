@@ -499,7 +499,8 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values

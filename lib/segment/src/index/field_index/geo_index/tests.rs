@@ -5,7 +5,7 @@ use common::bitvec::BitVec;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, Populate};
+use common::universal_io::MmapFile;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::SeedableRng;
@@ -15,7 +15,6 @@ use serde_json::json;
 use tempfile::{Builder, TempDir};
 
 use super::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
-use super::immutable_geo_index::ImmutableGeoIndex;
 use super::on_disk_geo_index::OnDiskGeoIndex;
 use super::read_ops::GeoMapIndexRead;
 use super::{GEO_QUERY_MAX_REGION, GeoIndex};
@@ -85,15 +84,7 @@ impl IndexBuilder {
         match self {
             IndexBuilder::MutableGridstore(builder) => builder.finalize(),
             IndexBuilder::Mmap(builder) => builder.finalize(),
-            IndexBuilder::Immutable(builder) => {
-                let GeoIndex::OnDisk(index) = builder.finalize()? else {
-                    panic!("expected mmap index");
-                };
-
-                let index =
-                    GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(index).unwrap());
-                Ok(index)
-            }
+            IndexBuilder::Immutable(builder) => builder.finalize(),
         }
     }
 }
@@ -649,8 +640,6 @@ fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: Inde
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn load_from_disk(#[case] index_type: IndexType) {
-    use common::universal_io::Populate;
-
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
@@ -674,17 +663,12 @@ fn load_from_disk(#[case] index_type: IndexType) {
         IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::OnDisk => GeoIndex::new_on_disk(temp_dir.path(), false, &empty_deleted())
+        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &empty_deleted())
             .unwrap()
             .unwrap(),
-        IndexType::Immutable => GeoIndex::Immutable(
-            ImmutableGeoIndex::load_from_on_disk(
-                OnDiskGeoIndex::open(&MmapFs, temp_dir.path(), Populate::No, &empty_deleted())
-                    .unwrap()
-                    .unwrap(),
-            )
+        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), false, &empty_deleted())
+            .unwrap()
             .unwrap(),
-        ),
     };
 
     let berlin_geo_radius = GeoRadius {
@@ -752,17 +736,14 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
         IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::OnDisk => GeoIndex::new_on_disk(temp_dir.path(), false, &deleted_with(&[1]))
+        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &deleted_with(&[1]))
             .unwrap()
             .unwrap(),
-        IndexType::Immutable => GeoIndex::Immutable(
-            ImmutableGeoIndex::load_from_on_disk(
-                OnDiskGeoIndex::open(&MmapFs, temp_dir.path(), Populate::No, &deleted_with(&[1]))
-                    .unwrap()
-                    .unwrap(),
-            )
-            .unwrap(),
-        ),
+        IndexType::Immutable => {
+            GeoIndex::new_immutable(temp_dir.path(), false, &deleted_with(&[1]))
+                .unwrap()
+                .unwrap()
+        }
     };
     assert_eq!(new_index.points_count(), 1);
     if index_type != IndexType::OnDisk {
@@ -1331,17 +1312,12 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
         IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::OnDisk => GeoIndex::new_on_disk(temp_dir.path(), false, &deleted)
+        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &deleted)
             .unwrap()
             .unwrap(),
-        IndexType::Immutable => GeoIndex::Immutable(
-            ImmutableGeoIndex::load_from_on_disk(
-                OnDiskGeoIndex::open(&MmapFs, temp_dir.path(), Populate::No, &deleted)
-                    .unwrap()
-                    .unwrap(),
-            )
+        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), false, &deleted)
+            .unwrap()
             .unwrap(),
-        ),
     };
 
     assert_eq!(new_index.points_count(), 4);
@@ -1418,17 +1394,12 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     let mut short_deleted = BitVec::repeat(false, 2);
     short_deleted.set(1, true);
     let new_index = match index_type {
-        IndexType::OnDisk => GeoIndex::new_on_disk(temp_dir.path(), false, &short_deleted)
+        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &short_deleted)
             .unwrap()
             .unwrap(),
-        IndexType::Immutable => GeoIndex::Immutable(
-            ImmutableGeoIndex::load_from_on_disk(
-                OnDiskGeoIndex::open(&MmapFs, temp_dir.path(), Populate::No, &short_deleted)
-                    .unwrap()
-                    .unwrap(),
-            )
+        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), false, &short_deleted)
+            .unwrap()
             .unwrap(),
-        ),
         IndexType::Mutable => unreachable!(),
     };
 
