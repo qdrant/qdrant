@@ -1388,6 +1388,49 @@ fn test_for_each_in_batch_congruent_with_get_value() {
     }
 }
 
+/// Regression: a value that is persisted on disk and then deleted in memory (a pending
+/// pointer-unset that hasn't been flushed) must read back as absent through *both* the single
+/// `get_value` path and the batched `read_values` path. The batched tracker lookup used to skip
+/// the `pending.current == None` case and fall through to the stale persisted pointer, so
+/// `read_values` resurrected the old value while `get_value` correctly reported it gone.
+#[test]
+fn test_batch_read_honors_pending_unset_of_flushed_value() {
+    let (_dir, mut storage) = empty_storage();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_write = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    // Write and FLUSH so the pointer is persisted on disk.
+    let payload = random_payload(rng, 3);
+    storage.put_value(0, &payload, hw_write).unwrap();
+    storage.flusher()().unwrap();
+
+    // Delete WITHOUT flushing: leaves a pending pointer-unset (`current == None`) over a
+    // persisted pointer — the exact precondition the batched read must respect.
+    storage.delete_value(0).unwrap();
+
+    let single = storage.get_value::<Random>(0, &hw_counter).unwrap();
+    assert_eq!(single, None, "single get must see the pending delete");
+
+    let mut batch = [Some(Payload::default())];
+    storage
+        .read_values::<Random, _, GridstoreError>(
+            std::iter::once((0usize, 0u32)),
+            |idx, _, value| {
+                batch[idx] = value;
+                Ok(())
+            },
+            hw_counter.payload_io_read_counter(),
+        )
+        .unwrap();
+    assert_eq!(
+        batch[0], None,
+        "batched read must also see the pending delete, not the stale persisted value",
+    );
+}
+
 /// Opening a [`GridstoreReader`] must not require a writable backend: a reader
 /// only reads. Backing it with the write-enforced `ReadOnly<MmapFile>` (which
 /// `debug_assert!`s every open is non-writable) only succeeds if the reader
