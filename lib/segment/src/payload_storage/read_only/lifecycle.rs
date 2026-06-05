@@ -20,9 +20,6 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
     /// storage does; the flag is retained to answer
     /// [`is_on_disk`](super::super::PayloadStorageRead::is_on_disk).
     ///
-    /// Returns [`Ok(None)`] when the on-disk directory doesn't exist — the read
-    /// path never creates, mirroring the read-only field indexes.
-    ///
     /// [1]: crate::payload_storage::mmap_payload_storage::MmapPayloadStorage::open_or_create
     pub fn open(fs: &S::Fs, path: PathBuf, populate: bool) -> OperationResult<Self> {
         let path = storage_dir(path);
