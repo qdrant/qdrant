@@ -1414,7 +1414,7 @@ fn test_batch_read_honors_pending_unset_of_flushed_value() {
     let single = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(single, None, "single get must see the pending delete");
 
-    let mut batch = vec![Some(Payload::default())];
+    let mut batch = [Some(Payload::default())];
     storage
         .read_values::<Random, _, GridstoreError>(
             std::iter::once((0usize, 0u32)),
