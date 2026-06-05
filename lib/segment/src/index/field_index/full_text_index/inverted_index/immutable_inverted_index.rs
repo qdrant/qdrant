@@ -11,7 +11,7 @@ use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mmap_inverted_index::MmapInvertedIndex;
-use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
+use super::mmap_inverted_index::mmap_postings_enum::OnDiskPostingsEnum;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::positions::Positions;
 use super::postings_iterator::{
@@ -502,8 +502,8 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&MmapInvertedIndex<S>>
 
     fn try_from(index: &MmapInvertedIndex<S>) -> OperationResult<Self> {
         let postings = match &index.storage.postings {
-            MmapPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
-            MmapPostingsEnum::WithPositions(postings) => {
+            OnDiskPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
+            OnDiskPostingsEnum::WithPositions(postings) => {
                 ImmutablePostings::WithPositions(postings.all_postings()?)
             }
         };

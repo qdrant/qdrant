@@ -5,32 +5,32 @@ use common::universal_io::UniversalRead;
 use super::super::positions::Positions;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
-use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::uio_postings::UniversalPostings;
+use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::uio_postings::OnDiskPostings;
 
-pub enum MmapPostingsEnum<S: UniversalRead> {
-    Ids(UniversalPostings<(), S>),
-    WithPositions(UniversalPostings<Positions, S>),
+pub enum OnDiskPostingsEnum<S: UniversalRead> {
+    Ids(OnDiskPostings<(), S>),
+    WithPositions(OnDiskPostings<Positions, S>),
 }
 
-impl<S: UniversalRead> MmapPostingsEnum<S> {
+impl<S: UniversalRead> OnDiskPostingsEnum<S> {
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            MmapPostingsEnum::Ids(postings) => postings.populate(),
-            MmapPostingsEnum::WithPositions(postings) => postings.populate(),
+            OnDiskPostingsEnum::Ids(postings) => postings.populate(),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.populate(),
         }
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            MmapPostingsEnum::Ids(postings) => postings.clear_cache(),
-            MmapPostingsEnum::WithPositions(postings) => postings.clear_cache(),
+            OnDiskPostingsEnum::Ids(postings) => postings.clear_cache(),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.clear_cache(),
         }
     }
 
     pub fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         match self {
-            MmapPostingsEnum::Ids(postings) => postings.posting_len(token_id),
-            MmapPostingsEnum::WithPositions(postings) => postings.posting_len(token_id),
+            OnDiskPostingsEnum::Ids(postings) => postings.posting_len(token_id),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.posting_len(token_id),
         }
     }
 
@@ -42,12 +42,12 @@ impl<S: UniversalRead> MmapPostingsEnum<S> {
         // Collect ids upfront so the borrowed `RawPostingList` bytes don't have
         // to outlive this call. Acceptable because UniversalPostings is on disk.
         let ids: Vec<PointOffsetType> = match self {
-            MmapPostingsEnum::Ids(postings) => {
+            OnDiskPostingsEnum::Ids(postings) => {
                 let raw = postings.get(token_id).unwrap()?;
                 let view = raw.as_view::<()>().unwrap();
                 view.into_iter().map(|elem| elem.id).collect()
             }
-            MmapPostingsEnum::WithPositions(postings) => {
+            OnDiskPostingsEnum::WithPositions(postings) => {
                 let raw = postings.get(token_id).unwrap()?;
                 let view = raw.as_view::<Positions>().unwrap();
                 view.into_iter().map(|elem| elem.id).collect()
