@@ -31,7 +31,7 @@ mod tests {
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
     use tempfile::TempDir;
 
-    use super::super::MutableGeoMapIndex;
+    use super::super::MutableGeoIndex;
     use super::ReadOnlyAppendableGeoMapIndex;
     use crate::index::field_index::geo_index::GeoMapIndexRead;
     use crate::types::GeoPoint;
@@ -45,7 +45,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let mut mutable = MutableGeoMapIndex::open(dir.path().to_path_buf(), true)
+            let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true)
                 .unwrap()
                 .unwrap();
             // point 0: Berlin, 1 value

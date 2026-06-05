@@ -6,8 +6,8 @@ use common::types::PointOffsetType;
 use common::universal_io::MmapFs;
 use serde_json::Value;
 
-use super::GeoMapIndex;
-use super::mmap_geo_index::StoredGeoMapIndex;
+use super::GeoIndex;
+use super::mmap_geo_index::OnDiskGeoIndex;
 use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
@@ -20,7 +20,7 @@ pub struct GeoMapIndexMmapBuilder {
 }
 
 impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
-    type FieldIndexType = GeoMapIndex;
+    type FieldIndexType = GeoIndex;
 
     fn init(&mut self) -> OperationResult<()> {
         Ok(())
@@ -34,14 +34,14 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     ) -> OperationResult<()> {
         let values = payload
             .iter()
-            .flat_map(|value| <GeoMapIndex as ValueIndexer>::get_values(value))
+            .flat_map(|value| <GeoIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
         self.in_memory_index
             .add_many_geo_points(id, values, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(GeoMapIndex::OnDisk(Box::new(StoredGeoMapIndex::build(
+        Ok(GeoIndex::OnDisk(Box::new(OnDiskGeoIndex::build(
             &MmapFs,
             self.in_memory_index,
             &self.path,
@@ -53,7 +53,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
 
 pub struct GeoMapIndexGridstoreBuilder {
     dir: PathBuf,
-    index: Option<GeoMapIndex>,
+    index: Option<GeoIndex>,
 }
 
 impl GeoMapIndexGridstoreBuilder {
@@ -63,7 +63,7 @@ impl GeoMapIndexGridstoreBuilder {
 }
 
 impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
-    type FieldIndexType = GeoMapIndex;
+    type FieldIndexType = GeoIndex;
 
     fn init(&mut self) -> OperationResult<()> {
         assert!(
@@ -71,7 +71,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
             "index must be initialized exactly once",
         );
         self.index.replace(
-            GeoMapIndex::new_mutable(self.dir.clone(), true)?.ok_or_else(|| {
+            GeoIndex::new_mutable(self.dir.clone(), true)?.ok_or_else(|| {
                 OperationError::service_error("Failed to open GeoMapIndex after creating it")
             })?,
         );

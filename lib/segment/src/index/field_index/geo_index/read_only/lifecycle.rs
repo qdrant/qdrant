@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::universal_io::UniversalRead;
 
-use super::super::mmap_geo_index::StoredGeoMapIndex;
+use super::super::mmap_geo_index::OnDiskGeoIndex;
 use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoMapIndex;
 use super::ReadOnlyGeoMapIndex;
 use crate::common::operation_error::OperationResult;
@@ -50,7 +50,7 @@ impl<S: UniversalRead> ReadOnlyGeoMapIndex<S> {
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let Some(mmap_index) =
-            StoredGeoMapIndex::open(fs, path, effective_is_on_disk, deleted_points)?
+            OnDiskGeoIndex::open(fs, path, effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };

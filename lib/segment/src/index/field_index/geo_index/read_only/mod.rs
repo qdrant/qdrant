@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use serde_json::Value;
 
-use super::mmap_geo_index::StoredGeoMapIndex;
+use super::mmap_geo_index::OnDiskGeoIndex;
 use super::mutable_geo_index::read_only::ReadOnlyAppendableGeoMapIndex;
 use super::read_ops::GeoMapIndexRead;
 use crate::common::utils::MultiValue;
@@ -38,7 +38,7 @@ pub enum ReadOnlyGeoMapIndex<S: UniversalRead> {
     /// Loads into RAM from appendable Gridstore storage format.
     Appendable(ReadOnlyAppendableGeoMapIndex<S>),
     /// Directly reads from storage in immutable mmap format.
-    Immutable(StoredGeoMapIndex<S>),
+    Immutable(OnDiskGeoIndex<S>),
 }
 
 impl<S: UniversalRead> ReadOnlyGeoMapIndex<S> {
@@ -86,7 +86,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::super::GeoMapIndexRead;
-    use super::super::mutable_geo_index::MutableGeoMapIndex;
+    use super::super::mutable_geo_index::MutableGeoIndex;
     use super::ReadOnlyGeoMapIndex;
     use crate::types::GeoPoint;
 
@@ -101,7 +101,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let mut mutable = MutableGeoMapIndex::open(dir.path().to_path_buf(), true)
+            let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true)
                 .unwrap()
                 .unwrap();
             mutable

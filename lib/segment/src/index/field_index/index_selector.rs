@@ -19,7 +19,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::FullTextIndex;
-use crate::index::field_index::geo_index::GeoMapIndex;
+use crate::index::field_index::geo_index::GeoIndex;
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
@@ -367,13 +367,13 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         create_if_missing: bool,
         deleted_points: &BitSlice,
-    ) -> OperationResult<Option<GeoMapIndex>> {
+    ) -> OperationResult<Option<GeoIndex>> {
         Ok(match self {
             IndexSelector::NonAppendable { dir, is_on_disk } => {
-                GeoMapIndex::new_on_disk(&map_dir(dir, field), *is_on_disk, deleted_points)?
+                GeoIndex::new_on_disk(&map_dir(dir, field), *is_on_disk, deleted_points)?
             }
             IndexSelector::Appendable { dir } => {
-                GeoMapIndex::new_mutable(map_dir(dir, field), create_if_missing)?
+                GeoIndex::new_mutable(map_dir(dir, field), create_if_missing)?
             }
         })
     }
@@ -387,10 +387,10 @@ impl IndexSelector<'_> {
     ) -> FieldIndexBuilder {
         match self {
             IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(
-                GeoMapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk, deleted_points),
+                GeoIndex::builder_mmap(&map_dir(dir, field), *is_on_disk, deleted_points),
             ),
             IndexSelector::Appendable { dir } => {
-                make_gridstore(GeoMapIndex::builder_gridstore(map_dir(dir, field)))
+                make_gridstore(GeoIndex::builder_gridstore(map_dir(dir, field)))
             }
         }
     }

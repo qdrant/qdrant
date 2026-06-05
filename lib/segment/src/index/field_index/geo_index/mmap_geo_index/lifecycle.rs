@@ -23,7 +23,7 @@ use memmap2::MmapMut;
 use super::super::mutable_geo_index::InMemoryGeoMapIndex;
 use super::{
     COUNTS_PER_HASH, Counts, DELETED_PATH, POINTS_MAP, POINTS_MAP_IDS, PointKeyValue, STATS_PATH,
-    Storage, StoredGeoMapIndex, StoredGeoMapIndexStat,
+    Storage, OnDiskGeoIndex, StoredGeoMapIndexStat,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -31,7 +31,7 @@ use crate::index::field_index::geo_hash::{GeoHash, GeoHashRaw};
 use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 use crate::types::GeoPoint;
 
-impl<S: UniversalRead> StoredGeoMapIndex<S> {
+impl<S: UniversalRead> OnDiskGeoIndex<S> {
     pub fn build(
         fs: &S::Fs,
         dynamic_index: InMemoryGeoMapIndex,

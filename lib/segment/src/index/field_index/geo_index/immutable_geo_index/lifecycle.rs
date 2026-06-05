@@ -6,8 +6,8 @@ use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, ReadRange};
 
-use super::super::mmap_geo_index::StoredGeoMapIndex;
-use super::{Counts, DELETED_SENTINEL, ImmutableGeoMapIndex};
+use super::super::mmap_geo_index::OnDiskGeoIndex;
+use super::{Counts, DELETED_SENTINEL, ImmutableGeoIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
@@ -15,9 +15,9 @@ use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
-impl ImmutableGeoMapIndex {
+impl ImmutableGeoIndex {
     /// Open and load the immutable geo index from mmap storage.
-    pub fn load_from_on_disk(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
+    pub fn load_from_on_disk(index: OnDiskGeoIndex<MmapFile>) -> OperationResult<Self> {
         let index = Box::new(index);
         let counts_per_hash = index
             .storage

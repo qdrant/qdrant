@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
 
-use super::MutableGeoMapIndex;
+use super::MutableGeoIndex;
 use super::inner::InMemoryGeoMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -22,7 +22,7 @@ const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
     region_size_blocks: None,
 };
 
-impl MutableGeoMapIndex {
+impl MutableGeoIndex {
     /// Open and load mutable geo index from Gridstore storage
     ///
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does

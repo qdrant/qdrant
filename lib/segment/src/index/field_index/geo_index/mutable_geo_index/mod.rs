@@ -8,7 +8,7 @@ mod read_ops;
 pub use self::inner::InMemoryGeoMapIndex;
 use crate::types::RawGeoPoint;
 
-pub struct MutableGeoMapIndex {
+pub struct MutableGeoIndex {
     pub(super) in_memory_index: InMemoryGeoMapIndex,
     pub(super) storage: Gridstore<Vec<RawGeoPoint>>,
 }
