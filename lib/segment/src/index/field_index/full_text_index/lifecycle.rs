@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
-use super::mmap_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
+use super::on_disk_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
 use super::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::common::Flusher;

@@ -1,7 +1,7 @@
 use common::universal_io::MmapFile;
 
 use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::mmap_text_index::OnDiskFullTextIndex;
+use super::on_disk_text_index::OnDiskFullTextIndex;
 
 mod lifecycle;
 mod read_ops;

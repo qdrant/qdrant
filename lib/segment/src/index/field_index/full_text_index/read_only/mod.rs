@@ -1,6 +1,6 @@
 use common::universal_io::UniversalRead;
 
-use super::mmap_text_index::OnDiskFullTextIndex;
+use super::on_disk_text_index::OnDiskFullTextIndex;
 use super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 
 mod lifecycle;

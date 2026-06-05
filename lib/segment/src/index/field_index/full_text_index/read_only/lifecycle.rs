@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::universal_io::UniversalRead;
 
-use super::super::mmap_text_index::OnDiskFullTextIndex;
+use super::super::on_disk_text_index::OnDiskFullTextIndex;
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;

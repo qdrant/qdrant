@@ -5,7 +5,7 @@ use common::universal_io::MmapFile;
 
 use super::super::inverted_index::InvertedIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::super::mmap_text_index::OnDiskFullTextIndex;
+use super::super::on_disk_text_index::OnDiskFullTextIndex;
 use super::ImmutableFullTextIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};

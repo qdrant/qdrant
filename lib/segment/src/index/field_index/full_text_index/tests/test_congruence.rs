@@ -17,7 +17,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::FullTextIn
 use crate::index::field_index::full_text_index::inverted_index::{
     ARRAY_BOUNDARY_SENTINEL, Document, ParsedQuery, TokenId, TokenSet,
 };
-use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
+use crate::index::field_index::full_text_index::on_disk_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
 use crate::index::field_index::full_text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
