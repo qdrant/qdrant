@@ -421,7 +421,7 @@ mod tests {
 
     use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::MmapInvertedIndex;
+    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 
     fn generate_word() -> String {
@@ -560,9 +560,9 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        MmapInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
-        let mmap: MmapInvertedIndex = MmapInvertedIndex::open(
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
             mmap_dir.path().into(),
             false,
@@ -641,9 +641,9 @@ mod tests {
         let mut mut_index = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
 
         let immutable = ImmutableInvertedIndex::from(mut_index.clone());
-        MmapInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
-        let mut mmap_index = MmapInvertedIndex::open(
+        let mut mmap_index = OnDiskInvertedIndex::open(
             &MmapFs,
             mmap_dir.path().into(),
             false,
@@ -698,7 +698,7 @@ mod tests {
         mmap_parsed_queries: &[Option<ParsedQuery>],
         imm_mmap_parsed_queries: &[Option<ParsedQuery>],
         mut_index: &MutableInvertedIndex,
-        mmap_index: &MmapInvertedIndex,
+        mmap_index: &OnDiskInvertedIndex,
         imm_mmap_index: &ImmutableInvertedIndex,
         hw_counter: &HardwareCounterCell,
     ) {

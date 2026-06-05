@@ -10,7 +10,7 @@ use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
 use super::immutable_postings_enum::ImmutablePostings;
-use super::on_disk_inverted_index::MmapInvertedIndex;
+use super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::positions::Positions;
@@ -495,12 +495,12 @@ fn create_compressed_postings_with_positions(
             .collect()
 }
 
-impl<S: common::universal_io::UniversalRead> TryFrom<&MmapInvertedIndex<S>>
+impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
     for ImmutableInvertedIndex
 {
     type Error = OperationError;
 
-    fn try_from(index: &MmapInvertedIndex<S>) -> OperationResult<Self> {
+    fn try_from(index: &OnDiskInvertedIndex<S>) -> OperationResult<Self> {
         let postings = match &index.storage.postings {
             OnDiskPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
             OnDiskPostingsEnum::WithPositions(postings) => {

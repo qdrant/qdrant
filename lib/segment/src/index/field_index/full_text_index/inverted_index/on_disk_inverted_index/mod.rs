@@ -55,7 +55,7 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct MmapInvertedIndex<S: UniversalRead = MmapFile> {
+pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
     pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
     /// Number of points which are not deleted
@@ -84,7 +84,7 @@ impl<S: UniversalRead> Storage<S> {
     }
 }
 
-impl MmapInvertedIndex<MmapFile> {
+impl OnDiskInvertedIndex<MmapFile> {
     pub fn create(path: PathBuf, inverted_index: &ImmutableInvertedIndex) -> OperationResult<()> {
         let ImmutableInvertedIndex {
             postings,
@@ -152,7 +152,7 @@ impl MmapInvertedIndex<MmapFile> {
     }
 }
 
-impl<S: UniversalRead> MmapInvertedIndex<S> {
+impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     pub fn open(
         fs: &S::Fs,
         path: PathBuf,
@@ -482,7 +482,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
     }
 
     /// No-op flusher: the on-disk state is build-time only. See the type-level
-    /// docs on [`MmapInvertedIndex`] for the deletion durability contract.
+    /// docs on [`OnDiskInvertedIndex`] for the deletion durability contract.
     #[allow(clippy::unused_self)]
     pub fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
@@ -527,9 +527,9 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
     }
 }
 
-impl<S: UniversalRead> InvertedIndex for MmapInvertedIndex<S> {
+impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId> {
-        unreachable!("MmapInvertedIndex does not support mutable operations")
+        unreachable!("OnDiskInvertedIndex does not support mutable operations")
     }
 
     fn index_tokens(

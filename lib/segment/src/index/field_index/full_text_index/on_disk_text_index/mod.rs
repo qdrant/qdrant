@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitVec;
 use common::universal_io::{MmapFile, UniversalRead};
 
-use super::inverted_index::on_disk_inverted_index::MmapInvertedIndex;
+use super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::tokenizers::Tokenizer;
 use crate::data_types::index::TextIndexParams;
@@ -13,7 +13,7 @@ mod live_reload;
 mod read_ops;
 
 pub struct OnDiskFullTextIndex<S: UniversalRead = MmapFile> {
-    pub(in super::super) inverted_index: MmapInvertedIndex<S>,
+    pub(in super::super) inverted_index: OnDiskInvertedIndex<S>,
     pub(in super::super) tokenizer: Tokenizer,
 }
 
