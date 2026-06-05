@@ -25,6 +25,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::points_count(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::points_count(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::points_count(index),
         }
     }
 
@@ -32,6 +33,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::points_values_count(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::points_values_count(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::points_values_count(index),
         }
     }
 
@@ -39,6 +41,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::max_values_per_point(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::max_values_per_point(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::max_values_per_point(index),
         }
     }
 
@@ -54,6 +57,9 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
             ReadOnlyGeoMapIndex::Immutable(index) => {
                 GeoMapIndexRead::points_of_hash(index, hash, hw_counter)
             }
+            ReadOnlyGeoMapIndex::OnDisk(index) => {
+                GeoMapIndexRead::points_of_hash(index, hash, hw_counter)
+            }
         }
     }
 
@@ -67,6 +73,9 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
                 GeoMapIndexRead::values_of_hash(index, hash, hw_counter)
             }
             ReadOnlyGeoMapIndex::Immutable(index) => {
+                GeoMapIndexRead::values_of_hash(index, hash, hw_counter)
+            }
+            ReadOnlyGeoMapIndex::OnDisk(index) => {
                 GeoMapIndexRead::values_of_hash(index, hash, hw_counter)
             }
         }
@@ -85,6 +94,9 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
             ReadOnlyGeoMapIndex::Immutable(index) => {
                 GeoMapIndexRead::check_values_any(index, idx, hw_counter, check_fn)
             }
+            ReadOnlyGeoMapIndex::OnDisk(index) => {
+                GeoMapIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+            }
         }
     }
 
@@ -92,6 +104,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::values_count(index, idx),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::values_count(index, idx),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::values_count(index, idx),
         }
     }
 
@@ -99,6 +112,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::get_values(index, idx),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::get_values(index, idx),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::get_values(index, idx),
         }
     }
 
@@ -109,6 +123,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::iterator(index, values),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::iterator(index, values),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::iterator(index, values),
         }
     }
 
@@ -123,6 +138,9 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
             ReadOnlyGeoMapIndex::Immutable(index) => {
                 GeoMapIndexRead::points_per_hash_filtered(index, filter)
             }
+            ReadOnlyGeoMapIndex::OnDisk(index) => {
+                GeoMapIndexRead::points_per_hash_filtered(index, filter)
+            }
         }
     }
 
@@ -130,6 +148,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::get_storage_type(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::get_storage_type(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::get_storage_type(index),
         }
     }
 
@@ -137,6 +156,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::ram_usage_bytes(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::ram_usage_bytes(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::ram_usage_bytes(index),
         }
     }
 
@@ -144,6 +164,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::is_on_disk(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::is_on_disk(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::is_on_disk(index),
         }
     }
 
@@ -151,6 +172,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::populate(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::populate(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::populate(index),
         }
     }
 
@@ -158,6 +180,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::clear_cache(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::clear_cache(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::clear_cache(index),
         }
     }
 
@@ -165,6 +188,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::files(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::files(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::files(index),
         }
     }
 
@@ -172,6 +196,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::immutable_files(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::immutable_files(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::immutable_files(index),
         }
     }
 
@@ -179,6 +204,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => GeoMapIndexRead::telemetry_index_type(index),
             ReadOnlyGeoMapIndex::Immutable(index) => GeoMapIndexRead::telemetry_index_type(index),
+            ReadOnlyGeoMapIndex::OnDisk(index) => GeoMapIndexRead::telemetry_index_type(index),
         }
     }
 }
