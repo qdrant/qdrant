@@ -60,9 +60,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
-            ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate)
-                .unwrap()
-                .unwrap();
+            ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate).unwrap();
 
         assert_eq!(storage.is_on_disk(), !populate);
         for i in 0..5 {
@@ -70,21 +68,5 @@ mod tests {
         }
         // An unwritten point reads back as an empty payload.
         assert_eq!(storage.get(99, &hw_counter).unwrap(), payload_json! {});
-    }
-
-    /// Opening over a directory that was never written returns `Ok(None)` — the
-    /// read path never creates.
-    #[test]
-    fn read_only_payload_storage_missing_dir_is_none() {
-        let dir = TempDir::with_prefix("read_only_payload_missing").unwrap();
-        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
-        let fs = RoFs::from_context(Default::default()).unwrap();
-        let opened = ReadOnlyPayloadStorage::<ReadOnly<MmapFile>>::open(
-            &fs,
-            dir.path().to_path_buf(),
-            false,
-        )
-        .unwrap();
-        assert!(opened.is_none());
     }
 }

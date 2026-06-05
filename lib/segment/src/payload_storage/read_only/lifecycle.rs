@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::universal_io::{OkNotFound, UniversalRead};
+use common::universal_io::UniversalRead;
 use gridstore::GridstoreReader;
 
 use super::ReadOnlyPayloadStorage;
@@ -24,17 +24,14 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
     /// path never creates, mirroring the read-only field indexes.
     ///
     /// [1]: crate::payload_storage::mmap_payload_storage::MmapPayloadStorage::open_or_create
-    pub fn open(fs: &S::Fs, path: PathBuf, populate: bool) -> OperationResult<Option<Self>> {
+    pub fn open(fs: &S::Fs, path: PathBuf, populate: bool) -> OperationResult<Self> {
         let path = storage_dir(path);
-        let Some(storage) = GridstoreReader::<Payload, S>::open(fs, path).ok_not_found()? else {
-            // Files don't exist, cannot load
-            return Ok(None);
-        };
+        let storage = GridstoreReader::<Payload, S>::open(fs, path)?;
 
         if populate {
             storage.populate()?;
         }
 
-        Ok(Some(Self { storage, populate }))
+        Ok(Self { storage, populate })
     }
 }
