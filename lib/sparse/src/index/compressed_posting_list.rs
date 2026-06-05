@@ -14,6 +14,7 @@ use super::posting_list_common::{
     GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
 };
 use crate::common::types::{DimWeight, Weight};
+use crate::index::inverted_index::inverted_index_compressed_mmap::PostingListFileHeader;
 type BitPackerImpl = bitpacking::BitPacker4x;
 
 /// How many elements are packed in a single chunk.
@@ -124,21 +125,29 @@ enum IdChunkPosition {
 
 impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     pub(super) fn new(
-        id_data: &'a [u8],
-        chunks: &'a [CompressedPostingChunk<W>],
-        remainders: &'a [GenericPostingElement<W>],
-        last_id: Option<PointOffsetType>,
-        multiplier: W::QuantizationParams,
+        header: PostingListFileHeader<W>,
+        data: &'a [u8],
         hw_counter: &'a HardwareCounterCell,
-    ) -> Self {
-        CompressedPostingListView {
+    ) -> Option<Self> {
+        let ids_len = header.ids_len as usize;
+        let chunks_bytes = header.chunks_count as usize * size_of::<CompressedPostingChunk<W>>();
+        let id_data = data.get(..ids_len)?;
+        let chunks = <[CompressedPostingChunk<W>]>::ref_from_bytes(
+            data.get(ids_len..ids_len + chunks_bytes)?,
+        )
+        .ok()?;
+        let remainders =
+            <[GenericPostingElement<W>]>::ref_from_bytes(data.get(ids_len + chunks_bytes..)?)
+                .ok()?;
+
+        Some(CompressedPostingListView {
             id_data,
             chunks,
             remainders,
-            last_id,
-            multiplier,
+            last_id: header.last_id.checked_sub(1),
+            multiplier: header.quantization_params,
             hw_counter,
-        }
+        })
     }
 
     pub(super) fn parts(

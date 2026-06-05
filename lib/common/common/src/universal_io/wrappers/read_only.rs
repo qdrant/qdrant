@@ -10,7 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFs, UserData,
+    Item, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalKind, UniversalRead,
+    UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -153,6 +154,18 @@ where
         U: UserData,
     {
         self.0.read_iter::<P, T, U>(ranges)
+    }
+
+    #[inline]
+    fn read_bytes_iter<P, U>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
+    ) -> Result<impl Iterator<Item = Result<(U, ACow<'_>)>>>
+    where
+        P: AccessPattern,
+        U: UserData,
+    {
+        self.0.read_bytes_iter::<P, U>(ranges)
     }
 
     #[inline]

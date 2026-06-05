@@ -9,13 +9,15 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::aligned_vec::ACow;
 use common::fs::{atomic_save_json, read_json};
-use common::generic_consts::Random;
+use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, Result, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs, UserData,
+};
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
@@ -64,7 +66,7 @@ pub struct InvertedIndexCompressedMmap<W, S: UniversalRead> {
 
 #[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
-struct PostingListFileHeader<W: Weight> {
+pub struct PostingListFileHeader<W: Weight> {
     pub ids_start: u64,
     pub last_id: u32,
     /// Possible values: 0, 4, 8, ..., 512.
@@ -118,24 +120,36 @@ where
         Ok(())
     }
 
-    fn get<'a>(
+    fn get_batch<'a, U: UserData>(
         &'a self,
-        id: DimOffset,
+        ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Result<CompressedPostingListIterator<'a, W>> {
-        Ok(self.get(id, arena, hw_counter)?.iter())
+        mut callback: impl FnMut(U, Self::Iter<'a>) -> Result<()>,
+    ) -> Result<()> {
+        for record in self.views_iter(ids, arena, hw_counter)? {
+            let (user_data, view) = record?;
+            callback(user_data, view.iter())?;
+        }
+        Ok(())
     }
 
     fn len(&self) -> usize {
         self.file_header.posting_count
     }
 
-    fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize> {
-        let (header, remainders_end) = self.read_posting_header(id, hw_counter)?;
-        header
-            .postings_count(remainders_end)
-            .ok_or_else(corrupted_index)
+    fn posting_list_len_batch<U: UserData>(
+        &self,
+        ids: impl Iterator<Item = (U, DimOffset)>,
+        hw_counter: &HardwareCounterCell,
+        mut callback: impl FnMut(U, usize) -> Result<()>,
+    ) -> Result<()> {
+        self.for_each_header(ids, hw_counter, |user_data, header, remainders_end| {
+            let count = header
+                .postings_count(remainders_end)
+                .ok_or_else(corrupted_index)?;
+            callback(user_data, count)
+        })
     }
 
     fn files(path: &Path) -> Vec<PathBuf> {
@@ -199,76 +213,144 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         path.join(INDEX_CONFIG_FILE_NAME)
     }
 
-    pub fn get<'a>(
+    #[cfg(test)]
+    fn get<'a>(
         &'a self,
         id: DimId,
         arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<CompressedPostingListView<'a, W>> {
-        let (header, remainders_end) = self.read_posting_header(id, hw_counter)?;
-
-        let data_bytes = self.storage.read_bytes::<Random>(
-            header.ids_start..remainders_end,
-            align_of::<(CompressedPostingChunk<W>, GenericPostingElement<W>)>(),
-        )?;
-        let data = match data_bytes {
-            ACow::Borrowed(b) => b,
-            ACow::Owned(avec) => arena.put(avec),
-        };
-
-        let ids_len = header.ids_len as usize;
-        let chunks_bytes = header.chunks_count as usize * size_of::<CompressedPostingChunk<W>>();
-        let id_data = data.get(..ids_len).ok_or_else(corrupted_index)?;
-        let chunks = <[CompressedPostingChunk<W>]>::ref_from_bytes(
-            data.get(ids_len..ids_len + chunks_bytes)
-                .ok_or_else(corrupted_index)?,
-        )
-        .map_err(|_| corrupted_index())?;
-        let remainders = <[GenericPostingElement<W>]>::ref_from_bytes(
-            data.get(ids_len + chunks_bytes..)
-                .ok_or_else(corrupted_index)?,
-        )
-        .map_err(|_| corrupted_index())?;
-
-        Ok(CompressedPostingListView::new(
-            id_data,
-            chunks,
-            remainders,
-            header.last_id.checked_sub(1),
-            header.quantization_params,
-            hw_counter,
-        ))
+        let ((), view) = self
+            .views_iter(std::iter::once(((), id)), arena, hw_counter)?
+            .next()
+            .expect("one id yields one view")?;
+        Ok(view)
     }
 
-    /// Read the header for `id`, plus the next header's `ids_start`
-    /// (which doubles as this entry's remainders end).
-    fn read_posting_header(
+    /// Calls `callback` for each posting list view in the file.
+    /// Views are ephemeral, so they cannot outlive the closure.
+    ///
+    /// Similar to [`Self::for_each_header`].
+    pub fn for_each_view(
         &self,
-        id: DimId,
         hw_counter: &HardwareCounterCell,
-    ) -> Result<(PostingListFileHeader<W>, u64)> {
-        if id >= self.file_header.posting_count as DimId {
-            return Err(out_of_bounds(id, self.file_header.posting_count));
-        }
-
-        let header_start = u64::from(id) * Self::HEADER_SIZE as u64;
-        let has_next = id + 1 < self.file_header.posting_count as DimId;
-        let read_size = Self::HEADER_SIZE + if has_next { size_of::<u64>() } else { 0 };
-        let header_bytes = self.storage.read_bytes::<Random>(
-            header_start..header_start + read_size as u64,
+        mut callback: impl FnMut(DimOffset, CompressedPostingListView<'_, W>) -> Result<()>,
+    ) -> Result<()> {
+        // Phase 1: read all headers as one contiguous range.
+        let storage_len = self.storage.len::<u8>()?;
+        let headers = self.storage.read_bytes::<Sequential>(
+            0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
             align_of::<PostingListFileHeader<W>>(),
         )?;
-        let (&header, rest) = PostingListFileHeader::<W>::ref_from_prefix(&header_bytes)
+        hw_counter.vector_io_read().incr_delta(headers.len());
+        let headers = <[PostingListFileHeader<W>]>::ref_from_bytes(&headers)
             .map_err(|_| corrupted_index())?;
-        let remainders_end = if has_next {
-            *u64::ref_from_bytes(rest).map_err(|_| corrupted_index())?
-        } else {
-            self.storage.len::<u8>()?
-        };
 
-        hw_counter.vector_io_read().incr_delta(read_size);
+        let ranges = headers.iter().enumerate().map(|(id, header)| {
+            let remainders_end = headers
+                .get(id + 1)
+                .map_or(storage_len, |next| next.ids_start);
+            ReadBytesItem {
+                user_data: (id as DimOffset, *header),
+                range: header.ids_start..remainders_end,
+                align: align_of::<(CompressedPostingChunk<W>, GenericPostingElement<W>)>(),
+            }
+        });
 
-        Ok((header, remainders_end))
+        // Phase 2: read each posting's data via batched reads.
+        for record in self.storage.read_bytes_iter::<Random, _>(ranges)? {
+            let ((id, header), data) = record?;
+            let view = CompressedPostingListView::new(header, &data, hw_counter)
+                .ok_or_else(corrupted_index)?;
+            callback(id, view)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns an iterator of posting lists views, given their ids.
+    /// Arena owns the views, so views can outlive the iterator.
+    ///
+    /// Similar to [`Self::for_each_view`].
+    pub fn views_iter<'a, U: UserData>(
+        &'a self,
+        ids: impl Iterator<Item = (U, DimOffset)>,
+        arena: &'a Blink,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Result<impl Iterator<Item = Result<(U, CompressedPostingListView<'a, W>)>>> {
+        // Phase 1: read headers via batched reads.
+        let mut ranges = Vec::with_capacity(ids.size_hint().0);
+        self.for_each_header(ids, hw_counter, |user_data, header, remainders_end| {
+            ranges.push(ReadBytesItem {
+                user_data: (user_data, header),
+                range: header.ids_start..remainders_end,
+                align: align_of::<(CompressedPostingChunk<W>, GenericPostingElement<W>)>(),
+            });
+            Ok(())
+        })?;
+
+        // Phase 2: read each posting's data via batched reads.
+        let views = self
+            .storage
+            .read_bytes_iter::<Random, _>(ranges)?
+            .map(move |record| {
+                let ((user_data, header), data) = record?;
+                let data = match data {
+                    ACow::Borrowed(b) => b,
+                    ACow::Owned(avec) => arena.put(avec),
+                };
+                let view = CompressedPostingListView::new(header, data, hw_counter)
+                    .ok_or_else(corrupted_index)?;
+                Ok((user_data, view))
+            });
+
+        Ok(views)
+    }
+
+    /// Calls `callback` for each header of the given ids.
+    fn for_each_header<U: UserData>(
+        &self,
+        ids: impl Iterator<Item = (U, DimOffset)>,
+        hw_counter: &HardwareCounterCell,
+        mut callback: impl FnMut(U, PostingListFileHeader<W>, u64) -> Result<()>,
+    ) -> Result<()> {
+        let storage_len = self.storage.len::<u8>()?;
+        let posting_count = self.file_header.posting_count as DimOffset;
+
+        // Prepare an iterator of ranges.
+        //
+        // There are no straightforward way to validate ids without consuming
+        // the iterator. Thus, this iterator yields Results.
+        let mut error = None;
+        let ranges = ids.map_while(|(user_data, id)| {
+            if id >= posting_count {
+                error = Some(out_of_bounds(id, self.file_header.posting_count));
+                return None;
+            }
+            let has_next = id + 1 < posting_count;
+            let read_size = Self::HEADER_SIZE + if has_next { size_of::<u64>() } else { 0 };
+            let start = u64::from(id) * Self::HEADER_SIZE as u64;
+            Some(ReadBytesItem {
+                user_data: (user_data, has_next),
+                range: start..start + read_size as u64,
+                align: align_of::<PostingListFileHeader<W>>(),
+            })
+        });
+
+        for record in self.storage.read_bytes_iter::<Random, _>(ranges)? {
+            let ((user_data, has_next), header_bytes) = record?;
+            hw_counter.vector_io_read().incr_delta(header_bytes.len());
+            let (&header, rest) = PostingListFileHeader::<W>::ref_from_prefix(&header_bytes)
+                .map_err(|_| corrupted_index())?;
+            let remainders_end = if has_next {
+                *u64::ref_from_bytes(rest).map_err(|_| corrupted_index())?
+            } else {
+                storage_len
+            };
+            callback(user_data, header, remainders_end)?;
+        }
+
+        error.map_or(Ok(()), Err)
     }
 
     pub fn convert_and_save<P: AsRef<Path>>(
@@ -396,11 +478,10 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
     fn calculate_total_sparse_size(&self, hw_counter: &HardwareCounterCell) -> Result<usize> {
         let mut total = 0;
-        let mut arena = Blink::new();
-        for id in 0..self.file_header.posting_count as DimId {
-            total += self.get(id, &arena, hw_counter)?.store_size().total;
-            arena.reset();
-        }
+        self.for_each_view(hw_counter, |_id, view| {
+            total += view.store_size().total;
+            Ok(())
+        })?;
         Ok(total)
     }
 

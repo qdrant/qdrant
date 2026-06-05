@@ -80,13 +80,15 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
         idf: &mut HashMap<DimId, usize>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for (dim_id, count) in idf.iter_mut() {
-            if let Some(remapped_dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                *count += self
-                    .inverted_index
-                    .posting_list_len(remapped_dim_id, hw_counter)?;
-            }
-        }
+        let iter = idf.iter_mut().filter_map(|(dim_id, count)| {
+            let offset = self.indices_tracker.remap_index(*dim_id)?;
+            Some((count, offset))
+        });
+        self.inverted_index
+            .posting_list_len_batch(iter, hw_counter, |count, len| {
+                *count += len;
+                Ok(())
+            })?;
         Ok(())
     }
 

@@ -3,14 +3,15 @@ use std::path::Path;
 
 use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::ext::VecExt;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, Result};
+use common::universal_io::{MmapFs, Result, UserData};
 
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
 use super::{InvertedIndex, out_of_bounds};
 use crate::common::sparse_vector::RemappedSparseVector;
-use crate::common::types::{DimId, DimOffset, Weight};
+use crate::common::types::{DimOffset, Weight};
 use crate::index::compressed_posting_list::{
     CompressedPostingBuilder, CompressedPostingList, CompressedPostingListIterator,
     CompressedPostingListView,
@@ -36,24 +37,21 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 
     fn open(path: &Path) -> Result<Self> {
         let mmap_inverted_index = InvertedIndexCompressedMmap::<W, Storage>::load(&MmapFs, path)?;
-        let mut inverted_index = InvertedIndexCompressedImmutableRam {
-            postings: Vec::with_capacity(mmap_inverted_index.file_header.posting_count),
-            vector_count: mmap_inverted_index.file_header.vector_count,
-            total_sparse_size: mmap_inverted_index.total_sparse_vectors_size(),
-        };
 
         let hw_counter = HardwareCounterCell::disposable();
-
-        let mut arena = Blink::new();
-        for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
-            let posting_list = mmap_inverted_index.get(i, &arena, &hw_counter)?;
-            inverted_index.postings.push(posting_list.to_owned());
-            arena.reset();
-        }
+        let mut postings = vec![None; mmap_inverted_index.file_header.posting_count];
+        mmap_inverted_index.for_each_view(&hw_counter, |id, view| {
+            postings[id as usize] = Some(view.to_owned());
+            Ok(())
+        })?;
 
         mmap_inverted_index.clear_cache()?;
 
-        Ok(inverted_index)
+        Ok(InvertedIndexCompressedImmutableRam {
+            postings: postings.transform_in_place(Option::unwrap),
+            vector_count: mmap_inverted_index.file_header.vector_count,
+            total_sparse_size: mmap_inverted_index.total_sparse_vectors_size(),
+        })
     }
 
     fn save(&self, path: &Path) -> Result<()> {
@@ -61,21 +59,33 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         Ok(())
     }
 
-    fn get<'a>(
+    fn get_batch<'a, U: UserData>(
         &'a self,
-        id: DimOffset,
+        ids: impl Iterator<Item = (U, DimOffset)>,
         _arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell, // Ignored for in-ram index
-    ) -> Result<Self::Iter<'a>> {
-        Ok(self.get(id, hw_counter)?.iter())
+        mut callback: impl FnMut(U, Self::Iter<'a>) -> Result<()>,
+    ) -> Result<()> {
+        for (user_data, id) in ids {
+            callback(user_data, self.get(id, hw_counter)?.iter())?;
+        }
+        Ok(())
     }
 
     fn len(&self) -> usize {
         self.postings.len()
     }
 
-    fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize> {
-        Ok(self.get(id, hw_counter)?.len())
+    fn posting_list_len_batch<U: UserData>(
+        &self,
+        ids: impl Iterator<Item = (U, DimOffset)>,
+        hw_counter: &HardwareCounterCell,
+        mut callback: impl FnMut(U, usize) -> Result<()>,
+    ) -> Result<()> {
+        for (user_data, id) in ids {
+            callback(user_data, self.get(id, hw_counter)?.len())?;
+        }
+        Ok(())
     }
 
     fn files(path: &Path) -> Vec<std::path::PathBuf> {

@@ -52,28 +52,20 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         let mut max_record_id = 0;
         let mut min_record_id = u32::MAX;
         // iterate over query indices
-        for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            let mut it = inverted_index.get(*id, &scratch.arena, hardware_counter)?;
+        let ids = query.indices.iter().copied().enumerate();
+        inverted_index.get_batch(ids, &scratch.arena, hardware_counter, |offset, mut it| {
             if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
-                // check if new min
-                let min_record_id_posting = first.record_id;
-                min_record_id = min(min_record_id, min_record_id_posting);
-
-                // check if new max
-                let max_record_id_posting = last_id;
-                max_record_id = max(max_record_id, max_record_id_posting);
-
-                // capture query info
-                let query_index = *id;
-                let query_weight = query.values[query_weight_offset];
+                min_record_id = min(min_record_id, first.record_id);
+                max_record_id = max(max_record_id, last_id);
 
                 postings_iterators.push(IndexedPostingListIterator {
                     posting_list_iterator: it,
-                    query_index,
-                    query_weight,
+                    query_index: query.indices[offset],
+                    query_weight: query.values[offset],
                 });
             }
-        }
+            Ok(())
+        })?;
         let top_results = TopK::new(top);
         // Query vectors with negative values can NOT use the pruning mechanism which relies on the pre-computed `max_next_weight`.
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
