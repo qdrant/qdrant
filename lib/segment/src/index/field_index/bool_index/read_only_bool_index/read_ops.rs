@@ -46,8 +46,6 @@ impl<S: UniversalRead> BoolIndexRead for ReadOnlyBoolIndex<S> {
         "read_only_bool_index"
     }
 
-    // Override the default impls to use the counts cached on open / live reload,
-    // avoiding a bitmap scan on every read — mirroring `MutableBoolIndex`.
     fn trues_count(&self) -> usize {
         self.trues_count
     }
