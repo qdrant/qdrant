@@ -32,13 +32,10 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
 
         self.storage
             .view()
-            .for_each_in_batch::<Random, _, OperationError>(
-                new_points,
-                |idx, maybe_value: Option<Vec<u8>>| {
-                    let Some(value) = maybe_value else {
-                        return Ok(());
-                    };
-                    let point_offset = new_points[idx];
+            .read_values::<Random, _, OperationError>(
+                new_points.iter().copied().enumerate(),
+                |_, point_offset, maybe_value: Option<Vec<u8>>| {
+                    let value = maybe_value.unwrap_or_default();
                     // The stored document is already tokenized, so we replay the
                     // post-tokenization half of `MutableFullTextIndex::add_many`:
                     // register the tokens, then index them (plus the ordered
