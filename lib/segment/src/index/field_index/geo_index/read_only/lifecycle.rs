@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::universal_io::UniversalRead;
 
-use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoMapIndex;
+use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::ReadOnlyGeoMapIndex;
 use crate::common::operation_error::OperationResult;
 

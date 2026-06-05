@@ -90,9 +90,8 @@ impl IndexBuilder {
                     panic!("expected mmap index");
                 };
 
-                let index = GeoIndex::Immutable(
-                    ImmutableGeoIndex::load_from_on_disk(*index).unwrap(),
-                );
+                let index =
+                    GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(*index).unwrap());
                 Ok(index)
             }
         }

@@ -7,8 +7,8 @@ use common::universal_io::MmapFs;
 use serde_json::Value;
 
 use super::GeoIndex;
-use super::on_disk_geo_index::OnDiskGeoIndex;
 use super::mutable_geo_index::InMemoryGeoMapIndex;
+use super::on_disk_geo_index::OnDiskGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 

@@ -1,7 +1,7 @@
 mod builders;
 pub mod immutable_geo_index;
-pub mod on_disk_geo_index;
 pub mod mutable_geo_index;
+pub mod on_disk_geo_index;
 mod payload_index;
 pub mod read_only;
 pub mod read_ops;
@@ -18,8 +18,8 @@ use mutable_geo_index::InMemoryGeoMapIndex;
 
 pub use self::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use self::immutable_geo_index::ImmutableGeoIndex;
-use self::on_disk_geo_index::OnDiskGeoIndex;
 use self::mutable_geo_index::MutableGeoIndex;
+use self::on_disk_geo_index::OnDiskGeoIndex;
 pub use self::read_only::ReadOnlyGeoMapIndex;
 pub use self::read_ops::GeoMapIndexRead;
 use crate::common::operation_error::OperationResult;
@@ -123,9 +123,7 @@ impl GeoMapIndexRead for GeoIndex {
     ) -> OperationResult<usize> {
         match self {
             GeoIndex::Mutable(index) => GeoMapIndexRead::points_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => {
-                GeoMapIndexRead::points_of_hash(index, hash, hw_counter)
-            }
+            GeoIndex::Immutable(index) => GeoMapIndexRead::points_of_hash(index, hash, hw_counter),
             GeoIndex::OnDisk(index) => index.points_of_hash(hash, hw_counter),
         }
     }
@@ -137,9 +135,7 @@ impl GeoMapIndexRead for GeoIndex {
     ) -> OperationResult<usize> {
         match self {
             GeoIndex::Mutable(index) => GeoMapIndexRead::values_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => {
-                GeoMapIndexRead::values_of_hash(index, hash, hw_counter)
-            }
+            GeoIndex::Immutable(index) => GeoMapIndexRead::values_of_hash(index, hash, hw_counter),
             GeoIndex::OnDisk(index) => index.values_of_hash(hash, hw_counter),
         }
     }

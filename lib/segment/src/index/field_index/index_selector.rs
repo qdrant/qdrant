@@ -386,9 +386,11 @@ impl IndexSelector<'_> {
         deleted_points: &BitSlice,
     ) -> FieldIndexBuilder {
         match self {
-            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(
-                GeoIndex::builder_mmap(&map_dir(dir, field), *is_on_disk, deleted_points),
-            ),
+            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(GeoIndex::builder_mmap(
+                &map_dir(dir, field),
+                *is_on_disk,
+                deleted_points,
+            )),
             IndexSelector::Appendable { dir } => {
                 make_gridstore(GeoIndex::builder_gridstore(map_dir(dir, field)))
             }
