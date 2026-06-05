@@ -277,13 +277,19 @@ pub(super) fn estimate_cardinality<G: GeoMapIndexRead + ?Sized>(
 
         for interior in &interior_hashes {
             let interior_estimation = geo.match_cardinality(interior, hw_counter)?;
-            exterior_estimation.min = max(0, exterior_estimation.min - interior_estimation.max);
+            exterior_estimation.min = exterior_estimation
+                .min
+                .saturating_sub(interior_estimation.max);
             exterior_estimation.max = max(
                 exterior_estimation.min,
-                exterior_estimation.max - interior_estimation.min,
+                exterior_estimation
+                    .max
+                    .saturating_sub(interior_estimation.min),
             );
             exterior_estimation.exp = max(
-                exterior_estimation.exp - interior_estimation.exp,
+                exterior_estimation
+                    .exp
+                    .saturating_sub(interior_estimation.exp),
                 exterior_estimation.min,
             );
         }
