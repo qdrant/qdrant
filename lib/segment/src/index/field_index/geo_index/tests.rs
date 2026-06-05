@@ -216,6 +216,69 @@ fn radius_to_polygon(circle: &GeoRadius) -> GeoPolygon {
     ])
 }
 
+/// Regression: a geo-polygon whose interior ring matches more points than its
+/// exterior ring must not underflow the cardinality estimate. `estimate_cardinality`
+/// subtracted `usize`s wrapped in a no-op `max(0, ..)`, so when an interior estimate
+/// exceeded the exterior estimate the subtraction underflowed (debug panic / release
+/// wrap to ~usize::MAX, corrupting query planning).
+#[rstest]
+#[case(IndexType::Mutable)]
+#[case(IndexType::OnDisk)]
+#[case(IndexType::Immutable)]
+fn test_polygon_interior_exceeds_exterior_cardinality(#[case] index_type: IndexType) {
+    let (mut builder, _temp_dir, _db) = create_builder(index_type);
+
+    // A single indexed point in New York.
+    builder
+        .add_point(
+            0,
+            &[&json!([{ "lon": NYC.lon, "lat": NYC.lat }])],
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+    let index = builder.finalize().unwrap();
+
+    // Exterior ring over Europe (does not contain the point); interior ring around
+    // New York (contains the point). The interior cardinality estimate therefore
+    // exceeds the exterior one, which previously underflowed `exterior.min - interior.max`.
+    let polygon = GeoPolygon {
+        exterior: GeoLineString {
+            points: vec![
+                GeoPoint::new_unchecked(2.0, 51.0),
+                GeoPoint::new_unchecked(2.0, 60.0),
+                GeoPoint::new_unchecked(20.0, 60.0),
+                GeoPoint::new_unchecked(20.0, 51.0),
+                GeoPoint::new_unchecked(2.0, 51.0),
+            ],
+        },
+        interiors: Some(vec![GeoLineString {
+            points: vec![
+                GeoPoint::new_unchecked(-74.5, 40.0),
+                GeoPoint::new_unchecked(-74.5, 41.5),
+                GeoPoint::new_unchecked(-73.0, 41.5),
+                GeoPoint::new_unchecked(-73.0, 40.0),
+                GeoPoint::new_unchecked(-74.5, 40.0),
+            ],
+        }]),
+    };
+
+    let hw_counter = HardwareCounterCell::new();
+    let card = index
+        .estimate_cardinality(&condition_for_geo_polygon("test", polygon), &hw_counter)
+        .unwrap()
+        .unwrap();
+
+    // No underflow: a self-consistent estimate bounded by the single indexed point.
+    assert!(card.min <= card.exp, "min {} > exp {}", card.min, card.exp);
+    assert!(card.exp <= card.max, "exp {} > max {}", card.exp, card.max);
+    assert!(
+        card.max <= index.points_count(),
+        "max {} exceeds total points {}",
+        card.max,
+        index.points_count(),
+    );
+}
+
 #[rstest]
 #[case(IndexType::Mutable)]
 #[case(IndexType::OnDisk)]
