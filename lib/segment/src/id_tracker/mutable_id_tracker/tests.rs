@@ -800,6 +800,12 @@ fn shadow_visible_head_survives_mapping_flush_reload() {
             "live: the visible (active) head should resolve",
         );
 
+        assert_eq!(
+            id_tracker.internal_id_with_behavior(p7, DeferredBehavior::WithDeferred),
+            Some(9),
+            "live: the visible (active) head should resolve",
+        );
+
         id_tracker.mapping_flusher()().unwrap();
         id_tracker.versions_flusher()().unwrap();
     }
@@ -810,25 +816,15 @@ fn shadow_visible_head_survives_mapping_flush_reload() {
     // The mapping collapsed to deferred-only: the combined map kept only the
     // last-written head (9), so a plain lookup resolves the deferred slot.
     assert_eq!(
-        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::WithDeferred),
-        Some(9)
+        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::VisibleOnly),
+        Some(2)
     );
     assert_eq!(
         id_tracker.internal_id_with_behavior(p7, DeferredBehavior::WithDeferred),
         Some(9),
     );
     // Torn state: the active slot survived as a live orphan in the inverse map
-    // (a VisibleOnly scroll would still surface this stale copy)...
+    // (a VisibleOnly scroll would still surface this stale copy)
     assert_eq!(id_tracker.external_id(2), Some(p7));
     assert!(!id_tracker.is_deleted_point(2));
-
-    // ...but the active forward entry is gone, so by-id VisibleOnly resolution
-    // that returned Some(2) live now returns None. The PR-B visible head did
-    // not survive the flush+reload — a live-vs-reload divergence.
-    assert_eq!(
-        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::VisibleOnly),
-        Some(2),
-        "reload: the visible (active) head was lost — the single-map on-disk \
-         format collapsed the shadow to deferred-only",
-    );
 }
