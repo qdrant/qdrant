@@ -23,13 +23,14 @@ use std::sync::atomic::AtomicBool;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
-use common::mmap::MmapBitSlice;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{TQBits, TQMode};
 
 use self::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use crate::common::Flusher;
+use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
@@ -48,8 +49,8 @@ pub struct TurboVectorStorage {
     /// Quantizer used to de/quantize.
     quantizer: TurboQuantizer,
 
-    /// Memory-mapped deletion flags (`deleted.dat`).
-    deleted: MmapBitSlice,
+    /// Persisted flags marking which vectors are soft-deleted.
+    deleted: BitvecFlags<MmapFile>,
     /// Number of vectors currently flagged as deleted.
     deleted_count: usize,
 
@@ -57,8 +58,6 @@ pub struct TurboVectorStorage {
     distance: Distance,
     /// Original (un-padded) vector dimensionality.
     dim: usize,
-    /// Path to the `deleted.dat` flags file.
-    deleted_path: PathBuf,
 }
 
 impl TurboVectorStorage {
@@ -108,7 +107,7 @@ impl VectorStorageRead for TurboVectorStorage {
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+        self.deleted.get(key)
     }
 
     fn deleted_vector_count(&self) -> usize {
@@ -116,7 +115,7 @@ impl VectorStorageRead for TurboVectorStorage {
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
-        &self.deleted
+        self.deleted.get_bitslice()
     }
 }
 
@@ -146,9 +145,9 @@ impl VectorStorage for TurboVectorStorage {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        // Encoded blob + quantized.meta.json + the mutable deleted.dat flags.
+        // Encoded blob + quantized.meta.json + the mutable deleted flags.
         let mut files = self.storage.files();
-        files.push(self.deleted_path.clone());
+        files.extend(self.deleted.files());
         files
     }
 
