@@ -171,7 +171,9 @@ pub(super) fn load_mappings(
 ///
 /// An error item is returned if reading a mapping change fails due to malformed data. Then the
 /// iterator will not produce any more items.
-fn read_mappings_iter<R>(mut reader: R) -> impl Iterator<Item = OperationResult<MappingChange>>
+pub(super) fn read_mappings_iter<R>(
+    mut reader: R,
+) -> impl Iterator<Item = OperationResult<MappingChange>>
 where
     R: Read + Seek,
 {

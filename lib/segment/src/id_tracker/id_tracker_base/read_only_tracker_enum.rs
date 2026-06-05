@@ -8,7 +8,7 @@ use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
-    Appendable(ReadOnlyAppendableIdTracker),
+    Appendable(ReadOnlyAppendableIdTracker<S>),
     Immutable(ReadOnlyImmutableIdTracker<S>),
 }
 
