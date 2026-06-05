@@ -46,6 +46,8 @@ use crate::types::{
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
     VectorStorageDatatype, VectorStorageType,
 };
+#[cfg(target_os = "linux")]
+use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::dense_vector_storage::{
     open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
 };
@@ -214,7 +216,7 @@ pub(crate) fn create_payload_storage(
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
     #[cfg(target_os = "linux")]
-    if config.payload_storage_type == PayloadStorageType::Mmap {
+    if config.payload_storage_type == PayloadStorageType::Mmap && get_async_scorer() {
         match PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), false) {
             Ok(payload_storage) => {
                 return Ok(PayloadStorageEnum::IoUring(payload_storage));
