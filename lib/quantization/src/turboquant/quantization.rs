@@ -12,7 +12,7 @@ use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode};
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
-    pub(super) rotation: HadamardRotation,
+    pub rotation: HadamardRotation,
     pub(super) bits: TQBits,
     pub(super) mode: TQMode,
     pub(super) distance: DistanceType,

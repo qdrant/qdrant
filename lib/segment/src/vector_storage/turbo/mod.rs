@@ -92,6 +92,22 @@ impl TurboVectorStorage {
         }
         previous
     }
+
+    fn dequantize_vector(&self, quantized: Cow<[u8]>) -> CowVector<'_> {
+        let mut dequantized = self.quantizer.dequantize::<f64>(&quantized);
+
+        // Rotate back
+        self.quantizer.rotation.apply_inverse(&mut dequantized);
+
+        // Drop the padding tail: callers expect the original dimensionality.
+        CowVector::Dense(Cow::Owned(
+            // Skip the padding
+            dequantized[..self.dim]
+                .iter()
+                .map(|i| *i as f32)
+                .collect::<Vec<_>>(),
+        ))
+    }
 }
 
 /// Open (create-or-load) a TurboQuant vector storage backed by a single mmap file (non-appendable).
@@ -187,17 +203,11 @@ impl VectorStorageRead for TurboVectorStorage {
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        let quantized = self.storage.get_quantized_vector(key);
-        // TODO(TQDT): use the new simd dequantization method instead.
-        CowVector::Dense(Cow::Owned(self.quantizer.dequantize(&quantized)))
+        self.dequantize_vector(self.storage.get_quantized_vector(key))
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        let quantized = self.storage.get_quantized_vector_opt(key)?;
-        // TODO(TQDT): use the new simd dequantization method instead.
-        Some(CowVector::Dense(Cow::Owned(
-            self.quantizer.dequantize(&quantized),
-        )))
+        Some(self.dequantize_vector(self.storage.get_quantized_vector_opt(key)?))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -277,14 +287,30 @@ mod tests {
     fn make_vectors(dim: usize, count: usize, seed: u64) -> Vec<DenseVector> {
         let mut rng = StdRng::seed_from_u64(seed);
         (0..count)
-            .map(|_| (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect())
+            .map(|_| {
+                let v: DenseVector = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
+                v.iter().map(|&x| x / norm).collect()
+            })
             .collect()
+    }
+
+    /// Cosine similarity over the leading `a.len()` components of `b` (which may
+    /// carry padding/quantization noise in its tail).
+    fn cosine(a: &[f32], b: &[f32]) -> f32 {
+        let dot: f32 = a.iter().zip(b).map(|(&x, &y)| x * y).sum();
+        let na: f32 = a.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        let nb: f32 = b[..a.len()].iter().map(|&x| x * x).sum::<f32>().sqrt();
+        dot / (na * nb)
     }
 
     #[test]
     fn upsert_flush_reload_in_ram_matches_independent_oracle() {
         const COUNT: usize = 64;
         const SEED: u64 = 0xC0FFEE;
+        // Max direction error tolerated on a round-trip, and the separation we
+        // require from every unrelated vector.
+        const TOL: f32 = 2e-2;
 
         for dim in [1, 127, 128, 1024, 4096, 4097] {
             let distance = Distance::Dot;
@@ -299,12 +325,9 @@ mod tests {
 
             let inputs = make_vectors(dim, COUNT, SEED);
             let mut expected_bytes: Vec<Vec<u8>> = Vec::with_capacity(COUNT);
-            let mut expected_dense: Vec<DenseVector> = Vec::with_capacity(COUNT);
             for vector in &inputs {
                 let quantized = oracle.quantize(vector, &mut buf);
-                let dense: DenseVector = oracle.dequantize(&quantized);
                 expected_bytes.push(quantized);
-                expected_dense.push(dense);
             }
 
             // Hand 1 — write path: upsert into an on-disk chunked-mmap storage, flush, then drop it so everything must round-trip through disk on reload.
@@ -342,14 +365,33 @@ mod tests {
                     "encoded bytes mismatch for vector {i}",
                 );
 
-                // (b) Retrieval round-trip: the dequantized vector matches the oracle's quantize -> dequantize of the same input.
+                // (b) Retrieval round-trip: dequantization rotates back to the
+                // original space, so the recovered vector must point the same
+                // way as the input. Quantization is lossy, so compare directions
+                // via cosine rather than equality.
                 let retrieved = DenseVector::try_from(storage.get_vector::<Random>(key)).unwrap();
-                assert_eq!(
-                    retrieved, expected_dense[i],
-                    "retrieved vector mismatch for vector {i}",
+                assert!(
+                    (1.0 - cosine(&inputs[i], &retrieved)).abs() < TOL,
+                    "retrieved vector direction mismatch for vector {i}: cosine {}",
+                    cosine(&inputs[i], &retrieved),
                 );
 
-                // (c) `get_vector_opt` must return `Some` and agree with both `get_vector` and the oracle for every present vector.
+                // (b-sanity) No unrelated input may sit within `TOL` of the round-trip.
+                // Skipped at dim=1, where unit vectors are just ±1 and collide exactly.
+                if dim > 1 {
+                    for (j, other) in inputs.iter().enumerate() {
+                        if j == i {
+                            continue;
+                        }
+                        assert!(
+                            1.0 - cosine(other, &retrieved) > TOL,
+                            "vector {i} round-trip is within {TOL} of unrelated vector {j}: cosine {}",
+                            cosine(other, &retrieved),
+                        );
+                    }
+                }
+
+                // (c) `get_vector_opt` must return `Some` and agree with `get_vector` for every present vector.
                 let retrieved_opt = DenseVector::try_from(
                     storage
                         .get_vector_opt::<Random>(key)
@@ -357,9 +399,12 @@ mod tests {
                 )
                 .unwrap();
                 assert_eq!(
-                    retrieved_opt, expected_dense[i],
+                    retrieved_opt, retrieved,
                     "get_vector_opt mismatch for vector {i}",
                 );
+
+                // Check we don't return padded dim
+                assert_eq!(inputs[i].len(), retrieved.len());
             }
         }
     }
