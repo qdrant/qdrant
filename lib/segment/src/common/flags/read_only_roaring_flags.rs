@@ -29,14 +29,11 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     /// In-memory bitmap of true flags, materialized from the backing file on
     /// open and patched in place on [`LiveReload::live_reload`].
     bitmap: RoaringBitmap,
-
     /// Backing bitslice, retained so a reload can reopen it and read only the
     /// changed positions.
     storage: StoredBitSlice<S>,
-
     /// Total length of the flags, including trailing falses. Read from the status file.
     len: usize,
-
     directory: PathBuf,
 }
 
@@ -161,8 +158,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
         for &point in new_points {
             if self.storage.get_bit(u64::from(point))?.unwrap_or(false) {
                 self.bitmap.insert(point);
-            } else {
-                self.bitmap.remove(point);
             }
         }
 
