@@ -30,6 +30,15 @@ pub struct ReadOnlyBoolIndex<S: UniversalRead> {
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage<S>,
     pub(super) indexed_count: usize,
+    /// Cardinalities of the `trues` / `falses` bitmaps, cached like
+    /// [`MutableBoolIndex`][1]'s counts and refreshed on every [`LiveReload`][2],
+    /// so cardinality estimation / payload blocks / telemetry don't rescan the
+    /// bitmaps on each read.
+    ///
+    /// [1]: super::mutable_bool_index::MutableBoolIndex
+    /// [2]: crate::index::field_index::LiveReload
+    pub(super) trues_count: usize,
+    pub(super) falses_count: usize,
 }
 
 pub(super) struct ReadOnlyStorage<S: UniversalRead> {
@@ -160,10 +169,16 @@ mod tests {
     /// state as a fresh `ReadOnlyBoolIndex::open` over the post-write files.
     ///
     /// A writer keeps mutating the on-disk flags after the read-only view is
-    /// open: one point is deleted, one flips its `true`/`false` membership, and
-    /// points are appended. `live_reload` is handed only that delta, yet its
-    /// bitmaps, `filter` results, and `indexed_count` must match the
-    /// authoritative re-open.
+    /// open. The id-tracker producer is append-only — a value change allocates a
+    /// fresh offset and retires the old one — so `new_points` only ever carry
+    /// brand-new offsets and `deleted_points` only ever retire existing ones; no
+    /// offset is rewritten in place. `live_reload` is handed just that delta, yet
+    /// its bitmaps, `filter` results, `indexed_count`, and cached per-variant
+    /// counts must match the authoritative re-open.
+    ///
+    /// Offset 1100 lands past the 128-byte minimum mmap (1024 flags), growing the
+    /// flags file, so it is observed only because `live_reload` reopens the
+    /// bitslice — a stale mapping cannot see the grown region.
     #[test]
     fn live_reload_matches_fresh_open() {
         let dir = TempDir::with_prefix("read_only_bool_index_live_reload").unwrap();
@@ -193,18 +208,19 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // Writer's delta: drop point 1, flip point 2 to `true`-only, append 6
-        // (true) and 7 (false), plus point 70 (true) — beyond the first 64-bit
-        // element, so the reload must read a freshly-grown bitslice.
+        // Writer's append-only delta: retire points 1 (false) and 2 (both), then
+        // append fresh offsets 6 (true), 7 (false) and 1100 (true). Offset 1100
+        // grows the flags file past its 128-byte minimum, so the reload sees it
+        // only through the reopened bitslice.
         index.remove_point(1).unwrap();
-        index.add_point(2, &[&json!(true)], &hw_counter).unwrap();
+        index.remove_point(2).unwrap();
         index.add_point(6, &[&json!(true)], &hw_counter).unwrap();
         index.add_point(7, &[&json!(false)], &hw_counter).unwrap();
-        index.add_point(70, &[&json!(true)], &hw_counter).unwrap();
+        index.add_point(1100, &[&json!(true)], &hw_counter).unwrap();
         index.flusher()().unwrap();
 
         reloaded
-            .live_reload(&fs, &[1], &[2, 6, 7, 70], &hw_counter)
+            .live_reload(&fs, &[1, 2], &[6, 7, 1100], &hw_counter)
             .unwrap();
 
         let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
@@ -235,6 +251,15 @@ mod tests {
             .unwrap()
             .collect_vec();
 
+        // Exact cardinality reads the cached `trues_count` / `falses_count`, so
+        // it proves those were refreshed on reload (not just the bitmaps).
+        let card = |idx: &ReadOnlyBoolIndex<ReadOnly<MmapFile>>, value| {
+            idx.estimate_cardinality(&match_bool(value), &hw)
+                .unwrap()
+                .unwrap()
+                .exp
+        };
+
         // Parity with the authoritative re-open …
         assert_eq!(reloaded_true, fresh_true);
         assert_eq!(reloaded_false, fresh_false);
@@ -242,14 +267,17 @@ mod tests {
             reloaded.count_indexed_points(),
             fresh.count_indexed_points()
         );
+        assert_eq!(card(&reloaded, true), card(&fresh, true));
+        assert_eq!(card(&reloaded, false), card(&fresh, false));
 
         // … and the concrete expected sets, so the test pins behavior on its
-        // own. Point 2's flip clears it from `falses` (exercises the
-        // set-or-clear path), point 1 is gone, and points 6/7/70 come from the
-        // appended bits — 70 only via the freshly-grown bitslice.
-        assert_eq!(reloaded_true, vec![0, 2, 3, 5, 6, 70]);
+        // own. Points 1 and 2 are retired; 6 and 1100 are appended as `true`, 7
+        // as `false` — 1100 only via the reopened, freshly-grown bitslice.
+        assert_eq!(reloaded_true, vec![0, 3, 5, 6, 1100]);
         assert_eq!(reloaded_false, vec![4, 5, 7]);
-        assert_eq!(reloaded.count_indexed_points(), 8);
+        assert_eq!(reloaded.count_indexed_points(), 7);
+        assert_eq!(card(&reloaded, true), 5);
+        assert_eq!(card(&reloaded, false), 3);
     }
 
     /// A partial on-disk layout — exactly one of the `trues` / `falses` flag

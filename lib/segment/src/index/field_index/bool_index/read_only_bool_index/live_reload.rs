@@ -25,12 +25,14 @@ impl<S: UniversalRead> LiveReload for ReadOnlyBoolIndex<S> {
             .falses_flags
             .live_reload(fs, deleted_points, new_points, hw_counter)?;
 
-        // indexed_count = |trues ∪ falses|, as `open` derives it.
+        // Refresh the derived counts from the reloaded bitmaps, as `open` does.
         self.indexed_count =
             self.storage
                 .trues_flags
                 .get_bitmap()
                 .union_len(self.storage.falses_flags.get_bitmap()) as usize;
+        self.trues_count = self.storage.trues_flags.count_trues();
+        self.falses_count = self.storage.falses_flags.count_trues();
 
         Ok(())
     }

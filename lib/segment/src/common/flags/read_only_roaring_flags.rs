@@ -16,7 +16,7 @@ use crate::common::operation_error::OperationResult;
 ///
 /// Loads the persisted flags into an in-memory roaring bitmap on open and keeps
 /// the backing [`StoredBitSlice`] handle so [`LiveReload::live_reload`] can
-/// re-open it fresh and fetch only the changed positions, rather than re-scanning the
+/// reopen it to read the points the writer appended, rather than re-scanning the
 /// whole file. There is no write path: no buffer, no [`BufferedDynamicFlags`][2],
 /// no [`DynamicStoredFlags`][3]. The retained `S` is the one [`Self::open`] was
 /// called with, mirroring the other read-only field indexes, which likewise
@@ -29,8 +29,8 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     /// In-memory bitmap of true flags, materialized from the backing file on
     /// open and patched in place on [`LiveReload::live_reload`].
     bitmap: RoaringBitmap,
-    /// Backing bitslice. A reload replaces this with a freshly opened handle and
-    /// reads only the changed positions, so in-place writer edits are observed.
+    /// Backing bitslice. A reload reopens this handle so points the writer
+    /// appended become readable, then reads only those new positions.
     storage: StoredBitSlice<S>,
     /// Total length of the flags, including trailing falses. Read from the status file.
     len: usize,
@@ -70,8 +70,8 @@ fn read_status_len<S: UniversalRead>(
     Ok(Some(status.read_whole()?[0].len()))
 }
 
-/// Open the flags bitslice read-only. Shared by `open` (full scan into a fresh
-/// bitmap) and `live_reload` (delta reads of the changed positions).
+/// Open the flags bitslice read-only for [`ReadOnlyRoaringFlags::open`]'s full
+/// scan into a fresh bitmap. `live_reload` instead reopens the retained handle.
 fn open_flags_storage<S: UniversalRead>(
     fs: &S::Fs,
     directory: &Path,
@@ -105,7 +105,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         };
 
         // Build the bitmap from the set positions. The bitslice handle is kept
-        // for the live-reload path, which re-opens it fresh to read the delta.
+        // for the live-reload path, which reopens it to read appended points.
         let storage = open_flags_storage::<S>(fs, directory)?;
         let bitmap =
             RoaringBitmap::from_sorted_iter(storage.iter_ones()?.map(|i| i as PointOffsetType))
@@ -128,13 +128,13 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
     /// [`Self::open`].
     ///
     /// `deleted_points` are dropped from the bitmap — a removed point belongs in
-    /// no flag set, so this needs no I/O. `new_points` have their flag re-read
-    /// from a freshly opened bitslice and the bitmap bit set or cleared to match;
-    /// reading the current bit (rather than only inserting) also folds in value
-    /// changes, e.g. a point flipping from `true` to `false`.
+    /// no flag set, so this needs no I/O. `new_points` are freshly appended
+    /// offsets (the producer is append-only — see the body): each has its flag
+    /// read from the reopened bitslice and is inserted when set. A new offset was
+    /// never in the bitmap, so an unset flag needs no action.
     ///
-    /// `hw_counter` is unused: the per-position reads go through the freshly
-    /// opened [`StoredBitSlice`], which takes no hardware counter — mirroring
+    /// `hw_counter` is unused: the per-position reads go through the reopened
+    /// [`StoredBitSlice`], which takes no hardware counter — mirroring
     /// [`Self::open`], which also doesn't account its scan.
     fn live_reload(
         &mut self,
@@ -152,19 +152,18 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
             return Ok(());
         }
 
-        // Re-open the bitslice fresh instead of reopening the retained mapping
-        // in place: an in-place `reopen()` only re-maps when the file grows, so
-        // a writer's in-place edits that leave the file length unchanged (a
-        // flipped or cleared bit) are not reliably observed through the old
-        // mapping. A fresh open reads the current on-disk state, like `open`.
-        self.storage = open_flags_storage::<S>(fs, &self.directory)?;
+        // Reopen so points appended past the previous mapping become readable.
+        // The producer (the appendable id tracker) is append-only: a value
+        // change never overwrites an offset in place — it allocates a fresh
+        // offset (reported in `new_points`) and retires the displaced one (in
+        // `deleted_points`). So every `new_point` is a brand-new offset that was
+        // never in the bitmap: insert it when its bit is set, and otherwise
+        // leave it absent — no clear is needed.
+        self.storage.reopen()?;
         for &point in new_points {
             // Possible optimization: If new_points is sorted, we should be able to use read_bit_range and iter_ones on top of it
             if self.storage.get_bit(u64::from(point))?.unwrap_or(false) {
                 self.bitmap.insert(point);
-            } else {
-                // Now false on disk: remove it, since the bitmap is patched, not rebuilt.
-                self.bitmap.remove(point);
             }
         }
 
@@ -192,71 +191,5 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
             status_file(&self.directory),
             self.directory.join(FLAGS_FILE),
         ]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, MmapFs, ReadOnly, UniversalRead, UniversalReadFileOps};
-    use tempfile::TempDir;
-
-    use super::super::dynamic_stored_flags::{DynamicStoredFlags, FLAGS_FILE, status_file};
-    use super::ReadOnlyRoaringFlags;
-    use crate::common::flags::roaring_flags::RoaringFlagsRead;
-    use crate::common::live_reload::LiveReload;
-
-    /// Build a flags directory whose set ("true") positions are exactly `trues`
-    /// with logical length `len`, via the writable `DynamicStoredFlags`.
-    fn build_flags(dir: &std::path::Path, trues: &[u32], len: usize) {
-        let mut flags = DynamicStoredFlags::<MmapFile>::open(&MmapFs, dir, false).unwrap();
-        flags.set_len(&MmapFs, len).unwrap();
-        flags
-            .set_ascending_bits(trues.iter().map(|&i| (u64::from(i), true)))
-            .unwrap();
-        flags.flusher()().unwrap();
-    }
-
-    /// A writer can rewrite the flags file in place — same byte length, fresh
-    /// inode — whenever bits are cleared or flipped without growing the file.
-    /// `live_reload` must land on the current on-disk state, not a stale mmap
-    /// snapshot taken at open time. The same-length swap makes the retained
-    /// mapping's `reopen()` a no-op, so this is deterministic on every platform
-    /// (the read-only bool index reload test only diverges under Linux mmap
-    /// behavior).
-    #[test]
-    fn live_reload_reflects_same_length_replacement() {
-        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
-        let fs = RoFs::from_context(Default::default()).unwrap();
-        let hw = HardwareCounterCell::new();
-
-        // Initial on-disk flags: {1, 2, 4, 5}.
-        let dir = TempDir::with_prefix("ro_roaring_reload").unwrap();
-        build_flags(dir.path(), &[1, 2, 4, 5], 6);
-
-        let mut flags = ReadOnlyRoaringFlags::<ReadOnly<MmapFile>>::open(&fs, dir.path())
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            flags.get_bitmap().iter().collect::<Vec<_>>(),
-            vec![1, 2, 4, 5]
-        );
-
-        // Rewrite the same-length 128-byte file to {4, 5, 7} through a fresh
-        // inode: point 1 deleted, point 2 cleared (flip), point 7 set. The file
-        // does not grow, so an in-place `reopen()` would be a no-op.
-        let replacement = TempDir::with_prefix("ro_roaring_replace").unwrap();
-        build_flags(replacement.path(), &[4, 5, 7], 8);
-        fs_err::rename(
-            replacement.path().join(FLAGS_FILE),
-            dir.path().join(FLAGS_FILE),
-        )
-        .unwrap();
-        fs_err::rename(status_file(replacement.path()), status_file(dir.path())).unwrap();
-
-        flags.live_reload(&fs, &[1], &[2, 7], &hw).unwrap();
-
-        assert_eq!(flags.get_bitmap().iter().collect::<Vec<_>>(), vec![4, 5, 7]);
-        assert_eq!(flags.len(), 8);
     }
 }
