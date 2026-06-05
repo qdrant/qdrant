@@ -34,7 +34,7 @@ const GEO_QUERY_MAX_REGION: usize = 12;
 pub enum GeoIndex {
     Mutable(MutableGeoIndex),
     Immutable(ImmutableGeoIndex),
-    OnDisk(Box<OnDiskGeoIndex<MmapFile>>),
+    OnDisk(OnDiskGeoIndex<MmapFile>),
 }
 
 impl GeoIndex {
@@ -53,7 +53,7 @@ impl GeoIndex {
         };
 
         let index = if effective_is_on_disk {
-            GeoIndex::OnDisk(Box::new(on_disk_index))
+            GeoIndex::OnDisk(on_disk_index)
         } else {
             GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
         };
@@ -169,7 +169,7 @@ impl GeoMapIndexRead for GeoIndex {
         match self {
             GeoIndex::Mutable(index) => GeoMapIndexRead::get_values(index, idx),
             GeoIndex::Immutable(index) => GeoMapIndexRead::get_values(index, idx),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::get_values(index.as_ref(), idx),
+            GeoIndex::OnDisk(index) => GeoMapIndexRead::get_values(index, idx),
         }
     }
 
@@ -180,7 +180,7 @@ impl GeoMapIndexRead for GeoIndex {
         match self {
             GeoIndex::Mutable(index) => GeoMapIndexRead::iterator(index, values),
             GeoIndex::Immutable(index) => GeoMapIndexRead::iterator(index, values),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::iterator(index.as_ref(), values),
+            GeoIndex::OnDisk(index) => GeoMapIndexRead::iterator(index, values),
         }
     }
 
@@ -199,7 +199,7 @@ impl GeoMapIndexRead for GeoIndex {
         match self {
             GeoIndex::Mutable(index) => GeoMapIndexRead::get_storage_type(index),
             GeoIndex::Immutable(index) => GeoMapIndexRead::get_storage_type(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::get_storage_type(index.as_ref()),
+            GeoIndex::OnDisk(index) => GeoMapIndexRead::get_storage_type(index),
         }
     }
 
@@ -207,7 +207,7 @@ impl GeoMapIndexRead for GeoIndex {
         match self {
             GeoIndex::Mutable(index) => GeoMapIndexRead::ram_usage_bytes(index),
             GeoIndex::Immutable(index) => GeoMapIndexRead::ram_usage_bytes(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::ram_usage_bytes(index.as_ref()),
+            GeoIndex::OnDisk(index) => GeoMapIndexRead::ram_usage_bytes(index),
         }
     }
 
@@ -238,7 +238,7 @@ impl GeoMapIndexRead for GeoIndex {
         match self {
             GeoIndex::Mutable(index) => GeoMapIndexRead::files(index),
             GeoIndex::Immutable(index) => GeoMapIndexRead::files(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::files(index.as_ref()),
+            GeoIndex::OnDisk(index) => GeoMapIndexRead::files(index),
         }
     }
 
@@ -246,7 +246,7 @@ impl GeoMapIndexRead for GeoIndex {
         match self {
             GeoIndex::Mutable(_) => vec![],
             GeoIndex::Immutable(index) => GeoMapIndexRead::immutable_files(index),
-            GeoIndex::OnDisk(index) => GeoMapIndexRead::immutable_files(index.as_ref()),
+            GeoIndex::OnDisk(index) => GeoMapIndexRead::immutable_files(index),
         }
     }
 

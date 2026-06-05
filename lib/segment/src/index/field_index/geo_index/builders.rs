@@ -41,13 +41,13 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(GeoIndex::OnDisk(Box::new(OnDiskGeoIndex::build(
+        Ok(GeoIndex::OnDisk(OnDiskGeoIndex::build(
             &MmapFs,
             self.in_memory_index,
             &self.path,
             self.is_on_disk,
             &self.deleted_points,
-        )?)))
+        )?))
     }
 }
 

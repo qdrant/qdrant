@@ -91,7 +91,7 @@ impl IndexBuilder {
                 };
 
                 let index =
-                    GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(*index).unwrap());
+                    GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(index).unwrap());
                 Ok(index)
             }
         }
