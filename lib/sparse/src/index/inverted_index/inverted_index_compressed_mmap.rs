@@ -236,7 +236,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(DimOffset, CompressedPostingListView<'_, W>) -> Result<()>,
     ) -> Result<()> {
-        // Phase 1: read all headers at once.
+        // Phase 1: read all headers as one contiguous range.
         let storage_len = self.storage.len::<u8>()?;
         let headers = self.storage.read_bytes::<Sequential>(
             0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
@@ -257,7 +257,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
             }
         });
 
-        // Phase 2: read posting data one by one.
+        // Phase 2: read each posting's data via batched reads.
         for record in self.storage.read_bytes_iter::<Random, _>(ranges)? {
             let ((id, header), data) = record?;
             let view = CompressedPostingListView::new(header, &data, hw_counter)
@@ -278,7 +278,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<impl Iterator<Item = Result<(U, CompressedPostingListView<'a, W>)>>> {
-        // Phase 1: read headers one by one.
+        // Phase 1: read headers via batched reads.
         let mut ranges = Vec::with_capacity(ids.size_hint().0);
         self.for_each_header(ids, hw_counter, |user_data, header, remainders_end| {
             ranges.push(ReadBytesItem {
@@ -289,7 +289,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
             Ok(())
         })?;
 
-        // Phase 2: read posting data one by one.
+        // Phase 2: read each posting's data via batched reads.
         let views = self
             .storage
             .read_bytes_iter::<Random, _>(ranges)?
@@ -317,6 +317,10 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         let storage_len = self.storage.len::<u8>()?;
         let posting_count = self.file_header.posting_count as DimOffset;
 
+        // Prepare an iterator of ranges.
+        //
+        // There are no straightforward way to validate ids without consuming
+        // the iterator. Thus, this iterator yields Results.
         let mut error = None;
         let ranges = ids.map_while(|(user_data, id)| {
             if id >= posting_count {
