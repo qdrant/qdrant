@@ -92,7 +92,10 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     }
 
     fn is_on_disk(&self) -> bool {
-        true
+        // Pin the storage type: changing `data`'s type breaks this annotation.
+        let data: &ChunkedVectors<u8, MmapFile> = &self.data;
+
+        data.is_on_disk()
     }
 
     fn vectors_count(&self) -> usize {
