@@ -39,6 +39,8 @@ impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
                     .get_bitmap()
                     .union_len(falses_flags.get_bitmap())
                     as usize;
+                let trues_count = trues_flags.count_trues();
+                let falses_count = falses_flags.count_trues();
 
                 Ok(Some(Self {
                     _base_dir: path.to_path_buf(),
@@ -47,6 +49,8 @@ impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
                         falses_flags,
                     },
                     indexed_count,
+                    trues_count,
+                    falses_count,
                 }))
             }
             // Exactly one directory exists: partial/corrupt storage.

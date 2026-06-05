@@ -55,13 +55,9 @@ pub trait BoolIndexRead {
     /// Per-variant telemetry tag (e.g. `"mmap_bool"`).
     fn telemetry_index_type(&self) -> &'static str;
 
-    fn trues_count(&self) -> usize {
-        self.trues_flags().count_trues()
-    }
+    fn trues_count(&self) -> usize;
 
-    fn falses_count(&self) -> usize {
-        self.falses_flags().count_trues()
-    }
+    fn falses_count(&self) -> usize;
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         let has_true = self.trues_flags().get(point_id);

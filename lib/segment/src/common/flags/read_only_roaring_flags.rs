@@ -16,7 +16,7 @@ use crate::common::operation_error::OperationResult;
 ///
 /// Loads the persisted flags into an in-memory roaring bitmap on open and keeps
 /// the backing [`StoredBitSlice`] handle so [`LiveReload::live_reload`] can
-/// reopen it and fetch only the changed positions, rather than re-scanning the
+/// reopen it to read the points the writer appended, rather than re-scanning the
 /// whole file. There is no write path: no buffer, no [`BufferedDynamicFlags`][2],
 /// no [`DynamicStoredFlags`][3]. The retained `S` is the one [`Self::open`] was
 /// called with, mirroring the other read-only field indexes, which likewise
@@ -29,8 +29,8 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     /// In-memory bitmap of true flags, materialized from the backing file on
     /// open and patched in place on [`LiveReload::live_reload`].
     bitmap: RoaringBitmap,
-    /// Backing bitslice, retained so a reload can reopen it and read only the
-    /// changed positions.
+    /// Backing bitslice. A reload reopens this handle so points the writer
+    /// appended become readable, then reads only those new positions.
     storage: StoredBitSlice<S>,
     /// Total length of the flags, including trailing falses. Read from the status file.
     len: usize,
@@ -70,8 +70,8 @@ fn read_status_len<S: UniversalRead>(
     Ok(Some(status.read_whole()?[0].len()))
 }
 
-/// Open the flags bitslice read-only. Shared by `open` (full scan into a fresh
-/// bitmap) and `live_reload` (delta reads of the changed positions).
+/// Open the flags bitslice read-only for [`ReadOnlyRoaringFlags::open`]'s full
+/// scan into a fresh bitmap. `live_reload` instead reopens the retained handle.
 fn open_flags_storage<S: UniversalRead>(
     fs: &S::Fs,
     directory: &Path,
@@ -104,8 +104,8 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             return Ok(None);
         };
 
-        // Build the bitmap from the set positions, then keep the bitslice so a
-        // reload can reopen it and read only the changed positions.
+        // Build the bitmap from the set positions. The bitslice handle is kept
+        // for the live-reload path, which reopens it to read appended points.
         let storage = open_flags_storage::<S>(fs, directory)?;
         let bitmap =
             RoaringBitmap::from_sorted_iter(storage.iter_ones()?.map(|i| i as PointOffsetType))
@@ -128,12 +128,12 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
     /// [`Self::open`].
     ///
     /// `deleted_points` are dropped from the bitmap — a removed point belongs in
-    /// no flag set, so this needs no I/O. `new_points` have their flag re-read
-    /// from the reopened bitslice and the bitmap bit set or cleared to match;
-    /// reading the current bit (rather than only inserting) also folds in value
-    /// changes, e.g. a point flipping from `true` to `false`.
+    /// no flag set, so this needs no I/O. `new_points` are freshly appended
+    /// offsets (the producer is append-only — see the body): each has its flag
+    /// read from the reopened bitslice and is inserted when set. A new offset was
+    /// never in the bitmap, so an unset flag needs no action.
     ///
-    /// `hw_counter` is unused: the per-position reads go through the retained
+    /// `hw_counter` is unused: the per-position reads go through the reopened
     /// [`StoredBitSlice`], which takes no hardware counter — mirroring
     /// [`Self::open`], which also doesn't account its scan.
     fn live_reload(
@@ -152,8 +152,13 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
             return Ok(());
         }
 
-        // Reopen to pick up the writer's appended data, then read only the
-        // changed positions.
+        // Reopen so points appended past the previous mapping become readable.
+        // The producer (the appendable id tracker) is append-only: a value
+        // change never overwrites an offset in place — it allocates a fresh
+        // offset (reported in `new_points`) and retires the displaced one (in
+        // `deleted_points`). So every `new_point` is a brand-new offset that was
+        // never in the bitmap: insert it when its bit is set, and otherwise
+        // leave it absent — no clear is needed.
         self.storage.reopen()?;
         for &point in new_points {
             // Possible optimization: If new_points is sorted, we should be able to use read_bit_range and iter_ones on top of it
