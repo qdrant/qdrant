@@ -129,24 +129,16 @@ pub trait IdTrackerRead {
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 
-    /// Returns internal ID of the point, which is used inside this segment
-    ///
-    /// Excludes soft deleted points.
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
-
-    /// Returns the internal id of `external_id` under explicit deferred
+    /// Returns the internal ID of the point under explicit deferred
     /// semantics — see [`PointMappings::internal_id_with_behavior`].
     ///
-    /// Default impl ignores the behavior argument so non-appendable
-    /// trackers (which never carry deferred mutations) keep their
-    /// previous semantics for free.
+    /// Excludes soft deleted points. Trackers that never carry deferred
+    /// mutations (immutable / compressed) ignore the behavior argument.
     fn internal_id_with_behavior(
         &self,
         external_id: PointIdType,
-        _deferred_behavior: DeferredBehavior,
-    ) -> Option<PointOffsetType> {
-        self.internal_id(external_id)
-    }
+        deferred_behavior: DeferredBehavior,
+    ) -> Option<PointOffsetType>;
 
     /// Return external ID for internal point, defined by user
     ///

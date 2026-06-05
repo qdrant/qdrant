@@ -58,7 +58,7 @@ fn test_apply_to_appendable() {
             &point_ids,
             |point_id, segment| {
                 updated_in_place.push(point_id);
-                assert!(segment.has_point(point_id));
+                assert!(segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred));
                 Ok(true)
             },
             |point_id, _, _| {
@@ -82,11 +82,13 @@ fn test_apply_to_appendable() {
 
     // All points were moved from immutable into appendable segment
     for point_id in point_ids {
-        assert!(appendable_segment.has_point(point_id));
+        assert!(
+            appendable_segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred)
+        );
     }
 
-    assert!(!immutable_segment.has_point(11.into()));
-    assert!(!immutable_segment.has_point(12.into()));
+    assert!(!immutable_segment.has_point(11.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(!immutable_segment.has_point(12.into(), common::types::DeferredBehavior::WithDeferred));
 }
 
 /// Test applying points and conditionally moving them if operation versions are off
@@ -182,7 +184,7 @@ fn test_apply_and_move_old_versions(
             &[123.into(), 456.into(), 789.into()],
             |point_id, segment| {
                 processed_points.push(point_id);
-                assert!(segment.has_point(point_id));
+                assert!(segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred));
                 Ok(true)
             },
             |point_id, _, _| processed_points2.push(point_id),
@@ -197,16 +199,16 @@ fn test_apply_and_move_old_versions(
     let read_segment_2 = locked_segment_2.read();
 
     for i in &processed_points2 {
-        assert!(read_segment_2.has_point(*i));
+        assert!(read_segment_2.has_point(*i, common::types::DeferredBehavior::WithDeferred));
     }
 
     // Point 123 and 456 should have moved from segment 1 into 2
-    assert!(!read_segment_1.has_point(123.into()));
-    assert!(!read_segment_1.has_point(456.into()));
-    assert!(!read_segment_1.has_point(789.into()));
-    assert!(read_segment_2.has_point(123.into()));
-    assert!(read_segment_2.has_point(456.into()));
-    assert!(read_segment_2.has_point(789.into()));
+    assert!(!read_segment_1.has_point(123.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(!read_segment_1.has_point(456.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(!read_segment_1.has_point(789.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(read_segment_2.has_point(123.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(read_segment_2.has_point(456.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(read_segment_2.has_point(789.into(), common::types::DeferredBehavior::WithDeferred));
 }
 
 #[test]
@@ -242,11 +244,15 @@ fn test_cow_operation() {
     {
         let locked_segment_1 = holder.get(sid1).unwrap().get();
         let read_segment_1 = locked_segment_1.read();
-        assert!(!read_segment_1.has_point(123.into()));
+        assert!(
+            !read_segment_1.has_point(123.into(), common::types::DeferredBehavior::WithDeferred)
+        );
 
         let locked_segment_2 = holder.get(sid2).unwrap().get();
         let read_segment_2 = locked_segment_2.read();
-        assert!(read_segment_2.has_point(123.into()));
+        assert!(
+            read_segment_2.has_point(123.into(), common::types::DeferredBehavior::WithDeferred)
+        );
         let vector = read_segment_2
             .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter)
             .unwrap()
@@ -280,7 +286,7 @@ fn test_cow_operation() {
     let locked_segment_1 = holder.get(sid1).unwrap().get();
     let read_segment_1 = locked_segment_1.read();
 
-    assert!(read_segment_1.has_point(123.into()));
+    assert!(read_segment_1.has_point(123.into(), common::types::DeferredBehavior::WithDeferred));
 
     let new_vector = read_segment_1
         .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter)
@@ -326,15 +332,71 @@ fn test_points_deduplication() {
 
     assert_eq!(5, res);
 
-    assert!(holder.get(sid1).unwrap().get().read().has_point(1.into()));
-    assert!(holder.get(sid1).unwrap().get().read().has_point(2.into()));
-    assert!(!holder.get(sid2).unwrap().get().read().has_point(1.into()));
-    assert!(!holder.get(sid2).unwrap().get().read().has_point(2.into()));
+    assert!(
+        holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(1.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(2.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        !holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(1.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        !holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(2.into(), common::types::DeferredBehavior::WithDeferred)
+    );
 
-    assert!(holder.get(sid2).unwrap().get().read().has_point(4.into()));
-    assert!(holder.get(sid2).unwrap().get().read().has_point(5.into()));
-    assert!(!holder.get(sid1).unwrap().get().read().has_point(4.into()));
-    assert!(!holder.get(sid1).unwrap().get().read().has_point(5.into()));
+    assert!(
+        holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        !holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        !holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
+    );
 }
 
 /// Unit test for a specific bug we caught before.
@@ -398,11 +460,39 @@ fn test_points_deduplication_bug() {
     let removed_count = deduplicate_points_sync(&holder).unwrap();
     assert_eq!(2, removed_count);
 
-    assert!(!holder.get(sid1).unwrap().get().read().has_point(10.into()));
-    assert!(holder.get(sid2).unwrap().get().read().has_point(10.into()));
+    assert!(
+        !holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(10.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(10.into(), common::types::DeferredBehavior::WithDeferred)
+    );
 
-    assert!(!holder.get(sid1).unwrap().get().read().has_point(11.into()));
-    assert!(holder.get(sid2).unwrap().get().read().has_point(11.into()));
+    assert!(
+        !holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred)
+    );
 
     assert_eq!(
         holder
@@ -984,14 +1074,56 @@ fn test_points_deduplication_with_deferred() {
     assert_eq!(removed_count, 2);
 
     // After dedup: point 3 should only be in seg1
-    assert!(holder.get(sid1).unwrap().get().read().has_point(3.into()));
-    assert!(!holder.get(sid2).unwrap().get().read().has_point(3.into()));
+    assert!(
+        holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(3.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        !holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(3.into(), common::types::DeferredBehavior::WithDeferred)
+    );
 
     // Points 4 and 5 should still be in both seg1 and seg2
-    assert!(holder.get(sid1).unwrap().get().read().has_point(4.into()));
-    assert!(holder.get(sid2).unwrap().get().read().has_point(4.into()));
-    assert!(holder.get(sid1).unwrap().get().read().has_point(5.into()));
-    assert!(holder.get(sid2).unwrap().get().read().has_point(5.into()));
+    assert!(
+        holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        holder
+            .get(sid1)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert!(
+        holder
+            .get(sid2)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
+    );
 }
 
 /// Randomized test for deduplication with a mix of normal and deferred segments.
@@ -1059,7 +1191,7 @@ fn test_points_deduplication_with_deferred_randomized() {
     for id in 0..POINT_COUNT {
         let point_id = PointIdType::from(id);
         for (seg_idx, segment) in segments.iter().enumerate() {
-            if segment.has_point(point_id) {
+            if segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred) {
                 is_deferred.insert((id, seg_idx), segment.point_is_deferred(point_id));
             }
         }
@@ -1261,7 +1393,7 @@ fn test_double_proxies() {
     for (_proxy_id, proxy) in &outer_proxies {
         let proxy_read = proxy.get().read();
 
-        if proxy_read.has_point(2.into()) {
+        if proxy_read.has_point(2.into(), common::types::DeferredBehavior::WithDeferred) {
             has_point = true;
             let payload = proxy_read.payload(2.into(), &hw_counter).unwrap();
 
@@ -1315,9 +1447,18 @@ fn test_double_proxies() {
         "There should be no new segment after unproxying"
     );
 
-    let has_point_1 = locked_segment1.get().read().has_point(1.into()); // Deleted in inner proxy
-    let has_point_2 = locked_segment1.get().read().has_point(2.into()); // Deleted in outer proxy
-    let has_point_3 = locked_segment1.get().read().has_point(3.into()); // Not deleted
+    let has_point_1 = locked_segment1
+        .get()
+        .read()
+        .has_point(1.into(), common::types::DeferredBehavior::WithDeferred); // Deleted in inner proxy
+    let has_point_2 = locked_segment1
+        .get()
+        .read()
+        .has_point(2.into(), common::types::DeferredBehavior::WithDeferred); // Deleted in outer proxy
+    let has_point_3 = locked_segment1
+        .get()
+        .read()
+        .has_point(3.into(), common::types::DeferredBehavior::WithDeferred); // Not deleted
 
     assert!(!has_point_1, "Point 1 should be deleted");
     assert!(!has_point_2, "Point 2 should be deleted");
@@ -1425,7 +1566,7 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
 
     // Point 100 should exist in the appendable segment, not deferred
     assert!(
-        app.has_point(100.into()),
+        app.has_point(100.into(), common::types::DeferredBehavior::WithDeferred),
         "Point 100 should exist in the destination"
     );
 

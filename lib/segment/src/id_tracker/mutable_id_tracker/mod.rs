@@ -175,10 +175,6 @@ impl IdTrackerRead for MutableIdTracker {
         self.internal_to_version.get(internal_id as usize).copied()
     }
 
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.mappings.internal_id(&external_id)
-    }
-
     fn internal_id_with_behavior(
         &self,
         external_id: PointIdType,

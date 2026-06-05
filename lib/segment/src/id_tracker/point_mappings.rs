@@ -181,14 +181,6 @@ impl PointMappings {
         &self.deleted
     }
 
-    /// Internal id for `external_id`. Checks the active map first and falls
-    /// back to deferred — preserves "any matching id" semantics from before
-    /// the split, where every ext lived in a single map.
-    pub(crate) fn internal_id(&self, external_id: &PointIdType) -> Option<PointOffsetType> {
-        let active = self.internal_id_active(external_id);
-        active.or_else(|| self.internal_id_deferred(external_id))
-    }
-
     /// Internal id for `external_id` with explicit deferred semantics.
     ///
     /// - [`DeferredBehavior::VisibleOnly`] returns the active head only. An ext
@@ -516,6 +508,12 @@ impl PointMappings {
     ///   shadowed actives via PR C's filter so the deferred head wins
     ///   without yielding the same external id twice.
     ///
+    /// If the target slot is currently live under a *different* external id
+    /// (only reachable when recovering from a corrupted/truncated mappings
+    /// log — a well-formed caller drops a point before its slot is reused),
+    /// the stale external's forward head for this slot is detached so the
+    /// reverse mapping and the forward maps stay consistent.
+    ///
     /// Return value: the prior same-track head (now tombstoned). Shadowed
     /// actives aren't reported since they remain live.
     pub(crate) fn set_link(
@@ -585,6 +583,42 @@ impl PointMappings {
             && old as usize != internal_id_usize
         {
             self.tombstone_slot(old);
+        }
+
+        // Detach a stale live occupant of this slot before overwriting the
+        // reverse mapping. A well-formed caller only reuses an internal id
+        // after dropping its prior point (so the slot is tombstoned here), but
+        // a corrupted/truncated mappings log can replay a reuse with no
+        // intervening delete. Without this, the prior external id would keep a
+        // forward head pointing at this slot while the reverse mapping now
+        // resolves to `external_id` — a dangling entry that resolves the wrong
+        // external id for a live slot. Remove it from the track that owns this
+        // slot's region; the prior external's other-track head (if it is
+        // shadowed) points at a different slot and is left intact.
+        let replaced_external_id = self.internal_to_external[internal_id_usize];
+        if !self.deleted[internal_id_usize] && replaced_external_id != external_id {
+            match (replaced_external_id, is_deferred) {
+                (PointIdType::NumId(idx), false) => {
+                    if self.external_to_internal_num.get(&idx) == Some(&internal_id) {
+                        self.external_to_internal_num.remove(&idx);
+                    }
+                }
+                (PointIdType::NumId(idx), true) => {
+                    if self.external_to_internal_num_deferred.get(&idx) == Some(&internal_id) {
+                        self.external_to_internal_num_deferred.remove(&idx);
+                    }
+                }
+                (PointIdType::Uuid(uuid), false) => {
+                    if self.external_to_internal_uuid.get(&uuid) == Some(&internal_id) {
+                        self.external_to_internal_uuid.remove(&uuid);
+                    }
+                }
+                (PointIdType::Uuid(uuid), true) => {
+                    if self.external_to_internal_uuid_deferred.get(&uuid) == Some(&internal_id) {
+                        self.external_to_internal_uuid_deferred.remove(&uuid);
+                    }
+                }
+            }
         }
 
         self.internal_to_external[internal_id_usize] = external_id;
@@ -767,7 +801,10 @@ mod set_link_shadow_tests {
         m.set_link(ext(42), 0);
         m.set_link(ext(42), 1);
 
-        assert_eq!(m.internal_id(&ext(42)), Some(1));
+        assert_eq!(
+            m.internal_id_with_behavior(&ext(42), common::types::DeferredBehavior::VisibleOnly),
+            Some(1)
+        );
         assert!(m.is_deleted_point(0), "prior active head tombstoned");
         assert!(!m.is_shadowed(0));
         assert!(m.external_to_internal_num_deferred.is_empty());
@@ -780,7 +817,10 @@ mod set_link_shadow_tests {
         m.set_link(ext(7), 0);
         m.set_link(ext(7), 1);
 
-        assert_eq!(m.internal_id(&ext(7)), Some(1));
+        assert_eq!(
+            m.internal_id_with_behavior(&ext(7), common::types::DeferredBehavior::VisibleOnly),
+            Some(1)
+        );
         assert!(m.is_deleted_point(0));
         assert!(!m.is_shadowed(0));
         assert!(!m.is_shadowed(1));
@@ -807,7 +847,10 @@ mod set_link_shadow_tests {
         // Deferred slot itself isn't shadowed.
         assert!(!m.is_shadowed(7));
         // VisibleOnly-style lookup (active-first fall-through) returns active.
-        assert_eq!(m.internal_id(&ext(7)), Some(2));
+        assert_eq!(
+            m.internal_id_with_behavior(&ext(7), common::types::DeferredBehavior::VisibleOnly),
+            Some(2)
+        );
     }
 
     #[test]
@@ -842,7 +885,10 @@ mod set_link_shadow_tests {
         );
         assert!(!m.is_shadowed(7));
         // Active-first lookup falls through to deferred.
-        assert_eq!(m.internal_id(&ext(7)), Some(7));
+        assert_eq!(
+            m.internal_id_with_behavior(&ext(7), common::types::DeferredBehavior::WithDeferred),
+            Some(7)
+        );
     }
 
     #[test]
@@ -937,6 +983,9 @@ mod set_link_shadow_tests {
         assert!(!m.is_shadowed(2));
         assert!(!m.external_to_internal_num.contains_key(&7));
         assert!(!m.external_to_internal_num_deferred.contains_key(&7));
-        assert_eq!(m.internal_id(&ext(7)), None);
+        assert_eq!(
+            m.internal_id_with_behavior(&ext(7), common::types::DeferredBehavior::VisibleOnly),
+            None
+        );
     }
 }

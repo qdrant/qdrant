@@ -191,8 +191,11 @@ impl ReadSegmentEntry for Segment {
         self.with_view(|view| view.read_range(from, to))
     }
 
-    fn has_point(&self, point_id: PointIdType) -> bool {
-        self.id_tracker.borrow().internal_id(point_id).is_some()
+    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
+        self.id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, deferred_behavior)
+            .is_some()
     }
 
     fn is_empty(&self) -> bool {
@@ -523,7 +526,10 @@ impl NonAppendableSegmentEntry for Segment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let internal_id = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         let append_only = self.is_append_only();
         match internal_id {
             // Point does already not exist anymore
@@ -665,7 +671,10 @@ impl SegmentEntry for Segment {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
-        let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
+        let stored_internal_point = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         match stored_internal_point {
             Some(existing_internal_id) => self.handle_point_mutate(
                 op_num,
@@ -698,7 +707,10 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let internal_id = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -727,7 +739,10 @@ impl SegmentEntry for Segment {
         vector_name: &VectorName,
     ) -> OperationResult<bool> {
         check_vector_name(vector_name, &self.segment_config)?;
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let internal_id = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -774,7 +789,10 @@ impl SegmentEntry for Segment {
         full_payload: &Payload,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let internal_id = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -812,7 +830,10 @@ impl SegmentEntry for Segment {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let internal_id = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -853,7 +874,10 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let internal_id = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -888,7 +912,10 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        let internal_id = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,

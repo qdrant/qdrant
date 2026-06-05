@@ -12,6 +12,8 @@ mod vectors;
 
 use std::collections::HashMap;
 
+use common::types::DeferredBehavior;
+
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::FieldIndex;
@@ -68,8 +70,11 @@ where
     TVD: VectorDataRead,
 {
     pub fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+        // Feeds version-dedup (paired with `point_is_deferred`), which must see
+        // the latest version — including a deferred head that out-versions the
+        // shadowed active.
         self.id_tracker
-            .internal_id(point_id)
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred)
             .and_then(|internal_id| self.id_tracker.internal_version(internal_id))
     }
 

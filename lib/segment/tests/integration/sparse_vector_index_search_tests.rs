@@ -713,7 +713,10 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
             let id_1 = segment
                 .id_tracker
                 .borrow_mut()
-                .internal_id(search_1.id)
+                .internal_id_with_behavior(
+                    search_1.id,
+                    common::types::DeferredBehavior::VisibleOnly,
+                )
                 .unwrap();
             assert_eq!(id_1, search_2.idx);
         }

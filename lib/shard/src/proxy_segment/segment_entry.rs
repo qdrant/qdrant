@@ -449,9 +449,13 @@ impl ReadSegmentEntry for ProxySegment {
         Ok(hits)
     }
 
-    fn has_point(&self, point_id: PointIdType) -> bool {
+    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
         !self.deleted_points.contains_key(&point_id)
-            && self.wrapped_segment.get().read().has_point(point_id)
+            && self
+                .wrapped_segment
+                .get()
+                .read()
+                .has_point(point_id, deferred_behavior)
     }
 
     fn is_empty(&self) -> bool {
@@ -873,7 +877,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 let (has_point, is_deferred) = {
                     let read_proxy = proxy.read();
                     (
-                        read_proxy.has_point(point_id),
+                        read_proxy.has_point(point_id, DeferredBehavior::WithDeferred),
                         read_proxy.point_is_deferred(point_id),
                     )
                 };

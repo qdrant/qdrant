@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::DeferredBehavior;
 use itertools::Itertools;
 
 use super::StructPayloadIndexReadView;
@@ -50,6 +51,7 @@ where
         filter: &'b Filter,
         payload_provider: PayloadProvider<S>,
         total: usize,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(OptimizedFilter<'b>, CardinalityEstimation)> {
         let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
@@ -58,8 +60,13 @@ where
             should: if let Some(conditions) = filter.should.as_ref()
                 && !conditions.is_empty()
             {
-                let (optimized_conditions, estimation) =
-                    self.optimize_should(conditions, payload_provider.clone(), total, hw_counter)?;
+                let (optimized_conditions, estimation) = self.optimize_should(
+                    conditions,
+                    payload_provider.clone(),
+                    total,
+                    deferred_behavior,
+                    hw_counter,
+                )?;
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -76,6 +83,7 @@ where
                     *min_count,
                     payload_provider.clone(),
                     total,
+                    deferred_behavior,
                     hw_counter,
                 )?;
                 filter_estimations.push(estimation);
@@ -89,8 +97,13 @@ where
             must: if let Some(conditions) = filter.must.as_ref()
                 && !conditions.is_empty()
             {
-                let (optimized_conditions, estimation) =
-                    self.optimize_must(conditions, payload_provider.clone(), total, hw_counter)?;
+                let (optimized_conditions, estimation) = self.optimize_must(
+                    conditions,
+                    payload_provider.clone(),
+                    total,
+                    deferred_behavior,
+                    hw_counter,
+                )?;
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -99,8 +112,13 @@ where
             must_not: if let Some(conditions) = filter.must_not.as_ref()
                 && !conditions.is_empty()
             {
-                let (optimized_conditions, estimation) =
-                    self.optimize_must_not(conditions, payload_provider, total, hw_counter)?;
+                let (optimized_conditions, estimation) = self.optimize_must_not(
+                    conditions,
+                    payload_provider,
+                    total,
+                    deferred_behavior,
+                    hw_counter,
+                )?;
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -119,14 +137,20 @@ where
         conditions: &'b [Condition],
         payload_provider: PayloadProvider<S>,
         total: usize,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OptimizedCondition<'b>, CardinalityEstimation)>> {
         conditions
             .iter()
             .map(|condition| match condition {
                 Condition::Filter(filter) => {
-                    let (optimized_filter, estimation) =
-                        self.optimize_filter(filter, payload_provider.clone(), total, hw_counter)?;
+                    let (optimized_filter, estimation) = self.optimize_filter(
+                        filter,
+                        payload_provider.clone(),
+                        total,
+                        deferred_behavior,
+                        hw_counter,
+                    )?;
                     Ok((OptimizedCondition::Filter(optimized_filter), estimation))
                 }
                 Condition::Field(_)
@@ -136,9 +160,14 @@ where
                 | Condition::HasVector(_)
                 | Condition::Nested(_)
                 | Condition::CustomIdChecker(_) => {
-                    let estimation = self.condition_cardinality(condition, None, hw_counter)?;
-                    let condition_checker =
-                        self.condition_converter(condition, payload_provider.clone(), hw_counter);
+                    let estimation =
+                        self.condition_cardinality(condition, None, deferred_behavior, hw_counter)?;
+                    let condition_checker = self.condition_converter(
+                        condition,
+                        payload_provider.clone(),
+                        deferred_behavior,
+                        hw_counter,
+                    );
                     Ok((OptimizedCondition::Checker(condition_checker), estimation))
                 }
             })
@@ -150,10 +179,16 @@ where
         conditions: &'b [Condition],
         payload_provider: PayloadProvider<S>,
         total: usize,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
-        let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
+        let mut converted = self.convert_conditions(
+            conditions,
+            payload_provider,
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
         // More probable conditions first
         converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
@@ -167,10 +202,16 @@ where
         min_count: usize,
         payload_provider: PayloadProvider<S>,
         total: usize,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
-        let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
+        let mut converted = self.convert_conditions(
+            conditions,
+            payload_provider,
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
         // More probable conditions first if min_count < number of conditions
         if min_count < conditions.len() / 2 {
             converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
@@ -191,10 +232,16 @@ where
         conditions: &'b [Condition],
         payload_provider: PayloadProvider<S>,
         total: usize,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
-        let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
+        let mut converted = self.convert_conditions(
+            conditions,
+            payload_provider,
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
         // Less probable conditions first
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
@@ -207,10 +254,16 @@ where
         conditions: &'b [Condition],
         payload_provider: PayloadProvider<S>,
         total: usize,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
-        let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
+        let mut converted = self.convert_conditions(
+            conditions,
+            payload_provider,
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
         // More probable conditions first, as it will be reverted
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();

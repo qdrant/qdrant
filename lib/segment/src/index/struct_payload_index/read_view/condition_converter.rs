@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::DeferredBehavior;
 use serde_json::Value;
 
 use super::StructPayloadIndexReadView;
@@ -28,6 +29,7 @@ where
         &'b self,
         condition: &'b Condition,
         payload_provider: PayloadProvider<S>,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> ConditionCheckerFn<'b> {
         let id_tracker = self.id_tracker;
@@ -114,7 +116,9 @@ where
                 let segment_ids: AHashSet<_> = has_id
                     .has_id
                     .iter()
-                    .filter_map(|external_id| id_tracker.internal_id(*external_id))
+                    .filter_map(|external_id| {
+                        id_tracker.internal_id_with_behavior(*external_id, deferred_behavior)
+                    })
                     .collect();
                 Box::new(move |point_id| segment_ids.contains(&point_id))
             }
@@ -188,7 +192,9 @@ where
                     .point_mappings()
                     .iter_external()
                     .filter(|&point_id| cond.0.check(point_id))
-                    .filter_map(|external_id| id_tracker.internal_id(external_id))
+                    .filter_map(|external_id| {
+                        id_tracker.internal_id_with_behavior(external_id, deferred_behavior)
+                    })
                     .collect();
 
                 Box::new(move |internal_id| segment_ids.contains(&internal_id))

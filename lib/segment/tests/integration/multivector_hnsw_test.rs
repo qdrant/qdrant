@@ -89,7 +89,11 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
 
-        let internal_id = segment.id_tracker.borrow().internal_id(idx).unwrap();
+        let internal_id = segment
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(idx, common::types::DeferredBehavior::VisibleOnly)
+            .unwrap();
         multi_storage
             .insert_vector(
                 internal_id,

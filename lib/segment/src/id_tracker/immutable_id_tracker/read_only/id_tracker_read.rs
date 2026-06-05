@@ -15,7 +15,12 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyImmutableIdTracker<S> {
         self.internal_to_version.get(internal_id)
     }
 
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
+    fn internal_id_with_behavior(
+        &self,
+        external_id: PointIdType,
+        _deferred_behavior: common::types::DeferredBehavior,
+    ) -> Option<PointOffsetType> {
+        // Immutable mappings never carry deferred heads; behavior is moot.
         self.mappings.internal_id(&external_id)
     }
 

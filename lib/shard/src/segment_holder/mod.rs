@@ -19,7 +19,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
@@ -342,10 +342,14 @@ impl SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(ids: &[PointIdType], segment: &dyn ReadSegmentEntry) -> Vec<PointIdType> {
+    fn segment_points(
+        ids: &[PointIdType],
+        segment: &dyn ReadSegmentEntry,
+        deferred_behavior: DeferredBehavior,
+    ) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
-            .filter(|id| segment.has_point(*id))
+            .filter(|id| segment.has_point(*id, deferred_behavior))
             .collect()
     }
 
@@ -384,7 +388,8 @@ impl SegmentHolder {
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
-            let segment_points = Self::segment_points(ids, segment_lock.deref());
+            let segment_points =
+                Self::segment_points(ids, segment_lock.deref(), DeferredBehavior::WithDeferred);
             for segment_point in segment_points {
                 let Some(point_version) = segment_lock.point_version(segment_point) else {
                     continue;
@@ -731,7 +736,7 @@ impl SegmentHolder {
 
             // Partition remaining IDs: found ones go to existing_points, rest stay in remaining
             remaining_ids.retain(|&id| {
-                if segment_guard.has_point(id) {
+                if segment_guard.has_point(id, DeferredBehavior::WithDeferred) {
                     existing_points.insert(id);
                     false // Remove from remaining
                 } else {

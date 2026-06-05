@@ -162,7 +162,12 @@ fn test_store_load_mutated() {
         if dropped_points.contains(point) {
             assert!(id_tracker.is_deleted_point(internal_id));
             assert_eq!(id_tracker.external_id(internal_id), None);
-            assert!(id_tracker.mappings.internal_id(point).is_none());
+            assert!(
+                id_tracker
+                    .mappings
+                    .internal_id_with_behavior(point, common::types::DeferredBehavior::VisibleOnly)
+                    .is_none()
+            );
 
             continue;
         }
@@ -211,11 +216,22 @@ fn test_point_deletion_correctness() {
             .contains(&point_to_delete)
     );
 
-    assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(
+            point_to_delete,
+            common::types::DeferredBehavior::VisibleOnly
+        ),
+        Some(0)
+    );
 
     id_tracker.drop(point_to_delete).unwrap();
 
-    let point_exists = id_tracker.internal_id(point_to_delete).is_some()
+    let point_exists = id_tracker
+        .internal_id_with_behavior(
+            point_to_delete,
+            common::types::DeferredBehavior::VisibleOnly,
+        )
+        .is_some()
         && id_tracker
             .point_mappings()
             .iter_external()
@@ -241,7 +257,10 @@ fn test_point_deletion_persists_reload() {
     let old_mappings = {
         let mut id_tracker = make_mutable_tracker(segment_dir.path());
         let intetrnal_id = id_tracker
-            .internal_id(point_to_delete)
+            .internal_id_with_behavior(
+                point_to_delete,
+                common::types::DeferredBehavior::VisibleOnly,
+            )
             .expect("Point to delete exists.");
         assert!(!id_tracker.is_deleted_point(intetrnal_id));
         id_tracker.drop(point_to_delete).unwrap();
@@ -252,7 +271,13 @@ fn test_point_deletion_persists_reload() {
 
     // Point should still be gone
     let id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
-    assert_eq!(id_tracker.internal_id(point_to_delete), None);
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(
+            point_to_delete,
+            common::types::DeferredBehavior::VisibleOnly
+        ),
+        None
+    );
 
     old_mappings
         .iter_internal_raw()
@@ -318,9 +343,10 @@ fn test_point_mappings_deserializing_special() {
     // Exactly one entry
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00");
     assert_eq!(
-        read_mappings(buf, None)
-            .unwrap()
-            .internal_id(&PointIdType::NumId(1)),
+        read_mappings(buf, None).unwrap().internal_id_with_behavior(
+            &PointIdType::NumId(1),
+            common::types::DeferredBehavior::VisibleOnly,
+        ),
         Some(2)
     );
 
@@ -337,7 +363,13 @@ fn test_point_mappings_deserializing_special() {
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00");
     let mappings = read_mappings(buf, None).unwrap();
     assert_eq!(mappings.total_point_count(), 1);
-    assert_eq!(mappings.internal_id(&PointIdType::NumId(1)), Some(0));
+    assert_eq!(
+        mappings.internal_id_with_behavior(
+            &PointIdType::NumId(1),
+            common::types::DeferredBehavior::VisibleOnly
+        ),
+        Some(0)
+    );
 }
 
 /// Test that `operation_size` returns the correct size
@@ -400,7 +432,10 @@ fn test_point_mappings_truncation() {
         load_mappings(&mappings_path, None)
             .unwrap()
             .0
-            .internal_id(&PointIdType::NumId(1)),
+            .internal_id_with_behavior(
+                &PointIdType::NumId(1),
+                common::types::DeferredBehavior::VisibleOnly,
+            ),
         Some(2)
     );
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
@@ -416,7 +451,10 @@ fn test_point_mappings_truncation() {
         load_mappings(&mappings_path, None)
             .unwrap()
             .0
-            .internal_id(&PointIdType::NumId(1)),
+            .internal_id_with_behavior(
+                &PointIdType::NumId(1),
+                common::types::DeferredBehavior::VisibleOnly,
+            ),
         Some(2)
     );
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
@@ -432,7 +470,10 @@ fn test_point_mappings_truncation() {
         load_mappings(&mappings_path, None)
             .unwrap()
             .0
-            .internal_id(&PointIdType::NumId(1)),
+            .internal_id_with_behavior(
+                &PointIdType::NumId(1),
+                common::types::DeferredBehavior::VisibleOnly,
+            ),
         Some(2)
     );
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
@@ -447,7 +488,10 @@ fn test_point_mappings_truncation() {
         load_mappings(&mappings_path, None)
             .unwrap()
             .0
-            .internal_id(&PointIdType::NumId(1)),
+            .internal_id_with_behavior(
+                &PointIdType::NumId(1),
+                common::types::DeferredBehavior::VisibleOnly,
+            ),
         Some(2)
     );
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 26);
@@ -508,8 +552,10 @@ fn test_id_tracker_equal() {
         let internal = internal as PointOffsetType;
 
         assert_eq!(
-            in_memory_id_tracker.internal_id(*external),
-            mutable_id_tracker.internal_id(*external),
+            in_memory_id_tracker
+                .internal_id_with_behavior(*external, common::types::DeferredBehavior::VisibleOnly),
+            mutable_id_tracker
+                .internal_id_with_behavior(*external, common::types::DeferredBehavior::VisibleOnly),
         );
 
         assert_eq!(
@@ -558,7 +604,10 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
 
         assert_eq!(internal_id_mmap, internal_id_simple);
 
-        if mutable_id_tracker.internal_id(point_id).is_some() {
+        if mutable_id_tracker
+            .internal_id_with_behavior(point_id, common::types::DeferredBehavior::VisibleOnly)
+            .is_some()
+        {
             mutable_id_tracker.drop(point_id).unwrap();
         }
         mutable_id_tracker
@@ -568,7 +617,10 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
             .set_internal_version(internal_id_mmap, version)
             .unwrap();
 
-        if simple_id_tracker.internal_id(point_id).is_some() {
+        if simple_id_tracker
+            .internal_id_with_behavior(point_id, common::types::DeferredBehavior::VisibleOnly)
+            .is_some()
+        {
             simple_id_tracker.drop(point_id).unwrap();
         }
         simple_id_tracker
