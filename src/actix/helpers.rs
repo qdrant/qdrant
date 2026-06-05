@@ -251,7 +251,7 @@ impl ResponseError for HttpError {
             StorageError::AlreadyExists { .. } => http::StatusCode::CONFLICT,
             StorageError::ChecksumMismatch { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::Forbidden { .. } => http::StatusCode::FORBIDDEN,
-            StorageError::PreconditionFailed { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
+            StorageError::PreconditionFailed { .. } => http::StatusCode::PRECONDITION_FAILED,
             StorageError::InferenceError { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
             StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
@@ -275,5 +275,20 @@ impl From<CollectionError> for HttpError {
 impl From<std::io::Error> for HttpError {
     fn from(err: std::io::Error) -> Self {
         HttpError(err.into()) // TODO: Is this good enough?.. 🤔
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use actix_web::http;
+
+    use super::*;
+
+    #[test]
+    fn precondition_failed_maps_to_412() {
+        let err = HttpError(StorageError::PreconditionFailed {
+            description: "collection not in expected state".to_string(),
+        });
+        assert_eq!(err.status_code(), http::StatusCode::PRECONDITION_FAILED);
     }
 }
