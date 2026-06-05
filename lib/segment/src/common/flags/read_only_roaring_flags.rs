@@ -165,6 +165,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
             if self.storage.get_bit(u64::from(point))?.unwrap_or(false) {
                 self.bitmap.insert(point);
             } else {
+                // Now false on disk: remove it, since the bitmap is patched, not rebuilt.
                 self.bitmap.remove(point);
             }
         }
