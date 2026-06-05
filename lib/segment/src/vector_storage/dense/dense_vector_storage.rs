@@ -181,7 +181,7 @@ pub fn open_dense_vector_storage_byte(
     Ok(VectorStorageEnum::DenseMemmapByte(Box::new(mmap_storage)))
 }
 
-fn open_dense_vector_storage_impl<T, S>(
+pub(crate) fn open_dense_vector_storage_impl<T, S>(
     fs: S::Fs,
     path: &Path,
     dim: usize,
