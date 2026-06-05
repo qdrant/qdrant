@@ -20,6 +20,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use num_derive::FromPrimitive;
 use ordered_float::OrderedFloat;
+use quantization::DistanceType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
@@ -360,6 +361,22 @@ impl Distance {
         match self.distance_order() {
             Order::LargeBetter => score > threshold,
             Order::SmallBetter => score < threshold,
+        }
+    }
+}
+
+/// Map a segment [`Distance`] to the TurboQuant [`DistanceType`].
+///
+/// Uses the true Cosine mapping (`Cosine → Cosine`); the legacy quantizers fold
+/// Cosine into Dot for backwards-compat, but do so with an explicit match rather
+/// than this conversion.
+impl From<Distance> for DistanceType {
+    fn from(distance: Distance) -> Self {
+        match distance {
+            Distance::Cosine => DistanceType::Cosine,
+            Distance::Euclid => DistanceType::L2,
+            Distance::Dot => DistanceType::Dot,
+            Distance::Manhattan => DistanceType::L1,
         }
     }
 }

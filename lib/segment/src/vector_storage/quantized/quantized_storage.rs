@@ -82,6 +82,34 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             path: path.to_path_buf(),
         })
     }
+
+    /// Open the encoded vectors at `path`, creating an empty storage if the file does not yet exist.
+    pub fn open(
+        fs: &S::Fs,
+        path: &Path,
+        quantized_vector_size: usize,
+        prefault: bool,
+    ) -> OperationResult<QuantizedStorage<S>> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Ensure the backing file exists without clobbering existing data:
+        // `from_file` mmaps the file read-only and fails if it is missing.
+        fs_err::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+
+        let storage = Self::from_file(fs, path, quantized_vector_size)?;
+
+        if prefault {
+            storage.populate();
+        }
+
+        Ok(storage)
+    }
 }
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {

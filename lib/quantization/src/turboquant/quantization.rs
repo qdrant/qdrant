@@ -342,6 +342,10 @@ impl TurboQuantizer {
         }
     }
 
+    pub fn get_padded_dim(&self) -> usize {
+        self.padded_dim
+    }
+
     /// Similarity score between two vectors that were both encoded with this
     /// quantizer. Returns an approximate `<v1, v2>` for Dot and `cos(θ)` for
     /// Cosine.
