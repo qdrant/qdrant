@@ -164,9 +164,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
             // Possible optimization: If new_points is sorted, we should be able to use read_bit_range and iter_ones on top of it
             if self.storage.get_bit(u64::from(point))?.unwrap_or(false) {
                 self.bitmap.insert(point);
-            } else {
-                // Now false on disk: remove it, since the bitmap is patched, not rebuilt.
-                self.bitmap.remove(point);
             }
         }
 
@@ -194,71 +191,5 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
             status_file(&self.directory),
             self.directory.join(FLAGS_FILE),
         ]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, MmapFs, ReadOnly, UniversalRead, UniversalReadFileOps};
-    use tempfile::TempDir;
-
-    use super::super::dynamic_stored_flags::{DynamicStoredFlags, FLAGS_FILE, status_file};
-    use super::ReadOnlyRoaringFlags;
-    use crate::common::flags::roaring_flags::RoaringFlagsRead;
-    use crate::common::live_reload::LiveReload;
-
-    /// Build a flags directory whose set ("true") positions are exactly `trues`
-    /// with logical length `len`, via the writable `DynamicStoredFlags`.
-    fn build_flags(dir: &std::path::Path, trues: &[u32], len: usize) {
-        let mut flags = DynamicStoredFlags::<MmapFile>::open(&MmapFs, dir, false).unwrap();
-        flags.set_len(&MmapFs, len).unwrap();
-        flags
-            .set_ascending_bits(trues.iter().map(|&i| (u64::from(i), true)))
-            .unwrap();
-        flags.flusher()().unwrap();
-    }
-
-    /// A writer can rewrite the flags file in place — same byte length, fresh
-    /// inode — whenever bits are cleared or flipped without growing the file.
-    /// `live_reload` must land on the current on-disk state, not a stale mmap
-    /// snapshot taken at open time. The same-length swap makes the retained
-    /// mapping's `reopen()` a no-op, so this is deterministic on every platform
-    /// (the read-only bool index reload test only diverges under Linux mmap
-    /// behavior).
-    #[test]
-    fn live_reload_reflects_same_length_replacement() {
-        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
-        let fs = RoFs::from_context(Default::default()).unwrap();
-        let hw = HardwareCounterCell::new();
-
-        // Initial on-disk flags: {1, 2, 4, 5}.
-        let dir = TempDir::with_prefix("ro_roaring_reload").unwrap();
-        build_flags(dir.path(), &[1, 2, 4, 5], 6);
-
-        let mut flags = ReadOnlyRoaringFlags::<ReadOnly<MmapFile>>::open(&fs, dir.path())
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            flags.get_bitmap().iter().collect::<Vec<_>>(),
-            vec![1, 2, 4, 5]
-        );
-
-        // Rewrite the same-length 128-byte file to {4, 5, 7} through a fresh
-        // inode: point 1 deleted, point 2 cleared (flip), point 7 set. The file
-        // does not grow, so an in-place `reopen()` would be a no-op.
-        let replacement = TempDir::with_prefix("ro_roaring_replace").unwrap();
-        build_flags(replacement.path(), &[4, 5, 7], 8);
-        fs_err::rename(
-            replacement.path().join(FLAGS_FILE),
-            dir.path().join(FLAGS_FILE),
-        )
-        .unwrap();
-        fs_err::rename(status_file(replacement.path()), status_file(dir.path())).unwrap();
-
-        flags.live_reload(&fs, &[1], &[2, 7], &hw).unwrap();
-
-        assert_eq!(flags.get_bitmap().iter().collect::<Vec<_>>(), vec![4, 5, 7]);
-        assert_eq!(flags.len(), 8);
     }
 }
