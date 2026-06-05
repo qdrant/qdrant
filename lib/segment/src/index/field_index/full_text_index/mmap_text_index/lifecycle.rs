@@ -14,13 +14,13 @@ use super::super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
-use super::{FullTextMmapIndexBuilder, MmapFullTextIndex};
+use super::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
-impl<S: UniversalRead> MmapFullTextIndex<S> {
+impl<S: UniversalRead> OnDiskFullTextIndex<S> {
     pub fn open(
         fs: &S::Fs,
         path: PathBuf,
@@ -201,7 +201,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
                     )
                 })?;
 
-        let mmap_index = MmapFullTextIndex {
+        let mmap_index = OnDiskFullTextIndex {
             inverted_index,
             tokenizer,
         };
@@ -209,7 +209,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let text_index = if is_on_disk {
             FullTextIndex::OnDisk(Box::new(mmap_index))
         } else {
-            FullTextIndex::Immutable(ImmutableFullTextIndex::open_mmap(mmap_index)?)
+            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(mmap_index)?)
         };
 
         Ok(text_index)

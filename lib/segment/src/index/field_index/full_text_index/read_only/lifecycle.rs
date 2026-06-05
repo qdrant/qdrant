@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::universal_io::UniversalRead;
 
-use super::super::mmap_text_index::MmapFullTextIndex;
+use super::super::mmap_text_index::OnDiskFullTextIndex;
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;
@@ -53,7 +53,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         Ok(
-            MmapFullTextIndex::open(fs, path, config, effective_is_on_disk, deleted_points)?
+            OnDiskFullTextIndex::open(fs, path, config, effective_is_on_disk, deleted_points)?
                 .map(Self::Immutable),
         )
     }

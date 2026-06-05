@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::universal_io::MmapFile;
 
 use self::immutable_text_index::ImmutableFullTextIndex;
-use self::mmap_text_index::MmapFullTextIndex;
+use self::mmap_text_index::OnDiskFullTextIndex;
 use self::mutable_text_index::MutableFullTextIndex;
 use crate::data_types::index::TextIndexParams;
 
@@ -21,11 +21,11 @@ pub mod tokenizers;
 #[cfg(test)]
 mod tests;
 
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),
-    OnDisk(Box<MmapFullTextIndex<MmapFile>>),
+    OnDisk(Box<OnDiskFullTextIndex<MmapFile>>), // todo: remove box
 }
 
 pub struct FullTextGridstoreIndexBuilder {

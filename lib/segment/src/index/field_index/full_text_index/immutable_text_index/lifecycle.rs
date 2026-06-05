@@ -5,14 +5,14 @@ use common::universal_io::MmapFile;
 
 use super::super::inverted_index::InvertedIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::super::mmap_text_index::MmapFullTextIndex;
+use super::super::mmap_text_index::OnDiskFullTextIndex;
 use super::ImmutableFullTextIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 impl ImmutableFullTextIndex {
     /// Open and load the immutable full text index from mmap storage.
-    pub fn open_mmap(index: MmapFullTextIndex<MmapFile>) -> OperationResult<Self> {
+    pub fn load_from_on_disk(index: OnDiskFullTextIndex<MmapFile>) -> OperationResult<Self> {
         let index = Box::new(index);
         let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 

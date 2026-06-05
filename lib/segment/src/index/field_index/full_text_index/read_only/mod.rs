@@ -1,6 +1,6 @@
 use common::universal_io::UniversalRead;
 
-use super::mmap_text_index::MmapFullTextIndex;
+use super::mmap_text_index::OnDiskFullTextIndex;
 use super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 
 mod lifecycle;
@@ -34,7 +34,7 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
     /// Loads into RAM from appendable storage format
     Appendable(ReadOnlyAppendableFullTextIndex<S>),
     /// Directly reads from storage in immutable format
-    Immutable(MmapFullTextIndex<S>),
+    Immutable(OnDiskFullTextIndex<S>), // todo: add separate ondisk and immutable variants
 }
 
 #[cfg(test)]

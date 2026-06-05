@@ -3,11 +3,11 @@ use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use super::MmapFullTextIndex;
+use super::OnDiskFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
 
-impl<S: UniversalRead> LiveReload for MmapFullTextIndex<S> {
+impl<S: UniversalRead> LiveReload for OnDiskFullTextIndex<S> {
     type Fs = S::Fs;
 
     fn live_reload(

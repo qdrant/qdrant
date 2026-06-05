@@ -12,7 +12,7 @@ mod lifecycle;
 mod live_reload;
 mod read_ops;
 
-pub struct MmapFullTextIndex<S: UniversalRead = MmapFile> {
+pub struct OnDiskFullTextIndex<S: UniversalRead = MmapFile> {
     pub(in super::super) inverted_index: MmapInvertedIndex<S>,
     pub(in super::super) tokenizer: Tokenizer,
 }

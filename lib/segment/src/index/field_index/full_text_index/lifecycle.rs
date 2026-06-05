@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
-use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
+use super::mmap_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
 use super::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::common::Flusher;
@@ -32,7 +32,7 @@ impl FullTextIndex {
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let Some(mmap_index) =
-            MmapFullTextIndex::open(&MmapFs, path, config, effective_is_on_disk, deleted_points)?
+            OnDiskFullTextIndex::open(&MmapFs, path, config, effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };
@@ -42,7 +42,7 @@ impl FullTextIndex {
             Some(Self::OnDisk(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Some(Self::Immutable(ImmutableFullTextIndex::open_mmap(
+            Some(Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(
                 mmap_index,
             )?))
         };
