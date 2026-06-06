@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::OneshotFile;
-use common::mmap::MmapFlusher;
+use common::mmap::{AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
+use common::universal_io::{OpenOptions, Populate, ReadOnly, UniversalRead};
 use fs_err as fs;
 use fs_err::File;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
@@ -36,6 +37,60 @@ impl QuantizedRamStorage {
         }
         reader.into_inner().drop_cache()?;
         vectors.shrink_last_chunk();
+        Ok(QuantizedRamStorage {
+            vectors,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// Load all quantized vectors into RAM through the provided [`UniversalRead`]
+    /// filesystem, performing no writes.
+    ///
+    /// This is the read-only counterpart of [`Self::from_file`]: it sources the
+    /// bytes through the pluggable `S` backend (mmap, io_uring, object storage, …)
+    /// instead of opening the local path directly, so it works wherever a
+    /// [`UniversalRead`] handle is available.
+    pub fn from_universal_read<S: UniversalRead>(
+        fs: &S::Fs,
+        path: &Path,
+        quantized_vector_size: usize,
+    ) -> OperationResult<Self> {
+        if quantized_vector_size == 0 {
+            return Err(OperationError::service_error(
+                "`quantized_vector_size` must be non-zero",
+            ));
+        }
+
+        let storage = ReadOnly::<S>::open(
+            fs,
+            path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: true,
+                populate: Populate::No,
+                advice: AdviceSetting::Global,
+            },
+            Default::default(),
+        )?;
+
+        let len = storage.len::<u8>()? as usize;
+        if !len.is_multiple_of(quantized_vector_size) {
+            return Err(OperationError::inconsistent_storage(format!(
+                "Encoded file size ({len}) is not a multiple of quantized_vector_size ({quantized_vector_size})",
+            )));
+        }
+
+        let data = storage.read_whole::<u8>()?;
+        let mut vectors = VolatileChunkedVectors::<u8>::new(quantized_vector_size);
+        for chunk in data.chunks_exact(quantized_vector_size) {
+            vectors.push(chunk).map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to load quantized vectors into RAM: {err}"
+                ))
+            })?;
+        }
+        vectors.shrink_last_chunk();
+
         Ok(QuantizedRamStorage {
             vectors,
             path: path.to_path_buf(),

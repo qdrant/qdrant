@@ -1,0 +1,236 @@
+use std::sync::atomic::AtomicBool;
+
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
+use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
+use rstest::rstest;
+
+use super::QuantizedVectorsRead;
+use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::types::{
+    BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
+    ScalarQuantizationConfig,
+};
+use crate::vector_storage::VectorStorageEnum;
+use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
+use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
+use crate::vector_storage::vector_storage_base::{VectorStorage, VectorStorageRead};
+
+const DIMS: usize = 32;
+const NUM_POINTS: usize = 300;
+const DISTANCE: Distance = Distance::Dot;
+const SEED: u64 = 0x5eed_dead;
+
+fn build_on_disk_storage(dir: &std::path::Path, rng: &mut StdRng) -> VectorStorageEnum {
+    // Fill a volatile storage with random vectors, then copy it into an on-disk
+    // (memmap) storage so quantization can pick the mmap backend.
+    let hw = HardwareCounterCell::disposable();
+    let mut raw = new_volatile_dense_vector_storage(DIMS, DISTANCE);
+    for id in 0..NUM_POINTS as PointOffsetType {
+        let vector: Vec<f32> = (0..DIMS).map(|_| rng.random_range(-1.0..1.0)).collect();
+        raw.insert_vector(id, VectorRef::from(vector.as_slice()), &hw)
+            .unwrap();
+    }
+
+    let mut storage = open_dense_vector_storage(dir, DIMS, DISTANCE, false).unwrap();
+    let mut iter = (0..NUM_POINTS as PointOffsetType)
+        .map(|i| (raw.get_vector::<Random>(i), raw.is_deleted_vector(i)));
+    storage
+        .update_from(&mut iter, &AtomicBool::new(false))
+        .unwrap();
+    storage
+}
+
+fn scalar_config(always_ram: bool) -> QuantizationConfig {
+    ScalarQuantizationConfig {
+        r#type: crate::types::ScalarType::Int8,
+        quantile: Some(0.99),
+        always_ram: Some(always_ram),
+    }
+    .into()
+}
+
+fn binary_config(always_ram: bool) -> QuantizationConfig {
+    BinaryQuantizationConfig {
+        always_ram: Some(always_ram),
+        encoding: None,
+        query_encoding: None,
+    }
+    .into()
+}
+
+fn product_config(always_ram: bool) -> QuantizationConfig {
+    ProductQuantizationConfig {
+        compression: crate::types::CompressionRatio::X4,
+        always_ram: Some(always_ram),
+    }
+    .into()
+}
+
+/// The read-only [`QuantizedVectorsRead`] opened over the same on-disk data must
+/// produce bit-identical scores to the read-write [`QuantizedVectors`].
+#[rstest]
+#[case::scalar_mmap(scalar_config(false))]
+#[case::scalar_ram(scalar_config(true))]
+#[case::binary_mmap(binary_config(false))]
+#[case::binary_ram(binary_config(true))]
+#[case::product_mmap(product_config(false))]
+#[case::product_ram(product_config(true))]
+fn read_only_matches_read_write(#[case] config: QuantizationConfig) {
+    let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();
+    let quant_dir = tempfile::Builder::new().prefix("quant").tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(SEED);
+
+    let storage = build_on_disk_storage(dir.path(), &mut rng);
+    let on_disk = storage.is_on_disk();
+
+    let rw = QuantizedVectors::create(
+        &storage,
+        &config,
+        QuantizedVectorsStorageType::Immutable,
+        quant_dir.path(),
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    let ro = QuantizedVectorsRead::<MmapFile>::open(
+        &MmapFs,
+        quant_dir.path(),
+        storage.distance(),
+        storage.datatype(),
+        None,
+        on_disk,
+    )
+    .unwrap()
+    .expect("quantization config exists");
+
+    assert_eq!(ro.default_rescoring(), rw.default_rescoring());
+    assert_eq!(ro.is_on_disk(), rw.get_storage().is_on_disk());
+
+    let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
+
+    for _ in 0..20 {
+        let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
+        let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
+
+        let rw_scorer = rw
+            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
+            .unwrap();
+        let ro_scorer = ro
+            .raw_scorer(query, HardwareCounterCell::disposable())
+            .unwrap();
+
+        for &id in &sample {
+            assert_eq!(
+                rw_scorer.score_point(id),
+                ro_scorer.score_point(id),
+                "raw_scorer score mismatch at point {id}",
+            );
+        }
+
+        assert_internal_scorer_eq(&rw, &ro, &sample);
+    }
+}
+
+/// Same parity check for multi-vector storages, exercising the `*Multi` variants
+/// and the [`UniversalRead`]-backed multivector offsets loaders.
+#[rstest]
+#[case::scalar_multi(scalar_config(true))]
+#[case::binary_multi(binary_config(true))]
+fn read_only_matches_read_write_multivector(#[case] config: QuantizationConfig) {
+    use crate::fixtures::payload_fixtures::random_multi_vector;
+    use crate::types::MultiVectorConfig;
+    use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
+
+    let quant_dir = tempfile::Builder::new()
+        .prefix("quant-multi")
+        .tempdir()
+        .unwrap();
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let multivector_config = MultiVectorConfig::default();
+
+    let hw = HardwareCounterCell::disposable();
+    let mut storage = new_volatile_multi_dense_vector_storage(DIMS, DISTANCE, multivector_config);
+    for id in 0..NUM_POINTS as PointOffsetType {
+        let count = rng.random_range(1..=4);
+        let multi = random_multi_vector(&mut rng, DIMS, count);
+        storage
+            .insert_vector(id, VectorRef::from(&multi), &hw)
+            .unwrap();
+    }
+    let on_disk = storage.is_on_disk();
+
+    let rw = QuantizedVectors::create(
+        &storage,
+        &config,
+        QuantizedVectorsStorageType::Immutable,
+        quant_dir.path(),
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    let ro = QuantizedVectorsRead::<MmapFile>::open(
+        &MmapFs,
+        quant_dir.path(),
+        storage.distance(),
+        storage.datatype(),
+        Some(&multivector_config),
+        on_disk,
+    )
+    .unwrap()
+    .expect("quantization config exists");
+
+    let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(11).collect();
+
+    for _ in 0..10 {
+        let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
+        let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
+
+        let rw_scorer = rw
+            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
+            .unwrap();
+        let ro_scorer = ro
+            .raw_scorer(query, HardwareCounterCell::disposable())
+            .unwrap();
+
+        for &id in &sample {
+            assert_eq!(
+                rw_scorer.score_point(id),
+                ro_scorer.score_point(id),
+                "multivector raw_scorer score mismatch at point {id}",
+            );
+        }
+    }
+}
+
+fn assert_internal_scorer_eq(
+    rw: &QuantizedVectors,
+    ro: &QuantizedVectorsRead<MmapFile>,
+    sample: &[PointOffsetType],
+) {
+    let pivot = sample[0];
+    let rw_internal = rw.raw_internal_scorer(pivot, HardwareCounterCell::disposable());
+    let ro_internal = ro.raw_internal_scorer(pivot, HardwareCounterCell::disposable());
+
+    match (rw_internal, ro_internal) {
+        (Ok(rw_scorer), Ok(ro_scorer)) => {
+            for &id in sample {
+                assert_eq!(
+                    rw_scorer.score_point(id),
+                    ro_scorer.score_point(id),
+                    "raw_internal_scorer score mismatch at point {id}",
+                );
+            }
+        }
+        (Err(_), Err(_)) => {}
+        _ => panic!("read-only and read-write internal scorer support diverged"),
+    }
+}

@@ -9,7 +9,9 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage};
+use common::universal_io::{
+    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
@@ -103,6 +105,28 @@ impl MultivectorOffsetsStorageRam {
             path: path.to_path_buf(),
         })
     }
+
+    /// Load all offsets into RAM through the provided [`UniversalRead`] filesystem,
+    /// performing no writes.
+    ///
+    /// Read-only counterpart of [`Self::load`] used by read-only storages.
+    pub fn open<S: UniversalRead>(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
+        let offsets = TypedStorage::<S, MultivectorOffset>::open(
+            fs,
+            path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: true,
+                populate: Populate::No,
+                advice: AdviceSetting::Global,
+            },
+            Default::default(),
+        )?;
+        Ok(MultivectorOffsetsStorageRam {
+            offsets: offsets.read_whole()?.into_owned(),
+            path: path.to_path_buf(),
+        })
+    }
 }
 
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
@@ -155,12 +179,12 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
 }
 
 #[derive(Debug)]
-pub struct MultivectorOffsetsStorageMmap {
-    offsets: TypedStorage<MmapFile, MultivectorOffset>,
+pub struct MultivectorOffsetsStorageMmap<S: UniversalRead = MmapFile> {
+    offsets: TypedStorage<S, MultivectorOffset>,
     path: PathBuf,
 }
 
-impl MultivectorOffsetsStorageMmap {
+impl MultivectorOffsetsStorageMmap<MmapFile> {
     pub fn create(
         path: &Path,
         offsets: impl Iterator<Item = MultivectorOffset>,
@@ -171,8 +195,17 @@ impl MultivectorOffsetsStorageMmap {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        let offsets = TypedStorage::<MmapFile, MultivectorOffset>::open(
-            &MmapFs,
+        Self::open(&MmapFs, path)
+    }
+}
+
+impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
+    /// Open the offsets file read-only through the provided [`UniversalRead`] filesystem.
+    ///
+    /// Performs no writes, making this the entry point used by read-only storages.
+    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
+        let offsets = TypedStorage::<S, MultivectorOffset>::open(
+            fs,
             path,
             OpenOptions {
                 writeable: false,
@@ -180,7 +213,7 @@ impl MultivectorOffsetsStorageMmap {
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
             },
-            (),
+            Default::default(),
         )?;
 
         Ok(Self {
@@ -198,7 +231,7 @@ impl MultivectorOffsetsStorageMmap {
     }
 }
 
-impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
+impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap<S> {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         let offset = self
             .offsets
