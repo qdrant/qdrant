@@ -92,6 +92,8 @@ impl EdgeShard {
                                     datatype: wrapper.dense.datatype,
                                     quantization_config: None,
                                     hnsw_config: None,
+                                    data_integrity_check: None,
+                                    magnitude_bound: None,
                                 },
                             );
                         }
@@ -103,6 +105,8 @@ impl EdgeShard {
                                     on_disk: None,
                                     modifier: wrapper.sparse.modifier,
                                     datatype: wrapper.sparse.datatype,
+                                    data_integrity_check: None,
+                                    magnitude_bound: None,
                                 },
                             );
                         }

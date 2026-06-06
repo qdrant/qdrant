@@ -192,6 +192,16 @@ fn check_dense_values_finite(vector: &[f32]) -> OperationResult<()> {
     Ok(())
 }
 
+fn check_dense_magnitude_bound(vector: &[f32], magnitude_bound: f32) -> OperationResult<()> {
+    let magnitude_squared: f32 = vector.iter().map(|value| value * value).sum();
+    if magnitude_squared > magnitude_bound * magnitude_bound {
+        return Err(OperationError::validation_error(format!(
+            "Vector magnitude {magnitude_squared:.6} exceeds bound {magnitude_bound}"
+        )));
+    }
+    Ok(())
+}
+
 fn check_sparse_values_finite(values: &[f32]) -> OperationResult<()> {
     if let Some(index) = values.iter().position(|value| !value.is_finite()) {
         return Err(OperationError::validation_error(format!(
@@ -218,7 +228,13 @@ fn check_vector_against_config(
                     received_dim: vector.len(),
                 });
             }
-            check_dense_values_finite(vector)
+            if vector_config.data_integrity_check_enabled() {
+                check_dense_values_finite(vector)?;
+            }
+            if let Some(magnitude_bound) = vector_config.magnitude_bound {
+                check_dense_magnitude_bound(vector, magnitude_bound)?;
+            }
+            Ok(())
         }
         VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
         VectorRef::MultiDense(multi_vector) => {
@@ -231,7 +247,12 @@ fn check_vector_against_config(
                         received_dim: vector.len(),
                     });
                 }
-                check_dense_values_finite(vector)?;
+                if vector_config.data_integrity_check_enabled() {
+                    check_dense_values_finite(vector)?;
+                }
+                if let Some(magnitude_bound) = vector_config.magnitude_bound {
+                    check_dense_magnitude_bound(vector, magnitude_bound)?;
+                }
             }
             Ok(())
         }
@@ -240,11 +261,19 @@ fn check_vector_against_config(
 
 fn check_sparse_vector_against_config(
     vector: VectorRef,
-    _vector_config: &SparseVectorDataConfig,
+    vector_config: &SparseVectorDataConfig,
 ) -> OperationResult<()> {
     match vector {
         VectorRef::Dense(_) => Err(OperationError::WrongSparse),
-        VectorRef::Sparse(vector) => check_sparse_values_finite(&vector.values),
+        VectorRef::Sparse(vector) => {
+            if vector_config.data_integrity_check_enabled() {
+                check_sparse_values_finite(&vector.values)?;
+            }
+            if let Some(magnitude_bound) = vector_config.magnitude_bound {
+                check_dense_magnitude_bound(&vector.values, magnitude_bound)?;
+            }
+            Ok(())
+        }
         VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
     }
 }
@@ -266,10 +295,47 @@ mod tests {
             quantization_config: None,
             multivector_config: None,
             datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
         };
         let vector = vec![1.0, f32::NAN, 1.0];
         let err = check_vector_against_config(VectorRef::Dense(&vector), &config).unwrap_err();
         assert!(matches!(err, OperationError::ValidationError { .. }));
+    }
+
+    #[test]
+    fn rejects_vector_exceeding_magnitude_bound() {
+        let config = VectorDataConfig {
+            size: 3,
+            distance: Distance::Cosine,
+            storage_type: VectorStorageType::Memory,
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: Some(1.0),
+        };
+        let vector = vec![1.0, 1.0, 1.0];
+        let err = check_vector_against_config(VectorRef::Dense(&vector), &config).unwrap_err();
+        assert!(matches!(err, OperationError::ValidationError { .. }));
+    }
+
+    #[test]
+    fn allows_non_finite_vector_when_integrity_check_disabled() {
+        let config = VectorDataConfig {
+            size: 3,
+            distance: Distance::Cosine,
+            storage_type: VectorStorageType::Memory,
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+            data_integrity_check: Some(false),
+            magnitude_bound: None,
+        };
+        let vector = vec![1.0, f32::NAN, 1.0];
+        check_vector_against_config(VectorRef::Dense(&vector), &config).unwrap();
     }
 
     #[test]
@@ -287,6 +353,8 @@ mod tests {
             index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
             storage_type: SparseVectorStorageType::OnDisk,
             modifier: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
         };
         let err = check_sparse_vector_against_config(VectorRef::Sparse(&vector), &config)
             .unwrap_err();

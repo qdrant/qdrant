@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -16,6 +17,24 @@ use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use crate::types::{Filter, PointIdType};
+
+fn effective_order_value(
+    values: impl IntoIterator<Item = OrderValue>,
+    direction: Direction,
+    start_from: &OrderValue,
+) -> Option<OrderValue> {
+    let filtered: Vec<_> = values
+        .into_iter()
+        .filter(|value| match direction {
+            Direction::Asc => value >= start_from,
+            Direction::Desc => value <= start_from,
+        })
+        .collect();
+    match direction {
+        Direction::Asc => filtered.into_iter().min(),
+        Direction::Desc => filtered.into_iter().max(),
+    }
+}
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
 where
@@ -54,22 +73,16 @@ where
                 hw_counter,
                 is_stopped,
                 deferred_behavior,
-            )?
-            .flat_map(|internal_id| {
-                // Repeat a point for as many values as it has.
-                numeric_index
-                    .get_ordering_values(internal_id)
-                    // But only those which start from `start_from`.
-                    .filter(|value| match order_by.direction() {
-                        Direction::Asc => value >= &start_from,
-                        Direction::Desc => value <= &start_from,
-                    })
-                    .map(move |ordering_value| (ordering_value, internal_id))
-            })
-            .filter_map(|(value, internal_id)| {
+            )
+            .filter_map(|internal_id| {
+                let ordering_value = effective_order_value(
+                    numeric_index.get_ordering_values(internal_id),
+                    order_by.direction(),
+                    &start_from,
+                )?;
                 self.id_tracker
                     .external_id(internal_id)
-                    .map(|external_id| (value, external_id))
+                    .map(|external_id| (ordering_value, external_id))
             });
 
         Ok(match order_by.direction() {
@@ -134,15 +147,50 @@ where
             }
         };
 
-        let reads = filtered_iter
-            .stop_if(is_stopped)
-            .filter_map(|(value, internal_id)| {
+        let mut best_value_per_point: HashMap<PointOffsetType, OrderValue> = HashMap::new();
+        for (value, internal_id) in filtered_iter.stop_if(is_stopped) {
+            match order_by.direction() {
+                Direction::Asc => {
+                    best_value_per_point
+                        .entry(internal_id)
+                        .and_modify(|current| {
+                            if value < *current {
+                                *current = value;
+                            }
+                        })
+                        .or_insert(value);
+                }
+                Direction::Desc => {
+                    best_value_per_point
+                        .entry(internal_id)
+                        .and_modify(|current| {
+                            if value > *current {
+                                *current = value;
+                            }
+                        })
+                        .or_insert(value);
+                }
+            }
+        }
+
+        let mut reads: Vec<_> = best_value_per_point
+            .into_iter()
+            .filter_map(|(internal_id, value)| {
                 self.id_tracker
                     .external_id(internal_id)
                     .map(|external_id| (value, external_id))
             })
-            .take(limit.unwrap_or(usize::MAX))
             .collect();
+
+        match order_by.direction() {
+            Direction::Asc => reads.sort_unstable_by_key(|(value, _)| *value),
+            Direction::Desc => reads.sort_unstable_by_key(|(value, _)| Reverse(*value)),
+        }
+
+        if let Some(limit) = limit {
+            reads.truncate(limit);
+        }
+
         Ok(reads)
     }
 
@@ -186,5 +234,28 @@ where
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ordered_float::OrderedFloat;
+
+    use super::*;
+
+    /// Regression test for <https://github.com/qdrant/qdrant/issues/9192>
+    #[test]
+    fn effective_order_value_picks_single_value_per_point() {
+        let start_from = OrderValue::Float(OrderedFloat(0.0));
+        let values = [
+            OrderValue::Float(OrderedFloat(1.0)),
+            OrderValue::Float(OrderedFloat(3.0)),
+        ];
+
+        let asc = effective_order_value(values, Direction::Asc, &start_from).unwrap();
+        assert_eq!(asc, OrderValue::Float(OrderedFloat(1.0)));
+
+        let desc = effective_order_value(values, Direction::Desc, &start_from).unwrap();
+        assert_eq!(desc, OrderValue::Float(OrderedFloat(3.0)));
     }
 }

@@ -74,6 +74,8 @@ fn test_multi_filterable_hnsw(
                 quantization_config: None,
                 multivector_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
             },
         )]),
         sparse_vector_data: Default::default(),

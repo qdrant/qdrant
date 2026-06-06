@@ -554,6 +554,8 @@ impl CollectionParams {
                     on_disk,
                     datatype,
                     multivector_config,
+                    data_integrity_check,
+                    magnitude_bound,
                 } = params;
 
                 (
@@ -576,6 +578,8 @@ impl CollectionParams {
                         },
                         multivector_config: *multivector_config,
                         datatype: datatype.map(VectorStorageDatatype::from),
+                        data_integrity_check: *data_integrity_check,
+                        magnitude_bound: *magnitude_bound,
                     },
                 )
             })
@@ -606,6 +610,8 @@ impl CollectionParams {
                             },
                             storage_type: params.storage_type(),
                             modifier: params.modifier,
+                            data_integrity_check: params.data_integrity_check,
+                            magnitude_bound: params.magnitude_bound,
                         },
                     )
                 })

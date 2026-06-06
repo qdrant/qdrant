@@ -1378,6 +1378,14 @@ pub struct VectorParams {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multivector_config: Option<MultiVectorConfig>,
+
+    /// Reject non-finite vector components when enabled. Defaults to enabled when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_integrity_check: Option<bool>,
+
+    /// Reject vectors whose L2 norm exceeds this bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub magnitude_bound: Option<f32>,
 }
 
 /// Validate the value is in `[1, 65536]` or `None`.
@@ -1416,6 +1424,14 @@ pub struct SparseVectorParams {
     /// Default: none
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifier: Option<Modifier>,
+
+    /// Reject non-finite vector components when enabled. Defaults to enabled when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_integrity_check: Option<bool>,
+
+    /// Reject vectors whose L2 norm exceeds this bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub magnitude_bound: Option<f32>,
 }
 
 impl SparseVectorParams {
@@ -1676,6 +1692,8 @@ impl From<&VectorParams> for VectorParamsBase {
             on_disk: _,
             datatype: _,
             multivector_config: _,
+            data_integrity_check: _,
+            magnitude_bound: _,
         } = params;
         Self {
             size: size.get() as _, // TODO!?
@@ -1694,6 +1712,8 @@ impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
             quantization_config: _,
             multivector_config: _,
             datatype: _,
+            data_integrity_check: _,
+            magnitude_bound: _,
         } = config;
         Self { size, distance }
     }

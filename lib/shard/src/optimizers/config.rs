@@ -111,6 +111,8 @@ impl SegmentOptimizerConfig {
                         full_scan_threshold,
                         index_type: SparseIndexType::MutableRam,
                         datatype: index_datatype,
+            data_integrity_check: None,
+            magnitude_bound: None,
                     },
                     storage_type,
                     modifier,
@@ -139,6 +141,8 @@ pub struct DenseVectorOptimizerInput {
     pub quantization_config: Option<QuantizationConfig>,
     pub multivector_config: Option<MultiVectorConfig>,
     pub datatype: Option<VectorStorageDatatype>,
+            data_integrity_check: None,
+            magnitude_bound: None,
 }
 
 /// Per-sparse-vector input for the optimizer builder.
@@ -147,8 +151,12 @@ pub struct SparseVectorOptimizerInput {
     pub on_disk: Option<bool>,
     pub full_scan_threshold: Option<usize>,
     pub index_datatype: Option<VectorStorageDatatype>,
+            data_integrity_check: None,
+            magnitude_bound: None,
     pub storage_type: SparseVectorStorageType,
     pub modifier: Option<Modifier>,
+            data_integrity_check: None,
+            magnitude_bound: None,
 }
 
 /// Target segment count for the merge optimizer.

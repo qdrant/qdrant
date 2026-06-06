@@ -68,6 +68,8 @@ pub struct DenseVectorConfig {
     /// Element storage type (Float32, Float16, Uint8, Turbo4)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
+            data_integrity_check: None,
+            magnitude_bound: None,
 }
 
 /// Configuration for creating a new sparse named vector.
@@ -80,10 +82,14 @@ pub struct SparseVectorConfig {
     /// Value modifier for sparse vectors (e.g., IDF)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifier: Option<Modifier>,
+            data_integrity_check: None,
+            magnitude_bound: None,
     /// Datatype used to store weights in the index
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(custom(function = "validate_sparse_datatype"))]
     pub datatype: Option<VectorStorageDatatype>,
+            data_integrity_check: None,
+            magnitude_bound: None,
 }
 
 /// Reject the `Turbo4` datatype on sparse vector configs.
@@ -138,6 +144,8 @@ impl DenseVectorConfig {
             quantization_config: None,
             multivector_config: *multivector_config,
             datatype: *datatype,
+            data_integrity_check: None,
+            magnitude_bound: None,
         }
     }
 }
@@ -150,10 +158,14 @@ impl SparseVectorConfig {
         SparseVectorDataConfig {
             index: SparseIndexConfig {
                 datatype: *datatype,
+            data_integrity_check: None,
+            magnitude_bound: None,
                 ..Default::default()
             },
             storage_type: Default::default(),
             modifier: *modifier,
+            data_integrity_check: None,
+            magnitude_bound: None,
         }
     }
 }

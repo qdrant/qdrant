@@ -34,6 +34,8 @@ fn default_dense_config(dim: usize) -> VectorDataConfig {
         quantization_config: None,
         multivector_config: None,
         datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
     }
 }
 
@@ -50,6 +52,8 @@ fn dense_vector_name_config(dim: usize) -> VectorNameConfig {
         distance: Distance::Dot,
         multivector_config: None,
         datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
     })
 }
 
@@ -57,6 +61,8 @@ fn sparse_vector_name_config() -> VectorNameConfig {
     VectorNameConfig::sparse(SparseVectorConfig {
         modifier: None,
         datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
     })
 }
 

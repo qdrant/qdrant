@@ -270,6 +270,8 @@ impl TestSegments {
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
