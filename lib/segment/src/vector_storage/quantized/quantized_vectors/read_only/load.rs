@@ -1,7 +1,6 @@
 use std::path::Path;
 
-use common::fs::read_json;
-use common::universal_io::UniversalRead;
+use common::universal_io::{OkNotFound, UniversalRead, read_json_via};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
@@ -30,10 +29,11 @@ use crate::vector_storage::quantized::quantized_vectors::{
 impl<S: UniversalRead> QuantizedVectorsRead<S> {
     /// Open existing quantized vectors read-only through the [`UniversalRead`] backend `S`.
     ///
-    /// Returns `Ok(None)` when no quantization config is present at `path`. Unlike
-    /// [`QuantizedVectors::load`], this never creates or quantizes anything and never
-    /// writes to disk: only the immutable (`Immutable`) on-disk layout is accepted,
-    /// and the appendable (`Mutable`) layout is rejected.
+    /// Returns `Ok(None)` when no quantization config is present at `path`. Every read —
+    /// config, per-method metadata, quantized data and multivector offsets — goes through `S`;
+    /// nothing is read with direct filesystem access and nothing is written. Unlike
+    /// [`QuantizedVectors::load`], this never creates or quantizes anything: only the immutable
+    /// (`Immutable`) on-disk layout is accepted, and the appendable (`Mutable`) layout is rejected.
     ///
     /// `distance`, `datatype`, `multivector_config` and `on_disk_vector_storage` describe
     /// the original (source) vector storage this quantization was built for.
@@ -46,10 +46,11 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
         on_disk_vector_storage: bool,
     ) -> OperationResult<Option<Self>> {
         let config_path = QuantizedVectors::get_config_path(path);
-        if !config_path.exists() {
+        let config: Option<QuantizedVectorsConfig> =
+            read_json_via(fs, &config_path).ok_not_found()?;
+        let Some(config) = config else {
             return Ok(None);
-        }
-        let config: QuantizedVectorsConfig = read_json(&config_path)?;
+        };
 
         if !config.storage_type.is_immutable() {
             return Err(OperationError::service_error(
@@ -90,15 +91,14 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
             QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
                 let size = encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
                 if QuantizedVectors::is_ram(scalar.always_ram, on_disk_vector_storage) {
-                    let storage =
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?;
+                    let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::ScalarRam(
-                        EncodedVectorsU8::load(storage, &meta_path)?,
+                        EncodedVectorsU8::load(fs, storage, &meta_path)?,
                     ))
                 } else {
                     let storage = QuantizedStorage::<S>::from_file(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::ScalarMmap(
-                        EncodedVectorsU8::load(storage, &meta_path)?,
+                        EncodedVectorsU8::load(fs, storage, &meta_path)?,
                     ))
                 }
             }
@@ -109,15 +109,14 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     bucket_size,
                 );
                 if QuantizedVectors::is_ram(product.always_ram, on_disk_vector_storage) {
-                    let storage =
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?;
+                    let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::PQRam(EncodedVectorsPQ::load(
-                        storage, &meta_path,
+                        fs, storage, &meta_path,
                     )?))
                 } else {
                     let storage = QuantizedStorage::<S>::from_file(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::PQMmap(EncodedVectorsPQ::load(
-                        storage, &meta_path,
+                        fs, storage, &meta_path,
                     )?))
                 }
             }
@@ -127,15 +126,14 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     QuantizedVectors::convert_binary_encoding(binary.encoding),
                 );
                 if QuantizedVectors::is_ram(binary.always_ram, on_disk_vector_storage) {
-                    let storage =
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?;
+                    let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::BinaryRam(
-                        EncodedVectorsBin::load(storage, &meta_path)?,
+                        EncodedVectorsBin::load(fs, storage, &meta_path)?,
                     ))
                 } else {
                     let storage = QuantizedStorage::<S>::from_file(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::BinaryMmap(
-                        EncodedVectorsBin::load(storage, &meta_path)?,
+                        EncodedVectorsBin::load(fs, storage, &meta_path)?,
                     ))
                 }
             }
@@ -148,15 +146,14 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     mode,
                 );
                 if QuantizedVectors::is_ram(turbo.always_ram, on_disk_vector_storage) {
-                    let storage =
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?;
+                    let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::TQRam(EncodedVectorsTQ::load(
-                        storage, &meta_path,
+                        fs, storage, &meta_path,
                     )?))
                 } else {
                     let storage = QuantizedStorage::<S>::from_file(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::TQMmap(EncodedVectorsTQ::load(
-                        storage, &meta_path,
+                        fs, storage, &meta_path,
                     )?))
                 }
             }
@@ -180,7 +177,8 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 let size = encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
                 if QuantizedVectors::is_ram(scalar.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsU8::load(
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?,
+                        fs,
+                        QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?,
                         &meta_path,
                     )?;
                     let offsets = MultivectorOffsetsStorageRam::open::<S>(fs, &offsets_path)?;
@@ -189,6 +187,7 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     ))
                 } else {
                     let inner = EncodedVectorsU8::load(
+                        fs,
                         QuantizedStorage::<S>::from_file(fs, &data_path, size)?,
                         &meta_path,
                     )?;
@@ -206,7 +205,8 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 );
                 if QuantizedVectors::is_ram(product.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsPQ::load(
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?,
+                        fs,
+                        QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?,
                         &meta_path,
                     )?;
                     let offsets = MultivectorOffsetsStorageRam::open::<S>(fs, &offsets_path)?;
@@ -215,6 +215,7 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     ))
                 } else {
                     let inner = EncodedVectorsPQ::load(
+                        fs,
                         QuantizedStorage::<S>::from_file(fs, &data_path, size)?,
                         &meta_path,
                     )?;
@@ -233,7 +234,8 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 );
                 if QuantizedVectors::is_ram(binary.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsBin::load(
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?,
+                        fs,
+                        QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?,
                         &meta_path,
                     )?;
                     let offsets = MultivectorOffsetsStorageRam::open::<S>(fs, &offsets_path)?;
@@ -242,6 +244,7 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     ))
                 } else {
                     let inner = EncodedVectorsBin::load(
+                        fs,
                         QuantizedStorage::<S>::from_file(fs, &data_path, size)?,
                         &meta_path,
                     )?;
@@ -261,7 +264,8 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 );
                 if QuantizedVectors::is_ram(turbo.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsTQ::load(
-                        QuantizedRamStorage::from_universal_read::<S>(fs, &data_path, size)?,
+                        fs,
+                        QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?,
                         &meta_path,
                     )?;
                     let offsets = MultivectorOffsetsStorageRam::open::<S>(fs, &offsets_path)?;
@@ -270,6 +274,7 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     ))
                 } else {
                     let inner = EncodedVectorsTQ::load(
+                        fs,
                         QuantizedStorage::<S>::from_file(fs, &data_path, size)?,
                         &meta_path,
                     )?;

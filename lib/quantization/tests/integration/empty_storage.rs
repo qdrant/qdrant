@@ -42,6 +42,7 @@ mod tests {
         .unwrap();
 
         EncodedVectorsU8::<TestEncodedStorage>::load(
+            &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
         )
@@ -79,6 +80,7 @@ mod tests {
         .unwrap();
 
         EncodedVectorsPQ::<TestEncodedStorage>::load(
+            &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
         )
@@ -117,6 +119,7 @@ mod tests {
         .unwrap();
 
         EncodedVectorsBin::<u8, TestEncodedStorage>::load(
+            &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
         )

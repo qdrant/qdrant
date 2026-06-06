@@ -1,12 +1,11 @@
 use std::borrow::Cow;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::OneshotFile;
-use common::mmap::{AdviceSetting, MmapFlusher};
+use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadOnly, UniversalRead};
+use common::universal_io::{OneshotFile, UniversalRead};
 use fs_err as fs;
 use fs_err::File;
 
@@ -22,35 +21,13 @@ pub struct QuantizedRamStorage {
 }
 
 impl QuantizedRamStorage {
-    pub fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
-        let mut vectors = VolatileChunkedVectors::<u8>::new(quantized_vector_size);
-        let file = OneshotFile::open(path)?;
-        let mut reader = BufReader::new(file);
-        let mut buffer = vec![0u8; quantized_vector_size];
-        while reader.read_exact(&mut buffer).is_ok() {
-            vectors.push(&buffer).map_err(|err| {
-                std::io::Error::new(
-                    std::io::ErrorKind::OutOfMemory,
-                    format!("Failed to load quantized vectors from file: {err}"),
-                )
-            })?;
-        }
-        reader.into_inner().drop_cache()?;
-        vectors.shrink_last_chunk();
-        Ok(QuantizedRamStorage {
-            vectors,
-            path: path.to_path_buf(),
-        })
-    }
-
     /// Load all quantized vectors into RAM through the provided [`UniversalRead`]
     /// filesystem, performing no writes.
     ///
-    /// This is the read-only counterpart of [`Self::from_file`]: it sources the
-    /// bytes through the pluggable `S` backend (mmap, io_uring, object storage, …)
-    /// instead of opening the local path directly, so it works wherever a
-    /// [`UniversalRead`] handle is available.
-    pub fn from_universal_read<S: UniversalRead>(
+    /// The data is read once through the pluggable `S` backend (mmap, io_uring,
+    /// object storage, …) and evicted from the RAM/page cache afterwards via
+    /// [`OneshotFile`], since we keep our own heap copy.
+    pub fn from_file<S: UniversalRead>(
         fs: &S::Fs,
         path: &Path,
         quantized_vector_size: usize,
@@ -61,34 +38,25 @@ impl QuantizedRamStorage {
             ));
         }
 
-        let storage = ReadOnly::<S>::open(
-            fs,
-            path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: true,
-                populate: Populate::No,
-                advice: AdviceSetting::Global,
-            },
-            Default::default(),
-        )?;
+        let storage = OneshotFile::<S>::open(fs, path)?;
 
-        let len = storage.len::<u8>()? as usize;
+        // Read the whole file in a single access and validate against the returned
+        // buffer's length, rather than querying `len()` separately. Avoids an extra
+        // metadata round-trip on backends where size lookups are expensive (e.g. S3).
+        let data = storage.read_whole::<u8>()?;
+        let len = data.len();
         if !len.is_multiple_of(quantized_vector_size) {
             return Err(OperationError::inconsistent_storage(format!(
                 "Encoded file size ({len}) is not a multiple of quantized_vector_size ({quantized_vector_size})",
             )));
         }
 
-        let data = storage.read_whole::<u8>()?;
         let mut vectors = VolatileChunkedVectors::<u8>::new(quantized_vector_size);
-        for chunk in data.chunks_exact(quantized_vector_size) {
-            vectors.push(chunk).map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to load quantized vectors into RAM: {err}"
-                ))
-            })?;
-        }
+        vectors.extend(&data).map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to load quantized vectors into RAM: {err}"
+            ))
+        })?;
         vectors.shrink_last_chunk();
 
         Ok(QuantizedRamStorage {

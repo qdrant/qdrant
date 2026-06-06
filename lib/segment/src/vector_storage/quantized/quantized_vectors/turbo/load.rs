@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_tq;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::turboquant::TQMode;
@@ -18,6 +18,9 @@ use crate::vector_storage::quantized::quantized_multivector_storage::{
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
+
+/// The read-write path always operates on local files.
+const READ_FS: MmapFs = MmapFs;
 
 impl QuantizedVectors {
     pub(in super::super) fn load_turbo(
@@ -47,7 +50,7 @@ impl QuantizedVectors {
                     in_ram,
                 )?;
                 Ok(QuantizedVectorStorage::TQChunkedMmap(
-                    EncodedVectorsTQ::load(quantization_storage, meta_path.as_path())?,
+                    EncodedVectorsTQ::load(&READ_FS, quantization_storage, meta_path.as_path())?,
                 ))
             }
             (true, QuantizedVectorsStorageType::Immutable) => {
@@ -56,9 +59,13 @@ impl QuantizedVectors {
                     bits,
                     mode,
                 );
-                let quantized_vectors_storage =
-                    QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                let quantized_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
+                    &READ_FS,
+                    data_path.as_path(),
+                    quantized_vector_size,
+                )?;
                 Ok(QuantizedVectorStorage::TQRam(EncodedVectorsTQ::load(
+                    &READ_FS,
                     quantized_vectors_storage,
                     &meta_path,
                 )?))
@@ -70,11 +77,12 @@ impl QuantizedVectors {
                     mode,
                 );
                 let quantized_vectors_storage = QuantizedStorage::from_file(
-                    &MmapFs,
+                    &READ_FS,
                     data_path.as_path(),
                     quantized_vector_size,
                 )?;
                 Ok(QuantizedVectorStorage::TQMmap(EncodedVectorsTQ::load(
+                    &READ_FS,
                     quantized_vectors_storage,
                     &meta_path,
                 )?))
@@ -111,7 +119,7 @@ impl QuantizedVectors {
                     in_ram,
                 )?;
                 let inner_storage =
-                    EncodedVectorsTQ::load(quantization_storage, meta_path.as_path())?;
+                    EncodedVectorsTQ::load(&READ_FS, quantization_storage, meta_path.as_path())?;
                 let offsets_storage =
                     MultivectorOffsetsStorageChunkedMmap::load(offsets_path.as_path(), in_ram)?;
 
@@ -130,10 +138,13 @@ impl QuantizedVectors {
                     bits,
                     mode,
                 );
+                let inner_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
+                    &READ_FS,
+                    data_path.as_path(),
+                    quantized_vector_size,
+                )?;
                 let inner_vectors_storage =
-                    QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-                let inner_vectors_storage =
-                    EncodedVectorsTQ::load(inner_vectors_storage, &meta_path)?;
+                    EncodedVectorsTQ::load(&READ_FS, inner_vectors_storage, &meta_path)?;
                 let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
                 Ok(QuantizedVectorStorage::TQRamMulti(
                     QuantizedMultivectorStorage::new(
@@ -151,12 +162,12 @@ impl QuantizedVectors {
                     mode,
                 );
                 let inner_vectors_storage = QuantizedStorage::from_file(
-                    &MmapFs,
+                    &READ_FS,
                     data_path.as_path(),
                     quantized_vector_size,
                 )?;
                 let inner_vectors_storage =
-                    EncodedVectorsTQ::load(inner_vectors_storage, &meta_path)?;
+                    EncodedVectorsTQ::load(&READ_FS, inner_vectors_storage, &meta_path)?;
                 let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
                 Ok(QuantizedVectorStorage::TQMmapMulti(
                     QuantizedMultivectorStorage::new(
