@@ -43,6 +43,32 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
+            // Maven Central requires a -javadoc.jar for every non-pom artifact
+            // (aar included; no exemption). AGP generates one from sources here.
+            withJavadocJar()
+        }
+    }
+}
+
+// Config-phase repository block (see :qdrant-edge for the rationale) — top-level
+// so it stays configuration-cache compatible.
+publishing {
+    repositories {
+        maven {
+            name = "sonatype"
+            url = uri(
+                providers.gradleProperty("SONATYPE_URL")
+                    .orElse("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
+                    .get()
+            )
+            credentials {
+                username = providers.gradleProperty("SONATYPE_USERNAME")
+                    .orElse(providers.environmentVariable("SONATYPE_USERNAME"))
+                    .orNull
+                password = providers.gradleProperty("SONATYPE_PASSWORD")
+                    .orElse(providers.environmentVariable("SONATYPE_PASSWORD"))
+                    .orNull
+            }
         }
     }
 }
@@ -82,25 +108,6 @@ afterEvaluate {
                         connection.set("scm:git:https://github.com/qdrant/qdrant.git")
                         developerConnection.set("scm:git:ssh://git@github.com/qdrant/qdrant.git")
                     }
-                }
-            }
-        }
-
-        repositories {
-            maven {
-                name = "sonatype"
-                url = uri(
-                    providers.gradleProperty("SONATYPE_URL")
-                        .orElse("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
-                        .get()
-                )
-                credentials {
-                    username = providers.gradleProperty("SONATYPE_USERNAME")
-                        .orElse(providers.environmentVariable("SONATYPE_USERNAME"))
-                        .orNull
-                    password = providers.gradleProperty("SONATYPE_PASSWORD")
-                        .orElse(providers.environmentVariable("SONATYPE_PASSWORD"))
-                        .orNull
                 }
             }
         }

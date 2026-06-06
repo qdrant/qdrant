@@ -22,7 +22,7 @@ setup-rust: ## Install Rust toolchain + cargo-ndk
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
 		echo 'NOTE: add  source "$$HOME/.cargo/env"  to your shell profile, or restart your shell.'; \
 	fi
-	cargo install cargo-ndk --version ^3.5 --locked
+	cargo install cargo-ndk --version =3.5.4 --locked
 	@echo "Rust toolchain OK: $$(rustc --version 2>/dev/null || echo 'restart shell to activate')"
 
 .PHONY: setup-targets

@@ -124,6 +124,12 @@ jobs:
         run: |
           version="$(tr -d '[:space:]' < lib/edge/VERSION)"
           echo "lib/edge/VERSION = $version"
+          # Fail closed if VERSION is empty/missing, so the comparisons below
+          # can't trivially pass on "" == "" after a parse failure.
+          if [ -z "$version" ]; then
+            echo "::error file=lib/edge/VERSION::lib/edge/VERSION is empty"
+            exit 1
+          fi
 
           ffi_version="$(grep -m1 '^version' lib/edge/ffi/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           gradle_version="$(grep -m1 '^VERSION_NAME' lib/edge/android/gradle.properties | cut -d= -f2 | tr -d '[:space:]')"
@@ -135,6 +141,13 @@ jobs:
           fi
           if [ "$gradle_version" != "$version" ]; then
             echo "::error file=lib/edge/android/gradle.properties::VERSION_NAME ($gradle_version) != lib/edge/VERSION ($version)"
+            fail=1
+          fi
+          # The Swift release URL embeds the version as the `edge-v<VERSION>` tag.
+          # release-xcframework.sh regenerates it, but guard against a manual bump
+          # that forgets to, leaving a stale URL with no other signal.
+          if ! grep -qF "edge-v${version}/QdrantEdge.xcframework.zip" lib/edge/swift/Package.swift; then
+            echo "::error file=lib/edge/swift/Package.swift::releaseURL tag does not match lib/edge/VERSION ($version); run release-xcframework.sh"
             fail=1
           fi
           [ "$fail" -eq 0 ] && echo "All native SDK versions agree: $version"
@@ -170,7 +183,8 @@ jobs:
 
       - name: Build XCFramework + run Swift tests
         working-directory: lib/edge/swift
-        # `make test` builds the XCFramework (debug, iOS+macOS) then `swift test`.
+        # `make test` builds the XCFramework (release-mobile profile, iOS+macOS)
+        # then runs `swift test`.
         run: make test
 
   # Build the AAR and run the Android instrumented test on an emulator — the
@@ -191,7 +205,7 @@ jobs:
         run: rustup target add aarch64-linux-android x86_64-linux-android
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --version ^3.5 --locked
+        run: cargo install cargo-ndk --version =3.5.4 --locked
 
       - name: Set up JDK 21
         uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0

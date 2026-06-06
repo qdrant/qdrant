@@ -51,6 +51,34 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
+            // Maven Central requires a -javadoc.jar for every non-pom artifact
+            // (aar included; no exemption). AGP generates one from sources here.
+            withJavadocJar()
+        }
+    }
+}
+
+// The remote repository is config-phase (it doesn't reference the AGP `release`
+// component), so it lives at the top level — not inside afterEvaluate — to stay
+// configuration-cache compatible. Creds come from env/Gradle properties at
+// release time; `publishToMavenLocal` ignores this block.
+publishing {
+    repositories {
+        maven {
+            name = "sonatype"
+            url = uri(
+                providers.gradleProperty("SONATYPE_URL")
+                    .orElse("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
+                    .get()
+            )
+            credentials {
+                username = providers.gradleProperty("SONATYPE_USERNAME")
+                    .orElse(providers.environmentVariable("SONATYPE_USERNAME"))
+                    .orNull
+                password = providers.gradleProperty("SONATYPE_PASSWORD")
+                    .orElse(providers.environmentVariable("SONATYPE_PASSWORD"))
+                    .orNull
+            }
         }
     }
 }
@@ -92,29 +120,6 @@ afterEvaluate {
                         connection.set("scm:git:https://github.com/qdrant/qdrant.git")
                         developerConnection.set("scm:git:ssh://git@github.com/qdrant/qdrant.git")
                     }
-                }
-            }
-        }
-
-        // Remote repository is configured only when publishing for real (the
-        // OSSRH/Central creds come from env/Gradle properties at release time).
-        // `publishToMavenLocal` needs no repository block and is used to verify
-        // the artifact + POM locally without any network access.
-        repositories {
-            maven {
-                name = "sonatype"
-                url = uri(
-                    providers.gradleProperty("SONATYPE_URL")
-                        .orElse("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
-                        .get()
-                )
-                credentials {
-                    username = providers.gradleProperty("SONATYPE_USERNAME")
-                        .orElse(providers.environmentVariable("SONATYPE_USERNAME"))
-                        .orNull
-                    password = providers.gradleProperty("SONATYPE_PASSWORD")
-                        .orElse(providers.environmentVariable("SONATYPE_PASSWORD"))
-                        .orNull
                 }
             }
         }

@@ -63,13 +63,31 @@ rm -f "$ZIP_PATH"
 # downloaded zip against exactly this value.
 echo "==> Computing checksum..."
 CHECKSUM="$(cd "$SCRIPT_DIR" && swift package compute-checksum "$ZIP_PATH")"
+# compute-checksum can exit 0 with empty output in edge cases; an empty checksum
+# would patch a useless value and silently disable release mode. Guard it.
+[ -n "$CHECKSUM" ] || {
+    echo "ERROR: 'swift package compute-checksum' produced an empty checksum." >&2
+    exit 1
+}
 
 # ── 4. Patch Package.swift ─────────────────────────────────────────────────────
 
 echo "==> Patching Package.swift (url + checksum)..."
-# Update the two committed constants in place (BSD/macOS sed -i '' form).
+# Update the two committed constants in place.
 perl -0pi -e "s{let releaseURL = \"[^\"]*\"}{let releaseURL = \"$RELEASE_URL\"}" "$PACKAGE_SWIFT"
 perl -0pi -e "s{let releaseChecksum = \"[^\"]*\"}{let releaseChecksum = \"$CHECKSUM\"}" "$PACKAGE_SWIFT"
+
+# perl -pi exits 0 even when the regex never matches (e.g. the constants were
+# renamed). Verify the replacements actually landed so a no-op patch can't
+# silently ship stale values.
+grep -qF "let releaseURL = \"$RELEASE_URL\"" "$PACKAGE_SWIFT" || {
+    echo "ERROR: failed to patch releaseURL in Package.swift (constant renamed?)." >&2
+    exit 1
+}
+grep -qF "let releaseChecksum = \"$CHECKSUM\"" "$PACKAGE_SWIFT" || {
+    echo "ERROR: failed to patch releaseChecksum in Package.swift (constant renamed?)." >&2
+    exit 1
+}
 
 # ── Done ───────────────────────────────────────────────────────────────────────
 

@@ -11,8 +11,10 @@ import Foundation
 //     which also patches the committed values below), consume the published zip
 //     via `url:` + `checksum:` so the package is installable from a Git tag.
 //
-// `release-xcframework.sh` rewrites the two constants below at release time; the
-// env vars let CI/verification override them without editing the file.
+// `release-xcframework.sh` rewrites the two constants below at release time. To
+// activate release mode you must ALSO set `QDRANT_EDGE_RELEASE`; the
+// `QDRANT_EDGE_XCFRAMEWORK_URL`/`_CHECKSUM` env vars then override the constants
+// without editing the file (used by CI/verification).
 let releaseURL = "https://github.com/qdrant/qdrant/releases/download/edge-v0.7.2/QdrantEdge.xcframework.zip"
 let releaseChecksum = ""  // filled by release-xcframework.sh
 
@@ -20,15 +22,23 @@ let env = ProcessInfo.processInfo.environment
 let xcframeworkTarget: Target = {
     let url = env["QDRANT_EDGE_XCFRAMEWORK_URL"] ?? releaseURL
     let checksum = env["QDRANT_EDGE_XCFRAMEWORK_CHECKSUM"] ?? releaseChecksum
-    // Use the remote binary target only when a checksum is available (release
-    // mode). Otherwise fall back to the local build output for development.
-    if env["QDRANT_EDGE_RELEASE"] != nil, !checksum.isEmpty {
+    // Release mode is opt-in via QDRANT_EDGE_RELEASE. If it's set we MUST resolve
+    // the remote target — fail closed rather than silently fall back to the local
+    // build, which would publish/test the wrong (unpinned) artifact undetected.
+    if env["QDRANT_EDGE_RELEASE"] != nil {
+        guard !checksum.isEmpty else {
+            fatalError(
+                "QDRANT_EDGE_RELEASE is set but no checksum is available. Run " +
+                "release-xcframework.sh first, or set QDRANT_EDGE_XCFRAMEWORK_CHECKSUM."
+            )
+        }
         return .binaryTarget(
             name: "qdrant_edge_ffiFFI",
             url: url,
             checksum: checksum
         )
     }
+    // Default: local build output for development.
     return .binaryTarget(
         name: "qdrant_edge_ffiFFI",
         path: "out/QdrantEdge.xcframework"
