@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::universal_io::{MmapFile, MmapFs};
-use quantization::{EncodedVectorsPQ, encoded_vectors_pq};
+use quantization::EncodedVectorsPQ;
 
 use super::super::{QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsConfig};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -32,12 +32,8 @@ impl QuantizedVectors {
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
+        let quantized_vector_size = config.quantized_vector_size(false);
         if Self::is_ram(pq_config.always_ram, on_disk_vector_storage) {
-            let bucket_size = Self::get_bucket_size(pq_config.compression);
-            let quantized_vector_size = encoded_vectors_pq::get_quantized_vector_size(
-                &config.vector_parameters,
-                bucket_size,
-            );
             let quantized_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
                 &READ_FS,
                 data_path.as_path(),
@@ -49,11 +45,6 @@ impl QuantizedVectors {
                 &meta_path,
             )?))
         } else {
-            let bucket_size = Self::get_bucket_size(pq_config.compression);
-            let quantized_vector_size = encoded_vectors_pq::get_quantized_vector_size(
-                &config.vector_parameters,
-                bucket_size,
-            );
             let quantized_vectors_storage =
                 QuantizedStorage::from_file(&READ_FS, data_path.as_path(), quantized_vector_size)?;
             Ok(QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::load(
@@ -81,12 +72,8 @@ impl QuantizedVectors {
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         let offsets_path = Self::get_offsets_path(path, config.storage_type);
+        let quantized_vector_size = config.quantized_vector_size(true);
         if Self::is_ram(pq_config.always_ram, on_disk_vector_storage) {
-            let bucket_size = Self::get_bucket_size(pq_config.compression);
-            let quantized_vector_size = encoded_vectors_pq::get_quantized_vector_size(
-                &config.vector_parameters,
-                bucket_size,
-            );
             let inner_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
                 &READ_FS,
                 data_path.as_path(),
@@ -104,11 +91,6 @@ impl QuantizedVectors {
                 ),
             ))
         } else {
-            let bucket_size = Self::get_bucket_size(pq_config.compression);
-            let quantized_vector_size = encoded_vectors_pq::get_quantized_vector_size(
-                &config.vector_parameters,
-                bucket_size,
-            );
             let inner_vectors_storage =
                 QuantizedStorage::from_file(&READ_FS, data_path.as_path(), quantized_vector_size)?;
             let inner_vectors_storage =

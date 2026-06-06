@@ -1,14 +1,10 @@
 use std::path::Path;
 
 use common::universal_io::{OkNotFound, UniversalRead, read_json_via};
+use quantization::EncodedVectorsPQ;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
-use quantization::turboquant::TQMode;
-use quantization::{
-    EncodedVectorsPQ, encoded_vectors_binary, encoded_vectors_pq, encoded_vectors_tq,
-    encoded_vectors_u8,
-};
 
 use super::QuantizedVectorsRead;
 use super::storage::QuantizedVectorStorageRead;
@@ -83,10 +79,10 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
     ) -> OperationResult<QuantizedVectorStorageRead<S>> {
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
         let meta_path = QuantizedVectors::get_meta_path(path);
+        let size = config.quantized_vector_size(false);
 
         match &config.quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
-                let size = encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
                 if QuantizedVectors::is_ram(scalar.always_ram, on_disk_vector_storage) {
                     let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::ScalarRam(
@@ -100,11 +96,6 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 }
             }
             QuantizationConfig::Product(ProductQuantization { product }) => {
-                let bucket_size = QuantizedVectors::get_bucket_size(product.compression);
-                let size = encoded_vectors_pq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bucket_size,
-                );
                 if QuantizedVectors::is_ram(product.always_ram, on_disk_vector_storage) {
                     let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::PQRam(EncodedVectorsPQ::load(
@@ -118,10 +109,6 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 }
             }
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                let size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u128>(
-                    config.vector_parameters.dim,
-                    QuantizedVectors::convert_binary_encoding(binary.encoding),
-                );
                 if !config.storage_type.is_immutable() {
                     let storage = QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::BinaryChunked(
@@ -140,13 +127,6 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 }
             }
             QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
-                let bits = QuantizedVectors::convert_tq_bits(turbo.bits.unwrap_or_default());
-                let mode = TQMode::Plus;
-                let size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 if !config.storage_type.is_immutable() {
                     let storage = QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::TQChunked(
@@ -178,10 +158,10 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
         let meta_path = QuantizedVectors::get_meta_path(path);
         let offsets_path = QuantizedVectors::get_offsets_path(path, config.storage_type);
         let dim = config.vector_parameters.dim;
+        let size = config.quantized_vector_size(true);
 
         match &config.quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
-                let size = encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
                 if QuantizedVectors::is_ram(scalar.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsU8::load(
                         fs,
@@ -205,11 +185,6 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 }
             }
             QuantizationConfig::Product(ProductQuantization { product }) => {
-                let bucket_size = QuantizedVectors::get_bucket_size(product.compression);
-                let size = encoded_vectors_pq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bucket_size,
-                );
                 if QuantizedVectors::is_ram(product.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsPQ::load(
                         fs,
@@ -233,12 +208,6 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 }
             }
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                // Multi-vector binary storage uses `u8` words (see `BinaryRamMulti`/
-                // `BinaryMmapMulti`), unlike the single-vector `u128` storage.
-                let size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
-                    config.vector_parameters.dim,
-                    QuantizedVectors::convert_binary_encoding(binary.encoding),
-                );
                 if !config.storage_type.is_immutable() {
                     let inner = EncodedVectorsBin::load(
                         fs,
@@ -273,13 +242,6 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                 }
             }
             QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
-                let bits = QuantizedVectors::convert_tq_bits(turbo.bits.unwrap_or_default());
-                let mode = TQMode::Plus;
-                let size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 if !config.storage_type.is_immutable() {
                     let inner = EncodedVectorsTQ::load(
                         fs,

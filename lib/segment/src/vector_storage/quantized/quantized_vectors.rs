@@ -26,8 +26,9 @@ pub use self::storage::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::types::{
-    BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, CompressionRatio, Distance,
-    QuantizationConfig, ScalarType, TurboQuantBitSize, VectorStorageDatatype,
+    BinaryQuantization, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding,
+    CompressionRatio, Distance, ProductQuantization, QuantizationConfig, ScalarType,
+    TurboQuantBitSize, TurboQuantization, VectorStorageDatatype,
 };
 use crate::vector_storage::RawScorer;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
@@ -219,8 +220,70 @@ impl QuantizedVectors {
         }
     }
 
+    /// Size in bytes of a single quantized vector on disk.
+    ///
+    /// Single source of truth for the on-disk stride, shared by the create, load and
+    /// read-only-open paths so they cannot disagree about how the data is laid out.
+    /// `is_multi` selects the multi-vector layout — notably binary quantization packs
+    /// multi-vector storage into `u8` words but single-vector storage into `u128`.
+    pub(in crate::vector_storage::quantized) fn quantized_vector_size(
+        quantization_config: &QuantizationConfig,
+        vector_parameters: &quantization::VectorParameters,
+        is_multi: bool,
+    ) -> usize {
+        match quantization_config {
+            QuantizationConfig::Scalar(_) => {
+                quantization::encoded_vectors_u8::get_quantized_vector_size(vector_parameters)
+            }
+            QuantizationConfig::Product(ProductQuantization { product }) => {
+                let bucket_size = Self::get_bucket_size(product.compression);
+                quantization::encoded_vectors_pq::get_quantized_vector_size(
+                    vector_parameters,
+                    bucket_size,
+                )
+            }
+            QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+                let encoding = Self::convert_binary_encoding(binary.encoding);
+                if is_multi {
+                    quantization::encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
+                        vector_parameters.dim,
+                        encoding,
+                    )
+                } else {
+                    quantization::encoded_vectors_binary::get_quantized_vector_size_from_params::<
+                        u128,
+                    >(vector_parameters.dim, encoding)
+                }
+            }
+            QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
+                let bits = Self::convert_tq_bits(turbo.bits.unwrap_or_default());
+                quantization::encoded_vectors_tq::get_quantized_vector_size(
+                    vector_parameters,
+                    bits,
+                    quantization::turboquant::TQMode::Plus,
+                )
+            }
+        }
+    }
+
     pub fn get_storage(&self) -> &QuantizedVectorStorage {
         &self.storage_impl
+    }
+}
+
+impl QuantizedVectorsConfig {
+    /// Size in bytes of a single quantized vector on disk, for this config.
+    ///
+    /// See [`QuantizedVectors::quantized_vector_size`].
+    pub(in crate::vector_storage::quantized) fn quantized_vector_size(
+        &self,
+        is_multi: bool,
+    ) -> usize {
+        QuantizedVectors::quantized_vector_size(
+            &self.quantization_config,
+            &self.vector_parameters,
+            is_multi,
+        )
     }
 }
 

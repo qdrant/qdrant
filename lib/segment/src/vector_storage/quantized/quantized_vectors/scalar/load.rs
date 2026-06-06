@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use common::universal_io::{MmapFile, MmapFs};
-use quantization::encoded_vectors_u8;
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
 
 use super::super::{QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsConfig};
@@ -33,9 +32,8 @@ impl QuantizedVectors {
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
+        let quantized_vector_size = config.quantized_vector_size(false);
         if Self::is_ram(scalar_config.always_ram, on_disk_vector_storage) {
-            let quantized_vector_size =
-                encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
             let quantized_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
                 &READ_FS,
                 data_path.as_path(),
@@ -47,8 +45,6 @@ impl QuantizedVectors {
                 &meta_path,
             )?))
         } else {
-            let quantized_vector_size =
-                encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
             let quantized_vectors_storage =
                 QuantizedStorage::from_file(&READ_FS, data_path.as_path(), quantized_vector_size)?;
             Ok(QuantizedVectorStorage::ScalarMmap(EncodedVectorsU8::load(
@@ -76,9 +72,8 @@ impl QuantizedVectors {
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         let offsets_path = Self::get_offsets_path(path, config.storage_type);
+        let quantized_vector_size = config.quantized_vector_size(true);
         if Self::is_ram(scalar_config.always_ram, on_disk_vector_storage) {
-            let quantized_vector_size =
-                encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
             let inner_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
                 &READ_FS,
                 data_path.as_path(),
@@ -96,8 +91,6 @@ impl QuantizedVectors {
                 ),
             ))
         } else {
-            let quantized_vector_size =
-                encoded_vectors_u8::get_quantized_vector_size(&config.vector_parameters);
             let inner_vectors_storage =
                 QuantizedStorage::from_file(&READ_FS, data_path.as_path(), quantized_vector_size)?;
             let inner_vectors_storage =

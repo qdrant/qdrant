@@ -1,9 +1,7 @@
 use std::path::Path;
 
 use common::universal_io::{MmapFile, MmapFs};
-use quantization::encoded_vectors_tq;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
-use quantization::turboquant::TQMode;
 
 use super::super::{
     QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
@@ -29,21 +27,14 @@ impl QuantizedVectors {
         config: &QuantizedVectorsConfig,
         turbo_config: &TurboQuantQuantizationConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
-        let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = TQMode::Plus;
-
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         let in_ram = Self::is_ram(turbo_config.always_ram, on_disk_vector_storage);
+        let quantized_vector_size = config.quantized_vector_size(false);
 
         match (in_ram, config.storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
-                let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 let quantization_storage = QuantizedChunkedMmapStorage::new(
                     data_path.as_path(),
                     quantized_vector_size,
@@ -54,11 +45,6 @@ impl QuantizedVectors {
                 ))
             }
             (true, QuantizedVectorsStorageType::Immutable) => {
-                let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 let quantized_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
                     &READ_FS,
                     data_path.as_path(),
@@ -71,11 +57,6 @@ impl QuantizedVectors {
                 )?))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
-                let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 let quantized_vectors_storage = QuantizedStorage::from_file(
                     &READ_FS,
                     data_path.as_path(),
@@ -97,22 +78,15 @@ impl QuantizedVectors {
         turbo_config: &TurboQuantQuantizationConfig,
         multivector_config: &MultiVectorConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
-        let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = TQMode::Plus;
-
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         let offsets_path = Self::get_offsets_path(path, config.storage_type);
         let in_ram = Self::is_ram(turbo_config.always_ram, on_disk_vector_storage);
+        let quantized_vector_size = config.quantized_vector_size(true);
 
         match (in_ram, config.storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
-                let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 let quantization_storage = QuantizedChunkedMmapStorage::new(
                     data_path.as_path(),
                     quantized_vector_size,
@@ -133,11 +107,6 @@ impl QuantizedVectors {
                 ))
             }
             (true, QuantizedVectorsStorageType::Immutable) => {
-                let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 let inner_vectors_storage = QuantizedRamStorage::from_file::<MmapFile>(
                     &READ_FS,
                     data_path.as_path(),
@@ -156,11 +125,6 @@ impl QuantizedVectors {
                 ))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
-                let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
                 let inner_vectors_storage = QuantizedStorage::from_file(
                     &READ_FS,
                     data_path.as_path(),
