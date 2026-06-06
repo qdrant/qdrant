@@ -109,3 +109,125 @@ jobs:
       - name: Check for uncommitted changes
         if: always()
         run: git diff --exit-code
+
+  # Cheap guard: the native SDK version is single-sourced in lib/edge/VERSION;
+  # the FFI crate and the Gradle module must agree with it. Catches a forgotten
+  # bump in one place (the I-VERSION class of drift).
+  version-sync:
+    name: Check native SDK version is single-sourced
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Verify versions match lib/edge/VERSION
+        run: |
+          version="$(tr -d '[:space:]' < lib/edge/VERSION)"
+          echo "lib/edge/VERSION = $version"
+
+          ffi_version="$(grep -m1 '^version' lib/edge/ffi/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          gradle_version="$(grep -m1 '^VERSION_NAME' lib/edge/android/gradle.properties | cut -d= -f2 | tr -d '[:space:]')"
+
+          fail=0
+          if [ "$ffi_version" != "$version" ]; then
+            echo "::error file=lib/edge/ffi/Cargo.toml::version ($ffi_version) != lib/edge/VERSION ($version)"
+            fail=1
+          fi
+          if [ "$gradle_version" != "$version" ]; then
+            echo "::error file=lib/edge/android/gradle.properties::VERSION_NAME ($gradle_version) != lib/edge/VERSION ($version)"
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] && echo "All native SDK versions agree: $version"
+          exit $fail
+
+  # Build the XCFramework and run the Swift XCTest suite against the generated
+  # bindings — the only layer that catches a UniFFI binding-generation
+  # regression for Swift. Heavy (XCFramework build), so push-only.
+  swift-test:
+    name: Swift binding tests (macOS)
+    if: github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Rust nightly (tier-3 targets need rust-src)
+        uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
+        with:
+          components: rust-src
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+
+      - name: Add Apple targets
+        run: |
+          rustup target add \
+            aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios \
+            aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Build XCFramework + run Swift tests
+        working-directory: lib/edge/swift
+        # `make test` builds the XCFramework (debug, iOS+macOS) then `swift test`.
+        run: make test
+
+  # Build the AAR and run the Android instrumented test on an emulator — the
+  # only layer that catches a UniFFI binding regression for Kotlin/JNI. Heavy
+  # (NDK cross-build + emulator), so push-only.
+  android-test:
+    name: Android instrumented tests (emulator)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+
+      - name: Add Android targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version ^3.5 --locked
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+
+      - name: Install NDK
+        run: |
+          sdkmanager --install "ndk;27.0.12077973"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Build native libs + Kotlin bindings (debug)
+        working-directory: lib/edge/android
+        run: ./build-aar.sh --debug
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run instrumented tests on emulator
+        uses: reactivecircus/android-emulator-runner@1dcd0090116d15e7c562f8db72807de5e036a4ed # v2.34.0
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          working-directory: lib/edge/android
+          # connectedAndroidTest builds the debug AAR + test APK and runs the
+          # instrumented tests (real JNI → .so → UniFFI path) on the emulator.
+          script: ./gradlew :qdrant-edge-ffi:connectedDebugAndroidTest

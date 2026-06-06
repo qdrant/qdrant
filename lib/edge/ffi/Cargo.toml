@@ -1,6 +1,10 @@
 [package]
 name = "qdrant-edge-ffi"
-version = "0.1.0"
+# Single source of truth for the native (Swift/Kotlin) SDK version is
+# `lib/edge/VERSION`. Keep this in sync with it; CI verifies they match (and
+# that the published Edge line in `lib/edge/python/Cargo.toml` agrees). Bump
+# `lib/edge/VERSION`, then this, the Gradle `VERSION_NAME`, and the Swift tag.
+version = "0.7.2"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
