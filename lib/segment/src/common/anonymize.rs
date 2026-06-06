@@ -105,7 +105,7 @@ where
 {
     collection_opt
         .as_ref()
-        .map(|c| anonymize_collection_values(c))
+        .map(|c| anonymize_collection_values::<C, K, V>(c))
 }
 
 impl Anonymize for String {
