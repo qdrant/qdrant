@@ -183,6 +183,24 @@ fn get_sparse_vector_config_or_error<'a>(
         .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))
 }
 
+fn check_dense_values_finite(vector: &[f32]) -> OperationResult<()> {
+    if let Some(index) = vector.iter().position(|value| !value.is_finite()) {
+        return Err(OperationError::validation_error(format!(
+            "Vector contains non-finite value at index {index}"
+        )));
+    }
+    Ok(())
+}
+
+fn check_sparse_values_finite(values: &[f32]) -> OperationResult<()> {
+    if let Some(index) = values.iter().position(|value| !value.is_finite()) {
+        return Err(OperationError::validation_error(format!(
+            "Sparse vector contains non-finite value at index {index}"
+        )));
+    }
+    Ok(())
+}
+
 /// Check if the given dense vector data is compatible with the given configuration.
 ///
 /// Returns an error if incompatible.
@@ -200,7 +218,7 @@ fn check_vector_against_config(
                     received_dim: vector.len(),
                 });
             }
-            Ok(())
+            check_dense_values_finite(vector)
         }
         VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
         VectorRef::MultiDense(multi_vector) => {
@@ -213,6 +231,7 @@ fn check_vector_against_config(
                         received_dim: vector.len(),
                     });
                 }
+                check_dense_values_finite(vector)?;
             }
             Ok(())
         }
@@ -225,8 +244,53 @@ fn check_sparse_vector_against_config(
 ) -> OperationResult<()> {
     match vector {
         VectorRef::Dense(_) => Err(OperationError::WrongSparse),
-        VectorRef::Sparse(_vector) => Ok(()), // TODO(sparse) check vector by config
+        VectorRef::Sparse(vector) => check_sparse_values_finite(&vector.values),
         VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::data_types::vectors::VectorRef;
+    use crate::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
+
+    use super::*;
+
+    #[test]
+    fn rejects_non_finite_dense_vector() {
+        let config = VectorDataConfig {
+            size: 3,
+            distance: Distance::Cosine,
+            storage_type: VectorStorageType::Memory,
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        };
+        let vector = vec![1.0, f32::NAN, 1.0];
+        let err = check_vector_against_config(VectorRef::Dense(&vector), &config).unwrap_err();
+        assert!(matches!(err, OperationError::ValidationError { .. }));
+    }
+
+    #[test]
+    fn rejects_non_finite_sparse_vector() {
+        use crate::index::sparse_index::sparse_index_config::{
+            SparseIndexConfig, SparseIndexType,
+        };
+        use crate::types::{SparseVectorDataConfig, SparseVectorStorageType};
+
+        let vector = sparse::common::sparse_vector::SparseVector {
+            indices: vec![0, 1],
+            values: vec![1.0, f32::INFINITY],
+        };
+        let config = SparseVectorDataConfig {
+            index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
+            storage_type: SparseVectorStorageType::OnDisk,
+            modifier: None,
+        };
+        let err = check_sparse_vector_against_config(VectorRef::Sparse(&vector), &config)
+            .unwrap_err();
+        assert!(matches!(err, OperationError::ValidationError { .. }));
     }
 }
 

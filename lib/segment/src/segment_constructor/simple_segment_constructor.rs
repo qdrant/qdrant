@@ -159,6 +159,13 @@ mod tests {
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
+        let nan_vec = vec![f32::NAN, 0.0, 1.0, 1.0];
+        match segment.upsert_point(1, 121.into(), only_default_vector(&nan_vec), &hw_counter) {
+            Err(OperationError::ValidationError { .. }) => (),
+            Err(_) => panic!("Wrong error"),
+            Ok(_) => panic!("Operation with non-finite vector should fail"),
+        };
+
         segment
             .upsert_point(2, 1.into(), only_default_vector(&vec1), &hw_counter)
             .unwrap();
