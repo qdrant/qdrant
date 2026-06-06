@@ -39,6 +39,13 @@ import tech.qdrant.edge.*
 val shard = EdgeShard.load(path = dataDir, config = config)
 ```
 
+> **Note:** the `tech.qdrant.edge.*` facade re-exports every public type via a
+> `typealias`, but a `typealias` cannot re-export **sealed-class variants**. To
+> construct one — e.g. `PointId.NumId(1u)`, `Vector.Single(...)`,
+> `Query.Nearest(...)`, `Match.Value(...)` — also add `import
+> tech.qdrant.edge.ffi.*`. (The variants are identical types; only the
+> constructor reference needs the `ffi` import.)
+
 ### As a Gradle composite build
 
 ```kotlin

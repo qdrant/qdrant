@@ -646,17 +646,41 @@ pub struct EdgeConfig {
     pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
 }
 
+/// Inclusive bounds for a dense vector's dimensionality, mirroring the server's
+/// `#[validate(range(min = 1, max = 65536))]` on `VectorParams.size`
+/// (`segment::data_types::vector_name_config`). The FFI `From<VectorDataConfig>`
+/// path builds a `SegmentVectorDataConfig` directly and so bypasses that
+/// validator — we re-apply the same bound here.
+const MIN_VECTOR_SIZE: u64 = 1;
+const MAX_VECTOR_SIZE: u64 = 65_536;
+
 impl EdgeConfig {
-    /// Reject quantization strategies that the Edge engine cannot apply, so a
-    /// host gets a catchable error instead of silently-ignored config.
+    /// Reject host config the Edge engine cannot honor, so a host gets a
+    /// catchable `InvalidArgument` instead of silently-ignored config or an
+    /// uncatchable engine crash. Called from `load` before any conversion.
     ///
-    /// Edge only ever creates *appendable* segments, and appendable segments
-    /// support only `Binary` quantization in v1 (`Scalar`/`Product` are dropped
-    /// by the engine's `for_appendable_segment` filter). Accepting them would
-    /// be a false capability: the host would set `Scalar`, get no error, and
-    /// silently store full-precision vectors. Reject them up front instead.
-    pub(crate) fn validate_quantization(&self) -> crate::error::Result<()> {
+    /// Two checks, both per dense vector field:
+    ///
+    /// 1. **Dimensionality** must be in `1..=65536`. A `size` of `0` would flow
+    ///    into the engine and panic/abort (uncatchable) rather than surfacing a
+    ///    clean error; a huge `size` would request an enormous allocation. The
+    ///    server validates this range on its own deserialization path, but the
+    ///    FFI `From<VectorDataConfig>` path bypasses that validator.
+    /// 2. **Quantization** must be `Binary` or none. Edge only ever creates
+    ///    *appendable* segments, which support only `Binary` quantization in v1
+    ///    (`Scalar`/`Product` are dropped by the engine's
+    ///    `for_appendable_segment` filter). Accepting them would be a false
+    ///    capability: the host would set `Scalar`, get no error, and silently
+    ///    store full-precision vectors. Reject them up front instead.
+    pub(crate) fn validate(&self) -> crate::error::Result<()> {
         for (name, vd) in &self.vector_data {
+            if vd.size < MIN_VECTOR_SIZE || vd.size > MAX_VECTOR_SIZE {
+                return Err(crate::error::EdgeError::invalid_argument(format!(
+                    "vector field {name:?}: size {} is out of range \
+                     {MIN_VECTOR_SIZE}..={MAX_VECTOR_SIZE}",
+                    vd.size
+                )));
+            }
             match &vd.quantization_config {
                 Some(QuantizationConfig::Scalar { .. }) => {
                     return Err(crate::error::EdgeError::invalid_argument(format!(

@@ -64,7 +64,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError)
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError)
     /// if any point's `payload` field is not valid JSON or any UUID ID is
     /// malformed.
     #[uniffi::constructor]
@@ -88,7 +88,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// any UUID ID is malformed.
     #[uniffi::constructor]
     pub fn delete_points(
@@ -110,7 +110,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// the filter contains an invalid payload key or geo coordinate.
     #[uniffi::constructor]
     pub fn delete_points_by_filter(
@@ -132,7 +132,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// any UUID ID is malformed.
     #[uniffi::constructor]
     pub fn update_vectors(
@@ -164,7 +164,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// any UUID ID is malformed.
     #[uniffi::constructor]
     pub fn delete_vectors(
@@ -190,7 +190,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// `payload_json` is not a valid JSON object string.
     #[uniffi::constructor]
     pub fn set_payload(
@@ -222,7 +222,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// any UUID ID is malformed or any payload key is not a valid JSON-path.
     #[uniffi::constructor]
     pub fn delete_payload(
@@ -254,7 +254,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// any UUID ID is malformed.
     #[uniffi::constructor]
     pub fn clear_payload(

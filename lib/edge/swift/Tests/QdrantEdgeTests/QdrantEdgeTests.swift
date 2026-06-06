@@ -6,11 +6,12 @@ final class QdrantEdgeTests: XCTestCase {
     // Base temp directory unique per test run, cleaned up in tearDown
     private var testDir: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
         testDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("QdrantEdgeTests-\(UUID().uuidString)")
-        try! FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
+        // `try` (not `try!`): a temp-dir creation failure fails THIS test
+        // cleanly instead of crashing the whole test runner.
+        try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
     }
 
     override func tearDown() {

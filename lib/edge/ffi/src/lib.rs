@@ -81,10 +81,11 @@ impl EdgeShard {
     /// `config` was supplied.
     #[uniffi::constructor]
     pub fn load(path: String, config: Option<EdgeConfig>) -> Result<Arc<Self>> {
-        // Reject quantization strategies Edge can't apply, before conversion —
-        // otherwise Scalar/Product would be silently dropped (false capability).
+        // Reject config Edge can't honor (out-of-range vector size, unsupported
+        // quantization), before conversion — otherwise size=0 would crash the
+        // engine and Scalar/Product would be silently dropped (false capability).
         if let Some(cfg) = &config {
-            cfg.validate_quantization()?;
+            cfg.validate()?;
         }
         // The FFI `EdgeConfig` is the simplified surface (vectors + sparse);
         // we hydrate it into the richer `edge::EdgeConfig` via SegmentConfig.

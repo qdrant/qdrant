@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
-use qdrant_edge_ffi::query::{CountRequest, ScrollRequest};
+use qdrant_edge_ffi::query::{CountRequest, Query, ScrollRequest, SearchRequest};
 use qdrant_edge_ffi::types::{PointId, Vector, Point, WithPayload, WithVector};
 use qdrant_edge_ffi::update::UpdateOperation;
 use qdrant_edge_ffi::EdgeShard;
@@ -331,8 +331,8 @@ fn retrieve_missing_ids_omitted() {
 /// only `Binary` quantization in v1. `Scalar`/`Product` are silently dropped by
 /// the engine's `for_appendable_segment` filter, so a host that asked for them
 /// would believe its vectors are quantized while they are stored full-precision.
-/// `EdgeConfig::validate_quantization` (called from `load`) must reject them as a
-/// catchable `InvalidArgument` instead of accepting a false capability.
+/// `EdgeConfig::validate` (called from `load`) must reject them as a catchable
+/// `InvalidArgument` instead of accepting a false capability.
 #[test]
 fn unsupported_quantization_rejected_at_load() {
     use qdrant_edge_ffi::config::{QuantizationConfig, ScalarQuantizationParams, ScalarType};
@@ -433,4 +433,326 @@ fn oversized_limit_rejected_not_allocated() {
         })
         .expect("scroll with a sane limit should succeed after a rejected one");
     assert_eq!(ok.records.len(), 3, "all three points should scroll back");
+}
+
+// ── Test 9: delete_then_reload_reduces_count ──────────────────────────────────
+
+/// Core DB invariant: a delete must persist. Upsert three, delete one, flush,
+/// reload from disk, and confirm the deleted point is gone (count drops to 2 and
+/// retrieving its ID returns nothing). Until now only additive writes were
+/// covered; this exercises the delete path end-to-end through the FFI.
+#[test]
+fn delete_then_reload_reduces_count() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+
+    {
+        let shard: Arc<EdgeShard> =
+            EdgeShard::load(path.clone(), Some(make_config())).expect("load failed");
+        upsert_three(&shard);
+
+        let op = UpdateOperation::delete_points(vec![PointId::NumId { value: 2 }])
+            .expect("delete_points failed");
+        shard.update(op).expect("delete update failed");
+        shard.flush().expect("flush failed");
+    } // drop closes the shard
+
+    let reloaded: Arc<EdgeShard> =
+        EdgeShard::load(path, None).expect("reload after delete failed");
+
+    let count = reloaded
+        .count(CountRequest { filter: None, exact: true })
+        .expect("count failed");
+    assert_eq!(count, 2, "deleted point must not survive reload");
+
+    let got = reloaded
+        .retrieve(vec![PointId::NumId { value: 2 }], None, None)
+        .expect("retrieve failed");
+    assert!(got.is_empty(), "deleted ID 2 must not be retrievable");
+}
+
+// ── Test 10: search_returns_ranked_results ────────────────────────────────────
+
+/// The search path through the FFI was never exercised by an integration test.
+/// Upsert three points and rank them under Dot distance against a known query.
+///
+/// Dot is the *raw* (unnormalized) dot product, so magnitude matters. The
+/// hand-computed scores for query `[0.1,0.2,0.3,0.4]` are: ID 1
+/// `[0.1,0.2,0.3,0.4]` → 0.30, ID 2 `[0.4,0.3,0.2,0.1]` → 0.20, ID 3
+/// `[0.5,0.5,0.5,0.5]` → 0.50 (largest magnitude wins under Dot). So the
+/// expected ranking is `[3, 1, 2]`, NOT "same-direction-first". This asserts the
+/// real ranking, the descending order, and ID 3's exact score.
+#[test]
+fn search_returns_ranked_results() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let results = shard
+        .search(SearchRequest {
+            query: Query::Nearest {
+                vector: vec![0.1, 0.2, 0.3, 0.4],
+                using: Some("vec".to_string()),
+            },
+            limit: 3,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .expect("search failed");
+
+    assert_eq!(results.len(), 3, "expected all three points ranked");
+
+    let ranked_ids: Vec<u64> = results
+        .iter()
+        .map(|r| match &r.id {
+            PointId::NumId { value } => *value,
+            PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ranked_ids,
+        vec![3, 1, 2],
+        "Dot-distance ranking should be [3, 1, 2] by raw dot product"
+    );
+
+    // Dot distance: higher score = nearer, so results must be non-increasing.
+    assert!(
+        results[0].score >= results[1].score && results[1].score >= results[2].score,
+        "scores must be in descending order, got {:?}",
+        results.iter().map(|r| r.score).collect::<Vec<_>>()
+    );
+    // Top hit (ID 3) has the largest dot product, 0.50.
+    assert!(
+        (results[0].score - 0.50).abs() < 1e-5,
+        "top hit's Dot score should be ~0.50, got {}",
+        results[0].score
+    );
+}
+
+// ── Test 11: set_payload_visible_after_retrieve ───────────────────────────────
+
+/// `set_payload` is the primary mutation beyond `upsert`, and was untested.
+/// Upsert a point, set a new payload key on it, and confirm the key is visible
+/// on retrieve.
+#[test]
+fn set_payload_visible_after_retrieve() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let op = UpdateOperation::set_payload(
+        vec![PointId::NumId { value: 1 }],
+        r#"{"tag":"hot"}"#.to_string(),
+    )
+    .expect("set_payload failed");
+    shard.update(op).expect("set_payload update failed");
+
+    let got = shard
+        .retrieve(
+            vec![PointId::NumId { value: 1 }],
+            Some(WithPayload::Bool { enable: true }),
+            None,
+        )
+        .expect("retrieve failed");
+
+    assert_eq!(got.len(), 1, "expected the one point back");
+    let payload = got[0]
+        .payload
+        .as_deref()
+        .expect("payload should be present after set_payload");
+    let value: serde_json::Value =
+        serde_json::from_str(payload).expect("payload should be valid JSON");
+    assert_eq!(
+        value.get("tag").and_then(|v| v.as_str()),
+        Some("hot"),
+        "set_payload key must be visible on retrieve, got {payload}"
+    );
+    // The original upsert payload must survive the merge (set_payload merges).
+    assert_eq!(
+        value.get("title").and_then(|v| v.as_str()),
+        Some("point one"),
+        "set_payload must merge, not replace; original key lost: {payload}"
+    );
+}
+
+// ── Test 12: product_quantization_rejected_at_load ────────────────────────────
+
+/// C-Quant regression (Product arm): like Scalar, Product quantization is not
+/// supported on Edge's appendable segments and must be rejected at `load`.
+/// Guards the `Product` branch of `EdgeConfig::validate` against removal.
+#[test]
+fn product_quantization_rejected_at_load() {
+    use qdrant_edge_ffi::config::{
+        CompressionRatio, ProductQuantizationParams, QuantizationConfig,
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+
+    let config = EdgeConfig {
+        vector_data: HashMap::from([(
+            "vec".to_string(),
+            VectorDataConfig {
+                size: 4,
+                distance: Distance::Dot,
+                quantization_config: Some(QuantizationConfig::Product {
+                    config: ProductQuantizationParams {
+                        compression: CompressionRatio::X16,
+                        always_ram: Some(true),
+                    },
+                }),
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    };
+
+    #[allow(clippy::err_expect)]
+    let err = EdgeShard::load(path, Some(config))
+        .err()
+        .expect("load with Product quantization should fail, not silently drop it");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for Product quantization, got {err:?}"
+    );
+}
+
+// ── Test 13: binary_quantization_accepted_at_load ─────────────────────────────
+
+/// C-Quant positive case: Binary quantization IS supported on appendable
+/// segments, so `validate` must NOT reject it. Guards against over-rejection
+/// (someone accidentally narrowing the allow-arm).
+#[test]
+fn binary_quantization_accepted_at_load() {
+    use qdrant_edge_ffi::config::{BinaryQuantizationParams, QuantizationConfig};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+
+    let config = EdgeConfig {
+        vector_data: HashMap::from([(
+            "vec".to_string(),
+            VectorDataConfig {
+                size: 4,
+                distance: Distance::Dot,
+                quantization_config: Some(QuantizationConfig::Binary {
+                    config: BinaryQuantizationParams {
+                        always_ram: Some(true),
+                        encoding: None,
+                        query_encoding: None,
+                    },
+                }),
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    };
+
+    let shard = EdgeShard::load(path, Some(config));
+    assert!(
+        shard.is_ok(),
+        "Binary quantization must be accepted at load, got {:?}",
+        shard.err()
+    );
+}
+
+// ── Test 14: zero_vector_size_rejected_at_load ────────────────────────────────
+
+/// A `size` of 0 (or above 65536) would flow into the engine and crash
+/// uncatchably instead of surfacing a clean error. `EdgeConfig::validate` must
+/// reject out-of-range dimensionality as `InvalidArgument` at `load`.
+#[test]
+fn zero_vector_size_rejected_at_load() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+
+    let mut config = make_config();
+    config
+        .vector_data
+        .get_mut("vec")
+        .expect("vec field exists")
+        .size = 0;
+
+    #[allow(clippy::err_expect)]
+    let err = EdgeShard::load(path, Some(config))
+        .err()
+        .expect("load with size=0 should be rejected, not crash the engine");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for size=0, got {err:?}"
+    );
+}
+
+// ── Test 15: oversized_search_and_query_limits_rejected ───────────────────────
+
+/// C7 regression coverage for the request types beyond `scroll`: a huge `limit`
+/// on `search` and `query` must also be rejected at the FFI boundary (each goes
+/// through `bounded_limit`). Guards against a future refactor that forgets the
+/// cap on one of these paths.
+#[test]
+fn oversized_search_and_query_limits_rejected() {
+    use qdrant_edge_ffi::query::{QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    #[allow(clippy::err_expect)]
+    let search_err = shard
+        .search(SearchRequest {
+            query: Query::Nearest {
+                vector: vec![0.1, 0.2, 0.3, 0.4],
+                using: Some("vec".to_string()),
+            },
+            limit: u64::MAX,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .err()
+        .expect("search with u64::MAX limit should be rejected");
+    assert!(
+        matches!(search_err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for oversized search limit, got {search_err:?}"
+    );
+
+    #[allow(clippy::err_expect)]
+    let query_err = shard
+        .query(QueryRequest {
+            prefetches: Vec::new(),
+            query: Some(ScoringQuery::Vector {
+                query: Query::Nearest {
+                    vector: vec![0.1, 0.2, 0.3, 0.4],
+                    using: Some("vec".to_string()),
+                },
+            }),
+            limit: u64::MAX,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .err()
+        .expect("query with u64::MAX limit should be rejected");
+    assert!(
+        matches!(query_err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for oversized query limit, got {query_err:?}"
+    );
 }
