@@ -22,7 +22,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::chunked_vectors::{ChunkedVectors, ChunkedVectorsRead};
 
 #[derive(
     Copy,
@@ -420,6 +420,88 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     fn heap_size_bytes(&self) -> usize {
         let Self { data: _ } = self;
         0
+    }
+}
+
+/// Read-only counterpart of [`MultivectorOffsetsStorageChunkedMmap`], generic over
+/// the [`UniversalRead`] backend `S`.
+pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
+    data: ChunkedVectorsRead<MultivectorOffset, S>,
+}
+
+impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
+    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
+        let data = ChunkedVectorsRead::open(fs, path, 1, AdviceSetting::Global, None)?;
+        Ok(Self { data })
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.data.populate()
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.data.clear_cache()
+    }
+}
+
+impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedRead<S> {
+    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+        self.data
+            .get::<Random>(idx as VectorOffsetType)
+            .and_then(|offsets| offsets.first().copied())
+            .unwrap_or_default()
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        let point_offsets = ids
+            .iter()
+            .enumerate()
+            .map(|(idx, &point_offset)| (idx, point_offset, 1));
+
+        self.data
+            .iter_vectors::<Random, _>(point_offsets)
+            .map(|(idx, multi_offset)| {
+                let &[multi_offset] = multi_offset.as_ref() else {
+                    unreachable!("multi-vector offsets are stored as vectors of length 1");
+                };
+
+                (idx, multi_offset)
+            })
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    fn upsert_offset(
+        &mut self,
+        _id: PointOffsetType,
+        _offset: MultivectorOffset,
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Cannot upsert offset in read-only chunked storage",
+        ))
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        self.data.files()
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.data.immutable_files()
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        self.data.heap_size_bytes()
     }
 }
 

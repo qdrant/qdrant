@@ -12,13 +12,15 @@ use quantization::{
 
 use super::QuantizedVectorsRead;
 use super::storage::QuantizedVectorStorageRead;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::types::{
     BinaryQuantization, Distance, MultiVectorConfig, ProductQuantization, QuantizationConfig,
     ScalarQuantization, TurboQuantization, VectorStorageDatatype,
 };
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsetsStorageMmap, MultivectorOffsetsStorageRam, QuantizedMultivectorStorage,
+    MultivectorOffsetsStorageChunkedRead, MultivectorOffsetsStorageMmap,
+    MultivectorOffsetsStorageRam, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
@@ -31,9 +33,10 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
     ///
     /// Returns `Ok(None)` when no quantization config is present at `path`. Every read —
     /// config, per-method metadata, quantized data and multivector offsets — goes through `S`;
-    /// nothing is read with direct filesystem access and nothing is written. Unlike
-    /// [`QuantizedVectors::load`], this never creates or quantizes anything: only the immutable
-    /// (`Immutable`) on-disk layout is accepted, and the appendable (`Mutable`) layout is rejected.
+    /// nothing is read with direct filesystem access and nothing is written. Both on-disk
+    /// layouts are supported read-only: the immutable flat format and the appendable chunked
+    /// format (the latter only produced by Binary/TurboQuant). Unlike
+    /// [`QuantizedVectors::load`], this never creates or quantizes anything.
     ///
     /// `distance`, `datatype`, `multivector_config` and `on_disk_vector_storage` describe
     /// the original (source) vector storage this quantization was built for.
@@ -51,12 +54,6 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
         let Some(config) = config else {
             return Ok(None);
         };
-
-        if !config.storage_type.is_immutable() {
-            return Err(OperationError::service_error(
-                "Read-only quantized storage does not support the mutable (appendable) layout",
-            ));
-        }
 
         let storage_impl = match multivector_config {
             Some(multivector_config) => Self::open_multi(
@@ -125,7 +122,12 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     config.vector_parameters.dim,
                     QuantizedVectors::convert_binary_encoding(binary.encoding),
                 );
-                if QuantizedVectors::is_ram(binary.always_ram, on_disk_vector_storage) {
+                if !config.storage_type.is_immutable() {
+                    let storage = QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size)?;
+                    Ok(QuantizedVectorStorageRead::BinaryChunked(
+                        EncodedVectorsBin::load(fs, storage, &meta_path)?,
+                    ))
+                } else if QuantizedVectors::is_ram(binary.always_ram, on_disk_vector_storage) {
                     let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::BinaryRam(
                         EncodedVectorsBin::load(fs, storage, &meta_path)?,
@@ -145,7 +147,12 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     bits,
                     mode,
                 );
-                if QuantizedVectors::is_ram(turbo.always_ram, on_disk_vector_storage) {
+                if !config.storage_type.is_immutable() {
+                    let storage = QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size)?;
+                    Ok(QuantizedVectorStorageRead::TQChunked(
+                        EncodedVectorsTQ::load(fs, storage, &meta_path)?,
+                    ))
+                } else if QuantizedVectors::is_ram(turbo.always_ram, on_disk_vector_storage) {
                     let storage = QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?;
                     Ok(QuantizedVectorStorageRead::TQRam(EncodedVectorsTQ::load(
                         fs, storage, &meta_path,
@@ -232,7 +239,18 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     config.vector_parameters.dim,
                     QuantizedVectors::convert_binary_encoding(binary.encoding),
                 );
-                if QuantizedVectors::is_ram(binary.always_ram, on_disk_vector_storage) {
+                if !config.storage_type.is_immutable() {
+                    let inner = EncodedVectorsBin::load(
+                        fs,
+                        QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size)?,
+                        &meta_path,
+                    )?;
+                    let offsets =
+                        MultivectorOffsetsStorageChunkedRead::<S>::open(fs, &offsets_path)?;
+                    Ok(QuantizedVectorStorageRead::BinaryChunkedMulti(
+                        QuantizedMultivectorStorage::new(dim, inner, offsets, *multivector_config),
+                    ))
+                } else if QuantizedVectors::is_ram(binary.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsBin::load(
                         fs,
                         QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?,
@@ -262,7 +280,18 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
                     bits,
                     mode,
                 );
-                if QuantizedVectors::is_ram(turbo.always_ram, on_disk_vector_storage) {
+                if !config.storage_type.is_immutable() {
+                    let inner = EncodedVectorsTQ::load(
+                        fs,
+                        QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size)?,
+                        &meta_path,
+                    )?;
+                    let offsets =
+                        MultivectorOffsetsStorageChunkedRead::<S>::open(fs, &offsets_path)?;
+                    Ok(QuantizedVectorStorageRead::TQChunkedMulti(
+                        QuantizedMultivectorStorage::new(dim, inner, offsets, *multivector_config),
+                    ))
+                } else if QuantizedVectors::is_ram(turbo.always_ram, on_disk_vector_storage) {
                     let inner = EncodedVectorsTQ::load(
                         fs,
                         QuantizedRamStorage::from_file::<S>(fs, &data_path, size)?,

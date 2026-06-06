@@ -12,7 +12,7 @@ use super::QuantizedVectorsRead;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::types::{
     BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
-    ScalarQuantizationConfig,
+    ScalarQuantizationConfig, TurboQuantQuantizationConfig,
 };
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
@@ -73,16 +73,32 @@ fn product_config(always_ram: bool) -> QuantizationConfig {
     .into()
 }
 
+fn turbo_config(always_ram: bool) -> QuantizationConfig {
+    QuantizationConfig::Turbo(crate::types::TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: Some(always_ram),
+            bits: None,
+        },
+    })
+}
+
 /// The read-only [`QuantizedVectorsRead`] opened over the same on-disk data must
 /// produce bit-identical scores to the read-write [`QuantizedVectors`].
 #[rstest]
-#[case::scalar_mmap(scalar_config(false))]
-#[case::scalar_ram(scalar_config(true))]
-#[case::binary_mmap(binary_config(false))]
-#[case::binary_ram(binary_config(true))]
-#[case::product_mmap(product_config(false))]
-#[case::product_ram(product_config(true))]
-fn read_only_matches_read_write(#[case] config: QuantizationConfig) {
+#[case::scalar_mmap(scalar_config(false), QuantizedVectorsStorageType::Immutable)]
+#[case::scalar_ram(scalar_config(true), QuantizedVectorsStorageType::Immutable)]
+#[case::binary_mmap(binary_config(false), QuantizedVectorsStorageType::Immutable)]
+#[case::binary_ram(binary_config(true), QuantizedVectorsStorageType::Immutable)]
+#[case::binary_chunked(binary_config(false), QuantizedVectorsStorageType::Mutable)]
+#[case::product_mmap(product_config(false), QuantizedVectorsStorageType::Immutable)]
+#[case::product_ram(product_config(true), QuantizedVectorsStorageType::Immutable)]
+#[case::turbo_mmap(turbo_config(false), QuantizedVectorsStorageType::Immutable)]
+#[case::turbo_ram(turbo_config(true), QuantizedVectorsStorageType::Immutable)]
+#[case::turbo_chunked(turbo_config(false), QuantizedVectorsStorageType::Mutable)]
+fn read_only_matches_read_write(
+    #[case] config: QuantizationConfig,
+    #[case] storage_type: QuantizedVectorsStorageType,
+) {
     let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();
     let quant_dir = tempfile::Builder::new().prefix("quant").tempdir().unwrap();
     let mut rng = StdRng::seed_from_u64(SEED);
@@ -93,7 +109,7 @@ fn read_only_matches_read_write(#[case] config: QuantizationConfig) {
     let rw = QuantizedVectors::create(
         &storage,
         &config,
-        QuantizedVectorsStorageType::Immutable,
+        storage_type,
         quant_dir.path(),
         1,
         &AtomicBool::new(false),
@@ -142,9 +158,14 @@ fn read_only_matches_read_write(#[case] config: QuantizationConfig) {
 /// Same parity check for multi-vector storages, exercising the `*Multi` variants
 /// and the [`UniversalRead`]-backed multivector offsets loaders.
 #[rstest]
-#[case::scalar_multi(scalar_config(true))]
-#[case::binary_multi(binary_config(true))]
-fn read_only_matches_read_write_multivector(#[case] config: QuantizationConfig) {
+#[case::scalar_multi(scalar_config(true), QuantizedVectorsStorageType::Immutable)]
+#[case::binary_multi(binary_config(true), QuantizedVectorsStorageType::Immutable)]
+#[case::binary_chunked_multi(binary_config(false), QuantizedVectorsStorageType::Mutable)]
+#[case::turbo_chunked_multi(turbo_config(false), QuantizedVectorsStorageType::Mutable)]
+fn read_only_matches_read_write_multivector(
+    #[case] config: QuantizationConfig,
+    #[case] storage_type: QuantizedVectorsStorageType,
+) {
     use crate::fixtures::payload_fixtures::random_multi_vector;
     use crate::types::MultiVectorConfig;
     use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
@@ -170,7 +191,7 @@ fn read_only_matches_read_write_multivector(#[case] config: QuantizationConfig) 
     let rw = QuantizedVectors::create(
         &storage,
         &config,
-        QuantizedVectorsStorageType::Immutable,
+        storage_type,
         quant_dir.path(),
         1,
         &AtomicBool::new(false),

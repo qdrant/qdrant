@@ -16,8 +16,10 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::spaces::metric::Metric;
 use crate::vector_storage::RawScorer;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsetsStorageMmap, MultivectorOffsetsStorageRam, QuantizedMultivectorStorage,
+    MultivectorOffsetsStorageChunkedRead, MultivectorOffsetsStorageMmap,
+    MultivectorOffsetsStorageRam, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
@@ -63,12 +65,23 @@ type TQRamMulti = QuantizedMultivectorStorage<
     MultivectorOffsetsStorageRam,
 >;
 
+// Chunked (appendable) on-disk format, opened read-only. Only Binary and TurboQuant
+// quantization produce this layout; Scalar/PQ are always immutable.
+type BinaryChunkedMulti<S> = QuantizedMultivectorStorage<
+    EncodedVectorsBin<u8, QuantizedChunkedStorageRead<S>>,
+    MultivectorOffsetsStorageChunkedRead<S>,
+>;
+type TQChunkedMulti<S> = QuantizedMultivectorStorage<
+    EncodedVectorsTQ<QuantizedChunkedStorageRead<S>>,
+    MultivectorOffsetsStorageChunkedRead<S>,
+>;
+
 /// Read-only counterpart of [`super::super::QuantizedVectorStorage`].
 ///
-/// Generic over the [`UniversalRead`] backend `S`, it keeps only the immutable
-/// variants: in-RAM (`*Ram`) and read-only mmap (`*Mmap`). The appendable
-/// `*ChunkedMmap` variants — the only ones that can be mutated — are
-/// intentionally absent, so this enum exposes no write path.
+/// Generic over the [`UniversalRead`] backend `S`. It exposes no write path, but
+/// can read every on-disk layout: in-RAM (`*Ram`), read-only mmap (`*Mmap`) and the
+/// appendable chunked layout opened read-only (`*Chunked`, only produced by Binary
+/// and TurboQuant quantization).
 pub enum QuantizedVectorStorageRead<S: UniversalRead = MmapFile> {
     ScalarRam(EncodedVectorsU8<QuantizedRamStorage>),
     ScalarMmap(EncodedVectorsU8<QuantizedStorage<S>>),
@@ -76,16 +89,20 @@ pub enum QuantizedVectorStorageRead<S: UniversalRead = MmapFile> {
     PQMmap(EncodedVectorsPQ<QuantizedStorage<S>>),
     BinaryRam(EncodedVectorsBin<u128, QuantizedRamStorage>),
     BinaryMmap(EncodedVectorsBin<u128, QuantizedStorage<S>>),
+    BinaryChunked(EncodedVectorsBin<u128, QuantizedChunkedStorageRead<S>>),
     TQRam(EncodedVectorsTQ<QuantizedRamStorage>),
     TQMmap(EncodedVectorsTQ<QuantizedStorage<S>>),
+    TQChunked(EncodedVectorsTQ<QuantizedChunkedStorageRead<S>>),
     ScalarRamMulti(ScalarRamMulti),
     ScalarMmapMulti(ScalarMmapMulti<S>),
     PQRamMulti(PQRamMulti),
     PQMmapMulti(PQMmapMulti<S>),
     BinaryRamMulti(BinaryRamMulti),
     BinaryMmapMulti(BinaryMmapMulti<S>),
+    BinaryChunkedMulti(BinaryChunkedMulti<S>),
     TQRamMulti(TQRamMulti),
     TQMmapMulti(TQMmapMulti<S>),
+    TQChunkedMulti(TQChunkedMulti<S>),
 }
 
 impl<S: UniversalRead> fmt::Debug for QuantizedVectorStorageRead<S> {
@@ -113,6 +130,10 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryMmapMulti(q) => q.is_on_disk(),
             QuantizedVectorStorageRead::TQRamMulti(q) => q.is_on_disk(),
             QuantizedVectorStorageRead::TQMmapMulti(q) => q.is_on_disk(),
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.is_on_disk(),
+            QuantizedVectorStorageRead::TQChunked(q) => q.is_on_disk(),
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => q.is_on_disk(),
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => q.is_on_disk(),
         }
     }
 
@@ -135,6 +156,10 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryMmapMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorageRead::TQRamMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorageRead::TQMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.heap_size_bytes(),
+            QuantizedVectorStorageRead::TQChunked(q) => q.heap_size_bytes(),
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => q.heap_size_bytes(),
         }
     }
 
@@ -151,7 +176,9 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryRam(_)
             | QuantizedVectorStorageRead::BinaryMmap(_)
             | QuantizedVectorStorageRead::BinaryRamMulti(_)
-            | QuantizedVectorStorageRead::BinaryMmapMulti(_) => true,
+            | QuantizedVectorStorageRead::BinaryMmapMulti(_)
+            | QuantizedVectorStorageRead::BinaryChunked(_)
+            | QuantizedVectorStorageRead::BinaryChunkedMulti(_) => true,
             QuantizedVectorStorageRead::TQRam(q) => {
                 QuantizedVectors::tq_bits_default_rescoring(q.get_metadata().bits)
             }
@@ -162,6 +189,12 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
                 QuantizedVectors::tq_bits_default_rescoring(q.storage().get_metadata().bits)
             }
             QuantizedVectorStorageRead::TQMmapMulti(q) => {
+                QuantizedVectors::tq_bits_default_rescoring(q.storage().get_metadata().bits)
+            }
+            QuantizedVectorStorageRead::TQChunked(q) => {
+                QuantizedVectors::tq_bits_default_rescoring(q.get_metadata().bits)
+            }
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => {
                 QuantizedVectors::tq_bits_default_rescoring(q.storage().get_metadata().bits)
             }
         }
@@ -178,6 +211,8 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryMmap(q) => Ok(q.layout()),
             QuantizedVectorStorageRead::TQRam(q) => Ok(q.layout()),
             QuantizedVectorStorageRead::TQMmap(q) => Ok(q.layout()),
+            QuantizedVectorStorageRead::BinaryChunked(q) => Ok(q.layout()),
+            QuantizedVectorStorageRead::TQChunked(q) => Ok(q.layout()),
             QuantizedVectorStorageRead::ScalarRamMulti(_)
             | QuantizedVectorStorageRead::ScalarMmapMulti(_)
             | QuantizedVectorStorageRead::PQRamMulti(_)
@@ -185,7 +220,9 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             | QuantizedVectorStorageRead::BinaryRamMulti(_)
             | QuantizedVectorStorageRead::BinaryMmapMulti(_)
             | QuantizedVectorStorageRead::TQRamMulti(_)
-            | QuantizedVectorStorageRead::TQMmapMulti(_) => Err(OperationError::service_error(
+            | QuantizedVectorStorageRead::TQMmapMulti(_)
+            | QuantizedVectorStorageRead::BinaryChunkedMulti(_)
+            | QuantizedVectorStorageRead::TQChunkedMulti(_) => Err(OperationError::service_error(
                 "Cannot get quantized vector layout from multivector storage",
             )),
         }
@@ -201,6 +238,8 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryMmap(q) => q.get_quantized_vector(id),
             QuantizedVectorStorageRead::TQRam(q) => q.get_quantized_vector(id),
             QuantizedVectorStorageRead::TQMmap(q) => q.get_quantized_vector(id),
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.get_quantized_vector(id),
+            QuantizedVectorStorageRead::TQChunked(q) => q.get_quantized_vector(id),
             QuantizedVectorStorageRead::ScalarRamMulti(_)
             | QuantizedVectorStorageRead::ScalarMmapMulti(_)
             | QuantizedVectorStorageRead::PQRamMulti(_)
@@ -208,7 +247,9 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             | QuantizedVectorStorageRead::BinaryRamMulti(_)
             | QuantizedVectorStorageRead::BinaryMmapMulti(_)
             | QuantizedVectorStorageRead::TQRamMulti(_)
-            | QuantizedVectorStorageRead::TQMmapMulti(_) => {
+            | QuantizedVectorStorageRead::TQMmapMulti(_)
+            | QuantizedVectorStorageRead::BinaryChunkedMulti(_)
+            | QuantizedVectorStorageRead::TQChunkedMulti(_) => {
                 panic!("Cannot get quantized vector from multivector storage");
             }
         }
@@ -232,6 +273,10 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryMmapMulti(q) => q.files(),
             QuantizedVectorStorageRead::TQRamMulti(q) => q.files(),
             QuantizedVectorStorageRead::TQMmapMulti(q) => q.files(),
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.files(),
+            QuantizedVectorStorageRead::TQChunked(q) => q.files(),
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => q.files(),
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => q.files(),
         }
     }
 
@@ -253,6 +298,10 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryMmapMulti(q) => q.immutable_files(),
             QuantizedVectorStorageRead::TQRamMulti(q) => q.immutable_files(),
             QuantizedVectorStorageRead::TQMmapMulti(q) => q.immutable_files(),
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.immutable_files(),
+            QuantizedVectorStorageRead::TQChunked(q) => q.immutable_files(),
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => q.immutable_files(),
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => q.immutable_files(),
         }
     }
 
@@ -284,6 +333,16 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             }
             QuantizedVectorStorageRead::TQMmapMulti(q) => {
                 q.storage().storage().populate();
+                q.offsets_storage().populate()?;
+            }
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.storage().populate()?,
+            QuantizedVectorStorageRead::TQChunked(q) => q.storage().populate()?,
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => {
+                q.storage().storage().populate()?;
+                q.offsets_storage().populate()?;
+            }
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => {
+                q.storage().storage().populate()?;
                 q.offsets_storage().populate()?;
             }
         }
@@ -320,6 +379,16 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
                 q.storage().storage().clear_cache();
                 q.offsets_storage().clear_cache()?;
             }
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.storage().clear_cache()?,
+            QuantizedVectorStorageRead::TQChunked(q) => q.storage().clear_cache()?,
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => {
+                q.storage().storage().clear_cache()?;
+                q.offsets_storage().clear_cache()?;
+            }
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => {
+                q.storage().storage().clear_cache()?;
+                q.offsets_storage().clear_cache()?;
+            }
         }
         Ok(())
     }
@@ -342,6 +411,10 @@ impl<S: UniversalRead> QuantizedVectorStorageRead<S> {
             QuantizedVectorStorageRead::BinaryMmapMulti(q) => q.flusher(),
             QuantizedVectorStorageRead::TQRamMulti(q) => q.flusher(),
             QuantizedVectorStorageRead::TQMmapMulti(q) => q.flusher(),
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.flusher(),
+            QuantizedVectorStorageRead::TQChunked(q) => q.flusher(),
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => q.flusher(),
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => q.flusher(),
         }
     }
 }
@@ -404,6 +477,18 @@ impl<S: UniversalRead> QuantizedScorerDispatch for QuantizedVectorStorageRead<S>
             QuantizedVectorStorageRead::TQMmapMulti(q) => {
                 builder.new_multi_quantized_scorer::<TElement, TMetric, _, _>(q)
             }
+            QuantizedVectorStorageRead::BinaryChunked(q) => {
+                builder.new_quantized_scorer::<TElement, TMetric>(q)
+            }
+            QuantizedVectorStorageRead::TQChunked(q) => {
+                builder.new_quantized_scorer::<TElement, TMetric>(q)
+            }
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => {
+                builder.new_multi_quantized_scorer::<TElement, TMetric, _, _>(q)
+            }
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => {
+                builder.new_multi_quantized_scorer::<TElement, TMetric, _, _>(q)
+            }
         }
     }
 
@@ -459,6 +544,18 @@ impl<S: UniversalRead> QuantizedScorerDispatch for QuantizedVectorStorageRead<S>
                 internal_raw_multi_scorer(point_id, q, hardware_counter)
             }
             QuantizedVectorStorageRead::TQMmapMulti(q) => {
+                internal_raw_multi_scorer(point_id, q, hardware_counter)
+            }
+            QuantizedVectorStorageRead::BinaryChunked(q) => {
+                internal_raw_scorer(point_id, q, hardware_counter)
+            }
+            QuantizedVectorStorageRead::TQChunked(q) => {
+                internal_raw_scorer(point_id, q, hardware_counter)
+            }
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => {
+                internal_raw_multi_scorer(point_id, q, hardware_counter)
+            }
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => {
                 internal_raw_multi_scorer(point_id, q, hardware_counter)
             }
         }
