@@ -20,6 +20,7 @@ use crate::index::payload_config::{
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
 use crate::payload_json;
+use crate::payload_storage::PayloadStorageEnum;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
@@ -39,7 +40,7 @@ fn integer_index_match_and_range_use_or_logic() {
         .unwrap();
 
     let payload_storage = std::sync::Arc::new(atomic_refcell::AtomicRefCell::new(
-        payload_storage.into(),
+        PayloadStorageEnum::from(payload_storage),
     ));
     let id_tracker = std::sync::Arc::new(atomic_refcell::AtomicRefCell::new(
         create_id_tracker_fixture(1),

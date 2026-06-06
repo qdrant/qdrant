@@ -86,7 +86,9 @@ impl GroupsAggregator {
             let group = self
                 .groups
                 .entry(group_key.clone())
-                .or_insert_with(|| AHashMap::with_capacity(self.max_group_size));
+                .or_insert_with(|| {
+                    AHashMap::with_capacity(safe_allocation_capacity(self.max_group_size))
+                });
 
             let entry = group.entry(point.id);
 
