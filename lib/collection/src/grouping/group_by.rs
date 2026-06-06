@@ -152,7 +152,7 @@ impl QueryGroupRequest {
         let mut request = self.source.clone();
 
         // Adjust limit to fetch enough points to fill groups
-        request.limit = self.groups * self.group_size;
+        request.limit = self.groups.saturating_mul(self.group_size);
         request.prefetches.iter_mut().for_each(|prefetch| {
             increase_limit_for_group(prefetch, self.group_size);
         });
@@ -544,7 +544,7 @@ fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
 }
 
 fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
-    shard_prefetch.limit *= group_size;
+    shard_prefetch.limit = shard_prefetch.limit.saturating_mul(group_size);
     shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
         increase_limit_for_group(prefetch, group_size);
     });
