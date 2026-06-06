@@ -166,3 +166,56 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
             .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common::universal_io::{MmapFile, MmapFs};
+
+    use super::*;
+    use crate::common::operation_error::OperationError;
+
+    #[test]
+    fn rejects_zero_quantized_vector_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("quantized.bin");
+        fs::write(&path, [1, 2, 3, 4]).unwrap();
+
+        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 0).unwrap_err();
+
+        assert!(matches!(
+            err,
+            OperationError::ServiceError { description, .. }
+                if description == "`quantized_vector_size` must be non-zero"
+        ));
+    }
+
+    #[test]
+    fn rejects_trailing_partial_vector() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("quantized.bin");
+        fs::write(&path, [1, 2, 3, 4, 5]).unwrap();
+
+        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap_err();
+
+        assert!(matches!(
+            err,
+            OperationError::InconsistentStorage { description }
+                if description == "Encoded file size (5) is not a multiple of quantized_vector_size (2)"
+        ));
+    }
+
+    #[test]
+    fn loads_complete_vectors() {
+        use quantization::EncodedStorage;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("quantized.bin");
+        fs::write(&path, [1, 2, 3, 4]).unwrap();
+
+        let storage = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap();
+
+        assert_eq!(storage.vectors_count(), 2);
+        assert_eq!(storage.get_vector_data(0).as_ref(), [1, 2]);
+        assert_eq!(storage.get_vector_data(1).as_ref(), [3, 4]);
+    }
+}
