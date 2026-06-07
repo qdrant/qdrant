@@ -16,6 +16,7 @@ use common::types::PointOffsetType;
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
 use quantization::turboquant::TQBits;
 
+pub(in crate::vector_storage::quantized) use self::config::QuantizedStorageKind;
 pub use self::config::{
     QUANTIZED_APPENDABLE_DATA_PATH, QUANTIZED_APPENDABLE_OFFSETS_PATH, QUANTIZED_CONFIG_PATH,
     QUANTIZED_DATA_PATH, QUANTIZED_META_PATH, QUANTIZED_OFFSETS_PATH, QuantizedVectorsConfig,
@@ -268,22 +269,6 @@ impl QuantizedVectors {
 
     pub fn get_storage(&self) -> &QuantizedVectorStorage {
         &self.storage_impl
-    }
-}
-
-impl QuantizedVectorsConfig {
-    /// Size in bytes of a single quantized vector on disk, for this config.
-    ///
-    /// See [`QuantizedVectors::quantized_vector_size`].
-    pub(in crate::vector_storage::quantized) fn quantized_vector_size(
-        &self,
-        is_multi: bool,
-    ) -> usize {
-        QuantizedVectors::quantized_vector_size(
-            &self.quantization_config,
-            &self.vector_parameters,
-            is_multi,
-        )
     }
 }
 
