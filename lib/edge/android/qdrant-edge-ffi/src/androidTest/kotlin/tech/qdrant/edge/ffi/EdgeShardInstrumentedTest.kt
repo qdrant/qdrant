@@ -412,6 +412,12 @@ class EdgeShardInstrumentedTest {
                 ),
             )
             assertEquals("search after optimize should return all 3 points", 3, results.size)
+
+            // The HNSW config round-trips honestly through config().
+            val hnsw = shard.config().vectorData[""]?.hnswConfig
+            assertTrue("HNSW config should round-trip through config()", hnsw != null)
+            assertEquals("round-tripped HNSW m should match", 16uL, hnsw!!.m)
+            assertEquals("round-tripped HNSW efConstruct should match", 100uL, hnsw.efConstruct)
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }

@@ -344,6 +344,15 @@ final class QdrantEdgeTests: XCTestCase {
             scoreThreshold: nil
         ))
         XCTAssertEqual(results.count, 3, "Search after optimize should return all points")
+
+        // The HNSW config round-trips honestly through config().
+        let readBack = try shard.config()
+        let hnsw = try XCTUnwrap(
+            readBack.vectorData[""]?.hnswConfig,
+            "HNSW config should round-trip through config()"
+        )
+        XCTAssertEqual(hnsw.m, 16, "round-tripped HNSW m should match")
+        XCTAssertEqual(hnsw.efConstruct, 100, "round-tripped HNSW efConstruct should match")
     }
 
     // MARK: - testOversizedHnswParamRejected

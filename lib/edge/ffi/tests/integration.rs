@@ -689,11 +689,19 @@ fn binary_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
     };
 
-    let shard = EdgeShard::load(path, Some(config));
+    let shard = EdgeShard::load(path, Some(config)).expect("Binary quantization must be accepted");
+
+    // config() must honestly reflect the requested quantization (it reads the
+    // rich edge::EdgeConfig, not the lossy plain projection that drops it).
+    let read_back = shard.config().expect("config() failed");
+    let quant = read_back
+        .vector_data
+        .get("vec")
+        .and_then(|vd| vd.quantization_config.as_ref())
+        .expect("Binary quantization should round-trip through config()");
     assert!(
-        shard.is_ok(),
-        "Binary quantization must be accepted at load, got {:?}",
-        shard.err()
+        matches!(quant, QuantizationConfig::Binary { .. }),
+        "config() should report Binary quantization, got {quant:?}"
     );
 }
 
@@ -850,15 +858,21 @@ fn hnsw_config_optimize_and_search() {
         .expect("search after optimize failed");
     assert_eq!(results.len(), 3, "search after optimize should return all points");
 
-    // NOTE: `config()` reads back the *plain* segment config (Edge keeps HNSW in
-    // a separate global field, applied by the optimizer), so the HNSW config is
-    // intentionally not reflected on the per-vector read-back here — surfacing it
-    // would be a separate change to `config()`. The write path is proven above:
-    // the shard loaded with the HNSW config, optimized, and searched correctly.
+    // The HNSW config round-trips through config() (it reads the rich
+    // edge::EdgeConfig, not the lossy plain projection).
     let read_back = shard.config().expect("config() failed");
-    assert!(
-        read_back.vector_data.contains_key("vec"),
-        "config() should still report the vec field after optimize"
+    let vd = read_back
+        .vector_data
+        .get("vec")
+        .expect("config() should report the vec field");
+    let hnsw = vd
+        .hnsw_config
+        .as_ref()
+        .expect("HNSW config should round-trip through config()");
+    assert_eq!(hnsw.m, 16, "round-tripped HNSW m should match what was set");
+    assert_eq!(
+        hnsw.ef_construct, 100,
+        "round-tripped HNSW ef_construct should match what was set"
     );
 }
 

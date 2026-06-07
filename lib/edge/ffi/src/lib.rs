@@ -343,7 +343,11 @@ impl EdgeShard {
     pub fn config(&self) -> Result<EdgeConfig> {
         let guard = self.inner.lock();
         let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
-        Ok(EdgeConfig::from(shard.config().plain_segment_config()))
+        // Read back from the rich `edge::EdgeConfig` (which keeps HNSW and the
+        // requested quantization), NOT `plain_segment_config()` — that lossy
+        // projection hardcodes a plain index and filters quantization, so HNSW
+        // and Scalar/Product would silently vanish from the read-back.
+        Ok(EdgeConfig::from(&*shard.config()))
     }
 }
 

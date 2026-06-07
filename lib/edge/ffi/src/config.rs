@@ -902,3 +902,62 @@ impl From<SegmentConfig> for EdgeConfig {
         }
     }
 }
+
+/// Honest read-back from the engine's rich `edge::EdgeConfig`.
+///
+/// Used by `EdgeShard::config()` instead of the lossy `plain_segment_config()`
+/// projection (which hardcodes a plain index and runs quantization through the
+/// `for_appendable_segment` filter, so HNSW and the originally-requested
+/// quantization would be dropped from the read-back). `edge::EdgeConfig` keeps
+/// HNSW and quantization both per-vector and globally; here we resolve each
+/// field as `per_vector.or(global)`, mirroring how the engine actually applies
+/// them, so `config()` reflects what the host requested.
+impl From<&edge::EdgeConfig> for EdgeConfig {
+    fn from(c: &edge::EdgeConfig) -> Self {
+        let vector_data = c
+            .vectors
+            .iter()
+            .map(|(name, p)| {
+                // Per-vector overrides fall back to the shard-global config.
+                let quant = p
+                    .quantization_config
+                    .clone()
+                    .or_else(|| c.quantization_config.clone())
+                    .and_then(|q| QuantizationConfig::try_from(q).ok());
+                let hnsw = p
+                    .hnsw_config
+                    .unwrap_or(c.hnsw_config)
+                    .into();
+                (
+                    name.clone(),
+                    VectorDataConfig {
+                        size: p.size as u64,
+                        distance: Distance::from(p.distance),
+                        quantization_config: quant,
+                        multivector_config: p.multivector_config.map(MultiVectorConfig::from),
+                        datatype: p.datatype.map(VectorStorageDatatype::from),
+                        hnsw_config: Some(hnsw),
+                    },
+                )
+            })
+            .collect();
+        let sparse_vector_data = c
+            .sparse_vectors
+            .iter()
+            .map(|(name, p)| {
+                (
+                    name.clone(),
+                    SparseVectorDataConfig {
+                        full_scan_threshold: p.full_scan_threshold.map(|v| v as u64),
+                        datatype: p.datatype.map(VectorStorageDatatype::from),
+                        modifier: p.modifier.map(Modifier::from),
+                    },
+                )
+            })
+            .collect();
+        EdgeConfig {
+            vector_data,
+            sparse_vector_data,
+        }
+    }
+}
