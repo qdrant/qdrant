@@ -2,7 +2,6 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::fs::read_json;
-use common::universal_io::{MmapFile, MmapFs};
 use quantization::EncodedVectorsPQ;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
@@ -10,21 +9,18 @@ use quantization::encoded_vectors_u8::EncodedVectorsU8;
 
 use super::{
     QuantizedStorageKind, QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsConfig,
-    QuantizedVectorsStorageType,
+    QuantizedVectorsStorageType, READ_FS, ReadFile,
 };
 use crate::common::operation_error::OperationResult;
 use crate::types::{MultiVectorConfig, QuantizationConfig};
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedMmapStorage;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageMmap,
-    MultivectorOffsetsStorageRam, QuantizedMultivectorStorage,
+    MultivectorOffsetsStorageChunked, MultivectorOffsetsStorageMmap, MultivectorOffsetsStorageRam,
+    QuantizedMultivectorStorage,
 };
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
-
-/// The read-write load path always operates on local files.
-const READ_FS: MmapFs = MmapFs;
 
 impl QuantizedVectors {
     pub fn load(
@@ -105,9 +101,10 @@ impl QuantizedVectors {
 
         // Open the flat (RAM / mmap) or appendable chunked storage selected for this config.
         let ram =
-            || QuantizedRamStorage::from_file::<MmapFile>(&READ_FS, data_path.as_path(), size);
+            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
         let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
-        let chunked = || QuantizedChunkedMmapStorage::new(data_path.as_path(), size, in_ram);
+        let chunked =
+            || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
 
         let storage =
             match config.storage_kind(on_disk_vector_storage)? {
@@ -161,12 +158,14 @@ impl QuantizedVectors {
         // Open the inner quantized storage and the matching offsets storage for the
         // selected backend.
         let ram =
-            || QuantizedRamStorage::from_file::<MmapFile>(&READ_FS, data_path.as_path(), size);
+            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
         let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
-        let chunked = || QuantizedChunkedMmapStorage::new(data_path.as_path(), size, in_ram);
+        let chunked =
+            || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
         let ram_offsets = || MultivectorOffsetsStorageRam::load(&offsets_path);
         let mmap_offsets = || MultivectorOffsetsStorageMmap::load(&offsets_path);
-        let chunked_offsets = || MultivectorOffsetsStorageChunkedMmap::load(&offsets_path, in_ram);
+        let chunked_offsets =
+            || MultivectorOffsetsStorageChunked::<ReadFile>::load(READ_FS, &offsets_path, in_ram);
 
         let storage = match config.storage_kind(on_disk_vector_storage)? {
             QuantizedStorageKind::ScalarRam => {

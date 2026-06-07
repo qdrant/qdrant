@@ -13,8 +13,17 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
 use quantization::turboquant::TQBits;
+
+/// Local-file backend ([`MmapFile`]) shared by every persisted (mmap / chunked) quantized
+/// storage variant. Paired with the [`READ_FS`] value handle.
+pub(in crate::vector_storage::quantized) type ReadFile = MmapFile;
+
+/// Value handle for the [`ReadFile`] backend. The create and load paths always operate on
+/// local files, so they pass this single instance instead of constructing one each time.
+pub(in crate::vector_storage::quantized) const READ_FS: MmapFs = MmapFs;
 
 pub(in crate::vector_storage::quantized) use self::config::QuantizedStorageKind;
 pub use self::config::{

@@ -11,7 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 
-/// Read-only counterpart of [`super::QuantizedChunkedMmapStorage`], generic over the
+/// Read-only counterpart of [`super::QuantizedChunkedStorage`], generic over the
 /// [`UniversalRead`] backend `S`.
 ///
 /// Reads the appendable (chunked) on-disk layout without opening it for writing,

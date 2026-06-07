@@ -5,25 +5,34 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, UniversalKind};
+use common::universal_io::{MmapFile, UniversalKind, UniversalWrite};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
-pub struct QuantizedChunkedMmapStorage {
-    data: ChunkedVectors<u8, MmapFile>,
+/// Appendable (chunked) quantized storage, generic over the [`UniversalWrite`] backend `S`.
+///
+/// Read-write counterpart of [`super::QuantizedChunkedStorageRead`]. The backend `fs` is
+/// supplied by the caller (defaulting to [`MmapFile`]) rather than hardcoded.
+pub struct QuantizedChunkedStorage<S: UniversalWrite + Send + 'static = MmapFile> {
+    data: ChunkedVectors<u8, S>,
 }
 
-impl QuantizedChunkedMmapStorage {
-    pub fn new(path: &Path, quantized_vector_size: usize, in_ram: bool) -> OperationResult<Self> {
+impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
+    pub fn new(
+        fs: S::Fs,
+        path: &Path,
+        quantized_vector_size: usize,
+        in_ram: bool,
+    ) -> OperationResult<Self> {
         let advice = if in_ram {
             AdviceSetting::from(Advice::Normal)
         } else {
             AdviceSetting::Global
         };
         let data = ChunkedVectors::open(
-            MmapFs,
+            fs,
             path,
             quantized_vector_size,
             advice,
@@ -42,7 +51,9 @@ impl QuantizedChunkedMmapStorage {
     }
 }
 
-impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
+impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
+    for QuantizedChunkedStorage<S>
+{
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         self.data
             .get::<Random>(index as VectorOffsetType)
@@ -65,7 +76,7 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
         &mut self,
         id: PointOffsetType,
         vector: &[u8],
-        hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         self.data
             .insert(id as VectorOffsetType, vector, hw_counter)
@@ -73,21 +84,13 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     }
 
     fn is_in_ram_or_mmap() -> bool {
-        type StorageType = ChunkedVectors<u8, MmapFile>;
-
-        // This should produce compilation error, if `QuantizedChunkedMmapStorage::data` type is changed,
-        // to ensure that we always use correct type for this check
-        fn _static_assert_storage_type(storage: QuantizedChunkedMmapStorage) {
-            let _: StorageType = storage.data;
-        }
-
-        match StorageType::storage_kind() {
-            UniversalKind::IoUring |
-            UniversalKind::DiskCache | UniversalKind::S3 |
-            UniversalKind::Gcs |
-            UniversalKind::Azure => false,
-            UniversalKind::SimpleDiskCache | // FIXME: only `true` if it was entirely prefilled
-            UniversalKind::Mmap => true,
+        match ChunkedVectors::<u8, S>::storage_kind() {
+            UniversalKind::Mmap | UniversalKind::SimpleDiskCache => true,
+            UniversalKind::IoUring
+            | UniversalKind::DiskCache
+            | UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure => false,
         }
     }
 
@@ -122,20 +125,25 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     }
 }
 
-pub struct QuantizedChunkedMmapStorageBuilder {
-    data: ChunkedVectors<u8, MmapFile>,
+pub struct QuantizedChunkedStorageBuilder<S: UniversalWrite + Send + 'static = MmapFile> {
+    data: ChunkedVectors<u8, S>,
     hw_counter: HardwareCounterCell,
 }
 
-impl QuantizedChunkedMmapStorageBuilder {
-    pub fn new(path: &Path, quantized_vector_size: usize, in_ram: bool) -> OperationResult<Self> {
+impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorageBuilder<S> {
+    pub fn new(
+        fs: S::Fs,
+        path: &Path,
+        quantized_vector_size: usize,
+        in_ram: bool,
+    ) -> OperationResult<Self> {
         let advice = if in_ram {
             AdviceSetting::from(Advice::Normal)
         } else {
             AdviceSetting::Global
         };
         let data = ChunkedVectors::open(
-            MmapFs,
+            fs,
             path,
             quantized_vector_size,
             advice,
@@ -148,11 +156,13 @@ impl QuantizedChunkedMmapStorageBuilder {
     }
 }
 
-impl quantization::EncodedStorageBuilder for QuantizedChunkedMmapStorageBuilder {
-    type Storage = QuantizedChunkedMmapStorage;
+impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
+    for QuantizedChunkedStorageBuilder<S>
+{
+    type Storage = QuantizedChunkedStorage<S>;
     type Error = std::io::Error;
 
-    fn build(self) -> std::io::Result<QuantizedChunkedMmapStorage> {
+    fn build(self) -> std::io::Result<QuantizedChunkedStorage<S>> {
         let Self {
             data,
             hw_counter: _,
@@ -162,7 +172,7 @@ impl quantization::EncodedStorageBuilder for QuantizedChunkedMmapStorageBuilder 
             std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
         })?;
 
-        Ok(QuantizedChunkedMmapStorage { data })
+        Ok(QuantizedChunkedStorage { data })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {

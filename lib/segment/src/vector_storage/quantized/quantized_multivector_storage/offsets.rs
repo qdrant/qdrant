@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalWrite,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -250,18 +250,22 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
     }
 }
 
-pub struct MultivectorOffsetsStorageChunkedMmap {
-    data: ChunkedVectors<MultivectorOffset, MmapFile>,
+/// Appendable (chunked) multivector offsets storage, generic over the [`UniversalWrite`]
+/// backend `S`. Read-write counterpart of [`MultivectorOffsetsStorageChunkedRead`]; the
+/// backend `fs` is supplied by the caller (defaulting to [`MmapFile`]).
+pub struct MultivectorOffsetsStorageChunked<S: UniversalWrite + Send + 'static = MmapFile> {
+    data: ChunkedVectors<MultivectorOffset, S>,
 }
 
-impl MultivectorOffsetsStorageChunkedMmap {
+impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
     pub fn create(
+        fs: S::Fs,
         path: &Path,
         offsets: impl Iterator<Item = MultivectorOffset>,
         in_ram: bool,
     ) -> OperationResult<Self> {
         let hw_counter = HardwareCounterCell::disposable();
-        let mut offsets_storage = Self::load(path, in_ram)?;
+        let mut offsets_storage = Self::load(fs, path, in_ram)?;
         for (id, offset) in offsets.enumerate() {
             offsets_storage.upsert_offset(id as PointOffsetType, offset, &hw_counter)?;
         }
@@ -269,14 +273,14 @@ impl MultivectorOffsetsStorageChunkedMmap {
         Ok(offsets_storage)
     }
 
-    pub fn load(path: &Path, in_ram: bool) -> OperationResult<Self> {
+    pub fn load(fs: S::Fs, path: &Path, in_ram: bool) -> OperationResult<Self> {
         let advice = if in_ram {
             AdviceSetting::from(Advice::Normal)
         } else {
             AdviceSetting::Global
         };
         let data = ChunkedVectors::open(
-            MmapFs,
+            fs,
             path,
             1,
             advice,
@@ -295,7 +299,9 @@ impl MultivectorOffsetsStorageChunkedMmap {
     }
 }
 
-impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
+impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
+    for MultivectorOffsetsStorageChunked<S>
+{
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.data
             .get::<Random>(idx as VectorOffsetType)
@@ -362,7 +368,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     }
 }
 
-/// Read-only counterpart of [`MultivectorOffsetsStorageChunkedMmap`], generic over
+/// Read-only counterpart of [`MultivectorOffsetsStorageChunked`], generic over
 /// the [`UniversalRead`] backend `S`.
 pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
     data: ChunkedVectorsRead<MultivectorOffset, S>,

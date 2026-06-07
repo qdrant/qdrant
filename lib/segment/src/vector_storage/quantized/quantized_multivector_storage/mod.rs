@@ -17,7 +17,7 @@ use crate::types::{MultiVectorComparator, MultiVectorConfig};
 mod offsets;
 
 pub use offsets::{
-    MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageChunkedRead,
+    MultivectorOffsetsStorageChunked, MultivectorOffsetsStorageChunkedRead,
     MultivectorOffsetsStorageMmap, MultivectorOffsetsStorageRam,
 };
 

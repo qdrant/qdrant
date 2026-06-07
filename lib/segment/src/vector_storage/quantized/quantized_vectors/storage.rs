@@ -2,20 +2,20 @@ use std::fmt;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
 use quantization::{EncodedVectors, EncodedVectorsPQ};
 
+use super::ReadFile;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::spaces::metric::Metric;
 use crate::vector_storage::RawScorer;
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedMmapStorage;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageMmap,
-    MultivectorOffsetsStorageRam, QuantizedMultivectorStorage,
+    MultivectorOffsetsStorageChunked, MultivectorOffsetsStorageMmap, MultivectorOffsetsStorageRam,
+    QuantizedMultivectorStorage,
 };
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
@@ -29,13 +29,13 @@ type ScalarRamMulti = QuantizedMultivectorStorage<
     MultivectorOffsetsStorageRam,
 >;
 type ScalarMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsU8<QuantizedStorage<MmapFile>>,
+    EncodedVectorsU8<QuantizedStorage<ReadFile>>,
     MultivectorOffsetsStorageMmap,
 >;
 
 type ScalarChunkedMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsU8<QuantizedChunkedMmapStorage>,
-    MultivectorOffsetsStorageChunkedMmap,
+    EncodedVectorsU8<QuantizedChunkedStorage>,
+    MultivectorOffsetsStorageChunked,
 >;
 
 type PQRamMulti = QuantizedMultivectorStorage<
@@ -43,13 +43,13 @@ type PQRamMulti = QuantizedMultivectorStorage<
     MultivectorOffsetsStorageRam,
 >;
 type PQMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsPQ<QuantizedStorage<MmapFile>>,
+    EncodedVectorsPQ<QuantizedStorage<ReadFile>>,
     MultivectorOffsetsStorageMmap,
 >;
 
 type PQChunkedMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsPQ<QuantizedChunkedMmapStorage>,
-    MultivectorOffsetsStorageChunkedMmap,
+    EncodedVectorsPQ<QuantizedChunkedStorage>,
+    MultivectorOffsetsStorageChunked,
 >;
 
 type BinaryRamMulti = QuantizedMultivectorStorage<
@@ -57,13 +57,13 @@ type BinaryRamMulti = QuantizedMultivectorStorage<
     MultivectorOffsetsStorageRam,
 >;
 type BinaryMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsBin<u8, QuantizedStorage<MmapFile>>,
+    EncodedVectorsBin<u8, QuantizedStorage<ReadFile>>,
     MultivectorOffsetsStorageMmap,
 >;
 
 type BinaryChunkedMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsBin<u8, QuantizedChunkedMmapStorage>,
-    MultivectorOffsetsStorageChunkedMmap,
+    EncodedVectorsBin<u8, QuantizedChunkedStorage>,
+    MultivectorOffsetsStorageChunked,
 >;
 
 type TQRamMulti = QuantizedMultivectorStorage<
@@ -71,28 +71,28 @@ type TQRamMulti = QuantizedMultivectorStorage<
     MultivectorOffsetsStorageRam,
 >;
 type TQMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsTQ<QuantizedStorage<MmapFile>>,
+    EncodedVectorsTQ<QuantizedStorage<ReadFile>>,
     MultivectorOffsetsStorageMmap,
 >;
 
 type TQChunkedMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsTQ<QuantizedChunkedMmapStorage>,
-    MultivectorOffsetsStorageChunkedMmap,
+    EncodedVectorsTQ<QuantizedChunkedStorage>,
+    MultivectorOffsetsStorageChunked,
 >;
 
 pub enum QuantizedVectorStorage {
     ScalarRam(EncodedVectorsU8<QuantizedRamStorage>),
-    ScalarMmap(EncodedVectorsU8<QuantizedStorage<MmapFile>>),
-    ScalarChunkedMmap(EncodedVectorsU8<QuantizedChunkedMmapStorage>),
+    ScalarMmap(EncodedVectorsU8<QuantizedStorage<ReadFile>>),
+    ScalarChunkedMmap(EncodedVectorsU8<QuantizedChunkedStorage>),
     PQRam(EncodedVectorsPQ<QuantizedRamStorage>),
-    PQMmap(EncodedVectorsPQ<QuantizedStorage<MmapFile>>),
-    PQChunkedMmap(EncodedVectorsPQ<QuantizedChunkedMmapStorage>),
+    PQMmap(EncodedVectorsPQ<QuantizedStorage<ReadFile>>),
+    PQChunkedMmap(EncodedVectorsPQ<QuantizedChunkedStorage>),
     BinaryRam(EncodedVectorsBin<u128, QuantizedRamStorage>),
-    BinaryMmap(EncodedVectorsBin<u128, QuantizedStorage<MmapFile>>),
-    BinaryChunkedMmap(EncodedVectorsBin<u128, QuantizedChunkedMmapStorage>),
+    BinaryMmap(EncodedVectorsBin<u128, QuantizedStorage<ReadFile>>),
+    BinaryChunkedMmap(EncodedVectorsBin<u128, QuantizedChunkedStorage>),
     TQRam(EncodedVectorsTQ<QuantizedRamStorage>),
-    TQMmap(EncodedVectorsTQ<QuantizedStorage<MmapFile>>),
-    TQChunkedMmap(EncodedVectorsTQ<QuantizedChunkedMmapStorage>),
+    TQMmap(EncodedVectorsTQ<QuantizedStorage<ReadFile>>),
+    TQChunkedMmap(EncodedVectorsTQ<QuantizedChunkedStorage>),
     ScalarRamMulti(ScalarRamMulti),
     ScalarMmapMulti(ScalarMmapMulti),
     ScalarChunkedMmapMulti(ScalarChunkedMmapMulti),

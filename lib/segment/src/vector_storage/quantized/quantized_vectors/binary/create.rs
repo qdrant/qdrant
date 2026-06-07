@@ -4,13 +4,15 @@ use std::sync::atomic::AtomicBool;
 use quantization::encoded_vectors_binary;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 
-use super::super::{QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsStorageType};
+use super::super::{
+    QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsStorageType, READ_FS, ReadFile,
+};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::VectorElementType;
 use crate::types::{BinaryQuantizationConfig, MultiVectorConfig};
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedMmapStorageBuilder;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageBuilder;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffset, MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageMmap,
+    MultivectorOffset, MultivectorOffsetsStorageChunked, MultivectorOffsetsStorageMmap,
     MultivectorOffsetsStorageRam, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorageBuilder;
@@ -39,7 +41,8 @@ impl QuantizedVectors {
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
-                let storage_builder = QuantizedChunkedMmapStorageBuilder::new(
+                let storage_builder = QuantizedChunkedStorageBuilder::<ReadFile>::new(
+                    READ_FS,
                     data_path.as_path(),
                     quantized_vector_size,
                     in_ram,
@@ -121,7 +124,8 @@ impl QuantizedVectors {
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
-                let storage_builder = QuantizedChunkedMmapStorageBuilder::new(
+                let storage_builder = QuantizedChunkedStorageBuilder::<ReadFile>::new(
+                    READ_FS,
                     data_path.as_path(),
                     quantized_vector_size,
                     in_ram,
@@ -135,8 +139,12 @@ impl QuantizedVectors {
                     Some(meta_path.as_path()),
                     stopped,
                 )?;
-                let offsets =
-                    MultivectorOffsetsStorageChunkedMmap::create(&offsets_path, offsets, in_ram)?;
+                let offsets = MultivectorOffsetsStorageChunked::<ReadFile>::create(
+                    READ_FS,
+                    &offsets_path,
+                    offsets,
+                    in_ram,
+                )?;
                 Ok(QuantizedVectorStorage::BinaryChunkedMmapMulti(
                     QuantizedMultivectorStorage::new(
                         vector_parameters.dim,
