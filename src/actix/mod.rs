@@ -2,6 +2,7 @@ pub mod actix_telemetry;
 pub mod api;
 mod auth;
 mod certificate_helpers;
+mod ui_auth;
 mod forwarded;
 pub mod helpers;
 pub mod metrics_service;
@@ -46,6 +47,7 @@ use crate::actix::api::vector_name_api::config_vector_name_api;
 use crate::actix::auth::{AuthTransform, WhitelistItem};
 use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
+use crate::common::ui_auth::UiAuthState;
 use crate::common::debugger::DebuggerState;
 use crate::common::health;
 use crate::common::http_client::HttpClient;
@@ -84,6 +86,23 @@ pub fn init(
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
         let web_ui_available = web_ui_folder(&settings);
+        let ui_auth_state = web_ui_available.as_ref().map(|_| {
+            if settings.service.ui_auth_enabled() {
+                match UiAuthState::load_or_create(
+                    std::path::Path::new(&settings.storage.storage_path),
+                    &settings.service,
+                ) {
+                    Ok(state) => web::Data::new(state),
+                    Err(err) => {
+                        log::error!("Failed to initialize Web UI authentication: {err}");
+                        web::Data::new(UiAuthState::disabled())
+                    }
+                }
+            } else {
+                web::Data::new(UiAuthState::disabled())
+            }
+        });
+        let secure_ui_cookie = web::Data::new(settings.service.enable_tls);
         let service_config = web::Data::new(settings.service.clone());
         let audit_config_data = web::Data::new(settings.audit.clone());
 
@@ -171,8 +190,14 @@ pub fn init(
                 .service(get_point)
                 .service(get_points);
 
-            if let Some(static_folder) = web_ui_available.as_deref() {
-                app = app.service(web_ui_factory(static_folder));
+            if let (Some(static_folder), Some(ui_auth_state)) =
+                (web_ui_available.as_deref(), ui_auth_state.clone())
+            {
+                app = app.service(web_ui_factory(
+                    static_folder,
+                    ui_auth_state,
+                    secure_ui_cookie.clone(),
+                ));
             }
 
             app

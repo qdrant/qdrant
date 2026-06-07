@@ -1,0 +1,20 @@
+FROM debian:13-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /qdrant
+COPY target/debug/qdrant ./qdrant
+COPY config ./config
+COPY static ./static
+COPY tools/entrypoint.sh ./entrypoint.sh
+
+RUN chmod +x ./entrypoint.sh ./qdrant
+
+ENV TZ=Etc/UTC \
+    RUN_MODE=production
+
+EXPOSE 6333 6334
+CMD ["./entrypoint.sh"]

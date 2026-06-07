@@ -1,10 +1,16 @@
+use std::fs;
 use std::path::Path;
 
 use actix_web::dev::HttpServiceFactory;
 use actix_web::http::header::HeaderValue;
-use actix_web::middleware::DefaultHeaders;
-use actix_web::web;
+use actix_web::middleware::{self, DefaultHeaders};
+use actix_web::{web, HttpResponse, Responder};
 
+use crate::actix::ui_auth::{
+    change_credentials_handler, inject_dashboard_logout_bar, login_handler, login_page,
+    logout_handler, session_status_handler, ui_auth_middleware,
+};
+use crate::common::ui_auth::UiAuthState;
 use crate::settings::Settings;
 
 const DEFAULT_STATIC_DIR: &str = "./static";
@@ -37,9 +43,50 @@ pub fn web_ui_folder(settings: &Settings) -> Option<String> {
     }
 }
 
-pub fn web_ui_factory(static_folder: &str) -> impl HttpServiceFactory + use<> {
+async fn dashboard_index(
+    auth: web::Data<UiAuthState>,
+    static_folder: web::Data<String>,
+) -> impl Responder {
+    let index_path = Path::new(static_folder.as_str()).join("index.html");
+    let Ok(content) = fs::read_to_string(index_path) else {
+        return HttpResponse::NotFound().finish();
+    };
+
+    let body = if auth.enabled {
+        inject_dashboard_logout_bar(&content)
+    } else {
+        content
+    };
+
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(body)
+}
+
+pub fn web_ui_factory(
+    static_folder: &str,
+    ui_auth_state: web::Data<UiAuthState>,
+    secure_ui_cookie: web::Data<bool>,
+) -> impl HttpServiceFactory + use<> {
+    let static_folder_data = web::Data::new(static_folder.to_string());
+
     web::scope(WEB_UI_PATH)
         .wrap(DefaultHeaders::new().add(("X-Frame-Options", HeaderValue::from_static("DENY"))))
+        .app_data(ui_auth_state.clone())
+        .app_data(secure_ui_cookie)
+        .app_data(static_folder_data)
+        .wrap(middleware::from_fn(ui_auth_middleware))
+        .route("/login", web::get().to(login_page))
+        .route("/auth/login", web::post().to(login_handler))
+        .route("/auth/logout", web::post().to(logout_handler))
+        .route("/auth/session", web::get().to(session_status_handler))
+        .route(
+            "/auth/credentials",
+            web::put().to(change_credentials_handler),
+        )
+        .route("", web::get().to(dashboard_index))
+        .route("/", web::get().to(dashboard_index))
+        .route("/index.html", web::get().to(dashboard_index))
         .service(actix_files::Files::new("/", static_folder).index_file("index.html"))
 }
 
@@ -72,7 +119,12 @@ mod tests {
         }
 
         let static_folder = maybe_static_folder.unwrap();
-        let srv = test::init_service(App::new().service(web_ui_factory(&static_folder))).await;
+        let secure_cookie = web::Data::new(false);
+        let auth = web::Data::new(UiAuthState::disabled());
+        let srv = test::init_service(
+            App::new().service(web_ui_factory(&static_folder, auth, secure_cookie)),
+        )
+        .await;
 
         // Index path (no trailing slash)
         let req = TestRequest::with_uri(WEB_UI_PATH).to_request();
@@ -103,7 +155,12 @@ mod tests {
         );
         // Non-existing path (404 Not Found)
         let fake_path = uuid::Uuid::new_v4().to_string();
-        let srv = test::init_service(App::new().service(web_ui_factory(&fake_path))).await;
+        let secure_cookie = web::Data::new(false);
+        let auth = web::Data::new(UiAuthState::disabled());
+        let srv = test::init_service(
+            App::new().service(web_ui_factory(&fake_path, auth, secure_cookie)),
+        )
+        .await;
 
         let req = TestRequest::with_uri(WEB_UI_PATH).to_request();
         let res = test::call_service(&srv, req).await;
