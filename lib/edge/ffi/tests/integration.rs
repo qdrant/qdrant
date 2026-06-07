@@ -861,3 +861,70 @@ fn hnsw_config_optimize_and_search() {
         "config() should still report the vec field after optimize"
     );
 }
+
+// ── Test 17: oversized_hnsw_params_rejected_not_allocated ──────────────────────
+
+/// HNSW params drive eager per-vector allocations / thread spawning at
+/// `optimize()`; an unbounded `m` would request a multi-terabyte allocation and
+/// *abort* the process (uncatchable under panic=unwind), and a huge
+/// `max_indexing_threads` is a thread bomb. `validate()` must reject these at
+/// `load` with a catchable `InvalidArgument` BEFORE they reach the engine —
+/// same discipline as the `bounded_limit` / size guards.
+///
+/// Reaching the assertions at all is the proof (no abort).
+#[test]
+fn oversized_hnsw_params_rejected_not_allocated() {
+    use qdrant_edge_ffi::config::HnswIndexConfig;
+
+    // Build an EdgeConfig with a given HNSW config on the single "vec" field.
+    let make = |hnsw: HnswIndexConfig| EdgeConfig {
+        vector_data: HashMap::from([(
+            "vec".to_string(),
+            VectorDataConfig {
+                size: 4,
+                distance: Distance::Dot,
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+                hnsw_config: Some(hnsw),
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    };
+    let sane = HnswIndexConfig {
+        m: 16,
+        ef_construct: 100,
+        full_scan_threshold: 10_000,
+        max_indexing_threads: 1,
+        on_disk: Some(false),
+        payload_m: None,
+    };
+
+    // Each oversized field must be rejected as InvalidArgument, not allocated.
+    for (label, hnsw) in [
+        ("huge m", HnswIndexConfig { m: u64::MAX, ..sane.clone() }),
+        ("huge payload_m", HnswIndexConfig { payload_m: Some(u64::MAX), ..sane.clone() }),
+        ("ef_construct too small", HnswIndexConfig { ef_construct: 0, ..sane.clone() }),
+        ("huge ef_construct", HnswIndexConfig { ef_construct: u64::MAX, ..sane.clone() }),
+        ("thread bomb", HnswIndexConfig { max_indexing_threads: u64::MAX, ..sane.clone() }),
+    ] {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let path = dir.path().to_string_lossy().into_owned();
+        #[allow(clippy::err_expect)]
+        let err = EdgeShard::load(path, Some(make(hnsw)))
+            .err()
+            .unwrap_or_else(|| panic!("{label}: load should be rejected, not allocated"));
+        assert!(
+            matches!(err, EdgeError::InvalidArgument { .. }),
+            "{label}: expected InvalidArgument, got {err:?}"
+        );
+    }
+
+    // A sane HNSW config must still load fine (no over-rejection).
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    assert!(
+        EdgeShard::load(path, Some(make(sane))).is_ok(),
+        "a sane HNSW config must still be accepted"
+    );
+}

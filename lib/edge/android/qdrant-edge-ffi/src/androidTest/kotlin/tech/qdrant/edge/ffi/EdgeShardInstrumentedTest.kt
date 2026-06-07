@@ -416,4 +416,40 @@ class EdgeShardInstrumentedTest {
             try { shard.unload() } catch (_: Exception) {}
         }
     }
+
+    // ── Test 10: oversizedHnswParamRejected ────────────────────────────────
+
+    /** An absurd HNSW `m` must be rejected as a catchable EdgeException at load,
+     *  not abort the process via a multi-terabyte allocation at optimize(). */
+    @Test
+    fun oversizedHnswParamRejected() {
+        val dir = freshDir("hnsw-oversized")
+        val config = EdgeConfig(
+            vectorData = mapOf(
+                "" to VectorDataConfig(
+                    size = 4uL,
+                    distance = Distance.DOT,
+                    quantizationConfig = null,
+                    multivectorConfig = null,
+                    datatype = null,
+                    hnswConfig = HnswIndexConfig(
+                        m = ULong.MAX_VALUE,
+                        efConstruct = 100uL,
+                        fullScanThreshold = 10000uL,
+                        maxIndexingThreads = 1uL,
+                        onDisk = false,
+                        payloadM = null,
+                    ),
+                )
+            ),
+            sparseVectorData = emptyMap(),
+        )
+        var caught = false
+        try {
+            EdgeShard.load(path = dir.absolutePath, config = config).unload()
+        } catch (e: EdgeException) {
+            caught = true
+        }
+        assertTrue("oversized HNSW m should throw EdgeException, not abort", caught)
+    }
 }

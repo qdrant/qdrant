@@ -786,6 +786,21 @@ pub struct EdgeConfig {
 const MIN_VECTOR_SIZE: u64 = 1;
 const MAX_VECTOR_SIZE: u64 = 65_536;
 
+// HNSW parameter bounds. These are validated (rejected with InvalidArgument)
+// rather than saturated, because — unlike search-time tuning knobs — `m`,
+// `payload_m` and `ef_construct` drive *eager, per-vector* allocations during
+// `optimize()` (e.g. `LinksContainer::with_capacity(m * 2)` per point), and
+// `max_indexing_threads` spawns OS threads. An unbounded host value would
+// request a multi-terabyte allocation or a thread bomb and *abort* the process
+// — an abort that `panic = "unwind"` cannot catch. The caps are far above any
+// sane on-device value (the engine's own default `m` is 16, `ef_construct` 100).
+// `ef_construct` also has an engine-side minimum of 4 that the FFI conversion
+// path would otherwise bypass.
+const MAX_HNSW_M: u64 = 2_048;
+const MIN_HNSW_EF_CONSTRUCT: u64 = 4;
+const MAX_HNSW_EF_CONSTRUCT: u64 = 100_000;
+const MAX_HNSW_INDEXING_THREADS: u64 = 1_024;
+
 impl EdgeConfig {
     /// Reject host config that would crash the engine, so a host gets a
     /// catchable `InvalidArgument` instead of an uncatchable engine crash.
@@ -797,6 +812,13 @@ impl EdgeConfig {
     /// enormous allocation. The server validates this range on its own
     /// deserialization path, but the FFI `From<VectorDataConfig>` path bypasses
     /// that validator.
+    ///
+    /// **HNSW parameters** (when a field sets `hnsw_config`) are range-checked:
+    /// `m`/`payload_m` ≤ 2048, `ef_construct` in `4..=100000`,
+    /// `max_indexing_threads` ≤ 1024. These drive eager per-vector allocations
+    /// and thread spawning at `optimize()` time, so an unbounded host value
+    /// would abort the process (uncatchably) rather than merely run slow — they
+    /// must be rejected up front, not saturated.
     ///
     /// Quantization is NOT restricted here: the FFI surface exposes the same
     /// four strategies (Scalar/Product/Binary/Turbo) as the Python Edge SDK, for
@@ -812,6 +834,34 @@ impl EdgeConfig {
                      {MIN_VECTOR_SIZE}..={MAX_VECTOR_SIZE}",
                     vd.size
                 )));
+            }
+            if let Some(hnsw) = &vd.hnsw_config {
+                if hnsw.m > MAX_HNSW_M {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw m ({}) exceeds the maximum of {MAX_HNSW_M}",
+                        hnsw.m
+                    )));
+                }
+                if let Some(payload_m) = hnsw.payload_m
+                    && payload_m > MAX_HNSW_M
+                {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw payload_m ({payload_m}) exceeds the maximum of {MAX_HNSW_M}"
+                    )));
+                }
+                if hnsw.ef_construct < MIN_HNSW_EF_CONSTRUCT || hnsw.ef_construct > MAX_HNSW_EF_CONSTRUCT {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw ef_construct ({}) is out of range \
+                         {MIN_HNSW_EF_CONSTRUCT}..={MAX_HNSW_EF_CONSTRUCT}",
+                        hnsw.ef_construct
+                    )));
+                }
+                if hnsw.max_indexing_threads > MAX_HNSW_INDEXING_THREADS {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw max_indexing_threads ({}) exceeds the maximum of {MAX_HNSW_INDEXING_THREADS}",
+                        hnsw.max_indexing_threads
+                    )));
+                }
             }
         }
         Ok(())

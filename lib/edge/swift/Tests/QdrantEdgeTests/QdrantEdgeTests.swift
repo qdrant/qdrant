@@ -345,4 +345,41 @@ final class QdrantEdgeTests: XCTestCase {
         ))
         XCTAssertEqual(results.count, 3, "Search after optimize should return all points")
     }
+
+    // MARK: - testOversizedHnswParamRejected
+
+    /// An absurd HNSW `m` would drive a multi-terabyte allocation at optimize()
+    /// and abort the process; load() must reject it as a catchable EdgeError
+    /// instead. Reaching the assertion (no abort) is the proof.
+    func testOversizedHnswParamRejected() throws {
+        let shardURL = testDir.appendingPathComponent("hnsw-oversized")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+
+        let config = EdgeConfig(
+            vectorData: [
+                "": VectorDataConfig(
+                    size: 4,
+                    distance: .dot,
+                    quantizationConfig: nil,
+                    multivectorConfig: nil,
+                    datatype: nil,
+                    hnswConfig: HnswIndexConfig(
+                        m: .max,
+                        efConstruct: 100,
+                        fullScanThreshold: 10000,
+                        maxIndexingThreads: 1,
+                        onDisk: false,
+                        payloadM: nil
+                    )
+                ),
+            ],
+            sparseVectorData: [:]
+        )
+
+        XCTAssertThrowsError(try EdgeShard.load(path: shardURL.path, config: config)) { error in
+            guard case EdgeError.InvalidArgument = error else {
+                return XCTFail("Expected EdgeError.InvalidArgument for oversized HNSW m, got \(error)")
+            }
+        }
+    }
 }
