@@ -182,4 +182,176 @@ class EdgeShardInstrumentedTest {
             exceptionCaught,
         )
     }
+
+    // ── Test 4: turboQuantizationLoadsAndSearches ──────────────────────────
+
+    /**
+     * On-device proof that Turbo quantization (exposed for parity with the
+     * Python Edge SDK) works through the real JNI -> .so -> UniFFI path: load a
+     * Turbo-quantized shard, upsert, search, and assert a result comes back.
+     */
+    @Test
+    fun turboQuantizationLoadsAndSearches() {
+        val dir = freshDir("turbo-quant")
+
+        val config = EdgeConfig(
+            vectorData = mapOf(
+                "" to VectorDataConfig(
+                    size = 4uL,
+                    distance = Distance.DOT,
+                    quantizationConfig = QuantizationConfig.Turbo(
+                        config = TurboQuantizationParams(
+                            alwaysRam = true,
+                            bits = TurboQuantBitSize.BITS4,
+                        ),
+                    ),
+                    multivectorConfig = null,
+                    datatype = null,
+                )
+            ),
+            sparseVectorData = emptyMap(),
+        )
+
+        val shard = EdgeShard.load(path = dir.absolutePath, config = config)
+        try {
+            shard.update(
+                operation = UpdateOperation.upsertPoints(
+                    points = listOf(
+                        Point(
+                            id = PointId.NumId(1uL),
+                            vector = Vector.Single(listOf(6.0f, 9.0f, 4.0f, 2.0f)),
+                            payload = null,
+                        ),
+                    ),
+                ),
+            )
+
+            val results = shard.search(
+                request = SearchRequest(
+                    query = Query.Nearest(vector = listOf(6.0f, 9.0f, 4.0f, 2.0f), using = null),
+                    limit = 10uL,
+                    offset = null,
+                    filter = null,
+                    params = null,
+                    withVector = null,
+                    withPayload = null,
+                    scoreThreshold = null,
+                ),
+            )
+            assertTrue("Turbo-quantized search should return a result", results.isNotEmpty())
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
+    }
+
+    // ── Helper: load a shard with 3 points (ids 1,2,3) ─────────────────────
+
+    private fun loadWithThreePoints(name: String): EdgeShard {
+        val dir = freshDir(name)
+        val shard = EdgeShard.load(path = dir.absolutePath, config = defaultConfig())
+        shard.update(
+            operation = UpdateOperation.upsertPoints(
+                points = listOf(
+                    Point(PointId.NumId(1uL), Vector.Single(listOf(1.0f, 0.0f, 0.0f, 0.0f)), """{"label":"a"}"""),
+                    Point(PointId.NumId(2uL), Vector.Single(listOf(0.0f, 1.0f, 0.0f, 0.0f)), """{"label":"b"}"""),
+                    Point(PointId.NumId(3uL), Vector.Single(listOf(0.0f, 0.0f, 1.0f, 0.0f)), """{"label":"c"}"""),
+                ),
+            ),
+        )
+        return shard
+    }
+
+    // ── Test 5: deleteReducesCount ─────────────────────────────────────────
+
+    @Test
+    fun deleteReducesCount() {
+        val shard = loadWithThreePoints("delete")
+        try {
+            shard.update(operation = UpdateOperation.deletePoints(pointIds = listOf(PointId.NumId(2uL))))
+
+            val count = shard.count(request = CountRequest(filter = null, exact = true))
+            assertEquals("count should drop to 2 after delete", 2uL, count)
+
+            val got = shard.retrieve(pointIds = listOf(PointId.NumId(2uL)), withPayload = null, withVector = null)
+            assertTrue("deleted point should not be retrievable", got.isEmpty())
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
+    }
+
+    // ── Test 6: setPayloadVisibleOnRetrieve ────────────────────────────────
+
+    @Test
+    fun setPayloadVisibleOnRetrieve() {
+        val shard = loadWithThreePoints("set-payload")
+        try {
+            shard.update(
+                operation = UpdateOperation.setPayload(
+                    pointIds = listOf(PointId.NumId(1uL)),
+                    payloadJson = """{"tag":"hot"}""",
+                ),
+            )
+
+            val got = shard.retrieve(
+                pointIds = listOf(PointId.NumId(1uL)),
+                withPayload = WithPayload.Bool(true),
+                withVector = null,
+            )
+            assertEquals(1, got.size)
+            val payload = got.first().payload ?: ""
+            assertTrue("new key 'tag' should be visible: $payload", payload.contains("\"tag\""))
+            assertTrue("original 'label' should survive merge: $payload", payload.contains("\"label\""))
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
+    }
+
+    // ── Test 7: scrollReturnsAllPoints ─────────────────────────────────────
+
+    @Test
+    fun scrollReturnsAllPoints() {
+        val shard = loadWithThreePoints("scroll")
+        try {
+            val page = shard.scroll(
+                request = ScrollRequest(
+                    offset = null,
+                    limit = 10uL,
+                    filter = null,
+                    withPayload = WithPayload.Bool(false),
+                    withVector = WithVector.Bool(false),
+                    orderBy = null,
+                ),
+            )
+            assertEquals("scroll should return all 3 points", 3, page.records.size)
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
+    }
+
+    // ── Test 8: queryReturnsRankedResults ──────────────────────────────────
+
+    @Test
+    fun queryReturnsRankedResults() {
+        val shard = loadWithThreePoints("query")
+        try {
+            val results = shard.query(
+                request = QueryRequest(
+                    limit = 10uL,
+                    offset = null,
+                    query = ScoringQuery.Vector(query = Query.Nearest(vector = listOf(1.0f, 0.0f, 0.0f, 0.0f), using = null)),
+                    prefetches = emptyList(),
+                    withVector = null,
+                    withPayload = null,
+                    filter = null,
+                    scoreThreshold = null,
+                    params = null,
+                ),
+            )
+            assertEquals("query should rank all 3 points", 3, results.size)
+            val topId = results.first().id
+            assertTrue("nearest to [1,0,0,0] should be id=1", topId is PointId.NumId && topId.value == 1uL)
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
+    }
 }

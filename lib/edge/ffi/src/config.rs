@@ -12,7 +12,9 @@ use segment::types::{
     QuantizationConfig as SegmentQuantizationConfig,
     ScalarQuantization, ScalarQuantizationConfig, ScalarType as SegmentScalarType,
     SegmentConfig, SparseVectorDataConfig as SegmentSparseVectorDataConfig,
-    SparseVectorStorageType, VectorDataConfig as SegmentVectorDataConfig,
+    SparseVectorStorageType, TurboQuantBitSize as SegmentTurboQuantBitSize,
+    TurboQuantQuantizationConfig, TurboQuantization,
+    VectorDataConfig as SegmentVectorDataConfig,
     VectorStorageDatatype as SegmentVectorStorageDatatype, VectorStorageType,
 };
 
@@ -355,6 +357,51 @@ pub struct BinaryQuantizationParams {
     pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
 }
 
+/// Bits-per-component for TurboQuant. Fewer bits = more compression, less recall.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum TurboQuantBitSize {
+    /// 1 bit per component (maximum compression).
+    Bits1,
+    /// 1.5 bits per component.
+    Bits1_5,
+    /// 2 bits per component.
+    Bits2,
+    /// 4 bits per component (default; best recall of the Turbo modes).
+    Bits4,
+}
+
+impl From<TurboQuantBitSize> for SegmentTurboQuantBitSize {
+    fn from(b: TurboQuantBitSize) -> Self {
+        match b {
+            TurboQuantBitSize::Bits1 => SegmentTurboQuantBitSize::Bits1,
+            TurboQuantBitSize::Bits1_5 => SegmentTurboQuantBitSize::Bits1_5,
+            TurboQuantBitSize::Bits2 => SegmentTurboQuantBitSize::Bits2,
+            TurboQuantBitSize::Bits4 => SegmentTurboQuantBitSize::Bits4,
+        }
+    }
+}
+
+impl From<SegmentTurboQuantBitSize> for TurboQuantBitSize {
+    fn from(b: SegmentTurboQuantBitSize) -> Self {
+        match b {
+            SegmentTurboQuantBitSize::Bits1 => TurboQuantBitSize::Bits1,
+            SegmentTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1_5,
+            SegmentTurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
+            SegmentTurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
+        }
+    }
+}
+
+/// Parameters for TurboQuant quantization.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct TurboQuantizationParams {
+    /// If `true`, keep the quantized data in RAM; otherwise allow it to be
+    /// memory-mapped.
+    pub always_ram: Option<bool>,
+    /// Bits-per-component. Defaults to `Bits4` when unset.
+    pub bits: Option<TurboQuantBitSize>,
+}
+
 /// Selects a vector quantization strategy for a vector field.
 ///
 /// Quantization trades a small amount of recall for lower memory and
@@ -370,6 +417,9 @@ pub enum QuantizationConfig {
     /// Binary quantization — maximum compression, best for very large
     /// collections and often paired with reranking.
     Binary { config: BinaryQuantizationParams },
+    /// TurboQuant — bit-packed quantization (1 to 4 bits per component) tuned
+    /// for fast on-device search.
+    Turbo { config: TurboQuantizationParams },
 }
 
 impl From<QuantizationConfig> for SegmentQuantizationConfig {
@@ -400,6 +450,14 @@ impl From<QuantizationConfig> for SegmentQuantizationConfig {
                         query_encoding: config
                             .query_encoding
                             .map(SegmentBinaryQuantizationQueryEncoding::from),
+                    },
+                })
+            }
+            QuantizationConfig::Turbo { config } => {
+                SegmentQuantizationConfig::Turbo(TurboQuantization {
+                    turbo: TurboQuantQuantizationConfig {
+                        always_ram: config.always_ram,
+                        bits: config.bits.map(SegmentTurboQuantBitSize::from),
                     },
                 })
             }
@@ -440,10 +498,14 @@ impl TryFrom<SegmentQuantizationConfig> for QuantizationConfig {
                     },
                 })
             }
-            // Turbo quantization has no FFI equivalent yet; hide it from the
-            // simplified surface instead of panicking when a collection that
-            // uses it is loaded.
-            SegmentQuantizationConfig::Turbo(_) => Err(()),
+            SegmentQuantizationConfig::Turbo(TurboQuantization { turbo }) => {
+                Ok(QuantizationConfig::Turbo {
+                    config: TurboQuantizationParams {
+                        always_ram: turbo.always_ram,
+                        bits: turbo.bits.map(TurboQuantBitSize::from),
+                    },
+                })
+            }
         }
     }
 }
@@ -655,23 +717,23 @@ const MIN_VECTOR_SIZE: u64 = 1;
 const MAX_VECTOR_SIZE: u64 = 65_536;
 
 impl EdgeConfig {
-    /// Reject host config the Edge engine cannot honor, so a host gets a
-    /// catchable `InvalidArgument` instead of silently-ignored config or an
-    /// uncatchable engine crash. Called from `load` before any conversion.
+    /// Reject host config that would crash the engine, so a host gets a
+    /// catchable `InvalidArgument` instead of an uncatchable engine crash.
+    /// Called from `load` before any conversion.
     ///
-    /// Two checks, both per dense vector field:
+    /// Per dense vector field, **dimensionality** must be in `1..=65536`. A
+    /// `size` of `0` would flow into the engine and panic/abort (uncatchable)
+    /// rather than surfacing a clean error; a huge `size` would request an
+    /// enormous allocation. The server validates this range on its own
+    /// deserialization path, but the FFI `From<VectorDataConfig>` path bypasses
+    /// that validator.
     ///
-    /// 1. **Dimensionality** must be in `1..=65536`. A `size` of `0` would flow
-    ///    into the engine and panic/abort (uncatchable) rather than surfacing a
-    ///    clean error; a huge `size` would request an enormous allocation. The
-    ///    server validates this range on its own deserialization path, but the
-    ///    FFI `From<VectorDataConfig>` path bypasses that validator.
-    /// 2. **Quantization** must be `Binary` or none. Edge only ever creates
-    ///    *appendable* segments, which support only `Binary` quantization in v1
-    ///    (`Scalar`/`Product` are dropped by the engine's
-    ///    `for_appendable_segment` filter). Accepting them would be a false
-    ///    capability: the host would set `Scalar`, get no error, and silently
-    ///    store full-precision vectors. Reject them up front instead.
+    /// Quantization is NOT restricted here: the FFI surface exposes the same
+    /// four strategies (Scalar/Product/Binary/Turbo) as the Python Edge SDK, for
+    /// parity. Note that Edge only builds *appendable* segments, and the engine's
+    /// `for_appendable_segment` filter keeps only `Binary`/`Turbo` there —
+    /// `Scalar`/`Product` are dropped by the engine (shared behavior across all
+    /// Edge SDKs), not by this SDK.
     pub(crate) fn validate(&self) -> crate::error::Result<()> {
         for (name, vd) in &self.vector_data {
             if vd.size < MIN_VECTOR_SIZE || vd.size > MAX_VECTOR_SIZE {
@@ -680,21 +742,6 @@ impl EdgeConfig {
                      {MIN_VECTOR_SIZE}..={MAX_VECTOR_SIZE}",
                     vd.size
                 )));
-            }
-            match &vd.quantization_config {
-                Some(QuantizationConfig::Scalar { .. }) => {
-                    return Err(crate::error::EdgeError::invalid_argument(format!(
-                        "vector field {name:?}: Scalar quantization is not supported on Qdrant Edge \
-                         (appendable segments support only Binary quantization in v1)"
-                    )));
-                }
-                Some(QuantizationConfig::Product { .. }) => {
-                    return Err(crate::error::EdgeError::invalid_argument(format!(
-                        "vector field {name:?}: Product quantization is not supported on Qdrant Edge \
-                         (appendable segments support only Binary quantization in v1)"
-                    )));
-                }
-                Some(QuantizationConfig::Binary { .. }) | None => {}
             }
         }
         Ok(())

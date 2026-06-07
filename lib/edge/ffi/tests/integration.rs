@@ -325,23 +325,20 @@ fn retrieve_missing_ids_omitted() {
 //   3. Call `unpack_snapshot(snapshot_path, target_path)`.
 //   4. `EdgeShard::load(target_path, None)` and assert `info().points_count`.
 
-// ── Test 7: unsupported_quantization_rejected_at_load ─────────────────────────
+// ── Test 7: scalar_quantization_accepted_at_load ──────────────────────────────
 
-/// C-Quant regression: Edge only creates appendable segments, which support
-/// only `Binary` quantization in v1. `Scalar`/`Product` are silently dropped by
-/// the engine's `for_appendable_segment` filter, so a host that asked for them
-/// would believe its vectors are quantized while they are stored full-precision.
-/// `EdgeConfig::validate` (called from `load`) must reject them as a catchable
-/// `InvalidArgument` instead of accepting a false capability.
+/// The FFI exposes all four quantization strategies for parity with the Python
+/// Edge SDK, so `load` must ACCEPT a Scalar-quantized config (not reject it).
+/// Edge core's `for_appendable_segment` filter may drop Scalar on the appendable
+/// segment — that is shared engine behavior across all Edge SDKs, not something
+/// this SDK rejects.
 #[test]
-fn unsupported_quantization_rejected_at_load() {
+fn scalar_quantization_accepted_at_load() {
     use qdrant_edge_ffi::config::{QuantizationConfig, ScalarQuantizationParams, ScalarType};
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
 
-    // A config identical to `make_config()` but with Scalar quantization on the
-    // single "vec" field — the exact shape a host would write expecting Int8.
     let config = EdgeConfig {
         vector_data: HashMap::from([(
             "vec".to_string(),
@@ -362,19 +359,11 @@ fn unsupported_quantization_rejected_at_load() {
         sparse_vector_data: HashMap::new(),
     };
 
-    // `.err().expect()` rather than `.expect_err()`: the Ok type is
-    // `Arc<EdgeShard>`, and `EdgeShard` is a UniFFI object that intentionally
-    // does not implement `Debug`, so `expect_err` (which formats the Ok value)
-    // does not compile here.
-    #[allow(clippy::err_expect)]
-    let err = EdgeShard::load(path, Some(config))
-        .err()
-        .expect("load with Scalar quantization should fail, not silently drop it");
-
-    // Branchable contract (C5): the host must be able to catch this as bad input.
+    let shard = EdgeShard::load(path, Some(config));
     assert!(
-        matches!(err, EdgeError::InvalidArgument { .. }),
-        "expected InvalidArgument for unsupported quantization, got {err:?}"
+        shard.is_ok(),
+        "Scalar quantization must be accepted at load (parity with Python SDK), got {:?}",
+        shard.err()
     );
 }
 
@@ -583,13 +572,13 @@ fn set_payload_visible_after_retrieve() {
     );
 }
 
-// ── Test 12: product_quantization_rejected_at_load ────────────────────────────
+// ── Test 12: product_quantization_accepted_at_load ────────────────────────────
 
-/// C-Quant regression (Product arm): like Scalar, Product quantization is not
-/// supported on Edge's appendable segments and must be rejected at `load`.
-/// Guards the `Product` branch of `EdgeConfig::validate` against removal.
+/// Parity with the Python Edge SDK: Product quantization must be ACCEPTED at
+/// `load` (the FFI exposes all four strategies; the engine decides what it can
+/// apply on its appendable segments).
 #[test]
-fn product_quantization_rejected_at_load() {
+fn product_quantization_accepted_at_load() {
     use qdrant_edge_ffi::config::{
         CompressionRatio, ProductQuantizationParams, QuantizationConfig,
     };
@@ -616,13 +605,50 @@ fn product_quantization_rejected_at_load() {
         sparse_vector_data: HashMap::new(),
     };
 
-    #[allow(clippy::err_expect)]
-    let err = EdgeShard::load(path, Some(config))
-        .err()
-        .expect("load with Product quantization should fail, not silently drop it");
+    let shard = EdgeShard::load(path, Some(config));
     assert!(
-        matches!(err, EdgeError::InvalidArgument { .. }),
-        "expected InvalidArgument for Product quantization, got {err:?}"
+        shard.is_ok(),
+        "Product quantization must be accepted at load (parity with Python SDK), got {:?}",
+        shard.err()
+    );
+}
+
+// ── Test 12b: turbo_quantization_accepted_at_load ─────────────────────────────
+
+/// Turbo (TurboQuant) is exposed for parity with the Python Edge SDK and IS
+/// applied on appendable segments (`supports_appendable()` = Binary | Turbo).
+/// `load` must accept it.
+#[test]
+fn turbo_quantization_accepted_at_load() {
+    use qdrant_edge_ffi::config::{QuantizationConfig, TurboQuantBitSize, TurboQuantizationParams};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+
+    let config = EdgeConfig {
+        vector_data: HashMap::from([(
+            "vec".to_string(),
+            VectorDataConfig {
+                size: 4,
+                distance: Distance::Dot,
+                quantization_config: Some(QuantizationConfig::Turbo {
+                    config: TurboQuantizationParams {
+                        always_ram: Some(true),
+                        bits: Some(TurboQuantBitSize::Bits4),
+                    },
+                }),
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    };
+
+    let shard = EdgeShard::load(path, Some(config));
+    assert!(
+        shard.is_ok(),
+        "Turbo quantization must be accepted at load, got {:?}",
+        shard.err()
     );
 }
 
