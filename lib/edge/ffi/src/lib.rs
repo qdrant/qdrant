@@ -115,6 +115,24 @@ impl EdgeShard {
         Ok(())
     }
 
+    /// Runs the segment optimizers in-process, blocking until no more
+    /// optimizations are planned. This is what builds the HNSW index from the
+    /// freshly-written (plain) segments: until you call it, searches fall back
+    /// to a brute-force scan, and large segments may be excluded from results.
+    /// Call it after a batch of upserts (e.g. on app-suspend or after import).
+    ///
+    /// Returns `true` if any segment was optimized, `false` if already optimal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EdgeError::ShardClosed`] if the shard has been unloaded, or
+    /// [`EdgeError::OperationError`] if an optimizer fails.
+    pub fn optimize(&self) -> Result<bool> {
+        let guard = self.inner.lock();
+        let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
+        Ok(shard.optimize()?)
+    }
+
     /// Eagerly releases the shard's WAL and segment file handles, flushing any
     /// pending data.
     ///

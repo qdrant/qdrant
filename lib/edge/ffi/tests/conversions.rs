@@ -233,6 +233,7 @@ fn closed_shard_returns_shard_closed() {
                 quantization_config: None,
                 multivector_config: None,
                 datatype: None,
+                hnsw_config: None,
             },
         )]),
         sparse_vector_data: HashMap::new(),

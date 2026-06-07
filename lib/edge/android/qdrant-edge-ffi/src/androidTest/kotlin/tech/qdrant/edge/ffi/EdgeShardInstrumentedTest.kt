@@ -43,6 +43,7 @@ class EdgeShardInstrumentedTest {
                 quantizationConfig = null,
                 multivectorConfig = null,
                 datatype = null,
+                hnswConfig = null,
             )
         ),
         sparseVectorData = emptyMap(),
@@ -207,6 +208,7 @@ class EdgeShardInstrumentedTest {
                     ),
                     multivectorConfig = null,
                     datatype = null,
+                    hnswConfig = null,
                 )
             ),
             sparseVectorData = emptyMap(),
@@ -350,6 +352,66 @@ class EdgeShardInstrumentedTest {
             assertEquals("query should rank all 3 points", 3, results.size)
             val topId = results.first().id
             assertTrue("nearest to [1,0,0,0] should be id=1", topId is PointId.NumId && topId.value == 1uL)
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
+    }
+
+    // ── Test 9: hnswOptimizeAndSearch ──────────────────────────────────────
+
+    /** Loads with an HNSW config, upserts, optimize() (builds HNSW), searches. */
+    @Test
+    fun hnswOptimizeAndSearch() {
+        val dir = freshDir("hnsw-optimize")
+        val config = EdgeConfig(
+            vectorData = mapOf(
+                "" to VectorDataConfig(
+                    size = 4uL,
+                    distance = Distance.DOT,
+                    quantizationConfig = null,
+                    multivectorConfig = null,
+                    datatype = null,
+                    hnswConfig = HnswIndexConfig(
+                        m = 16uL,
+                        efConstruct = 100uL,
+                        fullScanThreshold = 10000uL,
+                        maxIndexingThreads = 1uL,
+                        onDisk = false,
+                        payloadM = null,
+                    ),
+                )
+            ),
+            sparseVectorData = emptyMap(),
+        )
+        val shard = EdgeShard.load(path = dir.absolutePath, config = config)
+        try {
+            shard.update(
+                operation = UpdateOperation.upsertPoints(
+                    points = listOf(
+                        Point(PointId.NumId(1uL), Vector.Single(listOf(1.0f, 0.0f, 0.0f, 0.0f)), null),
+                        Point(PointId.NumId(2uL), Vector.Single(listOf(0.0f, 1.0f, 0.0f, 0.0f)), null),
+                        Point(PointId.NumId(3uL), Vector.Single(listOf(0.0f, 0.0f, 1.0f, 0.0f)), null),
+                    ),
+                ),
+            )
+
+            // Builds the HNSW index; don't assert the bool (tiny shard may be
+            // already optimal), only that it runs and search still works.
+            shard.optimize()
+
+            val results = shard.search(
+                request = SearchRequest(
+                    query = Query.Nearest(vector = listOf(1.0f, 0.0f, 0.0f, 0.0f), using = null),
+                    limit = 3uL,
+                    offset = null,
+                    filter = null,
+                    params = null,
+                    withVector = null,
+                    withPayload = null,
+                    scoreThreshold = null,
+                ),
+            )
+            assertEquals("search after optimize should return all 3 points", 3, results.size)
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }

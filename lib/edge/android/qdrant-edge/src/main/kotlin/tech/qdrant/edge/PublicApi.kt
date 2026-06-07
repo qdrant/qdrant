@@ -37,6 +37,7 @@ public typealias GeoLineString = tech.qdrant.edge.ffi.GeoLineString
 public typealias GeoPoint = tech.qdrant.edge.ffi.GeoPoint
 public typealias GeoPolygon = tech.qdrant.edge.ffi.GeoPolygon
 public typealias GeoRadius = tech.qdrant.edge.ffi.GeoRadius
+public typealias HnswIndexConfig = tech.qdrant.edge.ffi.HnswIndexConfig
 public typealias MultiVectorConfig = tech.qdrant.edge.ffi.MultiVectorConfig
 public typealias OrderBy = tech.qdrant.edge.ffi.OrderBy
 public typealias Point = tech.qdrant.edge.ffi.Point

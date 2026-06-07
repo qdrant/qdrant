@@ -44,6 +44,7 @@ class MainActivity : Activity() {
                     quantizationConfig = null,
                     multivectorConfig = null,
                     datatype = null,
+                    hnswConfig = null,
                 )
             ),
             sparseVectorData = emptyMap(),

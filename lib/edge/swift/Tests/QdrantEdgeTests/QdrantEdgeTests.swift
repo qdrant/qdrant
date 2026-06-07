@@ -31,7 +31,8 @@ final class QdrantEdgeTests: XCTestCase {
                     distance: .dot,
                     quantizationConfig: nil,
                     multivectorConfig: nil,
-                    datatype: nil
+                    datatype: nil,
+                    hnswConfig: nil
                 ),
             ],
             sparseVectorData: [:]
@@ -262,7 +263,8 @@ final class QdrantEdgeTests: XCTestCase {
                     distance: .dot,
                     quantizationConfig: .turbo(config: TurboQuantizationParams(alwaysRam: true, bits: .bits4)),
                     multivectorConfig: nil,
-                    datatype: nil
+                    datatype: nil,
+                    hnswConfig: nil
                 ),
             ],
             sparseVectorData: [:]
@@ -286,5 +288,61 @@ final class QdrantEdgeTests: XCTestCase {
             scoreThreshold: nil
         ))
         XCTAssertFalse(results.isEmpty, "Turbo-quantized search should return a result")
+    }
+
+    // MARK: - testHnswOptimizeAndSearch
+
+    /// Loads with an explicit HNSW config, upserts, runs optimize() (builds the
+    /// HNSW index from plain segments), and confirms search still works — proving
+    /// the HNSW config reaches the optimizer and optimize() works on-device.
+    func testHnswOptimizeAndSearch() throws {
+        let shardURL = testDir.appendingPathComponent("hnsw-optimize")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+
+        let config = EdgeConfig(
+            vectorData: [
+                "": VectorDataConfig(
+                    size: 4,
+                    distance: .dot,
+                    quantizationConfig: nil,
+                    multivectorConfig: nil,
+                    datatype: nil,
+                    hnswConfig: HnswIndexConfig(
+                        m: 16,
+                        efConstruct: 100,
+                        fullScanThreshold: 10000,
+                        maxIndexingThreads: 1,
+                        onDisk: false,
+                        payloadM: nil
+                    )
+                ),
+            ],
+            sparseVectorData: [:]
+        )
+
+        let shard = try EdgeShard.load(path: shardURL.path, config: config)
+        defer { shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1), vector: .single(values: [1.0, 0.0, 0.0, 0.0]), payload: nil),
+            Point(id: .numId(value: 2), vector: .single(values: [0.0, 1.0, 0.0, 0.0]), payload: nil),
+            Point(id: .numId(value: 3), vector: .single(values: [0.0, 0.0, 1.0, 0.0]), payload: nil),
+        ]))
+
+        // Builds the HNSW index; we don't assert the bool (a tiny shard may be
+        // already optimal), only that it does not throw and search still works.
+        _ = try shard.optimize()
+
+        let results = try shard.search(request: SearchRequest(
+            query: .nearest(vector: [1.0, 0.0, 0.0, 0.0], using: nil),
+            limit: 3,
+            offset: nil,
+            filter: nil,
+            params: nil,
+            withVector: nil,
+            withPayload: nil,
+            scoreThreshold: nil
+        ))
+        XCTAssertEqual(results.count, 3, "Search after optimize should return all points")
     }
 }

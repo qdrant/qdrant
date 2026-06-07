@@ -6,6 +6,7 @@ use segment::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding as SegmentBinaryQuantizationEncoding,
     BinaryQuantizationQueryEncoding as SegmentBinaryQuantizationQueryEncoding,
     CompressionRatio as SegmentCompressionRatio, Distance as SegmentDistance,
+    HnswConfig as SegmentHnswConfig,
     Indexes, MultiVectorComparator as SegmentMultiVectorComparator,
     MultiVectorConfig as SegmentMultiVectorConfig, PayloadStorageType,
     ProductQuantization, ProductQuantizationConfig,
@@ -510,6 +511,60 @@ impl TryFrom<SegmentQuantizationConfig> for QuantizationConfig {
     }
 }
 
+// ── HnswIndexConfig ───────────────────────────────────────────────────────────
+
+/// HNSW index parameters for a dense vector field.
+///
+/// Set this on a `VectorDataConfig` to control the approximate-nearest-neighbour
+/// index. With no HNSW config the field uses a plain (brute-force) index until
+/// the optimizer runs; providing one lets you tune the recall/memory/speed
+/// trade-off — important on memory-constrained devices.
+///
+/// The index is built by [`crate::EdgeShard::optimize`]; these parameters take
+/// effect when that runs.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HnswIndexConfig {
+    /// Edges per node in the graph. Higher = better recall, more memory.
+    pub m: u64,
+    /// Neighbours considered while building. Higher = better index, slower build.
+    pub ef_construct: u64,
+    /// Below this size (KB) a full scan is preferred over HNSW traversal.
+    pub full_scan_threshold: u64,
+    /// Background index-building threads. `0` = auto-select.
+    pub max_indexing_threads: u64,
+    /// Store the HNSW index on disk instead of RAM. Defaults to `false`.
+    pub on_disk: Option<bool>,
+    /// Custom `m` for the payload index graph; defaults to `m` when unset.
+    pub payload_m: Option<u64>,
+}
+
+impl From<HnswIndexConfig> for SegmentHnswConfig {
+    fn from(c: HnswIndexConfig) -> Self {
+        SegmentHnswConfig {
+            m: crate::error::clamp_usize(c.m),
+            ef_construct: crate::error::clamp_usize(c.ef_construct),
+            full_scan_threshold: crate::error::clamp_usize(c.full_scan_threshold),
+            max_indexing_threads: crate::error::clamp_usize(c.max_indexing_threads),
+            on_disk: c.on_disk,
+            payload_m: c.payload_m.map(crate::error::clamp_usize),
+            inline_storage: None,
+        }
+    }
+}
+
+impl From<SegmentHnswConfig> for HnswIndexConfig {
+    fn from(c: SegmentHnswConfig) -> Self {
+        HnswIndexConfig {
+            m: c.m as u64,
+            ef_construct: c.ef_construct as u64,
+            full_scan_threshold: c.full_scan_threshold as u64,
+            max_indexing_threads: c.max_indexing_threads as u64,
+            on_disk: c.on_disk,
+            payload_m: c.payload_m.map(|v| v as u64),
+        }
+    }
+}
+
 // ── VectorDataConfig ────────────────────────────────────────────────────────
 
 /// Configuration for a single dense vector field.
@@ -531,6 +586,10 @@ pub struct VectorDataConfig {
     pub multivector_config: Option<MultiVectorConfig>,
     /// Optional storage datatype; defaults to `Float32` when unset.
     pub datatype: Option<VectorStorageDatatype>,
+    /// Optional HNSW index parameters. `None` uses a plain index until the
+    /// optimizer builds one with default settings; set this to tune the
+    /// recall/memory/speed trade-off. Built by [`crate::EdgeShard::optimize`].
+    pub hnsw_config: Option<HnswIndexConfig>,
 }
 
 impl From<VectorDataConfig> for SegmentVectorDataConfig {
@@ -539,7 +598,13 @@ impl From<VectorDataConfig> for SegmentVectorDataConfig {
             size: crate::error::clamp_usize(c.size),
             distance: SegmentDistance::from(c.distance),
             storage_type: VectorStorageType::InRamChunkedMmap,
-            index: Indexes::Plain {},
+            // The index travels via the `index` field: emit `Hnsw` when the host
+            // supplied HNSW params (so `edge::EdgeConfig::from_segment_config`
+            // picks them up and the optimizer builds an HNSW index), else `Plain`.
+            index: match c.hnsw_config {
+                Some(h) => Indexes::Hnsw(SegmentHnswConfig::from(h)),
+                None => Indexes::Plain {},
+            },
             quantization_config: c.quantization_config.map(SegmentQuantizationConfig::from),
             multivector_config: c.multivector_config.map(SegmentMultiVectorConfig::from),
             datatype: c.datatype.map(SegmentVectorStorageDatatype::from),
@@ -549,12 +614,17 @@ impl From<VectorDataConfig> for SegmentVectorDataConfig {
 
 impl From<SegmentVectorDataConfig> for VectorDataConfig {
     fn from(c: SegmentVectorDataConfig) -> Self {
+        let hnsw_config = match c.index {
+            Indexes::Hnsw(h) => Some(HnswIndexConfig::from(h)),
+            Indexes::Plain {} => None,
+        };
         VectorDataConfig {
             size: c.size as u64,
             distance: Distance::from(c.distance),
             quantization_config: c.quantization_config.and_then(|q| q.try_into().ok()),
             multivector_config: c.multivector_config.map(MultiVectorConfig::from),
             datatype: c.datatype.map(VectorStorageDatatype::from),
+            hnsw_config,
         }
     }
 }

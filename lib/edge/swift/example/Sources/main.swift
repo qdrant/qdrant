@@ -61,7 +61,8 @@ let config = EdgeConfig(
             distance: .dot,
             quantizationConfig: nil,
             multivectorConfig: nil,
-            datatype: nil
+            datatype: nil,
+            hnswConfig: nil
         ),
     ],
     sparseVectorData: [:]
