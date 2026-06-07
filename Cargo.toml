@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.18.2"
+version = "1.18.3-dev"
 description = "Qdrant - Vector Search engine"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
@@ -129,6 +129,7 @@ wal = { path = "lib/wal" }
 
 actix-multipart = "0.7.2"
 constant_time_eq = "0.4.2"
+sha2 = { workspace = true }
 
 # Profiling
 tracing = { workspace = true }
@@ -206,6 +207,7 @@ async-trait = "0.1.89"
 atomicwrites = "0.4.4"
 bincode = "1.3.3" # no upgrade because 2.0.x is much slower https://github.com/qdrant/qdrant/pull/6134
 bitpacking = "0.9.3"
+blink-alloc = "0.4.0"
 bytemuck = { version = "1.25.0", features = [
     "derive",
     "extern_crate_alloc",

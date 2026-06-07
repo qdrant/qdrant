@@ -86,6 +86,19 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub enable_static_content: Option<bool>,
 
+    /// Require username/password login before serving the Web UI.
+    /// Enabled by default when static content is enabled.
+    #[serde(default)]
+    pub ui_auth_enabled: Option<bool>,
+
+    /// Initial Web UI username. Used only when `ui_auth.json` does not exist yet.
+    /// Default: `admin`
+    pub ui_username: Option<String>,
+
+    /// Initial Web UI password. Used only when `ui_auth.json` does not exist yet.
+    /// Default: `qdrant`
+    pub ui_password: Option<String>,
+
     /// How much time is considered too long for a query to execute.
     pub slow_query_secs: Option<f32>,
 
@@ -109,6 +122,10 @@ pub struct ServiceConfig {
 impl ServiceConfig {
     pub fn hardware_reporting(&self) -> bool {
         self.hardware_reporting.unwrap_or_default()
+    }
+
+    pub fn ui_auth_enabled(&self) -> bool {
+        self.ui_auth_enabled.unwrap_or(true)
     }
 }
 

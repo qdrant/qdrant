@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Qdrant Dashboard Login</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #9aa7b8;
+      --accent: #dc244c;
+      --border: #2a3648;
+      --error: #ff6b6b;
+      --ok: #3dd68c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at top, #243049, var(--bg) 55%);
+      color: var(--text);
+      padding: 24px;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+    }
+    p {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #111827;
+      color: var(--text);
+      font-size: 1rem;
+    }
+    button {
+      width: 100%;
+      margin-top: 18px;
+      padding: 12px 14px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.secondary {
+      margin-top: 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .message {
+      margin-top: 14px;
+      min-height: 1.2rem;
+      font-size: 0.92rem;
+    }
+    .message.error { color: var(--error); }
+    .message.ok { color: var(--ok); }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .tab.active {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(220, 36, 76, 0.12);
+    }
+    .hidden { display: none; }
+    .hint {
+      margin-top: 16px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Qdrant Dashboard</h1>
+    <p id="subtitle">Sign in to access the Web UI.</p>
+
+    <div class="tabs">
+      <button class="tab active" id="tab-login" type="button">Sign in</button>
+      <button class="tab" id="tab-change" type="button">Change credentials</button>
+    </div>
+
+    <form id="login-form">
+      <label for="login-username">Username</label>
+      <input id="login-username" name="username" autocomplete="username" required>
+
+      <label for="login-password">Password</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+
+      <button type="submit">Sign in</button>
+    </form>
+
+    <form id="change-form" class="hidden">
+      <label for="current-password">Current password</label>
+      <input id="current-password" name="current_password" type="password" autocomplete="current-password" required>
+
+      <label for="new-username">New username</label>
+      <input id="new-username" name="new_username" autocomplete="username">
+
+      <label for="new-password">New password</label>
+      <input id="new-password" name="new_password" type="password" autocomplete="new-password" required>
+
+      <button type="submit">Update credentials</button>
+      <button class="secondary" id="open-dashboard" type="button">Open dashboard</button>
+      <button class="secondary" id="logout-btn" type="button">Log out</button>
+    </form>
+
+    <div class="message" id="message"></div>
+    <p class="hint">Default credentials are <code>admin</code> / <code>qdrant</code> until you change them here or via Docker environment variables.</p>
+  </div>
+
+  <script>
+    const message = document.getElementById('message');
+    const loginForm = document.getElementById('login-form');
+    const changeForm = document.getElementById('change-form');
+    const tabLogin = document.getElementById('tab-login');
+    const tabChange = document.getElementById('tab-change');
+    const subtitle = document.getElementById('subtitle');
+    const redirect = new URLSearchParams(window.location.search).get('redirect') || '/dashboard/';
+
+    function setMessage(text, type) {
+      message.textContent = text;
+      message.className = 'message' + (type ? ' ' + type : '');
+    }
+
+    function showLogin() {
+      tabLogin.classList.add('active');
+      tabChange.classList.remove('active');
+      loginForm.classList.remove('hidden');
+      changeForm.classList.add('hidden');
+      subtitle.textContent = 'Sign in to access the Web UI.';
+    }
+
+    function showChange() {
+      tabChange.classList.add('active');
+      tabLogin.classList.remove('active');
+      changeForm.classList.remove('hidden');
+      loginForm.classList.add('hidden');
+      subtitle.textContent = 'Update the dashboard username and password.';
+    }
+
+    tabLogin.addEventListener('click', showLogin);
+    tabChange.addEventListener('click', showChange);
+
+    async function refreshSession() {
+      const response = await fetch('/dashboard/auth/session');
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.authenticated) {
+        document.getElementById('new-username').placeholder = data.username || '';
+        showChange();
+      }
+    }
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setMessage('');
+      const payload = {
+        username: document.getElementById('login-username').value,
+        password: document.getElementById('login-password').value,
+      };
+      const response = await fetch('/dashboard/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(data.message || 'Login failed', 'error');
+        return;
+      }
+      window.location.href = redirect;
+    });
+
+    changeForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setMessage('');
+      const payload = {
+        current_password: document.getElementById('current-password').value,
+        new_username: document.getElementById('new-username').value || undefined,
+        new_password: document.getElementById('new-password').value,
+      };
+      const response = await fetch('/dashboard/auth/credentials', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(data.message || 'Update failed', 'error');
+        return;
+      }
+      setMessage(data.message || 'Credentials updated', 'ok');
+      showLogin();
+    });
+
+    document.getElementById('open-dashboard').addEventListener('click', () => {
+      window.location.href = redirect;
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      setMessage('');
+      await fetch('/dashboard/auth/logout', { method: 'POST' });
+      window.location.href = '/dashboard/login';
+    });
+
+    refreshSession();
+  </script>
+</body>
+</html>

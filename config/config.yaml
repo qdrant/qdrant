@@ -318,6 +318,14 @@ service:
   #
   # enforce_internal_auth: true
 
+  # Protect the Web UI with a username/password login screen.
+  # Credentials are stored in `storage/ui_auth.json` after the first start.
+  # Default credentials: admin / qdrant
+  #
+  # ui_auth_enabled: true
+  # ui_username: admin
+  # ui_password: qdrant
+
   # Hardware reporting adds information to the API responses with a
   # hint on how many resources were used to execute the request.
   #

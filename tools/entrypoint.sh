@@ -18,6 +18,45 @@ _interrupt () {
 
 trap _interrupt SIGINT
 
+setup_ui_auth() {
+  local storage_path="${QDRANT__STORAGE__STORAGE_PATH:-./storage}"
+  local auth_file="${storage_path}/ui_auth.json"
+
+  if [ -f "$auth_file" ]; then
+    return
+  fi
+
+  if [ -n "$QDRANT__SERVICE__UI_USERNAME" ] && [ -n "$QDRANT__SERVICE__UI_PASSWORD" ]; then
+    return
+  fi
+
+  if [ -t 0 ] && [ "${QDRANT_UI_SETUP_PROMPT:-true}" = "true" ]; then
+    echo ""
+    echo "Qdrant Web UI login setup"
+    echo "Default credentials: admin / qdrant"
+    echo "Press Enter to keep defaults, or type 'setup' to configure now."
+    read -r choice
+
+    if [ "$choice" = "setup" ]; then
+      read -r -p "Username [admin]: " username
+      read -r -s -p "Password: " password
+      echo ""
+      export QDRANT__SERVICE__UI_USERNAME="${username:-admin}"
+      export QDRANT__SERVICE__UI_PASSWORD="${password}"
+      echo "Web UI credentials will be initialized on first start."
+    else
+      echo "Using default Web UI credentials (admin / qdrant)."
+      echo "Change them later at /dashboard/login after the container starts."
+    fi
+    echo ""
+  else
+    echo "Web UI will start with default credentials (admin / qdrant)."
+    echo "Set QDRANT__SERVICE__UI_USERNAME and QDRANT__SERVICE__UI_PASSWORD to override."
+  fi
+}
+
+setup_ui_auth
+
 ./qdrant $@ &
 
 # Get PID for the traps

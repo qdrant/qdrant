@@ -49,7 +49,9 @@ To experience the full power of Qdrant locally, run the container with this comm
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
-Note that this starts an insecure deployment without authentication, open to all network interfaces. Please refer to [secure your instance](https://qdrant.tech/documentation/security/#secure-your-instance).
+The Web UI at `http://localhost:6333/dashboard` is protected by a login screen. On first start it uses default credentials `admin` / `qdrant` (change them at `/dashboard/login` or via `QDRANT__SERVICE__UI_USERNAME` / `QDRANT__SERVICE__UI_PASSWORD`). Use the **Log out** button in the dashboard header or on the login page to end your session. Interactive Docker starts can optionally prompt for credentials during container startup.
+
+Note that the REST API remains open unless you also configure an API key. This deployment is open to all network interfaces. Please refer to [secure your instance](https://qdrant.tech/documentation/security/#secure-your-instance).
 
 Now you can connect to the server with any [client](#clients). For example, using Python:
 

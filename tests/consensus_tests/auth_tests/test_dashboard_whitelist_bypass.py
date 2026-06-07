@@ -50,6 +50,8 @@ def dashboard_cluster(tmp_path_factory: pytest.TempPathFactory):
         extra_env={
             "QDRANT__SERVICE__ENABLE_STATIC_CONTENT": "true",
             "QDRANT__SERVICE__STATIC_CONTENT_DIR": str(static_dir),
+            # UI login is tested separately; keep this regression focused on API-key whitelist behavior.
+            "QDRANT__SERVICE__UI_AUTH_ENABLED": "false",
         },
     )
 
