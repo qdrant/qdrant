@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
 
 #[derive(Debug)]
-pub(super) struct HNSWSearchesTelemetry {
+pub(crate) struct HNSWSearchesTelemetry {
     pub(super) unfiltered_plain: Arc<Mutex<OperationDurationsAggregator>>,
     pub(super) filtered_plain: Arc<Mutex<OperationDurationsAggregator>>,
     pub(super) unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,
