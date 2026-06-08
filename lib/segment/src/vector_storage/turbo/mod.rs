@@ -16,9 +16,7 @@ mod turbo_encoded_vectors;
 
 use std::alloc::Layout;
 use std::borrow::Cow;
-use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -128,15 +126,6 @@ impl VectorStorage for TurboVectorStorage {
     ) -> OperationResult<()> {
         // TODO: encode the f32 vector via `self.encoded.upsert_vector` (live insert).
         unimplemented!("TODO: encode and insert a single vector")
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        _other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        _stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        // TODO: encode each incoming f32 vector and propagate deleted flags.
-        unimplemented!("TODO: encode vectors from another storage (optimize)")
     }
 
     fn flusher(&self) -> Flusher {
