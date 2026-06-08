@@ -65,8 +65,9 @@ impl HNSWIndexReadViewEnum<'_> {
             let selectivity = if available_vector_count == 0 {
                 1.0
             } else {
-                let query_point_cardinality =
-                    self.payload_index.estimate_cardinality(filter, &hw_counter)?;
+                let query_point_cardinality = self
+                    .payload_index
+                    .estimate_cardinality(filter, &hw_counter)?;
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
@@ -288,7 +289,9 @@ impl HNSWIndexReadViewEnum<'_> {
         let is_stopped = &vector_query_context.is_stopped();
 
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self.payload_index.estimate_cardinality(filter, hw_counter)?;
+        let query_cardinality = self
+            .payload_index
+            .estimate_cardinality(filter, hw_counter)?;
         let filtered_points: Vec<PointOffsetType> = self
             .payload_index
             .iter_filtered_points(
