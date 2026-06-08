@@ -10,6 +10,7 @@ use crate::collection::Collection;
 use crate::lookup::lookup_ids;
 use crate::lookup::types::PseudoId;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult, PointGroup};
 
@@ -24,6 +25,7 @@ where
     /// `Fn` to get a collection having its name. Obligatory for recommend and lookup
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
@@ -46,6 +48,7 @@ where
             collection,
             collection_by_name,
             read_consistency: None,
+            routing_token: None,
             shard_selection: ShardSelectorInternal::All,
             timeout: None,
             hw_measurement_acc,
@@ -54,6 +57,11 @@ where
 
     pub fn set_read_consistency(mut self, read_consistency: Option<ReadConsistency>) -> Self {
         self.read_consistency = read_consistency;
+        self
+    }
+
+    pub fn set_routing_token(mut self, routing_token: Option<RoutingToken>) -> Self {
+        self.routing_token = routing_token;
         self
     }
 
@@ -92,6 +100,7 @@ where
                 self.collection,
                 self.collection_by_name.clone(),
                 self.read_consistency,
+                self.routing_token,
                 self.shard_selection.clone(),
                 self.timeout,
                 self.hw_measurement_acc.clone(),
@@ -102,6 +111,7 @@ where
             core_group_by,
             self.collection,
             self.read_consistency,
+            self.routing_token,
             self.shard_selection.clone(),
             self.timeout,
             self.hw_measurement_acc.clone(),
@@ -125,6 +135,7 @@ where
                     pseudo_ids,
                     self.collection_by_name,
                     self.read_consistency,
+                    self.routing_token,
                     &self.shard_selection,
                     timeout,
                     self.hw_measurement_acc.clone(),

@@ -49,6 +49,8 @@ impl TableOfContent {
                 peer_limit,
                 shard_selection,
                 None,
+                // Internal node-to-node call: routing already resolved by the coordinator.
+                None,
                 timeout,
                 hw_measurement_acc,
             )

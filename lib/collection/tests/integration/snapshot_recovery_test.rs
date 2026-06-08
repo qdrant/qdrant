@@ -171,6 +171,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         .search(
             full_search_request.clone().into(),
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
             hw_acc,
@@ -182,6 +183,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let recovered_result = recovered_collection
         .search(
             full_search_request.into(),
+            None,
             None,
             &ShardSelectorInternal::All,
             None,

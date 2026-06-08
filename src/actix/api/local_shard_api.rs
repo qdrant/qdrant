@@ -17,6 +17,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::{AccessRequirements, Auth};
 use tokio::time::Instant;
 
+use super::routing_token::ActixRoutingToken;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{
@@ -40,6 +41,7 @@ async fn get_points(
     path: web::Path<CollectionShard>,
     request: web::Json<PointRequestInternal>,
     params: web::Query<ReadParams>,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
     service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     // No strict mode verification needed
@@ -58,6 +60,7 @@ async fn get_points(
         &path.collection_name,
         request.into_inner(),
         params.consistency,
+        routing_token,
         params.timeout(),
         ShardSelectorInternal::ShardId(path.shard),
         auth,
@@ -81,6 +84,7 @@ async fn scroll_points(
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<ScrollRequestInternal>>,
     params: web::Query<ReadParams>,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
     service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     let WithFilter {
@@ -135,6 +139,7 @@ async fn scroll_points(
             &path.collection_name,
             request,
             params.consistency,
+            routing_token,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
             auth,
@@ -157,6 +162,7 @@ async fn count_points(
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<CountRequestInternal>>,
     params: web::Query<ReadParams>,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
     service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     let WithFilter {
@@ -209,6 +215,7 @@ async fn count_points(
             &path.collection_name,
             request,
             params.consistency,
+            routing_token,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
             auth,

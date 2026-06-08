@@ -24,6 +24,7 @@ pub(super) async fn collect_model_from_collection(collection: &Collection) -> Mo
                 order_by: None,
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
             HwMeasurementAcc::new(),

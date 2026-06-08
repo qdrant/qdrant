@@ -124,6 +124,8 @@ pub async fn search(
         &collection_name,
         search_request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
@@ -168,6 +170,8 @@ pub async fn core_search_batch(
         collection_name,
         requests,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         auth,
         timeout,
         request_hw_counter.get_counter(),
@@ -227,6 +231,8 @@ pub async fn core_search_list(
             &collection_name,
             request,
             read_consistency,
+            // TODO(route_token): implement for gRPC
+            None,
             shard_selection,
             auth,
             timeout,
@@ -284,6 +290,8 @@ pub async fn search_groups(
         &collection_name,
         search_groups_request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
@@ -337,6 +345,8 @@ pub async fn recommend(
             &collection_name,
             request,
             read_consistency,
+            // TODO(route_token): implement for gRPC
+            None,
             shard_selector,
             auth,
             timeout,
@@ -393,6 +403,8 @@ pub async fn recommend_batch(
             collection_name,
             requests,
             read_consistency,
+            // TODO(route_token): implement for gRPC
+            None,
             auth,
             timeout,
             request_hw_counter.get_counter(),
@@ -448,6 +460,8 @@ pub async fn recommend_groups(
         &collection_name,
         recommend_groups_request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
@@ -494,6 +508,8 @@ pub async fn discover(
             &collection_name,
             request,
             read_consistency,
+            // TODO(route_token): implement for gRPC
+            None,
             shard_selector,
             auth,
             timeout,
@@ -549,6 +565,8 @@ pub async fn discover_batch(
             collection_name,
             requests,
             read_consistency,
+            // TODO(route_token): implement for gRPC
+            None,
             auth,
             timeout,
             request_hw_counter.get_counter(),
@@ -623,6 +641,8 @@ pub async fn scroll(
         &collection_name,
         scroll_request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         timeout,
         shard_selector,
         auth,
@@ -690,6 +710,8 @@ pub async fn count(
         &collection_name,
         count_request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         timeout,
         shard_selector,
         auth,
@@ -755,6 +777,8 @@ pub async fn get(
         &collection_name,
         point_request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         timeout,
         shard_selector,
         auth,
@@ -807,6 +831,8 @@ pub async fn query(
         &collection_name,
         request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         shard_selector,
         auth,
         timeout,
@@ -863,6 +889,8 @@ pub async fn query_batch(
         collection_name,
         requests,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         auth,
         timeout,
         request_hw_counter.get_counter(),
@@ -923,6 +951,8 @@ pub async fn query_groups(
         &collection_name,
         request,
         read_consistency,
+        // TODO(route_token): implement for gRPC
+        None,
         shard_selector,
         auth,
         timeout,
@@ -991,6 +1021,8 @@ pub async fn facet(
             facet_request,
             shard_selector,
             read_consistency,
+            // TODO(route_token): implement for gRPC
+            None,
             auth,
             timeout,
             request_hw_counter.get_counter(),
@@ -1059,6 +1091,8 @@ pub async fn search_points_matrix(
             &collection_name,
             search_matrix_request,
             read_consistency,
+            // TODO(route_token): implement for gRPC
+            None,
             shard_selector,
             auth,
             timeout,

@@ -13,6 +13,7 @@ use shard::search::CoreSearchRequestBatch;
 
 use super::ShardReplicaSet;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::types::*;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 
@@ -21,6 +22,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<ScrollRequestInternal>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -40,8 +42,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
-            // TODO(route_token): optional deterministic routing to be exposed through read API
-            None,
+            routing_token,
             local_only,
         )
         .await
@@ -91,7 +92,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
-            // TODO(route_token): optional deterministic routing to be exposed through read API
+            // Local-only read: replica routing does not apply.
             None,
             true,
         )
@@ -102,6 +103,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -119,17 +121,18 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
-            // TODO(route_token): optional deterministic routing to be exposed through read API
-            None,
+            routing_token,
             local_only,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn count(
         &self,
         request: Arc<CountRequestInternal>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
         local_only: bool,
         hw_measurement_acc: HwMeasurementAcc,
@@ -154,8 +157,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
-            // TODO(route_token): optional deterministic routing to be exposed through read API
-            None,
+            routing_token,
             local_only,
         )
         .await
@@ -168,6 +170,7 @@ impl ShardReplicaSet {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
         local_only: bool,
         hw_measurement_acc: HwMeasurementAcc,
@@ -200,8 +203,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
-            // TODO(route_token): optional deterministic routing to be exposed through read API
-            None,
+            routing_token,
             local_only,
         )
         .await
@@ -210,7 +212,7 @@ impl ShardReplicaSet {
     pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
         self.execute_read_operation(
             |shard| async move { shard.info().await }.boxed(),
-            // TODO(route_token): optional deterministic routing to be exposed through read API
+            // Collection info read: replica routing does not apply.
             None,
             local_only,
         )
@@ -249,6 +251,7 @@ impl ShardReplicaSet {
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -266,8 +269,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
-            // TODO(route_token): optional deterministic routing to be exposed through read API
-            None,
+            routing_token,
             local_only,
         )
         .await
@@ -277,6 +279,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<FacetParams>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -290,8 +293,7 @@ impl ShardReplicaSet {
                 async move { shard.facet(request, &search_runtime, timeout, hw_acc).await }.boxed()
             },
             read_consistency,
-            // TODO(route_token): optional deterministic routing to be exposed through read API
-            None,
+            routing_token,
             local_only,
         )
         .await

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 pub use api::HTTP_HEADER_API_KEY;
 use chrono::Utc;
+use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
@@ -211,12 +212,22 @@ impl AuthKeys {
             order_by: None,
         };
 
+        // Stateful JWT validation checks whether matching points exist. Deferred
+        // points can make that existence flip between requests (a point appearing or
+        // disappearing) and differ across replicas, which would make the same token
+        // pass and then fail. Route deterministically, seeded by the claim, so a
+        // given token consistently checks the same replica and stays stable.
+        let routing_token = serde_json::to_vec(value_exists)
+            .ok()
+            .map(|claim| RoutingToken::from_bytes(&claim));
+
         let res = self
             .toc
             .scroll(
                 value_exists.get_collection(),
                 scroll_req,
                 None,
+                routing_token,
                 None, // no timeout
                 ShardSelectorInternal::All,
                 Auth::new_internal(Access::full("JWT stateful validation")),

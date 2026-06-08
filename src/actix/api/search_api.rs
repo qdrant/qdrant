@@ -13,6 +13,7 @@ use tokio::time::Instant;
 
 use super::CollectionPath;
 use super::read_params::ReadParams;
+use super::routing_token::ActixRoutingToken;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,
@@ -30,6 +31,7 @@ async fn search_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> HttpResponse {
     let SearchRequest {
         search_request,
@@ -68,6 +70,7 @@ async fn search_points(
         &collection.collection_name,
         search_request.into(),
         params.consistency,
+        routing_token,
         shard_selection,
         auth,
         params.timeout(),
@@ -92,6 +95,7 @@ async fn batch_search_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> HttpResponse {
     let pass = match check_strict_mode(
         &*request,
@@ -139,6 +143,7 @@ async fn batch_search_points(
         &collection.collection_name,
         requests,
         params.consistency,
+        routing_token,
         auth,
         params.timeout(),
         request_hw_counter.get_counter(),
@@ -167,6 +172,7 @@ async fn search_point_groups(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> HttpResponse {
     let SearchGroupsRequest {
         search_group_request,
@@ -204,6 +210,7 @@ async fn search_point_groups(
         &collection.collection_name,
         search_group_request,
         params.consistency,
+        routing_token,
         shard_selection,
         auth,
         params.timeout(),
@@ -222,6 +229,7 @@ async fn search_points_matrix_pairs(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let SearchMatrixRequest {
         search_request,
@@ -259,6 +267,7 @@ async fn search_points_matrix_pairs(
         &collection.collection_name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
+        routing_token,
         shard_selection,
         auth,
         params.timeout(),
@@ -278,6 +287,7 @@ async fn search_points_matrix_offsets(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let SearchMatrixRequest {
         search_request,
@@ -315,6 +325,7 @@ async fn search_points_matrix_offsets(
         &collection.collection_name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
+        routing_token,
         shard_selection,
         auth,
         params.timeout(),
