@@ -1,4 +1,4 @@
-mod load;
+mod lifecycle;
 mod storage;
 #[cfg(test)]
 mod tests;
