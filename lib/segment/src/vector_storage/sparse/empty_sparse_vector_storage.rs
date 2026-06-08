@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -72,6 +73,16 @@ impl SparseVectorStorage for EmptySparseVectorStorage {
     {
         Ok(())
     }
+
+    fn update_from<'a>(
+        &mut self,
+        _other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        Err(OperationError::service_error(
+            "Cannot update empty sparse vector storage",
+        ))
+    }
 }
 
 impl VectorStorageRead for EmptySparseVectorStorage {
@@ -122,16 +133,6 @@ impl VectorStorage for EmptySparseVectorStorage {
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Cannot insert into empty sparse vector storage",
-        ))
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        _other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        _stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        Err(OperationError::service_error(
-            "Cannot update empty sparse vector storage",
         ))
     }
 

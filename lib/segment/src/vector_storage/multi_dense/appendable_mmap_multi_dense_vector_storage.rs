@@ -220,6 +220,25 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
             0
         }
     }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, VectorElementType>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let start_index = self.offsets.len() as PointOffsetType;
+        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation
+        for (other_vector, other_deleted) in other_vectors {
+            check_process_stopped(stopped)?;
+            // Do not perform preprocessing - vectors should be already processed
+            let other_vector = VectorRef::MultiDense(other_vector.as_ref());
+            let new_id = self.offsets.len() as PointOffsetType;
+            self.insert_vector(new_id, other_vector, &disposed_hw_counter)?;
+            self.set_deleted(new_id, other_deleted);
+        }
+        let end_index = self.offsets.len() as PointOffsetType;
+        Ok(start_index..end_index)
+    }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVectorStorage<T> {
@@ -341,25 +360,6 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         self.set_deleted(key, false);
 
         Ok(())
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.offsets.len() as PointOffsetType;
-        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation
-        for (other_vector, other_deleted) in other_vectors {
-            check_process_stopped(stopped)?;
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector: VectorRef = other_vector.as_vec_ref();
-            let new_id = self.offsets.len() as PointOffsetType;
-            self.insert_vector(new_id, other_vector, &disposed_hw_counter)?;
-            self.set_deleted(new_id, other_deleted);
-        }
-        let end_index = self.offsets.len() as PointOffsetType;
-        Ok(start_index..end_index)
     }
 
     fn flusher(&self) -> Flusher {

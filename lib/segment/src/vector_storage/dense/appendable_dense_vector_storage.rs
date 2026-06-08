@@ -94,6 +94,24 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
     {
         self.vectors.for_each_in_batch(keys, callback);
     }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let start_index = self.vectors.len() as PointOffsetType;
+        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
+        for (other_vector, other_deleted) in other_vectors {
+            check_process_stopped(stopped)?;
+            // Do not perform preprocessing - vectors should be already processed
+            let other_vector = T::slice_from_float_cow(other_vector);
+            let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
+            self.set_deleted(new_id as PointOffsetType, other_deleted);
+        }
+        let end_index = self.vectors.len() as PointOffsetType;
+        Ok(start_index..end_index)
+    }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorStorage<T> {
@@ -167,24 +185,6 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
             .insert(key as VectorOffsetType, vector.as_ref(), hw_counter)?;
         self.set_deleted(key, false);
         Ok(())
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.vectors.len() as PointOffsetType;
-        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
-        for (other_vector, other_deleted) in other_vectors {
-            check_process_stopped(stopped)?;
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
-            let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
-            self.set_deleted(new_id as PointOffsetType, other_deleted);
-        }
-        let end_index = self.vectors.len() as PointOffsetType;
-        Ok(start_index..end_index)
     }
 
     fn flusher(&self) -> Flusher {
