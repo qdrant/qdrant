@@ -12642,8 +12642,8 @@
             "type": "boolean"
           },
           "single_file_mmap_vector_storage": {
-            "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.17.1+",
-            "default": false,
+            "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.18.3+",
+            "default": true,
             "type": "boolean"
           },
           "async_payload_storage": {
