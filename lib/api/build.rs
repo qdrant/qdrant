@@ -275,6 +275,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPointGroups.group_size", "range(min = 1)"),
             ("SearchPointGroups.limit", "range(min = 1)"),
             ("SearchPointGroups.timeout", "range(min = 1)"),
+            ("SearchParams.hnsw_ef", "range(min = 1)"),
             ("SearchParams.quantization", ""),
             ("SearchParams.acorn", ""),
             ("QuantizationSearchParams.oversampling", "range(min = 1.0)"),
