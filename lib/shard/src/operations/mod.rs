@@ -109,6 +109,11 @@ impl CollectionUpdateOperations {
     /// This does not touch `VectorNameOperation` responsible for creating/deleting a named vector.
     ///
     /// Only affects the named-vector variants; the default (unnamed) vector is left untouched.
+    ///
+    /// Note: this is best-effort. Stripping a vector from an early operation silently changes the
+    /// behavior of a later operation that depended on it (e.g. a `has_vector` filter or
+    /// `UpdateVectors`), so the replayed timeline can still diverge from the live one. Tracked in
+    /// <https://github.com/qdrant/qdrant/issues/9386>.
     pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
         match self {
             Self::PointOperation(op) => op.retain_vector_names(valid),
