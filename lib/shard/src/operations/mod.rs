@@ -120,6 +120,27 @@ impl CollectionUpdateOperations {
             Self::StagingOperation(_) => (),
         }
     }
+
+    /// If this operation creates a named vector, return the name it introduces.
+    ///
+    /// Used during WAL replay to grow the set of valid vector names: a historical
+    /// `CreateVectorName` must make its name valid for the operations that follow it in
+    /// the WAL, otherwise a later upsert referencing it would be wrongly stripped by
+    /// [`Self::retain_vector_names`].
+    pub fn created_vector_name(&self) -> Option<&VectorNameBuf> {
+        match self {
+            Self::VectorNameOperation(VectorNameOperations::CreateVectorName(op)) => {
+                Some(&op.vector_name)
+            }
+            Self::VectorNameOperation(VectorNameOperations::DeleteVectorName(_))
+            | Self::PointOperation(_)
+            | Self::VectorOperation(_)
+            | Self::PayloadOperation(_)
+            | Self::FieldIndexOperation(_) => None,
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants, Hash)]

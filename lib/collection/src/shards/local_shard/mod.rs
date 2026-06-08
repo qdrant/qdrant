@@ -784,7 +784,10 @@ impl LocalShard {
         // reference a vector name that was since removed by `delete_named_vector`; replaying
         // such an operation against the post-deletion segment config fails validation and the
         // whole operation (with its points) is dropped. We strip the dead names before applying.
-        let valid_vector_names: HashSet<_> = {
+        //
+        // Seeded from the current config and grown as the replay re-applies `CreateVectorName`
+        // operations, so a name that is created and used within the replay window stays valid.
+        let mut valid_vector_names: HashSet<_> = {
             let params = &self.collection_config.read().await.params;
             params
                 .vectors
@@ -808,6 +811,12 @@ impl LocalShard {
             })?;
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
+            }
+
+            // A historical `CreateVectorName` makes its name valid for every operation that
+            // follows it in the WAL; track it before stripping so those references survive.
+            if let Some(name) = update.operation.created_vector_name() {
+                valid_vector_names.insert(name.clone());
             }
 
             update.operation.retain_vector_names(&valid_vector_names);
