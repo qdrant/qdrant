@@ -173,6 +173,21 @@ impl ReadSegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
+        self.vector_with_behavior(
+            vector_name,
+            point_id,
+            DeferredBehavior::VisibleOnly,
+            hw_counter,
+        )
+    }
+
+    fn vector_with_behavior(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<VectorInternal>> {
         // The proxy queues a delete or schema-superseding create for this
         // vector — the wrapped's stored data is no longer authoritative.
         // Treat the lookup as if the point had no value for this vector.
@@ -185,16 +200,27 @@ impl ReadSegmentEntry for ProxySegment {
         if self.deleted_points.contains_key(&point_id) {
             Ok(None)
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .vector(vector_name, point_id, hw_counter)
+            self.wrapped_segment.get().read().vector_with_behavior(
+                vector_name,
+                point_id,
+                deferred_behavior,
+                hw_counter,
+            )
         }
     }
 
     fn all_vectors(
         &self,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors<'_>> {
+        self.all_vectors_with_behavior(point_id, DeferredBehavior::VisibleOnly, hw_counter)
+    }
+
+    fn all_vectors_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>> {
         let mut result = NamedVectors::default();
@@ -214,7 +240,9 @@ impl ReadSegmentEntry for ProxySegment {
         drop(wrapped_guard);
 
         for vector_name in vector_names {
-            if let Some(vector) = self.vector(&vector_name, point_id, hw_counter)? {
+            if let Some(vector) =
+                self.vector_with_behavior(&vector_name, point_id, deferred_behavior, hw_counter)?
+            {
                 result.insert(vector_name, vector);
             }
         }
@@ -226,13 +254,23 @@ impl ReadSegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
+        self.payload_with_behavior(point_id, DeferredBehavior::VisibleOnly, hw_counter)
+    }
+
+    fn payload_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
         if self.deleted_points.contains_key(&point_id) {
             Ok(Payload::default())
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .payload(point_id, hw_counter)
+            self.wrapped_segment.get().read().payload_with_behavior(
+                point_id,
+                deferred_behavior,
+                hw_counter,
+            )
         }
     }
 

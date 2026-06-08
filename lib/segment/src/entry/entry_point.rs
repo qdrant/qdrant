@@ -72,9 +72,34 @@ pub trait ReadSegmentEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>>;
 
+    /// Like [`ReadSegmentEntry::vector`], but with explicit deferred semantics.
+    ///
+    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
+    /// the point, including a deferred head that is invisible to ordinary reads.
+    fn vector_with_behavior(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<VectorInternal>>;
+
     fn all_vectors(
         &self,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors<'_>>;
+
+    /// Like [`SegmentEntry::all_vectors`], but with explicit deferred semantics.
+    ///
+    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
+    /// the point, including a deferred head that is invisible to ordinary reads.
+    /// Used by the copy-on-write move path so deferred points are relocated with
+    /// their actual data instead of an empty/visible-only snapshot.
+    fn all_vectors_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>>;
 
@@ -98,6 +123,19 @@ pub trait ReadSegmentEntry {
     fn payload(
         &self,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    /// Like [`SegmentEntry::payload`], but with explicit deferred semantics.
+    ///
+    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
+    /// the point, including a deferred head that is invisible to ordinary reads.
+    /// Used by the copy-on-write move path so deferred points are relocated with
+    /// their actual payload instead of failing with `PointIdError`.
+    fn payload_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
