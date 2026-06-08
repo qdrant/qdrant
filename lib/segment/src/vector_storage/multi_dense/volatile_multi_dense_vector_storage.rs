@@ -129,11 +129,21 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         key: PointOffsetType,
         vector: VectorRef,
         is_deleted: bool,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
-        let multi_vector = multi_vector.as_vec_ref();
+        self.insert_multi_native(key, multi_vector.as_ref(), is_deleted, hw_counter)
+    }
+
+    /// Insert a multi-vector already in the storage's element type `T`.
+    fn insert_multi_native(
+        &mut self,
+        key: PointOffsetType,
+        multi_vector: TypedMultiDenseVectorRef<T>,
+        is_deleted: bool,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.dim);
         let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
         if multivector_size_in_bytes >= CHUNK_SIZE {
@@ -239,18 +249,16 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
 
     fn update_from<'a>(
         &mut self,
-        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, VectorElementType>, bool)>,
+        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, T>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors_metadata.len() as PointOffsetType;
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector = VectorRef::MultiDense(other_vector.as_ref());
             let new_id = self.vectors_metadata.len() as PointOffsetType;
-            self.insert_vector_impl(
+            self.insert_multi_native(
                 new_id,
-                other_vector,
+                other_vector.as_ref(),
                 other_deleted,
                 &HardwareCounterCell::disposable(), // This function is only used by internal operations
             )?;
