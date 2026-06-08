@@ -134,6 +134,31 @@ def test_strict_mode_query_limit_validation(collection_name):
     assert not search_fail.ok
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "max_query_limit",
+        "max_timeout",
+        "max_points_count",
+        "filter_max_conditions",
+        "upsert_max_batchsize",
+    ],
+)
+def test_strict_mode_zero_limit_rejected(collection_name, field):
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PATCH",
+        path_params={"collection_name": collection_name},
+        body={
+            "strict_mode_config": {
+                "enabled": True,
+                field: 0,
+            },
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
 def test_strict_mode_timeout_validation(collection_name):
     def search_request_with_timeout(timeout):
         return request_with_validation(
