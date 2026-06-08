@@ -3,7 +3,7 @@ mod tracker_enum;
 mod trait_def;
 
 #[allow(dead_code)]
-mod read_only_tracker_enum;
+pub mod read_only_tracker_enum;
 
 pub use point_mappings_ref::{PointMappingsGuard, PointMappingsRefEnum};
 pub use tracker_enum::IdTrackerEnum;
