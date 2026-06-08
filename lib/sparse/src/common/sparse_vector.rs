@@ -314,6 +314,14 @@ pub fn validate_sparse_vector_impl<T: Clone + Eq + Hash>(
     if indices.iter().unique().count() != indices.len() {
         errors.add("indices", ValidationError::new("must be unique"));
     }
+    if values.iter().any(|x| !x.is_finite()) {
+        errors.add(
+            "values",
+            ValidationError::new(
+                "vector values must be finite (no NaN or Inf); values exceeding the f32 range are not allowed",
+            ),
+        );
+    }
 
     if errors.is_empty() {
         Ok(())

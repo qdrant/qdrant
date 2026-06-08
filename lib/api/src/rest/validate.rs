@@ -4,7 +4,7 @@ use common::validation::validate_multi_vector;
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::schema::validate_non_empty_dense;
+use super::schema::{validate_multi_dense_vector, validate_non_empty_dense};
 use super::{
     Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
     PointVectors, Query, QueryInterface, RecommendInput, RelevanceFeedbackInput, Sample,
@@ -52,9 +52,9 @@ impl Validate for VectorInput {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             VectorInput::Id(_id) => Ok(()),
-            VectorInput::DenseVector(_dense) => Ok(()),
+            VectorInput::DenseVector(dense) => validate_non_empty_dense(dense),
             VectorInput::SparseVector(sparse) => sparse.validate(),
-            VectorInput::MultiDenseVector(multi) => validate_multi_vector(multi),
+            VectorInput::MultiDenseVector(multi) => validate_multi_dense_vector(multi),
             VectorInput::Document(doc) => doc.validate(),
             VectorInput::Image(image) => image.validate(),
             VectorInput::Object(obj) => obj.validate(),

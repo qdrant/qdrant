@@ -35,6 +35,27 @@ pub(crate) fn validate_non_empty_dense(vector: &[f32]) -> Result<(), ValidationE
         errors.add("vector", err);
         return Err(errors);
     }
+    // Reject values that are non-finite (NaN, ±Inf). This can happen when an
+    // incoming JSON f64 value exceeds f32::MAX and is silently overflowed to
+    // +Inf by the deserializer. Storing such values corrupts distance metrics
+    // and breaks HNSW ordering.
+    if vector.iter().any(|x| !x.is_finite()) {
+        let mut err = ValidationError::new("non_finite_value");
+        err.message = Some(Cow::Borrowed(
+            "vector values must be finite (no NaN or Inf); values exceeding the f32 range are not allowed",
+        ));
+        let mut errors = ValidationErrors::new();
+        errors.add("vector", err);
+        return Err(errors);
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_multi_dense_vector(m: &MultiDenseVector) -> Result<(), ValidationErrors> {
+    validate_multi_vector(m)?;
+    for vec in m {
+        validate_non_empty_dense(vec)?;
+    }
     Ok(())
 }
 
@@ -66,7 +87,7 @@ impl Validate for Vector {
         match self {
             Vector::Dense(v) => validate_non_empty_dense(v),
             Vector::Sparse(v) => v.validate(),
-            Vector::MultiDense(m) => validate_multi_vector(m),
+            Vector::MultiDense(m) => validate_multi_dense_vector(m),
             Vector::Document(_) => Ok(()),
             Vector::Image(_) => Ok(()),
             Vector::Object(_) => Ok(()),
@@ -147,7 +168,7 @@ impl Validate for VectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             VectorStruct::Single(v) => validate_non_empty_dense(v),
-            VectorStruct::MultiDense(v) => validate_multi_vector(v),
+            VectorStruct::MultiDense(v) => validate_multi_dense_vector(v),
             VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
             VectorStruct::Document(_) => Ok(()),
             VectorStruct::Image(_) => Ok(()),
