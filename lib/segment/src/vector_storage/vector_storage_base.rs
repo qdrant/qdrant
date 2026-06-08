@@ -173,6 +173,9 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
     /// The range of point offsets that were added to the storage.
     ///
     /// If stopped, the operation returns a cancellation error.
+    ///
+    /// Vectors are in the storage's own element type `T` — no f32 round-trip.
+    /// Used by the same-type merge path (`merge_from`).
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
@@ -259,7 +262,10 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
 
     fn size_of_available_vectors_in_bytes(&self) -> usize;
 
-    /// Add the given multi-dense vectors to the storage.
+    /// Append the given multi-dense vectors to the storage.
+    ///
+    /// Vectors are in the storage's own element type `T` — no f32 round-trip.
+    /// Used by the same-type merge path (`merge_from`).
     ///
     /// # Returns
     /// The range of point offsets that were added to the storage.
@@ -995,141 +1001,6 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::EmptyDense(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::EmptySparse(v) => v.deleted_vector_bitslice(),
-        }
-    }
-}
-
-/// Unwrap a generic [`CowVector`] into a dense slice in the storage's element
-/// type `T` for [`DenseVectorStorage`], converting from f32 if needed.
-///
-/// Receiving a non-dense vector here is a logic error: the merge path always
-/// feeds a storage with vectors of its own kind.
-fn unwrap_dense<T: PrimitiveVectorElement>(
-    (vector, deleted): (CowVector<'_>, bool),
-) -> (Cow<'_, [T]>, bool) {
-    match vector {
-        CowVector::Dense(v) => (T::slice_from_float_cow(v), deleted),
-        CowVector::Sparse(_) | CowVector::MultiDense(_) => {
-            unreachable!("dense vector storage received a non-dense vector")
-        }
-    }
-}
-
-/// Unwrap a generic [`CowVector`] into a sparse vector for [`SparseVectorStorage`].
-fn unwrap_sparse((vector, deleted): (CowVector<'_>, bool)) -> (Cow<'_, SparseVector>, bool) {
-    match vector {
-        CowVector::Sparse(v) => (v, deleted),
-        CowVector::Dense(_) | CowVector::MultiDense(_) => {
-            unreachable!("sparse vector storage received a non-sparse vector")
-        }
-    }
-}
-
-/// Unwrap a generic [`CowVector`] into a multi-dense vector in the storage's
-/// element type `T` for [`MultiVectorStorage`], converting from f32 if needed.
-fn unwrap_multi<T: PrimitiveVectorElement>(
-    (vector, deleted): (CowVector<'_>, bool),
-) -> (CowMultiVector<'_, T>, bool) {
-    match vector {
-        CowVector::MultiDense(v) => (T::from_float_multivector(v), deleted),
-        CowVector::Dense(_) | CowVector::Sparse(_) => {
-            unreachable!("multi-dense vector storage received a non-multi-dense vector")
-        }
-    }
-}
-
-impl VectorStorageEnum {
-    /// Add the given vectors to the storage.
-    ///
-    /// Dispatches to the kind-specific [`DenseVectorStorage::update_from`],
-    /// [`SparseVectorStorage::update_from`] or [`MultiVectorStorage::update_from`],
-    /// unwrapping the generic [`CowVector`] into the concrete vector kind.
-    ///
-    /// # Returns
-    /// The range of point offsets that were added to the storage.
-    ///
-    /// If stopped, the operation returns a cancellation error.
-    pub fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            VectorStorageEnum::DenseMemmap(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            VectorStorageEnum::DenseMemmapByte(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            VectorStorageEnum::DenseMemmapHalf(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            VectorStorageEnum::SparseVolatile(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_sparse), stopped)
-            }
-            VectorStorageEnum::SparseMmap(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_sparse), stopped)
-            }
-            VectorStorageEnum::MultiDenseVolatile(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_multi), stopped)
-            }
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_multi), stopped)
-            }
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_multi), stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_multi), stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_multi), stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_multi), stopped)
-            }
-            VectorStorageEnum::EmptyDense(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_dense), stopped)
-            }
-            VectorStorageEnum::EmptySparse(v) => {
-                v.update_from(&mut other_vectors.map(unwrap_sparse), stopped)
-            }
         }
     }
 }
