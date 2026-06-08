@@ -2,7 +2,6 @@ mod search;
 
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use parking_lot::Mutex;
 
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
@@ -11,7 +10,9 @@ use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsReadAccess,
+};
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 pub struct PlainVectorIndexReadView<
@@ -20,10 +21,11 @@ pub struct PlainVectorIndexReadView<
     V: VectorStorageRead,
     P: PayloadStorageRead,
     F: FieldIndexRead,
+    Q: QuantizedVectorsReadAccess,
 > {
     pub(crate) id_tracker: &'a I,
     pub(crate) vector_storage: &'a V,
-    pub(crate) quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>, // ToDo: make reference to generic, once available
+    pub(crate) quantized_vectors: Option<&'a Q>,
     pub(crate) payload_index: StructPayloadIndexReadView<'a, P, I, V, F>,
     pub(crate) filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     pub(crate) unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
@@ -33,5 +35,11 @@ pub struct PlainVectorIndexReadView<
 /// [`IdTrackerEnum`] / [`VectorStorageEnum`] / [`PayloadStorageEnum`] enums.
 ///
 /// [`PlainVectorIndex`]: super::PlainVectorIndex
-pub(crate) type PlainVectorIndexReadViewEnum<'a> =
-    PlainVectorIndexReadView<'a, IdTrackerEnum, VectorStorageEnum, PayloadStorageEnum, FieldIndex>;
+pub(crate) type PlainVectorIndexReadViewEnum<'a> = PlainVectorIndexReadView<
+    'a,
+    IdTrackerEnum,
+    VectorStorageEnum,
+    PayloadStorageEnum,
+    FieldIndex,
+    QuantizedVectors,
+>;

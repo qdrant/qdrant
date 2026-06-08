@@ -75,15 +75,14 @@ impl PlainVectorIndexReadViewEnum<'_> {
         } else {
             &self.unfiltered_searches_telemetry
         });
-        let quantized_storage = self.quantized_vectors.borrow();
         let deleted_points = query_context
             .deleted_points()
             .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
-        let quantization_enabled = is_quantized_search(quantized_storage.as_ref(), params);
+        let quantization_enabled = is_quantized_search(self.quantized_vectors, params);
         let quantized_vectors = quantization_enabled
-            .then_some(quantized_storage.as_ref())
+            .then_some(self.quantized_vectors)
             .flatten();
-        let oversampled_top = get_oversampled_top(quantized_storage.as_ref(), params, top);
+        let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
         let batch_searcher = BatchFilteredSearcher::new(
             query_vectors,
             self.vector_storage,
@@ -118,7 +117,7 @@ impl PlainVectorIndexReadViewEnum<'_> {
                 std::mem::take(search_result),
                 deleted_points,
                 self.vector_storage,
-                quantized_storage.as_ref(),
+                self.quantized_vectors,
                 query_vector,
                 params,
                 top,
