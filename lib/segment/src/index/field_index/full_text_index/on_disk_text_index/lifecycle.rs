@@ -199,15 +199,15 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
                     )
                 })?;
 
-        let mmap_index = OnDiskFullTextIndex {
+        let on_disk_index = OnDiskFullTextIndex {
             inverted_index,
             tokenizer,
         };
 
         let text_index = if is_on_disk {
-            FullTextIndex::OnDisk(mmap_index)
+            FullTextIndex::OnDisk(on_disk_index)
         } else {
-            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(mmap_index)?)
+            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
         };
 
         Ok(text_index)

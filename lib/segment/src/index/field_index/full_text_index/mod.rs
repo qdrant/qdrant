@@ -21,7 +21,6 @@ pub mod tokenizers;
 #[cfg(test)]
 mod tests;
 
-#[expect(clippy::large_enum_variant)]
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),
