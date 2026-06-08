@@ -35,6 +35,8 @@ documents = [
     (5, "fresh fruit market", [0.88, 0.12, 0.18, 0.05]),
 ]
 
+
+
 shard.update(UpdateOperation.upsert_points([
     Point(
         point_id,
@@ -55,15 +57,15 @@ results = shard.query(QueryRequest(
     prefetches=[
         Prefetch(
             query=Query.Nearest(dense_query, using="dense"),
-            limit=5,
+            limit=3,
         ),
         Prefetch(
             query=Query.Nearest(sparse_query, using="sparse"),
-            limit=5,
+            limit=3,
         ),
     ],
     query=Fusion.Dbsf(),
-    limit=4,
+    limit=3,
     with_payload=True,
 ))
 
