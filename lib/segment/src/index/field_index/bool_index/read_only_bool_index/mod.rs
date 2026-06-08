@@ -70,6 +70,7 @@ impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
 mod tests {
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::sorted_slice::SortedSlice;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
     use itertools::Itertools as _;
     use serde_json::json;
@@ -213,7 +214,12 @@ mod tests {
         index.flusher()().unwrap();
 
         reloaded
-            .live_reload(&fs, &[1, 2], &[6, 7, 1100], &hw_counter)
+            .live_reload(
+                &fs,
+                &SortedSlice::new(&[1, 2]).unwrap(),
+                &SortedSlice::new(&[6, 7, 1100]).unwrap(),
+                &hw_counter,
+            )
             .unwrap();
 
         let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())

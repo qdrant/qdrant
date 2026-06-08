@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
+use common::sorted_slice::SortedSlice;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead};
@@ -139,8 +140,8 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
     fn live_reload(
         &mut self,
         fs: &S::Fs,
-        deleted_points: &[PointOffsetType],
-        new_points: &[PointOffsetType],
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for &point in deleted_points {
@@ -152,17 +153,16 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
             return Ok(());
         }
 
-        // Reopen so points appended past the previous mapping become readable.
-        // The producer (the appendable id tracker) is append-only: a value
-        // change never overwrites an offset in place — it allocates a fresh
-        // offset (reported in `new_points`) and retires the displaced one (in
-        // `deleted_points`). So every `new_point` is a brand-new offset that was
-        // never in the bitmap: insert it when its bit is set, and otherwise
-        // leave it absent — no clear is needed.
+        // Live reload is append-only, so we only need to process the new range of
+        // the bitslice.
         self.storage.reopen()?;
-        for &point in new_points {
-            // Possible optimization: If new_points is sorted, we should be able to use read_bit_range and iter_ones on top of it
-            if self.storage.get_bit(u64::from(point))?.unwrap_or(false) {
+        if let Some(new_range) = new_points.range_u64() {
+            let start = new_range.start as usize;
+            let bitslice = self.storage.read_bit_range(new_range)?;
+            for point in bitslice
+                .iter_ones()
+                .map(|idx| (idx + start) as PointOffsetType)
+            {
                 self.bitmap.insert(point);
             }
         }

@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -17,8 +18,8 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     fn live_reload(
         &mut self,
         _fs: &S::Fs,
-        deleted_points: &[PointOffsetType],
-        _new_points: &[PointOffsetType],
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        _new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No on-disk state changes on reload: this index is immutable, so only
