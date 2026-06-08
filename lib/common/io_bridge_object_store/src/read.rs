@@ -36,6 +36,9 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
 
     fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static;
 
+    /// Create or truncate an empty object at `path`.
+    fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static;
+
     /// Fetch `range` from `path` as a stream of byte chunks.
     ///
     /// The returned future resolves once the request has been initiated and the

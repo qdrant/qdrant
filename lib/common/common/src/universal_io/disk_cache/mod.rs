@@ -98,6 +98,14 @@ impl UniversalReadFileOps for BlockCacheFs {
     fn exists(&self, path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
+
+    fn create(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_create(path)
+    }
+
+    fn create_dir(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_create_dir(path)
+    }
 }
 
 impl UniversalReadFs for BlockCacheFs {

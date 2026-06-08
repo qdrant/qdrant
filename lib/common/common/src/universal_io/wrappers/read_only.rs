@@ -10,8 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalKind, UniversalRead,
-    UniversalReadFs, UserData,
+    Item, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalIoError, UniversalKind,
+    UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -47,6 +47,18 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
 
     fn exists(&self, path: &Path) -> Result<bool> {
         self.0.exists(path)
+    }
+
+    fn create(&self, _path: &Path) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support creating files",
+        ))
+    }
+
+    fn create_dir(&self, _path: &Path) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support creating directories",
+        ))
     }
 }
 

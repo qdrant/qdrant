@@ -153,6 +153,10 @@ mod tests {
             std::future::ready(Ok(true))
         }
 
+        fn create(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+            std::future::ready(Ok(()))
+        }
+
         fn read_range(
             &self,
             _path: &Path,

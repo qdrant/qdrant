@@ -2,6 +2,16 @@ use std::path::{Path, PathBuf};
 
 use crate::universal_io::UniversalIoError;
 
+pub fn local_create(path: &Path) -> crate::universal_io::Result<()> {
+    fs_err::File::create(path)
+        .map(drop)
+        .map_err(|err| UniversalIoError::extract_not_found(err, path))
+}
+
+pub fn local_create_dir(path: &Path) -> crate::universal_io::Result<()> {
+    fs_err::create_dir_all(path).map_err(|err| UniversalIoError::extract_not_found(err, path))
+}
+
 pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>> {
     let dir = prefix_path.parent().unwrap_or(Path::new("."));
     let file_prefix = prefix_path

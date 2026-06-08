@@ -69,6 +69,19 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         }
     }
 
+    fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+        let store = self.clone();
+        let key = build_key(path);
+
+        async move {
+            store
+                .put(&key, Bytes::new().into())
+                .await
+                .map(drop)
+                .map_err(UniversalIoError::s3)
+        }
+    }
+
     fn read_range(
         &self,
         path: &Path,
@@ -120,7 +133,7 @@ fn build_key(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use common::universal_io::{ReadRange, UniversalRead};
+    use common::universal_io::{ReadRange, UniversalRead, UniversalReadFileOps};
     use object_store::ObjectStoreExt as _;
     use object_store::memory::InMemory;
 
@@ -235,6 +248,20 @@ mod tests {
         let file = make_file(runtime, store, "obj");
         let len: u64 = <BlobFile<Arc<InMemory>> as UniversalRead>::len::<u16>(&file).unwrap();
         assert_eq!(len, 2);
+    }
+
+    #[test]
+    fn fs_create_writes_empty_object_and_create_dir_is_noop() {
+        let runtime = BridgeRuntime::global();
+        let store = Arc::new(InMemory::new());
+        let fs = crate::BlobFs::new(store.clone(), runtime.clone());
+
+        fs.create_dir(Path::new("prefix")).unwrap();
+        fs.create(Path::new("prefix/empty")).unwrap();
+
+        assert!(fs.exists(Path::new("prefix/empty")).unwrap());
+        let len = runtime.block_on(store.head(&object_store::path::Path::from("prefix/empty")));
+        assert_eq!(len.unwrap().size, 0);
     }
 
     #[test]

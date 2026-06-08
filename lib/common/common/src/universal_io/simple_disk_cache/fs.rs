@@ -84,6 +84,14 @@ where
     fn exists(&self, path: &Path) -> Result<bool> {
         self.remote_fs.exists(path)
     }
+
+    fn create(&self, path: &Path) -> Result<()> {
+        self.remote_fs.create(path)
+    }
+
+    fn create_dir(&self, path: &Path) -> Result<()> {
+        self.remote_fs.create_dir(path)
+    }
 }
 
 impl<R> UniversalReadFs for DiskCacheFs<R>

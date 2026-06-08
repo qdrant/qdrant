@@ -43,6 +43,14 @@ impl<A: AsyncRead> UniversalReadFileOps for BlobFs<A> {
     fn exists(&self, path: &Path) -> Result<bool> {
         self.runtime.block_on(self.inner.exists(path))
     }
+
+    fn create(&self, path: &Path) -> Result<()> {
+        self.runtime.block_on(self.inner.create(path))
+    }
+
+    fn create_dir(&self, _path: &Path) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {

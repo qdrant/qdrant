@@ -37,6 +37,14 @@ pub trait UniversalReadFileOps: Sized + Debug {
     /// Check whether a file exists at the given path.
     fn exists(&self, path: &Path) -> Result<bool>;
 
+    /// Create or truncate a file at the given path.
+    fn create(&self, path: &Path) -> Result<()>;
+
+    /// Create a directory at the given path.
+    ///
+    /// Backends without materialized directories may treat this as a no-op.
+    fn create_dir(&self, path: &Path) -> Result<()>;
+
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.
 }
