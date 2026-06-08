@@ -16,21 +16,22 @@ mod turbo_encoded_vectors;
 
 use std::borrow::Cow;
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{TQBits, TQMode};
 
 use self::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::operation_error::OperationResult;
+use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
@@ -107,6 +108,33 @@ impl TurboVectorStorage {
                 .map(|i| *i as f32)
                 .collect::<Vec<_>>(),
         ))
+    }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
+
+        // Appended contiguously from the current count; deleted flags are
+        // applied one layer up using the returned range.
+        let start_index = self.storage.vectors_count() as PointOffsetType;
+        let mut key = start_index;
+        for (other_vector, other_deleted) in other_vectors {
+            check_process_stopped(stopped)?;
+            let dense: Cow<[VectorElementType]> = Cow::try_from(other_vector)?;
+
+            // TODO(TQDT): don't double quantize after merging/rebasing on top of #9357
+            let quantized = self
+                .quantizer
+                .quantize(&dense, &mut self.quantization_buffer);
+            self.storage.upsert_vector(key, &quantized, &disposed_hw)?;
+            self.set_deleted(key, other_deleted);
+            key += 1;
+        }
+
+        Ok(start_index..key)
     }
 }
 
