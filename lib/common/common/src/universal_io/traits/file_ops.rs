@@ -16,7 +16,7 @@ use crate::universal_io::{OpenOptions, Result};
 /// a backend can implement this trait to expose metadata-style operations
 /// without ever opening file handles. The "open files" capability lives on
 /// the [`UniversalReadFs`] subtrait.
-pub trait UniversalReadFileOps: Sized + Debug {
+pub trait UniversalReadFileOps: Clone + Debug + Sized {
     /// Implementation-specific construction config. Backends are free to
     /// require explicit construction; callers that want to opt into the
     /// `<Fs::ContextConfig>::default()` pattern must constrain
@@ -36,6 +36,31 @@ pub trait UniversalReadFileOps: Sized + Debug {
 
     /// Check whether a file exists at the given path.
     fn exists(&self, path: &Path) -> Result<bool>;
+
+    /// Create or truncate a file at the given path.
+    ///
+    /// Local backends use `expected_length` to pre-size the file. Backends
+    /// without fixed-size file objects may ignore it.
+    fn create(&self, path: &Path, expected_length: usize) -> Result<()>;
+
+    /// Create a directory at the given path.
+    ///
+    /// Backends without materialized directories may treat this as a no-op.
+    fn create_dir(&self, path: &Path) -> Result<()>;
+
+    /// Remove a file at the given path.
+    fn remove(&self, path: &Path) -> Result<()>;
+
+    /// Remove a directory at the given path.
+    ///
+    /// Backends without materialized directories may treat this as a no-op.
+    fn remove_dir(&self, path: &Path) -> Result<()>;
+
+    /// Atomically save bytes at the given path.
+    ///
+    /// Local backends should use an atomic file replacement. Object-store
+    /// backends may overwrite the full object.
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()>;
 
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.

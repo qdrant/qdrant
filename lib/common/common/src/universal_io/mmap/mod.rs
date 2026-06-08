@@ -35,6 +35,26 @@ impl UniversalReadFileOps for MmapFs {
     fn exists(&self, path: &Path) -> Result<bool> {
         fs_err::exists(path).map_err(UniversalIoError::from)
     }
+
+    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+        local_file_ops::local_create(path, expected_length)
+    }
+
+    fn create_dir(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_create_dir(path)
+    }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_remove_dir(path)
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        local_file_ops::local_atomic_save(path, bytes)
+    }
 }
 
 impl UniversalReadFs for MmapFs {

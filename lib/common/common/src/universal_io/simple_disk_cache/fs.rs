@@ -84,6 +84,26 @@ where
     fn exists(&self, path: &Path) -> Result<bool> {
         self.remote_fs.exists(path)
     }
+
+    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+        self.remote_fs.create(path, expected_length)
+    }
+
+    fn create_dir(&self, path: &Path) -> Result<()> {
+        self.remote_fs.create_dir(path)
+    }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        self.remote_fs.remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<()> {
+        self.remote_fs.remove_dir(path)
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        self.remote_fs.atomic_save(path, bytes)
+    }
 }
 
 impl<R> UniversalReadFs for DiskCacheFs<R>

@@ -55,7 +55,7 @@ impl MmapSparseVectorStorage {
     fn open(path: &Path) -> OperationResult<Self> {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Gridstore::open(storage_dir).map_err(|err| {
+        let storage = Gridstore::open(MmapFs, storage_dir).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
             ))
@@ -99,7 +99,7 @@ impl MmapSparseVectorStorage {
             ..Default::default()
         };
 
-        let storage = Gridstore::new(storage_dir, storage_config).map_err(|err| {
+        let storage = Gridstore::new(MmapFs, storage_dir, storage_config).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))
