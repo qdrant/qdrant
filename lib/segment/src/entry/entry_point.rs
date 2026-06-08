@@ -162,8 +162,9 @@ pub trait ReadSegmentEntry {
 
     /// Check if there is point with `point_id` in this segment.
     ///
-    /// Soft deleted points are excluded.
-    fn has_point(&self, point_id: PointIdType) -> bool;
+    /// Soft deleted points are excluded. `deferred_behavior` selects whether a
+    /// deferred-only point counts as present.
+    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool;
 
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(

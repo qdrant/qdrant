@@ -104,8 +104,52 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use rstest::rstest;
+    use tempfile::Builder;
 
     use super::*;
+    use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
+
+    /// Review finding #1 (optimizer merge consequence): `for_each_unique_point`
+    /// is the merge primitive `segment_builder::update_from` uses to pick the
+    /// winning copy per external id when rolling segments together. It walks
+    /// `iter_from(None)` and keeps the highest version. For a shadowed point
+    /// (active head below the cutoff + deferred head above it, the result of an
+    /// in-place mutation), `iter_from` resolves the collision to the *active*
+    /// (older) slot and never yields the deferred head — so the merge keeps the
+    /// pre-mutation copy and the mutation is silently dropped on optimization.
+    ///
+    /// On `dev` this worked: a deferred write tombstoned the active, so the
+    /// single map pointed at the deferred head and the merge pulled the latest.
+    #[test]
+    fn for_each_unique_point_keeps_deferred_head_for_shadowed_point() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        // Appendable tracker with deferred cutoff = 5.
+        let mut tracker = MutableIdTracker::open(dir.path(), Some(5)).unwrap();
+        let p7 = PointIdType::NumId(7);
+
+        // ext 7: active@2 is the pre-mutation copy (version 5); deferred@9 is
+        // the latest in-place mutation (version 8). The active is shadowed.
+        tracker.set_link(p7, 2).unwrap();
+        tracker.set_internal_version(2, 5).unwrap();
+        tracker.set_link(p7, 9).unwrap();
+        tracker.set_internal_version(9, 8).unwrap();
+
+        let trackers = [tracker];
+        let mut merged = Vec::new();
+        for_each_unique_point(trackers.iter(), |m| {
+            merged.push((m.external_id, m.internal_id, m.version));
+        });
+
+        // The merge must carry the latest (deferred) copy so the mutation
+        // survives optimization. It instead yields the stale active copy
+        // (internal 2, version 5), silently dropping the version-8 mutation.
+        assert_eq!(
+            merged,
+            vec![(p7, 9, 8)],
+            "for_each_unique_point dropped the deferred (latest) copy of a \
+             shadowed point, keeping the pre-mutation active version",
+        );
+    }
 
     #[rstest]
     fn test_for_each_unique_point(#[values(0, 1, 5)] tracker_count: usize) {

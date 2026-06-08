@@ -365,7 +365,7 @@ async fn test_truncate_unapplied_wal() {
             &current_runtime,
             None,
             hw_acc.clone(),
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .await
         .unwrap();

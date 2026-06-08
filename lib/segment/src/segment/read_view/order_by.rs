@@ -113,7 +113,7 @@ where
             // We can't early-stop the iterator for deferred points because the items are sorted
             // lexicographically by type `(T, internalID)`.
             .filter(|&(_, internal_id)| {
-                deferred_behavior.include_all_points()
+                deferred_behavior.with_deferred_points()
                     || internal_id < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
             });
 

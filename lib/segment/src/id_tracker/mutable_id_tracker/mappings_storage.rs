@@ -10,12 +10,10 @@ use common::types::PointOffsetType;
 use fs_err::File;
 use itertools::Itertools;
 use parking_lot::Mutex;
-use uuid::Uuid;
 
 use super::change::{MappingChange, read_entry, write_entry};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::types::PointIdType;
 
 const FILE_MAPPINGS: &str = "mutable_id_tracker.mappings";
 
@@ -210,91 +208,34 @@ pub(super) fn read_mappings<R>(
 where
     R: Read + Seek,
 {
-    let mut deleted = BitVec::new();
-    let mut internal_to_external: Vec<PointIdType> = Default::default();
-    let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
-    let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
+    // Replay the persisted change log through the canonical mutators rather
+    // than accumulating into a single flat map per id-type. A flat
+    // `external -> internal` map can only hold one head per external id, so it
+    // collapses the active+deferred coexistence case (the same external id
+    // linked first to an active slot, then to a deferred one via sequential
+    // `set_link`) down to the last write, silently dropping the other head and
+    // orphaning its slot. The log *is* the sequence of `set_link`/`drop` calls
+    // that produced the live in-memory state, so replaying it through those
+    // same functions reconstructs that state exactly — both heads, the
+    // shadowed bit, and `deferred_deleted_count` — with no logic duplication.
+    let mut mappings = PointMappings::new(
+        BitVec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        deferred_internal_id,
+    );
 
     for change in read_mappings_iter(reader) {
         match change? {
             MappingChange::Insert(external_id, internal_id) => {
-                // Update internal to external mapping
-                if internal_id as usize >= internal_to_external.len() {
-                    internal_to_external
-                        .resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
-                }
-                let replaced_external_id = internal_to_external[internal_id as usize];
-                internal_to_external[internal_id as usize] = external_id;
-
-                // If point already exists, drop existing mapping
-                if deleted
-                    .get(internal_id as usize)
-                    .is_some_and(|deleted| !deleted)
-                {
-                    // Fixing corrupted mapping - this id should be recovered from WAL
-                    // This should not happen in normal operation, but it can happen if
-                    // the database is corrupted.
-                    log::warn!(
-                        "removing duplicated external id {external_id} in internal id {replaced_external_id}",
-                    );
-                    debug_assert!(false, "should never have to remove");
-                    match replaced_external_id {
-                        PointIdType::NumId(num) => {
-                            external_to_internal_num.remove(&num);
-                        }
-                        PointIdType::Uuid(uuid) => {
-                            external_to_internal_uuid.remove(&uuid);
-                        }
-                    }
-                }
-
-                // Mark point entry as not deleted
-                if internal_id as usize >= deleted.len() {
-                    deleted.resize(internal_id as usize + 1, true);
-                }
-                deleted.set(internal_id as usize, false);
-
-                // Set external to internal mapping
-                match external_id {
-                    PointIdType::NumId(num) => {
-                        external_to_internal_num.insert(num, internal_id);
-                    }
-                    PointIdType::Uuid(uuid) => {
-                        external_to_internal_uuid.insert(uuid, internal_id);
-                    }
-                }
+                mappings.set_link(external_id, internal_id);
             }
             MappingChange::Delete(external_id) => {
-                // Remove external to internal mapping
-                let internal_id = match external_id {
-                    PointIdType::NumId(idx) => external_to_internal_num.remove(&idx),
-                    PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(&uuid),
-                };
-                let Some(internal_id) = internal_id else {
-                    continue;
-                };
-
-                // Set internal to external mapping back to max int
-                if (internal_id as usize) < internal_to_external.len() {
-                    internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
-                }
-
-                // Mark internal point as deleted
-                if internal_id as usize >= deleted.len() {
-                    deleted.resize(internal_id as usize + 1, true);
-                }
-                deleted.set(internal_id as usize, true);
+                mappings.drop(external_id);
             }
         }
     }
-
-    let mappings = PointMappings::new(
-        deleted,
-        internal_to_external,
-        external_to_internal_num,
-        external_to_internal_uuid,
-        deferred_internal_id,
-    );
 
     Ok(mappings)
 }

@@ -1,6 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
@@ -45,7 +45,9 @@ where
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        let internal_id = self.lookup_internal_id(point_id)?;
+        // Single-point retrieval observes the visible snapshot; deferred
+        // mutations stay hidden until the optimizer rolls a fresh segment.
+        let internal_id = self.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly)?;
         self.payload_by_offset(internal_id, hw_counter)
     }
 

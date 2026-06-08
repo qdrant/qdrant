@@ -358,7 +358,7 @@ async fn clean_task(
                 None,
                 None,
                 HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
-                DeferredBehavior::IncludeAll,   // Include also deferred points in the cleanup task.
+                DeferredBehavior::WithDeferred, // Include also deferred points in the cleanup task.
             )
             .await
         {

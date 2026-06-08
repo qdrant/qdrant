@@ -215,7 +215,9 @@ mod tests {
 
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
-            assert!(segment_guard.has_point(point_id));
+            assert!(
+                segment_guard.has_point(point_id, common::types::DeferredBehavior::WithDeferred)
+            );
             let payload = segment_guard.payload(point_id, &hw_counter).unwrap();
             let payload_color = payload
                 .get_value(&"color".parse().unwrap())
@@ -386,7 +388,13 @@ mod tests {
                     .filter_map(|(i, point_id)| (i % 4 == 0).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector1_vecs_to_delete {
-                    let id = id_tracker.borrow().internal_id(point_id).unwrap();
+                    let id = id_tracker
+                        .borrow()
+                        .internal_id_with_behavior(
+                            point_id,
+                            common::types::DeferredBehavior::VisibleOnly,
+                        )
+                        .unwrap();
                     vector1_storage.delete_vector(id).unwrap();
                 }
             }
@@ -405,7 +413,13 @@ mod tests {
                     .filter_map(|(i, point_id)| (i % 10 == 7).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector2_vecs_to_delete {
-                    let id = id_tracker.borrow().internal_id(point_id).unwrap();
+                    let id = id_tracker
+                        .borrow()
+                        .internal_id_with_behavior(
+                            point_id,
+                            common::types::DeferredBehavior::VisibleOnly,
+                        )
+                        .unwrap();
                     vector2_storage.delete_vector(id).unwrap();
                 }
             }

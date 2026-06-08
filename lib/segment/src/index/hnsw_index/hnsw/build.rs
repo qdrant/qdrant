@@ -617,7 +617,7 @@ fn condition_points(
             &cardinality_estimation,
             &disposed_hw_counter,
             stopped,
-            DeferredBehavior::IncludeAll,
+            DeferredBehavior::WithDeferred,
         )?
         .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
         .collect())

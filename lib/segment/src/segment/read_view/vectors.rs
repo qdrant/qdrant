@@ -1,6 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 
 use crate::common::check_vector_name;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -103,7 +103,9 @@ where
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        let internal_id = self.lookup_internal_id(point_id)?;
+        // Single-point retrieval observes the visible snapshot; deferred
+        // mutations stay hidden until the optimizer rolls a fresh segment.
+        let internal_id = self.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly)?;
         self.vector_by_offset(vector_name, internal_id, hw_counter)
     }
 

@@ -28,7 +28,7 @@ fn test_point_exclusion() {
 
     let segment = build_segment_1(dir.path());
 
-    assert!(segment.has_point(3.into()));
+    assert!(segment.has_point(3.into(), common::types::DeferredBehavior::WithDeferred));
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
@@ -81,7 +81,7 @@ fn test_named_vector_search() {
 
     let segment = build_segment_3(dir.path());
 
-    assert!(segment.has_point(3.into()));
+    assert!(segment.has_point(3.into(), common::types::DeferredBehavior::WithDeferred));
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 

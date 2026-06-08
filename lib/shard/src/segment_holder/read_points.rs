@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+use common::types::DeferredBehavior;
 use parking_lot::RwLockReadGuard;
 use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -17,6 +18,7 @@ impl SegmentHolder {
         segments: impl IntoIterator<Item = LockedSegment>,
         ids: &[PointIdType],
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
         mut f: F,
     ) -> OperationResult<usize>
     where
@@ -29,7 +31,7 @@ impl SegmentHolder {
             let segment_point_ids: Vec<PointIdType> = ids
                 .iter()
                 .copied()
-                .filter(|id| read_segment.has_point(*id))
+                .filter(|id| read_segment.has_point(*id, deferred_behavior))
                 .collect();
             check_stopped(is_stopped)?;
             if !segment_point_ids.is_empty() {
@@ -63,6 +65,7 @@ impl SegmentHolder {
         ids: &[PointIdType],
         is_stopped: &AtomicBool,
         timeout: Duration,
+        deferred_behavior: DeferredBehavior,
         f: F,
     ) -> OperationResult<usize>
     where
@@ -76,7 +79,7 @@ impl SegmentHolder {
             holder_guard.segments_for_retrieval().collect()
         };
 
-        Self::_read_points(segments, ids, is_stopped, f)
+        Self::_read_points(segments, ids, is_stopped, deferred_behavior, f)
     }
 
     /// Provides an entry point of reading multiple points in all segments.
@@ -85,12 +88,13 @@ impl SegmentHolder {
         &self,
         ids: &[PointIdType],
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
         f: F,
     ) -> OperationResult<usize>
     where
         F: FnMut(&[PointIdType], &RwLockReadGuard<dyn ReadSegmentEntry>) -> OperationResult<usize>,
     {
         let segments = self.segments_for_retrieval();
-        Self::_read_points(segments, ids, is_stopped, f)
+        Self::_read_points(segments, ids, is_stopped, deferred_behavior, f)
     }
 }

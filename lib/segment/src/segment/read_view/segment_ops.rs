@@ -1,4 +1,4 @@
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerRead;
@@ -15,12 +15,16 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
+    /// Resolve an external id to its internal offset under the caller-chosen
+    /// deferred semantics. The behavior is explicit so this low-level helper
+    /// makes no snapshot-vs-latest policy assumption on the caller's behalf.
     pub(crate) fn lookup_internal_id(
         &self,
         point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<PointOffsetType> {
         self.id_tracker
-            .internal_id(point_id)
+            .internal_id_with_behavior(point_id, deferred_behavior)
             .ok_or(OperationError::PointIdError {
                 missed_point_id: point_id,
             })

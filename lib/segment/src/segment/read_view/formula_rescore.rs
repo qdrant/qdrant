@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::{ScoreType, ScoredPointOffset};
+use common::types::{DeferredBehavior, ScoreType, ScoredPointOffset};
 use itertools::{Either, Itertools};
 
 use crate::common::operation_error::OperationResult;
@@ -46,8 +46,12 @@ where
                 scores
                     .iter()
                     .filter_map(|point| {
-                        // Discard points without internal ids.
-                        let internal_id = self.id_tracker.internal_id(point.id)?;
+                        // Discard points without internal ids. Rescoring a
+                        // prefetch must resolve the same visible head the
+                        // search saw.
+                        let internal_id = self
+                            .id_tracker
+                            .internal_id_with_behavior(point.id, DeferredBehavior::VisibleOnly)?;
 
                         // filter_map side effect: keep all uniquely seen point offsets.
                         points_to_rescore.insert(internal_id);

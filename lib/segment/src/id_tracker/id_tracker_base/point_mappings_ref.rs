@@ -23,20 +23,20 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over all external IDs.
     ///
     /// Excludes soft deleted points.
-    pub fn iter_external(self) -> Box<dyn Iterator<Item = PointIdType> + 'a> {
+    pub fn iter_external(self) -> impl Iterator<Item = PointIdType> + 'a {
         match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_external(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_external(),
+            PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_external()),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_external()),
         }
     }
 
     /// Iterate over internal IDs (offsets).
     ///
     /// Excludes soft deleted points.
-    pub fn iter_internal(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    pub fn iter_internal(self) -> impl Iterator<Item = PointOffsetType> + 'a {
         match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
+            PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_internal()),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_internal()),
         }
     }
 
@@ -46,20 +46,10 @@ impl<'a> PointMappingsRefEnum<'a> {
     pub fn iter_from(
         self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_from(external_id),
-            PointMappingsRefEnum::Compressed(m) => m.iter_from(external_id),
-        }
-    }
-
-    /// Iterate over internal IDs in a random order.
-    ///
-    /// Excludes soft deleted points.
-    pub fn iter_random(self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_random(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_random(),
+            PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_from(external_id)),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_from(external_id)),
         }
     }
 
@@ -68,22 +58,17 @@ impl<'a> PointMappingsRefEnum<'a> {
     pub fn iter_internal_excluding(
         self,
         exclude_bitslice: &'a BitSlice,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
-        };
-        Box::new(
-            iter.filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
-        )
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        self.iter_internal()
+            .filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false))
     }
 
     /// Iterate over all internal IDs, filtering deferred points using the
     /// mapping's own threshold.
-    pub fn iter_internal_visible(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    pub fn iter_internal_visible(self) -> impl Iterator<Item = PointOffsetType> + 'a {
         match self.deferred_internal_id() {
-            None => self.iter_internal(),
-            Some(deferred_internal_id) => Box::new(
+            None => Either::Left(self.iter_internal()),
+            Some(deferred_internal_id) => Either::Right(
                 self.iter_internal()
                     .take_while(move |&id| id < deferred_internal_id),
             ),
@@ -91,18 +76,23 @@ impl<'a> PointMappingsRefEnum<'a> {
     }
 
     /// Iterate over all internal IDs, with deferred filtering selected by
-    /// `deferred_behavior`:
-    /// - [`DeferredBehavior::Exclude`] applies the mapping's own threshold;
-    /// - [`DeferredBehavior::IncludeAll`] yields every point regardless of the
-    ///   threshold.
+    /// `deferred_behavior`. See [`PointMappings::iter_internal_with_behavior`]
+    /// for the per-mode contract.
     pub fn iter_internal_with_behavior(
         self,
         deferred_behavior: DeferredBehavior,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        if deferred_behavior.include_all_points() {
-            self.iter_internal()
-        } else {
-            self.iter_internal_visible()
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        match self {
+            PointMappingsRefEnum::Plain(m) => {
+                Either::Left(m.iter_internal_with_behavior(deferred_behavior))
+            }
+            PointMappingsRefEnum::Compressed(m) => {
+                // Compressed mappings are immutable,
+                // they can't have deferred points,
+                // so we can only pull visible points
+                // and ignore the parameter
+                Either::Right(m.iter_internal())
+            }
         }
     }
 
@@ -116,9 +106,14 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// postings for tombstoned internal IDs (a single bit test per element,
     /// negligible overhead).
     ///
-    /// For [`DeferredBehavior::IncludeAll`] — or when the mapping has no
-    /// deferred threshold — the threshold cutoff is skipped, but the
-    /// deleted-bitslice filter is always applied.
+    /// For [`DeferredBehavior::VisibleOnly`] — points at or above the cutoff are
+    /// dropped on top of the deleted check.
+    /// For [`DeferredBehavior::WithDeferred`] — every non-deleted point is
+    /// yielded, except shadowed actives (an active whose external id has
+    /// been overridden by a deferred mutation). Skipping shadowed actives
+    /// is what gives the WithDeferred consumer a one-yield-per-external
+    /// guarantee in the presence of append-only mutations into a deferred
+    /// segment.
     pub fn filter_deferred_and_deleted<I>(
         self,
         iter: I,
@@ -130,7 +125,11 @@ impl<'a> PointMappingsRefEnum<'a> {
         let deleted = self.deleted();
         match deferred_behavior.apply(self.deferred_internal_id()) {
             None => {
-                Either::Left(iter.filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false)))
+                let shadowed = self.shadowed();
+                Either::Left(iter.filter(move |&id| {
+                    !deleted.get_bit(id as usize).unwrap_or(false)
+                        && !shadowed.get_bit(id as usize).unwrap_or(false)
+                }))
             }
             Some(cutoff) => {
                 Either::Right(iter.filter(move |&id| {
@@ -140,35 +139,55 @@ impl<'a> PointMappingsRefEnum<'a> {
         }
     }
 
-    /// Iterate starting from a given ID, filtering deferred points using the
-    /// mapping's own threshold.
-    pub fn iter_from_visible(
+    /// Iterate starting from a given ID, with deferred filtering selected by
+    /// `deferred_behavior`. See [`PointMappings::iter_from_with_behavior`] for
+    /// the per-mode contract. Compressed mappings ignore the parameter (they
+    /// can't hold deferred entries).
+    pub fn iter_from_with_behavior(
         self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        match self.deferred_internal_id() {
-            None => self.iter_from(external_id),
-            Some(deferred_internal_id) => Box::new(
-                self.iter_from(external_id)
-                    .filter(move |&(_, iid)| iid < deferred_internal_id),
-            ),
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        match self {
+            PointMappingsRefEnum::Plain(m) => {
+                Either::Left(m.iter_from_with_behavior(external_id, deferred_behavior))
+            }
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_from(external_id)),
         }
     }
 
-    /// Iterate over internal IDs in random order, filtering deferred points
-    /// using the mapping's own threshold.
-    pub fn iter_random_visible(
+    /// Iterate over internal IDs in random order, with deferred filtering
+    /// selected by `deferred_behavior`. See
+    /// [`PointMappings::iter_random_with_behavior`] for the per-mode contract.
+    /// Compressed mappings ignore the parameter (they can't hold deferred
+    /// entries).
+    pub fn iter_random_with_behavior(
         self,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        match self.deferred_internal_id() {
-            None => self.iter_random(),
-            Some(deferred_internal_id) => Box::new(
-                self.iter_random()
-                    // We _can_ prevent iterating over all points by going down into `iter_random()` and set
-                    // the `max_internal_id` to `deferred_internal_id`.
-                    .filter(move |&(_, iid)| iid < deferred_internal_id),
-            ),
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        match self {
+            PointMappingsRefEnum::Plain(m) => {
+                Either::Left(m.iter_random_with_behavior(deferred_behavior))
+            }
+            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_random()),
         }
+    }
+
+    /// Iterate starting from a given ID, filtering deferred points using the
+    /// mapping's own threshold. Shorthand for
+    /// [`Self::iter_from_with_behavior`] with [`DeferredBehavior::VisibleOnly`].
+    pub fn iter_from_visible(
+        self,
+        external_id: Option<PointIdType>,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        self.iter_from_with_behavior(external_id, DeferredBehavior::VisibleOnly)
+    }
+
+    /// Iterate over internal IDs in random order, filtering deferred points
+    /// using the mapping's own threshold. Shorthand for
+    /// [`Self::iter_random_with_behavior`] with [`DeferredBehavior::VisibleOnly`].
+    pub fn iter_random_visible(self) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        self.iter_random_with_behavior(DeferredBehavior::VisibleOnly)
     }
 
     /// Deferred threshold attached to this mapping, if any.
@@ -191,6 +210,15 @@ impl<'a> PointMappingsRefEnum<'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.deleted(),
             PointMappingsRefEnum::Compressed(m) => m.deleted(),
+        }
+    }
+
+    /// Shadowed-active bitslice for this mapping. Empty for compressed
+    /// mappings (immutable trackers can't carry deferred mutations).
+    fn shadowed(self) -> &'a BitSlice {
+        match self {
+            PointMappingsRefEnum::Plain(m) => m.shadowed_bitslice(),
+            PointMappingsRefEnum::Compressed(_) => BitSlice::empty(),
         }
     }
 }

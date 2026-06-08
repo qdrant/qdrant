@@ -311,7 +311,7 @@ impl HNSWIndex {
                 hw_counter,
                 is_stopped,
                 // No deferred filtering here since it's HNSW index.
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )
             .map(|it| it.collect())
         })?;

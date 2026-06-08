@@ -28,41 +28,48 @@ pub fn retrieve_blocking(
 
     let hw_counter = hw_measurement_acc.get_counter_cell();
 
-    SegmentHolder::read_points_locked(&segments, points, is_stopped, timeout, |ids, segment| {
-        let mut newer_version_points: Vec<_> = Vec::with_capacity(ids.len());
+    SegmentHolder::read_points_locked(
+        &segments,
+        points,
+        is_stopped,
+        timeout,
+        deferred_behavior,
+        |ids, segment| {
+            let mut newer_version_points: Vec<_> = Vec::with_capacity(ids.len());
 
-        let mut applied = 0;
+            let mut applied = 0;
 
-        for &id in ids {
-            let version = segment.point_version(id).ok_or_else(|| {
-                OperationError::service_error(format!("No version for point {id}"))
-            })?;
+            for &id in ids {
+                let version = segment.point_version(id).ok_or_else(|| {
+                    OperationError::service_error(format!("No version for point {id}"))
+                })?;
 
-            // If we already have the latest point version, keep that and continue
-            let version_entry = point_version.entry(id);
-            if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
-                applied += 1;
-                continue;
+                // If we already have the latest point version, keep that and continue
+                let version_entry = point_version.entry(id);
+                if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
+                    applied += 1;
+                    continue;
+                }
+                newer_version_points.push(id);
+                *version_entry.or_default() = version;
             }
-            newer_version_points.push(id);
-            *version_entry.or_default() = version;
-        }
 
-        for (id, record) in segment.retrieve(
-            &newer_version_points,
-            with_payload,
-            with_vector,
-            &hw_counter,
-            is_stopped,
-            deferred_behavior,
-        )? {
-            // We expect all points to be found since we already checked their versions
-            point_records.insert(id, RecordInternal::from(record));
-            applied += 1;
-        }
+            for (id, record) in segment.retrieve(
+                &newer_version_points,
+                with_payload,
+                with_vector,
+                &hw_counter,
+                is_stopped,
+                deferred_behavior,
+            )? {
+                // We expect all points to be found since we already checked their versions
+                point_records.insert(id, RecordInternal::from(record));
+                applied += 1;
+            }
 
-        Ok(applied)
-    })?;
+            Ok(applied)
+        },
+    )?;
 
     Ok(point_records)
 }

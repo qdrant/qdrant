@@ -134,7 +134,7 @@ impl LocalShard {
                         search_runtime_handle,
                         hw_acc,
                         Some(timeout.saturating_sub(instant.elapsed())),
-                        DeferredBehavior::Exclude,
+                        DeferredBehavior::VisibleOnly,
                     )
                     .await?
                     .len();

@@ -46,7 +46,7 @@ where
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             )?
             .filter_map(|internal_id| self.id_tracker.external_id(internal_id));
 

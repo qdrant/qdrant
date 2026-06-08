@@ -1497,7 +1497,7 @@ fn validate_facet_result(
                 count_filter.as_ref(),
                 &Default::default(),
                 &hw_counter,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             )
             .unwrap()
             .len();

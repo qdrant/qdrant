@@ -411,7 +411,7 @@ impl ShardHolder {
                         // Internal operation, no performance tracking needed
                         HwMeasurementAcc::disposable(),
                         true,
-                        DeferredBehavior::IncludeAll,
+                        DeferredBehavior::WithDeferred,
                     )
                     .await?;
             }

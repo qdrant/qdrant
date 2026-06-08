@@ -31,10 +31,18 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         }
     }
 
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
+    fn internal_id_with_behavior(
+        &self,
+        external_id: PointIdType,
+        deferred_behavior: common::types::DeferredBehavior,
+    ) -> Option<PointOffsetType> {
         match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.internal_id(external_id),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.internal_id(external_id),
+            ReadOnlyIdTrackerEnum::Appendable(t) => {
+                t.internal_id_with_behavior(external_id, deferred_behavior)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(t) => {
+                t.internal_id_with_behavior(external_id, deferred_behavior)
+            }
         }
     }
 

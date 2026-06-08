@@ -1,5 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
@@ -74,6 +74,7 @@ where
     pub fn struct_filtered_context<'q>(
         &'q self,
         filter: &'q Filter,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<StructFilterContext<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
@@ -82,6 +83,7 @@ where
             filter,
             payload_provider,
             self.available_point_count(),
+            deferred_behavior,
             hw_counter,
         )?;
 
@@ -92,6 +94,7 @@ where
         &self,
         condition: &Condition,
         nested_path: Option<&JsonPath>,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         Ok(match condition {
@@ -119,7 +122,10 @@ where
                 let point_ids = has_id.has_id.clone();
                 let resolved_point_offsets: Vec<PointOffsetType> = point_ids
                     .iter()
-                    .filter_map(|external_id| self.id_tracker.internal_id(*external_id))
+                    .filter_map(|external_id| {
+                        self.id_tracker
+                            .internal_id_with_behavior(*external_id, deferred_behavior)
+                    })
                     .collect();
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {

@@ -16,7 +16,7 @@ use common::flags::feature_flags;
 use common::progress_tracker::ProgressTracker;
 use common::small_uint::U24;
 use common::storage_version::StorageVersion;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::MmapFs;
 use fs_err as fs;
 use itertools::Itertools;
@@ -417,10 +417,12 @@ impl SegmentBuilder {
             let other_payload = payloads[point_data.segment_index.get() as usize]
                 .with_view(|v| v.get_payload_sequential(old_internal_id, &hw_counter))?; // Internal operation, no measurement needed!
 
-            match self
-                .id_tracker
-                .internal_id(ExtendedPointId::from(point_data.external_id))
-            {
+            match self.id_tracker.internal_id_with_behavior(
+                ExtendedPointId::from(point_data.external_id),
+                // Dedup guard on a freshly built target (no deferred heads
+                // here): match any existing copy of this external id.
+                DeferredBehavior::WithDeferred,
+            ) {
                 Some(existing_internal_id) => {
                     debug_assert!(
                         false,

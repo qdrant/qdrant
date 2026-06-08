@@ -230,7 +230,7 @@ impl ShardOperation for ProxyShard {
                             hw_measurement_acc.clone(),
                             None, // no timeout on update path
                             // Including deferred points in the result here since they could be part of the update operation.
-                            DeferredBehavior::IncludeAll,
+                            DeferredBehavior::WithDeferred,
                         )
                         .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())

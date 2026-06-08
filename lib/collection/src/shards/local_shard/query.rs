@@ -136,7 +136,7 @@ impl LocalShard {
                 &self.search_runtime,
                 timeout,
                 hw_measurement_acc,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             ),
         )
         .await
