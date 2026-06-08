@@ -39,6 +39,7 @@ pub mod save_on_disk;
 pub mod scope_tracker;
 pub mod small_uint;
 pub mod sort_utils;
+pub mod sorted_slice;
 pub mod stable_hash;
 pub mod storage_version;
 pub mod stored_bitslice;

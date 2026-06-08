@@ -63,6 +63,7 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::sorted_slice::SortedSlice;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
     use itertools::Itertools as _;
     use serde_json::{Value, json};
@@ -212,7 +213,12 @@ mod tests {
         let total = 5;
 
         reloaded
-            .live_reload(&fs, &[1], &[2, 4], &hw_counter)
+            .live_reload(
+                &fs,
+                &SortedSlice::new(&[1]).unwrap(),
+                &SortedSlice::new(&[2, 4]).unwrap(),
+                &hw_counter,
+            )
             .unwrap();
 
         let fresh = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total)

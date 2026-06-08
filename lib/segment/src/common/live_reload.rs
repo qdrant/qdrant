@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
@@ -37,8 +38,8 @@ pub(crate) trait LiveReload {
     fn live_reload(
         &mut self,
         fs: &Self::Fs,
-        deleted_points: &[PointOffsetType],
-        new_points: &[PointOffsetType],
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 }

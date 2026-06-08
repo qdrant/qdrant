@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -12,8 +13,8 @@ impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
     fn live_reload(
         &mut self,
         fs: &S::Fs,
-        deleted_points: &[PointOffsetType],
-        new_points: &[PointOffsetType],
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Reload each flag set's bitmap from the changed points only.
@@ -26,8 +27,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
 
         // total_point_count only grows, to cover appended offsets.
         self.total_point_count = new_points
-            .iter()
-            .fold(self.total_point_count, |max, &id| max.max(id as usize + 1));
+            .last()
+            .map(|&id| id as usize + 1)
+            .unwrap_or(self.total_point_count);
 
         Ok(())
     }
