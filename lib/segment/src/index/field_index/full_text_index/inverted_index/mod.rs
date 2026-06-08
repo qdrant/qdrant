@@ -414,7 +414,7 @@ mod tests {
 
     use common::bitvec::{BitSliceExt, BitVec};
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::MmapFs;
+    use common::universal_io::{MmapFs, Populate};
     use rand::RngExt;
     use rand::seq::SliceRandom;
     use rstest::rstest;
@@ -565,7 +565,7 @@ mod tests {
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
             mmap_dir.path().into(),
-            false,
+            Populate::No,
             phrase_matching,
             &empty_deleted,
         )
@@ -646,7 +646,7 @@ mod tests {
         let mut mmap_index = OnDiskInvertedIndex::open(
             &MmapFs,
             mmap_dir.path().into(),
-            false,
+            Populate::No,
             phrase_matching,
             &empty_deleted,
         )

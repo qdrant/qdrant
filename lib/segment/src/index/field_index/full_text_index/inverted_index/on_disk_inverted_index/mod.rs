@@ -60,7 +60,6 @@ pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
     pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
     /// Number of points which are not deleted
     pub(in crate::index::field_index::full_text_index) active_points_count: usize,
-    pub(in crate::index::field_index::full_text_index) is_on_disk: bool,
 }
 
 pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRead = MmapFile> {
@@ -156,7 +155,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     pub fn open(
         fs: &S::Fs,
         path: PathBuf,
-        populate: bool,
+        populate: Populate,
         has_positions: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
@@ -168,7 +167,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let postings_open_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Advice(Advice::Normal),
         };
 
@@ -197,7 +196,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -209,7 +208,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -221,7 +220,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -251,7 +250,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 deleted_points: deleted,
             },
             active_points_count: points_count,
-            is_on_disk: !populate,
         }))
     }
 
@@ -492,10 +490,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage.ram_usage_bytes()
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -511,7 +505,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             path,
             storage,
             active_points_count: _,
-            is_on_disk: _,
         } = self;
         let Storage {
             postings,
@@ -656,11 +649,10 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         self.storage
             .vocab
             .for_each_entry_in_iter(tokens, |user_data, token_ids| {
-                if self.is_on_disk {
-                    hw_counter.payload_index_io_read_counter().incr_delta(
-                        READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
-                    );
-                }
+                hw_counter.payload_index_io_read_counter().incr_delta(
+                    READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+                );
+
                 f(user_data, token_ids.map(unwrap_token));
                 Ok(())
             })

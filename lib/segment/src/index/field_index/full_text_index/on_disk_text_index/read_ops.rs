@@ -75,7 +75,7 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: self.inverted_index.is_on_disk(),
+            is_on_disk: true,
         }
     }
 
@@ -84,6 +84,6 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     }
 
     fn is_on_disk(&self) -> bool {
-        self.inverted_index.is_on_disk()
+        true
     }
 }

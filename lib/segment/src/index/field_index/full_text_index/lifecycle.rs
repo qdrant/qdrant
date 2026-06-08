@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -31,22 +31,21 @@ impl FullTextIndex {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(mmap_index) =
-            OnDiskFullTextIndex::open(&MmapFs, path, config, effective_is_on_disk, deleted_points)?
+        let populate = Populate::from(!effective_is_on_disk);
+        let Some(on_disk_index) =
+            OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
         else {
             return Ok(None);
         };
 
         let index = if effective_is_on_disk {
             // Use on-disk directly
-            Some(Self::OnDisk(mmap_index))
+            Self::OnDisk(on_disk_index)
         } else {
             // Load into RAM, use mmap as backing storage
-            Some(Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(
-                mmap_index,
-            )?))
+            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
         };
-        Ok(index)
+        Ok(Some(index))
     }
 
     pub fn new_gridstore(
