@@ -279,12 +279,18 @@ enum Operation {
     Delete(PointOffset),
     // Get point by offset
     Get(PointOffset),
+    // Batched get of several offsets via `read_values`
+    GetBatch(Vec<PointOffset>),
     // Flush after delay
     FlushDelay(Duration),
     // Clear storage
     Clear,
     // Iter up to limit
     Iter(PointOffset),
+    // Warm the mmap cache (pages, tracker, bitmask)
+    Populate,
+    // Drop the disk cache
+    ClearCache,
 }
 
 impl Operation {
@@ -296,6 +302,9 @@ impl Operation {
             max_point_offset / 500,   // flush
             max_point_offset / 5_000, // clear
             max_point_offset / 5_000, // iter
+            max_point_offset / 10,    // get_batch
+            max_point_offset / 1_000, // populate
+            max_point_offset / 1_000, // clear_cache
         ])
         .unwrap();
 
@@ -325,6 +334,15 @@ impl Operation {
                 let limit = rng.random_range(0..=10);
                 Operation::Iter(limit)
             }
+            6 => {
+                let batch_size = rng.random_range(1..=16);
+                let offsets = (0..batch_size)
+                    .map(|_| rng.random_range(0..=max_point_offset))
+                    .collect();
+                Operation::GetBatch(offsets)
+            }
+            7 => Operation::Populate,
+            8 => Operation::ClearCache,
             op => panic!("{op} out of range"),
         }
     }
@@ -426,6 +444,36 @@ fn test_behave_like_hashmap(
                     v1_rand, v2,
                     "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
                 );
+            }
+            Operation::GetBatch(point_offsets) => {
+                log::debug!("op:{i} GET_BATCH size:{}", point_offsets.len());
+                let mut batch_results: Vec<Option<Payload>> = vec![None; point_offsets.len()];
+                storage
+                    .read_values::<Random, _, GridstoreError>(
+                        point_offsets.iter().copied().enumerate(),
+                        |idx, _, value| {
+                            batch_results[idx] = value;
+                            Ok(())
+                        },
+                        hw_counter.payload_io_read_counter(),
+                    )
+                    .unwrap();
+                for (idx, &point_offset) in point_offsets.iter().enumerate() {
+                    let v_batch = &batch_results[idx];
+                    let v_model = model_hashmap.get(&point_offset).cloned();
+                    assert_eq!(
+                        v_batch, &v_model,
+                        "get_batch failed for point_offset: {point_offset} with {v_batch:?} vs {v_model:?}",
+                    );
+                }
+            }
+            Operation::Populate => {
+                log::debug!("op:{i} POPULATE");
+                storage.populate().unwrap();
+            }
+            Operation::ClearCache => {
+                log::debug!("op:{i} CLEAR_CACHE");
+                storage.clear_cache().unwrap();
             }
             Operation::FlushDelay(delay) => {
                 let mut flush_lock_guard = has_flusher_lock.lock();
