@@ -921,16 +921,30 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             .vectors
             .iter()
             .map(|(name, p)| {
-                // Per-vector overrides fall back to the shard-global config.
+                // This is an "as-requested" read-back: each field reflects what
+                // the host configured, NOT what the engine will effectively
+                // apply. So we read the per-vector value (falling back to the
+                // shard-global one Edge stores), and crucially do NOT substitute
+                // the engine's default when the host set nothing — a field
+                // configured without HNSW reads back as `None`, matching how the
+                // quantization field behaves. (The engine's *apply* path uses
+                // `unwrap_or(default)`; that's a different contract.)
                 let quant = p
                     .quantization_config
                     .clone()
                     .or_else(|| c.quantization_config.clone())
+                    // `.ok()` cannot drop a real config: `TryFrom` is total over
+                    // the closed `SegmentQuantizationConfig` enum (every variant
+                    // maps to `Ok`). It only guards a hypothetical future engine
+                    // variant with no FFI equivalent.
                     .and_then(|q| QuantizationConfig::try_from(q).ok());
-                let hnsw = p
-                    .hnsw_config
-                    .unwrap_or(c.hnsw_config)
-                    .into();
+                // Read the per-vector HNSW only. `edge::EdgeConfig.hnsw_config`
+                // is a non-optional global that's always populated (the engine
+                // default when unset), so falling back to it would report HNSW
+                // for a field the host left as a plain index — the asymmetry we
+                // are fixing. The per-vector field is `None` exactly when the
+                // host requested no HNSW.
+                let hnsw = p.hnsw_config.map(HnswIndexConfig::from);
                 (
                     name.clone(),
                     VectorDataConfig {
@@ -939,7 +953,7 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
                         quantization_config: quant,
                         multivector_config: p.multivector_config.map(MultiVectorConfig::from),
                         datatype: p.datatype.map(VectorStorageDatatype::from),
-                        hnsw_config: Some(hnsw),
+                        hnsw_config: hnsw,
                     },
                 )
             })

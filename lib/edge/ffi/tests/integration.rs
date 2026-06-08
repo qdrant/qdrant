@@ -361,11 +361,25 @@ fn scalar_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
     };
 
-    let shard = EdgeShard::load(path, Some(config));
+    let shard = EdgeShard::load(path, Some(config)).expect("Scalar quantization must be accepted");
+
+    // config() is an "as-requested" read-back: it reports Scalar (what the host
+    // asked for), even though the engine drops it on the appendable segment.
+    let read_back = shard.config().expect("config() failed");
+    let vd = read_back.vector_data.get("vec").expect("vec field present");
     assert!(
-        shard.is_ok(),
-        "Scalar quantization must be accepted at load (parity with Python SDK), got {:?}",
-        shard.err()
+        matches!(
+            vd.quantization_config,
+            Some(QuantizationConfig::Scalar { .. })
+        ),
+        "config() should report the requested Scalar quantization, got {:?}",
+        vd.quantization_config
+    );
+    // No HNSW was requested → it must read back as None (not the engine default).
+    assert!(
+        vd.hnsw_config.is_none(),
+        "a field with no HNSW config must read back as None, got {:?}",
+        vd.hnsw_config
     );
 }
 
