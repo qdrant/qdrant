@@ -19,9 +19,13 @@ mod build;
 #[cfg(feature = "gpu")]
 mod gpu_build;
 mod old_index;
-mod search;
+#[allow(dead_code)]
+mod read_only;
+mod read_view;
 mod telemetry;
 mod vector_index_impl;
+
+use self::read_view::{HNSWIndexReadView, HNSWIndexReadViewEnum};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
@@ -154,5 +158,25 @@ impl HNSWIndex {
         } = self;
         graph.clear_cache()?;
         Ok(())
+    }
+
+    pub fn with_view<R>(&self, f: impl FnOnce(HNSWIndexReadViewEnum<'_>) -> R) -> R {
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let quantized_vectors = self.quantized_vectors.borrow();
+        let payload_index = self.payload_index.borrow();
+
+        payload_index.with_view(|payload_index_view| {
+            let read_view = HNSWIndexReadView {
+                id_tracker: &*id_tracker,
+                vector_storage: &*vector_storage,
+                quantized_vectors: quantized_vectors.as_ref(),
+                payload_index: payload_index_view,
+                config: &self.config,
+                graph: &self.graph,
+                searches_telemetry: &self.searches_telemetry,
+            };
+            f(read_view)
+        })
     }
 }
