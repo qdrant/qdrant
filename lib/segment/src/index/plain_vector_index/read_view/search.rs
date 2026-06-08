@@ -1,24 +1,18 @@
-use std::collections::HashMap;
-
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{DeferredBehavior, ScoredPointOffset, TelemetryDetail};
-use sparse::common::types::DimId;
+use common::types::{DeferredBehavior, ScoredPointOffset};
 
 use super::PlainVectorIndexReadViewEnum;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
-use crate::common::operation_time_statistics::{
-    OperationDurationStatistics, ScopeDurationMeasurer,
-};
+use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::IdTrackerRead;
+use crate::index::PayloadIndexRead;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
-use crate::index::{PayloadIndexRead, VectorIndexRead};
-use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
 
@@ -49,10 +43,8 @@ impl PlainVectorIndexReadViewEnum<'_> {
             Ok(vector_storage_size <= indexing_threshold_bytes)
         }
     }
-}
 
-impl VectorIndexRead for PlainVectorIndexReadViewEnum<'_> {
-    fn search(
+    pub fn search(
         &self,
         query_vectors: &[&QueryVector],
         filter: Option<&Filter>,
@@ -134,47 +126,5 @@ impl VectorIndexRead for PlainVectorIndexReadViewEnum<'_> {
             )?;
         }
         Ok(search_results)
-    }
-
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
-        VectorIndexSearchesTelemetry {
-            index_name: None,
-            unfiltered_plain: self
-                .unfiltered_searches_telemetry
-                .lock()
-                .get_statistics(detail),
-            filtered_plain: self
-                .filtered_searches_telemetry
-                .lock()
-                .get_statistics(detail),
-            unfiltered_hnsw: OperationDurationStatistics::default(),
-            filtered_small_cardinality: OperationDurationStatistics::default(),
-            filtered_large_cardinality: OperationDurationStatistics::default(),
-            filtered_exact: OperationDurationStatistics::default(),
-            filtered_sparse: Default::default(),
-            unfiltered_exact: OperationDurationStatistics::default(),
-            unfiltered_sparse: OperationDurationStatistics::default(),
-        }
-    }
-
-    fn indexed_vector_count(&self) -> usize {
-        0
-    }
-
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
-        self.vector_storage.size_of_available_vectors_in_bytes()
-    }
-
-    fn fill_idf_statistics(
-        &self,
-        _idf: &mut HashMap<DimId, usize>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        // Plain (dense) index doesn't track IDF.
-        Ok(())
-    }
-
-    fn is_index(&self) -> bool {
-        false
     }
 }
