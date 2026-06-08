@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use bytes::Bytes;
 use common::universal_io::{OpenOptions, Result, UniversalReadFileOps, UniversalReadFs};
 
 use crate::{AsyncRead, BlobFile, BridgeRuntime};
@@ -8,6 +9,7 @@ use crate::{AsyncRead, BlobFile, BridgeRuntime};
 /// the [`BridgeRuntime`] used to drive its async operations. Opens per-object
 /// [`BlobFile`] handles via [`UniversalReadFs::open`] and answers metadata
 /// queries (`list_files`, `exists`) by blocking on the backend.
+#[derive(Clone)]
 pub struct BlobFs<A: AsyncRead> {
     inner: A,
     runtime: BridgeRuntime,
@@ -27,7 +29,7 @@ impl<A: AsyncRead> BlobFs<A> {
     }
 }
 
-impl<A: AsyncRead> UniversalReadFileOps for BlobFs<A> {
+impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     type ContextConfig = A::Config;
 
     fn from_context(config: Self::ContextConfig) -> Result<Self> {
@@ -42,6 +44,27 @@ impl<A: AsyncRead> UniversalReadFileOps for BlobFs<A> {
 
     fn exists(&self, path: &Path) -> Result<bool> {
         self.runtime.block_on(self.inner.exists(path))
+    }
+
+    fn create(&self, path: &Path, _expected_length: usize) -> Result<()> {
+        self.runtime.block_on(self.inner.create(path))
+    }
+
+    fn create_dir(&self, _path: &Path) -> Result<()> {
+        Ok(())
+    }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        self.runtime.block_on(self.inner.remove(path))
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<()> {
+        self.runtime.block_on(self.inner.remove_dir(path))
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        self.runtime
+            .block_on(self.inner.atomic_save(path, Bytes::copy_from_slice(bytes)))
     }
 }
 
