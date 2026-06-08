@@ -56,7 +56,9 @@ macro_rules! here {
     };
 }
 
-/// `anyhow::ensure!` but with location, as what `assert!` would do
+block:
+
+**SEARCH:**// `anyhow::ensure!` but with location, as what `assert!` would do
 macro_rules! ensure {
     ($($arg:tt)*) => {
         (|| Ok(anyhow::ensure!($($arg)*)))().map_err(|e| {
