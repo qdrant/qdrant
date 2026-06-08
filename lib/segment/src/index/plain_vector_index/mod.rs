@@ -1,6 +1,10 @@
 mod lifecycle;
 mod read;
 
+#[allow(dead_code)]
+mod read_only;
+mod read_view;
+
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -8,7 +12,10 @@ use parking_lot::Mutex;
 
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
 use crate::id_tracker::IdTrackerEnum;
+use crate::index::field_index::FieldIndex;
+use crate::index::plain_vector_index::read_view::PlainVectorIndexReadView;
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
@@ -37,5 +44,37 @@ impl PlainVectorIndex {
             filtered_searches_telemetry: OperationDurationsAggregator::new(),
             unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
         }
+    }
+
+    pub fn with_view<R>(
+        &self,
+        f: impl FnOnce(
+            PlainVectorIndexReadView<
+                '_,
+                IdTrackerEnum,
+                VectorStorageEnum,
+                PayloadStorageEnum,
+                FieldIndex,
+            >,
+        ) -> R,
+    ) -> R {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let quantized_vectors = self.quantized_vectors.clone();
+        let filtered_searches_telemetry = self.filtered_searches_telemetry.clone();
+        let unfiltered_searches_telemetry = self.unfiltered_searches_telemetry.clone();
+
+        payload_index.with_view(|payload_index_view| {
+            let read_view = PlainVectorIndexReadView {
+                id_tracker: &*id_tracker,
+                vector_storage: &*vector_storage,
+                quantized_vectors,
+                payload_index: payload_index_view,
+                filtered_searches_telemetry,
+                unfiltered_searches_telemetry,
+            };
+            f(read_view)
+        })
     }
 }
