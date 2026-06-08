@@ -6,7 +6,7 @@ use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use quantization::EncodedStorage;
 
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedMmapStorage;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 
@@ -17,7 +17,7 @@ pub(super) enum TurboEncodedVectorStorage {
     /// Single mem-mapped file of encoded vectors.
     Mmap(QuantizedStorage<MmapFile>),
     /// Chunked mem-mapped encoded vectors (appendable).
-    ChunkedMmap(QuantizedChunkedMmapStorage),
+    ChunkedMmap(QuantizedChunkedStorage<MmapFile>),
 }
 
 impl TurboEncodedVectorStorage {

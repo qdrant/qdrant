@@ -4,6 +4,7 @@ mod config;
 mod create;
 mod load;
 mod pq;
+mod read_only;
 mod scalar;
 mod storage;
 mod turbo;
@@ -12,30 +13,38 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
 use quantization::turboquant::TQBits;
 
+/// Local-file backend ([`MmapFile`]) shared by every persisted (mmap / chunked) quantized
+/// storage variant. Paired with the [`READ_FS`] value handle.
+pub(in crate::vector_storage::quantized) type ReadFile = MmapFile;
+
+/// Value handle for the [`ReadFile`] backend. The create and load paths always operate on
+/// local files, so they pass this single instance instead of constructing one each time.
+pub(in crate::vector_storage::quantized) const READ_FS: MmapFs = MmapFs;
+
+pub(in crate::vector_storage::quantized) use self::config::QuantizedStorageKind;
 pub use self::config::{
     QUANTIZED_APPENDABLE_DATA_PATH, QUANTIZED_APPENDABLE_OFFSETS_PATH, QUANTIZED_CONFIG_PATH,
     QUANTIZED_DATA_PATH, QUANTIZED_META_PATH, QUANTIZED_OFFSETS_PATH, QuantizedVectorsConfig,
     QuantizedVectorsStorageType,
 };
+pub use self::read_only::{QuantizedVectorStorageRead, QuantizedVectorsRead};
 pub use self::storage::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::types::{
-    BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, CompressionRatio, Distance,
-    QuantizationConfig, ScalarType, TurboQuantBitSize, VectorStorageDatatype,
+    BinaryQuantization, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding,
+    CompressionRatio, Distance, ProductQuantization, QuantizationConfig, ScalarType,
+    TurboQuantBitSize, TurboQuantization, VectorStorageDatatype,
 };
-use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
-use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsetsStorage, QuantizedMultivectorStorage,
+use crate::vector_storage::RawScorer;
+use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
+use crate::vector_storage::quantized::quantized_scorer_builder::{
+    QuantizedScorerBuilder, QuantizedScorerDispatch,
 };
-use crate::vector_storage::quantized::quantized_query_scorer::{
-    InternalScorerUnsupported, QuantizedQueryScorer,
-};
-use crate::vector_storage::quantized::quantized_scorer_builder::QuantizedScorerBuilder;
-use crate::vector_storage::{RawScorer, RawScorerImpl};
 
 #[derive(Debug)]
 pub struct QuantizedVectors {
@@ -57,14 +66,14 @@ impl QuantizedVectors {
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         QuantizedScorerBuilder::new(
-            &self.storage_impl,
             &self.config.quantization_config,
             query,
             &self.distance,
             self.datatype,
             hardware_counter,
+            self.storage_impl.is_on_disk(),
         )
-        .build()
+        .build(&self.storage_impl)
     }
 
     /// Build a raw scorer for the specified `point_id`.
@@ -74,125 +83,42 @@ impl QuantizedVectors {
         point_id: PointOffsetType,
         hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        fn build<'a, TEncodedVectors: quantization::EncodedVectors>(
-            point_id: PointOffsetType,
-            quantized_data: &'a TEncodedVectors,
-            hardware_counter: HardwareCounterCell,
-        ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-            let query_scorer =
-                QuantizedQueryScorer::new_internal(point_id, quantized_data, hardware_counter)?;
-            Ok(Box::new(RawScorerImpl { query_scorer }))
-        }
-
-        fn build_multi<'a, QuantizedStorage, OffsetStorage>(
-            point_id: PointOffsetType,
-            quantized_data: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
-            hardware_counter: HardwareCounterCell,
-        ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported>
-        where
-            QuantizedStorage: quantization::EncodedVectors + 'a,
-            OffsetStorage: MultivectorOffsetsStorage + 'a,
-        {
-            let query_scorer = QuantizedMultiQueryScorer::new_internal(
-                point_id,
-                quantized_data,
-                hardware_counter,
-            )?;
-
-            Ok(Box::new(RawScorerImpl { query_scorer }))
-        }
-
-        match &self.storage_impl {
-            QuantizedVectorStorage::ScalarRam(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarMmap(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::PQRam(storage) => build(point_id, storage, hardware_counter),
-            QuantizedVectorStorage::PQMmap(storage) => build(point_id, storage, hardware_counter),
-            QuantizedVectorStorage::PQChunkedMmap(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryRam(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryMmap(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::TQRam(storage) => build(point_id, storage, hardware_counter),
-            QuantizedVectorStorage::TQMmap(storage) => build(point_id, storage, hardware_counter),
-            QuantizedVectorStorage::TQChunkedMmap(storage) => {
-                build(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarRamMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarChunkedMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::PQRamMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::PQMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::PQChunkedMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryRamMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::TQRamMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::TQMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-            QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
-                build_multi(point_id, storage, hardware_counter)
-            }
-        }
+        self.storage_impl
+            .raw_internal_scorer(point_id, hardware_counter)
     }
 
-    fn get_config_path(path: &Path) -> PathBuf {
+    pub(in crate::vector_storage::quantized) fn get_config_path(path: &Path) -> PathBuf {
         path.join(QUANTIZED_CONFIG_PATH)
     }
 
-    fn get_data_path(path: &Path, storage_type: QuantizedVectorsStorageType) -> PathBuf {
+    pub(in crate::vector_storage::quantized) fn get_data_path(
+        path: &Path,
+        storage_type: QuantizedVectorsStorageType,
+    ) -> PathBuf {
         match storage_type {
             QuantizedVectorsStorageType::Immutable => path.join(QUANTIZED_DATA_PATH),
             QuantizedVectorsStorageType::Mutable => path.join(QUANTIZED_APPENDABLE_DATA_PATH),
         }
     }
 
-    fn get_meta_path(path: &Path) -> PathBuf {
+    pub(in crate::vector_storage::quantized) fn get_meta_path(path: &Path) -> PathBuf {
         path.join(QUANTIZED_META_PATH)
     }
 
-    fn get_offsets_path(path: &Path, storage_type: QuantizedVectorsStorageType) -> PathBuf {
+    pub(in crate::vector_storage::quantized) fn get_offsets_path(
+        path: &Path,
+        storage_type: QuantizedVectorsStorageType,
+    ) -> PathBuf {
         match storage_type {
             QuantizedVectorsStorageType::Immutable => path.join(QUANTIZED_OFFSETS_PATH),
             QuantizedVectorsStorageType::Mutable => path.join(QUANTIZED_APPENDABLE_OFFSETS_PATH),
         }
     }
 
-    fn is_ram(always_ram: Option<bool>, on_disk_vector_storage: bool) -> bool {
+    pub(in crate::vector_storage::quantized) fn is_ram(
+        always_ram: Option<bool>,
+        on_disk_vector_storage: bool,
+    ) -> bool {
         // Low-memory mode forces the mmap (on-disk) backend regardless of the
         // persisted `always_ram` flag. The on-disk byte layout is identical,
         // so flipping back later still works without rebuild.
@@ -202,7 +128,7 @@ impl QuantizedVectors {
         !on_disk_vector_storage || always_ram == Some(true)
     }
 
-    fn convert_binary_encoding(
+    pub(in crate::vector_storage::quantized) fn convert_binary_encoding(
         encoding: Option<BinaryQuantizationEncoding>,
     ) -> quantization::encoded_vectors_binary::Encoding {
         match encoding {
@@ -245,7 +171,7 @@ impl QuantizedVectors {
         }
     }
 
-    fn convert_tq_bits(bits: TurboQuantBitSize) -> TQBits {
+    pub(in crate::vector_storage::quantized) fn convert_tq_bits(bits: TurboQuantBitSize) -> TQBits {
         match bits {
             TurboQuantBitSize::Bits1 => TQBits::Bits1,
             TurboQuantBitSize::Bits1_5 => TQBits::Bits1_5,
@@ -254,7 +180,7 @@ impl QuantizedVectors {
         }
     }
 
-    fn tq_bits_default_rescoring(bits: TQBits) -> bool {
+    pub(in crate::vector_storage::quantized) fn tq_bits_default_rescoring(bits: TQBits) -> bool {
         match bits {
             TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 => true,
             TQBits::Bits4 => false,
@@ -292,13 +218,61 @@ impl QuantizedVectors {
         }
     }
 
-    fn get_bucket_size(compression: CompressionRatio) -> usize {
+    pub(in crate::vector_storage::quantized) fn get_bucket_size(
+        compression: CompressionRatio,
+    ) -> usize {
         match compression {
             CompressionRatio::X4 => 1,
             CompressionRatio::X8 => 2,
             CompressionRatio::X16 => 4,
             CompressionRatio::X32 => 8,
             CompressionRatio::X64 => 16,
+        }
+    }
+
+    /// Size in bytes of a single quantized vector on disk.
+    ///
+    /// Single source of truth for the on-disk stride, shared by the create, load and
+    /// read-only-open paths so they cannot disagree about how the data is laid out.
+    /// `is_multi` selects the multi-vector layout — notably binary quantization packs
+    /// multi-vector storage into `u8` words but single-vector storage into `u128`.
+    pub(in crate::vector_storage::quantized) fn quantized_vector_size(
+        quantization_config: &QuantizationConfig,
+        vector_parameters: &quantization::VectorParameters,
+        is_multi: bool,
+    ) -> usize {
+        match quantization_config {
+            QuantizationConfig::Scalar(_) => {
+                quantization::encoded_vectors_u8::get_quantized_vector_size(vector_parameters)
+            }
+            QuantizationConfig::Product(ProductQuantization { product }) => {
+                let bucket_size = Self::get_bucket_size(product.compression);
+                quantization::encoded_vectors_pq::get_quantized_vector_size(
+                    vector_parameters,
+                    bucket_size,
+                )
+            }
+            QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+                let encoding = Self::convert_binary_encoding(binary.encoding);
+                if is_multi {
+                    quantization::encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
+                        vector_parameters.dim,
+                        encoding,
+                    )
+                } else {
+                    quantization::encoded_vectors_binary::get_quantized_vector_size_from_params::<
+                        u128,
+                    >(vector_parameters.dim, encoding)
+                }
+            }
+            QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
+                let bits = Self::convert_tq_bits(turbo.bits.unwrap_or_default());
+                quantization::encoded_vectors_tq::get_quantized_vector_size(
+                    vector_parameters,
+                    bits,
+                    quantization::turboquant::TQMode::Plus,
+                )
+            }
         }
     }
 

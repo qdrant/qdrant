@@ -75,6 +75,26 @@ impl TurboVectorStorage {
     pub fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_quantized_vector(key)
     }
+
+    /// Add the given vectors to the storage.
+    ///
+    /// Inherent method (mirrors [`VectorStorageEnum::update_from`]) rather than a
+    /// `VectorStorage` trait method: `update_from` now lives on the per-kind
+    /// sub-traits, and `TurboVectorStorage` deliberately implements neither
+    /// `DenseVectorStorage<T>` nor the others.
+    ///
+    /// # Returns
+    /// The range of point offsets that were added to the storage.
+    ///
+    /// If stopped, the operation returns a cancellation error.
+    pub fn update_from<'a>(
+        &mut self,
+        _other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        // TODO: encode each incoming f32 vector and propagate deleted flags.
+        unimplemented!("TODO: encode vectors from another storage (optimize)")
+    }
 }
 
 impl VectorStorageRead for TurboVectorStorage {

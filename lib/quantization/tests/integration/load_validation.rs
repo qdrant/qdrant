@@ -47,6 +47,7 @@ mod tests {
 
         let try_load = |stride: usize| {
             EncodedVectorsU8::<TestEncodedStorage>::load(
+                &common::universal_io::MmapFs,
                 TestEncodedStorage::from_file(data_path.as_path(), stride).unwrap(),
                 meta_path.as_path(),
             )
@@ -65,7 +66,10 @@ mod tests {
                     "loading a storage with vector stride {stride} should fail, \
                      metadata expects {quantized_vector_size}"
                 ),
-                Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::InvalidData),
+                Err(err) => assert!(
+                    matches!(&err, common::universal_io::UniversalIoError::Io(e) if e.kind() == std::io::ErrorKind::InvalidData),
+                    "unexpected error: {err:?}",
+                ),
             }
         }
     }
@@ -118,6 +122,7 @@ mod tests {
 
         let load = || {
             EncodedVectorsU8::<TestEncodedStorage>::load(
+                &common::universal_io::MmapFs,
                 TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
                 meta_path.as_path(),
             )
@@ -151,7 +156,10 @@ mod tests {
                     "malicious snapshot with actual_dim={inflated_actual_dim} was accepted — \
                      heap OOB read is reachable (BBP-827 regression)"
                 ),
-                Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::InvalidData),
+                Err(err) => assert!(
+                    matches!(&err, common::universal_io::UniversalIoError::Io(e) if e.kind() == std::io::ErrorKind::InvalidData),
+                    "unexpected error: {err:?}",
+                ),
             }
         }
     }

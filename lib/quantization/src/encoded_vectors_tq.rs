@@ -8,6 +8,7 @@ use common::fs::atomic_save_json;
 use common::mmap::MmapFlusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalReadFs, read_json_via};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
@@ -275,9 +276,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         })
     }
 
-    pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
-        let contents = fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
+    pub fn load<Fs: UniversalReadFs>(
+        fs: &Fs,
+        encoded_vectors: TStorage,
+        meta_path: &Path,
+    ) -> common::universal_io::Result<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
 
         let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
 
