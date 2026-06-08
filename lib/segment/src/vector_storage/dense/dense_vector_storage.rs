@@ -16,7 +16,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::common::get_async_scorer;
@@ -234,7 +234,7 @@ where
 
     fn update_from<'a>(
         &mut self,
-        other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
@@ -246,10 +246,9 @@ where
         let mut deleted_ids = vec![];
         for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
             check_process_stopped(stopped)?;
-            let vector = T::slice_from_float_cow(other_vector);
             // Safety: T implements zerocopy::IntoBytes.
             #[expect(deprecated, reason = "legacy code")]
-            let raw_bites = unsafe { mmap::transmute_to_u8_slice(vector.as_ref()) };
+            let raw_bites = unsafe { mmap::transmute_to_u8_slice(other_vector.as_ref()) };
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
