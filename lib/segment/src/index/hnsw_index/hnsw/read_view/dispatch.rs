@@ -53,7 +53,8 @@ impl HNSWIndexReadViewEnum<'_> {
                 // to do a plain search instead.
                 let plain_search = exact
                     || is_hnsw_disabled
-                    || self.vector_storage.available_vector_count() < self.config.full_scan_threshold;
+                    || self.vector_storage.available_vector_count()
+                        < self.config.full_scan_threshold;
 
                 // Do plain or graph search
                 if plain_search {
@@ -138,8 +139,9 @@ impl HNSWIndexReadViewEnum<'_> {
                 // The filter context's lifetime is tied to the payload view, which is already
                 // held by this read view.
                 let use_graph = {
-                    let filter_context =
-                        self.payload_index.filter_context(query_filter, &hw_counter)?;
+                    let filter_context = self
+                        .payload_index
+                        .filter_context(query_filter, &hw_counter)?;
                     sample_check_cardinality(
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),

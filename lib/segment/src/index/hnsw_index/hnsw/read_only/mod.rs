@@ -19,12 +19,14 @@ use common::universal_io::UniversalRead;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
+use crate::id_tracker::IdTrackerEnum;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::FieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::{StructPayloadIndex, StructPayloadIndexReadView};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -48,6 +50,25 @@ pub struct ReadOnlyHNSWIndex<S: UniversalRead> {
     is_on_disk: bool,
 }
 
+/// Read-only view over a [`ReadOnlyHNSWIndex`].
+///
+/// The top-level backends are read-only ([`ReadOnlyIdTrackerEnum`] /
+/// [`VectorStorageReadEnum`] / [`QuantizedVectorsRead`]), while the payload
+/// index view is still built over the in-memory enums of [`StructPayloadIndex`].
+type ReadView<'a, S> = HNSWIndexReadView<
+    'a,
+    ReadOnlyIdTrackerEnum<S>,
+    VectorStorageReadEnum<S>,
+    QuantizedVectorsRead<S>,
+    StructPayloadIndexReadView<
+        'a,
+        PayloadStorageEnum,
+        IdTrackerEnum,
+        VectorStorageEnum,
+        FieldIndex,
+    >,
+>;
+
 impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
     pub fn is_on_disk(&self) -> bool {
         self.is_on_disk
@@ -57,19 +78,7 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
     /// [`HNSWIndex::with_view`].
     ///
     /// [`HNSWIndex::with_view`]: super::super::HNSWIndex::with_view
-    pub fn with_view<R>(
-        &self,
-        f: impl FnOnce(
-            HNSWIndexReadView<
-                '_,
-                ReadOnlyIdTrackerEnum<S>,
-                VectorStorageReadEnum<S>,
-                PayloadStorageEnum,
-                FieldIndex,
-                QuantizedVectorsRead<S>,
-            >,
-        ) -> R,
-    ) -> R {
+    pub fn with_view<R>(&self, f: impl FnOnce(ReadView<'_, S>) -> R) -> R {
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
