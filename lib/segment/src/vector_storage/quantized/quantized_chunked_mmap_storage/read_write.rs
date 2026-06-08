@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalKind, UniversalWrite};
+use common::universal_io::{MmapFile, UniversalWrite};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -84,14 +84,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
     }
 
     fn is_in_ram_or_mmap() -> bool {
-        match ChunkedVectors::<u8, S>::storage_kind() {
-            UniversalKind::Mmap | UniversalKind::SimpleDiskCache => true,
-            UniversalKind::IoUring
-            | UniversalKind::DiskCache
-            | UniversalKind::S3
-            | UniversalKind::Gcs
-            | UniversalKind::Azure => false,
-        }
+        ChunkedVectors::<u8, S>::storage_kind().is_in_ram_or_mmap()
     }
 
     fn is_on_disk(&self) -> bool {

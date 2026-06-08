@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalKind, UniversalRead};
+use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -74,14 +74,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
     }
 
     fn is_in_ram_or_mmap() -> bool {
-        match S::kind() {
-            UniversalKind::Mmap | UniversalKind::SimpleDiskCache => true,
-            UniversalKind::IoUring
-            | UniversalKind::DiskCache
-            | UniversalKind::S3
-            | UniversalKind::Gcs
-            | UniversalKind::Azure => false,
-        }
+        S::kind().is_in_ram_or_mmap()
     }
 
     fn is_on_disk(&self) -> bool {

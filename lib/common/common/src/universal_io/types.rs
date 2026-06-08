@@ -20,6 +20,22 @@ pub enum UniversalKind {
     Azure,
 }
 
+impl UniversalKind {
+    /// Whether data backed by this kind is fully resident in RAM or mapped into
+    /// the address space (mmap), as opposed to being fetched on demand from disk
+    /// or a remote object store.
+    pub fn is_in_ram_or_mmap(self) -> bool {
+        match self {
+            UniversalKind::Mmap | UniversalKind::SimpleDiskCache => true,
+            UniversalKind::IoUring
+            | UniversalKind::DiskCache
+            | UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure => false,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Populate {
     /// Let backend choose
