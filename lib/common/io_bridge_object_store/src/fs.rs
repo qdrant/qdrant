@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use bytes::Bytes;
 use common::universal_io::{OpenOptions, Result, UniversalReadFileOps, UniversalReadFs};
 
 use crate::{AsyncRead, BlobFile, BridgeRuntime};
@@ -58,6 +59,11 @@ impl<A: AsyncRead> UniversalReadFileOps for BlobFs<A> {
 
     fn remove_dir(&self, path: &Path) -> Result<()> {
         self.runtime.block_on(self.inner.remove_dir(path))
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        self.runtime
+            .block_on(self.inner.atomic_save(path, Bytes::copy_from_slice(bytes)))
     }
 }
 

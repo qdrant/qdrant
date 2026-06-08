@@ -82,6 +82,10 @@ impl UniversalReadFileOps for IoUringFs {
     fn remove_dir(&self, path: &Path) -> Result<()> {
         local_file_ops::local_remove_dir(path)
     }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        local_file_ops::local_atomic_save(path, bytes)
+    }
 }
 
 /// Per-open backend extras for [`IoUringFs::open`].

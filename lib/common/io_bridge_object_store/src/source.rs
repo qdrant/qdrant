@@ -119,6 +119,23 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         }
     }
 
+    fn atomic_save(
+        &self,
+        path: &Path,
+        bytes: Bytes,
+    ) -> impl Future<Output = Result<()>> + Send + 'static {
+        let store = self.clone();
+        let key = build_key(path);
+
+        async move {
+            store
+                .put(&key, bytes.into())
+                .await
+                .map(drop)
+                .map_err(UniversalIoError::s3)
+        }
+    }
+
     fn read_range(
         &self,
         path: &Path,
@@ -307,15 +324,19 @@ mod tests {
         fs.create(Path::new("prefix/empty"), 1024).unwrap();
         fs.create(Path::new("prefix/nested/empty"), 1024).unwrap();
         fs.create(Path::new("prefix-sibling/empty"), 1024).unwrap();
+        fs.atomic_save(Path::new("prefix/saved"), b"saved").unwrap();
 
         assert!(fs.exists(Path::new("prefix/empty")).unwrap());
         let len = runtime.block_on(store.head(&object_store::path::Path::from("prefix/empty")));
         assert_eq!(len.unwrap().size, 0);
+        let len = runtime.block_on(store.head(&object_store::path::Path::from("prefix/saved")));
+        assert_eq!(len.unwrap().size, 5);
 
         fs.remove(Path::new("prefix/empty")).unwrap();
         fs.remove_dir(Path::new("prefix")).unwrap();
         assert!(!fs.exists(Path::new("prefix/empty")).unwrap());
         assert!(!fs.exists(Path::new("prefix/nested/empty")).unwrap());
+        assert!(!fs.exists(Path::new("prefix/saved")).unwrap());
         assert!(fs.exists(Path::new("prefix-sibling/empty")).unwrap());
     }
 

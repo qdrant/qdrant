@@ -56,6 +56,12 @@ pub trait UniversalReadFileOps: Sized + Debug {
     /// Backends without materialized directories may treat this as a no-op.
     fn remove_dir(&self, path: &Path) -> Result<()>;
 
+    /// Atomically save bytes at the given path.
+    ///
+    /// Local backends should use an atomic file replacement. Object-store
+    /// backends may overwrite the full object.
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()>;
+
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.
 }

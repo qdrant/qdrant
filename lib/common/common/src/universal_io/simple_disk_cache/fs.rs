@@ -100,6 +100,10 @@ where
     fn remove_dir(&self, path: &Path) -> Result<()> {
         self.remote_fs.remove_dir(path)
     }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        self.remote_fs.atomic_save(path, bytes)
+    }
 }
 
 impl<R> UniversalReadFs for DiskCacheFs<R>

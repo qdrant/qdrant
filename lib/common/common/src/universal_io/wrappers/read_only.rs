@@ -72,6 +72,12 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
             "ReadOnlyFs does not support removing directories",
         ))
     }
+
+    fn atomic_save(&self, _path: &Path, _bytes: &[u8]) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support atomic saves",
+        ))
+    }
 }
 
 impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {

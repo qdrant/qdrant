@@ -165,6 +165,14 @@ mod tests {
             std::future::ready(Ok(()))
         }
 
+        fn atomic_save(
+            &self,
+            _path: &Path,
+            _bytes: Bytes,
+        ) -> impl Future<Output = Result<()>> + Send + 'static {
+            std::future::ready(Ok(()))
+        }
+
         fn read_range(
             &self,
             _path: &Path,

@@ -1,5 +1,7 @@
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use crate::fs::atomic_save;
 use crate::mmap::create_and_ensure_length;
 use crate::universal_io::UniversalIoError;
 
@@ -19,6 +21,12 @@ pub fn local_remove(path: &Path) -> crate::universal_io::Result<()> {
 
 pub fn local_remove_dir(path: &Path) -> crate::universal_io::Result<()> {
     fs_err::remove_dir_all(path).map_err(|err| UniversalIoError::extract_not_found(err, path))
+}
+
+pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Result<()> {
+    atomic_save(path, |writer| {
+        writer.write_all(bytes).map_err(UniversalIoError::from)
+    })
 }
 
 pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>> {

@@ -114,6 +114,10 @@ impl UniversalReadFileOps for BlockCacheFs {
     fn remove_dir(&self, path: &Path) -> Result<()> {
         local_file_ops::local_remove_dir(path)
     }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        local_file_ops::local_atomic_save(path, bytes)
+    }
 }
 
 impl UniversalReadFs for BlockCacheFs {
