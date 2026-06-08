@@ -1,0 +1,82 @@
+use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
+use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
+use sparse::common::sparse_vector::SparseVector;
+
+use super::ReadOnlySparseVectorStorage;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::named_vectors::CowVector;
+use crate::types::{Distance, VectorStorageDatatype};
+use crate::vector_storage::VectorStorageRead;
+use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
+
+impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
+    fn distance(&self) -> Distance {
+        SPARSE_VECTOR_DISTANCE
+    }
+
+    fn datatype(&self) -> VectorStorageDatatype {
+        VectorStorageDatatype::Float32
+    }
+
+    fn is_on_disk(&self) -> bool {
+        true
+    }
+
+    fn total_vector_count(&self) -> usize {
+        self.next_point_offset
+    }
+
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key)
+            .unwrap_or_else(CowVector::default_sparse)
+    }
+
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
+            let Some(sparse_vector) = sparse_vector else {
+                return Ok(());
+            };
+
+            let sparse_vector = SparseVector::try_from(sparse_vector)?;
+            callback(user_data, point_offset, CowVector::from(sparse_vector));
+            Ok(())
+        };
+
+        self.storage
+            .read_values::<P, _, _>(
+                keys.into_iter(),
+                callback,
+                HardwareCounterCell::disposable().vector_io_read(),
+            )
+            .expect("sparse vectors read")
+    }
+
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        match self
+            .storage
+            .get_value::<P>(key, &HardwareCounterCell::disposable())
+        {
+            Ok(Some(stored)) => SparseVector::try_from(stored).ok().map(CowVector::from),
+            _ => None,
+        }
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get(key)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted.count()
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.as_bitslice()
+    }
+}
