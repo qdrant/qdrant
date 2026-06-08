@@ -188,6 +188,31 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
 
         Ok(())
     }
+
+    /// Append all flattened vectors in `vectors` to the end of the storage.
+    ///
+    /// `vectors` holds `vectors.len() / dim` consecutive vectors. They are inserted
+    /// in batches of one chunk's remaining capacity, so each batch is a single
+    /// `copy_from_slice` and never crosses a chunk boundary.
+    pub fn extend(&mut self, vectors: &[T]) -> Result<(), TryReserveError> {
+        assert!(
+            vectors.len().is_multiple_of(self.dim),
+            "Vector data size mismatch"
+        );
+
+        let count = vectors.len() / self.dim;
+        let mut inserted = 0;
+        while inserted < count {
+            let key = self.len;
+            let batch = self.get_chunk_left_keys(key).min(count - inserted);
+            let start = inserted * self.dim;
+            let end = start + batch * self.dim;
+            self.insert_many(key, &vectors[start..end], batch)?;
+            inserted += batch;
+        }
+
+        Ok(())
+    }
 }
 
 impl<T: Clone> TrySetCapacityExact for VolatileChunkedVectors<T> {
