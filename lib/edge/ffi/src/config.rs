@@ -79,8 +79,9 @@ pub enum VectorStorageDatatype {
     Float16,
     /// Unsigned 8-bit integers. Requires pre-quantized embeddings.
     Uint8,
-    /// Turbo quantization storage (read-only via config(); not configurable
-    /// through this SDK's quantization options yet).
+    /// 4-bit TurboQuant storage datatype. This is the *storage* datatype the
+    /// engine reports for a Turbo-quantized field; configure TurboQuant itself
+    /// via [`QuantizationConfig::Turbo`], not by setting this datatype directly.
     Turbo4,
 }
 
@@ -363,8 +364,10 @@ pub struct BinaryQuantizationParams {
 pub enum TurboQuantBitSize {
     /// 1 bit per component (maximum compression).
     Bits1,
-    /// 1.5 bits per component.
-    Bits1_5,
+    /// 1.5 bits per component. (Named `Bits1Point5`, not `Bits1_5`, so the
+    /// generated Swift case reads as `bits1Point5` rather than the ambiguous
+    /// `bits15`.)
+    Bits1Point5,
     /// 2 bits per component.
     Bits2,
     /// 4 bits per component (default; best recall of the Turbo modes).
@@ -375,7 +378,7 @@ impl From<TurboQuantBitSize> for SegmentTurboQuantBitSize {
     fn from(b: TurboQuantBitSize) -> Self {
         match b {
             TurboQuantBitSize::Bits1 => SegmentTurboQuantBitSize::Bits1,
-            TurboQuantBitSize::Bits1_5 => SegmentTurboQuantBitSize::Bits1_5,
+            TurboQuantBitSize::Bits1Point5 => SegmentTurboQuantBitSize::Bits1_5,
             TurboQuantBitSize::Bits2 => SegmentTurboQuantBitSize::Bits2,
             TurboQuantBitSize::Bits4 => SegmentTurboQuantBitSize::Bits4,
         }
@@ -386,7 +389,7 @@ impl From<SegmentTurboQuantBitSize> for TurboQuantBitSize {
     fn from(b: SegmentTurboQuantBitSize) -> Self {
         match b {
             SegmentTurboQuantBitSize::Bits1 => TurboQuantBitSize::Bits1,
-            SegmentTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1_5,
+            SegmentTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1Point5,
             SegmentTurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
             SegmentTurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
         }

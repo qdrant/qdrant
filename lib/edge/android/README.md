@@ -153,3 +153,28 @@ EdgeShard.load(path, config).use { shard ->
 To release *before* disposal (e.g. at app-suspend), call `shard.unload()`
 (typically after `shard.flush()`). Do not confuse it with `close()` /
 `destroy()`, which dispose the object itself.
+
+## Error handling
+
+Fallible calls throw `EdgeException`, a sealed exception so you can branch on
+the error category (the field is `reason`, not `message`):
+
+- `EdgeException.ShardClosed` — the shard was unloaded; reopen it via
+  `EdgeShard.load`.
+- `EdgeException.InvalidArgument` — host-supplied input was invalid (bad UUID,
+  out-of-range vector size, unsupported config, …); fix the input and retry.
+- `EdgeException.OperationException` — any other engine failure (I/O, missing
+  payload index, dimension mismatch, …).
+
+```kotlin
+try {
+    val shard = EdgeShard.load(path = dataDir, config = config)
+    shard.update(operation = upsert)
+} catch (e: EdgeException.ShardClosed) {
+    // reopen the shard
+} catch (e: EdgeException.InvalidArgument) {
+    println("Bad input: ${e.reason}")
+} catch (e: EdgeException.OperationException) {
+    println("Engine error: ${e.reason}")
+}
+```

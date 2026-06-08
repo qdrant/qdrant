@@ -942,3 +942,74 @@ fn oversized_hnsw_params_rejected_not_allocated() {
         "a sane HNSW config must still be accepted"
     );
 }
+
+// ── Test 18: scroll_pagination_via_next_offset ────────────────────────────────
+
+/// Scroll the shard page-by-page using the `next_offset` cursor and confirm:
+/// every page (except possibly the last) returns `next_offset`, feeding it back
+/// yields the following page, the final page returns `next_offset == None`, and
+/// the union across pages is all points with no duplicates. This pins the
+/// pagination contract, which the single-page scroll tests don't exercise.
+#[test]
+fn scroll_pagination_via_next_offset() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    // Upsert 5 points (IDs 1..=5) so a page size of 2 yields 3 pages (2+2+1).
+    let points: Vec<Point> = (1..=5u64)
+        .map(|i| Point {
+            id: PointId::NumId { value: i },
+            vector: named_vec([i as f32, 0.0, 0.0, 0.0]),
+            payload: None,
+        })
+        .collect();
+    shard
+        .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+        .expect("update failed");
+
+    let page_size = 2u64;
+    let mut offset: Option<PointId> = None;
+    let mut seen: Vec<u64> = Vec::new();
+    let mut pages = 0;
+
+    loop {
+        let resp = shard
+            .scroll(ScrollRequest {
+                offset: offset.clone(),
+                limit: Some(page_size),
+                filter: None,
+                with_payload: None,
+                with_vector: None,
+                order_by: None,
+            })
+            .expect("scroll failed");
+        pages += 1;
+        assert!(pages <= 10, "pagination did not terminate (loop guard)");
+
+        assert!(
+            resp.records.len() as u64 <= page_size,
+            "a page must not exceed the requested limit"
+        );
+        for r in &resp.records {
+            match &r.id {
+                PointId::NumId { value } => seen.push(*value),
+                PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
+            }
+        }
+
+        match resp.next_offset {
+            Some(next) => offset = Some(next),
+            None => break, // last page
+        }
+    }
+
+    assert_eq!(pages, 3, "5 points at page size 2 should span exactly 3 pages");
+    seen.sort_unstable();
+    assert_eq!(
+        seen,
+        vec![1, 2, 3, 4, 5],
+        "pagination should visit every point exactly once, got {seen:?}"
+    );
+}

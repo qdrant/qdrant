@@ -96,3 +96,27 @@ let hits = try await Task.detached(priority: .userInitiated) {
 If you wrap the shard in an `actor` (a natural pattern for a database), the
 generated value types (`Point`, `Filter`, `SearchRequest`, …) are `Sendable`,
 so they cross the actor boundary cleanly under Swift 6 strict concurrency.
+
+## Error handling
+
+Fallible calls throw `EdgeError`, a branchable enum so you can react to the
+error category:
+
+- `.shardClosed` — the shard was unloaded; reopen it via `EdgeShard.load`.
+- `.invalidArgument(reason)` — host-supplied input was invalid (bad UUID,
+  out-of-range vector size, unsupported config, …); fix the input and retry.
+- `.operationError(reason)` — any other engine failure (I/O, missing payload
+  index, dimension mismatch, …).
+
+```swift
+do {
+    let shard = try EdgeShard.load(path: dataDir, config: config)
+    try shard.update(operation: upsert)
+} catch EdgeError.ShardClosed {
+    // reopen the shard
+} catch let EdgeError.InvalidArgument(reason) {
+    print("Bad input: \(reason)")
+} catch let error as EdgeError {
+    print("Engine error: \(error)")
+}
+```
