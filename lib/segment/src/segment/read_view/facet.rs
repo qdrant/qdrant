@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
 
@@ -106,8 +107,8 @@ where
                     let count = iter
                         .dedup()
                         .take_while(|&point_id| point_id < max_id)
-                        .filter(|&point_id| context.check(point_id))
-                        .count();
+                        .try_filter(|&point_id| context.check(point_id))
+                        .process_results(|it| it.count())?;
 
                     if count > 0 {
                         hits.insert(value.to_owned(), count);

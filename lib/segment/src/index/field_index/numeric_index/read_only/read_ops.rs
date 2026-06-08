@@ -20,7 +20,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P, S: UniversalRead>
@@ -129,7 +129,7 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
         self.inner.condition_checker(condition, hw_acc)
     }
 }

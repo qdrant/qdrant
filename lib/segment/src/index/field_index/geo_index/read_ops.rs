@@ -31,7 +31,7 @@ use crate::index::field_index::geo_hash::{
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
@@ -328,7 +328,7 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
     geo: &'a G,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'a>> {
+) -> Option<Box<dyn ConditionChecker + 'a>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -350,7 +350,6 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
             geo.check_values_any(point_id, &hw_counter, &|value| {
                 geo_radius.check_point(value)
             })
-            .unwrap_or(false) // TODO(uio): handle errors
         }));
     }
     if let Some(geo_bounding_box) = *geo_bounding_box {
@@ -358,7 +357,6 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
             geo.check_values_any(point_id, &hw_counter, &|value| {
                 geo_bounding_box.check_point(value)
             })
-            .unwrap_or(false) // TODO(uio): handle errors
         }));
     }
     if let Some(geo_polygon) = geo_polygon.as_ref() {
@@ -367,7 +365,6 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
             geo.check_values_any(point_id, &hw_counter, &|value| {
                 polygon_wrapper.check_point(value)
             })
-            .unwrap_or(false) // TODO(uio): handle errors
         }));
     }
     None

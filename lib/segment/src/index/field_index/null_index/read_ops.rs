@@ -25,7 +25,7 @@ use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::FieldCondition;
 
@@ -225,7 +225,7 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &FieldCondition,
     _hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'a>> {
+) -> Option<Box<dyn ConditionChecker + 'a>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -242,12 +242,12 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
 
     if let Some(is_empty) = *is_empty {
         return Some(Box::new(move |point_id: PointOffsetType| {
-            null_index.values_is_empty(point_id) == is_empty
+            Ok(null_index.values_is_empty(point_id) == is_empty)
         }));
     }
     if let Some(is_null) = *is_null {
         return Some(Box::new(move |point_id: PointOffsetType| {
-            null_index.values_is_null(point_id) == is_null
+            Ok(null_index.values_is_null(point_id) == is_null)
         }));
     }
     None

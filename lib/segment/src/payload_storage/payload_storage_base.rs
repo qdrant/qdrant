@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
-use crate::types::{Filter, OwnedPayloadRef, Payload};
+use crate::types::{OwnedPayloadRef, Payload};
 
 /// Read-only trait for payload data storage.
 ///
@@ -122,16 +122,3 @@ pub trait PayloadStorage: PayloadStorageRead {
         Vec::new()
     }
 }
-
-pub trait ConditionChecker {
-    /// Check if point satisfies filter condition. Return true if satisfies
-    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool;
-}
-
-pub trait FilterContext {
-    /// Check if point satisfies filter condition. Return true if satisfies
-    fn check(&self, point_id: PointOffsetType) -> bool;
-}
-
-pub type PayloadStorageSS = dyn PayloadStorage + Sync + Send;
-pub type ConditionCheckerSS = dyn ConditionChecker + Sync + Send;

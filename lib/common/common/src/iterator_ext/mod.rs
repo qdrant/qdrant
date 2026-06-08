@@ -73,6 +73,19 @@ pub trait IteratorExt: Iterator {
         })
         .unwrap_or(Ok(false))
     }
+
+    /// [`Iterator::filter()`] but for fallible predicates.
+    fn try_filter<F, E>(self, mut f: F) -> impl Iterator<Item = Result<Self::Item, E>>
+    where
+        F: FnMut(&Self::Item) -> Result<bool, E>,
+        Self: Sized,
+    {
+        self.filter_map(move |item| match f(&item) {
+            Ok(true) => Some(Ok(item)),
+            Ok(false) => None,
+            Err(e) => Some(Err(e)),
+        })
+    }
 }
 
 impl<I: Iterator> IteratorExt for I {}
