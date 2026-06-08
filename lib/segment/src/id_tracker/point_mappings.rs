@@ -988,4 +988,51 @@ mod set_link_shadow_tests {
             None
         );
     }
+
+    /// Review finding #1: `iter_from_with_behavior(WithDeferred)` must surface
+    /// the deferred (latest) internal id for a shadowed ext, the same way
+    /// `internal_id_with_behavior` and `iter_internal_with_behavior` already do.
+    /// It currently delegates to `iter_from`, whose merge resolves the
+    /// active/deferred collision to the *active* (stale) head — so consumers
+    /// that use the yielded internal id (optimizer merge via
+    /// `for_each_unique_point`, `filtered_read_by_id_stream`) observe the
+    /// pre-mutation version.
+    #[test]
+    fn iter_from_with_behavior_with_deferred_yields_latest_head() {
+        use common::types::DeferredBehavior;
+
+        // Cutoff = 5. ext 7: active@2, deferred@9 (active shadowed).
+        let mut m = fresh_mapping(Some(5));
+        m.set_link(ext(7), 2);
+        m.set_link(ext(7), 9);
+
+        // The point-lookup sibling agrees the latest head is the deferred slot.
+        assert_eq!(
+            m.internal_id_with_behavior(&ext(7), DeferredBehavior::WithDeferred),
+            Some(9),
+        );
+        // The internal-id iteration sibling also yields only the deferred slot
+        // (the shadowed active is skipped).
+        let via_internal: Vec<_> = m
+            .iter_internal_with_behavior(DeferredBehavior::WithDeferred)
+            .collect();
+        assert_eq!(
+            via_internal,
+            vec![9],
+            "iter_internal_with_behavior(WithDeferred) yields the deferred head",
+        );
+
+        // iter_from_with_behavior(WithDeferred) must agree: one yield per ext,
+        // carrying the latest (deferred) internal id.
+        let via_from: Vec<_> = m
+            .iter_from_with_behavior(None, DeferredBehavior::WithDeferred)
+            .collect();
+        assert_eq!(
+            via_from,
+            vec![(ext(7), 9)],
+            "iter_from_with_behavior(WithDeferred) must surface the deferred \
+             (latest) internal id, consistent with internal_id_with_behavior and \
+             iter_internal_with_behavior; it instead yields the stale active slot 2",
+        );
+    }
 }

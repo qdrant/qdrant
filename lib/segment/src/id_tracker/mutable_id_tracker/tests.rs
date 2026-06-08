@@ -755,3 +755,76 @@ fn test_store_versions_extends_without_set_len() {
     assert_eq!(versions[4], 0);
     assert_eq!(versions[5], 500);
 }
+
+/// Review finding (shadow durability): PR-B keeps a mutated point's active
+/// (visible) head alive and shadows it with the deferred head, so a
+/// deferred-mutated point stays visible to `VisibleOnly` readers. But the
+/// persisted format is a single combined map, and `PointMappings::new` (the
+/// load entry point) cannot reconstruct a shadow — each ext is partitioned
+/// into exactly one track. The append-only change journal records only
+/// `Insert(ext, internal_id)`, so on reload the later deferred insert
+/// overwrites the active entry and the combined map collapses to
+/// deferred-only.
+///
+/// This is a live-vs-reload divergence the PR introduces: on `dev` a deferred
+/// write tombstones the active, so the point is `None` for `VisibleOnly` both
+/// live and after reload (consistent). Here it is `Some(2)` live but `None`
+/// after a plain mappings flush + reload. The reload state is also *torn*: the
+/// active slot survives as a live orphan in the inverse map (so a `VisibleOnly`
+/// scroll still surfaces the stale copy), while by-id resolution is broken.
+///
+/// The test isolates the persistence layer (no WAL replay); in the full system
+/// the active head is only restored if the deferred op is still in the WAL and
+/// gets re-applied, so durability hinges on flush-vs-WAL-truncate ordering.
+#[test]
+fn shadow_visible_head_survives_mapping_flush_reload() {
+    use common::types::DeferredBehavior;
+
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let cutoff = Some(5 as PointOffsetType);
+    let p7 = PointIdType::NumId(7);
+
+    {
+        let mut id_tracker = MutableIdTracker::open(segment_dir.path(), cutoff).unwrap();
+        // Active head below the cutoff — the visible version.
+        id_tracker.set_link(p7, 2).unwrap();
+        id_tracker.set_internal_version(2, 1).unwrap();
+        // Deferred head above the cutoff (in-place mutation) shadows the active.
+        id_tracker.set_link(p7, 9).unwrap();
+        id_tracker.set_internal_version(9, 2).unwrap();
+
+        // Live: VisibleOnly readers still resolve the point to its active head.
+        assert_eq!(
+            id_tracker.internal_id_with_behavior(p7, DeferredBehavior::VisibleOnly),
+            Some(2),
+            "live: the visible (active) head should resolve",
+        );
+
+        assert_eq!(
+            id_tracker.internal_id_with_behavior(p7, DeferredBehavior::WithDeferred),
+            Some(9),
+            "live: the visible (active) head should resolve",
+        );
+
+        id_tracker.mapping_flusher()().unwrap();
+        id_tracker.versions_flusher()().unwrap();
+    }
+
+    // Reload from disk only (no WAL replay).
+    let id_tracker = MutableIdTracker::open(segment_dir.path(), cutoff).unwrap();
+
+    // The mapping collapsed to deferred-only: the combined map kept only the
+    // last-written head (9), so a plain lookup resolves the deferred slot.
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::VisibleOnly),
+        Some(2)
+    );
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(p7, DeferredBehavior::WithDeferred),
+        Some(9),
+    );
+    // Torn state: the active slot survived as a live orphan in the inverse map
+    // (a VisibleOnly scroll would still surface this stale copy)
+    assert_eq!(id_tracker.external_id(2), Some(p7));
+    assert!(!id_tracker.is_deleted_point(2));
+}
