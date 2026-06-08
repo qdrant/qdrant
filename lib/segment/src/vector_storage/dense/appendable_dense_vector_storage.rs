@@ -24,8 +24,8 @@ use crate::vector_storage::{
     DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
-const VECTORS_DIR_PATH: &str = "vectors";
-const DELETED_DIR_PATH: &str = "deleted";
+pub(crate) const VECTORS_DIR_PATH: &str = "vectors";
+pub(crate) const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
 pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
