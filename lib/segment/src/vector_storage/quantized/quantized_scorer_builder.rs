@@ -86,6 +86,36 @@ where
     Ok(Box::new(RawScorerImpl { query_scorer }))
 }
 
+/// Build a query raw scorer over a quantized storage enum.
+///
+/// Shared by the read-write [`QuantizedVectors`] and read-only [`QuantizedVectorsRead`]
+/// so the [`QuantizedScorerBuilder`] wiring lives in a single place.
+///
+/// [`QuantizedVectors`]: super::quantized_vectors::QuantizedVectors
+/// [`QuantizedVectorsRead`]: super::quantized_vectors::QuantizedVectorsRead
+pub(in crate::vector_storage::quantized) fn build_quantized_raw_scorer<'a, Q>(
+    storage: &'a Q,
+    quantization_config: &'a QuantizationConfig,
+    distance: &'a Distance,
+    datatype: VectorStorageDatatype,
+    on_disk: bool,
+    query: QueryVector,
+    hardware_counter: HardwareCounterCell,
+) -> OperationResult<Box<dyn RawScorer + 'a>>
+where
+    Q: QuantizedScorerDispatch,
+{
+    QuantizedScorerBuilder::new(
+        quantization_config,
+        query,
+        distance,
+        datatype,
+        hardware_counter,
+        on_disk,
+    )
+    .build(storage)
+}
+
 pub(in crate::vector_storage::quantized) struct QuantizedScorerBuilder<'a> {
     quantization_config: &'a QuantizationConfig,
     query: QueryVector,

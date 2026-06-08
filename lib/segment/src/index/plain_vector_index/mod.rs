@@ -55,13 +55,14 @@ impl PlainVectorIndex {
                 VectorStorageEnum,
                 PayloadStorageEnum,
                 FieldIndex,
+                QuantizedVectors,
             >,
         ) -> R,
     ) -> R {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let quantized_vectors = self.quantized_vectors.clone();
+        let quantized_vectors = self.quantized_vectors.borrow();
         let filtered_searches_telemetry = self.filtered_searches_telemetry.clone();
         let unfiltered_searches_telemetry = self.unfiltered_searches_telemetry.clone();
 
@@ -69,7 +70,7 @@ impl PlainVectorIndex {
             let read_view = PlainVectorIndexReadView {
                 id_tracker: &*id_tracker,
                 vector_storage: &*vector_storage,
-                quantized_vectors,
+                quantized_vectors: quantized_vectors.as_ref(),
                 payload_index: payload_index_view,
                 filtered_searches_telemetry,
                 unfiltered_searches_telemetry,
