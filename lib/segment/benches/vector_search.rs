@@ -1,6 +1,5 @@
 use std::array;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -52,9 +51,9 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
     });
 
     let result = match &mut storage {
-        VectorStorageEnum::DenseMemmap(v) => v.update_from(&mut vectors, &AtomicBool::from(false)),
+        VectorStorageEnum::DenseMemmap(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(v) => v.update_from(&mut vectors, &AtomicBool::from(false)),
+        VectorStorageEnum::DenseUring(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
         _ => panic!("unexpected dense vector storage variant"),
     };
     result.expect("vector storage populated");

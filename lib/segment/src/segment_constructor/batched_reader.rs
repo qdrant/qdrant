@@ -149,15 +149,13 @@ pub(crate) fn merge_from<'a>(
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
+        // Empty storages are read-only placeholders: their `update_from` always
+        // errors, so there is no source vector to read and no reader to build.
         VectorStorageEnum::EmptyDense(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_f32);
-            let range = target.update_from(&mut reader, stopped);
-            reader.finish(range)
+            target.update_from(&mut std::iter::empty(), stopped)
         }
         VectorStorageEnum::EmptySparse(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_sparse);
-            let range = target.update_from(&mut reader, stopped);
-            reader.finish(range)
+            target.update_from(&mut std::iter::empty(), stopped)
         }
     }
 }
