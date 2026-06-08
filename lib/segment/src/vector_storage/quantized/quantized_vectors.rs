@@ -4,6 +4,7 @@ mod config;
 mod create;
 mod load;
 mod pq;
+mod read_access;
 mod read_only;
 mod scalar;
 mod storage;
@@ -31,6 +32,7 @@ pub use self::config::{
     QUANTIZED_DATA_PATH, QUANTIZED_META_PATH, QUANTIZED_OFFSETS_PATH, QuantizedVectorsConfig,
     QuantizedVectorsStorageType,
 };
+pub use self::read_access::QuantizedVectorsReadAccess;
 pub use self::read_only::{QuantizedVectorStorageRead, QuantizedVectorsRead};
 pub use self::storage::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
@@ -43,7 +45,7 @@ use crate::types::{
 use crate::vector_storage::RawScorer;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_scorer_builder::{
-    QuantizedScorerBuilder, QuantizedScorerDispatch,
+    QuantizedScorerDispatch, build_quantized_raw_scorer,
 };
 
 #[derive(Debug)]
@@ -65,15 +67,15 @@ impl QuantizedVectors {
         query: QueryVector,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        QuantizedScorerBuilder::new(
+        build_quantized_raw_scorer(
+            &self.storage_impl,
             &self.config.quantization_config,
-            query,
             &self.distance,
             self.datatype,
-            hardware_counter,
             self.storage_impl.is_on_disk(),
+            query,
+            hardware_counter,
         )
-        .build(&self.storage_impl)
     }
 
     /// Build a raw scorer for the specified `point_id`.
@@ -278,6 +280,32 @@ impl QuantizedVectors {
 
     pub fn get_storage(&self) -> &QuantizedVectorStorage {
         &self.storage_impl
+    }
+}
+
+impl QuantizedVectorsReadAccess for QuantizedVectors {
+    fn config(&self) -> &QuantizedVectorsConfig {
+        self.config()
+    }
+
+    fn default_rescoring(&self) -> bool {
+        self.default_rescoring()
+    }
+
+    fn raw_scorer<'a>(
+        &'a self,
+        query: QueryVector,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        self.raw_scorer(query, hardware_counter)
+    }
+
+    fn raw_internal_scorer<'a>(
+        &'a self,
+        point_id: PointOffsetType,
+        hardware_counter: HardwareCounterCell,
+    ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
+        self.raw_internal_scorer(point_id, hardware_counter)
     }
 }
 

@@ -20,8 +20,9 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::RawScorer;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_scorer_builder::{
-    QuantizedScorerBuilder, QuantizedScorerDispatch,
+    QuantizedScorerDispatch, build_quantized_raw_scorer,
 };
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
 
 /// Read-only counterpart of [`super::super::QuantizedVectors`].
 ///
@@ -79,15 +80,15 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
         query: QueryVector,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        QuantizedScorerBuilder::new(
+        build_quantized_raw_scorer(
+            &self.storage_impl,
             &self.config.quantization_config,
-            query,
             &self.distance,
             self.datatype,
-            hardware_counter,
             self.storage_impl.is_on_disk(),
+            query,
+            hardware_counter,
         )
-        .build(&self.storage_impl)
     }
 
     /// Build a raw scorer for the specified `point_id`.
@@ -137,6 +138,32 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
     pub fn flusher(&self) -> Flusher {
         let flusher = self.storage_impl.flusher();
         Box::new(move || flusher().map_err(OperationError::from))
+    }
+}
+
+impl<S: UniversalRead> QuantizedVectorsReadAccess for QuantizedVectorsRead<S> {
+    fn config(&self) -> &QuantizedVectorsConfig {
+        self.config()
+    }
+
+    fn default_rescoring(&self) -> bool {
+        self.default_rescoring()
+    }
+
+    fn raw_scorer<'a>(
+        &'a self,
+        query: QueryVector,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        self.raw_scorer(query, hardware_counter)
+    }
+
+    fn raw_internal_scorer<'a>(
+        &'a self,
+        point_id: PointOffsetType,
+        hardware_counter: HardwareCounterCell,
+    ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
+        self.raw_internal_scorer(point_id, hardware_counter)
     }
 }
 
