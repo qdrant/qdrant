@@ -1,4 +1,4 @@
-mod vector_index_read;
+mod search;
 
 use std::sync::Arc;
 
