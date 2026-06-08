@@ -97,15 +97,13 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
 
     fn update_from<'a>(
         &mut self,
-        other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector = T::slice_from_float_cow(other_vector);
             let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
             self.set_deleted(new_id as PointOffsetType, other_deleted);
         }

@@ -169,16 +169,13 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
 
     /// Add the given dense vectors to the storage.
     ///
-    /// Incoming vectors are always in [`VectorElementType`] (`f32`); storages
-    /// with a narrower element type convert them on insert.
-    ///
     /// # Returns
     /// The range of point offsets that were added to the storage.
     ///
     /// If stopped, the operation returns a cancellation error.
     fn update_from<'a>(
         &mut self,
-        other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
 
@@ -264,16 +261,13 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
 
     /// Add the given multi-dense vectors to the storage.
     ///
-    /// Incoming vectors are always in [`VectorElementType`] (`f32`); storages
-    /// with a narrower element type convert them on insert.
-    ///
     /// # Returns
     /// The range of point offsets that were added to the storage.
     ///
     /// If stopped, the operation returns a cancellation error.
     fn update_from<'a>(
         &mut self,
-        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, VectorElementType>, bool)>,
+        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, T>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
 }
@@ -1005,13 +999,16 @@ impl VectorStorageRead for VectorStorageEnum {
     }
 }
 
-/// Unwrap a generic [`CowVector`] into a dense slice for [`DenseVectorStorage`].
+/// Unwrap a generic [`CowVector`] into a dense slice in the storage's element
+/// type `T` for [`DenseVectorStorage`], converting from f32 if needed.
 ///
 /// Receiving a non-dense vector here is a logic error: the merge path always
 /// feeds a storage with vectors of its own kind.
-fn unwrap_dense((vector, deleted): (CowVector<'_>, bool)) -> (Cow<'_, [VectorElementType]>, bool) {
+fn unwrap_dense<T: PrimitiveVectorElement>(
+    (vector, deleted): (CowVector<'_>, bool),
+) -> (Cow<'_, [T]>, bool) {
     match vector {
-        CowVector::Dense(v) => (v, deleted),
+        CowVector::Dense(v) => (T::slice_from_float_cow(v), deleted),
         CowVector::Sparse(_) | CowVector::MultiDense(_) => {
             unreachable!("dense vector storage received a non-dense vector")
         }
@@ -1028,12 +1025,13 @@ fn unwrap_sparse((vector, deleted): (CowVector<'_>, bool)) -> (Cow<'_, SparseVec
     }
 }
 
-/// Unwrap a generic [`CowVector`] into a multi-dense vector for [`MultiVectorStorage`].
-fn unwrap_multi(
+/// Unwrap a generic [`CowVector`] into a multi-dense vector in the storage's
+/// element type `T` for [`MultiVectorStorage`], converting from f32 if needed.
+fn unwrap_multi<T: PrimitiveVectorElement>(
     (vector, deleted): (CowVector<'_>, bool),
-) -> (CowMultiVector<'_, VectorElementType>, bool) {
+) -> (CowMultiVector<'_, T>, bool) {
     match vector {
-        CowVector::MultiDense(v) => (v, deleted),
+        CowVector::MultiDense(v) => (T::from_float_multivector(v), deleted),
         CowVector::Dense(_) | CowVector::Sparse(_) => {
             unreachable!("multi-dense vector storage received a non-multi-dense vector")
         }

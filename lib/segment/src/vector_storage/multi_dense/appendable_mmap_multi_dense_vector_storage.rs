@@ -125,6 +125,63 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         previous
     }
 
+    /// Insert a multi-vector already in the storage's element type `T`.
+    ///
+    /// Leaves the deleted flag cleared; callers that need it set should call
+    /// [`Self::set_deleted`] afterwards.
+    fn insert_multi_native(
+        &mut self,
+        key: PointOffsetType,
+        multi_vector: TypedMultiDenseVectorRef<T>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        assert_eq!(multi_vector.dim, self.vectors.dim());
+        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
+        let max_vector_size_bytes = self.vectors.max_vector_size_bytes();
+        if multivector_size_in_bytes >= max_vector_size_bytes {
+            return Err(OperationError::service_error(format!(
+                "Cannot insert multi vector of size {multivector_size_in_bytes} to the mmap vector storage.\
+                 It's too large, maximum size is {max_vector_size_bytes}."
+            )));
+        }
+
+        let mut offset = self
+            .offsets
+            .get::<Random>(key as VectorOffsetType)
+            .map(|x| x.first().copied().unwrap_or_default())
+            .unwrap_or_default();
+
+        if multi_vector.vectors_count() > offset.capacity as usize {
+            // append vector to the end
+            let mut new_key = self.vectors.len();
+            let chunk_left_keys = self.vectors.get_remaining_chunk_keys(new_key);
+            if multi_vector.vectors_count() > chunk_left_keys {
+                new_key += chunk_left_keys;
+            }
+
+            offset = MultivectorMmapOffset {
+                offset: new_key as PointOffsetType,
+                count: multi_vector.vectors_count() as PointOffsetType,
+                capacity: multi_vector.vectors_count() as PointOffsetType,
+            };
+        } else {
+            // use existing place to insert vector
+            offset.count = multi_vector.vectors_count() as PointOffsetType;
+        }
+
+        self.vectors.insert_many(
+            offset.offset as VectorOffsetType,
+            multi_vector.flattened_vectors,
+            multi_vector.vectors_count(),
+            hw_counter,
+        )?;
+        self.offsets
+            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
+        self.set_deleted(key, false);
+
+        Ok(())
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -223,17 +280,15 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
 
     fn update_from<'a>(
         &mut self,
-        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, VectorElementType>, bool)>,
+        other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, T>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.offsets.len() as PointOffsetType;
         let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector = VectorRef::MultiDense(other_vector.as_ref());
             let new_id = self.offsets.len() as PointOffsetType;
-            self.insert_vector(new_id, other_vector, &disposed_hw_counter)?;
+            self.insert_multi_native(new_id, other_vector.as_ref(), &disposed_hw_counter)?;
             self.set_deleted(new_id, other_deleted);
         }
         let end_index = self.offsets.len() as PointOffsetType;
@@ -314,52 +369,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
     ) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
-        let multi_vector = multi_vector.as_vec_ref();
-        assert_eq!(multi_vector.dim, self.vectors.dim());
-        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
-        let max_vector_size_bytes = self.vectors.max_vector_size_bytes();
-        if multivector_size_in_bytes >= max_vector_size_bytes {
-            return Err(OperationError::service_error(format!(
-                "Cannot insert multi vector of size {multivector_size_in_bytes} to the mmap vector storage.\
-                 It's too large, maximum size is {max_vector_size_bytes}."
-            )));
-        }
-
-        let mut offset = self
-            .offsets
-            .get::<Random>(key as VectorOffsetType)
-            .map(|x| x.first().copied().unwrap_or_default())
-            .unwrap_or_default();
-
-        if multi_vector.vectors_count() > offset.capacity as usize {
-            // append vector to the end
-            let mut new_key = self.vectors.len();
-            let chunk_left_keys = self.vectors.get_remaining_chunk_keys(new_key);
-            if multi_vector.vectors_count() > chunk_left_keys {
-                new_key += chunk_left_keys;
-            }
-
-            offset = MultivectorMmapOffset {
-                offset: new_key as PointOffsetType,
-                count: multi_vector.vectors_count() as PointOffsetType,
-                capacity: multi_vector.vectors_count() as PointOffsetType,
-            };
-        } else {
-            // use existing place to insert vector
-            offset.count = multi_vector.vectors_count() as PointOffsetType;
-        }
-
-        self.vectors.insert_many(
-            offset.offset as VectorOffsetType,
-            multi_vector.flattened_vectors,
-            multi_vector.vectors_count(),
-            hw_counter,
-        )?;
-        self.offsets
-            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
-        self.set_deleted(key, false);
-
-        Ok(())
+        self.insert_multi_native(key, multi_vector.as_ref(), hw_counter)
     }
 
     fn flusher(&self) -> Flusher {
