@@ -28,7 +28,7 @@ impl Blob for Payload {
 }
 
 #[derive(Debug)]
-pub struct PayloadStorageImpl<S = MmapFile> {
+pub struct PayloadStorageImpl<S: UniversalWrite + 'static = MmapFile> {
     storage: Gridstore<Payload, S>,
     populate: bool,
 }
@@ -52,7 +52,7 @@ where
     }
 
     fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Gridstore::open(path).map_err(|err| {
+        let storage = Gridstore::open(S::Fs::default(), path).map_err(|err| {
             OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
         })?;
 
@@ -64,7 +64,7 @@ where
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Gridstore::new(path, StorageOptions::default())?;
+        let storage = Gridstore::new(S::Fs::default(), path, StorageOptions::default())?;
 
         if populate {
             storage.populate()?;

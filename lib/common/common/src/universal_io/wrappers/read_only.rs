@@ -10,8 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalKind, UniversalRead,
-    UniversalReadFs, UserData,
+    Item, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalIoError, UniversalKind,
+    UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -26,6 +26,7 @@ pub struct ReadOnly<S>(S);
 /// and asserts read-only semantics on `open`. In practice this Fs is
 /// rarely instantiated; callers use [`ReadOnly::open`] with the
 /// underlying `&S::Fs` directly.
+#[derive(Clone)]
 pub struct ReadOnlyFs<F>(F);
 
 impl<F: fmt::Debug> fmt::Debug for ReadOnlyFs<F> {
@@ -47,6 +48,36 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
 
     fn exists(&self, path: &Path) -> Result<bool> {
         self.0.exists(path)
+    }
+
+    fn create(&self, _path: &Path, _expected_length: usize) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support creating files",
+        ))
+    }
+
+    fn create_dir(&self, _path: &Path) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support creating directories",
+        ))
+    }
+
+    fn remove(&self, _path: &Path) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support removing files",
+        ))
+    }
+
+    fn remove_dir(&self, _path: &Path) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support removing directories",
+        ))
+    }
+
+    fn atomic_save(&self, _path: &Path, _bytes: &[u8]) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support atomic saves",
+        ))
     }
 }
 

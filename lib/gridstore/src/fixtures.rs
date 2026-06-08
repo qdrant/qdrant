@@ -1,3 +1,4 @@
+use common::universal_io::MmapFs;
 use rand::distr::{Distribution, Uniform};
 use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
@@ -29,7 +30,7 @@ impl Blob for Payload {
 /// Create an empty storage with the default configuration
 pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let storage = Gridstore::new(dir.path().to_path_buf(), Default::default()).unwrap();
+    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), Default::default()).unwrap();
     (dir, storage)
 }
 
@@ -44,7 +45,7 @@ pub fn empty_storage_sized(
         compression: Some(compression),
         ..Default::default()
     };
-    let storage = Gridstore::new(dir.path().to_path_buf(), options).unwrap();
+    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }
 
