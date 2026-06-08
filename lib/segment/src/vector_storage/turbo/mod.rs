@@ -16,7 +16,9 @@ mod turbo_encoded_vectors;
 
 use std::alloc::Layout;
 use std::borrow::Cow;
+use std::ops::Range;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
