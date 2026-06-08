@@ -217,24 +217,27 @@ impl EdgeShard {
             .map_err(|e| OperationError::service_error(e.to_string()))
     }
 
-    pub fn flush(&self) {
+    pub fn flush(&self) -> OperationResult<()> {
         self.wal
             .try_lock()
-            .expect("WAL lock acquired")
+            .ok_or_else(|| OperationError::service_error("WAL lock busy during flush"))?
             .flush()
-            .expect("WAL flushed");
+            .map_err(|e| OperationError::service_error(format!("WAL flush failed: {e}")))?;
 
         self.segments
             .try_read()
-            .expect("segment holder lock acquired")
-            .flush_all(FlushMode::Sync, true)
-            .expect("segments flushed");
+            .ok_or_else(|| OperationError::service_error("segment holder lock busy during flush"))?
+            .flush_all(FlushMode::Sync, true)?;
+
+        Ok(())
     }
 }
 
 impl Drop for EdgeShard {
     fn drop(&mut self) {
-        self.flush();
+        if let Err(e) = self.flush() {
+            log::error!("EdgeShard flush during drop failed: {e}");
+        }
     }
 }
 

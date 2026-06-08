@@ -26,12 +26,20 @@ pub enum PointId {
     Uuid { value: String },
 }
 
-impl From<PointId> for PointIdType {
-    fn from(id: PointId) -> Self {
+impl TryFrom<PointId> for PointIdType {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(id: PointId) -> Result<Self, Self::Error> {
         match id {
-            PointId::NumId { value } => PointIdType::NumId(value),
+            PointId::NumId { value } => Ok(PointIdType::NumId(value)),
             PointId::Uuid { value } => {
-                PointIdType::Uuid(uuid::Uuid::parse_str(&value).expect("valid UUID"))
+                let uuid = uuid::Uuid::parse_str(&value).map_err(|e| {
+                    crate::error::EdgeError::invalid_argument(format!(
+                        "invalid point UUID {:?}: {e}",
+                        value
+                    ))
+                })?;
+                Ok(PointIdType::Uuid(uuid))
             }
         }
     }
@@ -211,12 +219,18 @@ pub enum WithPayload {
     Fields { fields: Vec<String> },
 }
 
-impl From<WithPayload> for WithPayloadInterface {
-    fn from(w: WithPayload) -> Self {
+impl TryFrom<WithPayload> for WithPayloadInterface {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(w: WithPayload) -> Result<Self, Self::Error> {
         match w {
-            WithPayload::Bool { enable } => WithPayloadInterface::Bool(enable),
+            WithPayload::Bool { enable } => Ok(WithPayloadInterface::Bool(enable)),
             WithPayload::Fields { fields } => {
-                WithPayloadInterface::Fields(fields.into_iter().filter_map(|f| f.parse().ok()).collect())
+                let parsed: Result<Vec<_>, _> = fields
+                    .iter()
+                    .map(|f| crate::error::parse_json_path(f))
+                    .collect();
+                Ok(WithPayloadInterface::Fields(parsed?))
             }
         }
     }
@@ -273,13 +287,15 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn into_internal(self) -> std::result::Result<PointStructPersisted, String> {
+    pub fn into_internal(self) -> std::result::Result<PointStructPersisted, crate::error::EdgeError> {
         let payload = match self.payload {
-            Some(json) => Some(json_to_payload(&json)?),
+            Some(json) => Some(json_to_payload(&json).map_err(|e| {
+                crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}"))
+            })?),
             None => None,
         };
         Ok(PointStructPersisted {
-            id: PointIdType::from(self.id),
+            id: PointIdType::try_from(self.id)?,
             vector: VectorStructPersisted::from(self.vector),
             payload,
         })

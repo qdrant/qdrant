@@ -2,7 +2,8 @@ use ahash::AHashSet;
 use segment::types::{
     AnyVariants, Condition as SegmentCondition, FieldCondition as SegmentFieldCondition,
     Filter as SegmentFilter, GeoPoint as SegmentGeoPoint,
-    GeoBoundingBox as SegmentGeoBoundingBox, GeoRadius as SegmentGeoRadius,
+    GeoBoundingBox as SegmentGeoBoundingBox, GeoLineString as SegmentGeoLineString,
+    GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius,
     HasIdCondition, HasVectorCondition, IsEmptyCondition, IsNullCondition,
     Match as SegmentMatch, MatchAny, MatchExcept, MatchText, MatchValue,
     PayloadField, PointIdType, Range, RangeInterface,
@@ -25,9 +26,16 @@ pub struct GeoPoint {
     pub lat: f64,
 }
 
-impl From<GeoPoint> for SegmentGeoPoint {
-    fn from(p: GeoPoint) -> Self {
-        SegmentGeoPoint::new(p.lon, p.lat).expect("valid geo point")
+impl TryFrom<GeoPoint> for SegmentGeoPoint {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(p: GeoPoint) -> Result<Self, Self::Error> {
+        SegmentGeoPoint::new(p.lon, p.lat).map_err(|e| {
+            crate::error::EdgeError::invalid_argument(format!(
+                "invalid geo point (lon={}, lat={}): {e}",
+                p.lon, p.lat
+            ))
+        })
     }
 }
 
@@ -51,12 +59,14 @@ pub struct GeoBoundingBox {
     pub bottom_right: GeoPoint,
 }
 
-impl From<GeoBoundingBox> for SegmentGeoBoundingBox {
-    fn from(b: GeoBoundingBox) -> Self {
-        SegmentGeoBoundingBox {
-            top_left: SegmentGeoPoint::from(b.top_left),
-            bottom_right: SegmentGeoPoint::from(b.bottom_right),
-        }
+impl TryFrom<GeoBoundingBox> for SegmentGeoBoundingBox {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(b: GeoBoundingBox) -> Result<Self, Self::Error> {
+        Ok(SegmentGeoBoundingBox {
+            top_left: SegmentGeoPoint::try_from(b.top_left)?,
+            bottom_right: SegmentGeoPoint::try_from(b.bottom_right)?,
+        })
     }
 }
 
@@ -71,12 +81,69 @@ pub struct GeoRadius {
     pub radius: f64,
 }
 
-impl From<GeoRadius> for SegmentGeoRadius {
-    fn from(r: GeoRadius) -> Self {
-        SegmentGeoRadius {
-            center: SegmentGeoPoint::from(r.center),
+impl TryFrom<GeoRadius> for SegmentGeoRadius {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: GeoRadius) -> Result<Self, Self::Error> {
+        Ok(SegmentGeoRadius {
+            center: SegmentGeoPoint::try_from(r.center)?,
             radius: ordered_float::OrderedFloat(r.radius),
-        }
+        })
+    }
+}
+
+// ── GeoLineString ────────────────────────────────────────────────────────────
+
+/// A closed ring of geographic points. The first and last point must be equal
+/// and a ring needs at least 4 points (Qdrant validates this engine-side).
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct GeoLineString {
+    pub points: Vec<GeoPoint>,
+}
+
+impl TryFrom<GeoLineString> for SegmentGeoLineString {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(ls: GeoLineString) -> Result<Self, Self::Error> {
+        let points = ls
+            .points
+            .into_iter()
+            .map(SegmentGeoPoint::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(SegmentGeoLineString { points })
+    }
+}
+
+// ── GeoPolygon ───────────────────────────────────────────────────────────────
+
+/// A polygon geo filter: points inside `exterior` and outside every `interior`
+/// hole match.
+///
+/// Each line string must form a closed ring (first == last point) with at
+/// least 4 points; Qdrant enforces this at the engine level.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct GeoPolygon {
+    /// The exterior ring that bounds the surface.
+    pub exterior: GeoLineString,
+    /// Optional interior rings (holes). Points inside a hole are excluded.
+    pub interiors: Option<Vec<GeoLineString>>,
+}
+
+impl TryFrom<GeoPolygon> for SegmentGeoPolygon {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(p: GeoPolygon) -> Result<Self, Self::Error> {
+        let exterior = SegmentGeoLineString::try_from(p.exterior)?;
+        let interiors = p
+            .interiors
+            .map(|rings| {
+                rings
+                    .into_iter()
+                    .map(SegmentGeoLineString::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        Ok(SegmentGeoPolygon { exterior, interiors })
     }
 }
 
@@ -141,32 +208,48 @@ pub enum Match {
     Except { strings: Option<Vec<String>>, integers: Option<Vec<i64>> },
 }
 
-impl From<Match> for SegmentMatch {
-    fn from(m: Match) -> Self {
+impl TryFrom<Match> for SegmentMatch {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(m: Match) -> Result<Self, Self::Error> {
         match m {
-            Match::Value { value } => SegmentMatch::Value(MatchValue {
+            Match::Value { value } => Ok(SegmentMatch::Value(MatchValue {
                 value: SegmentValueVariants::from(value),
-            }),
-            Match::Text { text } => SegmentMatch::Text(MatchText { text }),
+            })),
+            Match::Text { text } => Ok(SegmentMatch::Text(MatchText { text })),
             Match::Any { strings, integers } => {
-                let any = if let Some(strings) = strings {
-                    AnyVariants::Strings(strings.into_iter().collect())
-                } else if let Some(integers) = integers {
-                    AnyVariants::Integers(integers.into_iter().collect())
-                } else {
-                    AnyVariants::Strings(Default::default())
+                let any = match (strings, integers) {
+                    (None, None) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Any requires either `strings` or `integers`",
+                        ));
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Any: set either `strings` or `integers`, not both",
+                        ));
+                    }
+                    (Some(strings), None) => AnyVariants::Strings(strings.into_iter().collect()),
+                    (None, Some(integers)) => AnyVariants::Integers(integers.into_iter().collect()),
                 };
-                SegmentMatch::Any(MatchAny { any })
+                Ok(SegmentMatch::Any(MatchAny { any }))
             }
             Match::Except { strings, integers } => {
-                let except = if let Some(strings) = strings {
-                    AnyVariants::Strings(strings.into_iter().collect())
-                } else if let Some(integers) = integers {
-                    AnyVariants::Integers(integers.into_iter().collect())
-                } else {
-                    AnyVariants::Strings(Default::default())
+                let except = match (strings, integers) {
+                    (None, None) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Except requires either `strings` or `integers`",
+                        ));
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(crate::error::EdgeError::invalid_argument(
+                            "Match::Except: set either `strings` or `integers`, not both",
+                        ));
+                    }
+                    (Some(strings), None) => AnyVariants::Strings(strings.into_iter().collect()),
+                    (None, Some(integers)) => AnyVariants::Integers(integers.into_iter().collect()),
                 };
-                SegmentMatch::Except(MatchExcept { except })
+                Ok(SegmentMatch::Except(MatchExcept { except }))
             }
         }
     }
@@ -193,10 +276,10 @@ pub struct ValuesCount {
 impl From<ValuesCount> for SegmentValuesCount {
     fn from(v: ValuesCount) -> Self {
         SegmentValuesCount {
-            lt: v.lt.map(|x| x as usize),
-            gt: v.gt.map(|x| x as usize),
-            gte: v.gte.map(|x| x as usize),
-            lte: v.lte.map(|x| x as usize),
+            lt: v.lt.map(crate::error::clamp_usize),
+            gt: v.gt.map(crate::error::clamp_usize),
+            gte: v.gte.map(crate::error::clamp_usize),
+            lte: v.lte.map(crate::error::clamp_usize),
         }
     }
 }
@@ -205,9 +288,9 @@ impl From<ValuesCount> for SegmentValuesCount {
 
 /// A filter condition applied to a single payload field.
 ///
-/// Exactly one of `match`, `range`, `geo_bounding_box`, `geo_radius`, or
-/// `values_count` should be set; setting more than one is an error. The
-/// payload `key` uses JSON-path syntax for nested fields (e.g.
+/// Exactly one of `match`, `range`, `geo_bounding_box`, `geo_radius`,
+/// `geo_polygon`, or `values_count` should be set; setting more than one is
+/// an error. The payload `key` uses JSON-path syntax for nested fields (e.g.
 /// `"meta.location"`).
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct FieldCondition {
@@ -221,15 +304,33 @@ pub struct FieldCondition {
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Geographic radius containment.
     pub geo_radius: Option<GeoRadius>,
+    /// Geographic polygon containment.
+    pub geo_polygon: Option<GeoPolygon>,
     /// Cardinality filter over array-valued payloads.
     pub values_count: Option<ValuesCount>,
 }
 
-impl From<FieldCondition> for SegmentFieldCondition {
-    fn from(c: FieldCondition) -> Self {
-        SegmentFieldCondition {
-            key: c.key.parse().expect("valid json path"),
-            r#match: c.r#match.map(SegmentMatch::from),
+impl TryFrom<FieldCondition> for SegmentFieldCondition {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(c: FieldCondition) -> Result<Self, Self::Error> {
+        let key = crate::error::parse_json_path(&c.key)?;
+        let geo_bounding_box = c
+            .geo_bounding_box
+            .map(SegmentGeoBoundingBox::try_from)
+            .transpose()?;
+        let geo_radius = c
+            .geo_radius
+            .map(SegmentGeoRadius::try_from)
+            .transpose()?;
+        let geo_polygon = c
+            .geo_polygon
+            .map(SegmentGeoPolygon::try_from)
+            .transpose()?;
+        let r#match = c.r#match.map(SegmentMatch::try_from).transpose()?;
+        Ok(SegmentFieldCondition {
+            key,
+            r#match,
             range: c.range.map(|r| {
                 RangeInterface::Float(Range {
                     gte: r.gte.map(ordered_float::OrderedFloat),
@@ -238,13 +339,13 @@ impl From<FieldCondition> for SegmentFieldCondition {
                     lt: r.lt.map(ordered_float::OrderedFloat),
                 })
             }),
-            geo_bounding_box: c.geo_bounding_box.map(SegmentGeoBoundingBox::from),
-            geo_radius: c.geo_radius.map(SegmentGeoRadius::from),
-            geo_polygon: None,
+            geo_bounding_box,
+            geo_radius,
+            geo_polygon,
             values_count: c.values_count.map(SegmentValuesCount::from),
             is_empty: None,
             is_null: None,
-        }
+        })
     }
 }
 
@@ -268,33 +369,41 @@ pub enum Condition {
     Filter { filter: Filter },
 }
 
-impl From<Condition> for SegmentCondition {
-    fn from(c: Condition) -> Self {
+impl TryFrom<Condition> for SegmentCondition {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(c: Condition) -> Result<Self, Self::Error> {
         match c {
-            Condition::Field { condition } => SegmentCondition::Field(SegmentFieldCondition::from(condition)),
-            Condition::IsEmpty { key } => SegmentCondition::IsEmpty(IsEmptyCondition {
-                is_empty: PayloadField {
-                    key: key.parse().expect("valid json path"),
-                },
-            }),
-            Condition::IsNull { key } => SegmentCondition::IsNull(IsNullCondition {
-                is_null: PayloadField {
-                    key: key.parse().expect("valid json path"),
-                },
-            }),
+            Condition::Field { condition } => {
+                Ok(SegmentCondition::Field(SegmentFieldCondition::try_from(condition)?))
+            }
+            Condition::IsEmpty { key } => {
+                let parsed_key = crate::error::parse_json_path(&key)?;
+                Ok(SegmentCondition::IsEmpty(IsEmptyCondition {
+                    is_empty: PayloadField { key: parsed_key },
+                }))
+            }
+            Condition::IsNull { key } => {
+                let parsed_key = crate::error::parse_json_path(&key)?;
+                Ok(SegmentCondition::IsNull(IsNullCondition {
+                    is_null: PayloadField { key: parsed_key },
+                }))
+            }
             Condition::HasId { ids } => {
-                let id_set: AHashSet<PointIdType> =
-                    ids.into_iter().map(PointIdType::from).collect();
-                SegmentCondition::HasId(HasIdCondition {
-                    has_id: MaybeArc::NoArc(id_set),
-                })
+                let id_set: Result<AHashSet<PointIdType>, crate::error::EdgeError> =
+                    ids.into_iter().map(PointIdType::try_from).collect();
+                Ok(SegmentCondition::HasId(HasIdCondition {
+                    has_id: MaybeArc::NoArc(id_set?),
+                }))
             }
             Condition::HasVector { vector_name } => {
-                SegmentCondition::HasVector(HasVectorCondition {
+                Ok(SegmentCondition::HasVector(HasVectorCondition {
                     has_vector: vector_name,
-                })
+                }))
             }
-            Condition::Filter { filter } => SegmentCondition::Filter(SegmentFilter::from(filter)),
+            Condition::Filter { filter } => {
+                Ok(SegmentCondition::Filter(SegmentFilter::try_from(filter)?))
+            }
         }
     }
 }
@@ -346,17 +455,27 @@ pub struct Filter {
     pub must_not: Option<Vec<Condition>>,
 }
 
-impl From<Filter> for SegmentFilter {
-    fn from(f: Filter) -> Self {
-        SegmentFilter {
-            must: f.must.map(|v| v.into_iter().map(SegmentCondition::from).collect()),
-            should: f
-                .should
-                .map(|v| v.into_iter().map(SegmentCondition::from).collect()),
-            must_not: f
-                .must_not
-                .map(|v| v.into_iter().map(SegmentCondition::from).collect()),
+impl TryFrom<Filter> for SegmentFilter {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(f: Filter) -> Result<Self, Self::Error> {
+        let must = f
+            .must
+            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .transpose()?;
+        let should = f
+            .should
+            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .transpose()?;
+        let must_not = f
+            .must_not
+            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .transpose()?;
+        Ok(SegmentFilter {
+            must,
+            should,
+            must_not,
             min_should: None,
-        }
+        })
     }
 }

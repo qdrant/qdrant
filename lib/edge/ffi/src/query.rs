@@ -40,7 +40,7 @@ pub struct SearchParams {
 impl From<SearchParams> for SegmentSearchParams {
     fn from(p: SearchParams) -> Self {
         SegmentSearchParams {
-            hnsw_ef: p.hnsw_ef.map(|v| v as usize),
+            hnsw_ef: p.hnsw_ef.map(crate::error::clamp_usize),
             exact: p.exact,
             quantization: None,
             indexed_only: p.indexed_only,
@@ -100,20 +100,22 @@ pub enum ScoringQuery {
     Sample { sample: Sample },
 }
 
-impl From<ScoringQuery> for shard::query::ScoringQuery {
-    fn from(q: ScoringQuery) -> Self {
+impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(q: ScoringQuery) -> Result<Self, Self::Error> {
         match q {
             ScoringQuery::Vector { query } => {
-                shard::query::ScoringQuery::Vector(QueryEnum::from(query))
+                Ok(shard::query::ScoringQuery::Vector(QueryEnum::from(query)))
             }
             ScoringQuery::Fusion { fusion } => {
-                shard::query::ScoringQuery::Fusion(FusionInternal::from(fusion))
+                Ok(shard::query::ScoringQuery::Fusion(FusionInternal::from(fusion)))
             }
             ScoringQuery::OrderBy { order_by } => {
-                shard::query::ScoringQuery::OrderBy(SegmentOrderBy::from(order_by))
+                Ok(shard::query::ScoringQuery::OrderBy(SegmentOrderBy::try_from(order_by)?))
             }
             ScoringQuery::Sample { sample } => {
-                shard::query::ScoringQuery::Sample(SampleInternal::from(sample))
+                Ok(shard::query::ScoringQuery::Sample(SampleInternal::from(sample)))
             }
         }
     }
@@ -136,7 +138,7 @@ impl From<Fusion> for FusionInternal {
     fn from(f: Fusion) -> Self {
         match f {
             Fusion::Rrf { k } => FusionInternal::Rrf {
-                k: k as usize,
+                k: crate::error::clamp_usize(k),
                 weights: None,
             },
             Fusion::Dbsf => FusionInternal::Dbsf,
@@ -157,13 +159,16 @@ pub struct OrderBy {
     pub direction: Option<Direction>,
 }
 
-impl From<OrderBy> for SegmentOrderBy {
-    fn from(o: OrderBy) -> Self {
-        SegmentOrderBy {
-            key: o.key.parse().expect("valid json path"),
+impl TryFrom<OrderBy> for SegmentOrderBy {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(o: OrderBy) -> Result<Self, Self::Error> {
+        let key = crate::error::parse_json_path(&o.key)?;
+        Ok(SegmentOrderBy {
+            key,
             direction: o.direction.map(SegmentDirection::from),
             start_from: None,
-        }
+        })
     }
 }
 
@@ -228,16 +233,28 @@ pub struct Prefetch {
     pub params: Option<SearchParams>,
 }
 
-impl From<Prefetch> for ShardPrefetch {
-    fn from(p: Prefetch) -> Self {
-        ShardPrefetch {
-            prefetches: p.prefetches.into_iter().map(ShardPrefetch::from).collect(),
-            limit: p.limit as usize,
-            query: p.query.map(shard::query::ScoringQuery::from),
+impl TryFrom<Prefetch> for ShardPrefetch {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(p: Prefetch) -> Result<Self, Self::Error> {
+        let prefetches = p
+            .prefetches
+            .into_iter()
+            .map(ShardPrefetch::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let filter = p.filter.map(SegmentFilter::try_from).transpose()?;
+        let query = p
+            .query
+            .map(shard::query::ScoringQuery::try_from)
+            .transpose()?;
+        Ok(ShardPrefetch {
+            prefetches,
+            limit: crate::error::bounded_limit("prefetch limit", p.limit)?,
+            query,
             params: p.params.map(SegmentSearchParams::from),
-            filter: p.filter.map(SegmentFilter::from),
+            filter,
             score_threshold: p.score_threshold.map(OrderedFloat),
-        }
+        })
     }
 }
 
@@ -271,22 +288,35 @@ pub struct QueryRequest {
     pub params: Option<SearchParams>,
 }
 
-impl From<QueryRequest> for ShardQueryRequest {
-    fn from(r: QueryRequest) -> Self {
-        ShardQueryRequest {
-            prefetches: r.prefetches.into_iter().map(ShardPrefetch::from).collect(),
-            limit: r.limit as usize,
-            offset: r.offset.unwrap_or(0) as usize,
+impl TryFrom<QueryRequest> for ShardQueryRequest {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: QueryRequest) -> Result<Self, Self::Error> {
+        let prefetches = r
+            .prefetches
+            .into_iter()
+            .map(ShardPrefetch::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
+        let query = r
+            .query
+            .map(shard::query::ScoringQuery::try_from)
+            .transpose()?;
+        Ok(ShardQueryRequest {
+            prefetches,
+            limit: crate::error::bounded_limit("limit", r.limit)?,
+            offset: crate::error::bounded_limit("offset", r.offset.unwrap_or(0))?,
             with_vector: r.with_vector.map(SegmentWithVector::from).unwrap_or_default(),
             with_payload: r
                 .with_payload
-                .map(WithPayloadInterface::from)
+                .map(WithPayloadInterface::try_from)
+                .transpose()?
                 .unwrap_or_default(),
-            query: r.query.map(shard::query::ScoringQuery::from),
-            filter: r.filter.map(SegmentFilter::from),
+            query,
+            filter,
             score_threshold: r.score_threshold.map(OrderedFloat),
             params: r.params.map(SegmentSearchParams::from),
-        }
+        })
     }
 }
 
@@ -317,18 +347,24 @@ pub struct SearchRequest {
     pub score_threshold: Option<f32>,
 }
 
-impl From<SearchRequest> for CoreSearchRequest {
-    fn from(r: SearchRequest) -> Self {
-        CoreSearchRequest {
+impl TryFrom<SearchRequest> for CoreSearchRequest {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: SearchRequest) -> Result<Self, Self::Error> {
+        let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
+        Ok(CoreSearchRequest {
             query: QueryEnum::from(r.query),
-            limit: r.limit as usize,
-            offset: r.offset.unwrap_or(0) as usize,
-            filter: r.filter.map(SegmentFilter::from),
+            limit: crate::error::bounded_limit("limit", r.limit)?,
+            offset: crate::error::bounded_limit("offset", r.offset.unwrap_or(0))?,
+            filter,
             params: r.params.map(SegmentSearchParams::from),
             with_vector: r.with_vector.map(SegmentWithVector::from),
-            with_payload: r.with_payload.map(WithPayloadInterface::from),
+            with_payload: r
+                .with_payload
+                .map(WithPayloadInterface::try_from)
+                .transpose()?,
             score_threshold: r.score_threshold,
-        }
+        })
     }
 }
 
@@ -357,16 +393,27 @@ pub struct ScrollRequest {
     pub order_by: Option<OrderBy>,
 }
 
-impl From<ScrollRequest> for ScrollRequestInternal {
-    fn from(r: ScrollRequest) -> Self {
-        ScrollRequestInternal {
-            offset: r.offset.map(PointIdType::from),
-            limit: r.limit.map(|v| v as usize),
-            filter: r.filter.map(SegmentFilter::from),
-            with_payload: r.with_payload.map(WithPayloadInterface::from),
+impl TryFrom<ScrollRequest> for ScrollRequestInternal {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: ScrollRequest) -> Result<Self, Self::Error> {
+        let offset = r.offset.map(PointIdType::try_from).transpose()?;
+        let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
+        let order_by = r
+            .order_by
+            .map(|o| SegmentOrderBy::try_from(o).map(OrderByInterface::Struct))
+            .transpose()?;
+        Ok(ScrollRequestInternal {
+            offset,
+            limit: r.limit.map(|v| crate::error::bounded_limit("limit", v)).transpose()?,
+            filter,
+            with_payload: r
+                .with_payload
+                .map(WithPayloadInterface::try_from)
+                .transpose()?,
             with_vector: r.with_vector.map(SegmentWithVector::from).unwrap_or_default(),
-            order_by: r.order_by.map(|o| OrderByInterface::Struct(SegmentOrderBy::from(o))),
-        }
+            order_by,
+        })
     }
 }
 
@@ -382,12 +429,15 @@ pub struct CountRequest {
     pub exact: bool,
 }
 
-impl From<CountRequest> for CountRequestInternal {
-    fn from(r: CountRequest) -> Self {
-        CountRequestInternal {
-            filter: r.filter.map(SegmentFilter::from),
+impl TryFrom<CountRequest> for CountRequestInternal {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: CountRequest) -> Result<Self, Self::Error> {
+        let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
+        Ok(CountRequestInternal {
+            filter,
             exact: r.exact,
-        }
+        })
     }
 }
 
@@ -410,14 +460,18 @@ pub struct FacetRequest {
     pub filter: Option<Filter>,
 }
 
-impl From<FacetRequest> for FacetRequestInternal {
-    fn from(r: FacetRequest) -> Self {
-        FacetRequestInternal {
-            key: r.key.parse().expect("valid json path"),
-            limit: r.limit as usize,
-            filter: r.filter.map(SegmentFilter::from),
+impl TryFrom<FacetRequest> for FacetRequestInternal {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: FacetRequest) -> Result<Self, Self::Error> {
+        let key = crate::error::parse_json_path(&r.key)?;
+        let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
+        Ok(FacetRequestInternal {
+            key,
+            limit: crate::error::bounded_limit("limit", r.limit)?,
+            filter,
             exact: r.exact,
-        }
+        })
     }
 }
 

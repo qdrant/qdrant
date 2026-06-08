@@ -105,6 +105,13 @@ jobs:
         working-directory: lib/edge
         run: just rs-check
 
+      - name: 🦀 Test qdrant-edge-ffi (conversions + integration)
+        # Run on nightly: the workspace uses unstable features (cfg_select in
+        # lib/common), so stable can't compile it. nightly is already installed
+        # above (for fmt). +nightly also makes doctests use the nightly rustdoc,
+        # avoiding the E0514 toolchain-mismatch seen with a stray stable rustdoc.
+        run: cargo +nightly test --locked -p qdrant-edge-ffi
+
       - name: 🦀 Build Rust examples
         working-directory: lib/edge
         run: just rs-examples-build

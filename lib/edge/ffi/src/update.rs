@@ -64,17 +64,17 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError)
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError)
     /// if any point's `payload` field is not valid JSON or any UUID ID is
     /// malformed.
     #[uniffi::constructor]
     pub fn upsert_points(
         points: Vec<Point>,
     ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
-        let internal_points: std::result::Result<Vec<_>, _> =
-            points.into_iter().map(|p| p.into_internal()).collect();
-        let internal_points =
-            internal_points.map_err(|e| crate::error::EdgeError::OperationError { message: e })?;
+        let internal_points = points
+            .into_iter()
+            .map(|p| p.into_internal())
+            .collect::<crate::error::Result<Vec<_>>>()?;
         let points = PointInsertOperationsInternal::PointsList(internal_points);
         let operation = point_ops::PointOperations::UpsertPoints(points);
         Ok(Arc::new(Self {
@@ -85,24 +85,42 @@ impl UpdateOperation {
     /// Builds an operation that deletes the points with the given IDs.
     ///
     /// IDs that do not exist in the shard are silently ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
+    /// any UUID ID is malformed.
     #[uniffi::constructor]
-    pub fn delete_points(point_ids: Vec<PointId>) -> Arc<Self> {
-        let ids: Vec<PointIdType> = point_ids.into_iter().map(PointIdType::from).collect();
+    pub fn delete_points(
+        point_ids: Vec<PointId>,
+    ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
+        let ids: Vec<PointIdType> = point_ids
+            .into_iter()
+            .map(PointIdType::try_from)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         let operation = point_ops::PointOperations::DeletePoints { ids };
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::PointOperation(operation),
-        })
+        }))
     }
 
     /// Builds an operation that deletes every point matching `filter`.
     ///
     /// Use a narrowly-scoped filter to avoid accidentally wiping the shard.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
+    /// the filter contains an invalid payload key or geo coordinate.
     #[uniffi::constructor]
-    pub fn delete_points_by_filter(filter: Filter) -> Arc<Self> {
-        let operation = point_ops::PointOperations::DeletePointsByFilter(SegmentFilter::from(filter));
-        Arc::new(Self {
+    pub fn delete_points_by_filter(
+        filter: Filter,
+    ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
+        let seg_filter = SegmentFilter::try_from(filter)?;
+        let operation = point_ops::PointOperations::DeletePointsByFilter(seg_filter);
+        Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::PointOperation(operation),
-        })
+        }))
     }
 
     /// Builds an operation that replaces the vector fields of existing
@@ -111,37 +129,57 @@ impl UpdateOperation {
     /// Payload is left untouched. Only the vector fields present in each
     /// [`PointVectors`] are replaced; other fields of the point are
     /// preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
+    /// any UUID ID is malformed.
     #[uniffi::constructor]
-    pub fn update_vectors(point_vectors: Vec<PointVectors>) -> Arc<Self> {
+    pub fn update_vectors(
+        point_vectors: Vec<PointVectors>,
+    ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
         let points = point_vectors
             .into_iter()
-            .map(|pv| shard::operations::vector_ops::PointVectorsPersisted {
-                id: PointIdType::from(pv.id),
-                vector: VectorStructPersisted::from(pv.vector),
+            .map(|pv| {
+                Ok(shard::operations::vector_ops::PointVectorsPersisted {
+                    id: PointIdType::try_from(pv.id)?,
+                    vector: VectorStructPersisted::from(pv.vector),
+                })
             })
-            .collect();
+            .collect::<std::result::Result<Vec<_>, crate::error::EdgeError>>()?;
         let operation =
             vector_ops::VectorOperations::UpdateVectors(vector_ops::UpdateVectorsOp {
                 points,
                 update_filter: None,
             });
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::VectorOperation(operation),
-        })
+        }))
     }
 
     /// Builds an operation that removes named vectors from the given points.
     ///
     /// The points themselves remain; only the listed vector fields are
     /// cleared.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
+    /// any UUID ID is malformed.
     #[uniffi::constructor]
-    pub fn delete_vectors(point_ids: Vec<PointId>, vector_names: Vec<String>) -> Arc<Self> {
-        let ids: Vec<PointIdType> = point_ids.into_iter().map(PointIdType::from).collect();
+    pub fn delete_vectors(
+        point_ids: Vec<PointId>,
+        vector_names: Vec<String>,
+    ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
+        let ids: Vec<PointIdType> = point_ids
+            .into_iter()
+            .map(PointIdType::try_from)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         let operation =
             vector_ops::VectorOperations::DeleteVectors(PointIdsList::from(ids), vector_names);
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::VectorOperation(operation),
-        })
+        }))
     }
 
     /// Builds an operation that merges `payload_json` into the payloads of
@@ -152,7 +190,7 @@ impl UpdateOperation {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::OperationError`](crate::error::EdgeError) if
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
     /// `payload_json` is not a valid JSON object string.
     #[uniffi::constructor]
     pub fn set_payload(
@@ -160,8 +198,11 @@ impl UpdateOperation {
         payload_json: String,
     ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
         let payload = json_to_payload(&payload_json)
-            .map_err(|e| crate::error::EdgeError::OperationError { message: e })?;
-        let ids: Vec<PointIdType> = point_ids.into_iter().map(PointIdType::from).collect();
+            .map_err(|e| crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}")))?;
+        let ids: Vec<PointIdType> = point_ids
+            .into_iter()
+            .map(PointIdType::try_from)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         let operation = payload_ops::PayloadOps::SetPayload(payload_ops::SetPayloadOp {
             payload,
             points: Some(ids),
@@ -178,33 +219,54 @@ impl UpdateOperation {
     ///
     /// Keys use JSON-path syntax for nested values. Missing keys are
     /// silently ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
+    /// any UUID ID is malformed or any payload key is not a valid JSON-path.
     #[uniffi::constructor]
-    pub fn delete_payload(point_ids: Vec<PointId>, keys: Vec<String>) -> Arc<Self> {
-        let ids: Vec<PointIdType> = point_ids.into_iter().map(PointIdType::from).collect();
+    pub fn delete_payload(
+        point_ids: Vec<PointId>,
+        keys: Vec<String>,
+    ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
+        let ids: Vec<PointIdType> = point_ids
+            .into_iter()
+            .map(PointIdType::try_from)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         let keys = keys
             .into_iter()
-            .map(|k| k.parse().expect("valid json path"))
-            .collect();
+            .map(|k| crate::error::parse_json_path(&k))
+            .collect::<crate::error::Result<Vec<_>>>()?;
         let operation = payload_ops::PayloadOps::DeletePayload(payload_ops::DeletePayloadOp {
             keys,
             points: Some(ids),
             filter: None,
         });
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::PayloadOperation(operation),
-        })
+        }))
     }
 
     /// Builds an operation that completely removes the payload of the
     /// given points (all keys).
     ///
     /// The points themselves remain; only the payload is cleared.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
+    /// any UUID ID is malformed.
     #[uniffi::constructor]
-    pub fn clear_payload(point_ids: Vec<PointId>) -> Arc<Self> {
-        let ids: Vec<PointIdType> = point_ids.into_iter().map(PointIdType::from).collect();
+    pub fn clear_payload(
+        point_ids: Vec<PointId>,
+    ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
+        let ids: Vec<PointIdType> = point_ids
+            .into_iter()
+            .map(PointIdType::try_from)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         let operation = payload_ops::PayloadOps::ClearPayload { points: ids };
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::PayloadOperation(operation),
-        })
+        }))
     }
 }

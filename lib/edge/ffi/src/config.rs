@@ -6,13 +6,16 @@ use segment::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding as SegmentBinaryQuantizationEncoding,
     BinaryQuantizationQueryEncoding as SegmentBinaryQuantizationQueryEncoding,
     CompressionRatio as SegmentCompressionRatio, Distance as SegmentDistance,
+    HnswConfig as SegmentHnswConfig,
     Indexes, MultiVectorComparator as SegmentMultiVectorComparator,
     MultiVectorConfig as SegmentMultiVectorConfig, PayloadStorageType,
     ProductQuantization, ProductQuantizationConfig,
     QuantizationConfig as SegmentQuantizationConfig,
     ScalarQuantization, ScalarQuantizationConfig, ScalarType as SegmentScalarType,
     SegmentConfig, SparseVectorDataConfig as SegmentSparseVectorDataConfig,
-    SparseVectorStorageType, VectorDataConfig as SegmentVectorDataConfig,
+    SparseVectorStorageType, TurboQuantBitSize as SegmentTurboQuantBitSize,
+    TurboQuantQuantizationConfig, TurboQuantization,
+    VectorDataConfig as SegmentVectorDataConfig,
     VectorStorageDatatype as SegmentVectorStorageDatatype, VectorStorageType,
 };
 
@@ -76,6 +79,10 @@ pub enum VectorStorageDatatype {
     Float16,
     /// Unsigned 8-bit integers. Requires pre-quantized embeddings.
     Uint8,
+    /// 4-bit TurboQuant storage datatype. This is the *storage* datatype the
+    /// engine reports for a Turbo-quantized field; configure TurboQuant itself
+    /// via [`QuantizationConfig::Turbo`], not by setting this datatype directly.
+    Turbo4,
 }
 
 impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
@@ -84,6 +91,7 @@ impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
             VectorStorageDatatype::Float32 => SegmentVectorStorageDatatype::Float32,
             VectorStorageDatatype::Float16 => SegmentVectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8 => SegmentVectorStorageDatatype::Uint8,
+            VectorStorageDatatype::Turbo4 => SegmentVectorStorageDatatype::Turbo4,
         }
     }
 }
@@ -94,13 +102,7 @@ impl From<SegmentVectorStorageDatatype> for VectorStorageDatatype {
             SegmentVectorStorageDatatype::Float32 => VectorStorageDatatype::Float32,
             SegmentVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
             SegmentVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
-            // `Turbo4` is the TurboQuant datatype added to `edge` after this PR's base.
-            // Turbo quantization is intentionally outside the v1 FFI surface (see design
-            // §6), but a shard created by the engine with this datatype must still be
-            // readable via `config()`. Report it as its base storage width (`Uint8`)
-            // rather than panicking. TODO(Phase 5): expose Turbo properly or make this
-            // conversion fallible so the host learns the datatype isn't representable.
-            SegmentVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Uint8,
+            SegmentVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Turbo4,
         }
     }
 }
@@ -357,6 +359,53 @@ pub struct BinaryQuantizationParams {
     pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
 }
 
+/// Bits-per-component for TurboQuant. Fewer bits = more compression, less recall.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum TurboQuantBitSize {
+    /// 1 bit per component (maximum compression).
+    Bits1,
+    /// 1.5 bits per component. (Named `Bits1Point5`, not `Bits1_5`, so the
+    /// generated Swift case reads as `bits1Point5` rather than the ambiguous
+    /// `bits15`.)
+    Bits1Point5,
+    /// 2 bits per component.
+    Bits2,
+    /// 4 bits per component (default; best recall of the Turbo modes).
+    Bits4,
+}
+
+impl From<TurboQuantBitSize> for SegmentTurboQuantBitSize {
+    fn from(b: TurboQuantBitSize) -> Self {
+        match b {
+            TurboQuantBitSize::Bits1 => SegmentTurboQuantBitSize::Bits1,
+            TurboQuantBitSize::Bits1Point5 => SegmentTurboQuantBitSize::Bits1_5,
+            TurboQuantBitSize::Bits2 => SegmentTurboQuantBitSize::Bits2,
+            TurboQuantBitSize::Bits4 => SegmentTurboQuantBitSize::Bits4,
+        }
+    }
+}
+
+impl From<SegmentTurboQuantBitSize> for TurboQuantBitSize {
+    fn from(b: SegmentTurboQuantBitSize) -> Self {
+        match b {
+            SegmentTurboQuantBitSize::Bits1 => TurboQuantBitSize::Bits1,
+            SegmentTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1Point5,
+            SegmentTurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
+            SegmentTurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
+        }
+    }
+}
+
+/// Parameters for TurboQuant quantization.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct TurboQuantizationParams {
+    /// If `true`, keep the quantized data in RAM; otherwise allow it to be
+    /// memory-mapped.
+    pub always_ram: Option<bool>,
+    /// Bits-per-component. Defaults to `Bits4` when unset.
+    pub bits: Option<TurboQuantBitSize>,
+}
+
 /// Selects a vector quantization strategy for a vector field.
 ///
 /// Quantization trades a small amount of recall for lower memory and
@@ -372,6 +421,9 @@ pub enum QuantizationConfig {
     /// Binary quantization — maximum compression, best for very large
     /// collections and often paired with reranking.
     Binary { config: BinaryQuantizationParams },
+    /// TurboQuant — bit-packed quantization (1 to 4 bits per component) tuned
+    /// for fast on-device search.
+    Turbo { config: TurboQuantizationParams },
 }
 
 impl From<QuantizationConfig> for SegmentQuantizationConfig {
@@ -402,6 +454,14 @@ impl From<QuantizationConfig> for SegmentQuantizationConfig {
                         query_encoding: config
                             .query_encoding
                             .map(SegmentBinaryQuantizationQueryEncoding::from),
+                    },
+                })
+            }
+            QuantizationConfig::Turbo { config } => {
+                SegmentQuantizationConfig::Turbo(TurboQuantization {
+                    turbo: TurboQuantQuantizationConfig {
+                        always_ram: config.always_ram,
+                        bits: config.bits.map(SegmentTurboQuantBitSize::from),
                     },
                 })
             }
@@ -442,10 +502,68 @@ impl TryFrom<SegmentQuantizationConfig> for QuantizationConfig {
                     },
                 })
             }
-            // Turbo quantization has no FFI equivalent yet; hide it from the
-            // simplified surface instead of panicking when a collection that
-            // uses it is loaded.
-            SegmentQuantizationConfig::Turbo(_) => Err(()),
+            SegmentQuantizationConfig::Turbo(TurboQuantization { turbo }) => {
+                Ok(QuantizationConfig::Turbo {
+                    config: TurboQuantizationParams {
+                        always_ram: turbo.always_ram,
+                        bits: turbo.bits.map(TurboQuantBitSize::from),
+                    },
+                })
+            }
+        }
+    }
+}
+
+// ── HnswIndexConfig ───────────────────────────────────────────────────────────
+
+/// HNSW index parameters for a dense vector field.
+///
+/// Set this on a `VectorDataConfig` to control the approximate-nearest-neighbour
+/// index. With no HNSW config the field uses a plain (brute-force) index until
+/// the optimizer runs; providing one lets you tune the recall/memory/speed
+/// trade-off — important on memory-constrained devices.
+///
+/// The index is built by [`crate::EdgeShard::optimize`]; these parameters take
+/// effect when that runs.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HnswIndexConfig {
+    /// Edges per node in the graph. Higher = better recall, more memory.
+    pub m: u64,
+    /// Neighbours considered while building. Higher = better index, slower build.
+    pub ef_construct: u64,
+    /// Below this size (KB) a full scan is preferred over HNSW traversal.
+    pub full_scan_threshold: u64,
+    /// Background index-building threads. `0` = auto-select.
+    pub max_indexing_threads: u64,
+    /// Store the HNSW index on disk instead of RAM. Defaults to `false`.
+    pub on_disk: Option<bool>,
+    /// Custom `m` for the payload index graph; defaults to `m` when unset.
+    pub payload_m: Option<u64>,
+}
+
+impl From<HnswIndexConfig> for SegmentHnswConfig {
+    fn from(c: HnswIndexConfig) -> Self {
+        SegmentHnswConfig {
+            m: crate::error::clamp_usize(c.m),
+            ef_construct: crate::error::clamp_usize(c.ef_construct),
+            full_scan_threshold: crate::error::clamp_usize(c.full_scan_threshold),
+            max_indexing_threads: crate::error::clamp_usize(c.max_indexing_threads),
+            on_disk: c.on_disk,
+            payload_m: c.payload_m.map(crate::error::clamp_usize),
+            inline_storage: None,
+        }
+    }
+}
+
+impl From<SegmentHnswConfig> for HnswIndexConfig {
+    fn from(c: SegmentHnswConfig) -> Self {
+        HnswIndexConfig {
+            m: c.m as u64,
+            ef_construct: c.ef_construct as u64,
+            full_scan_threshold: c.full_scan_threshold as u64,
+            max_indexing_threads: c.max_indexing_threads as u64,
+            on_disk: c.on_disk,
+            payload_m: c.payload_m.map(|v| v as u64),
         }
     }
 }
@@ -471,15 +589,25 @@ pub struct VectorDataConfig {
     pub multivector_config: Option<MultiVectorConfig>,
     /// Optional storage datatype; defaults to `Float32` when unset.
     pub datatype: Option<VectorStorageDatatype>,
+    /// Optional HNSW index parameters. `None` uses a plain index until the
+    /// optimizer builds one with default settings; set this to tune the
+    /// recall/memory/speed trade-off. Built by [`crate::EdgeShard::optimize`].
+    pub hnsw_config: Option<HnswIndexConfig>,
 }
 
 impl From<VectorDataConfig> for SegmentVectorDataConfig {
     fn from(c: VectorDataConfig) -> Self {
         SegmentVectorDataConfig {
-            size: c.size as usize,
+            size: crate::error::clamp_usize(c.size),
             distance: SegmentDistance::from(c.distance),
             storage_type: VectorStorageType::InRamChunkedMmap,
-            index: Indexes::Plain {},
+            // The index travels via the `index` field: emit `Hnsw` when the host
+            // supplied HNSW params (so `edge::EdgeConfig::from_segment_config`
+            // picks them up and the optimizer builds an HNSW index), else `Plain`.
+            index: match c.hnsw_config {
+                Some(h) => Indexes::Hnsw(SegmentHnswConfig::from(h)),
+                None => Indexes::Plain {},
+            },
             quantization_config: c.quantization_config.map(SegmentQuantizationConfig::from),
             multivector_config: c.multivector_config.map(SegmentMultiVectorConfig::from),
             datatype: c.datatype.map(SegmentVectorStorageDatatype::from),
@@ -489,12 +617,17 @@ impl From<VectorDataConfig> for SegmentVectorDataConfig {
 
 impl From<SegmentVectorDataConfig> for VectorDataConfig {
     fn from(c: SegmentVectorDataConfig) -> Self {
+        let hnsw_config = match c.index {
+            Indexes::Hnsw(h) => Some(HnswIndexConfig::from(h)),
+            Indexes::Plain {} => None,
+        };
         VectorDataConfig {
             size: c.size as u64,
             distance: Distance::from(c.distance),
             quantization_config: c.quantization_config.and_then(|q| q.try_into().ok()),
             multivector_config: c.multivector_config.map(MultiVectorConfig::from),
             datatype: c.datatype.map(VectorStorageDatatype::from),
+            hnsw_config,
         }
     }
 }
@@ -582,7 +715,7 @@ impl From<SparseVectorDataConfig> for SegmentSparseVectorDataConfig {
         SegmentSparseVectorDataConfig {
             index: SparseIndexConfig {
                 index_type: SegmentSparseIndexType::MutableRam,
-                full_scan_threshold: c.full_scan_threshold.map(|v| v as usize),
+                full_scan_threshold: c.full_scan_threshold.map(crate::error::clamp_usize),
                 datatype: c.datatype.map(SegmentVectorStorageDatatype::from),
             },
             storage_type: SparseVectorStorageType::Mmap,
@@ -648,6 +781,96 @@ pub struct EdgeConfig {
     pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
 }
 
+/// Inclusive bounds for a dense vector's dimensionality, mirroring the server's
+/// `#[validate(range(min = 1, max = 65536))]` on `VectorParams.size`
+/// (`segment::data_types::vector_name_config`). The FFI `From<VectorDataConfig>`
+/// path builds a `SegmentVectorDataConfig` directly and so bypasses that
+/// validator — we re-apply the same bound here.
+const MIN_VECTOR_SIZE: u64 = 1;
+const MAX_VECTOR_SIZE: u64 = 65_536;
+
+// HNSW parameter bounds. These are validated (rejected with InvalidArgument)
+// rather than saturated, because — unlike search-time tuning knobs — `m`,
+// `payload_m` and `ef_construct` drive *eager, per-vector* allocations during
+// `optimize()` (e.g. `LinksContainer::with_capacity(m * 2)` per point), and
+// `max_indexing_threads` spawns OS threads. An unbounded host value would
+// request a multi-terabyte allocation or a thread bomb and *abort* the process
+// — an abort that `panic = "unwind"` cannot catch. The caps are far above any
+// sane on-device value (the engine's own default `m` is 16, `ef_construct` 100).
+// `ef_construct` also has an engine-side minimum of 4 that the FFI conversion
+// path would otherwise bypass.
+const MAX_HNSW_M: u64 = 2_048;
+const MIN_HNSW_EF_CONSTRUCT: u64 = 4;
+const MAX_HNSW_EF_CONSTRUCT: u64 = 100_000;
+const MAX_HNSW_INDEXING_THREADS: u64 = 1_024;
+
+impl EdgeConfig {
+    /// Reject host config that would crash the engine, so a host gets a
+    /// catchable `InvalidArgument` instead of an uncatchable engine crash.
+    /// Called from `load` before any conversion.
+    ///
+    /// Per dense vector field, **dimensionality** must be in `1..=65536`. A
+    /// `size` of `0` would flow into the engine and panic/abort (uncatchable)
+    /// rather than surfacing a clean error; a huge `size` would request an
+    /// enormous allocation. The server validates this range on its own
+    /// deserialization path, but the FFI `From<VectorDataConfig>` path bypasses
+    /// that validator.
+    ///
+    /// **HNSW parameters** (when a field sets `hnsw_config`) are range-checked:
+    /// `m`/`payload_m` ≤ 2048, `ef_construct` in `4..=100000`,
+    /// `max_indexing_threads` ≤ 1024. These drive eager per-vector allocations
+    /// and thread spawning at `optimize()` time, so an unbounded host value
+    /// would abort the process (uncatchably) rather than merely run slow — they
+    /// must be rejected up front, not saturated.
+    ///
+    /// Quantization is NOT restricted here: the FFI surface exposes the same
+    /// four strategies (Scalar/Product/Binary/Turbo) as the Python Edge SDK, for
+    /// parity. Note that Edge only builds *appendable* segments, and the engine's
+    /// `for_appendable_segment` filter keeps only `Binary`/`Turbo` there —
+    /// `Scalar`/`Product` are dropped by the engine (shared behavior across all
+    /// Edge SDKs), not by this SDK.
+    pub(crate) fn validate(&self) -> crate::error::Result<()> {
+        for (name, vd) in &self.vector_data {
+            if vd.size < MIN_VECTOR_SIZE || vd.size > MAX_VECTOR_SIZE {
+                return Err(crate::error::EdgeError::invalid_argument(format!(
+                    "vector field {name:?}: size {} is out of range \
+                     {MIN_VECTOR_SIZE}..={MAX_VECTOR_SIZE}",
+                    vd.size
+                )));
+            }
+            if let Some(hnsw) = &vd.hnsw_config {
+                if hnsw.m > MAX_HNSW_M {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw m ({}) exceeds the maximum of {MAX_HNSW_M}",
+                        hnsw.m
+                    )));
+                }
+                if let Some(payload_m) = hnsw.payload_m
+                    && payload_m > MAX_HNSW_M
+                {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw payload_m ({payload_m}) exceeds the maximum of {MAX_HNSW_M}"
+                    )));
+                }
+                if hnsw.ef_construct < MIN_HNSW_EF_CONSTRUCT || hnsw.ef_construct > MAX_HNSW_EF_CONSTRUCT {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw ef_construct ({}) is out of range \
+                         {MIN_HNSW_EF_CONSTRUCT}..={MAX_HNSW_EF_CONSTRUCT}",
+                        hnsw.ef_construct
+                    )));
+                }
+                if hnsw.max_indexing_threads > MAX_HNSW_INDEXING_THREADS {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "vector field {name:?}: hnsw max_indexing_threads ({}) exceeds the maximum of {MAX_HNSW_INDEXING_THREADS}",
+                        hnsw.max_indexing_threads
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl From<EdgeConfig> for SegmentConfig {
     fn from(c: EdgeConfig) -> Self {
         SegmentConfig {
@@ -679,6 +902,79 @@ impl From<SegmentConfig> for EdgeConfig {
                 .into_iter()
                 .map(|(k, v)| (k, SparseVectorDataConfig::from(v)))
                 .collect(),
+        }
+    }
+}
+
+/// Honest read-back from the engine's rich `edge::EdgeConfig`.
+///
+/// Used by `EdgeShard::config()` instead of the lossy `plain_segment_config()`
+/// projection (which hardcodes a plain index and runs quantization through the
+/// `for_appendable_segment` filter, so HNSW and the originally-requested
+/// quantization would be dropped from the read-back). `edge::EdgeConfig` keeps
+/// HNSW and quantization both per-vector and globally; here we resolve each
+/// field as `per_vector.or(global)`, mirroring how the engine actually applies
+/// them, so `config()` reflects what the host requested.
+impl From<&edge::EdgeConfig> for EdgeConfig {
+    fn from(c: &edge::EdgeConfig) -> Self {
+        let vector_data = c
+            .vectors
+            .iter()
+            .map(|(name, p)| {
+                // This is an "as-requested" read-back: each field reflects what
+                // the host configured, NOT what the engine will effectively
+                // apply. So we read the per-vector value (falling back to the
+                // shard-global one Edge stores), and crucially do NOT substitute
+                // the engine's default when the host set nothing — a field
+                // configured without HNSW reads back as `None`, matching how the
+                // quantization field behaves. (The engine's *apply* path uses
+                // `unwrap_or(default)`; that's a different contract.)
+                let quant = p
+                    .quantization_config
+                    .clone()
+                    .or_else(|| c.quantization_config.clone())
+                    // `.ok()` cannot drop a real config: `TryFrom` is total over
+                    // the closed `SegmentQuantizationConfig` enum (every variant
+                    // maps to `Ok`). It only guards a hypothetical future engine
+                    // variant with no FFI equivalent.
+                    .and_then(|q| QuantizationConfig::try_from(q).ok());
+                // Read the per-vector HNSW only. `edge::EdgeConfig.hnsw_config`
+                // is a non-optional global that's always populated (the engine
+                // default when unset), so falling back to it would report HNSW
+                // for a field the host left as a plain index — the asymmetry we
+                // are fixing. The per-vector field is `None` exactly when the
+                // host requested no HNSW.
+                let hnsw = p.hnsw_config.map(HnswIndexConfig::from);
+                (
+                    name.clone(),
+                    VectorDataConfig {
+                        size: p.size as u64,
+                        distance: Distance::from(p.distance),
+                        quantization_config: quant,
+                        multivector_config: p.multivector_config.map(MultiVectorConfig::from),
+                        datatype: p.datatype.map(VectorStorageDatatype::from),
+                        hnsw_config: hnsw,
+                    },
+                )
+            })
+            .collect();
+        let sparse_vector_data = c
+            .sparse_vectors
+            .iter()
+            .map(|(name, p)| {
+                (
+                    name.clone(),
+                    SparseVectorDataConfig {
+                        full_scan_threshold: p.full_scan_threshold.map(|v| v as u64),
+                        datatype: p.datatype.map(VectorStorageDatatype::from),
+                        modifier: p.modifier.map(Modifier::from),
+                    },
+                )
+            })
+            .collect();
+        EdgeConfig {
+            vector_data,
+            sparse_vector_data,
         }
     }
 }

@@ -5978,7 +5978,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant-edge-ffi"
-version = "0.1.0"
+version = "0.7.2"
 dependencies = [
  "ahash",
  "edge",
@@ -5988,6 +5988,7 @@ dependencies = [
  "serde_json",
  "shard",
  "sparse",
+ "tempfile",
  "thiserror 2.0.18",
  "uniffi",
  "uuid",

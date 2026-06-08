@@ -1,6 +1,13 @@
 [package]
 name = "qdrant-edge-ffi"
-version = "0.1.0"
+# Single source of truth for the native (Swift/Kotlin) SDK version is
+# `lib/edge/VERSION`. Keep this in sync with it; the CI `version-sync` job
+# verifies this, the Gradle `VERSION_NAME`, and the Swift release tag all match
+# `lib/edge/VERSION`. (The Python package in `lib/edge/python/Cargo.toml` is a
+# separate distribution channel with its own cadence and is NOT checked here.)
+# To bump: edit `lib/edge/VERSION`, then this, the Gradle `VERSION_NAME`, and run
+# `release-xcframework.sh` to update the Swift tag.
+version = "0.7.2"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
@@ -15,7 +22,12 @@ crate-type = ["staticlib", "cdylib", "lib"]
 [dependencies]
 edge = { path = ".." }
 segment = { path = "../../segment", default-features = false }
-shard = { path = "../../shard" }
+# default-features = false drops shard's `default = ["api"]` (the gRPC/prost
+# `api` types crate), which the FFI never uses — matching the `edge` and
+# `edge-python` siblings. (Note: `tonic`/`tokio` are still pulled in via
+# non-optional deps of `shard`/`common`, so this trims the `api`/prost crate,
+# not the whole server stack.)
+shard = { path = "../../shard", default-features = false }
 sparse = { path = "../../sparse" }
 
 uniffi = "0.31"
@@ -25,6 +37,9 @@ ahash = { workspace = true }
 parking_lot = { workspace = true }
 serde_json = { workspace = true }
 ordered-float = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [build-dependencies]
 uniffi = { version = "0.31", features = ["build"] }
