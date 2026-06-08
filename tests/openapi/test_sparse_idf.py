@@ -109,22 +109,20 @@ def test_collection_request_with_idf(collection_name):
     query = ["i", "is", "not", "television", "channel"]
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": {
-                "name": "text",
-                "vector": get_vector(query)
-            },
+            "query": get_vector(query),
+            "using": "text",
             "limit": 2
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 2
+    assert len(response.json()['result']['points']) == 2
 
     # IDF gives priority to rare words, even if there are more common words in the query
-    assert response.json()['result'][0]['id'] == 3
+    assert response.json()['result']['points'][0]['id'] == 3
 
     # Now let's change modifier back to "none" and check the results
 
@@ -143,20 +141,18 @@ def test_collection_request_with_idf(collection_name):
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": {
-                "name": "text",
-                "vector": get_vector(query)
-            },
+            "query": get_vector(query),
+            "using": "text",
             "limit": 2
         }
     )
 
     assert response.ok
-    assert len(response.json()['result']) == 2
+    assert len(response.json()['result']['points']) == 2
 
     # Now the results are different
-    assert response.json()['result'][0]['id'] != 3
+    assert response.json()['result']['points'][0]['id'] != 3

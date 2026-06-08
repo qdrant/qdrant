@@ -330,11 +330,11 @@ def test_scroll_with_prefix(collection_name):
     assert len(response.json()['result']['points']) == 3
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [1., 1., 1., 1.],
+            "query": [1., 1., 1., 1.],
             "limit": 10,
             "with_payload": True,
             "with_vector": False,
@@ -352,4 +352,4 @@ def test_scroll_with_prefix(collection_name):
     )
 
     assert response.ok
-    assert len(response.json()['result']) == 3
+    assert len(response.json()['result']['points']) == 3

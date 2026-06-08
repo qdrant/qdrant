@@ -140,16 +140,17 @@ def test_turboquant_search(collection_name, vector_name, descending):
     query_vector = _random_vector(rng)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": {"name": vector_name, "vector": query_vector},
+            "query": query_vector,
+            "using": vector_name,
             "limit": 10,
         }
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 10
     assert all('score' in hit for hit in result)
     assert all('id' in hit for hit in result)
@@ -163,11 +164,12 @@ def test_turboquant_search_with_filter(collection_name, vector_name):
     query_vector = _random_vector(rng)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": {"name": vector_name, "vector": query_vector},
+            "query": query_vector,
+            "using": vector_name,
             "filter": {
                 "must": [{"key": "city", "match": {"value": "Berlin"}}]
             },
@@ -176,7 +178,7 @@ def test_turboquant_search_with_filter(collection_name, vector_name):
         }
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) > 0
     for hit in result:
         assert hit['payload']['city'] == "Berlin"
@@ -210,11 +212,12 @@ def test_turboquant_search_with_quantization_params(collection_name, rescore):
     query_vector = _random_vector(rng)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": {"name": "image", "vector": query_vector},
+            "query": query_vector,
+            "using": "image",
             "params": {
                 "quantization": {
                     "ignore": False,
@@ -226,7 +229,7 @@ def test_turboquant_search_with_quantization_params(collection_name, rescore):
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 10
+    assert len(response.json()['result']['points']) == 10
 
 
 def test_turboquant_via_patch():
@@ -306,13 +309,13 @@ def test_turboquant_default_bits():
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": _random_vector(random.Random(1)), "limit": 5},
+        body={"query": _random_vector(random.Random(1)), "limit": 5},
     )
     assert response.ok
-    assert len(response.json()['result']) == 5
+    assert len(response.json()['result']['points']) == 5
 
     response = request_with_validation(
         api='/collections/{collection_name}',

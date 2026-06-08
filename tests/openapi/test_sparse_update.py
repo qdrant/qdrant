@@ -57,22 +57,20 @@ def test_sparse_dense_updates(collection_name):
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 10,
-            "vector": {
-                "name": "text",
-                "vector": {
-                    "indices": [100],
-                    "values": [0.9]
-                }
-            }
+            "query": {
+                "indices": [100],
+                "values": [0.9]
+            },
+            "using": "text"
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 1
+    assert len(response.json()['result']['points']) == 1
 
     # Overwrite existing vector with new indices
     response = request_with_validation(
@@ -96,56 +94,50 @@ def test_sparse_dense_updates(collection_name):
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 10,
-            "vector": {
-                "name": "text",
-                "vector": {
-                    "indices": [100],
-                    "values": [0.9]
-                }
-            }
+            "query": {
+                "indices": [100],
+                "values": [0.9]
+            },
+            "using": "text"
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 0
+    assert len(response.json()['result']['points']) == 0
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 10,
-            "vector": {
-                "name": "text",
-                "vector": {
-                    "indices": [700],
-                    "values": [0.9]
-                }
-            }
+            "query": {
+                "indices": [700],
+                "values": [0.9]
+            },
+            "using": "text"
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 1
+    assert len(response.json()['result']['points']) == 1
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 10,
-            "vector": {
-                "name": "text",
-                "vector": {
-                    "indices": [10],
-                    "values": [0.9]
-                }
-            }
+            "query": {
+                "indices": [10],
+                "values": [0.9]
+            },
+            "using": "text"
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 1
+    assert len(response.json()['result']['points']) == 1
 

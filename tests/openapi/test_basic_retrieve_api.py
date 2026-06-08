@@ -39,19 +39,19 @@ def test_points_retrieve(collection_name):
     assert response.json()['result']['points_count'] == 10
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 3
+    assert len(response.json()['result']['points']) == 3
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
@@ -65,13 +65,13 @@ def test_points_retrieve(collection_name):
                     }
                 ]
             },
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
         }
     )
     assert response.ok
     # only 2 London records in collection
-    assert len(response.json()['result']) == 2
+    assert len(response.json()['result']['points']) == 2
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
@@ -85,11 +85,11 @@ def test_points_retrieve(collection_name):
 
 def test_exclude_payload(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 5,
             "filter": {
                 "should": [
@@ -107,27 +107,27 @@ def test_exclude_payload(collection_name):
         }
     )
     assert response.ok
-    assert len(response.json()['result']) > 0
-    for result in response.json()['result']:
+    assert len(response.json()['result']['points']) > 0
+    for result in response.json()['result']['points']:
         assert 'city' not in result['payload']
 
 
 def test_batch_search(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/batch",
+        api="/collections/{collection_name}/points/query/batch",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
             "searches": [
                 {
-                    "vector": [0.2, 0.1, 0.9, 0.7],
+                    "query": [0.2, 0.1, 0.9, 0.7],
                     "limit": 3,
                 },
                 {
                     "filter": {
                         "should": [{"key": "city", "match": {"value": "London"}}]
                     },
-                    "vector": [0.2, 0.1, 0.9, 0.7],
+                    "query": [0.2, 0.1, 0.9, 0.7],
                     "limit": 3,
                 },
             ],
@@ -135,11 +135,11 @@ def test_batch_search(collection_name):
     )
     assert response.ok
     assert len(response.json()["result"]) == 2
-    assert len(response.json()["result"][0]) == 3
-    assert len(response.json()["result"][1]) == 2
+    assert len(response.json()["result"][0]["points"]) == 3
+    assert len(response.json()["result"][1]["points"]) == 2
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/batch",
+        api="/collections/{collection_name}/points/query/batch",
         method="POST",
         path_params={"collection_name": collection_name},
         body={"searches": []},
@@ -150,11 +150,11 @@ def test_batch_search(collection_name):
 
 def test_is_empty_condition(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 5,
             "filter": {
                 "should": [
@@ -172,20 +172,20 @@ def test_is_empty_condition(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 4
+    assert len(json['result']['points']) == 4
 
-    ids = [x['id'] for x in json['result']]
+    ids = [x['id'] for x in json['result']['points']]
     assert 5 in ids
     assert 6 in ids
     assert 7 in ids
     assert 8 in ids
 
     response2 = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 5,
             "filter": {
                 "should": [
@@ -201,17 +201,17 @@ def test_is_empty_condition(collection_name):
     assert response2.ok
 
     json2 = response2.json()
-    ids2 = [x['id'] for x in json2['result']]
+    ids2 = [x['id'] for x in json2['result']['points']]
     assert ids == ids2
 
 
 def test_is_null_condition(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 5,
             "filter": {
                 "should": [
@@ -228,17 +228,17 @@ def test_is_null_condition(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 1
+    assert len(json['result']['points']) == 1
 
-    ids = [x['id'] for x in json['result']]
+    ids = [x['id'] for x in json['result']['points']]
     assert 7 in ids
 
     response2 = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 5,
             "filter": {
                 "should": [
@@ -254,18 +254,18 @@ def test_is_null_condition(collection_name):
     assert response2.ok
 
     json2 = response2.json()
-    ids2 = [x['id'] for x in json2['result']]
+    ids2 = [x['id'] for x in json2['result']['points']]
 
     assert ids == ids2
 
     # With must_not (as recommended in docs)
     def must_not_is_null(field: str):
         response = request_with_validation(
-            api='/collections/{collection_name}/points/search',
+            api='/collections/{collection_name}/points/query',
             method="POST",
             path_params={'collection_name': collection_name},
             body={
-                "vector": [0.2, 0.1, 0.9, 0.7],
+                "query": [0.2, 0.1, 0.9, 0.7],
                 "limit": 5,
                 "filter": {
                     "must_not": [
@@ -282,9 +282,9 @@ def test_is_null_condition(collection_name):
         assert response.ok
 
         json = response.json()
-        assert len(json['result']) == 5
+        assert len(json['result']['points']) == 5
 
-        ids = [x['id'] for x in json['result']]
+        ids = [x['id'] for x in json['result']['points']]
         assert 5 not in ids
         assert 6 not in ids
         assert 7 not in ids
@@ -292,11 +292,11 @@ def test_is_null_condition(collection_name):
         assert 2 in ids
 
         response2 = request_with_validation(
-            api='/collections/{collection_name}/points/search',
+            api='/collections/{collection_name}/points/query',
             method="POST",
             path_params={'collection_name': collection_name},
             body={
-                "vector": [0.2, 0.1, 0.9, 0.7],
+                "query": [0.2, 0.1, 0.9, 0.7],
                 "limit": 5,
                 "filter": {
                     "must": [
@@ -312,7 +312,7 @@ def test_is_null_condition(collection_name):
         assert response2.ok
 
         json2 = response2.json()
-        ids2 = [x['id'] for x in json2['result']]
+        ids2 = [x['id'] for x in json2['result']['points']]
         assert ids == ids2
 
     must_not_is_null("city")
@@ -321,25 +321,29 @@ def test_is_null_condition(collection_name):
 
 def test_recommendation(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
+            "query": {
+                "recommend": {
+                    "negative": [],
+                    "positive": [1],
+                }
+            },
             "limit": 3,
-            "negative": [],
-            "positive": [1],
             "with_vector": False,
             "with_payload": True
         }
     )
-    assert len(response.json()['result']) == 3
-    assert response.json()['result'][0]['payload'] is not None
+    assert len(response.json()['result']['points']) == 3
+    assert response.json()['result']['points'][0]['payload'] is not None
     assert response.ok
 
 
 def test_query_single_condition(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
@@ -351,13 +355,13 @@ def test_query_single_condition(collection_name):
                     }
                 }
             },
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
         }
     )
     assert response.ok
     # only 2 London records in collection
-    assert len(response.json()['result']) == 2
+    assert len(response.json()['result']['points']) == 2
 
 
 def test_query_nested(collection_name):
