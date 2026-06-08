@@ -30,9 +30,9 @@ use crate::vector_storage::{
     MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
-const VECTORS_DIR_PATH: &str = "vectors";
-const OFFSETS_DIR_PATH: &str = "offsets";
-const DELETED_DIR_PATH: &str = "deleted";
+pub(crate) const VECTORS_DIR_PATH: &str = "vectors";
+pub(crate) const OFFSETS_DIR_PATH: &str = "offsets";
+pub(crate) const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
