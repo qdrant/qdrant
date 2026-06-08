@@ -12,10 +12,10 @@ use parking_lot::Mutex;
 
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
 use crate::id_tracker::IdTrackerEnum;
-use crate::index::field_index::FieldIndex;
-use crate::index::plain_vector_index::read_view::PlainVectorIndexReadView;
+use crate::index::plain_vector_index::read_view::{
+    PlainVectorIndexReadView, PlainVectorIndexReadViewEnum,
+};
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
@@ -46,19 +46,7 @@ impl PlainVectorIndex {
         }
     }
 
-    pub fn with_view<R>(
-        &self,
-        f: impl FnOnce(
-            PlainVectorIndexReadView<
-                '_,
-                IdTrackerEnum,
-                VectorStorageEnum,
-                PayloadStorageEnum,
-                FieldIndex,
-                QuantizedVectors,
-            >,
-        ) -> R,
-    ) -> R {
+    pub fn with_view<R>(&self, f: impl FnOnce(PlainVectorIndexReadViewEnum<'_>) -> R) -> R {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
