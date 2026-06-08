@@ -220,8 +220,11 @@ impl From<Sample> for SampleInternal {
 pub struct Prefetch {
     /// Maximum number of candidates this branch contributes.
     pub limit: u64,
-    /// Scoring strategy for this branch. `None`/`null` means "pass-through"
-    /// if there are nested `prefetches`.
+    /// Scoring strategy for this branch. When `None`/`null`, the branch is a
+    /// pass-through over its nested `prefetches`; with no prefetches either, it
+    /// degrades to a scroll-by-id of `limit` points (engine behavior). A
+    /// `Fusion` query with no nested `prefetches` is rejected by the engine
+    /// ("cannot apply Fusion without prefetches").
     pub query: Option<ScoringQuery>,
     /// Nested prefetch branches (for recursive fusion / reranking).
     pub prefetches: Vec<Prefetch>,
@@ -271,8 +274,11 @@ pub struct QueryRequest {
     pub limit: u64,
     /// Number of results to skip (for pagination).
     pub offset: Option<u64>,
-    /// Scoring strategy. If `None`/`null`, the request must have
-    /// `prefetches` and relies on fusion implicit in the prefetch stage.
+    /// Scoring strategy. When `None`/`null` with `prefetches`, the request is a
+    /// pass-through over the prefetch stage; with no `prefetches` either, it
+    /// degrades to a scroll-by-id of `limit` points (engine behavior, matching
+    /// the REST contract). A `Fusion` query with no `prefetches` is rejected by
+    /// the engine ("cannot apply Fusion without prefetches").
     pub query: Option<ScoringQuery>,
     /// Optional prefetch branches used for multi-stage retrieval / fusion.
     pub prefetches: Vec<Prefetch>,

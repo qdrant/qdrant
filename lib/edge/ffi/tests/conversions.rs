@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
-use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, Match};
+use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, GeoRadius, Match};
 use qdrant_edge_ffi::query::CountRequest;
 use qdrant_edge_ffi::types::{PointId, WithPayload};
 use qdrant_edge_ffi::EdgeShard;
@@ -60,11 +60,12 @@ fn valid_geo_point_converts() {
 
 #[test]
 fn bad_payload_key_in_field_condition_returns_error() {
-    // A key with a space is not a valid JSON-path.
+    // A key with a space is not a valid JSON-path. A valid predicate is set so
+    // the failure is unambiguously the key parse, not the no-predicate check.
     let cond = Condition::Field {
         condition: FieldCondition {
             key: "has space".to_string(),
-            r#match: None,
+            r#match: Some(Match::Text { text: "x".to_string() }),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -78,10 +79,12 @@ fn bad_payload_key_in_field_condition_returns_error() {
 
 #[test]
 fn valid_payload_key_in_field_condition_converts() {
+    // A valid key plus a real predicate (a no-predicate condition is rejected,
+    // see `field_condition_no_predicate_returns_error`).
     let cond = Condition::Field {
         condition: FieldCondition {
             key: "meta.author".to_string(),
-            r#match: None,
+            r#match: Some(Match::Text { text: "ann".to_string() }),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -316,6 +319,207 @@ fn geo_polygon_bad_coordinate_returns_error() {
     assert!(r.is_err(), "expected Err for out-of-range coordinate");
 }
 
+/// A polygon whose exterior ring has fewer than 4 points is rejected at the FFI
+/// boundary (mirrors the engine's `validate_line_string`), rather than reaching
+/// the geo index where it can panic on indexed payloads.
+#[test]
+fn geo_polygon_too_few_points_returns_error() {
+    let polygon = GeoPolygon {
+        exterior: GeoLineString {
+            points: vec![
+                GeoPoint { lon: 0.0, lat: 0.0 },
+                GeoPoint { lon: 0.0, lat: 1.0 },
+                GeoPoint { lon: 0.0, lat: 0.0 },
+            ], // only 3 points
+        },
+        interiors: None,
+    };
+    let cond = Condition::Field {
+        condition: FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(polygon),
+            values_count: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err(), "expected Err for ring with fewer than 4 points");
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+/// A polygon whose exterior ring does not close (first != last) is rejected.
+#[test]
+fn geo_polygon_unclosed_ring_returns_error() {
+    let polygon = GeoPolygon {
+        exterior: GeoLineString {
+            points: vec![
+                GeoPoint { lon: 0.0, lat: 0.0 },
+                GeoPoint { lon: 0.0, lat: 1.0 },
+                GeoPoint { lon: 1.0, lat: 1.0 },
+                GeoPoint { lon: 1.0, lat: 0.0 }, // != first → not closed
+            ],
+        },
+        interiors: None,
+    };
+    let cond = Condition::Field {
+        condition: FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(polygon),
+            values_count: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err(), "expected Err for unclosed ring");
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+/// A malformed *interior* ring is rejected too — the same validating
+/// conversion runs for exterior and interior rings.
+#[test]
+fn geo_polygon_bad_interior_ring_returns_error() {
+    let good_exterior = GeoLineString {
+        points: vec![
+            GeoPoint { lon: 0.0, lat: 0.0 },
+            GeoPoint { lon: 0.0, lat: 10.0 },
+            GeoPoint { lon: 10.0, lat: 10.0 },
+            GeoPoint { lon: 0.0, lat: 0.0 },
+        ],
+    };
+    let bad_interior = GeoLineString {
+        points: vec![
+            GeoPoint { lon: 1.0, lat: 1.0 },
+            GeoPoint { lon: 2.0, lat: 2.0 },
+        ], // only 2 points
+    };
+    let polygon = GeoPolygon {
+        exterior: good_exterior,
+        interiors: Some(vec![bad_interior]),
+    };
+    let cond = Condition::Field {
+        condition: FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(polygon),
+            values_count: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err(), "expected Err for malformed interior ring");
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+// ── GeoRadius bounds ──────────────────────────────────────────────────────────
+
+fn field_with_geo_radius(radius: f64) -> Condition {
+    Condition::Field {
+        condition: FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: Some(GeoRadius {
+                center: GeoPoint { lon: 13.4, lat: 52.5 },
+                radius,
+            }),
+            geo_polygon: None,
+            values_count: None,
+        },
+    }
+}
+
+#[test]
+fn geo_radius_negative_returns_error() {
+    let r: Result<SegmentCondition, _> = field_with_geo_radius(-1.0).try_into();
+    assert!(r.is_err(), "expected Err for negative radius");
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+#[test]
+fn geo_radius_nan_returns_error() {
+    let r: Result<SegmentCondition, _> = field_with_geo_radius(f64::NAN).try_into();
+    assert!(r.is_err(), "expected Err for NaN radius");
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+#[test]
+fn geo_radius_infinite_returns_error() {
+    let r: Result<SegmentCondition, _> = field_with_geo_radius(f64::INFINITY).try_into();
+    assert!(r.is_err(), "expected Err for infinite radius");
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+#[test]
+fn geo_radius_valid_converts() {
+    let r: Result<SegmentCondition, _> = field_with_geo_radius(1000.0).try_into();
+    assert!(r.is_ok(), "expected Ok for a valid radius, got: {:?}", r.err());
+}
+
+/// A zero radius is a degenerate (empty) circle but NOT invalid — the engine
+/// accepts it (`check_point` uses `distance < radius`, so it matches nothing).
+/// Pin this so the bound stays "non-negative", not "strictly positive".
+#[test]
+fn geo_radius_zero_converts() {
+    let r: Result<SegmentCondition, _> = field_with_geo_radius(0.0).try_into();
+    assert!(r.is_ok(), "expected Ok for a zero radius, got: {:?}", r.err());
+}
+
+// ── FieldCondition: at-least-one predicate ────────────────────────────────────
+
+/// A FieldCondition with no predicate set is a silent no-op (matches every
+/// point); the FFI rejects it, mirroring the engine's `validate_field_condition`
+/// ("at least one", NOT "exactly one").
+#[test]
+fn field_condition_no_predicate_returns_error() {
+    let cond = Condition::Field {
+        condition: FieldCondition {
+            key: "meta.author".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_err(), "expected Err for a predicate-less field condition");
+    assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
+}
+
+/// Setting MORE than one predicate is allowed (they AND together) — this is the
+/// contract the engine/gRPC/REST/Python SDK use, so the FFI must not reject it.
+#[test]
+fn field_condition_multiple_predicates_converts() {
+    use qdrant_edge_ffi::filter::{RangeFloat, ValuesCount};
+    let cond = Condition::Field {
+        condition: FieldCondition {
+            key: "tags".to_string(),
+            r#match: Some(Match::Text { text: "x".to_string() }),
+            range: Some(RangeFloat { gte: Some(1.0), gt: None, lte: None, lt: None }),
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: Some(ValuesCount { gte: Some(1), gt: None, lte: None, lt: None }),
+        },
+    };
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(
+        r.is_ok(),
+        "multiple predicates must be allowed (AND-combined), got: {:?}",
+        r.err()
+    );
+}
+
 // ── Turbo4 datatype round-trip ────────────────────────────────────────────────
 
 /// VectorStorageDatatype::Turbo4 must round-trip through the segment type
@@ -326,14 +530,14 @@ fn turbo4_datatype_round_trips() {
     use segment::types::VectorStorageDatatype as SegmentVectorStorageDatatype;
 
     let ffi_turbo = VectorStorageDatatype::Turbo4;
-    let seg: SegmentVectorStorageDatatype = ffi_turbo.into();
+    let seg = SegmentVectorStorageDatatype::from(ffi_turbo);
     assert!(
         matches!(seg, SegmentVectorStorageDatatype::Turbo4),
         "expected SegmentVectorStorageDatatype::Turbo4, got {:?}",
         seg
     );
 
-    let back: VectorStorageDatatype = seg.into();
+    let back = VectorStorageDatatype::from(seg);
     assert!(
         matches!(back, VectorStorageDatatype::Turbo4),
         "expected VectorStorageDatatype::Turbo4 back, got {:?}",

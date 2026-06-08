@@ -85,6 +85,15 @@ impl TryFrom<GeoRadius> for SegmentGeoRadius {
     type Error = crate::error::EdgeError;
 
     fn try_from(r: GeoRadius) -> Result<Self, Self::Error> {
+        // The radius reaches the geo index unvalidated otherwise: a negative or
+        // non-finite value yields nonsensical distance comparisons (and feeds
+        // NaN into the geohash math). Reject it at the boundary.
+        if !r.radius.is_finite() || r.radius < 0.0 {
+            return Err(crate::error::EdgeError::invalid_argument(format!(
+                "invalid geo radius: must be a finite, non-negative number of meters, got {}",
+                r.radius
+            )));
+        }
         Ok(SegmentGeoRadius {
             center: SegmentGeoPoint::try_from(r.center)?,
             radius: ordered_float::OrderedFloat(r.radius),
@@ -95,7 +104,9 @@ impl TryFrom<GeoRadius> for SegmentGeoRadius {
 // ── GeoLineString ────────────────────────────────────────────────────────────
 
 /// A closed ring of geographic points. The first and last point must be equal
-/// and a ring needs at least 4 points (Qdrant validates this engine-side).
+/// and a ring needs at least 4 points; this is validated at the FFI boundary
+/// (and again by the engine), so a malformed ring is rejected with
+/// `InvalidArgument`.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct GeoLineString {
     pub points: Vec<GeoPoint>,
@@ -110,6 +121,27 @@ impl TryFrom<GeoLineString> for SegmentGeoLineString {
             .into_iter()
             .map(SegmentGeoPoint::try_from)
             .collect::<Result<Vec<_>, _>>()?;
+
+        // Mirror the engine's `GeoPolygon::validate_line_string`, which only runs
+        // on the serde-deserialization path. Building the segment type directly
+        // here would otherwise let a malformed ring (too few points or unclosed)
+        // through to the geo index, where it can panic on indexed payloads.
+        if points.len() <= 3 {
+            return Err(crate::error::EdgeError::invalid_argument(format!(
+                "invalid geo ring: a closed ring needs at least 4 points, got {}",
+                points.len()
+            )));
+        }
+        // `points` is non-empty here (len > 3), so first/last always exist.
+        let (first, last) = (&points[0], &points[points.len() - 1]);
+        if (first.lat - last.lat).abs() > f64::EPSILON
+            || (first.lon - last.lon).abs() > f64::EPSILON
+        {
+            return Err(crate::error::EdgeError::invalid_argument(
+                "invalid geo ring: the first and last points must be equal to close the ring",
+            ));
+        }
+
         Ok(SegmentGeoLineString { points })
     }
 }
@@ -120,7 +152,8 @@ impl TryFrom<GeoLineString> for SegmentGeoLineString {
 /// hole match.
 ///
 /// Each line string must form a closed ring (first == last point) with at
-/// least 4 points; Qdrant enforces this at the engine level.
+/// least 4 points; this is validated at the FFI boundary (and again by the
+/// engine), so a malformed ring is rejected with `InvalidArgument`.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct GeoPolygon {
     /// The exterior ring that bounds the surface.
@@ -288,10 +321,13 @@ impl From<ValuesCount> for SegmentValuesCount {
 
 /// A filter condition applied to a single payload field.
 ///
-/// Exactly one of `match`, `range`, `geo_bounding_box`, `geo_radius`,
-/// `geo_polygon`, or `values_count` should be set; setting more than one is
-/// an error. The payload `key` uses JSON-path syntax for nested fields (e.g.
-/// `"meta.location"`).
+/// At least one of `match`, `range`, `geo_bounding_box`, `geo_radius`,
+/// `geo_polygon`, or `values_count` must be set — a condition with none set is
+/// rejected (it would silently match every point). Setting more than one is
+/// allowed and combines them with logical AND, matching the engine's
+/// `validate_field_condition` and the gRPC/REST/Python contract (this is *not*
+/// an exactly-one constraint). The payload `key` uses JSON-path syntax for
+/// nested fields (e.g. `"meta.location"`).
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct FieldCondition {
     /// Payload key to test (JSON-path syntax supported).
@@ -315,6 +351,24 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
 
     fn try_from(c: FieldCondition) -> Result<Self, Self::Error> {
         let key = crate::error::parse_json_path(&c.key)?;
+
+        // Mirror the engine's `validate_field_condition`: a condition with no
+        // predicate set is a silent no-op (it matches every point), so reject it
+        // at the boundary. This is "at least one", NOT "exactly one" — multiple
+        // predicates are valid and combine with AND.
+        if c.r#match.is_none()
+            && c.range.is_none()
+            && c.geo_bounding_box.is_none()
+            && c.geo_radius.is_none()
+            && c.geo_polygon.is_none()
+            && c.values_count.is_none()
+        {
+            return Err(crate::error::EdgeError::invalid_argument(
+                "field condition has no predicate set: specify at least one of \
+                 match, range, geo_bounding_box, geo_radius, geo_polygon, or values_count",
+            ));
+        }
+
         let geo_bounding_box = c
             .geo_bounding_box
             .map(SegmentGeoBoundingBox::try_from)
@@ -427,7 +481,7 @@ impl TryFrom<Condition> for SegmentCondition {
 ///         FieldCondition(key: "category",
 ///                        match: .value(value: .string(value: "news")),
 ///                        range: nil, geoBoundingBox: nil,
-///                        geoRadius: nil, valuesCount: nil))],
+///                        geoRadius: nil, geoPolygon: nil, valuesCount: nil))],
 ///     should: nil,
 ///     mustNot: nil
 /// )
@@ -439,7 +493,7 @@ impl TryFrom<Condition> for SegmentCondition {
 ///         key = "category",
 ///         `match` = Match.Value(ValueVariants.String("news")),
 ///         range = null, geoBoundingBox = null,
-///         geoRadius = null, valuesCount = null,
+///         geoRadius = null, geoPolygon = null, valuesCount = null,
 ///     ))),
 ///     should = null,
 ///     mustNot = null,
