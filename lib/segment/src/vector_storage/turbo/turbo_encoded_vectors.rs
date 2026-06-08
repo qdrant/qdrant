@@ -41,7 +41,8 @@ impl TurboEncodedVectorStorage {
         quantized_vector_size: usize,
         in_ram: bool,
     ) -> OperationResult<Self> {
-        Ok(Self::ChunkedMmap(QuantizedChunkedMmapStorage::new(
+        Ok(Self::ChunkedMmap(QuantizedChunkedStorage::new(
+            MmapFs,
             path,
             quantized_vector_size,
             in_ram,

@@ -46,7 +46,7 @@ const DELETED_PATH: &str = "deleted.dat";
 
 /// Vector storage for TurboQuant encoded vectors.
 pub struct TurboVectorStorage {
-    /// Raw quantized storage over one of the three backends.
+    /// Raw quantized storage over one of the two backends.
     storage: TurboEncodedVectorStorage,
 
     /// Quantizer used to de/quantize.
