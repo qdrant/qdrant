@@ -46,8 +46,9 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         let available_points = self.available_point_count();
-        let estimator =
-            |condition: &Condition| self.condition_cardinality(condition, None, hw_counter);
+        let estimator = |condition: &Condition| {
+            self.condition_cardinality(condition, None, DeferredBehavior::VisibleOnly, hw_counter)
+        };
         estimate_filter(&estimator, query, available_points)
     }
 
@@ -59,7 +60,12 @@ where
     ) -> OperationResult<CardinalityEstimation> {
         let available_points = self.available_point_count();
         let estimator = |condition: &Condition| {
-            self.condition_cardinality(condition, Some(nested_path), hw_counter)
+            self.condition_cardinality(
+                condition,
+                Some(nested_path),
+                DeferredBehavior::VisibleOnly,
+                hw_counter,
+            )
         };
         estimate_filter(&estimator, query, available_points)
     }
@@ -78,7 +84,7 @@ where
                 &query_cardinality,
                 hw_counter,
                 is_stopped,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             )?
             .collect();
         Ok(result)
@@ -126,7 +132,13 @@ where
         let payload_provider = PayloadProvider::new(self.payload.clone());
         let total = self.available_point_count();
         let condition_checkers = self
-            .convert_conditions(conditions, payload_provider, total, hw_counter)?
+            .convert_conditions(
+                conditions,
+                payload_provider,
+                total,
+                DeferredBehavior::VisibleOnly,
+                hw_counter,
+            )?
             .into_iter()
             .map(|(checker, _estimation)| checker)
             .collect();
@@ -153,7 +165,8 @@ where
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
+            let struct_filtered_context =
+                self.struct_filtered_context(filter, deferred_behavior, hw_counter)?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .stop_if(is_stopped)
@@ -197,7 +210,7 @@ where
                 } else {
                     // Some conditions are primary clauses, some are not
                     let struct_filtered_context =
-                        self.struct_filtered_context(filter, hw_counter)?;
+                        self.struct_filtered_context(filter, deferred_behavior, hw_counter)?;
                     let iter = joined_primary_iterator.filter(move |&id| {
                         !visited_list.check_and_update_visited(id)
                             && struct_filtered_context.check(id)
@@ -208,7 +221,8 @@ where
 
             // We can't use primary conditions, so we fall back to iterating over all ids
             // and applying full filter.
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
+            let struct_filtered_context =
+                self.struct_filtered_context(filter, deferred_behavior, hw_counter)?;
 
             let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
@@ -243,7 +257,11 @@ where
         filter: &'b Filter,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn FilterContext + 'b>> {
-        Ok(Box::new(self.struct_filtered_context(filter, hw_counter)?))
+        Ok(Box::new(self.struct_filtered_context(
+            filter,
+            DeferredBehavior::VisibleOnly,
+            hw_counter,
+        )?))
     }
 
     fn for_each_payload_block(

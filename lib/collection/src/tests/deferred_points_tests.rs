@@ -87,7 +87,7 @@ async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
             &current_runtime,
             None,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .await
         .unwrap();

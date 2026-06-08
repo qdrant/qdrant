@@ -129,10 +129,16 @@ pub trait IdTrackerRead {
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 
-    /// Returns internal ID of the point, which is used inside this segment
+    /// Returns the internal ID of the point under explicit deferred
+    /// semantics — see [`PointMappings::internal_id_with_behavior`].
     ///
-    /// Excludes soft deleted points.
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
+    /// Excludes soft deleted points. Trackers that never carry deferred
+    /// mutations (immutable / compressed) ignore the behavior argument.
+    fn internal_id_with_behavior(
+        &self,
+        external_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+    ) -> Option<PointOffsetType>;
 
     /// Return external ID for internal point, defined by user
     ///
@@ -226,20 +232,18 @@ pub trait IdTrackerRead {
         point_ids: &[PointIdType],
         deferred_behavior: DeferredBehavior,
     ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
-        // Non-appendable trackers never carry a deferred threshold (it's set
-        // only via `MutableIdTracker::open`, guarded by `appendable_flag` in
-        // the segment constructor), so we don't need an appendable check here.
-        let deferred_cutoff = deferred_behavior.apply(self.deferred_internal_id());
-
+        // For VisibleOnly, the deferred-aware lookup returns the active head
+        // only — there's no need for the post-lookup cutoff filter the
+        // old impl carried. For WithDeferred, the lookup prefers the
+        // deferred head over a shadowed active so each ext yields its
+        // latest version exactly once.
         let mut ids = Vec::with_capacity(point_ids.len());
         let mut offsets = Vec::with_capacity(point_ids.len());
         for &point_id in point_ids {
-            let Some(internal_id) = self.internal_id(point_id) else {
+            let Some(internal_id) = self.internal_id_with_behavior(point_id, deferred_behavior)
+            else {
                 continue;
             };
-            if deferred_cutoff.is_some_and(|cutoff| internal_id >= cutoff) {
-                continue;
-            }
             ids.push(point_id);
             offsets.push(internal_id);
         }

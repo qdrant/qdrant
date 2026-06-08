@@ -356,7 +356,7 @@ fn test_check_consistency() {
     );
 
     let internal_id = segment
-        .with_view(|v| v.lookup_internal_id(6.into()))
+        .with_view(|v| v.lookup_internal_id(6.into(), DeferredBehavior::VisibleOnly))
         .unwrap();
 
     // make id_tracker inconsistent
@@ -521,7 +521,7 @@ fn test_point_vector_count_multivec() {
 
     // Replace vector 'a' for point 8, counts should remain the same
     let internal_8 = segment
-        .with_view(|v| v.lookup_internal_id(8.into()))
+        .with_view(|v| v.lookup_internal_id(8.into(), DeferredBehavior::VisibleOnly))
         .unwrap();
     segment
         .replace_all_vectors(
@@ -576,7 +576,7 @@ fn test_vector_compatibility_checks() {
         )
         .unwrap();
     let internal_id = segment
-        .with_view(|v| v.lookup_internal_id(point_id))
+        .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
         .unwrap();
 
     // A set of broken vectors
@@ -1125,7 +1125,7 @@ fn test_deferred_point_read_operations() {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
         },
@@ -1149,7 +1149,7 @@ fn test_deferred_point_read_operations() {
                     },
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
         },
@@ -1186,7 +1186,7 @@ fn test_deferred_point_read_operations() {
                     &WithVector::Bool(false),
                     &hw_counter,
                     &AtomicBool::new(false),
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
                 .into_iter()

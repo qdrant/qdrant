@@ -343,7 +343,7 @@ fn assert_query_counts(segment: &Segment, live: &[bool], queries: &[IndexedQuery
                 Some(&q.filter),
                 &AtomicBool::new(false),
                 &hw,
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )
             .unwrap();
         let expected = (0..NUM_POINTS)

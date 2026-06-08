@@ -7,7 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::Random;
 use common::tar_unpack::tar_unpack_file;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
 
 use super::{
@@ -506,7 +506,11 @@ impl Segment {
     }
 
     pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
-        self.id_tracker.borrow().internal_id(point_id)
+        // Proxy/transfer callers pair this with `point_is_deferred`; they need
+        // the latest head, so resolve with deferred preference.
+        self.id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred)
     }
 
     pub fn get_deleted_points_bitvec(&self) -> BitVec {
@@ -664,7 +668,12 @@ impl Segment {
         // dangling external ids
         let mut has_dangling_external_ids = false;
         for external_id in id_tracker.point_mappings().iter_external() {
-            if id_tracker.internal_id(external_id).is_none() {
+            // Dangling check: a point is fine as long as *some* head resolves,
+            // so prefer the deferred head and fall back to active.
+            if id_tracker
+                .internal_id_with_behavior(external_id, DeferredBehavior::WithDeferred)
+                .is_none()
+            {
                 log::error!("External id {external_id} without internal id");
                 has_dangling_external_ids = true;
             }

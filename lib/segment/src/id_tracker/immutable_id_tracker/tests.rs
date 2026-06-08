@@ -211,11 +211,22 @@ fn test_point_deletion_correctness() {
             .contains(&point_to_delete)
     );
 
-    assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(
+            point_to_delete,
+            common::types::DeferredBehavior::VisibleOnly
+        ),
+        Some(0)
+    );
 
     id_tracker.drop(point_to_delete).unwrap();
 
-    let point_exists = id_tracker.internal_id(point_to_delete).is_some()
+    let point_exists = id_tracker
+        .internal_id_with_behavior(
+            point_to_delete,
+            common::types::DeferredBehavior::VisibleOnly,
+        )
+        .is_some()
         && id_tracker
             .point_mappings()
             .iter_external()
@@ -241,7 +252,10 @@ fn test_point_deletion_persists_reload() {
     let old_mappings = {
         let mut id_tracker = make_immutable_tracker(dir.path());
         let intetrnal_id = id_tracker
-            .internal_id(point_to_delete)
+            .internal_id_with_behavior(
+                point_to_delete,
+                common::types::DeferredBehavior::VisibleOnly,
+            )
             .expect("Point to delete exists.");
         assert!(!id_tracker.is_deleted_point(intetrnal_id));
         id_tracker.drop(point_to_delete).unwrap();
@@ -252,7 +266,13 @@ fn test_point_deletion_persists_reload() {
 
     // Point should still be gone
     let id_tracker = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
-    assert_eq!(id_tracker.internal_id(point_to_delete), None);
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(
+            point_to_delete,
+            common::types::DeferredBehavior::VisibleOnly
+        ),
+        None
+    );
 
     old_mappings
         .iter_internal_raw()
@@ -382,8 +402,10 @@ fn test_id_tracker_equal() {
         let internal = internal as PointOffsetType;
 
         assert_eq!(
-            in_memory_id_tracker.internal_id(*external),
-            immutable_id_tracker.internal_id(*external)
+            in_memory_id_tracker
+                .internal_id_with_behavior(*external, common::types::DeferredBehavior::VisibleOnly),
+            immutable_id_tracker
+                .internal_id_with_behavior(*external, common::types::DeferredBehavior::VisibleOnly)
         );
 
         assert_eq!(

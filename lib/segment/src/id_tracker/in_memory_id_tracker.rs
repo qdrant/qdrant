@@ -64,8 +64,13 @@ impl IdTrackerRead for InMemoryIdTracker {
         self.internal_to_version.get(internal_id as usize).copied()
     }
 
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.mappings.internal_id(&external_id)
+    fn internal_id_with_behavior(
+        &self,
+        external_id: PointIdType,
+        deferred_behavior: common::types::DeferredBehavior,
+    ) -> Option<PointOffsetType> {
+        self.mappings
+            .internal_id_with_behavior(&external_id, deferred_behavior)
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
@@ -148,8 +153,12 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        // Unset version first because it still requires the mapping to exist
-        if let Some(internal_id) = self.internal_id(external_id) {
+        // Unset version first because it still requires the mapping to exist.
+        // In-memory trackers never carry deferred heads, but resolve with
+        // deferred preference for consistency with the other drop paths.
+        if let Some(internal_id) = self
+            .internal_id_with_behavior(external_id, common::types::DeferredBehavior::WithDeferred)
+        {
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         self.mappings.drop(external_id);

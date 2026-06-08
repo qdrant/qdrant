@@ -165,7 +165,7 @@ where
             with_vector,
             hw_counter,
             is_stopped,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )?;
 
         let mut results = Vec::with_capacity(point_ids.len());

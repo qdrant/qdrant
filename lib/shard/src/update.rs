@@ -332,7 +332,7 @@ fn upsert_with_payload(
         res &= segment.clear_payload(op_num, point_id, hw_counter)?;
     }
     debug_assert!(
-        segment.has_point(point_id),
+        segment.has_point(point_id, DeferredBehavior::WithDeferred),
         "the point {point_id} should be present immediately after the upsert"
     );
     Ok(res)
@@ -403,7 +403,7 @@ fn deferred_points_to_exclude_by_filter(
             continue;
         }
         for (point_id, max_version) in &max_versions {
-            if segment.has_point(*point_id)
+            if segment.has_point(*point_id, DeferredBehavior::WithDeferred)
                 && segment.point_version(*point_id) > *max_version
                 && segment.point_is_deferred(*point_id)
             {
@@ -437,7 +437,7 @@ pub fn delete_points_by_filter(
                 &is_stopped,
                 hw_counter,
                 // Include also deferred points.
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )?;
             has_deferred |= segment.has_deferred_points();
             Ok((segment_id, point_ids))
@@ -462,7 +462,8 @@ pub fn delete_points_by_filter(
                 .iter()
                 .copied()
                 .filter(|point_id| {
-                    segment.has_point(*point_id) && !points_to_keep.contains(point_id)
+                    segment.has_point(*point_id, DeferredBehavior::WithDeferred)
+                        && !points_to_keep.contains(point_id)
                 })
                 .collect();
             points_to_delete.insert(segment_id, present);
@@ -541,6 +542,7 @@ pub fn sync_points(
     let _num_updated = segments.read_points(
         existing_point_ids.as_slice(),
         &is_stopped,
+        DeferredBehavior::WithDeferred,
         |ids, segment| {
             let with_vector = WithVector::Bool(true);
             let with_payload = WithPayload::from(true);
@@ -551,7 +553,7 @@ pub fn sync_points(
                 &with_vector,
                 hw_counter,
                 &is_stopped,
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )?;
             let mut updated = 0;
 
@@ -1019,7 +1021,7 @@ fn points_by_filter(
                 &is_stopped,
                 hw_counter,
                 // Read operation used for updates, so we must handle all points
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )?;
             has_deferred |= segment.has_deferred_points();
             Ok((segment_id, point_ids))
@@ -1220,11 +1222,11 @@ mod test {
         let app = app.read();
 
         assert!(
-            !app.has_point(1.into()),
+            !app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
             "Deferred copy should be deleted (matches filter)"
         );
         assert!(
-            !non_app.has_point(1.into()),
+            !non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
             "Old copy should also be deleted (deferred version matched filter)"
         );
     }
@@ -1261,11 +1263,11 @@ mod test {
         // so both copies must be kept. Once the optimizer kicks in and deduplicates,
         // only the Amsterdam version will remain.
         assert!(
-            app.has_point(1.into()),
+            app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
             "Deferred copy must be kept (does not match filter, is newest)"
         );
         assert!(
-            non_app.has_point(1.into()),
+            non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
             "Old copy must be kept (deferred version is newer and does not match filter)"
         );
     }
@@ -1331,8 +1333,14 @@ mod test {
         let app = holder.get(sid_app).unwrap().get();
         let app = app.read();
 
-        assert!(non_app.has_point(1.into()), "Old copy must be kept");
-        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+        assert!(
+            non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Old copy must be kept"
+        );
+        assert!(
+            app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Deferred copy must be kept"
+        );
     }
 
     // --- delete_payload_by_filter deferred tests ---
@@ -1394,8 +1402,14 @@ mod test {
         let app = holder.get(sid_app).unwrap().get();
         let app = app.read();
 
-        assert!(non_app.has_point(1.into()), "Old copy must be kept");
-        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+        assert!(
+            non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Old copy must be kept"
+        );
+        assert!(
+            app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Deferred copy must be kept"
+        );
     }
 
     // --- clear_payload_by_filter deferred tests ---
@@ -1455,8 +1469,14 @@ mod test {
         let app = holder.get(sid_app).unwrap().get();
         let app = app.read();
 
-        assert!(non_app.has_point(1.into()), "Old copy must be kept");
-        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+        assert!(
+            non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Old copy must be kept"
+        );
+        assert!(
+            app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Deferred copy must be kept"
+        );
     }
 
     // --- overwrite_payload_by_filter deferred tests ---
@@ -1520,8 +1540,14 @@ mod test {
         let app = holder.get(sid_app).unwrap().get();
         let app = app.read();
 
-        assert!(non_app.has_point(1.into()), "Old copy must be kept");
-        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+        assert!(
+            non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Old copy must be kept"
+        );
+        assert!(
+            app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Deferred copy must be kept"
+        );
     }
 
     // --- delete_vectors_by_filter deferred tests ---
@@ -1585,7 +1611,13 @@ mod test {
         let app = holder.get(sid_app).unwrap().get();
         let app = app.read();
 
-        assert!(non_app.has_point(1.into()), "Old copy must be kept");
-        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+        assert!(
+            non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Old copy must be kept"
+        );
+        assert!(
+            app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+            "Deferred copy must be kept"
+        );
     }
 }

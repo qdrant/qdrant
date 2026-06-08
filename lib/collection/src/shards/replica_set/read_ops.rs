@@ -185,7 +185,7 @@ impl ShardReplicaSet {
                             &search_runtime,
                             timeout,
                             hw_acc,
-                            DeferredBehavior::Exclude,
+                            DeferredBehavior::VisibleOnly,
                         )
                         .await
                 }

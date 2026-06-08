@@ -277,7 +277,7 @@ impl ForwardProxyShard {
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
-                DeferredBehavior::IncludeAll, // We must transfer deferred points too so we include them in this scroll operation.
+                DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll operation.
             )
             .await?;
 
@@ -346,7 +346,7 @@ impl ForwardProxyShard {
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
-                DeferredBehavior::IncludeAll, // We must transfer deferred points too so we include them in this scroll op.
+                DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll op.
             )
             .await?;
 
@@ -374,7 +374,7 @@ impl ForwardProxyShard {
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )
             .await?;
 
@@ -525,7 +525,7 @@ impl ShardOperation for ForwardProxyShard {
                         &self.wrapped_shard.search_runtime,
                         None,                           // No timeout
                         HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
-                        DeferredBehavior::IncludeAll,
+                        DeferredBehavior::WithDeferred,
                     )
                     .await?
                     .into_iter()

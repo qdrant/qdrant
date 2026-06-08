@@ -79,8 +79,16 @@ fn test_open_matches_mutable_tracker() {
     assert_in_sync(&read_only, &mutable);
 
     // Spot check resolved ids
-    assert_eq!(read_only.internal_id(100.into()), Some(0));
-    assert_eq!(read_only.internal_id(200.into()), None);
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(0)
+    );
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(200.into(), common::types::DeferredBehavior::VisibleOnly),
+        None
+    );
     assert_eq!(read_only.external_id(2), Some(300.into()));
 }
 
@@ -165,7 +173,11 @@ fn test_live_reload_insert_then_delete_within_batch() {
     assert_in_sync(&read_only, &mutable);
 
     // The pre-existing point is untouched.
-    assert_eq!(read_only.internal_id(100.into()), Some(0));
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(0)
+    );
     assert!(read_only.is_deleted_point(1));
 }
 
@@ -181,7 +193,11 @@ fn test_live_reload_upsert_relinks_to_new_offset() {
     flush(&mutable);
 
     let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
-    assert_eq!(read_only.internal_id(100.into()), Some(0));
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(0)
+    );
 
     // Upsert point 100: it moves to a new offset, the old offset is marked deleted.
     mutable.set_link(100.into(), 1).unwrap();
@@ -191,7 +207,11 @@ fn test_live_reload_upsert_relinks_to_new_offset() {
     let result = read_only.live_reload().unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, vec![0]);
-    assert_eq!(read_only.internal_id(100.into()), Some(1));
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(1)
+    );
     assert_eq!(read_only.internal_version(1), Some(20));
     assert!(read_only.is_deleted_point(0));
     assert_in_sync(&read_only, &mutable);
@@ -220,7 +240,11 @@ fn test_live_reload_withholds_insert_until_version_present() {
     // not present in the mapping at all (its data may be partially written).
     let result = read_only.live_reload().unwrap();
     assert_eq!(result, LiveReloadResult::default());
-    assert_eq!(read_only.internal_id(200.into()), None);
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(200.into(), common::types::DeferredBehavior::VisibleOnly),
+        None
+    );
     assert_eq!(read_only.internal_version(1), None);
 
     // The writer flushes the versions afterwards. A reload with no new mapping changes now reports
@@ -230,7 +254,11 @@ fn test_live_reload_withholds_insert_until_version_present() {
     let result = read_only.live_reload().unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
-    assert_eq!(read_only.internal_id(200.into()), Some(1));
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(200.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(1)
+    );
     assert_eq!(read_only.internal_version(1), Some(11));
     assert_in_sync(&read_only, &mutable);
 }
@@ -357,7 +385,13 @@ fn test_live_reload_withholds_partially_written_version() {
 
         let result = read_only.live_reload().unwrap();
         assert_eq!(result.inserted, vec![2]);
-        assert_eq!(read_only.internal_id(300.into()), Some(2));
+        assert_eq!(
+            read_only.internal_id_with_behavior(
+                300.into(),
+                common::types::DeferredBehavior::VisibleOnly
+            ),
+            Some(2)
+        );
         assert_eq!(read_only.internal_version(2), Some(12));
         assert_in_sync(&read_only, &mutable);
     }
