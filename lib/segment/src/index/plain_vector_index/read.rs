@@ -6,6 +6,7 @@ use sparse::common::types::DimId;
 
 use super::PlainVectorIndex;
 use crate::common::operation_error::OperationResult;
+use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::index::VectorIndexRead;
@@ -42,26 +43,46 @@ impl VectorIndexRead for PlainVectorIndex {
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
-        self.with_view(|view| view.get_telemetry_data(detail))
+        VectorIndexSearchesTelemetry {
+            index_name: None,
+            unfiltered_plain: self
+                .unfiltered_searches_telemetry
+                .lock()
+                .get_statistics(detail),
+            filtered_plain: self
+                .filtered_searches_telemetry
+                .lock()
+                .get_statistics(detail),
+            unfiltered_hnsw: OperationDurationStatistics::default(),
+            filtered_small_cardinality: OperationDurationStatistics::default(),
+            filtered_large_cardinality: OperationDurationStatistics::default(),
+            filtered_exact: OperationDurationStatistics::default(),
+            filtered_sparse: Default::default(),
+            unfiltered_exact: OperationDurationStatistics::default(),
+            unfiltered_sparse: OperationDurationStatistics::default(),
+        }
     }
 
     fn indexed_vector_count(&self) -> usize {
-        self.with_view(|view| view.indexed_vector_count())
+        0
     }
 
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
-        self.with_view(|view| view.size_of_searchable_vectors_in_bytes())
+        self.vector_storage
+            .borrow()
+            .size_of_available_vectors_in_bytes()
     }
 
     fn fill_idf_statistics(
         &self,
-        idf: &mut HashMap<DimId, usize>,
-        hw_counter: &HardwareCounterCell,
+        _idf: &mut HashMap<DimId, usize>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.with_view(|view| view.fill_idf_statistics(idf, hw_counter))
+        // Plain (dense) index doesn't track IDF.
+        Ok(())
     }
 
     fn is_index(&self) -> bool {
-        self.with_view(|view| view.is_index())
+        false
     }
 }
