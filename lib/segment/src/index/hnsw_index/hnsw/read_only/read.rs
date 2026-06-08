@@ -1,20 +1,20 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use common::types::{ScoredPointOffset, TelemetryDetail};
+use common::universal_io::UniversalRead;
 use sparse::common::types::DimId;
 
-use super::HNSWIndex;
-use crate::common::operation_error::{OperationError, OperationResult};
+use super::ReadOnlyHNSWIndex;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::{VectorIndex, VectorIndexRead};
+use crate::data_types::vectors::QueryVector;
+use crate::index::VectorIndexRead;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::VectorStorageRead;
 
-impl VectorIndexRead for HNSWIndex {
+impl<S: UniversalRead> VectorIndexRead for ReadOnlyHNSWIndex<S> {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -23,6 +23,7 @@ impl VectorIndexRead for HNSWIndex {
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        // Reuses the shared search logic implemented on the read view.
         self.with_view(|view| view.search(vectors, filter, top, params, query_context))
     }
 
@@ -66,29 +67,5 @@ impl VectorIndexRead for HNSWIndex {
 
     fn is_index(&self) -> bool {
         true
-    }
-}
-
-impl VectorIndex for HNSWIndex {
-    fn files(&self) -> Vec<PathBuf> {
-        let mut files = self.graph.files(&self.path);
-        let config_path = HnswGraphConfig::get_config_path(&self.path);
-        if config_path.exists() {
-            files.push(config_path);
-        }
-        files
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        self.files() // All HNSW index files are immutable 😎
-    }
-
-    fn update_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: Option<VectorRef>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        Err(OperationError::service_error("Cannot update HNSW index"))
     }
 }
