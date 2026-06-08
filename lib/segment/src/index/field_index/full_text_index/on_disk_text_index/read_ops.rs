@@ -74,9 +74,7 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: true,
-        }
+        StorageType::Mmap { is_on_disk: true }
     }
 
     fn ram_usage_bytes(&self) -> usize {

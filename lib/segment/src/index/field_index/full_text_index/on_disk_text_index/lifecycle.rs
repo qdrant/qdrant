@@ -28,7 +28,6 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-
         let has_positions = config.phrase_matching == Some(true);
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 

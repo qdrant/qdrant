@@ -1,6 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UserData;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::super::full_text_index_read::FullTextIndexRead;
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
@@ -11,7 +11,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl FullTextIndexRead for ImmutableFullTextIndex {
+impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
     fn tokenizer(&self) -> &Tokenizer {
         &self.storage.tokenizer
     }
@@ -74,9 +74,7 @@ impl FullTextIndexRead for ImmutableFullTextIndex {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.storage.is_on_disk(),
-        }
+        StorageType::Mmap { is_on_disk: false }
     }
 
     fn ram_usage_bytes(&self) -> usize {

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::UniversalRead;
 
 use super::super::inverted_index::InvertedIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
@@ -10,14 +10,14 @@ use super::ImmutableFullTextIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-impl ImmutableFullTextIndex {
+impl<S: UniversalRead> ImmutableFullTextIndex<S> {
     /// Open and load the immutable full text index from mmap storage.
-    pub fn load_from_on_disk(index: OnDiskFullTextIndex<MmapFile>) -> OperationResult<Self> {
+    pub fn load_from_on_disk(index: OnDiskFullTextIndex<S>) -> OperationResult<Self> {
         let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.inverted_index.clear_cache() {
-            log::warn!("Failed to clear mmap cache of ram mmap full text index: {err}");
+            log::warn!("Failed to clear cache of on-disk full text index: {err}");
         }
 
         let mut result = Self {
