@@ -97,8 +97,16 @@ where
         &self.quantized_storage
     }
 
+    pub fn storage_mut(&mut self) -> &mut QuantizedStorage {
+        &mut self.quantized_storage
+    }
+
     pub fn offsets_storage(&self) -> &TMultivectorOffsetsStorage {
         &self.offsets
+    }
+
+    pub fn offsets_storage_mut(&mut self) -> &mut TMultivectorOffsetsStorage {
+        &mut self.offsets
     }
 
     pub fn new(

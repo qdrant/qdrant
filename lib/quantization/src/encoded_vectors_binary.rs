@@ -426,6 +426,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         &self.encoded_vectors
     }
 
+    pub fn storage_mut(&mut self) -> &mut TStorage {
+        &mut self.encoded_vectors
+    }
+
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,

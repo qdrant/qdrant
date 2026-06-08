@@ -419,6 +419,41 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
             ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => q.flusher(),
         }
     }
+
+    /// Pick up quantized vectors a writer appended. Only the chunked (appendable)
+    /// layouts grow; Ram/Mmap are immutable, so they no-op. Deletions aren't
+    /// tracked here — they live in the raw vector storage.
+    pub fn live_reload(&mut self, fs: &S::Fs) -> OperationResult<()> {
+        match self {
+            QuantizedVectorStorageRead::ScalarRam(_)
+            | QuantizedVectorStorageRead::ScalarMmap(_)
+            | QuantizedVectorStorageRead::PQRam(_)
+            | QuantizedVectorStorageRead::PQMmap(_)
+            | QuantizedVectorStorageRead::BinaryRam(_)
+            | QuantizedVectorStorageRead::BinaryMmap(_)
+            | QuantizedVectorStorageRead::TQRam(_)
+            | QuantizedVectorStorageRead::TQMmap(_)
+            | QuantizedVectorStorageRead::ScalarRamMulti(_)
+            | QuantizedVectorStorageRead::ScalarMmapMulti(_)
+            | QuantizedVectorStorageRead::PQRamMulti(_)
+            | QuantizedVectorStorageRead::PQMmapMulti(_)
+            | QuantizedVectorStorageRead::BinaryRamMulti(_)
+            | QuantizedVectorStorageRead::BinaryMmapMulti(_)
+            | QuantizedVectorStorageRead::TQRamMulti(_)
+            | QuantizedVectorStorageRead::TQMmapMulti(_) => {}
+            QuantizedVectorStorageRead::BinaryChunked(q) => q.storage_mut().live_reload(fs)?,
+            QuantizedVectorStorageRead::TQChunked(q) => q.storage_mut().live_reload(fs)?,
+            QuantizedVectorStorageRead::BinaryChunkedMulti(q) => {
+                q.storage_mut().storage_mut().live_reload(fs)?;
+                q.offsets_storage_mut().live_reload(fs)?;
+            }
+            QuantizedVectorStorageRead::TQChunkedMulti(q) => {
+                q.storage_mut().storage_mut().live_reload(fs)?;
+                q.offsets_storage_mut().live_reload(fs)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<S: UniversalRead> QuantizedScorerDispatch for ReadOnlyQuantizedVectorStorage<S> {

@@ -95,6 +95,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         &self.encoded_vectors
     }
 
+    pub fn storage_mut(&mut self) -> &mut TStorage {
+        &mut self.encoded_vectors
+    }
+
     /// Encode vector data
     ///
     /// # Arguments
