@@ -82,6 +82,43 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         }
     }
 
+    fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+        let store = self.clone();
+        let key = build_key(path);
+
+        async move {
+            store.delete(&key).await.map_err(|err| match err {
+                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
+                    path: PathBuf::from(key.to_string()),
+                },
+                err => UniversalIoError::s3(err),
+            })
+        }
+    }
+
+    fn remove_dir(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+        let store = self.clone();
+        let prefix_path = path.to_path_buf();
+        let prefix = build_dir_prefix(path);
+
+        async move {
+            let mut objects = store.list(Some(&prefix));
+            while let Some(meta) = objects.try_next().await.map_err(|err| match err {
+                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
+                    path: prefix_path.clone(),
+                },
+                other => UniversalIoError::s3(other),
+            })? {
+                match store.delete(&meta.location).await {
+                    Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
+                    Err(other) => return Err(UniversalIoError::s3(other)),
+                }
+            }
+
+            Ok(())
+        }
+    }
+
     fn read_range(
         &self,
         path: &Path,
@@ -128,6 +165,16 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
 
 fn build_key(path: &Path) -> object_store::path::Path {
     object_store::path::Path::from(path.to_string_lossy().as_ref())
+}
+
+fn build_dir_prefix(path: &Path) -> object_store::path::Path {
+    let path = path.to_string_lossy();
+    let path = path.trim_end_matches('/');
+    if path.is_empty() {
+        object_store::path::Path::from("")
+    } else {
+        object_store::path::Path::from(format!("{path}/"))
+    }
 }
 
 #[cfg(test)]
@@ -258,10 +305,18 @@ mod tests {
 
         fs.create_dir(Path::new("prefix")).unwrap();
         fs.create(Path::new("prefix/empty"), 1024).unwrap();
+        fs.create(Path::new("prefix/nested/empty"), 1024).unwrap();
+        fs.create(Path::new("prefix-sibling/empty"), 1024).unwrap();
 
         assert!(fs.exists(Path::new("prefix/empty")).unwrap());
         let len = runtime.block_on(store.head(&object_store::path::Path::from("prefix/empty")));
         assert_eq!(len.unwrap().size, 0);
+
+        fs.remove(Path::new("prefix/empty")).unwrap();
+        fs.remove_dir(Path::new("prefix")).unwrap();
+        assert!(!fs.exists(Path::new("prefix/empty")).unwrap());
+        assert!(!fs.exists(Path::new("prefix/nested/empty")).unwrap());
+        assert!(fs.exists(Path::new("prefix-sibling/empty")).unwrap());
     }
 
     #[test]

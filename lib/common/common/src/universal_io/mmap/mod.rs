@@ -43,6 +43,14 @@ impl UniversalReadFileOps for MmapFs {
     fn create_dir(&self, path: &Path) -> Result<()> {
         local_file_ops::local_create_dir(path)
     }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_remove_dir(path)
+    }
 }
 
 impl UniversalReadFs for MmapFs {

@@ -51,6 +51,14 @@ impl<A: AsyncRead> UniversalReadFileOps for BlobFs<A> {
     fn create_dir(&self, _path: &Path) -> Result<()> {
         Ok(())
     }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        self.runtime.block_on(self.inner.remove(path))
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<()> {
+        self.runtime.block_on(self.inner.remove_dir(path))
+    }
 }
 
 impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {

@@ -39,6 +39,12 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
     /// Create or truncate an empty object at `path`.
     fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static;
 
+    /// Remove the object at `path`.
+    fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static;
+
+    /// Remove all objects matching the directory prefix at `path`.
+    fn remove_dir(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static;
+
     /// Fetch `range` from `path` as a stream of byte chunks.
     ///
     /// The returned future resolves once the request has been initiated and the

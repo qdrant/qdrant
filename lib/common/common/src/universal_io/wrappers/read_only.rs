@@ -60,6 +60,18 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
             "ReadOnlyFs does not support creating directories",
         ))
     }
+
+    fn remove(&self, _path: &Path) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support removing files",
+        ))
+    }
+
+    fn remove_dir(&self, _path: &Path) -> Result<()> {
+        Err(UniversalIoError::uninitialized(
+            "ReadOnlyFs does not support removing directories",
+        ))
+    }
 }
 
 impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {

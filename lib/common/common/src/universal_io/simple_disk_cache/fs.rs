@@ -92,6 +92,14 @@ where
     fn create_dir(&self, path: &Path) -> Result<()> {
         self.remote_fs.create_dir(path)
     }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        self.remote_fs.remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<()> {
+        self.remote_fs.remove_dir(path)
+    }
 }
 
 impl<R> UniversalReadFs for DiskCacheFs<R>

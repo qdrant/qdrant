@@ -48,6 +48,14 @@ pub trait UniversalReadFileOps: Sized + Debug {
     /// Backends without materialized directories may treat this as a no-op.
     fn create_dir(&self, path: &Path) -> Result<()>;
 
+    /// Remove a file at the given path.
+    fn remove(&self, path: &Path) -> Result<()>;
+
+    /// Remove a directory at the given path.
+    ///
+    /// Backends without materialized directories may treat this as a no-op.
+    fn remove_dir(&self, path: &Path) -> Result<()>;
+
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.
 }
