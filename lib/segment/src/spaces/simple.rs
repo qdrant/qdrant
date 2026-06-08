@@ -263,7 +263,10 @@ pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    v1.iter().zip(v2).map(|(a, b)| a * b).sum()
+    v1.iter()
+        .zip(v2)
+        .map(|(a, b)| (a * b) as f64)
+        .sum::<f64>() as ScoreType
 }
 
 #[cfg(test)]
@@ -302,5 +305,42 @@ mod tests {
                 "renormalization is not stable (vector #{attempt})"
             );
         }
+    }
+
+    /// Test that dot product is invariant under coordinate permutation.
+    /// This is a fundamental mathematical property: dot(v1, v2) = dot(perm(v1), perm(v2))
+    /// for any permutation of coordinates.
+    #[test]
+    fn test_dot_product_permutation_invariance() {
+        // Test case from issue #9351
+        let query = vec![1e20, 1.0, -1e20];
+        let vector = vec![1.0, 1.0, 1.0];
+        let perm = [0, 2, 1]; // permutation indices
+
+        let apply_perm = |v: &[f32]| -> Vec<f32> { perm.iter().map(|&i| v[i]).collect() };
+
+        let base_score = dot_similarity(&query, &vector);
+        let perm_score = dot_similarity(&apply_perm(&query), &apply_perm(&vector));
+
+        // The scores should be identical (same dot product value)
+        assert_eq!(
+            base_score, perm_score,
+            "Dot product must be invariant under coordinate permutation"
+        );
+
+        // Additional test with more challenging values
+        let query2 = vec![1e10, -1e10, 1e10, -1e10];
+        let vector2 = vec![1.0, 1.0, 1.0, 1.0];
+        let perm2 = [3, 1, 0, 2];
+
+        let apply_perm2 = |v: &[f32]| -> Vec<f32> { perm2.iter().map(|&i| v[i]).collect() };
+
+        let base_score2 = dot_similarity(&query2, &vector2);
+        let perm_score2 = dot_similarity(&apply_perm2(&query2), &apply_perm2(&vector2));
+
+        assert_eq!(
+            base_score2, perm_score2,
+            "Dot product must be invariant under coordinate permutation (test 2)"
+        );
     }
 }

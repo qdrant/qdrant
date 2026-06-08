@@ -203,12 +203,12 @@ pub(crate) unsafe fn dot_similarity_avx(
             i += 32;
         }
 
-        let mut result = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4);
+        let mut result = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4) as f64;
 
         for i in 0..n - m {
-            result += (*ptr1.add(i)) * (*ptr2.add(i));
+            result += ((*ptr1.add(i)) * (*ptr2.add(i))) as f64;
         }
-        result
+        result as f32
     }
 }
 
