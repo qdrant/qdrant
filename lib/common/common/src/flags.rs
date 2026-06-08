@@ -26,7 +26,7 @@ pub struct FeatureFlags {
 
     /// Use single-file mmap in-ram vector storage (InRamMmap)
     ///
-    /// Enabled by default in Qdrant 1.18.2+
+    /// Enabled by default in Qdrant 1.18.3+
     pub single_file_mmap_vector_storage: bool,
 
     /// Use io_uring-based payload storage implementation.
