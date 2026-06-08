@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
@@ -131,6 +132,24 @@ impl SparseVectorStorage for VolatileSparseVectorStorage {
 
         Ok(())
     }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let start_index = self.total_vector_count as PointOffsetType;
+        for (other_vector, other_deleted) in other_vectors {
+            check_process_stopped(stopped)?;
+            // Do not perform preprocessing - vectors should be already processed
+            let other_vector = other_vector.as_ref();
+            let new_id = self.total_vector_count as PointOffsetType;
+            self.total_vector_count += 1;
+            self.set_deleted(new_id, other_deleted);
+            self.update_stored(new_id, other_deleted, Some(other_vector));
+        }
+        Ok(start_index..self.total_vector_count as PointOffsetType)
+    }
 }
 
 impl VectorStorageRead for VolatileSparseVectorStorage {
@@ -192,24 +211,6 @@ impl VectorStorage for VolatileSparseVectorStorage {
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector));
         Ok(())
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.total_vector_count as PointOffsetType;
-        for (other_vector, other_deleted) in other_vectors {
-            check_process_stopped(stopped)?;
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other_vector.as_vec_ref().try_into()?;
-            let new_id = self.total_vector_count as PointOffsetType;
-            self.total_vector_count += 1;
-            self.set_deleted(new_id, other_deleted);
-            self.update_stored(new_id, other_deleted, Some(other_vector));
-        }
-        Ok(start_index..self.total_vector_count as PointOffsetType)
     }
 
     fn flusher(&self) -> Flusher {

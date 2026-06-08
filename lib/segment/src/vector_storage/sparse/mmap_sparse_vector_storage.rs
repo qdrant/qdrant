@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -226,6 +227,30 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
             HardwareCounterCell::disposable().vector_io_read(),
         )
     }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let hw_counter = HardwareCounterCell::disposable(); // This function is only used for internal operations. No need to measure.
+        let start_index = self.next_point_offset as PointOffsetType;
+        for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
+            // Do not perform preprocessing - vectors should be already processed
+            let other_vector = other_vector.as_ref();
+            let new_id = self.next_point_offset as PointOffsetType;
+            self.next_point_offset += 1;
+            self.set_deleted(new_id, other_deleted);
+
+            let vector = (!other_deleted).then_some(other_vector);
+            self.update_stored(new_id, vector, &hw_counter)?;
+        }
+
+        // return cancelled error if stopped
+        check_process_stopped(stopped)?;
+
+        Ok(start_index..self.next_point_offset as PointOffsetType)
+    }
 }
 
 impl VectorStorageRead for MmapSparseVectorStorage {
@@ -309,30 +334,6 @@ impl VectorStorage for MmapSparseVectorStorage {
         self.set_deleted(key, false);
         self.update_stored(key, Some(vector), hw_counter)?;
         Ok(())
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let hw_counter = HardwareCounterCell::disposable(); // This function is only used for internal operations. No need to measure.
-        let start_index = self.next_point_offset as PointOffsetType;
-        for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other_vector.as_vec_ref().try_into()?;
-            let new_id = self.next_point_offset as PointOffsetType;
-            self.next_point_offset += 1;
-            self.set_deleted(new_id, other_deleted);
-
-            let vector = (!other_deleted).then_some(other_vector);
-            self.update_stored(new_id, vector, &hw_counter)?;
-        }
-
-        // return cancelled error if stopped
-        check_process_stopped(stopped)?;
-
-        Ok(start_index..self.next_point_offset as PointOffsetType)
     }
 
     fn flusher(&self) -> crate::common::Flusher {
