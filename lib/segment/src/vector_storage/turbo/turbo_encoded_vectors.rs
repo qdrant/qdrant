@@ -1,5 +1,8 @@
 use std::borrow::Cow;
+use std::io::{self, Write};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
@@ -7,7 +10,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::EncodedStorage;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 
@@ -109,12 +112,72 @@ impl TurboEncodedVectorStorage {
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         match self {
-            TurboEncodedVectorStorage::Mmap(_) => {
-                panic!("Can't directly update vector in mmap storage")
+            TurboEncodedVectorStorage::Mmap(storage) => {
+                // We let the underlying storage decide the error instead of doing it here.
+                // Therefore, we don't assume it's read-only here and pretend to write.
+                storage.upsert_vector(id, vector, hw_counter)
             }
-            TurboEncodedVectorStorage::ChunkedMmap(chunked_mmap) => {
-                chunked_mmap.upsert_vector(id, vector, hw_counter)
+            TurboEncodedVectorStorage::ChunkedMmap(storage) => {
+                storage.upsert_vector(id, vector, hw_counter)
             }
         }
+    }
+
+    /// Bulk-ingest already-encoded vectors, dispatching to the backend implementation.
+    pub(super) fn update_from<'a>(
+        &mut self,
+        vectors: impl Iterator<Item = Cow<'a, [u8]>>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        match self {
+            Self::Mmap(storage) => Self::update_from_mmap(storage, vectors, stopped),
+            Self::ChunkedMmap(storage) => Self::update_from_chunked_mmap(storage, vectors, stopped),
+        }
+    }
+
+    /// Single-file backend: bulk-append encoded bytes to the file, then re-mmap once
+    /// (mirrors `DenseVectorStorageImpl::update_from`).
+    fn update_from_mmap<'a>(
+        storage: &mut QuantizedStorage<MmapFile>,
+        vectors: impl Iterator<Item = Cow<'a, [u8]>>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let start_index = storage.vectors_count() as PointOffsetType;
+        let mut end_index = start_index;
+
+        let mut writer = storage.open_appender()?;
+        for vector in vectors {
+            check_process_stopped(stopped)?;
+            writer.write_all(&vector)?;
+            end_index += 1;
+        }
+
+        // Persist + re-mmap so reads observe the appended vectors.
+        let file = writer
+            .into_inner()
+            .map_err(io::IntoInnerError::into_error)?;
+        file.sync_data()?;
+        storage.reload()?;
+
+        Ok(start_index..end_index)
+    }
+
+    /// Chunked backend: append each encoded vector through the chunked structure.
+    fn update_from_chunked_mmap<'a>(
+        storage: &mut QuantizedChunkedStorage<MmapFile>,
+        vectors: impl Iterator<Item = Cow<'a, [u8]>>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let disposed_hw = HardwareCounterCell::disposable();
+        let start_index = storage.vectors_count() as PointOffsetType;
+        let mut key = start_index;
+
+        for vector in vectors {
+            check_process_stopped(stopped)?;
+            storage.upsert_vector(key, &vector, &disposed_hw)?;
+            key += 1;
+        }
+
+        Ok(start_index..key)
     }
 }

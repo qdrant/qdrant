@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::io::BufWriter;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -7,7 +8,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{
+    MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 
@@ -37,6 +40,28 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             log::warn!("Failed to clear quantized storage RAM cache: {err}")
         }
     }
+}
+
+impl QuantizedStorage<MmapFile> {
+    /// Open the backing file for build-time bulk appends, bypassing the read-only mmap.
+    pub(crate) fn open_appender(&self) -> std::io::Result<BufWriter<fs::File>> {
+        Ok(BufWriter::new(open_append(&self.path)?))
+    }
+
+    /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
+    pub(crate) fn reload(&mut self) -> OperationResult<()> {
+        *self = Self::from_file(
+            &MmapFs,
+            &self.path.clone(),
+            self.quantized_vector_size.get(),
+        )?;
+        Ok(())
+    }
+}
+
+/// Open a file shortly for appending.
+fn open_append(path: &Path) -> std::io::Result<fs::File> {
+    fs::OpenOptions::new().append(true).open(path)
 }
 
 pub struct QuantizedStorageBuilder<S> {
