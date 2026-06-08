@@ -1118,7 +1118,6 @@ pub struct StrictModeConfig {
 
     /// Max batchsize when upserting
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1))]
     pub upsert_max_batchsize: Option<usize>,
 
     /// Max batchsize when searching
@@ -1150,7 +1149,6 @@ pub struct StrictModeConfig {
 
     /// Max conditions a filter can have.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1))]
     pub filter_max_conditions: Option<usize>,
 
     /// Max size of a condition, eg. items in `MatchAny`.

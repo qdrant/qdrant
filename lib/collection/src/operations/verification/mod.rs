@@ -180,7 +180,9 @@ fn check_filter_limits(
     strict_mode_config: &StrictModeConfig,
 ) -> CollectionResult<()> {
     // Filter condition count limit
-    if let Some(filter_condition_limit) = strict_mode_config.filter_max_conditions {
+    if let Some(filter_condition_limit) =
+        zero_as_unlimited(strict_mode_config.filter_max_conditions)
+    {
         let filter_conditions = filter.total_conditions_count();
 
         if !check_custom(|| Some(filter_conditions), Some(filter_condition_limit)) {
@@ -332,6 +334,15 @@ pub(crate) fn check_bool_opt(
         format!("{name} disabled!"),
         format!("Set {parameter}=false."),
     ))
+}
+
+/// Treat a limit of `0` as "no limit".
+///
+/// Some strict-mode limits (e.g. `upsert_max_batchsize`, `filter_max_conditions`)
+/// don't reject `0` at config validation time. A literal `0` limit would otherwise
+/// block every operation, making the collection unusable, so we interpret it as unset.
+pub(crate) fn zero_as_unlimited(limit: Option<usize>) -> Option<usize> {
+    limit.filter(|&limit| limit != 0)
 }
 
 pub(crate) fn check_limit_opt<T: PartialOrd + Display>(
