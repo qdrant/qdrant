@@ -9,7 +9,7 @@ use segment::types::{
     VectorNameBuf,
 };
 
-use super::{StrictModeVerification, check_limit_opt, zero_as_unlimited};
+use super::{StrictModeVerification, check_limit_opt};
 use crate::collection::Collection;
 use crate::common::collection_size_stats::CollectionSizeAtomicStats;
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
@@ -164,7 +164,7 @@ impl StrictModeVerification for PointInsertOperations {
     ) -> CollectionResult<()> {
         check_limit_opt(
             Some(self.len()),
-            zero_as_unlimited(strict_mode_config.upsert_max_batchsize),
+            strict_mode_config.upsert_max_batchsize,
             "upsert limit",
         )?;
 
@@ -230,7 +230,7 @@ impl StrictModeVerification for UpdateVectors {
     ) -> CollectionResult<()> {
         check_limit_opt(
             Some(self.points.len()),
-            zero_as_unlimited(strict_mode_config.upsert_max_batchsize),
+            strict_mode_config.upsert_max_batchsize,
             "update limit",
         )?;
 

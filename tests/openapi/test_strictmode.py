@@ -134,36 +134,31 @@ def test_strict_mode_query_limit_validation(collection_name):
     assert not search_fail.ok
 
 
-def test_strict_mode_zero_limit_means_unlimited(collection_name):
-    # A `0` value for these limits is accepted and interpreted as "no limit",
-    # so it must not turn the collection into an unusable "poison pill".
-    set_strict_mode(collection_name, {
-        "enabled": True,
-        "upsert_max_batchsize": 0,
-        "filter_max_conditions": 0,
-    })
-
-    request_with_validation(
-        api='/collections/{collection_name}/points',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+@pytest.mark.parametrize(
+    "field",
+    [
+        "max_query_limit",
+        "max_timeout",
+        "max_points_count",
+        "filter_max_conditions",
+        "upsert_max_batchsize",
+    ],
+)
+def test_strict_mode_zero_limit_rejected(collection_name, field):
+    # A `0` value for these limits would create an unusable collection, so it
+    # must be rejected at config validation time (HTTP 422).
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PATCH",
+        path_params={"collection_name": collection_name},
         body={
-            "points": [
-                {"id": 1, "vector": [0.1, 0.2, 0.3, 0.4]},
-            ]
+            "strict_mode_config": {
+                "enabled": True,
+                field: 0,
+            },
         },
-    ).raise_for_status()
-
-    request_with_validation(
-        api='/collections/{collection_name}/points/scroll',
-        method="POST",
-        path_params={'collection_name': collection_name},
-        body={
-            "filter": {"must": [{"key": "x", "match": {"value": "test"}}]},
-            "limit": 1,
-        },
-    ).raise_for_status()
+    )
+    assert response.status_code == 422, response.text
 
 
 def test_strict_mode_timeout_validation(collection_name):
