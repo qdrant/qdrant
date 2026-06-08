@@ -11,11 +11,11 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<S: UniversalRead> ImmutableFullTextIndex<S> {
-    /// Open and load the immutable full text index from mmap storage.
+    /// Open and load the immutable full text index from on-disk storage.
     pub fn load_from_on_disk(index: OnDiskFullTextIndex<S>) -> OperationResult<Self> {
         let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 
-        // Index is now loaded into memory, clear cache of backing mmap storage
+        // Index is now loaded into memory, clear cache of backing on-disk storage
         if let Err(err) = index.inverted_index.clear_cache() {
             log::warn!("Failed to clear cache of on-disk full text index: {err}");
         }
