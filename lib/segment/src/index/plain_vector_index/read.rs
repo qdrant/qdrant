@@ -1,59 +1,28 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use parking_lot::Mutex;
+use common::types::{DeferredBehavior, ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
-use super::hnsw_index::point_scorer::BatchFilteredSearcher;
+use super::PlainVectorIndex;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
-    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
+    OperationDurationStatistics, ScopeDurationMeasurer,
 };
 use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::data_types::vectors::QueryVector;
+use crate::id_tracker::IdTrackerRead;
+use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
-use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexRead};
+use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
-
-#[derive(Debug)]
-pub struct PlainVectorIndex {
-    id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
-    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
-    unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
-}
+use crate::vector_storage::VectorStorageRead;
 
 impl PlainVectorIndex {
-    pub fn new(
-        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-        quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    ) -> PlainVectorIndex {
-        PlainVectorIndex {
-            id_tracker,
-            vector_storage,
-            quantized_vectors,
-            payload_index,
-            filtered_searches_telemetry: OperationDurationsAggregator::new(),
-            unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
-        }
-    }
-
     pub fn is_small_enough_for_unindexed_search(
         &self,
         search_optimized_threshold_kb: usize,
@@ -211,40 +180,5 @@ impl VectorIndexRead for PlainVectorIndex {
 
     fn is_index(&self) -> bool {
         false
-    }
-}
-
-impl VectorIndex for PlainVectorIndex {
-    fn files(&self) -> Vec<PathBuf> {
-        vec![]
-    }
-
-    fn update_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: Option<VectorRef>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        let mut vector_storage = self.vector_storage.borrow_mut();
-
-        if let Some(vector) = vector {
-            vector_storage.insert_vector(id, vector, hw_counter)?;
-
-            let mut quantized_vectors = self.quantized_vectors.borrow_mut();
-            if let Some(quantized_vectors) = quantized_vectors.as_mut() {
-                quantized_vectors.upsert_vector(id, vector, hw_counter)?;
-            }
-        } else {
-            if id as usize >= vector_storage.total_vector_count() {
-                debug_assert!(id as usize == vector_storage.total_vector_count());
-                // Vector doesn't exist in the storage
-                // Insert default vector to keep the sequence
-                let default_vector = vector_storage.default_vector();
-                vector_storage.insert_vector(id, VectorRef::from(&default_vector), hw_counter)?;
-            }
-            vector_storage.delete_vector(id)?;
-        }
-
-        Ok(())
     }
 }
