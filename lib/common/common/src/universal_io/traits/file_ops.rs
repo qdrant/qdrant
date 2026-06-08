@@ -16,7 +16,7 @@ use crate::universal_io::{OpenOptions, Result};
 /// a backend can implement this trait to expose metadata-style operations
 /// without ever opening file handles. The "open files" capability lives on
 /// the [`UniversalReadFs`] subtrait.
-pub trait UniversalReadFileOps: Sized + Debug {
+pub trait UniversalReadFileOps: Clone + Debug + Sized {
     /// Implementation-specific construction config. Backends are free to
     /// require explicit construction; callers that want to opt into the
     /// `<Fs::ContextConfig>::default()` pattern must constrain

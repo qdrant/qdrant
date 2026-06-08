@@ -9,6 +9,7 @@ use crate::{AsyncRead, BlobFile, BridgeRuntime};
 /// the [`BridgeRuntime`] used to drive its async operations. Opens per-object
 /// [`BlobFile`] handles via [`UniversalReadFs::open`] and answers metadata
 /// queries (`list_files`, `exists`) by blocking on the backend.
+#[derive(Clone)]
 pub struct BlobFs<A: AsyncRead> {
     inner: A,
     runtime: BridgeRuntime,
@@ -28,7 +29,7 @@ impl<A: AsyncRead> BlobFs<A> {
     }
 }
 
-impl<A: AsyncRead> UniversalReadFileOps for BlobFs<A> {
+impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     type ContextConfig = A::Config;
 
     fn from_context(config: Self::ContextConfig) -> Result<Self> {

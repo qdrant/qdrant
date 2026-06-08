@@ -26,6 +26,7 @@ pub struct ReadOnly<S>(S);
 /// and asserts read-only semantics on `open`. In practice this Fs is
 /// rarely instantiated; callers use [`ReadOnly::open`] with the
 /// underlying `&S::Fs` directly.
+#[derive(Clone)]
 pub struct ReadOnlyFs<F>(F);
 
 impl<F: fmt::Debug> fmt::Debug for ReadOnlyFs<F> {
