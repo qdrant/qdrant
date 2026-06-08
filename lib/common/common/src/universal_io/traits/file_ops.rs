@@ -38,7 +38,10 @@ pub trait UniversalReadFileOps: Sized + Debug {
     fn exists(&self, path: &Path) -> Result<bool>;
 
     /// Create or truncate a file at the given path.
-    fn create(&self, path: &Path) -> Result<()>;
+    ///
+    /// Local backends use `expected_length` to pre-size the file. Backends
+    /// without fixed-size file objects may ignore it.
+    fn create(&self, path: &Path, expected_length: usize) -> Result<()>;
 
     /// Create a directory at the given path.
     ///

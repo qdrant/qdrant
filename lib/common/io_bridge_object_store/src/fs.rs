@@ -44,7 +44,7 @@ impl<A: AsyncRead> UniversalReadFileOps for BlobFs<A> {
         self.runtime.block_on(self.inner.exists(path))
     }
 
-    fn create(&self, path: &Path) -> Result<()> {
+    fn create(&self, path: &Path, _expected_length: usize) -> Result<()> {
         self.runtime.block_on(self.inner.create(path))
     }
 

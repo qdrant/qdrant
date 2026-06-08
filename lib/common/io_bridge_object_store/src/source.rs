@@ -257,7 +257,7 @@ mod tests {
         let fs = crate::BlobFs::new(store.clone(), runtime.clone());
 
         fs.create_dir(Path::new("prefix")).unwrap();
-        fs.create(Path::new("prefix/empty")).unwrap();
+        fs.create(Path::new("prefix/empty"), 1024).unwrap();
 
         assert!(fs.exists(Path::new("prefix/empty")).unwrap());
         let len = runtime.block_on(store.head(&object_store::path::Path::from("prefix/empty")));

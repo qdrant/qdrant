@@ -49,7 +49,7 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
         self.0.exists(path)
     }
 
-    fn create(&self, _path: &Path) -> Result<()> {
+    fn create(&self, _path: &Path, _expected_length: usize) -> Result<()> {
         Err(UniversalIoError::uninitialized(
             "ReadOnlyFs does not support creating files",
         ))

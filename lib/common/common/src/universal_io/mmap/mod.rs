@@ -36,8 +36,8 @@ impl UniversalReadFileOps for MmapFs {
         fs_err::exists(path).map_err(UniversalIoError::from)
     }
 
-    fn create(&self, path: &Path) -> Result<()> {
-        local_file_ops::local_create(path)
+    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+        local_file_ops::local_create(path, expected_length)
     }
 
     fn create_dir(&self, path: &Path) -> Result<()> {

@@ -85,8 +85,8 @@ where
         self.remote_fs.exists(path)
     }
 
-    fn create(&self, path: &Path) -> Result<()> {
-        self.remote_fs.create(path)
+    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+        self.remote_fs.create(path, expected_length)
     }
 
     fn create_dir(&self, path: &Path) -> Result<()> {
