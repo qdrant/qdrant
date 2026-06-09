@@ -8613,12 +8613,7 @@
             "$ref": "#/components/schemas/SnowballParams"
           },
           {
-            "description": "Explicitly opt out of stemming (`{\"type\": \"none\"}`).\n\nDiffers from leaving `stemmer` unset, which falls back to the language default stemmer.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/DisabledStemmerParams"
-              }
-            ]
+            "$ref": "#/components/schemas/DisabledStemmerParams"
           }
         ]
       },
