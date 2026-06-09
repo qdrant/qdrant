@@ -386,6 +386,23 @@ mod tests {
     }
 
     #[test]
+    fn test_reject_nan_values() {
+        let with_nan = SparseVector::new(vec![1, 2, 3], vec![1.0, f32::NAN, 3.0]);
+        assert!(with_nan.is_err());
+        let err = with_nan.unwrap_err();
+        assert!(err.field_errors().contains_key("values"));
+    }
+
+    #[test]
+    fn test_reject_inf_values() {
+        let with_inf = SparseVector::new(vec![1, 2, 3], vec![1.0, f32::INFINITY, 3.0]);
+        assert!(with_inf.is_err());
+
+        let with_neg_inf = SparseVector::new(vec![1, 2], vec![f32::NEG_INFINITY, 2.0]);
+        assert!(with_neg_inf.is_err());
+    }
+
+    #[test]
     fn sorting_test() {
         let mut not_sorted = SparseVector::new(vec![1, 3, 2], vec![1.0, 2.0, 3.0]).unwrap();
         assert!(!not_sorted.is_sorted());
