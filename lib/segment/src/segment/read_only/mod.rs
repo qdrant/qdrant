@@ -45,14 +45,14 @@ pub struct ReadOnlySegment<S: UniversalRead> {
 }
 
 pub struct ReadOnlyVectorData<S: UniversalRead> {
-    pub vector_index: Arc<AtomicRefCell<VectorIndexReadEnum>>, // ToDo: pass <S>
+    pub vector_index: Arc<AtomicRefCell<VectorIndexReadEnum<S>>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
 }
 
 impl<S: UniversalRead> VectorDataRead for ReadOnlyVectorData<S> {
     type IndexRef<'a>
-        = AtomicRef<'a, VectorIndexReadEnum>
+        = AtomicRef<'a, VectorIndexReadEnum<S>>
     where
         Self: 'a;
 
