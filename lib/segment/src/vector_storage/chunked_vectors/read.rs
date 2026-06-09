@@ -324,8 +324,14 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             return Ok(());
         }
 
-        let new_chunks =
-            read_chunks_from(fs, &self.directory, self.chunks.len(), advice, populate, false)?;
+        let new_chunks = read_chunks_from(
+            fs,
+            &self.directory,
+            self.chunks.len(),
+            advice,
+            populate,
+            false,
+        )?;
         self.chunks.extend(new_chunks);
         self.len = new_len;
         Ok(())
