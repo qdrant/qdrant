@@ -20,7 +20,7 @@ pub mod indexed_only;
 pub mod testing;
 mod wal_ops;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -780,8 +780,30 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
+        // Vector names that currently exist in the collection. Historical WAL operations may
+        // reference a vector name that was since removed by `delete_named_vector`; replaying
+        // such an operation against the post-deletion segment config fails validation and the
+        // whole operation (with its points) is dropped. We strip the dead names before applying.
+        //
+        // Seeded from the current config and grown as the replay re-applies `CreateVectorName`
+        // operations, so a name that is created and used within the replay window stays valid.
+        let mut valid_vector_names: HashSet<_> = {
+            let params = &self.collection_config.read().await.params;
+            params
+                .vectors
+                .params_iter()
+                .map(|(name, _)| name.to_owned())
+                .chain(
+                    params
+                        .sparse_vectors
+                        .iter()
+                        .flat_map(|sparse| sparse.keys().cloned()),
+                )
+                .collect()
+        };
+
         for entry in wal.read_range(from..to) {
-            let (op_num, update) = entry.map_err(|e| {
+            let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
                     "Failed to read WAL during recovery of {}: {e}",
                     self.path.display(),
@@ -790,6 +812,14 @@ impl LocalShard {
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
             }
+
+            // A historical `CreateVectorName` makes its name valid for every operation that
+            // follows it in the WAL; track it before stripping so those references survive.
+            if let Some(name) = update.operation.created_vector_name() {
+                valid_vector_names.insert(name.clone());
+            }
+
+            update.operation.retain_vector_names(&valid_vector_names);
 
             // Capture the operation type before `update.operation` is moved, so we can
             // report it if applying this operation turns out to be slow.

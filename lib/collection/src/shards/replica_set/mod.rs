@@ -374,6 +374,17 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Synchronously flush every segment in the local shard. Test-only — `stop_gracefully`
+    /// signals the periodic flush worker to stop but never triggers a final flush, so
+    /// tests that need on-disk consistency without waiting for the periodic tick use this.
+    #[cfg(test)]
+    pub(crate) async fn force_flush_local_for_test(&self) {
+        use crate::shards::shard::Shard;
+        if let Some(Shard::Local(local)) = &*self.local.read().await {
+            local.full_flush();
+        }
+    }
+
     pub fn shard_key(&self) -> Option<ShardKey> {
         self.shard_key.read().clone()
     }
