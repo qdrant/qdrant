@@ -7,7 +7,7 @@ use super::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::types::Distance;
+use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     DELETED_DIR_PATH, OFFSETS_DIR_PATH, VECTORS_DIR_PATH,
@@ -24,6 +24,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
         path: &Path,
         dim: usize,
         distance: Distance,
+        multi_vector_config: MultiVectorConfig,
         advice: AdviceSetting,
         populate: bool,
     ) -> OperationResult<Self> {
@@ -47,6 +48,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
             offsets,
             deleted,
             distance,
+            multi_vector_config,
         })
     }
 }

@@ -17,7 +17,8 @@ use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
-    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    MultiVectorStorage, MultiVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    VectorStorageRead,
 };
 
 /// All fields are counting vectors and not dimensions.
@@ -196,7 +197,7 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
     }
 }
 
-impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T> for VolatileMultiDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -236,7 +237,9 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
     fn multi_vector_config(&self) -> &MultiVectorConfig {
         &self.multi_vector_config
     }
+}
 
+impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVectorStorage<T> {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, T>, bool)>,

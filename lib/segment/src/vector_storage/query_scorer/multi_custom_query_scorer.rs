@@ -12,7 +12,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
-use crate::vector_storage::MultiVectorStorage;
+use crate::vector_storage::MultiVectorStorageRead;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -20,7 +20,7 @@ pub struct MultiCustomQueryScorer<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: MultiVectorStorage<TElement>,
+    TVectorStorage: MultiVectorStorageRead<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
 > {
     vector_storage: &'a TVectorStorage,
@@ -34,7 +34,7 @@ impl<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: MultiVectorStorage<TElement>,
+    TVectorStorage: MultiVectorStorageRead<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
 > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery>
 {
@@ -83,7 +83,7 @@ impl<
 impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: MultiVectorStorage<TElement>,
+    TVectorStorage: MultiVectorStorageRead<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
 > MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
@@ -108,7 +108,7 @@ impl<
 impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: MultiVectorStorage<TElement>,
+    TVectorStorage: MultiVectorStorageRead<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
 > QueryScorer for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {

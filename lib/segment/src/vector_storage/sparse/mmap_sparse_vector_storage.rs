@@ -21,7 +21,9 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageRead};
+use crate::vector_storage::{
+    SparseVectorStorage, SparseVectorStorageRead, VectorStorage, VectorStorageRead,
+};
 
 pub(crate) const DELETED_DIRNAME: &str = "deleted";
 pub(crate) const STORAGE_DIRNAME: &str = "store";
@@ -187,7 +189,7 @@ impl MmapSparseVectorStorage {
     }
 }
 
-impl SparseVectorStorage for MmapSparseVectorStorage {
+impl SparseVectorStorageRead for MmapSparseVectorStorage {
     fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
         self.get_sparse_opt::<P>(key)?
             .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
@@ -227,7 +229,9 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
             HardwareCounterCell::disposable().vector_io_read(),
         )
     }
+}
 
+impl SparseVectorStorage for MmapSparseVectorStorage {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,

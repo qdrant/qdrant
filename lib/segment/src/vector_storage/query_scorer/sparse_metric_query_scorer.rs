@@ -4,7 +4,7 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
-use crate::vector_storage::SparseVectorStorage;
+use crate::vector_storage::SparseVectorStorageRead;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
 

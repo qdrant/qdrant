@@ -15,7 +15,8 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::{
-    SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    SparseVectorStorage, SparseVectorStorageRead, VectorStorage, VectorStorageEnum,
+    VectorStorageRead,
 };
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
@@ -90,7 +91,7 @@ impl VolatileSparseVectorStorage {
     }
 }
 
-impl SparseVectorStorage for VolatileSparseVectorStorage {
+impl SparseVectorStorageRead for VolatileSparseVectorStorage {
     fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
         let vector = self
             .get_sparse_opt::<P>(key)?
@@ -122,7 +123,9 @@ impl SparseVectorStorage for VolatileSparseVectorStorage {
 
         Ok(())
     }
+}
 
+impl SparseVectorStorage for VolatileSparseVectorStorage {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
