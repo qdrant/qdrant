@@ -20,7 +20,7 @@ mod build;
 mod gpu_build;
 mod old_index;
 #[allow(dead_code)]
-mod read_only;
+pub mod read_only;
 mod read_view;
 mod telemetry;
 mod vector_index_impl;
