@@ -4,6 +4,7 @@ mod read_view;
 
 pub use read_view::StructPayloadIndexReadView;
 
+pub mod read_only;
 #[cfg(test)]
 mod tests;
 
