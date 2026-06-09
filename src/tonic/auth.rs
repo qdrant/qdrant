@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use collection::operations::routing::RoutingToken;
 use futures::future::BoxFuture;
 use storage::audit::{audit_trust_forwarded_headers, extract_tracing_id};
 use storage::rbac::Access;
@@ -171,4 +172,51 @@ pub fn extract_auth<R>(req: &mut tonic::Request<R>) -> Auth {
             }),
         )
     })
+}
+
+/// Extract the optional read [`RoutingToken`] from a gRPC request's metadata.
+///
+/// Reads the same key as the REST `X-Qdrant-Routing-Token` header
+/// ([`api::HTTP_HEADER_ROUTING_TOKEN`]) from the request metadata. Read directly
+/// from metadata (not request extensions) so it works even when no auth layer is
+/// installed. Absent or empty metadata yields `None` (default routing).
+pub fn extract_routing_token<R>(req: &tonic::Request<R>) -> Option<RoutingToken> {
+    let token = req
+        .metadata()
+        .get(api::HTTP_HEADER_ROUTING_TOKEN)?
+        .to_str()
+        .ok()?;
+    if token.is_empty() {
+        return None;
+    }
+    Some(RoutingToken::from_bytes(token.as_bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_routing_token_from_metadata() {
+        let mut req = tonic::Request::new(());
+        req.metadata_mut()
+            .insert("x-qdrant-routing-token", "user-42".parse().unwrap());
+        assert_eq!(
+            extract_routing_token(&req),
+            Some(RoutingToken::from_bytes(b"user-42")),
+        );
+    }
+
+    #[test]
+    fn missing_metadata_yields_none() {
+        assert_eq!(extract_routing_token(&tonic::Request::new(())), None);
+    }
+
+    #[test]
+    fn empty_metadata_yields_none() {
+        let mut req = tonic::Request::new(());
+        req.metadata_mut()
+            .insert("x-qdrant-routing-token", "".parse().unwrap());
+        assert_eq!(extract_routing_token(&req), None);
+    }
 }

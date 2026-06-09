@@ -826,6 +826,8 @@ impl PointsInternal for PointsInternalService {
             None, // *Has* to be `None`!
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             timeout,
             hw_data,
         )
@@ -859,6 +861,8 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             recommend_points,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await?;
@@ -892,6 +896,8 @@ impl PointsInternal for PointsInternalService {
             scroll_points,
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await
@@ -923,6 +929,8 @@ impl PointsInternal for PointsInternalService {
             get_points,
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await
@@ -950,6 +958,8 @@ impl PointsInternal for PointsInternalService {
             count_points,
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await?;

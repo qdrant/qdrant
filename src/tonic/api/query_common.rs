@@ -16,6 +16,7 @@ use collection::collection::distance_matrix::{
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::try_discover_request_from_grpc;
+use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CoreSearchRequest, PointRequestInternal};
 use collection::shards::shard::ShardId;
@@ -65,6 +66,7 @@ pub async fn search(
     search_points: SearchPoints,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     hw_measurement_acc: RequestHwCounter,
 ) -> Result<Response<SearchResponse>, Status> {
     let SearchPoints {
@@ -124,8 +126,7 @@ pub async fn search(
         &collection_name,
         search_request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
@@ -142,12 +143,14 @@ pub async fn search(
     Ok(Response::new(response))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn core_search_batch(
     toc_provider: impl CheckedTocProvider,
     collection_name: &str,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistencyGrpc>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchBatchResponse>, Status> {
@@ -170,8 +173,7 @@ pub async fn core_search_batch(
         collection_name,
         requests,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         auth,
         timeout,
         request_hw_counter.get_counter(),
@@ -200,6 +202,7 @@ pub async fn core_search_list(
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchBatchResponse>, Status> {
@@ -231,8 +234,7 @@ pub async fn core_search_list(
             &collection_name,
             request,
             read_consistency,
-            // TODO(route_token): implement for gRPC
-            None,
+            routing_token,
             shard_selection,
             auth,
             timeout,
@@ -259,6 +261,7 @@ pub async fn search_groups(
     search_point_groups: SearchPointGroups,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchGroupsResponse>, Status> {
     let search_groups_request = search_point_groups.clone().try_into()?;
@@ -290,8 +293,7 @@ pub async fn search_groups(
         &collection_name,
         search_groups_request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
@@ -315,6 +317,7 @@ pub async fn recommend(
     toc_provider: impl CheckedTocProvider,
     recommend_points: RecommendPoints,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendResponse>, Status> {
     // extract a few fields from the request and convert to internal request
@@ -345,8 +348,7 @@ pub async fn recommend(
             &collection_name,
             request,
             read_consistency,
-            // TODO(route_token): implement for gRPC
-            None,
+            routing_token,
             shard_selector,
             auth,
             timeout,
@@ -366,12 +368,14 @@ pub async fn recommend(
     Ok(Response::new(response))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn recommend_batch(
     toc_provider: impl CheckedTocProvider,
     collection_name: &str,
     recommend_points: Vec<RecommendPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
@@ -403,8 +407,7 @@ pub async fn recommend_batch(
             collection_name,
             requests,
             read_consistency,
-            // TODO(route_token): implement for gRPC
-            None,
+            routing_token,
             auth,
             timeout,
             request_hw_counter.get_counter(),
@@ -429,6 +432,7 @@ pub async fn recommend_groups(
     toc_provider: impl CheckedTocProvider,
     recommend_point_groups: RecommendPointGroups,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendGroupsResponse>, Status> {
     let recommend_groups_request = recommend_point_groups.clone().try_into()?;
@@ -460,8 +464,7 @@ pub async fn recommend_groups(
         &collection_name,
         recommend_groups_request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
@@ -485,6 +488,7 @@ pub async fn discover(
     toc_provider: impl CheckedTocProvider,
     discover_points: DiscoverPoints,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<DiscoverResponse>, Status> {
     let (request, collection_name, read_consistency, timeout, shard_key_selector) =
@@ -508,8 +512,7 @@ pub async fn discover(
             &collection_name,
             request,
             read_consistency,
-            // TODO(route_token): implement for gRPC
-            None,
+            routing_token,
             shard_selector,
             auth,
             timeout,
@@ -529,12 +532,14 @@ pub async fn discover(
     Ok(Response::new(response))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn discover_batch(
     toc_provider: impl CheckedTocProvider,
     collection_name: &str,
     discover_points: Vec<DiscoverPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<DiscoverBatchResponse>, Status> {
@@ -565,8 +570,7 @@ pub async fn discover_batch(
             collection_name,
             requests,
             read_consistency,
-            // TODO(route_token): implement for gRPC
-            None,
+            routing_token,
             auth,
             timeout,
             request_hw_counter.get_counter(),
@@ -592,6 +596,7 @@ pub async fn scroll(
     scroll_points: ScrollPoints,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<ScrollResponse>, Status> {
     let ScrollPoints {
@@ -641,8 +646,7 @@ pub async fn scroll(
         &collection_name,
         scroll_request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         timeout,
         shard_selector,
         auth,
@@ -673,6 +677,7 @@ pub async fn count(
     count_points: CountPoints,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<CountResponse>, Status> {
     let CountPoints {
@@ -710,8 +715,7 @@ pub async fn count(
         &collection_name,
         count_request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         timeout,
         shard_selector,
         auth,
@@ -733,6 +737,7 @@ pub async fn get(
     get_points: GetPoints,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<GetResponse>, Status> {
     let GetPoints {
@@ -777,8 +782,7 @@ pub async fn get(
         &collection_name,
         point_request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         timeout,
         shard_selector,
         auth,
@@ -800,6 +804,7 @@ pub async fn query(
     query_points: QueryPoints,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
     inference_params: InferenceParams,
 ) -> Result<Response<QueryResponse>, Status> {
@@ -831,8 +836,7 @@ pub async fn query(
         &collection_name,
         request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         shard_selector,
         auth,
         timeout,
@@ -856,6 +860,7 @@ pub async fn query_batch(
     points: Vec<QueryPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
     inference_params: InferenceParams,
@@ -889,8 +894,7 @@ pub async fn query_batch(
         collection_name,
         requests,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         auth,
         timeout,
         request_hw_counter.get_counter(),
@@ -920,6 +924,7 @@ pub async fn query_groups(
     query_points: QueryPointGroups,
     shard_selection: Option<ShardId>,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
     inference_params: InferenceParams,
 ) -> Result<Response<QueryGroupsResponse>, Status> {
@@ -951,8 +956,7 @@ pub async fn query_groups(
         &collection_name,
         request,
         read_consistency,
-        // TODO(route_token): implement for gRPC
-        None,
+        routing_token,
         shard_selector,
         auth,
         timeout,
@@ -976,6 +980,7 @@ pub async fn facet(
     toc_provider: impl CheckedTocProvider,
     facet_counts: FacetCounts,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<FacetResponse>, Status> {
     let FacetCounts {
@@ -1021,8 +1026,7 @@ pub async fn facet(
             facet_request,
             shard_selector,
             read_consistency,
-            // TODO(route_token): implement for gRPC
-            None,
+            routing_token,
             auth,
             timeout,
             request_hw_counter.get_counter(),
@@ -1044,6 +1048,7 @@ pub async fn search_points_matrix(
     toc_provider: impl CheckedTocProvider,
     search_matrix_points: SearchMatrixPoints,
     auth: Auth,
+    routing_token: Option<RoutingToken>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<CollectionSearchMatrixResponse, Status> {
     let SearchMatrixPoints {
@@ -1091,8 +1096,7 @@ pub async fn search_points_matrix(
             &collection_name,
             search_matrix_request,
             read_consistency,
-            // TODO(route_token): implement for gRPC
-            None,
+            routing_token,
             shard_selector,
             auth,
             timeout,
