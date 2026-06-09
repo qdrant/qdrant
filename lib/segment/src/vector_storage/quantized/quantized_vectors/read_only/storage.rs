@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
+use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
@@ -423,7 +424,13 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
     /// Pick up quantized vectors a writer appended. Only the chunked (appendable)
     /// layouts grow; Ram/Mmap are immutable, so they no-op. Deletions aren't
     /// tracked here — they live in the raw vector storage.
-    pub fn live_reload(&mut self, fs: &S::Fs) -> OperationResult<()> {
+    pub fn live_reload(
+        &mut self,
+        fs: &S::Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
             QuantizedVectorStorageRead::ScalarRam(_)
             | QuantizedVectorStorageRead::ScalarMmap(_)
@@ -441,15 +448,33 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
             | QuantizedVectorStorageRead::BinaryMmapMulti(_)
             | QuantizedVectorStorageRead::TQRamMulti(_)
             | QuantizedVectorStorageRead::TQMmapMulti(_) => {}
-            QuantizedVectorStorageRead::BinaryChunked(q) => q.storage_mut().live_reload(fs)?,
-            QuantizedVectorStorageRead::TQChunked(q) => q.storage_mut().live_reload(fs)?,
+            QuantizedVectorStorageRead::BinaryChunked(q) => {
+                q.storage_mut()
+                    .live_reload(fs, deleted_points, new_points, hw_counter)?
+            }
+            QuantizedVectorStorageRead::TQChunked(q) => {
+                q.storage_mut()
+                    .live_reload(fs, deleted_points, new_points, hw_counter)?
+            }
             QuantizedVectorStorageRead::BinaryChunkedMulti(q) => {
-                q.storage_mut().storage_mut().live_reload(fs)?;
-                q.offsets_storage_mut().live_reload(fs)?;
+                q.storage_mut().storage_mut().live_reload(
+                    fs,
+                    deleted_points,
+                    new_points,
+                    hw_counter,
+                )?;
+                q.offsets_storage_mut()
+                    .live_reload(fs, deleted_points, new_points, hw_counter)?;
             }
             QuantizedVectorStorageRead::TQChunkedMulti(q) => {
-                q.storage_mut().storage_mut().live_reload(fs)?;
-                q.offsets_storage_mut().live_reload(fs)?;
+                q.storage_mut().storage_mut().live_reload(
+                    fs,
+                    deleted_points,
+                    new_points,
+                    hw_counter,
+                )?;
+                q.offsets_storage_mut()
+                    .live_reload(fs, deleted_points, new_points, hw_counter)?;
             }
         }
         Ok(())

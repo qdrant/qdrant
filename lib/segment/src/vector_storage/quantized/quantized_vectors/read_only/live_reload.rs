@@ -11,15 +11,14 @@ impl<S: UniversalRead> LiveReload for QuantizedVectorsRead<S> {
     type Fs = S::Fs;
 
     /// Reload appended quantized vectors from disk (chunked layouts only).
-    /// Quantized tracks no deletions, so `deleted_points` is unused; appended
-    /// vectors come from disk, so `new_points` is unused too.
     fn live_reload(
         &mut self,
         fs: &S::Fs,
-        _deleted_points: &SortedSlice<'_, PointOffsetType>,
-        _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.storage_impl.live_reload(fs)
+        self.storage_impl
+            .live_reload(fs, deleted_points, new_points, hw_counter)
     }
 }

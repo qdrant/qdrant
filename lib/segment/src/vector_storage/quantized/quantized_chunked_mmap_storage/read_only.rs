@@ -44,12 +44,15 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
     }
 
     /// Pick up quantized vectors a writer appended to the chunked backing.
-    pub fn live_reload(&mut self, fs: &S::Fs) -> OperationResult<()> {
-        // Chunk-open settings are stored on the reader; deletions/new points are
-        // not tracked for quantized, so empty deltas are passed through.
-        let empty = SortedSlice::new(&[]).unwrap();
+    pub fn live_reload(
+        &mut self,
+        fs: &S::Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.data
-            .live_reload(fs, &empty, &empty, &HardwareCounterCell::disposable())
+            .live_reload(fs, deleted_points, new_points, hw_counter)
     }
 }
 
