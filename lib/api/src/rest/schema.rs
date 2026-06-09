@@ -316,7 +316,53 @@ pub enum DocumentOptions {
 mod tests {
     use std::assert_matches;
 
+    use validator::Validate as _;
+
     use super::*;
+
+    #[test]
+    fn test_validate_non_empty_dense_rejects_nan() {
+        assert!(validate_non_empty_dense(&[1.0, f32::NAN, 3.0]).is_err());
+    }
+
+    #[test]
+    fn test_validate_non_empty_dense_rejects_inf() {
+        assert!(validate_non_empty_dense(&[1.0, f32::INFINITY, 3.0]).is_err());
+        assert!(validate_non_empty_dense(&[f32::NEG_INFINITY, 2.0]).is_err());
+    }
+
+    #[test]
+    fn test_validate_non_empty_dense_accepts_finite() {
+        assert!(validate_non_empty_dense(&[1.0, -2.5, 3.0]).is_ok());
+    }
+
+    #[test]
+    fn test_vector_dense_rejects_non_finite() {
+        assert!(Vector::Dense(vec![1.0, f32::NAN]).validate().is_err());
+        assert!(Vector::Dense(vec![f32::INFINITY]).validate().is_err());
+    }
+
+    #[test]
+    fn test_vector_struct_single_rejects_non_finite() {
+        assert!(VectorStruct::Single(vec![1.0, f32::NAN]).validate().is_err());
+        assert!(
+            VectorStruct::Single(vec![f32::NEG_INFINITY])
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_vector_struct_multi_dense_rejects_non_finite() {
+        let multi = vec![vec![1.0, f32::NAN], vec![2.0, 3.0]];
+        assert!(VectorStruct::MultiDense(multi).validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_multi_dense_rejects_non_finite() {
+        let multi = vec![vec![f32::INFINITY, 1.0], vec![2.0, 3.0]];
+        assert!(validate_multi_dense_vector(&multi).is_err());
+    }
 
     #[test]
     fn test_document_options_should_deserialize_into_common() {
