@@ -12,7 +12,7 @@ use common::universal_io::{
 use fs_err as fs;
 use num_traits::AsPrimitive;
 
-use super::chunks::{chunk_name, read_chunks};
+use super::chunks::{chunk_name, read_chunks, read_chunks_from};
 use super::config::{CONFIG_FILE_NAME, ChunkedVectorsConfig, STATUS_FILE_NAME};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
@@ -309,9 +309,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         0
     }
 
-    /// Refresh to the current on-disk state, picking up vectors and chunk files a
-    /// writer appended; a no-op when the length is unchanged. `advice`/`populate`
-    /// should match what the storage was opened with.
+    /// Refresh to the current on-disk state, opening only chunk files a writer
+    /// appended since the last load; a no-op when the length is unchanged.
+    /// `advice`/`populate` should match what the storage was opened with.
     #[allow(dead_code)] // pending: read-only chunked vector storages will use this
     pub fn live_reload(
         &mut self,
@@ -324,8 +324,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             return Ok(());
         }
 
-        // Status grew: re-scan for new chunk files and adopt the new length.
-        self.chunks = read_chunks(fs, &self.directory, advice, populate, false)?;
+        let new_chunks =
+            read_chunks_from(fs, &self.directory, self.chunks.len(), advice, populate, false)?;
+        self.chunks.extend(new_chunks);
         self.len = new_len;
         Ok(())
     }
@@ -408,5 +409,61 @@ mod tests {
             .get::<Random>(first.len() as VectorOffsetType)
             .unwrap();
         assert_eq!(got.as_ref(), second[0].as_slice());
+    }
+
+    /// `live_reload` opens only chunk files created since the last load, keeping
+    /// the chunks it already holds (which still see vectors appended into them).
+    #[test]
+    fn live_reload_adopts_only_new_chunks() {
+        const DIM: usize = 32; // 4096 vectors per test chunk
+        let dir = Builder::new()
+            .prefix("chunked_reload_grow")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
+            MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        for s in 0..4000 {
+            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 4000);
+        assert_eq!(reader.chunks.len(), 1);
+
+        for s in 4000..9000 {
+            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        reader
+            .live_reload(&MmapFs, AdviceSetting::Global, false)
+            .unwrap();
+
+        assert_eq!(reader.len(), 9000);
+        assert_eq!(reader.chunks.len(), 3, "two new chunk files adopted");
+
+        // 4050 was appended into the already-open first chunk; 5000/8999 are new chunks.
+        for offset in [3999, 4050, 5000, 8999] {
+            assert_eq!(
+                reader.get::<Random>(offset).unwrap().as_ref(),
+                make_vec(offset as usize, DIM).as_slice(),
+            );
+        }
     }
 }

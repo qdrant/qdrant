@@ -25,6 +25,18 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
     populate: bool,
     writeable: bool,
 ) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
+    read_chunks_from(fs, directory, 0, advice, populate, writeable)
+}
+
+/// Open chunk files with id `>= start_chunk_id`, in ascending order.
+pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
+    fs: &S::Fs,
+    directory: &Path,
+    start_chunk_id: usize,
+    advice: AdviceSetting,
+    populate: bool,
+    writeable: bool,
+) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -42,8 +54,8 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
     }
 
     let num_chunks = chunks_files.len();
-    let mut result = Vec::with_capacity(num_chunks);
-    for chunk_id in 0..num_chunks {
+    let mut result = Vec::with_capacity(num_chunks.saturating_sub(start_chunk_id));
+    for chunk_id in start_chunk_id..num_chunks {
         let chunk_path = chunks_files.remove(&chunk_id).ok_or_else(|| {
             UniversalIoError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
