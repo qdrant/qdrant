@@ -1281,7 +1281,8 @@ mod test {
         };
 
         let mut wal = Wal::with_options(dir.path(), &options).unwrap();
-        let entries = EntryGenerator::new().take(entry_count).collect::<Vec<_>>();
+        // Fixed-size entries make the segment boundaries deterministic.
+        let entries = vec![vec![0; 32]; entry_count];
 
         for entry in &entries {
             wal.append(entry).unwrap();
