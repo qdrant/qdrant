@@ -8,7 +8,7 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 
-use super::QuantizedVectorsRead;
+use super::ReadOnlyQuantizedVectors;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{
@@ -79,7 +79,7 @@ fn turbo_config(always_ram: bool) -> QuantizationConfig {
     })
 }
 
-/// The read-only [`QuantizedVectorsRead`] opened over the same on-disk data must
+/// The read-only [`ReadOnlyQuantizedVectors`] opened over the same on-disk data must
 /// produce bit-identical scores to the read-write [`QuantizedVectors`].
 #[rstest]
 #[case::scalar_mmap(scalar_config(false), QuantizedVectorsStorageType::Immutable)]
@@ -113,7 +113,7 @@ fn read_only_matches_read_write(
     )
     .unwrap();
 
-    let ro = QuantizedVectorsRead::<MmapFile>::open(
+    let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &MmapFs,
         quant_dir.path(),
         storage.distance(),
@@ -195,7 +195,7 @@ fn read_only_matches_read_write_multivector(
     )
     .unwrap();
 
-    let ro = QuantizedVectorsRead::<MmapFile>::open(
+    let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &MmapFs,
         quant_dir.path(),
         storage.distance(),
@@ -231,7 +231,7 @@ fn read_only_matches_read_write_multivector(
 
 fn assert_internal_scorer_eq(
     rw: &QuantizedVectors,
-    ro: &QuantizedVectorsRead<MmapFile>,
+    ro: &ReadOnlyQuantizedVectors<MmapFile>,
     sample: &[PointOffsetType],
 ) {
     let pivot = sample[0];

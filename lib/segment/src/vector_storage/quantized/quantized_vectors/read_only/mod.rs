@@ -11,7 +11,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
 
-pub use self::storage::QuantizedVectorStorageRead;
+pub use self::storage::ReadOnlyQuantizedVectorStorage;
 use super::{QUANTIZED_CONFIG_PATH, QuantizedVectorsConfig};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -22,7 +22,7 @@ use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsu
 use crate::vector_storage::quantized::quantized_scorer_builder::{
     QuantizedScorerDispatch, build_quantized_raw_scorer,
 };
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 
 /// Read-only counterpart of [`super::super::QuantizedVectors`].
 ///
@@ -30,17 +30,17 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAcc
 /// on-disk data (see [`Self::open`]) and exposes only read operations: it has no
 /// `create`/`upsert`/builder path and never writes to disk.
 #[derive(Debug)]
-pub struct QuantizedVectorsRead<S: UniversalRead = MmapFile> {
-    storage_impl: QuantizedVectorStorageRead<S>,
+pub struct ReadOnlyQuantizedVectors<S: UniversalRead = MmapFile> {
+    storage_impl: ReadOnlyQuantizedVectorStorage<S>,
     config: QuantizedVectorsConfig,
     path: PathBuf,
     distance: Distance,
     datatype: VectorStorageDatatype,
 }
 
-impl<S: UniversalRead> QuantizedVectorsRead<S> {
+impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     pub(super) fn new(
-        storage_impl: QuantizedVectorStorageRead<S>,
+        storage_impl: ReadOnlyQuantizedVectorStorage<S>,
         config: QuantizedVectorsConfig,
         path: PathBuf,
         distance: Distance,
@@ -59,7 +59,7 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
         &self.config
     }
 
-    pub fn get_storage(&self) -> &QuantizedVectorStorageRead<S> {
+    pub fn get_storage(&self) -> &ReadOnlyQuantizedVectorStorage<S> {
         &self.storage_impl
     }
 
@@ -141,7 +141,7 @@ impl<S: UniversalRead> QuantizedVectorsRead<S> {
     }
 }
 
-impl<S: UniversalRead> QuantizedVectorsReadAccess for QuantizedVectorsRead<S> {
+impl<S: UniversalRead> QuantizedVectorsRead for ReadOnlyQuantizedVectors<S> {
     fn config(&self) -> &QuantizedVectorsConfig {
         self.config()
     }
@@ -167,7 +167,7 @@ impl<S: UniversalRead> QuantizedVectorsReadAccess for QuantizedVectorsRead<S> {
     }
 }
 
-impl<S: UniversalRead> crate::common::memory_usage::MemoryReporter for QuantizedVectorsRead<S> {
+impl<S: UniversalRead> crate::common::memory_usage::MemoryReporter for ReadOnlyQuantizedVectors<S> {
     fn memory_usage(&self) -> crate::common::memory_usage::ComponentMemoryUsage {
         use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
 

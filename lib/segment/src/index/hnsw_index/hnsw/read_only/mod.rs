@@ -27,7 +27,7 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::struct_payload_index::{StructPayloadIndex, StructPayloadIndexReadView};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::vector_storage::VectorStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
+use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 /// Read-only, generic-over-storage counterpart of [`HNSWIndex`].
@@ -41,7 +41,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 pub struct ReadOnlyHNSWIndex<S: UniversalRead> {
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
-    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectorsRead<S>>>>,
+    quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
@@ -53,13 +53,13 @@ pub struct ReadOnlyHNSWIndex<S: UniversalRead> {
 /// Read-only view over a [`ReadOnlyHNSWIndex`].
 ///
 /// The top-level backends are read-only ([`ReadOnlyIdTrackerEnum`] /
-/// [`VectorStorageReadEnum`] / [`QuantizedVectorsRead`]), while the payload
+/// [`VectorStorageReadEnum`] / [`ReadOnlyQuantizedVectors`]), while the payload
 /// index view is still built over the in-memory enums of [`StructPayloadIndex`].
 type ReadView<'a, S> = HNSWIndexReadView<
     'a,
     ReadOnlyIdTrackerEnum<S>,
     VectorStorageReadEnum<S>,
-    QuantizedVectorsRead<S>,
+    ReadOnlyQuantizedVectors<S>,
     StructPayloadIndexReadView<
         'a,
         PayloadStorageEnum,
