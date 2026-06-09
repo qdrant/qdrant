@@ -4,7 +4,6 @@ use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -18,6 +17,7 @@ use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use crate::fixtures::query_fixtures::QueryVariant;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{
     BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantizationConfig,
@@ -144,13 +144,11 @@ fn scoring_equivalency(
 
     let mut other_storage = other_storage(other_dir.path());
 
-    let mut iter = (0..NUM_POINTS).map(|i| {
-        let i = i as PointOffsetType;
-        let vec = raw_storage.get_vector::<Random>(i);
-        let deleted = raw_storage.is_deleted_vector(i);
-        (vec, deleted)
-    });
-    other_storage.update_from(&mut iter, &Default::default())?;
+    merge_from_single_source(
+        &mut other_storage,
+        &raw_storage,
+        NUM_POINTS as PointOffsetType,
+    )?;
 
     let quant_dir = tempfile::Builder::new().prefix("quant-storage").tempdir()?;
     let quantized_vectors = if let Some(config) = &quant_config {

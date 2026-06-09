@@ -43,7 +43,7 @@ use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndexEnum};
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::{Segment, SegmentVersion};
-use crate::segment_constructor::batched_reader::{BatchedVectorReader, PointData};
+use crate::segment_constructor::batched_reader::{PointData, merge_from};
 use crate::segment_constructor::{
     VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
@@ -385,12 +385,14 @@ impl SegmentBuilder {
                 })
                 .collect::<Result<Vec<_>, OperationError>>()?;
 
-            let mut vectors_iter: BatchedVectorReader =
-                BatchedVectorReader::new(&points_to_insert, &other_vector_storages);
-
-            let internal_range = vector_data
-                .vector_storage
-                .update_from(&mut vectors_iter, stopped)?;
+            let source_refs: Vec<&VectorStorageEnum> =
+                other_vector_storages.iter().map(|s| &**s).collect();
+            let internal_range = merge_from(
+                &mut vector_data.vector_storage,
+                &points_to_insert,
+                &source_refs,
+                stopped,
+            )?;
 
             if new_internal_range != internal_range {
                 debug_assert!(

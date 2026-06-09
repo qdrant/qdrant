@@ -1,19 +1,17 @@
 use std::array;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::RngExt;
 use rand::distr::StandardUniform;
-use segment::data_types::named_vectors::CowVector;
 use segment::data_types::vectors::{DenseVector, QueryVector};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
-use segment::vector_storage::DEFAULT_STOPPED;
 use segment::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
+use segment::vector_storage::{DEFAULT_STOPPED, DenseVectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 #[cfg(not(target_os = "windows"))]
@@ -49,12 +47,16 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
 
     let mut vectors = (0..VECTORS).map(|_| {
         let vector = random_vector(DIM);
-        (CowVector::from(vector), false)
+        (std::borrow::Cow::Owned(vector), false)
     });
 
-    storage
-        .update_from(&mut vectors, &AtomicBool::from(false))
-        .expect("vector storage populated");
+    let result = match &mut storage {
+        VectorStorageEnum::DenseMemmap(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUring(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
+        _ => panic!("unexpected dense vector storage variant"),
+    };
+    result.expect("vector storage populated");
 
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(VECTORS)));
     let id_tracker = id_tracker.borrow();

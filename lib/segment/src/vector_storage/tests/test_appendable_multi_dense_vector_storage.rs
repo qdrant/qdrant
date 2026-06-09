@@ -14,6 +14,7 @@ use crate::data_types::vectors::{
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
+use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_full;
@@ -218,13 +219,7 @@ fn do_test_update_from_delete_points(
                 }
             });
         }
-        let mut iter = (0..points.len()).map(|i| {
-            let i = i as PointOffsetType;
-            let vec = storage2.get_vector::<Random>(i);
-            let deleted = storage2.is_deleted_vector(i);
-            (vec, deleted)
-        });
-        storage.update_from(&mut iter, &Default::default()).unwrap();
+        merge_from_single_source(storage, &storage2, points.len() as PointOffsetType).unwrap();
     }
 
     assert_eq!(
