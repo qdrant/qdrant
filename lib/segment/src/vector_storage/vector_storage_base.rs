@@ -219,7 +219,10 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: DenseVectorStorageRead<
     ) -> OperationResult<Range<PointOffsetType>>;
 }
 
-pub trait SparseVectorStorage: VectorStorageRead {
+/// Read-only access to a sparse vector storage: everything needed to score
+/// queries, without the ability to mutate. Implemented by read-only storages
+/// too, which cannot provide [`SparseVectorStorage::update_from`].
+pub trait SparseVectorStorageRead: VectorStorageRead {
     fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector>;
     fn get_sparse_opt<P: AccessPattern>(
         &self,
@@ -233,7 +236,9 @@ pub trait SparseVectorStorage: VectorStorageRead {
     ) -> OperationResult<()>
     where
         F: FnMut(usize, SparseVector);
+}
 
+pub trait SparseVectorStorage: SparseVectorStorageRead {
     /// Add the given sparse vectors to the storage.
     ///
     /// # Returns
@@ -247,7 +252,10 @@ pub trait SparseVectorStorage: VectorStorageRead {
     ) -> OperationResult<Range<PointOffsetType>>;
 }
 
-pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
+/// Read-only access to a multi-dense vector storage: everything needed to score
+/// queries, without the ability to mutate. Implemented by read-only storages
+/// too, which cannot provide [`MultiVectorStorage::update_from`].
+pub trait MultiVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
     fn vector_dim(&self) -> usize;
 
     fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> CowMultiVector<'_, T>;
@@ -262,7 +270,9 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
+}
 
+pub trait MultiVectorStorage<T: PrimitiveVectorElement>: MultiVectorStorageRead<T> {
     /// Add the given multi-dense vectors to the storage.
     ///
     /// # Returns

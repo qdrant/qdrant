@@ -7,7 +7,7 @@ use common::universal_io::UniversalRead;
 use super::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::types::Distance;
+use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 
 mod lifecycle;
@@ -20,6 +20,7 @@ pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: 
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
+    multi_vector_config: MultiVectorConfig,
 }
 
 pub fn iter_vectors<'a, P, T, U, S>(
@@ -132,6 +133,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            MultiVectorConfig::default(),
             AdviceSetting::Global,
             false,
         )

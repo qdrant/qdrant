@@ -1,16 +1,58 @@
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::AccessPattern;
+use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::ReadOnlySparseVectorStorage;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
+use crate::vector_storage::{SparseVectorStorageRead, VectorStorageRead};
+
+impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S> {
+    fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+        self.get_sparse_opt::<P>(key)?
+            .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
+    }
+
+    fn get_sparse_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<SparseVector>> {
+        self.storage
+            .get_value::<P>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
+            .map(SparseVector::try_from)
+            .transpose()
+    }
+
+    fn for_each_in_sparse_batch<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
+    where
+        F: FnMut(usize, SparseVector),
+    {
+        let point_offsets = keys.iter().copied().enumerate();
+
+        let callback = |value_idx, _, sparse_vector| {
+            if let Some(sparse_vector) = sparse_vector {
+                callback(value_idx, SparseVector::try_from(sparse_vector)?);
+            }
+
+            Ok(())
+        };
+
+        self.storage.read_values::<Random, _, _>(
+            point_offsets,
+            callback,
+            HardwareCounterCell::disposable().vector_io_read(),
+        )
+    }
+}
 
 impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
