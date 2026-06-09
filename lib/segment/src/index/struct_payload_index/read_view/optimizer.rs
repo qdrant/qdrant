@@ -72,11 +72,17 @@ where
             } else {
                 None
             },
+            // Drop `min_should` to `None` (match-all) only when it's a pure
+            // no-op: an empty condition list with `min_count == 0`. An empty
+            // list with `min_count > 0` is unsatisfiable (match-none) and must
+            // be kept -- dropping it silently degrades match-none into match-all
+            // (issue #9369). A non-empty list is always kept so `check_min_should`
+            // can compare the matched count against `min_count`.
             min_should: if let Some(MinShould {
                 conditions,
                 min_count,
             }) = filter.min_should.as_ref()
-                && !conditions.is_empty()
+                && (!conditions.is_empty() || *min_count > 0)
             {
                 let (optimized_conditions, estimation) = self.optimize_min_should(
                     conditions,
