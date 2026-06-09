@@ -173,9 +173,6 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
     /// The range of point offsets that were added to the storage.
     ///
     /// If stopped, the operation returns a cancellation error.
-    ///
-    /// Vectors are in the storage's own element type `T` — no f32 round-trip.
-    /// Used by the same-type merge path (`merge_from`).
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
@@ -262,10 +259,7 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
 
     fn size_of_available_vectors_in_bytes(&self) -> usize;
 
-    /// Append the given multi-dense vectors to the storage.
-    ///
-    /// Vectors are in the storage's own element type `T` — no f32 round-trip.
-    /// Used by the same-type merge path (`merge_from`).
+    /// Add the given multi-dense vectors to the storage.
     ///
     /// # Returns
     /// The range of point offsets that were added to the storage.
