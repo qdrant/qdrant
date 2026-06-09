@@ -369,6 +369,15 @@ impl<V: Blob> Gridstore<V> {
         self.bitmask.read().get_storage_size_bytes()
     }
 
+    /// Return the storage size in bytes (approximate: total page capacity).
+    ///
+    /// Cheap O(1) read of the page count. Prefer this over
+    /// [`Self::get_storage_size_bytes`] in hot paths (e.g. telemetry/segment
+    /// info aggregation) where byte-precise occupancy is not required.
+    pub fn get_storage_size_bytes_approx(&self) -> usize {
+        self.pages.read().num_pages() * self.config.page_size_bytes
+    }
+
     pub fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,

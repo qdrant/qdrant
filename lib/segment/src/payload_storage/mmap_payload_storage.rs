@@ -144,7 +144,9 @@ impl PayloadStorageRead for MmapPayloadStorage {
     }
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
-        Ok(self.storage.get_storage_size_bytes()?)
+        // Approximate (page capacity) is sufficient for telemetry/segment info
+        // aggregation, and avoids walking the entire bitmask on every call.
+        Ok(self.storage.get_storage_size_bytes_approx())
     }
 
     fn is_on_disk(&self) -> bool {
