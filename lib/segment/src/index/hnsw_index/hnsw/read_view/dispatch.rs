@@ -10,14 +10,14 @@ use crate::index::PayloadIndexRead;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::types::{Filter, QuantizationSearchParams, SearchParams};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
 impl<'a, I, V, Q, P> HNSWIndexReadView<'a, I, V, Q, P>
 where
     I: IdTrackerRead,
     V: VectorStorageRead + RawScorerBuilder,
-    Q: QuantizedVectorsReadAccess,
+    Q: QuantizedVectorsRead,
     P: PayloadIndexRead,
 {
     pub(crate) fn search(

@@ -14,14 +14,14 @@ use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
 use crate::types::{Filter, SearchParams};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
 impl<'a, I, V, Q, P> PlainVectorIndexReadView<'a, I, V, Q, P>
 where
     I: IdTrackerRead,
     V: VectorStorageRead + RawScorerBuilder,
-    Q: QuantizedVectorsReadAccess,
+    Q: QuantizedVectorsRead,
     P: PayloadIndexRead,
 {
     pub fn is_small_enough_for_unindexed_search(
