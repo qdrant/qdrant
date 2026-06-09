@@ -10,6 +10,7 @@ use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 
 use super::ReadOnlyQuantizedVectors;
+use crate::common::live_reload::LiveReload;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{
@@ -279,7 +280,7 @@ fn live_reload_chunked_preserves_scores() {
     )
     .unwrap();
 
-    let mut ro = QuantizedVectorsRead::<MmapFile>::open(
+    let mut ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &MmapFs,
         quant_dir.path(),
         storage.distance(),
