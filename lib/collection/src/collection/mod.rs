@@ -502,11 +502,6 @@ impl Collection {
             }
         }
 
-        // Update replica status
-        replica_set
-            .ensure_replica_with_state(peer_id, new_state)
-            .await?;
-
         if new_state == ReplicaState::Dead {
             let all_nodes_fixed_cancellation = self
                 .channel_service
@@ -532,6 +527,11 @@ impl Collection {
                     .await?;
             }
         }
+
+        // Update replica status
+        replica_set
+            .ensure_replica_with_state(peer_id, new_state)
+            .await?;
 
         // If not initialized yet, we need to check if it was initialized by this call
         if !self.is_initialized.check_ready() {
