@@ -11,8 +11,8 @@ use zerocopy::FromBytes;
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
-use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::raw_posting_list::RawPostingList;
-use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::types::{
+use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::raw_posting_list::RawPostingList;
+use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::types::{
     PostingListHeader, PostingsHeader, ZerocopyPostingValue,
 };
 
@@ -25,7 +25,7 @@ use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_in
 /// `size_of::<PostingsHeader>() + token_id * size_of::<PostingListHeader>()`.
 /// Each [`PostingListHeader`] then points (via absolute `offset`) into the
 /// posting-data region.
-pub struct UniversalPostings<V: ZerocopyPostingValue, S: UniversalRead> {
+pub struct OnDiskPostings<V: ZerocopyPostingValue, S: UniversalRead> {
     _path: PathBuf,
     storage: S,
     header: PostingsHeader,
@@ -42,7 +42,7 @@ struct HeadersBatch<'a> {
     missing: Vec<TokenId>,
 }
 
-impl<V: ZerocopyPostingValue, S: UniversalRead> UniversalPostings<V, S> {
+impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
     /// Open the postings file at `path` via the `S` storage backend.
     ///
     /// Returns `Ok(None)` if the file is not found

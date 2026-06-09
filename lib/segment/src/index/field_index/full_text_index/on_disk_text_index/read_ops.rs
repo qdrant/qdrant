@@ -5,13 +5,13 @@ use common::universal_io::{UniversalRead, UserData};
 use super::super::full_text_index_read::FullTextIndexRead;
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::super::tokenizers::Tokenizer;
-use super::MmapFullTextIndex;
+use super::OnDiskFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl<S: UniversalRead> FullTextIndexRead for MmapFullTextIndex<S> {
+impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     fn tokenizer(&self) -> &Tokenizer {
         &self.tokenizer
     }
@@ -74,9 +74,7 @@ impl<S: UniversalRead> FullTextIndexRead for MmapFullTextIndex<S> {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.inverted_index.is_on_disk(),
-        }
+        StorageType::Mmap { is_on_disk: true }
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -84,6 +82,6 @@ impl<S: UniversalRead> FullTextIndexRead for MmapFullTextIndex<S> {
     }
 
     fn is_on_disk(&self) -> bool {
-        self.inverted_index.is_on_disk()
+        true
     }
 }
