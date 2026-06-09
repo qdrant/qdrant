@@ -334,107 +334,118 @@ mod tests {
         dot / (na * nb)
     }
 
+    /// Seeds swept by the data-dependent tests below, so each runs over several
+    /// independent random inputs instead of a single fixed one.
+    const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E];
+
     #[test]
     fn upsert_flush_reload_in_ram_matches_independent_oracle() {
         const COUNT: usize = 64;
-        const SEED: u64 = 0xC0FFEE;
         // Max direction error tolerated on a round-trip, and the separation we
         // require from every unrelated vector.
         const TOL: f32 = 2e-2;
 
-        for dim in [1, 127, 128, 1024, 4096, 4097] {
-            let distance = Distance::Dot;
-            let dir = Builder::new().prefix("turbo_storage").tempdir().unwrap();
-            let hw_counter = HardwareCounterCell::new();
+        for seed in SEEDS {
+            for dim in [1, 127, 128, 1024, 4096, 4097] {
+                let distance = Distance::Dot;
+                let dir = Builder::new().prefix("turbo_storage").tempdir().unwrap();
+                let hw_counter = HardwareCounterCell::new();
 
-            // Independent oracle, computed up front and fully independently of the
-            // storage: a fresh quantizer configured exactly like the storage's
-            // internal one, plus `Vec<>`s standing in as a reference store.
-            let oracle = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
-            let mut buf = vec![0.0f64; oracle.get_padded_dim()];
+                // Independent oracle, computed up front and fully independently of the
+                // storage: a fresh quantizer configured exactly like the storage's
+                // internal one, plus `Vec<>`s standing in as a reference store.
+                let oracle = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+                let mut buf = vec![0.0f64; oracle.get_padded_dim()];
 
-            let inputs = make_vectors(dim, COUNT, SEED);
-            let mut expected_bytes: Vec<Vec<u8>> = Vec::with_capacity(COUNT);
-            for vector in &inputs {
-                let quantized = oracle.quantize(vector, &mut buf);
-                expected_bytes.push(quantized);
-            }
-
-            // Hand 1 — write path: upsert into an on-disk chunked-mmap storage, flush, then drop it so everything must round-trip through disk on reload.
-            {
-                let mut storage =
-                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, false).unwrap();
-                for (i, vector) in inputs.iter().enumerate() {
-                    storage
-                        .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
-                        .unwrap();
+                let inputs = make_vectors(dim, COUNT, seed);
+                let mut expected_bytes: Vec<Vec<u8>> = Vec::with_capacity(COUNT);
+                for vector in &inputs {
+                    let quantized = oracle.quantize(vector, &mut buf);
+                    expected_bytes.push(quantized);
                 }
-                assert_eq!(storage.total_vector_count(), COUNT);
-                storage.flusher()().unwrap();
-            }
 
-            // Hand 2 — load path: reopen the same directory in RAM and verify the persisted vectors against the oracle.
-            let storage =
-                open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
-
-            assert_eq!(storage.total_vector_count(), COUNT);
-            assert_eq!(storage.distance(), distance);
-
-            for i in 0..COUNT {
-                let key = i as PointOffsetType;
-                assert!(
-                    !storage.is_deleted_vector(key),
-                    "vector {i} unexpectedly flagged as deleted",
-                );
-
-                // (a) Encode path: raw encoded bytes match the oracle byte-for-byte.
-                let stored_bytes = storage.get_quantized_vector(key);
-                assert_eq!(
-                    stored_bytes.as_ref(),
-                    expected_bytes[i].as_slice(),
-                    "encoded bytes mismatch for vector {i}",
-                );
-
-                // (b) Retrieval round-trip: dequantization rotates back to the
-                // original space, so the recovered vector must point the same
-                // way as the input. Quantization is lossy, so compare directions
-                // via cosine rather than equality.
-                let retrieved = DenseVector::try_from(storage.get_vector::<Random>(key)).unwrap();
-                assert!(
-                    (1.0 - cosine(&inputs[i], &retrieved)).abs() < TOL,
-                    "retrieved vector direction mismatch for vector {i}: cosine {}",
-                    cosine(&inputs[i], &retrieved),
-                );
-
-                // (b-sanity) No unrelated input may sit within `TOL` of the round-trip.
-                // Skipped at dim=1, where unit vectors are just ±1 and collide exactly.
-                if dim > 1 {
-                    for (j, other) in inputs.iter().enumerate() {
-                        if j == i {
-                            continue;
-                        }
-                        assert!(
-                            1.0 - cosine(other, &retrieved) > TOL,
-                            "vector {i} round-trip is within {TOL} of unrelated vector {j}: cosine {}",
-                            cosine(other, &retrieved),
-                        );
+                // Hand 1 — write path: upsert into an on-disk chunked-mmap storage, flush, then drop it so everything must round-trip through disk on reload.
+                {
+                    let mut storage =
+                        open_appendable_turbo_vector_storage(dir.path(), dim, distance, false)
+                            .unwrap();
+                    for (i, vector) in inputs.iter().enumerate() {
+                        storage
+                            .insert_vector(
+                                i as PointOffsetType,
+                                vector.as_slice().into(),
+                                &hw_counter,
+                            )
+                            .unwrap();
                     }
+                    assert_eq!(storage.total_vector_count(), COUNT);
+                    storage.flusher()().unwrap();
                 }
 
-                // (c) `get_vector_opt` must return `Some` and agree with `get_vector` for every present vector.
-                let retrieved_opt = DenseVector::try_from(
-                    storage
-                        .get_vector_opt::<Random>(key)
-                        .expect("get_vector_opt returned None for a present vector"),
-                )
-                .unwrap();
-                assert_eq!(
-                    retrieved_opt, retrieved,
-                    "get_vector_opt mismatch for vector {i}",
-                );
+                // Hand 2 — load path: reopen the same directory in RAM and verify the persisted vectors against the oracle.
+                let storage =
+                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
 
-                // Check we don't return padded dim
-                assert_eq!(inputs[i].len(), retrieved.len());
+                assert_eq!(storage.total_vector_count(), COUNT);
+                assert_eq!(storage.distance(), distance);
+
+                for i in 0..COUNT {
+                    let key = i as PointOffsetType;
+                    assert!(
+                        !storage.is_deleted_vector(key),
+                        "vector {i} unexpectedly flagged as deleted (seed {seed:#x}, dim {dim})",
+                    );
+
+                    // (a) Encode path: raw encoded bytes match the oracle byte-for-byte.
+                    let stored_bytes = storage.get_quantized_vector(key);
+                    assert_eq!(
+                        stored_bytes.as_ref(),
+                        expected_bytes[i].as_slice(),
+                        "encoded bytes mismatch for vector {i} (seed {seed:#x}, dim {dim})",
+                    );
+
+                    // (b) Retrieval round-trip: dequantization rotates back to the
+                    // original space, so the recovered vector must point the same
+                    // way as the input. Quantization is lossy, so compare directions
+                    // via cosine rather than equality.
+                    let retrieved =
+                        DenseVector::try_from(storage.get_vector::<Random>(key)).unwrap();
+                    assert!(
+                        (1.0 - cosine(&inputs[i], &retrieved)).abs() < TOL,
+                        "retrieved vector direction mismatch for vector {i} (seed {seed:#x}, dim {dim}): cosine {}",
+                        cosine(&inputs[i], &retrieved),
+                    );
+
+                    // (b-sanity) No unrelated input may sit within `TOL` of the round-trip.
+                    // Skipped at dim=1, where unit vectors are just ±1 and collide exactly.
+                    if dim > 1 {
+                        for (j, other) in inputs.iter().enumerate() {
+                            if j == i {
+                                continue;
+                            }
+                            assert!(
+                                1.0 - cosine(other, &retrieved) > TOL,
+                                "vector {i} round-trip is within {TOL} of unrelated vector {j} (seed {seed:#x}, dim {dim}): cosine {}",
+                                cosine(other, &retrieved),
+                            );
+                        }
+                    }
+
+                    // (c) `get_vector_opt` must return `Some` and agree with `get_vector` for every present vector.
+                    let retrieved_opt = DenseVector::try_from(
+                        storage
+                            .get_vector_opt::<Random>(key)
+                            .expect("get_vector_opt returned None for a present vector"),
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        retrieved_opt, retrieved,
+                        "get_vector_opt mismatch for vector {i} (seed {seed:#x}, dim {dim})",
+                    );
+
+                    // Check we don't return padded dim
+                    assert_eq!(inputs[i].len(), retrieved.len());
+                }
             }
         }
     }
@@ -445,97 +456,108 @@ mod tests {
     #[test]
     fn mmap_update_from_builds_and_matches_independent_oracle() {
         const COUNT: usize = 64;
-        const SEED: u64 = 0xC0FFEE;
         const TOL: f32 = 2e-2;
         const DELETED: PointOffsetType = 3;
+        // Second deletion landing in the *second* batch (offset ≥ COUNT/2) so the
+        // `start_index + offset` arithmetic is exercised, not just `start_index == 0`.
+        const DELETED_LATE: PointOffsetType = 40;
 
-        for dim in [1, 127, 128, 1024, 4097] {
-            let distance = Distance::Dot;
-            let dir = Builder::new().prefix("turbo_mmap_build").tempdir().unwrap();
-            let hw_counter = HardwareCounterCell::new();
-            let stopped = AtomicBool::new(false);
+        for seed in SEEDS {
+            for dim in [1, 127, 128, 1024, 4097] {
+                let distance = Distance::Dot;
+                let dir = Builder::new().prefix("turbo_mmap_build").tempdir().unwrap();
+                let hw_counter = HardwareCounterCell::new();
+                let stopped = AtomicBool::new(false);
 
-            // Independent oracle, configured exactly like the storage's quantizer.
-            let oracle = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
-            let mut buf = vec![0.0f64; oracle.get_padded_dim()];
-            let inputs = make_vectors(dim, COUNT, SEED);
-            let expected_bytes: Vec<Vec<u8>> = inputs
-                .iter()
-                .map(|v| oracle.quantize(v, &mut buf))
-                .collect();
-
-            // Write path: two `update_from` calls into the single-file mmap backend,
-            // exercising accumulation across calls. Then flush and drop so the load
-            // path must round-trip through disk.
-            {
-                let mut storage =
-                    open_turbo_vector_storage(dir.path(), dim, distance, false).unwrap();
-
-                // Runtime per-point insert is unsupported for the single-file backend.
-                assert!(
-                    storage
-                        .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
-                        .is_err(),
-                    "insert_vector must be unsupported on the single-file mmap backend",
-                );
-
-                // `update_from` receives already-encoded vectors, so feed the oracle bytes.
-                let split = COUNT / 2;
-                let mut first = expected_bytes[..split]
+                // Independent oracle, configured exactly like the storage's quantizer.
+                let oracle = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+                let mut buf = vec![0.0f64; oracle.get_padded_dim()];
+                let inputs = make_vectors(dim, COUNT, seed);
+                let expected_bytes: Vec<Vec<u8>> = inputs
                     .iter()
-                    .enumerate()
-                    .map(|(i, bytes)| {
-                        (Cow::from(bytes.as_slice()), i as PointOffsetType == DELETED)
-                    });
-                assert_eq!(
-                    storage.update_from(&mut first, &stopped).unwrap(),
-                    0..(split as PointOffsetType),
-                );
+                    .map(|v| oracle.quantize(v, &mut buf))
+                    .collect();
 
-                let mut second = expected_bytes[split..]
-                    .iter()
-                    .map(|bytes| (Cow::from(bytes.as_slice()), false));
-                assert_eq!(
-                    storage.update_from(&mut second, &stopped).unwrap(),
-                    (split as PointOffsetType)..(COUNT as PointOffsetType),
-                );
+                // Write path: two `update_from` calls into the single-file mmap backend,
+                // exercising accumulation across calls. Then flush and drop so the load
+                // path must round-trip through disk.
+                {
+                    let mut storage =
+                        open_turbo_vector_storage(dir.path(), dim, distance, false).unwrap();
 
-                assert_eq!(storage.total_vector_count(), COUNT);
-                storage.flusher()().unwrap();
-            }
-
-            // Load path: reopen the directory and verify everything persisted.
-            let storage = open_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
-            assert_eq!(storage.total_vector_count(), COUNT);
-            assert_eq!(storage.distance(), distance);
-            assert_eq!(storage.deleted_vector_count(), 1);
-            assert!(storage.is_deleted_vector(DELETED));
-
-            for i in 0..COUNT {
-                let key = i as PointOffsetType;
-                if key != DELETED {
+                    // Runtime per-point insert is unsupported for the single-file backend.
                     assert!(
-                        !storage.is_deleted_vector(key),
-                        "vector {i} unexpectedly deleted"
+                        storage
+                            .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+                            .is_err(),
+                        "insert_vector must be unsupported on the single-file mmap backend",
                     );
+
+                    // `update_from` receives already-encoded vectors, so feed the oracle bytes.
+                    let split = COUNT / 2;
+                    let mut first = expected_bytes[..split]
+                        .iter()
+                        .enumerate()
+                        .map(|(i, bytes)| {
+                            (Cow::from(bytes.as_slice()), i as PointOffsetType == DELETED)
+                        });
+                    assert_eq!(
+                        storage.update_from(&mut first, &stopped).unwrap(),
+                        0..(split as PointOffsetType),
+                    );
+
+                    let mut second =
+                        expected_bytes[split..]
+                            .iter()
+                            .enumerate()
+                            .map(|(j, bytes)| {
+                                let offset = (split + j) as PointOffsetType;
+                                (Cow::from(bytes.as_slice()), offset == DELETED_LATE)
+                            });
+                    assert_eq!(
+                        storage.update_from(&mut second, &stopped).unwrap(),
+                        (split as PointOffsetType)..(COUNT as PointOffsetType),
+                    );
+
+                    assert_eq!(storage.total_vector_count(), COUNT);
+                    storage.flusher()().unwrap();
                 }
 
-                // Encoded bytes match the oracle byte-for-byte (soft-deleted data is kept).
-                let stored_bytes = storage.get_quantized_vector(key);
-                assert_eq!(
-                    stored_bytes.as_ref(),
-                    expected_bytes[i].as_slice(),
-                    "encoded bytes mismatch for vector {i}",
-                );
+                // Load path: reopen the directory and verify everything persisted.
+                let storage = open_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+                assert_eq!(storage.total_vector_count(), COUNT);
+                assert_eq!(storage.distance(), distance);
+                assert_eq!(storage.deleted_vector_count(), 2);
+                assert!(storage.is_deleted_vector(DELETED));
+                assert!(storage.is_deleted_vector(DELETED_LATE));
 
-                // Lossy round-trip: compare directions via cosine, drop padding tail.
-                let retrieved = DenseVector::try_from(storage.get_vector::<Random>(key)).unwrap();
-                assert!(
-                    (1.0 - cosine(&inputs[i], &retrieved)).abs() < TOL,
-                    "retrieved vector direction mismatch for vector {i}: cosine {}",
-                    cosine(&inputs[i], &retrieved),
-                );
-                assert_eq!(inputs[i].len(), retrieved.len());
+                for i in 0..COUNT {
+                    let key = i as PointOffsetType;
+                    if key != DELETED && key != DELETED_LATE {
+                        assert!(
+                            !storage.is_deleted_vector(key),
+                            "vector {i} unexpectedly deleted (seed {seed:#x}, dim {dim})"
+                        );
+                    }
+
+                    // Encoded bytes match the oracle byte-for-byte (soft-deleted data is kept).
+                    let stored_bytes = storage.get_quantized_vector(key);
+                    assert_eq!(
+                        stored_bytes.as_ref(),
+                        expected_bytes[i].as_slice(),
+                        "encoded bytes mismatch for vector {i} (seed {seed:#x}, dim {dim})",
+                    );
+
+                    // Lossy round-trip: compare directions via cosine, drop padding tail.
+                    let retrieved =
+                        DenseVector::try_from(storage.get_vector::<Random>(key)).unwrap();
+                    assert!(
+                        (1.0 - cosine(&inputs[i], &retrieved)).abs() < TOL,
+                        "retrieved vector direction mismatch for vector {i} (seed {seed:#x}, dim {dim}): cosine {}",
+                        cosine(&inputs[i], &retrieved),
+                    );
+                    assert_eq!(inputs[i].len(), retrieved.len());
+                }
             }
         }
     }
@@ -544,60 +566,61 @@ mod tests {
     #[test]
     fn reinsert_clears_deleted_flag_and_count() {
         const DIM: usize = 128;
-        const SEED: u64 = 0x0BAD_C0DE;
 
-        let distance = Distance::Dot;
-        let dir = Builder::new().prefix("turbo_reinsert").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        for seed in SEEDS {
+            let distance = Distance::Dot;
+            let dir = Builder::new().prefix("turbo_reinsert").tempdir().unwrap();
+            let hw_counter = HardwareCounterCell::new();
 
-        let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+            let mut storage =
+                open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
 
-        // Two vectors, so the deleted counter has a non-trivial baseline and we
-        // can confirm the untouched neighbour is unaffected.
-        let inputs = make_vectors(DIM, 2, SEED);
-        for (i, vector) in inputs.iter().enumerate() {
+            // Two vectors, so the deleted counter has a non-trivial baseline and we
+            // can confirm the untouched neighbour is unaffected.
+            let inputs = make_vectors(DIM, 2, seed);
+            for (i, vector) in inputs.iter().enumerate() {
+                storage
+                    .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                    .unwrap();
+            }
+
+            // Baseline: nothing is deleted right after insertion.
+            assert_eq!(storage.deleted_vector_count(), 0);
+            assert!(!storage.is_deleted_vector(0));
+
+            // Soft-delete vector 0: flag set, counter incremented.
+            assert!(storage.delete_vector(0).unwrap());
+            assert_eq!(storage.deleted_vector_count(), 1);
+            assert!(storage.is_deleted_vector(0));
+            assert_eq!(storage.deleted_vector_bitslice().get_bit(0), Some(true));
+
+            // Re-insert (upsert) the same slot: it must come back to life.
             storage
-                .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
                 .unwrap();
+
+            // (a) The flag itself must be cleared — checked both via the accessor
+            //     and the raw deleted bitslice.
+            assert!(
+                !storage.is_deleted_vector(0),
+                "re-inserted vector still flagged as deleted (seed {seed:#x})",
+            );
+            assert_eq!(
+                storage.deleted_vector_bitslice().get_bit(0),
+                Some(false),
+                "deleted bitslice still marks re-inserted vector as deleted (seed {seed:#x})",
+            );
+
+            // (b) The deleted counter must be decremented back to zero.
+            assert_eq!(
+                storage.deleted_vector_count(),
+                0,
+                "deleted_vector_count was not decremented on re-insert (seed {seed:#x})",
+            );
+
+            // The untouched neighbor stayed live throughout.
+            assert!(!storage.is_deleted_vector(1));
         }
-
-        // Baseline: nothing is deleted right after insertion.
-        assert_eq!(storage.deleted_vector_count(), 0);
-        assert!(!storage.is_deleted_vector(0));
-
-        // Soft-delete vector 0: flag set, counter incremented.
-        assert!(storage.delete_vector(0).unwrap());
-        assert_eq!(storage.deleted_vector_count(), 1);
-        assert!(storage.is_deleted_vector(0));
-        assert_eq!(storage.deleted_vector_bitslice().get_bit(0), Some(true));
-
-        // Re-insert (upsert) the same slot: it must come back to life.
-        storage
-            .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
-            .unwrap();
-
-        // (a) The flag itself must be cleared — checked both via the accessor
-        //     and the raw deleted bitslice.
-        assert!(
-            !storage.is_deleted_vector(0),
-            "re-inserted vector still flagged as deleted",
-        );
-        assert_eq!(
-            storage.deleted_vector_bitslice().get_bit(0),
-            Some(false),
-            "deleted bitslice still marks re-inserted vector as deleted",
-        );
-
-        // (b) The deleted counter must be decremented back to zero.
-        assert_eq!(
-            storage.deleted_vector_count(),
-            0,
-            "deleted_vector_count was not decremented on re-insert",
-        );
-
-        // The untouched neighbor stayed live throughout.
-        assert!(!storage.is_deleted_vector(1));
     }
 
     /// Insert `vectors` at contiguous keys starting from 0.
@@ -618,28 +641,29 @@ mod tests {
     fn get_vector_opt_returns_none_for_absent_key() {
         const DIM: usize = 128;
         const COUNT: usize = 8;
-        const SEED: u64 = 0xC0FFEE;
 
-        let distance = Distance::Dot;
-        let dir = Builder::new().prefix("turbo_opt_none").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        for seed in SEEDS {
+            let distance = Distance::Dot;
+            let dir = Builder::new().prefix("turbo_opt_none").tempdir().unwrap();
+            let hw_counter = HardwareCounterCell::new();
 
-        let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
+            let mut storage =
+                open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+            insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
 
-        // Present key is `Some`; the first absent key and one well past it are `None`.
-        assert!(storage.get_vector_opt::<Random>(0).is_some());
-        assert!(
-            storage
-                .get_vector_opt::<Random>(COUNT as PointOffsetType)
-                .is_none()
-        );
-        assert!(
-            storage
-                .get_vector_opt::<Random>(COUNT as PointOffsetType + 5)
-                .is_none()
-        );
+            // Present key is `Some`; the first absent key and one well past it are `None`.
+            assert!(storage.get_vector_opt::<Random>(0).is_some());
+            assert!(
+                storage
+                    .get_vector_opt::<Random>(COUNT as PointOffsetType)
+                    .is_none()
+            );
+            assert!(
+                storage
+                    .get_vector_opt::<Random>(COUNT as PointOffsetType + 5)
+                    .is_none()
+            );
+        }
     }
 
     /// Upserting an existing key overwrites it in place: the count is unchanged
@@ -647,49 +671,50 @@ mod tests {
     #[test]
     fn insert_overwrites_existing_key_in_place() {
         const DIM: usize = 128;
-        const SEED: u64 = 0x0DECAF;
         const TOL: f32 = 2e-2;
 
-        let distance = Distance::Dot;
-        let dir = Builder::new().prefix("turbo_overwrite").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        for seed in SEEDS {
+            let distance = Distance::Dot;
+            let dir = Builder::new().prefix("turbo_overwrite").tempdir().unwrap();
+            let hw_counter = HardwareCounterCell::new();
 
-        // Two near-orthogonal unit vectors so the stored one is unambiguous.
-        let inputs = make_vectors(DIM, 2, SEED);
-        let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+            // Two near-orthogonal unit vectors so the stored one is unambiguous.
+            let inputs = make_vectors(DIM, 2, seed);
+            let mut storage =
+                open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
 
-        storage
-            .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
-            .unwrap();
-        assert_eq!(storage.total_vector_count(), 1);
-        let bytes_first = storage.get_quantized_vector(0).into_owned();
+            storage
+                .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+                .unwrap();
+            assert_eq!(storage.total_vector_count(), 1);
+            let bytes_first = storage.get_quantized_vector(0).into_owned();
 
-        // Overwrite slot 0 with the second vector.
-        storage
-            .insert_vector(0, inputs[1].as_slice().into(), &hw_counter)
-            .unwrap();
+            // Overwrite slot 0 with the second vector.
+            storage
+                .insert_vector(0, inputs[1].as_slice().into(), &hw_counter)
+                .unwrap();
 
-        // Overwrite, not append: still one vector, but with new bytes.
-        assert_eq!(storage.total_vector_count(), 1);
-        assert_ne!(
-            bytes_first.as_slice(),
-            storage.get_quantized_vector(0).as_ref(),
-            "encoded bytes were not replaced on overwrite",
-        );
+            // Overwrite, not append: still one vector, but with new bytes.
+            assert_eq!(storage.total_vector_count(), 1);
+            assert_ne!(
+                bytes_first.as_slice(),
+                storage.get_quantized_vector(0).as_ref(),
+                "encoded bytes were not replaced on overwrite (seed {seed:#x})",
+            );
 
-        // The retrieved vector points like the new input, not the old one.
-        let retrieved = DenseVector::try_from(storage.get_vector::<Random>(0)).unwrap();
-        assert!(
-            (1.0 - cosine(&inputs[1], &retrieved)).abs() < TOL,
-            "overwrite did not store the new vector: cosine {}",
-            cosine(&inputs[1], &retrieved),
-        );
-        assert!(
-            1.0 - cosine(&inputs[0], &retrieved) > TOL,
-            "overwritten vector still resembles the old input: cosine {}",
-            cosine(&inputs[0], &retrieved),
-        );
+            // The retrieved vector points like the new input, not the old one.
+            let retrieved = DenseVector::try_from(storage.get_vector::<Random>(0)).unwrap();
+            assert!(
+                (1.0 - cosine(&inputs[1], &retrieved)).abs() < TOL,
+                "overwrite did not store the new vector (seed {seed:#x}): cosine {}",
+                cosine(&inputs[1], &retrieved),
+            );
+            assert!(
+                1.0 - cosine(&inputs[0], &retrieved) > TOL,
+                "overwritten vector still resembles the old input (seed {seed:#x}): cosine {}",
+                cosine(&inputs[0], &retrieved),
+            );
+        }
     }
 
     /// `datatype` and `is_on_disk` for both in-RAM and on-disk openings.
@@ -761,34 +786,35 @@ mod tests {
     fn available_count_and_size_track_deletions() {
         const DIM: usize = 128;
         const COUNT: usize = 8;
-        const SEED: u64 = 0x5128E;
 
-        let distance = Distance::Dot;
-        let dir = Builder::new().prefix("turbo_avail").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        for seed in SEEDS {
+            let distance = Distance::Dot;
+            let dir = Builder::new().prefix("turbo_avail").tempdir().unwrap();
+            let hw_counter = HardwareCounterCell::new();
 
-        let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
+            let mut storage =
+                open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+            insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
 
-        let encoded_len = storage.get_quantized_vector(0).as_ref().len();
+            let encoded_len = storage.get_quantized_vector(0).as_ref().len();
 
-        // All present: available == total, size == count * encoded length.
-        assert_eq!(storage.available_vector_count(), COUNT);
-        assert_eq!(
-            storage.size_of_available_vectors_in_bytes(),
-            COUNT * encoded_len,
-        );
+            // All present: available == total, size == count * encoded length.
+            assert_eq!(storage.available_vector_count(), COUNT);
+            assert_eq!(
+                storage.size_of_available_vectors_in_bytes(),
+                COUNT * encoded_len,
+            );
 
-        // Soft-delete one: total is unchanged, available and size drop by one vector.
-        assert!(storage.delete_vector(0).unwrap());
-        assert_eq!(storage.total_vector_count(), COUNT);
-        assert_eq!(storage.deleted_vector_count(), 1);
-        assert_eq!(storage.available_vector_count(), COUNT - 1);
-        assert_eq!(
-            storage.size_of_available_vectors_in_bytes(),
-            (COUNT - 1) * encoded_len,
-        );
+            // Soft-delete one: total is unchanged, available and size drop by one vector.
+            assert!(storage.delete_vector(0).unwrap());
+            assert_eq!(storage.total_vector_count(), COUNT);
+            assert_eq!(storage.deleted_vector_count(), 1);
+            assert_eq!(storage.available_vector_count(), COUNT - 1);
+            assert_eq!(
+                storage.size_of_available_vectors_in_bytes(),
+                (COUNT - 1) * encoded_len,
+            );
+        }
     }
 
     /// A freshly created storage holds nothing: all counts are zero and reads miss.
@@ -815,43 +841,361 @@ mod tests {
     fn read_vectors_threads_user_data_and_matches_get_vector() {
         const DIM: usize = 128;
         const COUNT: usize = 8;
-        const SEED: u64 = 0x0DA7A;
 
-        let distance = Distance::Dot;
-        let dir = Builder::new().prefix("turbo_read_batch").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        for seed in SEEDS {
+            let distance = Distance::Dot;
+            let dir = Builder::new().prefix("turbo_read_batch").tempdir().unwrap();
+            let hw_counter = HardwareCounterCell::new();
 
-        let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
+            let mut storage =
+                open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+            insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
 
-        // User data is an arbitrary tag we expect echoed back beside each offset.
-        let keys: Vec<(usize, PointOffsetType)> =
-            (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
+            // User data is an arbitrary tag we expect echoed back beside each offset.
+            let keys: Vec<(usize, PointOffsetType)> =
+                (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
-        let mut seen: Vec<(usize, PointOffsetType, DenseVector)> = Vec::new();
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
-        });
+            let mut seen: Vec<(usize, PointOffsetType, DenseVector)> = Vec::new();
+            storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
+            });
 
-        // Order is not guaranteed (the trait permits parallel reads), so check
-        // each callback against its own offset, not its arrival position.
-        assert_eq!(seen.len(), COUNT);
-        for (tag, offset, vector) in &seen {
-            // The tag paired with this offset must travel back glued to it.
-            assert_eq!(
-                *tag,
-                *offset as usize * 10,
-                "user data not threaded to its offset"
-            );
-            let direct = DenseVector::try_from(storage.get_vector::<Random>(*offset)).unwrap();
-            assert_eq!(*vector, direct, "read_vectors disagrees with get_vector");
+            // Order is not guaranteed (the trait permits parallel reads), so check
+            // each callback against its own offset, not its arrival position.
+            assert_eq!(seen.len(), COUNT);
+            for (tag, offset, vector) in &seen {
+                // The tag paired with this offset must travel back glued to it.
+                assert_eq!(
+                    *tag,
+                    *offset as usize * 10,
+                    "user data not threaded to its offset (seed {seed:#x})"
+                );
+                let direct = DenseVector::try_from(storage.get_vector::<Random>(*offset)).unwrap();
+                assert_eq!(
+                    *vector, direct,
+                    "read_vectors disagrees with get_vector (seed {seed:#x})"
+                );
+            }
+
+            // Every requested offset was visited exactly once.
+            let mut offsets: Vec<PointOffsetType> = seen.iter().map(|(_, o, _)| *o).collect();
+            offsets.sort_unstable();
+            assert_eq!(offsets, (0..COUNT as PointOffsetType).collect::<Vec<_>>());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Model-based stateful test.
+    //
+    // A randomized sequence of operations is applied to the real storage and to
+    // an independent in-memory model in lockstep; the two are checked for exact
+    // agreement after every flush/drop/reload and at the end. The result is then
+    // copied from the appendable ChunkedMmap backend into the read-only
+    // single-file Mmap backend using only `update_from`, exactly as the optimizer
+    // does at the storage level (offset-preserving, carrying each deleted flag),
+    // and the destination is verified against the same model.
+    // ---------------------------------------------------------------------
+
+    const MODEL_TOL: f32 = 2e-2;
+
+    /// Independent reference codec: a fresh quantizer configured exactly like the
+    /// storage's internal one, used to compute expected encoded bytes and the
+    /// expected dequantized output without touching the storage.
+    struct Oracle {
+        quantizer: TurboQuantizer,
+        dim: usize,
+    }
+
+    impl Oracle {
+        fn new(dim: usize, distance: Distance) -> Self {
+            let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+            Self { quantizer, dim }
         }
 
-        // Every requested offset was visited exactly once.
-        let mut offsets: Vec<PointOffsetType> = seen.iter().map(|(_, o, _)| *o).collect();
-        offsets.sort_unstable();
-        assert_eq!(offsets, (0..COUNT as PointOffsetType).collect::<Vec<_>>());
+        fn encode(&self, v: &[f32]) -> Vec<u8> {
+            let mut buf = vec![0.0f64; self.quantizer.get_padded_dim()];
+            self.quantizer.quantize(v, &mut buf)
+        }
+
+        /// Mirror of [`TurboVectorStorage::dequantize_vector`]: dequantize, rotate
+        /// back, drop the padding tail, cast to f32.
+        fn dequantize(&self, encoded: &[u8]) -> DenseVector {
+            let mut d = self.quantizer.dequantize::<f64>(encoded);
+            self.quantizer.rotation.apply_inverse(&mut d);
+            d[..self.dim].iter().map(|&x| x as f32).collect()
+        }
+
+        fn quantized_size(&self) -> usize {
+            self.quantizer.quantized_size()
+        }
+    }
+
+    /// One offset in the reference model: the last-inserted input, its expected
+    /// encoded bytes, and the soft-delete flag.
+    struct Slot {
+        input: DenseVector,
+        encoded: Vec<u8>,
+        deleted: bool,
+    }
+
+    /// Random unit vector drawn from the scenario's RNG (one deterministic stream).
+    fn random_unit_vector(rng: &mut StdRng, dim: usize) -> DenseVector {
+        let v: DenseVector = (0..dim).map(|_| rng.random_range(-1.0f32..1.0)).collect();
+        let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        if norm == 0.0 {
+            // Degenerate all-zero draw: fall back to a fixed unit vector.
+            let mut u = vec![0.0f32; dim];
+            u[0] = 1.0;
+            return u;
+        }
+        v.iter().map(|&x| x / norm).collect()
+    }
+
+    /// Full tolerance-free comparison of a storage against the reference model.
+    fn assert_matches_model(
+        storage: &TurboVectorStorage,
+        model: &[Slot],
+        oracle: &Oracle,
+        ctx: &str,
+    ) {
+        let live = model.iter().filter(|s| !s.deleted).count();
+        let deleted = model.len() - live;
+
+        assert_eq!(
+            storage.total_vector_count(),
+            model.len(),
+            "{ctx}: total count"
+        );
+        assert_eq!(
+            storage.deleted_vector_count(),
+            deleted,
+            "{ctx}: deleted count"
+        );
+        assert_eq!(
+            storage.available_vector_count(),
+            live,
+            "{ctx}: available count"
+        );
+        assert_eq!(
+            storage.size_of_available_vectors_in_bytes(),
+            live * oracle.quantized_size(),
+            "{ctx}: available size in bytes",
+        );
+
+        for (i, slot) in model.iter().enumerate() {
+            let key = i as PointOffsetType;
+
+            assert_eq!(
+                storage.is_deleted_vector(key),
+                slot.deleted,
+                "{ctx}: deleted flag at {i}",
+            );
+
+            // Encode path: bytes match the oracle byte-for-byte (soft-deleted data is kept).
+            assert_eq!(
+                storage.get_quantized_vector(key).as_ref(),
+                slot.encoded.as_slice(),
+                "{ctx}: encoded bytes at {i}",
+            );
+
+            // Read path: dequantization matches the oracle exactly (f32-exact).
+            let retrieved = DenseVector::try_from(storage.get_vector::<Random>(key)).unwrap();
+            assert_eq!(
+                retrieved,
+                oracle.dequantize(&slot.encoded),
+                "{ctx}: dequantized at {i}"
+            );
+            assert_eq!(retrieved.len(), oracle.dim, "{ctx}: dim at {i}");
+
+            // `get_vector_opt` agrees with `get_vector` for present keys.
+            let opt = DenseVector::try_from(
+                storage
+                    .get_vector_opt::<Random>(key)
+                    .expect("present key is Some"),
+            )
+            .unwrap();
+            assert_eq!(opt, retrieved, "{ctx}: get_vector_opt at {i}");
+
+            // Codec sanity against the original input: the round-trip points the same way.
+            if oracle.dim > 1 && !slot.deleted {
+                let c = cosine(&slot.input, &retrieved);
+                assert!(
+                    (1.0 - c).abs() < MODEL_TOL,
+                    "{ctx}: direction at {i}: cosine {c}"
+                );
+            }
+        }
+
+        // Reads at or past the end miss.
+        assert!(
+            storage
+                .get_vector_opt::<Random>(model.len() as PointOffsetType)
+                .is_none(),
+            "{ctx}: opt past end",
+        );
+    }
+
+    /// Copy `src` into a fresh single-file (read-only) storage using only
+    /// `update_from`, exactly as the optimizer does at the storage level:
+    /// offset-preserving, carrying each vector's deleted flag. Verifies the copy
+    /// is byte-identical, then returns the destination after a flush/drop/reload.
+    fn optimizer_copy(
+        src: &TurboVectorStorage,
+        dst_dir: &Path,
+        dim: usize,
+        distance: Distance,
+        stopped: &AtomicBool,
+    ) -> TurboVectorStorage {
+        let count = src.total_vector_count() as PointOffsetType;
+        {
+            let mut dst = open_turbo_vector_storage(dst_dir, dim, distance, false).unwrap();
+            {
+                let mut it =
+                    (0..count).map(|k| (src.get_quantized_vector(k), src.is_deleted_vector(k)));
+                let range = dst.update_from(&mut it, stopped).unwrap();
+                assert_eq!(range, 0..count, "update_from range");
+            }
+
+            // The copy is verbatim: the destination is byte-identical to the source.
+            for k in 0..count {
+                assert_eq!(
+                    dst.get_quantized_vector(k).as_ref(),
+                    src.get_quantized_vector(k).as_ref(),
+                    "copy: encoded bytes diverge at {k}",
+                );
+                assert_eq!(
+                    dst.is_deleted_vector(k),
+                    src.is_deleted_vector(k),
+                    "copy: deleted flag diverges at {k}",
+                );
+            }
+            dst.flusher()().unwrap();
+        }
+        open_turbo_vector_storage(dst_dir, dim, distance, true).unwrap()
+    }
+
+    /// Drive a randomized op sequence against the appendable ChunkedMmap storage
+    /// and the model in lockstep, flushing/dropping/reloading at random, then copy
+    /// the result into the read-only single-file backend via `update_from`.
+    fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let oracle = Oracle::new(dim, distance);
+        let dir = Builder::new().prefix("turbo_model_src").tempdir().unwrap();
+        let dst_dir = Builder::new().prefix("turbo_model_dst").tempdir().unwrap();
+        let hw = HardwareCounterCell::new();
+        let stopped = AtomicBool::new(false);
+
+        let mut model: Vec<Slot> = Vec::new();
+        let mut in_ram = rng.random_range(0..2) == 0;
+        let mut storage =
+            open_appendable_turbo_vector_storage(dir.path(), dim, distance, in_ram).unwrap();
+
+        for _ in 0..ops {
+            let count = model.len() as PointOffsetType;
+            // Force growth while empty; otherwise pick a weighted op.
+            let op = if count == 0 {
+                0
+            } else {
+                rng.random_range(0..100)
+            };
+
+            match op {
+                // Append a new vector.
+                0..=34 => {
+                    let v = random_unit_vector(&mut rng, dim);
+                    let encoded = oracle.encode(&v);
+                    storage
+                        .insert_vector(count, v.as_slice().into(), &hw)
+                        .unwrap();
+                    model.push(Slot {
+                        input: v,
+                        encoded,
+                        deleted: false,
+                    });
+                }
+                // Overwrite an existing slot (also clears any deleted flag).
+                35..=59 => {
+                    let k = rng.random_range(0..model.len());
+                    let v = random_unit_vector(&mut rng, dim);
+                    let encoded = oracle.encode(&v);
+                    storage
+                        .insert_vector(k as PointOffsetType, v.as_slice().into(), &hw)
+                        .unwrap();
+                    model[k] = Slot {
+                        input: v,
+                        encoded,
+                        deleted: false,
+                    };
+                }
+                // Soft-delete an existing slot.
+                60..=84 => {
+                    let k = rng.random_range(0..model.len());
+                    let was_live = !model[k].deleted;
+                    assert_eq!(
+                        storage.delete_vector(k as PointOffsetType).unwrap(),
+                        was_live,
+                    );
+                    model[k].deleted = true;
+                }
+                // Flush + drop + reload (toggling in_ram), then a full check.
+                _ => {
+                    storage.flusher()().unwrap();
+                    drop(storage);
+                    in_ram = !in_ram;
+                    storage =
+                        open_appendable_turbo_vector_storage(dir.path(), dim, distance, in_ram)
+                            .unwrap();
+                    assert_matches_model(&storage, &model, &oracle, "after reload");
+                }
+            }
+
+            // Cheap per-op invariant: counts never drift.
+            let live = model.iter().filter(|s| !s.deleted).count();
+            assert_eq!(storage.total_vector_count(), model.len());
+            assert_eq!(storage.deleted_vector_count(), model.len() - live);
+        }
+
+        // Final flush/reload, then a full check of the source.
+        storage.flusher()().unwrap();
+        drop(storage);
+        let storage =
+            open_appendable_turbo_vector_storage(dir.path(), dim, distance, in_ram).unwrap();
+        assert_matches_model(&storage, &model, &oracle, "source final");
+
+        // Optimizer-style copy into the read-only backend, then verify it too.
+        let dst = optimizer_copy(&storage, dst_dir.path(), dim, distance, &stopped);
+        assert_matches_model(&dst, &model, &oracle, "dst after copy");
+    }
+
+    const SEEDS_PER_CELL: u64 = 8;
+    const OPS: usize = 60;
+
+    /// Sweep dims and distances with several randomized scenarios each.
+    #[test]
+    fn turbo_model_test_random_ops_dot() {
+        for dim in [1usize, 4, 127, 128, 4096, 4097] {
+            for seed in 0..SEEDS_PER_CELL {
+                // Mix dim/distance into the seed so cells don't share a stream.
+                let seed = seed
+                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    .wrapping_add(dim as u64);
+                run_model_scenario(dim, Distance::Dot, seed, OPS);
+            }
+        }
+    }
+
+    /// Sweep dims and distances with several randomized scenarios each.
+    #[test]
+    fn turbo_model_test_random_ops_cosine() {
+        for dim in [1usize, 4, 127, 128, 4096, 4097] {
+            for seed in 0..SEEDS_PER_CELL {
+                // Mix dim/distance into the seed so cells don't share a stream.
+                let seed = seed
+                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    .wrapping_add(dim as u64 + 1);
+                run_model_scenario(dim, Distance::Cosine, seed, OPS);
+            }
+        }
     }
 }
 

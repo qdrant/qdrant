@@ -153,6 +153,7 @@ impl TurboEncodedVectorStorage {
         }
 
         // Persist + re-mmap so reads observe the appended vectors.
+        writer.flush()?;
         let file = writer
             .into_inner()
             .map_err(io::IntoInnerError::into_error)?;
