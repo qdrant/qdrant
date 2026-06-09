@@ -18,12 +18,14 @@ impl<S: UniversalRead> LiveReload for VectorStorageReadEnum<S> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            // Immutable dense (mmap) live-reload is postponed: needs the deleted
-            // flags threaded through `ImmutableDenseVectors` (Dense* step).
-            VectorStorageReadEnum::Dense(_)
-            | VectorStorageReadEnum::DenseByte(_)
-            | VectorStorageReadEnum::DenseHalf(_) => {
-                todo!("live_reload for immutable dense (mmap) storage is not yet implemented")
+            VectorStorageReadEnum::Dense(s) => {
+                s.live_reload(fs, deleted_points, new_points, hw_counter)
+            }
+            VectorStorageReadEnum::DenseByte(s) => {
+                s.live_reload(fs, deleted_points, new_points, hw_counter)
+            }
+            VectorStorageReadEnum::DenseHalf(s) => {
+                s.live_reload(fs, deleted_points, new_points, hw_counter)
             }
             VectorStorageReadEnum::DenseChunked(s) => {
                 s.live_reload(fs, deleted_points, new_points, hw_counter)

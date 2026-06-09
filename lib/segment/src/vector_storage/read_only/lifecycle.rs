@@ -5,10 +5,10 @@ use common::universal_io::UniversalRead;
 
 use super::VectorStorageReadEnum;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::{VectorDataConfig, VectorStorageDatatype, VectorStorageType};
-use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage_impl;
-use crate::vector_storage::dense::read_only::ReadOnlyChunkedDenseVectorStorage;
+use crate::vector_storage::dense::read_only::{
+    ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
+};
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
 
 impl<S: UniversalRead> VectorStorageReadEnum<S> {
@@ -20,10 +20,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         fs: &S::Fs,
         vector_config: &VectorDataConfig,
         path: &Path,
-    ) -> OperationResult<Option<Self>>
-    where
-        S::Fs: Clone,
-    {
+    ) -> OperationResult<Option<Self>> {
         let dim = vector_config.size;
         let distance = vector_config.distance;
         let datatype = vector_config.datatype.unwrap_or_default();
@@ -109,30 +106,15 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
             }
         } else {
             match datatype {
-                VectorStorageDatatype::Float32 => {
-                    Self::Dense(Box::new(open_dense_vector_storage_impl::<
-                        VectorElementType,
-                        S,
-                    >(
-                        fs.clone(), path, dim, distance, populate
-                    )?))
-                }
-                VectorStorageDatatype::Uint8 => {
-                    Self::DenseByte(Box::new(open_dense_vector_storage_impl::<
-                        VectorElementTypeByte,
-                        S,
-                    >(
-                        fs.clone(), path, dim, distance, populate
-                    )?))
-                }
-                VectorStorageDatatype::Float16 => {
-                    Self::DenseHalf(Box::new(open_dense_vector_storage_impl::<
-                        VectorElementTypeHalf,
-                        S,
-                    >(
-                        fs.clone(), path, dim, distance, populate
-                    )?))
-                }
+                VectorStorageDatatype::Float32 => Self::Dense(Box::new(
+                    ReadOnlyImmutableDenseVectorStorage::open(fs, path, dim, distance, populate)?,
+                )),
+                VectorStorageDatatype::Uint8 => Self::DenseByte(Box::new(
+                    ReadOnlyImmutableDenseVectorStorage::open(fs, path, dim, distance, populate)?,
+                )),
+                VectorStorageDatatype::Float16 => Self::DenseHalf(Box::new(
+                    ReadOnlyImmutableDenseVectorStorage::open(fs, path, dim, distance, populate)?,
+                )),
                 VectorStorageDatatype::Turbo4 => {
                     return Err(OperationError::service_error(
                         "Turbo4 datatype storage is not yet supported",
