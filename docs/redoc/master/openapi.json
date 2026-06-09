@@ -8638,24 +8638,6 @@
           "snowball"
         ]
       },
-      "DisabledStemmerParams": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/NoStemmer"
-          }
-        }
-      },
-      "NoStemmer": {
-        "description": "Tag selecting the explicit \"no stemming\" algorithm.",
-        "type": "string",
-        "enum": [
-          "none"
-        ]
-      },
       "SnowballLanguage": {
         "description": "Languages supported by snowball stemmer.",
         "type": "string",
@@ -8679,6 +8661,24 @@
           "swedish",
           "tamil",
           "turkish"
+        ]
+      },
+      "DisabledStemmerParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/NoStemmer"
+          }
+        }
+      },
+      "NoStemmer": {
+        "description": "Tag selecting the explicit \"no stemming\" algorithm.",
+        "type": "string",
+        "enum": [
+          "none"
         ]
       },
       "BoolIndexParams": {
