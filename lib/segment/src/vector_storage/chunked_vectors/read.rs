@@ -7,9 +7,9 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UserData, read_json_via,
+    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
+    read_json_via, read_whole_via,
 };
-use fs_err as fs;
 use num_traits::AsPrimitive;
 
 use super::chunks::{chunk_name, read_chunks};
@@ -34,6 +34,9 @@ pub struct ChunkedVectorsRead<T: bytemuck::Pod + Send, S: UniversalRead> {
     pub(super) len: usize,
     pub(super) chunks: Vec<TypedStorage<S, T>>,
     pub(super) directory: PathBuf,
+    /// Open-time chunk settings, reused by live-reload to open new chunks.
+    pub(super) advice: AdviceSetting,
+    pub(super) populate: bool,
 }
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
@@ -83,7 +86,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             )));
         }
 
-        let len = read_status_len(&Self::status_file(directory))?;
+        let len = read_status_len(fs, &Self::status_file(directory))?;
         let chunks = read_chunks(fs, directory, advice, populate.unwrap_or_default(), false)?;
 
         Ok(Self {
@@ -91,6 +94,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             len,
             chunks,
             directory: directory.to_owned(),
+            advice,
+            populate: populate.unwrap_or_default(),
         })
     }
 
@@ -291,6 +296,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             len: _,
             chunks,
             directory: _,
+            advice: _,
+            populate: _,
         } = self;
         for chunk in chunks {
             chunk.clear_ram_cache()?;
@@ -304,23 +311,152 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             len: _,
             chunks: _,
             directory: _,
+            advice: _,
+            populate: _,
         } = self;
 
         0
     }
 }
 
-fn read_status_len(status_file: &Path) -> OperationResult<usize> {
-    let bytes = fs::read(status_file)?;
+pub(super) fn read_status_len<Fs: UniversalReadFs>(
+    fs: &Fs,
+    status_file: &Path,
+) -> OperationResult<usize> {
     let needed = std::mem::size_of::<usize>();
-    if bytes.len() < needed {
-        return Err(OperationError::service_error(format!(
-            "Status file {} is too short: {} < {needed}",
-            status_file.display(),
-            bytes.len(),
-        )));
+    let len = read_whole_via(fs, status_file, |bytes| {
+        let head = bytes.get(..needed).ok_or_else(|| {
+            UniversalIoError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!(
+                    "Status file {} is too short: {} < {needed}",
+                    status_file.display(),
+                    bytes.len(),
+                ),
+            ))
+        })?;
+        Ok(usize::from_ne_bytes(head.try_into().expect("size matches")))
+    })?;
+    Ok(len)
+}
+
+#[cfg(test)]
+mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Random;
+    use common::sorted_slice::SortedSlice;
+    use common::universal_io::{MmapFile, MmapFs};
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::common::live_reload::LiveReload;
+    use crate::vector_storage::chunked_vectors::ChunkedVectors;
+
+    fn make_vec(seed: usize, dim: usize) -> Vec<f32> {
+        (0..dim).map(|i| (seed * dim + i) as f32).collect()
     }
-    Ok(usize::from_ne_bytes(
-        bytes[..needed].try_into().expect("size matches"),
-    ))
+
+    /// A read-only view picks up writer-appended vectors after `live_reload`.
+    #[test]
+    fn live_reload_picks_up_appended_vectors() {
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let first: Vec<Vec<f32>> = (0..100).map(|s| make_vec(s, DIM)).collect();
+        let second: Vec<Vec<f32>> = (100..250).map(|s| make_vec(s, DIM)).collect();
+
+        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
+            MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        for vector in &first {
+            writer.push(vector.as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        assert_eq!(reader.len(), first.len());
+
+        // Append more through the writer, then reload the read-only view.
+        for vector in &second {
+            writer.push(vector.as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), first.len() + second.len());
+        let got = reader
+            .get::<Random>(first.len() as VectorOffsetType)
+            .unwrap();
+        assert_eq!(got.as_ref(), second[0].as_slice());
+    }
+
+    /// `live_reload` opens only chunk files created since the last load, keeping
+    /// the chunks it already holds (which still see vectors appended into them).
+    #[test]
+    fn live_reload_adopts_only_new_chunks() {
+        const DIM: usize = 32; // 4096 vectors per test chunk
+        let dir = Builder::new()
+            .prefix("chunked_reload_grow")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
+            MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        for s in 0..4000 {
+            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Some(false),
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 4000);
+        assert_eq!(reader.chunks.len(), 1);
+
+        for s in 4000..9000 {
+            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), 9000);
+        assert_eq!(reader.chunks.len(), 3, "two new chunk files adopted");
+
+        // 4050 was appended into the already-open first chunk; 5000/8999 are new chunks.
+        for offset in [3999, 4050, 5000, 8999] {
+            assert_eq!(
+                reader.get::<Random>(offset).unwrap().as_ref(),
+                make_vec(offset, DIM).as_slice(),
+            );
+        }
+    }
 }
