@@ -23,6 +23,33 @@ use crate::types::{Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
 use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
+impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
+    /// Plain (full-scan) sparse search over a set of pre-filtered points.
+    ///
+    /// Thin wrapper that drives the shared [`SparseVectorIndexReadView`]; kept on
+    /// the index for benches and other direct callers.
+    ///
+    /// [`SparseVectorIndexReadView`]: super::read_view::SparseVectorIndexReadView
+    pub fn search_plain(
+        &self,
+        sparse_vector: &SparseVector,
+        filter: &Filter,
+        top: usize,
+        prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        self.with_view(|view| {
+            view.search_plain(
+                sparse_vector,
+                filter,
+                top,
+                prefiltered_points,
+                vector_query_context,
+            )
+        })
+    }
+}
+
 impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInvertedIndex> {
     fn search(
         &self,
@@ -32,34 +59,36 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
         _params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let mut results = Vec::with_capacity(vectors.len());
-        let mut prefiltered_points = None;
+        self.with_view(|view| {
+            let mut results = Vec::with_capacity(vectors.len());
+            let mut prefiltered_points = None;
 
-        for vector in vectors {
-            check_process_stopped(&query_context.is_stopped())?;
+            for vector in vectors {
+                check_process_stopped(&query_context.is_stopped())?;
 
-            let search_results = if query_context.is_require_idf() {
-                let vector = (*vector).clone().transform(|mut vector| {
-                    match &mut vector {
-                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {
-                            return Err(OperationError::WrongSparse);
+                let search_results = if query_context.is_require_idf() {
+                    let vector = (*vector).clone().transform(|mut vector| {
+                        match &mut vector {
+                            VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {
+                                return Err(OperationError::WrongSparse);
+                            }
+                            VectorInternal::Sparse(sparse) => {
+                                query_context.remap_idf_weights(&sparse.indices, &mut sparse.values)
+                            }
                         }
-                        VectorInternal::Sparse(sparse) => {
-                            query_context.remap_idf_weights(&sparse.indices, &mut sparse.values)
-                        }
-                    }
 
-                    Ok(vector)
-                })?;
+                        Ok(vector)
+                    })?;
 
-                self.search_query(&vector, filter, top, &mut prefiltered_points, query_context)?
-            } else {
-                self.search_query(vector, filter, top, &mut prefiltered_points, query_context)?
-            };
+                    view.search_query(&vector, filter, top, &mut prefiltered_points, query_context)?
+                } else {
+                    view.search_query(vector, filter, top, &mut prefiltered_points, query_context)?
+                };
 
-            results.push(search_results);
-        }
-        Ok(results)
+                results.push(search_results);
+            }
+            Ok(results)
+        })
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
