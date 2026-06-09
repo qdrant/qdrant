@@ -7,17 +7,15 @@ use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::universal_io::UniversalRead;
 use uuid::Uuid;
 
-use crate::id_tracker::IdTrackerEnum;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
-use crate::index::field_index::FieldIndex;
+use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::read_only::VectorIndexReadEnum;
-use crate::index::struct_payload_index::{StructPayloadIndex, StructPayloadIndexReadView};
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::index::struct_payload_index::StructPayloadIndexReadView;
+use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{SegmentConfig, SegmentType, SeqNumberType, VectorNameBuf};
-use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -36,7 +34,7 @@ pub struct ReadOnlySegment<S: UniversalRead> {
 
     pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     pub vector_data: HashMap<VectorNameBuf, ReadOnlyVectorData<S>>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>, // ToDo: read-only struct payload index
+    pub payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
     pub payload_storage: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
 
     /// Shows what kind of indexes and storages are used in this segment
@@ -76,10 +74,10 @@ pub type ReadOnlySegmentReadViewFor<'s, S> = SegmentReadView<
     ReadOnlyIdTrackerEnum<S>,
     StructPayloadIndexReadView<
         's,
-        PayloadStorageEnum,
-        IdTrackerEnum,
-        VectorStorageEnum,
-        FieldIndex,
+        ReadOnlyPayloadStorage<S>,
+        ReadOnlyIdTrackerEnum<S>,
+        VectorStorageReadEnum<S>,
+        ReadOnlyFieldIndex<S>,
     >,
     ReadOnlyPayloadStorage<S>,
     ReadOnlyVectorData<S>,
