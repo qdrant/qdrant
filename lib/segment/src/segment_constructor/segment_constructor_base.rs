@@ -56,6 +56,7 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+use crate::vector_storage::turbo::open_turbo_vector_storage;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
@@ -123,9 +124,13 @@ fn open_mmap_vector_storage(
                 vector_config.distance,
                 populate,
             ),
-            VectorStorageDatatype::Turbo4 => {
-                unimplemented!("turbo4 datatype storage not yet wired up")
-            }
+            VectorStorageDatatype::Turbo4 => open_turbo_vector_storage(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                populate,
+            )
+            .map(|s| VectorStorageEnum::DenseTurbo(Box::new(s))),
         }
     }
 }
@@ -389,7 +394,7 @@ pub(crate) fn create_sparse_vector_index(
             VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
         }
         (_, VectorStorageDatatype::Turbo4) => {
-            unimplemented!("turbo4 datatype storage not yet wired up")
+            unreachable!("Sparse index incompatible with turbo. Validated at API level.")
         }
     };
 

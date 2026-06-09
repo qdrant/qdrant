@@ -8,10 +8,6 @@
 //! It intentionally implements only [`VectorStorageRead`] + [`VectorStorage`],
 //! **not** `DenseVectorStorage<T>`.
 
-// Scaffold: nothing constructs `TurboVectorStorage` yet. Remove once it is wired
-// into `VectorStorageEnum::DenseTurbo`.
-#![allow(dead_code)]
-
 mod turbo_encoded_vectors;
 
 use std::borrow::Cow;
@@ -116,6 +112,17 @@ impl TurboVectorStorage {
                 .map(|i| *i as f32)
                 .collect::<Vec<_>>(),
         ))
+    }
+}
+
+impl std::fmt::Debug for TurboVectorStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TurboVectorStorage")
+            .field("dim", &self.dim)
+            .field("distance", &self.distance)
+            .field("total_vector_count", &self.storage.vectors_count())
+            .field("deleted_count", &self.deleted_count)
+            .finish_non_exhaustive()
     }
 }
 

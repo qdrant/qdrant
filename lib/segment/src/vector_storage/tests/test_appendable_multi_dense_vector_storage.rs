@@ -84,7 +84,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             | VectorStorageEnum::DenseUringHalf(_) => unreachable!(),
             VectorStorageEnum::DenseAppendableMemmap(_)
             | VectorStorageEnum::DenseAppendableMemmapByte(_)
-            | VectorStorageEnum::DenseAppendableMemmapHalf(_) => unreachable!(),
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseTurbo(_) => unreachable!(),
             VectorStorageEnum::SparseMmap(_) => unreachable!(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => unreachable!(),
