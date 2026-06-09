@@ -14,7 +14,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::{
-    DenseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 /// Placeholder vector storage that contains no data.
@@ -84,7 +84,7 @@ pub fn new_empty_dense_vector_storage(
     ))
 }
 
-impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
+impl DenseVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -96,7 +96,9 @@ impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
         // flag from `is_deleted_vector` keeps the placeholder from being read.
         Cow::Owned(vec![0.0; self.dim])
     }
+}
 
+impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
     fn update_from<'a>(
         &mut self,
         _other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,

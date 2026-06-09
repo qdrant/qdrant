@@ -25,6 +25,13 @@ pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: 
     deleted_count: usize,
 }
 
+impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVectorStorage<T, S> {
+    pub fn size_of_available_vectors_in_bytes(&self) -> usize {
+        // Total flattened element bytes across all stored multi-vectors.
+        self.vectors.len() * self.vectors.dim() * std::mem::size_of::<T>()
+    }
+}
+
 impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     for ReadOnlyChunkedMultiDenseVectorStorage<T, S>
 {

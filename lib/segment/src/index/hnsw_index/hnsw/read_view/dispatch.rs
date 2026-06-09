@@ -1,6 +1,6 @@
 use common::types::ScoredPointOffset;
 
-use super::HNSWIndexReadViewEnum;
+use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
@@ -10,9 +10,16 @@ use crate::index::PayloadIndexRead;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::types::{Filter, QuantizationSearchParams, SearchParams};
-use crate::vector_storage::VectorStorageRead;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-impl HNSWIndexReadViewEnum<'_> {
+impl<'a, I, V, Q, P> HNSWIndexReadView<'a, I, V, Q, P>
+where
+    I: IdTrackerRead,
+    V: VectorStorageRead + RawScorerBuilder,
+    Q: QuantizedVectorsReadAccess,
+    P: PayloadIndexRead,
+{
     pub(crate) fn search(
         &self,
         vectors: &[&QueryVector],

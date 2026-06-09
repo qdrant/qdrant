@@ -22,7 +22,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
 use crate::vector_storage::{
-    DenseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 const VECTORS_PATH: &str = "matrix.dat";
@@ -210,7 +210,7 @@ where
     Ok(storage)
 }
 
-impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
+impl<T, S> DenseVectorStorageRead<T> for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead,
@@ -231,7 +231,13 @@ where
         let mmap_store = self.vectors.as_ref().unwrap();
         mmap_store.for_each_in_batch(keys, f);
     }
+}
 
+impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead,
+{
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,

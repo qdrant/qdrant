@@ -15,6 +15,7 @@ use crate::types::Distance;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage_with_uring;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::vector_storage_base::VectorStorageRead;
 
 #[test]
@@ -102,7 +103,7 @@ fn test_random_score(
     let mut async_scorer = FilteredScorer::new(
         query,
         storage,
-        None,
+        None::<&QuantizedVectors>,
         None,
         deleted_points,
         HardwareCounterCell::new(),

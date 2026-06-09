@@ -15,7 +15,8 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
-    DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    DenseVectorStorage, DenseVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    VectorStorageRead,
 };
 
 /// In-memory vector storage that is volatile
@@ -75,7 +76,7 @@ impl<T: PrimitiveVectorElement> VolatileDenseVectorStorage<T> {
     }
 }
 
-impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for VolatileDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -83,7 +84,9 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
         Cow::Borrowed(self.vectors.get(key as VectorOffsetType))
     }
+}
 
+impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorStorage<T> {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,

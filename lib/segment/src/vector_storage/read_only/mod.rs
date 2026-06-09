@@ -1,16 +1,22 @@
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::data_types::vectors::{
+    QueryVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
+};
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
 use crate::vector_storage::dense::read_only::chunked_vector_storage::ReadOnlyChunkedDenseVectorStorage;
 use crate::vector_storage::multi_dense::read_only::chunked_vector_storage::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::sparse::read_only::sparse_vector_storage::ReadOnlySparseVectorStorage;
+use crate::vector_storage::{
+    DenseVectorStorageRead, RawScorer, RawScorerBuilder, VectorStorageRead, raw_scorer_impl,
+};
 
 /// Read-only counterpart of [`super::super::VectorStorageEnum`].
 ///
@@ -185,6 +191,65 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.deleted_vector_bitslice(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.deleted_vector_bitslice(),
             VectorStorageReadEnum::Sparse(s) => s.deleted_vector_bitslice(),
+        }
+    }
+}
+
+impl<S: UniversalRead> VectorStorageReadEnum<S> {
+    /// Size of all available (non-deleted) vectors in bytes.
+    pub fn size_of_available_vectors_in_bytes(&self) -> usize {
+        match self {
+            VectorStorageReadEnum::Dense(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseByte(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseHalf(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseChunked(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
+                s.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
+                s.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageReadEnum::Sparse(_) => {
+                unreachable!("Sparse storage does not know its total size, get from index instead")
+            }
+        }
+    }
+}
+
+impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
+    fn build_raw_scorer<'a>(
+        &'a self,
+        query: QueryVector,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        match self {
+            VectorStorageReadEnum::Dense(s) => raw_scorer_impl(query, s.as_ref(), hardware_counter),
+            VectorStorageReadEnum::DenseByte(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseHalf(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseChunked(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseChunkedByte(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseChunkedHalf(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            // Multi / sparse read-only storages don't yet implement the typed
+            // storage traits the query scorers are built from.
+            VectorStorageReadEnum::MultiDenseChunked(_)
+            | VectorStorageReadEnum::MultiDenseChunkedByte(_)
+            | VectorStorageReadEnum::MultiDenseChunkedHalf(_)
+            | VectorStorageReadEnum::Sparse(_) => Err(OperationError::service_error(
+                "raw scorer is not yet supported for read-only multi / sparse vector storage",
+            )),
         }
     }
 }

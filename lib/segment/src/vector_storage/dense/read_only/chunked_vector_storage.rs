@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use common::bitvec::{BitSlice, BitVec};
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
@@ -7,7 +9,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
-use crate::vector_storage::{VectorOffsetType, VectorStorageRead};
+use crate::vector_storage::{DenseVectorStorageRead, VectorOffsetType, VectorStorageRead};
 
 #[derive(Debug)]
 pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
@@ -19,6 +21,20 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
     deleted: BitVec,
     distance: Distance,
     deleted_count: usize,
+}
+
+impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
+    for ReadOnlyChunkedDenseVectorStorage<T, S>
+{
+    fn vector_dim(&self) -> usize {
+        self.vectors.dim()
+    }
+
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+        self.vectors
+            .get::<P>(key as VectorOffsetType)
+            .expect("vector not found")
+    }
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead

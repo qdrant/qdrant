@@ -162,25 +162,15 @@ pub trait VectorStorage: VectorStorageRead {
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool>;
 }
 
-pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
+/// Read-only access to a dense vector storage.
+///
+/// Everything needed to read and score dense vectors, without the ability to
+/// mutate. Implemented by read-only storages too, which cannot provide
+/// [`DenseVectorStorage::update_from`].
+pub trait DenseVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
     fn vector_dim(&self) -> usize;
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]>;
-
-    /// Add the given dense vectors to the storage.
-    ///
-    /// Incoming vectors are always in [`VectorElementType`] (`f32`); storages
-    /// with a narrower element type convert them on insert.
-    ///
-    /// # Returns
-    /// The range of point offsets that were added to the storage.
-    ///
-    /// If stopped, the operation returns a cancellation error.
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>>;
 
     /// Call `f` with the raw bytes of the vector if it exists.
     ///
@@ -214,6 +204,23 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
     }
+}
+
+pub trait DenseVectorStorage<T: PrimitiveVectorElement>: DenseVectorStorageRead<T> {
+    /// Add the given dense vectors to the storage.
+    ///
+    /// Incoming vectors are always in [`VectorElementType`] (`f32`); storages
+    /// with a narrower element type convert them on insert.
+    ///
+    /// # Returns
+    /// The range of point offsets that were added to the storage.
+    ///
+    /// If stopped, the operation returns a cancellation error.
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>>;
 }
 
 pub trait SparseVectorStorage: VectorStorageRead {
