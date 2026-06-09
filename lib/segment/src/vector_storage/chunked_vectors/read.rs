@@ -7,9 +7,9 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UserData, read_json_via,
+    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
+    read_json_via, read_whole_via,
 };
-use fs_err as fs;
 use num_traits::AsPrimitive;
 
 use super::chunks::{chunk_name, read_chunks};
@@ -86,7 +86,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             )));
         }
 
-        let len = read_status_len(&Self::status_file(directory))?;
+        let len = read_status_len(fs, &Self::status_file(directory))?;
         let chunks = read_chunks(fs, directory, advice, populate.unwrap_or_default(), false)?;
 
         Ok(Self {
@@ -319,19 +319,25 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     }
 }
 
-pub(super) fn read_status_len(status_file: &Path) -> OperationResult<usize> {
-    let bytes = fs::read(status_file)?;
+pub(super) fn read_status_len<Fs: UniversalReadFs>(
+    fs: &Fs,
+    status_file: &Path,
+) -> OperationResult<usize> {
     let needed = std::mem::size_of::<usize>();
-    if bytes.len() < needed {
-        return Err(OperationError::service_error(format!(
-            "Status file {} is too short: {} < {needed}",
-            status_file.display(),
-            bytes.len(),
-        )));
-    }
-    Ok(usize::from_ne_bytes(
-        bytes[..needed].try_into().expect("size matches"),
-    ))
+    let len = read_whole_via(fs, status_file, |bytes| {
+        let head = bytes.get(..needed).ok_or_else(|| {
+            UniversalIoError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!(
+                    "Status file {} is too short: {} < {needed}",
+                    status_file.display(),
+                    bytes.len(),
+                ),
+            ))
+        })?;
+        Ok(usize::from_ne_bytes(head.try_into().expect("size matches")))
+    })?;
+    Ok(len)
 }
 
 #[cfg(test)]

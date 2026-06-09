@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalWrite,
+    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    UniversalWrite,
 };
-use fs_err as fs;
 
 use super::config::{MMAP_CHUNKS_PATTERN_END, MMAP_CHUNKS_PATTERN_START};
 
@@ -37,19 +37,18 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
     populate: bool,
     writeable: bool,
 ) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
+    // List only the chunk files via the prefix, so unrelated files in the
+    // directory are never enumerated.
+    let chunks_prefix = directory.join(MMAP_CHUNKS_PATTERN_START);
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_file() {
-            let chunk_id = path
-                .file_name()
-                .and_then(|file_name| file_name.to_str())
-                .and_then(check_mmap_file_name_pattern);
+    for path in fs.list_files(&chunks_prefix)? {
+        let chunk_id = path
+            .file_name()
+            .and_then(|file_name| file_name.to_str())
+            .and_then(check_mmap_file_name_pattern);
 
-            if let Some(chunk_id) = chunk_id {
-                chunks_files.insert(chunk_id, path);
-            }
+        if let Some(chunk_id) = chunk_id {
+            chunks_files.insert(chunk_id, path);
         }
     }
 

@@ -22,7 +22,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ChunkedVectorsRea
         _new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let new_len = read_status_len(&Self::status_file(&self.directory))?;
+        let new_len = read_status_len(fs, &Self::status_file(&self.directory))?;
         if new_len == self.len {
             return Ok(());
         }
