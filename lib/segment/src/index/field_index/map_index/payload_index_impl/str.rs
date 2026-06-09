@@ -78,8 +78,8 @@ impl PayloadFieldIndexRead for MapIndex<str> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        condition_checker_impl(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+        Ok(condition_checker_impl(self, condition, hw_acc))
     }
 }
 
@@ -120,8 +120,8 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        condition_checker_impl(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+        Ok(condition_checker_impl(self, condition, hw_acc))
     }
 }
 

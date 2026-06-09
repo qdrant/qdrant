@@ -140,8 +140,8 @@ impl PayloadFieldIndexRead for BoolIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        read_ops::condition_checker(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+        Ok(read_ops::condition_checker(self, condition, hw_acc))
     }
 }
 

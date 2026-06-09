@@ -193,7 +193,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
         read_ops::condition_checker(self, condition, hw_acc)
     }
 
