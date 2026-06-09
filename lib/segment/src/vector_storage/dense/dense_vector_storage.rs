@@ -25,8 +25,8 @@ use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
-const VECTORS_PATH: &str = "matrix.dat";
-const DELETED_PATH: &str = "deleted.dat";
+pub(crate) const VECTORS_PATH: &str = "matrix.dat";
+pub(crate) const DELETED_PATH: &str = "deleted.dat";
 
 /// Stores all dense vectors in mem-mapped file
 ///
@@ -216,7 +216,7 @@ where
     S: UniversalRead,
 {
     fn vector_dim(&self) -> usize {
-        self.vectors.as_ref().unwrap().dim
+        self.vectors.as_ref().unwrap().dim()
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -244,7 +244,7 @@ where
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
-        let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
+        let start_index = self.vectors.as_ref().unwrap().num_vectors() as PointOffsetType;
         let mut end_index = start_index;
 
         // Extend vectors file, write other vectors into it
@@ -318,7 +318,7 @@ where
     }
 
     fn total_vector_count(&self) -> usize {
-        self.vectors.as_ref().unwrap().num_vectors
+        self.vectors.as_ref().unwrap().num_vectors()
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {

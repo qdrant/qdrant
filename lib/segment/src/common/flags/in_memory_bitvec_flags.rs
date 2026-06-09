@@ -66,6 +66,14 @@ impl InMemoryBitvecFlags {
         Ok(Self { bitvec, count })
     }
 
+    /// Wrap an already-materialized deletion `bitvec`, computing the set-flag
+    /// count. For flags coming from an on-disk format other than the dynamic
+    /// flags read by [`Self::open`] (e.g. the immutable dense `deleted.dat`).
+    pub fn from_bitvec(bitvec: BitVec) -> Self {
+        let count = bitvec.count_ones();
+        Self { bitvec, count }
+    }
+
     /// Whether the flag at `key` is set; out-of-range keys read as unset.
     pub fn get(&self, key: PointOffsetType) -> bool {
         self.bitvec.get(key as usize).is_some_and(|bit| *bit)
