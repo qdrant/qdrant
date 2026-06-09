@@ -69,12 +69,6 @@ pub struct TurboVectorStorage {
 }
 
 impl TurboVectorStorage {
-    /// Memory layout of a single encoded vector.
-    pub fn quantized_vector_layout(&self) -> OperationResult<Layout> {
-        // TODO: build from quantized_vector_size() with the encoding alignment.
-        unimplemented!("TODO: layout of one encoded vector")
-    }
-
     /// Raw encoded vector blob for one vector (no dequantization/lloyd lookup).
     pub fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_quantized_vector(key)
