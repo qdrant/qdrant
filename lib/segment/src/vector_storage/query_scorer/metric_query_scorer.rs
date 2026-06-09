@@ -10,14 +10,14 @@ use zerocopy::FromBytes;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
-use crate::vector_storage::DenseVectorStorage;
+use crate::vector_storage::DenseVectorStorageRead;
 use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct MetricQueryScorer<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
 > {
     vector_storage: &'a TVectorStorage,
     query: TypedDenseVector<TElement>,
@@ -29,7 +29,7 @@ impl<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
 > MetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
     pub fn new(
@@ -61,7 +61,7 @@ impl<
 impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
 > QueryScorer for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
     type TVector = [TElement];

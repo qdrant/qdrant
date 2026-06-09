@@ -16,6 +16,7 @@ use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageRead, check_deleted_condition};
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -57,8 +58,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let searcher = BatchFilteredSearcher::new(
             &[query_vector],
-            &vector_storage,
-            None,
+            &*vector_storage,
+            None::<&QuantizedVectors>,
             None,
             top,
             deleted_point_bitslice,

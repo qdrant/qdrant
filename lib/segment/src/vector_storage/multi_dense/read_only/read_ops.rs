@@ -12,6 +12,13 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
     flattened_to_multi_vector, read_multi_vector,
 };
 
+impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVectorStorage<T, S> {
+    pub fn size_of_available_vectors_in_bytes(&self) -> usize {
+        // Total flattened element bytes across all stored multi-vectors.
+        self.vectors.len() * self.vectors.dim() * std::mem::size_of::<T>()
+    }
+}
+
 impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     for ReadOnlyChunkedMultiDenseVectorStorage<T, S>
 {
