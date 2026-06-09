@@ -13,6 +13,10 @@ use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
 
 impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        unreachable!("Sparse storage does not know its total size, get from index instead")
+    }
+
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
     }

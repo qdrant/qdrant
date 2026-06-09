@@ -9,7 +9,7 @@ use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
 use crate::vector_storage::dense::read_only::ReadOnlyChunkedDenseVectorStorage;
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
-use crate::vector_storage::{DenseVectorStorageRead, RawScorer, RawScorerBuilder, raw_scorer_impl};
+use crate::vector_storage::{RawScorer, RawScorerBuilder, raw_scorer_impl};
 
 mod lifecycle;
 mod read_ops;
@@ -29,30 +29,6 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
-}
-
-impl<S: UniversalRead> VectorStorageReadEnum<S> {
-    /// Size of all available (non-deleted) vectors in bytes.
-    pub fn size_of_available_vectors_in_bytes(&self) -> usize {
-        match self {
-            VectorStorageReadEnum::Dense(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseByte(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseHalf(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseChunked(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
-                s.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
-                s.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageReadEnum::Sparse(_) => {
-                unreachable!("Sparse storage does not know its total size, get from index instead")
-            }
-        }
-    }
 }
 
 impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {

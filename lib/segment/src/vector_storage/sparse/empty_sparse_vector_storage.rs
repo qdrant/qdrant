@@ -86,6 +86,10 @@ impl SparseVectorStorage for EmptySparseVectorStorage {
 }
 
 impl VectorStorageRead for EmptySparseVectorStorage {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        0
+    }
+
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
     }

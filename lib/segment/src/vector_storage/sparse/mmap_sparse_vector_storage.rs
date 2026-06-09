@@ -254,6 +254,10 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
 }
 
 impl VectorStorageRead for MmapSparseVectorStorage {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        unreachable!("Mmap sparse storage does not know its total size, get from index instead")
+    }
+
     fn distance(&self) -> crate::types::Distance {
         super::SPARSE_VECTOR_DISTANCE
     }

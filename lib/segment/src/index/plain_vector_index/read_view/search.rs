@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, ScoredPointOffset};
 
-use super::PlainVectorIndexReadViewEnum;
+use super::PlainVectorIndexReadView;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
@@ -14,9 +14,16 @@ use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
 use crate::types::{Filter, SearchParams};
-use crate::vector_storage::VectorStorageRead;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-impl PlainVectorIndexReadViewEnum<'_> {
+impl<'a, I, V, Q, P> PlainVectorIndexReadView<'a, I, V, Q, P>
+where
+    I: IdTrackerRead,
+    V: VectorStorageRead + RawScorerBuilder,
+    Q: QuantizedVectorsReadAccess,
+    P: PayloadIndexRead,
+{
     pub fn is_small_enough_for_unindexed_search(
         &self,
         search_optimized_threshold_kb: usize,

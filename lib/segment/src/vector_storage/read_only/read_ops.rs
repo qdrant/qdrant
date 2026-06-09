@@ -9,6 +9,25 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::VectorStorageRead;
 
 impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        match self {
+            VectorStorageReadEnum::Dense(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseByte(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseHalf(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseChunked(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
+                s.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
+                s.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageReadEnum::Sparse(s) => s.size_of_available_vectors_in_bytes(),
+        }
+    }
+
     fn distance(&self) -> Distance {
         match self {
             VectorStorageReadEnum::Dense(s) => s.distance(),
