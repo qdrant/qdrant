@@ -71,7 +71,7 @@ pub struct TurboVectorStorage {
 impl TurboVectorStorage {
     /// Bytes used by all available (non-deleted) vectors in their encoded form.
     pub fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.quantizer.quantized_size()
+        self.available_vector_count() * self.quantized_vector_size()
     }
 
     /// Raw encoded vector blob for one vector (no dequantization/lloyd lookup).
@@ -108,35 +108,6 @@ impl TurboVectorStorage {
                 .map(|i| *i as f32)
                 .collect::<Vec<_>>(),
         ))
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        // Vectors are appended contiguously from the current count. The backend write is
-        // delegated to the storage dispatcher; here we only record which of the new offsets
-        // are soft-deleted and apply those flags once the data is in place.
-        let start_index = self.storage.vectors_count() as PointOffsetType;
-        let mut deleted_offsets = Vec::new();
-        let mut offset: PointOffsetType = 0;
-
-        let encoded = other_vectors.map(|(vector, deleted)| {
-            if deleted {
-                deleted_offsets.push(start_index + offset);
-            }
-            offset += 1;
-            vector
-        });
-
-        let range = self.storage.update_from(encoded, stopped)?;
-
-        for key in deleted_offsets {
-            self.set_deleted(key, true);
-        }
-
-        Ok(range)
     }
 }
 
@@ -298,6 +269,49 @@ impl VectorStorage for TurboVectorStorage {
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         Ok(!self.set_deleted(key, true))
+    }
+}
+
+impl DenseTQVectorStorage for TurboVectorStorage {
+    fn vector_dim(&self) -> usize {
+        self.dim
+    }
+
+    fn quantized_vector_size(&self) -> usize {
+        self.quantizer.quantized_size()
+    }
+
+    fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
+        self.storage.get_quantized_vector(key)
+    }
+
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        // Vectors are appended contiguously from the current count. The backend write is
+        // delegated to the storage dispatcher; here we only record which of the new offsets
+        // are soft-deleted and apply those flags once the data is in place.
+        let start_index = self.storage.vectors_count() as PointOffsetType;
+        let mut deleted_offsets = Vec::new();
+        let mut offset: PointOffsetType = 0;
+
+        let encoded = other_vectors.map(|(vector, deleted)| {
+            if deleted {
+                deleted_offsets.push(start_index + offset);
+            }
+            offset += 1;
+            vector
+        });
+
+        let range = self.storage.update_from(encoded, stopped)?;
+
+        for key in deleted_offsets {
+            self.set_deleted(key, true);
+        }
+
+        Ok(range)
     }
 }
 
@@ -1196,29 +1210,5 @@ mod tests {
                 run_model_scenario(dim, Distance::Cosine, seed, OPS);
             }
         }
-    }
-}
-
-impl DenseTQVectorStorage for TurboVectorStorage {
-    fn vector_dim(&self) -> usize {
-        self.dim
-    }
-
-    fn quantized_vector_size(&self) -> usize {
-        // TODO: bytes of one encoded vector from `self.quantizer`.
-        unimplemented!("TODO: encoded size of one vector")
-    }
-
-    fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        self.storage.get_quantized_vector(key)
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        _other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
-        _stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        // TODO: append the incoming encoded blobs and propagate deleted flags.
-        unimplemented!("TODO: copy encoded vectors from another TQ storage")
     }
 }
