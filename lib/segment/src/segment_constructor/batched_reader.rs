@@ -14,8 +14,8 @@ use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::CompactExtendedPointId;
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    DenseVectorStorage, DenseVectorStorageRead, MultiVectorStorage, MultiVectorStorageRead,
+    SparseVectorStorage, SparseVectorStorageRead, VectorStorageEnum, VectorStorageRead,
 };
 
 /// Define location of the point source during segment construction.
