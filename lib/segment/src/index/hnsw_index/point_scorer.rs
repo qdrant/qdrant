@@ -13,7 +13,7 @@ use crate::data_types::vectors::QueryVector;
 use crate::payload_storage::FilterContext;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
     RawScorer, RawScorerBuilder, VectorStorageRead, check_deleted_condition,
@@ -127,7 +127,7 @@ impl<'a> FilteredScorer<'a> {
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
-        Q: QuantizedVectorsReadAccess,
+        Q: QuantizedVectorsRead,
     {
         let raw_scorer = match quantized_vectors {
             Some(quantized_vectors) => quantized_vectors.raw_scorer(query, hardware_counter)?,
@@ -154,7 +154,7 @@ impl<'a> FilteredScorer<'a> {
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
-        Q: QuantizedVectorsReadAccess,
+        Q: QuantizedVectorsRead,
     {
         // This is a fallback function, which is used if quantized vector storage
         // is not capable of reconstructing the query vector.
@@ -296,7 +296,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
-        Q: QuantizedVectorsReadAccess,
+        Q: QuantizedVectorsRead,
     {
         let scorer_batch = queries
             .iter()

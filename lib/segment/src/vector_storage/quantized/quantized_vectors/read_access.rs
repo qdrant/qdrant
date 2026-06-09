@@ -13,8 +13,8 @@ use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsu
 /// [`QuantizedVectorsRead`], so search code can be generic over the backend.
 ///
 /// [`QuantizedVectors`]: super::QuantizedVectors
-/// [`QuantizedVectorsRead`]: super::QuantizedVectorsRead
-pub trait QuantizedVectorsReadAccess {
+/// [`QuantizedVectorsRead`]: super::ReadOnlyQuantizedVectors
+pub trait QuantizedVectorsRead {
     fn config(&self) -> &QuantizedVectorsConfig;
 
     fn default_rescoring(&self) -> bool;

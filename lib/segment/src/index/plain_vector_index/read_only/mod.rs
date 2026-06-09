@@ -12,13 +12,13 @@ use crate::index::plain_vector_index::read_view::PlainVectorIndexReadView;
 use crate::index::struct_payload_index::{StructPayloadIndex, StructPayloadIndexReadView};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::vector_storage::VectorStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
+use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 pub struct ReadOnlyPlainVectorIndex<S: UniversalRead> {
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
-    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectorsRead<S>>>>,
+    quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
@@ -27,13 +27,13 @@ pub struct ReadOnlyPlainVectorIndex<S: UniversalRead> {
 /// Read-only view over a [`ReadOnlyPlainVectorIndex`].
 ///
 /// The top-level backends are read-only ([`ReadOnlyIdTrackerEnum`] /
-/// [`VectorStorageReadEnum`] / [`QuantizedVectorsRead`]), while the payload
+/// [`VectorStorageReadEnum`] / [`ReadOnlyQuantizedVectors`]), while the payload
 /// index view is still built over the in-memory enums of [`StructPayloadIndex`].
 type ReadView<'a, S> = PlainVectorIndexReadView<
     'a,
     ReadOnlyIdTrackerEnum<S>,
     VectorStorageReadEnum<S>,
-    QuantizedVectorsRead<S>,
+    ReadOnlyQuantizedVectors<S>,
     StructPayloadIndexReadView<
         'a,
         PayloadStorageEnum,

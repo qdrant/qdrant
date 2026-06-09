@@ -32,8 +32,8 @@ pub use self::config::{
     QUANTIZED_DATA_PATH, QUANTIZED_META_PATH, QUANTIZED_OFFSETS_PATH, QuantizedVectorsConfig,
     QuantizedVectorsStorageType,
 };
-pub use self::read_access::QuantizedVectorsReadAccess;
-pub use self::read_only::{QuantizedVectorStorageRead, QuantizedVectorsRead};
+pub use self::read_access::QuantizedVectorsRead;
+pub use self::read_only::{ReadOnlyQuantizedVectorStorage, ReadOnlyQuantizedVectors};
 pub use self::storage::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
@@ -283,7 +283,7 @@ impl QuantizedVectors {
     }
 }
 
-impl QuantizedVectorsReadAccess for QuantizedVectors {
+impl QuantizedVectorsRead for QuantizedVectors {
     fn config(&self) -> &QuantizedVectorsConfig {
         self.config()
     }

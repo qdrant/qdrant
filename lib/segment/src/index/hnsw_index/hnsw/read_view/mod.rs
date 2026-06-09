@@ -9,9 +9,7 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectors, QuantizedVectorsReadAccess,
-};
+use crate::vector_storage::quantized::quantized_vectors::{QuantizedVectors, QuantizedVectorsRead};
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 /// Read-only view over an HNSW index.
@@ -23,7 +21,7 @@ pub struct HNSWIndexReadView<
     'a,
     I: IdTrackerRead,
     V: VectorStorageRead,
-    Q: QuantizedVectorsReadAccess,
+    Q: QuantizedVectorsRead,
     P: PayloadIndexRead,
 > {
     pub(crate) id_tracker: &'a I,

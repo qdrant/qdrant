@@ -17,7 +17,7 @@ use crate::index::vector_index_search_common::{
 };
 use crate::payload_storage::FilterContext;
 use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, SearchParams};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query::DiscoverQuery;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
@@ -25,7 +25,7 @@ impl<'a, I, V, Q, P> HNSWIndexReadView<'a, I, V, Q, P>
 where
     I: IdTrackerRead,
     V: VectorStorageRead + RawScorerBuilder,
-    Q: QuantizedVectorsReadAccess,
+    Q: QuantizedVectorsRead,
     P: PayloadIndexRead,
 {
     pub(super) fn search_with_graph(
@@ -365,7 +365,7 @@ fn construct_search_scorer<'a, V, Q>(
 ) -> OperationResult<FilteredScorer<'a>>
 where
     V: VectorStorageRead + RawScorerBuilder,
-    Q: QuantizedVectorsReadAccess,
+    Q: QuantizedVectorsRead,
 {
     let quantization_enabled = is_quantized_search(quantized_storage, params);
     FilteredScorer::new(
@@ -391,7 +391,7 @@ fn construct_batch_searcher<'a, V, Q>(
 ) -> OperationResult<BatchFilteredSearcher<'a>>
 where
     V: VectorStorageRead + RawScorerBuilder,
-    Q: QuantizedVectorsReadAccess,
+    Q: QuantizedVectorsRead,
 {
     let quantization_enabled = is_quantized_search(quantized_storage, params);
     BatchFilteredSearcher::new(

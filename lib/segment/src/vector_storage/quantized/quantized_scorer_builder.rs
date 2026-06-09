@@ -92,7 +92,7 @@ where
 /// so the [`QuantizedScorerBuilder`] wiring lives in a single place.
 ///
 /// [`QuantizedVectors`]: super::quantized_vectors::QuantizedVectors
-/// [`QuantizedVectorsRead`]: super::quantized_vectors::QuantizedVectorsRead
+/// [`QuantizedVectorsRead`]: super::quantized_vectors::ReadOnlyQuantizedVectors
 pub(in crate::vector_storage::quantized) fn build_quantized_raw_scorer<'a, Q>(
     storage: &'a Q,
     quantization_config: &'a QuantizationConfig,

@@ -9,10 +9,10 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{
     SearchParams, default_quantization_ignore_value, default_quantization_oversampling_value,
 };
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-pub fn is_quantized_search<Q: QuantizedVectorsReadAccess>(
+pub fn is_quantized_search<Q: QuantizedVectorsRead>(
     quantized_storage: Option<&Q>,
     params: Option<&SearchParams>,
 ) -> bool {
@@ -24,7 +24,7 @@ pub fn is_quantized_search<Q: QuantizedVectorsReadAccess>(
     quantized_storage.is_some() && !ignore_quantization && !exact
 }
 
-pub fn get_oversampled_top<Q: QuantizedVectorsReadAccess>(
+pub fn get_oversampled_top<Q: QuantizedVectorsRead>(
     quantized_storage: Option<&Q>,
     params: Option<&SearchParams>,
     top: usize,
@@ -57,7 +57,7 @@ pub fn postprocess_search_result<V, Q>(
 ) -> OperationResult<Vec<ScoredPointOffset>>
 where
     V: VectorStorageRead + RawScorerBuilder,
-    Q: QuantizedVectorsReadAccess,
+    Q: QuantizedVectorsRead,
 {
     let quantization_enabled = is_quantized_search(quantized_vectors, params);
 
