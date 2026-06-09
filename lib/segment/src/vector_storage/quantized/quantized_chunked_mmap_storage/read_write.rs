@@ -55,9 +55,11 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
     for QuantizedChunkedStorage<S>
 {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.data
-            .get::<Random>(index as VectorOffsetType)
-            .unwrap_or_default()
+        self.get_vector_data_opt(index).unwrap_or_default()
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        self.data.get::<Random>(index as VectorOffsetType)
     }
 
     fn iter_batch(

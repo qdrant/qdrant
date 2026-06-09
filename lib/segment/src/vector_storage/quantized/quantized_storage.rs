@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::io::BufWriter;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -7,7 +8,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{
+    MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 
@@ -37,6 +40,28 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             log::warn!("Failed to clear quantized storage RAM cache: {err}")
         }
     }
+}
+
+impl QuantizedStorage<MmapFile> {
+    /// Open the backing file for build-time bulk appends, bypassing the read-only mmap.
+    pub(crate) fn open_appender(&self) -> std::io::Result<BufWriter<fs::File>> {
+        Ok(BufWriter::new(open_append(&self.path)?))
+    }
+
+    /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
+    pub(crate) fn reload(&mut self) -> OperationResult<()> {
+        *self = Self::from_file(
+            &MmapFs,
+            &self.path.clone(),
+            self.quantized_vector_size.get(),
+        )?;
+        Ok(())
+    }
+}
+
+/// Open a file shortly for appending.
+fn open_append(path: &Path) -> std::io::Result<fs::File> {
+    fs::OpenOptions::new().append(true).open(path)
 }
 
 pub struct QuantizedStorageBuilder<S> {
@@ -82,10 +107,42 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             path: path.to_path_buf(),
         })
     }
+
+    /// Open the encoded vectors at `path`, creating an empty storage if the file does not yet exist.
+    pub fn open(
+        fs: &S::Fs,
+        path: &Path,
+        quantized_vector_size: usize,
+        prefault: bool,
+    ) -> OperationResult<QuantizedStorage<S>> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Ensure the backing file exists without clobbering existing data:
+        // `from_file` mmaps the file read-only and fails if it is missing.
+        fs_err::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+
+        let storage = Self::from_file(fs, path, quantized_vector_size)?;
+
+        if prefault {
+            storage.populate();
+        }
+
+        Ok(storage)
+    }
 }
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index).expect("vector exists")
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
         let start = (self.quantized_vector_size.get() * index as usize) as u64;
         let length = self.quantized_vector_size.get() as u64;
         self.storage
@@ -93,7 +150,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
                 byte_offset: start,
                 length,
             })
-            .expect("vector exists")
+            .ok()
     }
 
     fn upsert_vector(
