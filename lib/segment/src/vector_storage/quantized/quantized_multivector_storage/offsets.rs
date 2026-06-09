@@ -371,7 +371,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
 /// Read-only counterpart of [`MultivectorOffsetsStorageChunked`], generic over
 /// the [`UniversalRead`] backend `S`.
 pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
-    data: ChunkedVectorsRead<MultivectorOffset, S>,
+    pub(super) data: ChunkedVectorsRead<MultivectorOffset, S>,
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {

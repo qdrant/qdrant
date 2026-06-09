@@ -107,7 +107,7 @@ pub enum ReadOnlyQuantizedVectorStorage<S: UniversalRead = MmapFile> {
 
 impl<S: UniversalRead> fmt::Debug for ReadOnlyQuantizedVectorStorage<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("QuantizedVectorStorageRead").finish()
+        f.debug_tuple("ReadOnlyQuantizedVectorStorage").finish()
     }
 }
 

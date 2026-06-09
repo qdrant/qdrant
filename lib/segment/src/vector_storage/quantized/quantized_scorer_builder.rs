@@ -27,7 +27,7 @@ use crate::vector_storage::{RawScorer, RawScorerImpl, raw_scorer_from_query_scor
 /// Per-variant scorer dispatch for a quantized storage enum.
 ///
 /// Implemented by both the read-write [`QuantizedVectorStorage`] and the
-/// read-only `QuantizedVectorStorageRead<S>` enums. Keeping the datatype/distance
+/// read-only `ReadOnlyQuantizedVectorStorage<S>` enums. Keeping the datatype/distance
 /// and per-query dispatch in [`QuantizedScorerBuilder`] (shared) and only the
 /// per-variant `match` here avoids duplicating the scorer construction logic.
 pub(in crate::vector_storage::quantized) trait QuantizedScorerDispatch {
