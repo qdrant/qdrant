@@ -40,21 +40,39 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         };
 
         // Multivectors always use the appendable chunked layout.
-        if vector_config.multivector_config.is_some() {
+        if let Some(multivector_config) = vector_config.multivector_config {
             return Ok(Some(match datatype {
                 VectorStorageDatatype::Float32 => {
                     Self::MultiDenseChunked(Box::new(ReadOnlyChunkedMultiDenseVectorStorage::open(
-                        fs, path, dim, distance, advice, populate,
+                        fs,
+                        path,
+                        dim,
+                        distance,
+                        multivector_config,
+                        advice,
+                        populate,
                     )?))
                 }
                 VectorStorageDatatype::Uint8 => Self::MultiDenseChunkedByte(Box::new(
                     ReadOnlyChunkedMultiDenseVectorStorage::open(
-                        fs, path, dim, distance, advice, populate,
+                        fs,
+                        path,
+                        dim,
+                        distance,
+                        multivector_config,
+                        advice,
+                        populate,
                     )?,
                 )),
                 VectorStorageDatatype::Float16 => Self::MultiDenseChunkedHalf(Box::new(
                     ReadOnlyChunkedMultiDenseVectorStorage::open(
-                        fs, path, dim, distance, advice, populate,
+                        fs,
+                        path,
+                        dim,
+                        distance,
+                        multivector_config,
+                        advice,
+                        populate,
                     )?,
                 )),
                 VectorStorageDatatype::Turbo4 => {

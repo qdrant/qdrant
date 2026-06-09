@@ -16,7 +16,8 @@ use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
 use crate::vector_storage::{
-    SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    SparseVectorStorage, SparseVectorStorageRead, VectorStorage, VectorStorageEnum,
+    VectorStorageRead,
 };
 
 /// Placeholder sparse vector storage that contains no data.
@@ -51,7 +52,7 @@ pub fn new_empty_sparse_vector_storage(num_points: usize) -> VectorStorageEnum {
     VectorStorageEnum::EmptySparse(EmptySparseVectorStorage::new(num_points))
 }
 
-impl SparseVectorStorage for EmptySparseVectorStorage {
+impl SparseVectorStorageRead for EmptySparseVectorStorage {
     fn get_sparse<P: AccessPattern>(&self, _key: PointOffsetType) -> OperationResult<SparseVector> {
         Ok(SparseVector::default())
     }
@@ -73,7 +74,9 @@ impl SparseVectorStorage for EmptySparseVectorStorage {
     {
         Ok(())
     }
+}
 
+impl SparseVectorStorage for EmptySparseVectorStorage {
     fn update_from<'a>(
         &mut self,
         _other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,

@@ -5,13 +5,13 @@ use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
-use crate::vector_storage::SparseVectorStorage;
+use crate::vector_storage::SparseVectorStorageRead;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct SparseCustomQueryScorer<
     'a,
-    TVectorStorage: SparseVectorStorage,
+    TVectorStorage: SparseVectorStorageRead,
     TQuery: Query<SparseVector>,
 > {
     vector_storage: &'a TVectorStorage,
@@ -21,7 +21,7 @@ pub struct SparseCustomQueryScorer<
 
 impl<
     'a,
-    TVectorStorage: SparseVectorStorage,
+    TVectorStorage: SparseVectorStorageRead,
     TQuery: Query<SparseVector> + TransformInto<TQuery, SparseVector, SparseVector>,
 > SparseCustomQueryScorer<'a, TVectorStorage, TQuery>
 {
@@ -52,7 +52,7 @@ impl<
     }
 }
 
-impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScorer
+impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> QueryScorer
     for SparseCustomQueryScorer<'_, TVectorStorage, TQuery>
 {
     type TVector = SparseVector;

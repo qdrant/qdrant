@@ -12,7 +12,9 @@ use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::query_scorer::{QueryScorerBytes, QueryScorerBytesImpl};
-use super::{DenseVectorStorageRead, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
+use super::{
+    DenseVectorStorageRead, MultiVectorStorageRead, SparseVectorStorageRead, VectorStorageEnum,
+};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -142,7 +144,7 @@ pub fn raw_sparse_scorer_volatile<'a>(
     raw_scorer_from_query_scorer(query_scorer)
 }
 
-pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
+pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorageRead>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     hardware_counter: HardwareCounterCell,
@@ -324,7 +326,7 @@ pub fn raw_scorer_from_query_scorer<'a>(
 pub fn raw_multi_scorer_impl<
     'a,
     TElement: PrimitiveVectorElement,
-    TVectorStorage: MultiVectorStorage<TElement>,
+    TVectorStorage: MultiVectorStorageRead<TElement>,
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
@@ -364,7 +366,7 @@ fn new_multi_scorer_with_metric<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement> + 'a,
-    TVectorStorage: MultiVectorStorage<TElement>,
+    TVectorStorage: MultiVectorStorageRead<TElement>,
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,

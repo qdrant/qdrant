@@ -27,7 +27,8 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::{
-    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    MultiVectorStorage, MultiVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    VectorStorageRead,
 };
 
 pub(crate) const VECTORS_DIR_PATH: &str = "vectors";
@@ -209,7 +210,9 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
     }
 }
 
-impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
+    for AppendableMmapMultiDenseVectorStorage<T>
+{
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
     }
@@ -267,7 +270,9 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
     fn multi_vector_config(&self) -> &MultiVectorConfig {
         &self.multi_vector_config
     }
+}
 
+impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T> {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (CowMultiVector<'a, T>, bool)>,
