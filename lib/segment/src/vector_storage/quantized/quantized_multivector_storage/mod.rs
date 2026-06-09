@@ -14,6 +14,7 @@ use smallvec::SmallVec;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
+mod live_reload;
 mod offsets;
 
 pub use offsets::{

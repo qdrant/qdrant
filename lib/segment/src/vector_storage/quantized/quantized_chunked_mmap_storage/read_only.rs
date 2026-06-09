@@ -4,11 +4,9 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher};
-use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
@@ -20,7 +18,7 @@ use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 /// so the mutable storage format can be loaded by the read-only quantized storage.
 #[derive(Debug)]
 pub struct QuantizedChunkedStorageRead<S: UniversalRead> {
-    data: ChunkedVectorsRead<u8, S>,
+    pub(super) data: ChunkedVectorsRead<u8, S>,
 }
 
 impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
@@ -41,18 +39,6 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.data.clear_cache()
-    }
-
-    /// Pick up quantized vectors a writer appended to the chunked backing.
-    pub fn live_reload(
-        &mut self,
-        fs: &S::Fs,
-        deleted_points: &SortedSlice<'_, PointOffsetType>,
-        new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.data
-            .live_reload(fs, deleted_points, new_points, hw_counter)
     }
 }
 

@@ -15,6 +15,7 @@ use quantization::{EncodedVectors, EncodedVectorsPQ};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::index::field_index::LiveReload;
 use crate::spaces::metric::Metric;
 use crate::vector_storage::RawScorer;
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
