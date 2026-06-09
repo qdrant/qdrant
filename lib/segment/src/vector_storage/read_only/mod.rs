@@ -41,6 +41,7 @@ mod tests {
     use crate::data_types::vectors::{
         DenseVector, MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorRef,
     };
+    use crate::segment_constructor::batched_reader::merge_from_single_source;
     use crate::types::{
         Distance, Indexes, MultiVectorConfig, VectorDataConfig, VectorStorageDatatype,
         VectorStorageType,
@@ -150,13 +151,8 @@ mod tests {
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
-            let mut iter = (0..vectors.len() as PointOffsetType).map(|i| {
-                (
-                    staging.get_vector::<Random>(i),
-                    staging.is_deleted_vector(i),
-                )
-            });
-            storage.update_from(&mut iter, &Default::default()).unwrap();
+            merge_from_single_source(&mut storage, &staging, vectors.len() as PointOffsetType)
+                .unwrap();
             storage.flusher()().unwrap();
         }
 

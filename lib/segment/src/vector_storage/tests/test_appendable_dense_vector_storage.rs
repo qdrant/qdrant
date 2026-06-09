@@ -1,7 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -11,6 +10,7 @@ use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
+use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage_full;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
@@ -152,13 +152,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
                 }
             });
         }
-        let mut iter = (0..points.len()).map(|i| {
-            let i = i as PointOffsetType;
-            let vec = storage2.get_vector::<Random>(i);
-            let deleted = storage2.is_deleted_vector(i);
-            (vec, deleted)
-        });
-        storage.update_from(&mut iter, &Default::default()).unwrap();
+        merge_from_single_source(storage, &storage2, points.len() as PointOffsetType).unwrap();
     }
 
     assert_eq!(
