@@ -340,10 +340,6 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
             f(idx, &self.get_dense_tq::<Random>(key));
         }
     }
-
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.quantized_vector_size()
-    }
 }
 
 #[derive(Debug)]
