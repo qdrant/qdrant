@@ -79,6 +79,19 @@ impl TurboVectorStorage {
         self.storage.get_quantized_vector(key)
     }
 
+    /// Populate all pages of the encoded vectors into the page cache.
+    pub fn populate(&self) -> OperationResult<()> {
+        // deleted bitvec is already loaded
+        self.storage.populate()
+    }
+
+    /// Drop the disk cache for the encoded vectors and deleted flags.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache()?;
+        self.deleted.clear_cache()?;
+        Ok(())
+    }
+
     /// Set the deleted flag for `key`, keeping `deleted_count` in sync, and return the previous state.
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         if !deleted && self.storage.vectors_count() <= key as usize {

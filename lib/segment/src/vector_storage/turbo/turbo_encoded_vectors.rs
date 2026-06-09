@@ -105,6 +105,24 @@ impl TurboEncodedVectorStorage {
         }
     }
 
+    /// Populate all pages of the encoded vectors into the page cache.
+    pub(super) fn populate(&self) -> OperationResult<()> {
+        match self {
+            Self::Mmap(s) => s.populate(),
+            Self::ChunkedMmap(s) => s.populate()?,
+        }
+        Ok(())
+    }
+
+    /// Drop the disk cache for the encoded vectors.
+    pub(super) fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Mmap(s) => s.clear_cache(),
+            Self::ChunkedMmap(s) => s.clear_cache()?,
+        }
+        Ok(())
+    }
+
     pub(super) fn upsert_vector(
         &mut self,
         id: PointOffsetType,
