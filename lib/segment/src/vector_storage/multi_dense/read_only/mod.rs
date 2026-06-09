@@ -205,6 +205,7 @@ mod tests {
                 dir.path(),
                 DIM,
                 Distance::Dot,
+                MultiVectorConfig::default(),
                 AdviceSetting::Global,
                 false,
             )
