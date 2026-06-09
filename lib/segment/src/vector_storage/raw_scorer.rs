@@ -12,7 +12,7 @@ use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::query_scorer::{QueryScorerBytes, QueryScorerBytesImpl};
-use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
+use super::{DenseVectorStorageRead, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -93,6 +93,30 @@ pub fn new_raw_scorer<'a>(
         }
         VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),
         VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs, hc),
+    }
+}
+
+/// Build a [`RawScorer`] for a query against this vector storage.
+///
+/// Implemented for the storage enums so scoring code can be generic over
+/// read-write ([`VectorStorageEnum`]) and read-only
+/// ([`VectorStorageReadEnum`](crate::vector_storage::read_only::VectorStorageReadEnum))
+/// backends.
+pub trait RawScorerBuilder {
+    fn build_raw_scorer<'a>(
+        &'a self,
+        query: QueryVector,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>>;
+}
+
+impl RawScorerBuilder for VectorStorageEnum {
+    fn build_raw_scorer<'a>(
+        &'a self,
+        query: QueryVector,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        new_raw_scorer(query, self, hardware_counter)
     }
 }
 
@@ -187,7 +211,7 @@ pub fn new_raw_scorer_for_test<'a>(
 pub fn raw_scorer_impl<
     'a,
     TElement: PrimitiveVectorElement,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
@@ -227,7 +251,7 @@ fn new_scorer_with_metric<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement> + 'a,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,

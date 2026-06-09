@@ -3,7 +3,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 
-use super::HNSWIndexReadViewEnum;
+use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
@@ -17,11 +17,17 @@ use crate::index::vector_index_search_common::{
 };
 use crate::payload_storage::FilterContext;
 use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, SearchParams};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsReadAccess;
 use crate::vector_storage::query::DiscoverQuery;
-use crate::vector_storage::{VectorStorageEnum, VectorStorageRead, new_raw_scorer};
+use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-impl HNSWIndexReadViewEnum<'_> {
+impl<'a, I, V, Q, P> HNSWIndexReadView<'a, I, V, Q, P>
+where
+    I: IdTrackerRead,
+    V: VectorStorageRead + RawScorerBuilder,
+    Q: QuantizedVectorsReadAccess,
+    P: PayloadIndexRead,
+{
     pub(super) fn search_with_graph(
         &self,
         vector: &QueryVector,
@@ -115,11 +121,9 @@ impl HNSWIndexReadViewEnum<'_> {
             };
 
             // Full vectors are "base vectors"
-            let base_scorer = new_raw_scorer(
-                vector.to_owned(),
-                self.vector_storage,
-                vector_query_context.hardware_counter(),
-            )?;
+            let base_scorer = self
+                .vector_storage
+                .build_raw_scorer(vector.to_owned(), vector_query_context.hardware_counter())?;
             let Some(base_scorer_bytes) = base_scorer.scorer_bytes() else {
                 return Ok(None);
             };
@@ -350,15 +354,19 @@ impl HNSWIndexReadViewEnum<'_> {
     }
 }
 
-fn construct_search_scorer<'a>(
+fn construct_search_scorer<'a, V, Q>(
     vector: &QueryVector,
-    vector_storage: &'a VectorStorageEnum,
-    quantized_storage: Option<&'a QuantizedVectors>,
+    vector_storage: &'a V,
+    quantized_storage: Option<&'a Q>,
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
     hardware_counter: HardwareCounterCell,
     filter_context: Option<Box<dyn FilterContext + 'a>>,
-) -> OperationResult<FilteredScorer<'a>> {
+) -> OperationResult<FilteredScorer<'a>>
+where
+    V: VectorStorageRead + RawScorerBuilder,
+    Q: QuantizedVectorsReadAccess,
+{
     let quantization_enabled = is_quantized_search(quantized_storage, params);
     FilteredScorer::new(
         vector.to_owned(),
@@ -371,16 +379,20 @@ fn construct_search_scorer<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn construct_batch_searcher<'a>(
+fn construct_batch_searcher<'a, V, Q>(
     vectors: &[&QueryVector],
-    vector_storage: &'a VectorStorageEnum,
-    quantized_storage: Option<&'a QuantizedVectors>,
+    vector_storage: &'a V,
+    quantized_storage: Option<&'a Q>,
     top: usize,
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
     hardware_counter: HardwareCounterCell,
     filter_context: Option<Box<dyn FilterContext + 'a>>,
-) -> OperationResult<BatchFilteredSearcher<'a>> {
+) -> OperationResult<BatchFilteredSearcher<'a>>
+where
+    V: VectorStorageRead + RawScorerBuilder,
+    Q: QuantizedVectorsReadAccess,
+{
     let quantization_enabled = is_quantized_search(quantized_storage, params);
     BatchFilteredSearcher::new(
         vectors,

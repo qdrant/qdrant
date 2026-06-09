@@ -240,7 +240,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let mut raw_scorer = FilteredScorer::new(
         query.clone(),
         storage,
-        None,
+        None::<&QuantizedVectors>,
         None,
         id_tracker.deleted_point_bitslice(),
         HardwareCounterCell::new(),
@@ -250,7 +250,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new(
         &[&query],
         storage,
-        None,
+        None::<&QuantizedVectors>,
         None,
         2,
         id_tracker.deleted_point_bitslice(),

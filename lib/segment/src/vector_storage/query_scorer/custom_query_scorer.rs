@@ -10,7 +10,7 @@ use zerocopy::FromBytes;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
-use crate::vector_storage::DenseVectorStorage;
+use crate::vector_storage::DenseVectorStorageRead;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -18,7 +18,7 @@ pub struct CustomQueryScorer<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
     TStoredQuery: Query<TypedDenseVector<TElement>>,
 > {
     vector_storage: &'a TVectorStorage,
@@ -32,7 +32,7 @@ impl<
     'a,
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
     TStoredQuery: Query<TypedDenseVector<TElement>>,
 > CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
@@ -76,7 +76,7 @@ impl<
 impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TVectorStorage: DenseVectorStorage<TElement>,
+    TVectorStorage: DenseVectorStorageRead<TElement>,
     TStoredQuery: Query<TypedDenseVector<TElement>>,
 > QueryScorer for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {

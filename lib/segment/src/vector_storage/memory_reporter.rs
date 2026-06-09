@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent, MemoryReporter};
 use crate::vector_storage::vector_storage_base::{
-    DenseVectorStorage as _, MultiVectorStorage as _, VectorStorage as _, VectorStorageEnum,
+    DenseVectorStorageRead as _, MultiVectorStorage as _, VectorStorage as _, VectorStorageEnum,
     VectorStorageRead as _,
 };
 
