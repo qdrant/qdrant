@@ -5,8 +5,9 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{
     QueryVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
 };
-use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
-use crate::vector_storage::dense::read_only::ReadOnlyChunkedDenseVectorStorage;
+use crate::vector_storage::dense::read_only::{
+    ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
+};
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 use crate::vector_storage::{
@@ -22,9 +23,9 @@ mod read_ops;
 /// Wraps each on-disk storage type with its [`super`] read-only variant.
 /// Volatile, empty and test-only variants are intentionally absent.
 pub enum VectorStorageReadEnum<S: UniversalRead> {
-    Dense(Box<DenseVectorStorageImpl<VectorElementType, S>>),
-    DenseByte(Box<DenseVectorStorageImpl<VectorElementTypeByte, S>>),
-    DenseHalf(Box<DenseVectorStorageImpl<VectorElementTypeHalf, S>>),
+    Dense(Box<ReadOnlyImmutableDenseVectorStorage<VectorElementType, S>>),
+    DenseByte(Box<ReadOnlyImmutableDenseVectorStorage<VectorElementTypeByte, S>>),
+    DenseHalf(Box<ReadOnlyImmutableDenseVectorStorage<VectorElementTypeHalf, S>>),
     DenseChunked(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementType, S>>),
     DenseChunkedByte(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementTypeByte, S>>),
     DenseChunkedHalf(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementTypeHalf, S>>),
