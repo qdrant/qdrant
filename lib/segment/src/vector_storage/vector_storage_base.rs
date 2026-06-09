@@ -591,8 +591,8 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 v.with_dense_bytes_opt::<P, R>(key, f)
             }
-            // Encoded TQ bytes have a different layout than f32; the only caller
-            // (graph-links serialization) expects f32 bytes, so fall back to get_vector.
+            // TQ-encoded bytes aren't f32-layout; the only consumer (HNSW `inline_storage`
+            // graph-links) is already gated off for Turbo by get_vector_layout() returning Err.
             VectorStorageEnum::DenseTurbo(_) => None,
             VectorStorageEnum::SparseVolatile(_) => None,
             VectorStorageEnum::SparseMmap(_) => None,

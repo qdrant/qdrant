@@ -29,7 +29,7 @@ fn fill_dense<T: PrimitiveVectorElement>(
     Ok(())
 }
 
-fn fill_turbo(
+pub(super) fn fill_turbo(
     storage: &mut impl DenseTQVectorStorage,
     count: usize,
     stopped: &AtomicBool,
