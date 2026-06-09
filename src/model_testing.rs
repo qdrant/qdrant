@@ -7,6 +7,18 @@ use clap::Parser;
 use collection::profiling::interface::init_requests_profile_collector;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
+#[cfg(all(
+    not(target_env = "msvc"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(all(
+    not(target_env = "msvc"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Parser, Debug)]
 #[command(
