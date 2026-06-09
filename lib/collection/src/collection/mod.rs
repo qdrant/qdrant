@@ -408,10 +408,13 @@ impl Collection {
         new_state: ReplicaState,
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
-        let mut shard_holder = self.shards_holder.read().await;
-        let mut replica_set = shard_holder
+        let mut replica_set = self
+            .shards_holder
+            .read()
+            .await
             .get_shard(shard_id)
-            .ok_or_else(|| shard_not_found_error(shard_id))?;
+            .ok_or_else(|| shard_not_found_error(shard_id))?
+            .clone();
 
         log::debug!(
             "Changing shard {}:{shard_id} replica state from {:?} to {new_state:?}",
@@ -475,18 +478,26 @@ impl Collection {
         // stays, abort just reverts the receiver back to `Active`, and the
         // persist below overwrites that with `Dead`.
         if new_state == ReplicaState::Dead && current_state.is_some_and(|s| s.is_resharding()) {
-            let resharding_state = shard_holder.resharding_state.read().clone();
-            if let Some(state) = resharding_state {
-                // `abort_resharding` grabs the shard_holder write lock internally.
-                drop(shard_holder);
-                self.abort_resharding(state.key(), false).await?;
-                // For up direction, abort dropped the shard. If it's gone, the
-                // replica we'd be deactivating no longer exists on this peer
-                // and the rest of the function is a no-op.
-                shard_holder = self.shards_holder.read().await;
-                let Some(rs) = shard_holder.get_shard(shard_id) else {
+            let reshard_key = self
+                .shards_holder
+                .read()
+                .await
+                .resharding_state
+                .read()
+                .as_ref()
+                .map(|state| state.key());
+
+            if let Some(reshard_key) = reshard_key {
+                // Drop replica set `Arc`, so that `abort_resharding` can drop shard cleanly
+                drop(replica_set);
+
+                self.abort_resharding(reshard_key, false).await?;
+
+                // Check if shard was dropped (when resharding up), and return early if so
+                let Some(rs) = self.shards_holder.read().await.get_shard(shard_id).cloned() else {
                     return Ok(());
                 };
+
                 replica_set = rs;
             }
         }
@@ -500,19 +511,20 @@ impl Collection {
             let all_nodes_fixed_cancellation = self
                 .channel_service
                 .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+
             let related_transfers = if all_nodes_fixed_cancellation {
-                shard_holder.get_related_transfers(peer_id, shard_id)
+                self.shards_holder
+                    .read()
+                    .await
+                    .get_related_transfers(peer_id, shard_id)
             } else {
                 // This is the old buggy logic, but we have to keep it
                 // for maintaining consistency in a cluster with mixed versions.
-                shard_holder.get_transfers(|transfer| {
+                self.shards_holder.read().await.get_transfers(|transfer| {
                     transfer.shard_id == shard_id
                         && (transfer.from == peer_id || transfer.to == peer_id)
                 })
             };
-
-            // Functions below lock `shard_holder`!
-            drop(shard_holder);
 
             // Terminate transfer if source or target replicas are now dead
             for transfer in related_transfers {
