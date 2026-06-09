@@ -35,7 +35,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::{VectorStorage, VectorStorageRead};
+use crate::vector_storage::{DenseTQVectorStorage, VectorStorage, VectorStorageRead};
 
 // TurboQuant DataType (TQDT) always uses 4 bits without shift+scale error correction.
 const TQDT_BITS: TQBits = TQBits::Bits4;
@@ -170,5 +170,29 @@ impl VectorStorage for TurboVectorStorage {
     fn delete_vector(&mut self, _key: PointOffsetType) -> OperationResult<bool> {
         // TODO: set the bit in `self.deleted` and bump `self.deleted_count`.
         unimplemented!("TODO: flag a vector as deleted")
+    }
+}
+
+impl DenseTQVectorStorage for TurboVectorStorage {
+    fn vector_dim(&self) -> usize {
+        self.dim
+    }
+
+    fn quantized_vector_size(&self) -> usize {
+        // TODO: bytes of one encoded vector from `self.quantizer`.
+        unimplemented!("TODO: encoded size of one vector")
+    }
+
+    fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
+        self.storage.get_quantized_vector(key)
+    }
+
+    fn update_from<'a>(
+        &mut self,
+        _other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        // TODO: append the incoming encoded blobs and propagate deleted flags.
+        unimplemented!("TODO: copy encoded vectors from another TQ storage")
     }
 }

@@ -272,6 +272,66 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
     ) -> OperationResult<Range<PointOffsetType>>;
 }
 
+pub trait DenseTQVectorStorage: VectorStorageRead {
+    /// Original dimension of the vector, without quantization applied.
+    fn vector_dim(&self) -> usize;
+
+    /// Size in bytes of the quantized vector.
+    fn quantized_vector_size(&self) -> usize;
+
+    /// Get the quantized vector by the given key
+    fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]>;
+
+    /// Add the given dense TQ vectors to the storage.
+    ///
+    /// # Returns
+    /// The range of point offsets that were added to the storage.
+    ///
+    /// If stopped, the operation returns a cancellation error.
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>>;
+
+    /// Call `f` with the raw bytes of the vector if it exists.
+    ///
+    /// Uses `bytemuck::cast_slice` on the borrowed data — zero copy, zero allocation.
+    fn with_dense_tq_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> Option<R> {
+        ((key as usize) < self.total_vector_count()).then(|| {
+            let dense_tq = self.get_dense_tq::<P>(key);
+            f(&dense_tq)
+        })
+    }
+
+    /// Get layout for a single vector
+    fn get_dense_tq_vector_layout(&self) -> OperationResult<Layout> {
+        Layout::array::<u8>(self.quantized_vector_size())
+            .map_err(|_| OperationError::service_error("Layout is too big"))
+    }
+
+    /// Run given function for each vector in the dense batch.
+    ///
+    /// Implementation can assume that the keys are consecutive
+    fn for_each_in_dense_tq_batch<F: FnMut(usize, &[u8])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) {
+        for (idx, &key) in keys.iter().enumerate() {
+            f(idx, &self.get_dense_tq::<Random>(key));
+        }
+    }
+
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        self.available_vector_count() * self.quantized_vector_size()
+    }
+}
+
 #[derive(Debug)]
 pub enum VectorStorageEnum {
     DenseVolatile(VolatileDenseVectorStorage<VectorElementType>),
