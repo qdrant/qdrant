@@ -36,7 +36,14 @@ impl Collection {
         hw_measurement_acc: HwMeasurementAcc,
         force: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
-        let shard_holder = self.shards_holder.clone().read_owned().await;
+        let shards: Vec<_> = self
+            .shards_holder
+            .clone()
+            .read_owned()
+            .await
+            .all_shards()
+            .map(Arc::clone)
+            .collect();
 
         let results = self
             .update_runtime
@@ -48,25 +55,26 @@ impl Collection {
                 // requests if any of them returns an error, so we *have to* use
                 // `futures::join_all`/`TryStreamExt::collect` instead!
 
-                let local_updates: FuturesUnordered<_> = shard_holder
-                    .all_shards()
-                    .map(|shard| {
-                        // The operation *can't* have a clock tag!
-                        //
-                        // We update *all* shards with a single operation, but each shard has it's own clock,
-                        // so it's *impossible* to assign any single clock tag to this operation.
-                        shard.update_local(
-                            OperationWithClockTag::from(operation.clone()),
-                            wait,
-                            None,
-                            hw_measurement_acc.clone(),
-                            force,
-                        )
-                    })
-                    .collect();
+                let local_updates = FuturesUnordered::new();
+
+                for shard in shards {
+                    // The operation *can't* have a clock tag!
+                    //
+                    // We update *all* shards with a single operation, but each shard has it's own clock,
+                    // so it's *impossible* to assign any single clock tag to this operation.
+                    let operation = OperationWithClockTag::from(operation.clone());
+                    let hw_measurement_acc = hw_measurement_acc.clone();
+
+                    let local_update = async move {
+                        shard
+                            .update_local(operation, wait, None, hw_measurement_acc, force)
+                            .await
+                    };
+
+                    local_updates.push(local_update);
+                }
 
                 let results: Vec<_> = local_updates.collect().await;
-
                 results
             })
             .await?;
@@ -100,10 +108,16 @@ impl Collection {
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        let shard_holder = self.shards_holder.clone().read_owned().await;
+        let shard = self
+            .shards_holder
+            .clone()
+            .read_owned()
+            .await
+            .get_shard(shard_selection)
+            .cloned();
 
         let result = self.update_runtime.spawn(async move {
-            let Some(shard) = shard_holder.get_shard(shard_selection) else {
+            let Some(shard) = shard else {
                 return Ok(None);
             };
 
@@ -162,7 +176,9 @@ impl Collection {
                 for (shard, operation) in operations {
                     let operation = shard_holder.split_by_mode(shard.shard_id, operation);
 
+                    let shard = shard.clone();
                     let hw_acc = hw_measurement_acc.clone();
+
                     updates.push(async move {
                         let mut result = UpdateResult {
                             operation_id: None,
@@ -208,8 +224,10 @@ impl Collection {
                     });
                 }
 
-                let results: Vec<_> = updates.collect().await;
+                // Do not hold `shard_holder` read-lock during update
+                drop(shard_holder);
 
+                let results: Vec<_> = updates.collect().await;
                 CollectionResult::Ok(results)
             })
             .await??;
