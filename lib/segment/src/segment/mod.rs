@@ -13,6 +13,9 @@ mod read_view;
 #[cfg(test)]
 mod tests;
 
+#[allow(dead_code)]
+mod read_only;
+
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
