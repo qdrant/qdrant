@@ -1,0 +1,31 @@
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::sorted_slice::SortedSlice;
+use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
+
+use super::ReadOnlyChunkedDenseVectorStorage;
+use crate::common::live_reload::LiveReload;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::primitive::PrimitiveVectorElement;
+
+impl<T: PrimitiveVectorElement, S: UniversalRead> LiveReload
+    for ReadOnlyChunkedDenseVectorStorage<T, S>
+{
+    type Fs = S::Fs;
+
+    /// Reload the chunked vectors and apply `deleted_points`; appended points are
+    /// served from the refreshed chunks, so `new_points` is unused.
+    fn live_reload(
+        &mut self,
+        fs: &S::Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.vectors
+            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        self.deleted.insert_all(deleted_points);
+
+        Ok(())
+    }
+}

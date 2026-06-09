@@ -11,6 +11,7 @@ use crate::types::Distance;
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 #[derive(Debug)]
@@ -61,12 +62,14 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
+    use common::sorted_slice::SortedSlice;
     use common::universal_io::{MmapFile, MmapFs};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::live_reload::LiveReload;
     use crate::data_types::vectors::{
         MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
     };
@@ -153,5 +156,98 @@ mod tests {
                 "vector {id} mismatch",
             );
         }
+    }
+
+    /// After `live_reload`, the read-only view reflects appends and deletions.
+    #[test]
+    fn live_reload_picks_up_appends_and_deletions() {
+        const DIM: usize = 48;
+        let dir = Builder::new().prefix("ro_multi_reload").tempdir().unwrap();
+        let mut rng = StdRng::seed_from_u64(11);
+        let hw = HardwareCounterCell::disposable();
+
+        let rand_multi = |rng: &mut StdRng| -> MultiDenseVectorInternal {
+            let inner = rng.random_range(1..=3);
+            let vectors = std::iter::repeat_with(|| {
+                std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                    .take(DIM)
+                    .collect()
+            })
+            .take(inner)
+            .collect::<Vec<Vec<VectorElementType>>>();
+            MultiDenseVectorInternal::try_from(vectors).unwrap()
+        };
+        let first: Vec<MultiDenseVectorInternal> = (0..150).map(|_| rand_multi(&mut rng)).collect();
+        let second: Vec<MultiDenseVectorInternal> =
+            (0..100).map(|_| rand_multi(&mut rng)).collect();
+
+        let mut writer = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            MultiVectorConfig::default(),
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        for (id, multivec) in first.iter().enumerate() {
+            writer
+                .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                .unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader =
+            ReadOnlyChunkedMultiDenseVectorStorage::<VectorElementType, MmapFile>::open(
+                &MmapFs,
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                AdviceSetting::Global,
+                false,
+            )
+            .unwrap();
+        assert_eq!(reader.total_vector_count(), first.len());
+
+        for (offset, multivec) in second.iter().enumerate() {
+            writer
+                .insert_vector(
+                    (first.len() + offset) as PointOffsetType,
+                    VectorRef::from(multivec),
+                    &hw,
+                )
+                .unwrap();
+        }
+        let deleted_ids: Vec<PointOffsetType> = vec![1, 75, 149];
+        for &id in &deleted_ids {
+            writer.delete_vector(id).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
+            .map(|offset| offset as PointOffsetType)
+            .collect();
+        reader
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+                &hw,
+            )
+            .unwrap();
+
+        assert_eq!(reader.total_vector_count(), first.len() + second.len());
+        assert_eq!(reader.deleted_vector_count(), deleted_ids.len());
+
+        // The appended multivector is visible and correct.
+        let stored = reader.get_vector::<Random>(first.len() as PointOffsetType);
+        let multi: TypedMultiDenseVectorRef<VectorElementType> =
+            stored.as_vec_ref().try_into().unwrap();
+        assert_eq!(multi.to_owned(), second[0]);
+
+        for &id in &deleted_ids {
+            assert!(reader.is_deleted_vector(id));
+        }
+        assert!(!reader.is_deleted_vector(0));
     }
 }
