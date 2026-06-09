@@ -76,7 +76,6 @@ where
                 conditions,
                 min_count,
             }) = filter.min_should.as_ref()
-                && !conditions.is_empty()
             {
                 let (optimized_conditions, estimation) = self.optimize_min_should(
                     conditions,
