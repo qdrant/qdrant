@@ -47,8 +47,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
             offsets,
             deleted,
             distance,
-            advice,
-            populate,
         })
     }
 }

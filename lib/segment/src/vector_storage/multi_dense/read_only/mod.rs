@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use common::generic_consts::AccessPattern;
-use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -22,9 +21,6 @@ pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: 
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
-    /// Chunk-open settings, reused by live-reload.
-    advice: AdviceSetting,
-    populate: bool,
 }
 
 pub fn iter_vectors<'a, P, T, U, S>(
@@ -66,6 +62,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
+    use common::sorted_slice::SortedSlice;
     use common::universal_io::{MmapFile, MmapFs};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
@@ -231,7 +228,12 @@ mod tests {
             .map(|offset| offset as PointOffsetType)
             .collect();
         reader
-            .live_reload(&MmapFs, &deleted_ids, &new_ids, &hw)
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+                &hw,
+            )
             .unwrap();
 
         assert_eq!(reader.total_vector_count(), first.len() + second.len());

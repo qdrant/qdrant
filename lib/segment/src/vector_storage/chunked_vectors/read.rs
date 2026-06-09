@@ -12,7 +12,7 @@ use common::universal_io::{
 use fs_err as fs;
 use num_traits::AsPrimitive;
 
-use super::chunks::{chunk_name, read_chunks, read_chunks_from};
+use super::chunks::{chunk_name, read_chunks};
 use super::config::{CONFIG_FILE_NAME, ChunkedVectorsConfig, STATUS_FILE_NAME};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
@@ -34,6 +34,9 @@ pub struct ChunkedVectorsRead<T: bytemuck::Pod + Send, S: UniversalRead> {
     pub(super) len: usize,
     pub(super) chunks: Vec<TypedStorage<S, T>>,
     pub(super) directory: PathBuf,
+    /// Open-time chunk settings, reused by live-reload to open new chunks.
+    pub(super) advice: AdviceSetting,
+    pub(super) populate: bool,
 }
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
@@ -91,6 +94,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             len,
             chunks,
             directory: directory.to_owned(),
+            advice,
+            populate: populate.unwrap_or_default(),
         })
     }
 
@@ -291,6 +296,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             len: _,
             chunks,
             directory: _,
+            advice: _,
+            populate: _,
         } = self;
         for chunk in chunks {
             chunk.clear_ram_cache()?;
@@ -304,41 +311,15 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             len: _,
             chunks: _,
             directory: _,
+            advice: _,
+            populate: _,
         } = self;
 
         0
     }
-
-    /// Refresh to the current on-disk state, opening only chunk files a writer
-    /// appended since the last load; a no-op when the length is unchanged.
-    /// `advice`/`populate` should match what the storage was opened with.
-    #[allow(dead_code)] // pending: read-only chunked vector storages will use this
-    pub fn live_reload(
-        &mut self,
-        fs: &S::Fs,
-        advice: AdviceSetting,
-        populate: bool,
-    ) -> OperationResult<()> {
-        let new_len = read_status_len(&Self::status_file(&self.directory))?;
-        if new_len == self.len {
-            return Ok(());
-        }
-
-        let new_chunks = read_chunks_from(
-            fs,
-            &self.directory,
-            self.chunks.len(),
-            advice,
-            populate,
-            false,
-        )?;
-        self.chunks.extend(new_chunks);
-        self.len = new_len;
-        Ok(())
-    }
 }
 
-fn read_status_len(status_file: &Path) -> OperationResult<usize> {
+pub(super) fn read_status_len(status_file: &Path) -> OperationResult<usize> {
     let bytes = fs::read(status_file)?;
     let needed = std::mem::size_of::<usize>();
     if bytes.len() < needed {
@@ -357,10 +338,12 @@ fn read_status_len(status_file: &Path) -> OperationResult<usize> {
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
+    use common::sorted_slice::SortedSlice;
     use common::universal_io::{MmapFile, MmapFs};
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::live_reload::LiveReload;
     use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
     fn make_vec(seed: usize, dim: usize) -> Vec<f32> {
@@ -406,9 +389,8 @@ mod tests {
         }
         writer.flusher()().unwrap();
 
-        reader
-            .live_reload(&MmapFs, AdviceSetting::Global, false)
-            .unwrap();
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
 
         assert_eq!(reader.len(), first.len() + second.len());
         let got = reader
@@ -457,9 +439,8 @@ mod tests {
         }
         writer.flusher()().unwrap();
 
-        reader
-            .live_reload(&MmapFs, AdviceSetting::Global, false)
-            .unwrap();
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
 
         assert_eq!(reader.len(), 9000);
         assert_eq!(reader.chunks.len(), 3, "two new chunk files adopted");
@@ -468,7 +449,7 @@ mod tests {
         for offset in [3999, 4050, 5000, 8999] {
             assert_eq!(
                 reader.get::<Random>(offset).unwrap().as_ref(),
-                make_vec(offset as usize, DIM).as_slice(),
+                make_vec(offset, DIM).as_slice(),
             );
         }
     }

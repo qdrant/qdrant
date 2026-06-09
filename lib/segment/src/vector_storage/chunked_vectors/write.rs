@@ -144,6 +144,8 @@ where
             len: status.len,
             chunks,
             directory: directory.to_owned(),
+            advice,
+            populate: populate.unwrap_or_default(),
         };
         Ok(Self { inner, status, fs })
     }

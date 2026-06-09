@@ -1,4 +1,3 @@
-use common::mmap::AdviceSetting;
 use common::universal_io::UniversalRead;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -16,9 +15,6 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
-    /// Chunk-open settings, reused by live-reload.
-    advice: AdviceSetting,
-    populate: bool,
 }
 
 #[cfg(test)]
@@ -26,6 +22,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
+    use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs};
     use rand::rngs::StdRng;
@@ -169,7 +166,12 @@ mod tests {
             .map(|offset| offset as PointOffsetType)
             .collect();
         reader
-            .live_reload(&MmapFs, &deleted_ids, &new_ids, &hw)
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+                &hw,
+            )
             .unwrap();
 
         assert_eq!(reader.total_vector_count(), first.len() + second.len());
