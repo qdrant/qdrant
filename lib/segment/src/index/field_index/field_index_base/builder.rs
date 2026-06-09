@@ -8,7 +8,7 @@ use crate::index::field_index::bool_index::BoolIndex;
 use crate::index::field_index::bool_index::immutable_bool_index::ImmutableBoolIndexBuilder;
 use crate::index::field_index::bool_index::mutable_bool_index::MutableBoolIndexBuilder;
 use crate::index::field_index::full_text_index::FullTextGridstoreIndexBuilder;
-use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
+use crate::index::field_index::full_text_index::on_disk_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::geo_index::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
 use crate::index::field_index::map_index::{MapIndexGridstoreBuilder, MapIndexMmapBuilder};
 use crate::index::field_index::null_index::NullIndex;

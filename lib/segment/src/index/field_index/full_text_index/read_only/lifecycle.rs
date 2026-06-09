@@ -1,13 +1,14 @@
 use std::path::PathBuf;
 
 use common::bitvec::BitSlice;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
-use super::super::mmap_text_index::MmapFullTextIndex;
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
+use super::super::on_disk_text_index::OnDiskFullTextIndex;
 use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::payload_config::IndexMutability;
 
 impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
@@ -52,10 +53,21 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        Ok(
-            MmapFullTextIndex::open(fs, path, config, effective_is_on_disk, deleted_points)?
-                .map(Self::Immutable),
-        )
+        let populate = Populate::from(!effective_is_on_disk);
+
+        let Some(on_disk_index) =
+            OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points)?
+        else {
+            return Ok(None);
+        };
+
+        let index = if effective_is_on_disk {
+            Self::OnDisk(on_disk_index)
+        } else {
+            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+        };
+
+        Ok(Some(index))
     }
 
     /// Reports the on-disk format's mutability, mirroring
@@ -72,6 +84,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
             Self::Appendable(_) => IndexMutability::Mutable,
+            Self::OnDisk(_) => IndexMutability::Immutable,
             Self::Immutable(_) => IndexMutability::Immutable,
         }
     }

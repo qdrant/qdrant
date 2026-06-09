@@ -125,7 +125,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => FullTextIndexRead::get_storage_type(index),
             Self::Immutable(index) => FullTextIndexRead::get_storage_type(index),
-            Self::OnDisk(index) => FullTextIndexRead::get_storage_type(index.as_ref()),
+            Self::OnDisk(index) => FullTextIndexRead::get_storage_type(index),
         }
     }
 
@@ -133,7 +133,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => FullTextIndexRead::ram_usage_bytes(index),
             Self::Immutable(index) => FullTextIndexRead::ram_usage_bytes(index),
-            Self::OnDisk(index) => FullTextIndexRead::ram_usage_bytes(index.as_ref()),
+            Self::OnDisk(index) => FullTextIndexRead::ram_usage_bytes(index),
         }
     }
 
@@ -141,7 +141,7 @@ impl FullTextIndexRead for FullTextIndex {
         match self {
             Self::Mutable(index) => FullTextIndexRead::is_on_disk(index),
             Self::Immutable(index) => FullTextIndexRead::is_on_disk(index),
-            Self::OnDisk(index) => FullTextIndexRead::is_on_disk(index.as_ref()),
+            Self::OnDisk(index) => FullTextIndexRead::is_on_disk(index),
         }
     }
 }

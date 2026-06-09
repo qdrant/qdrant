@@ -17,8 +17,8 @@ use crate::index::field_index::full_text_index::full_text_index_read::FullTextIn
 use crate::index::field_index::full_text_index::inverted_index::{
     ARRAY_BOUNDARY_SENTINEL, Document, ParsedQuery, TokenId, TokenSet,
 };
-use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
+use crate::index::field_index::full_text_index::on_disk_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 use crate::json_path::JsonPath;
@@ -27,23 +27,20 @@ use crate::types::{FieldCondition, ValuesCount};
 type Database = ();
 
 const FIELD_NAME: &str = "test";
-const TYPES: &[IndexType] = &[
-    IndexType::MutableGridstore,
-    IndexType::ImmMmap,
-    IndexType::ImmRamMmap,
-];
+const TYPES: &[IndexType] = &[IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum IndexType {
-    MutableGridstore,
-    ImmMmap,
-    ImmRamMmap,
+    Mutable,
+    OnDisk,
+    Immutable,
 }
 
+#[expect(clippy::large_enum_variant)]
 enum IndexBuilder {
-    MutableGridstore(FullTextGridstoreIndexBuilder),
-    ImmMmap(FullTextMmapIndexBuilder),
-    ImmRamMmap(FullTextMmapIndexBuilder),
+    Mutable(FullTextGridstoreIndexBuilder),
+    OnDisk(FullTextMmapIndexBuilder),
+    Immutable(FullTextMmapIndexBuilder),
 }
 
 impl IndexBuilder {
@@ -54,13 +51,13 @@ impl IndexBuilder {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            IndexBuilder::MutableGridstore(builder) => {
+            IndexBuilder::Mutable(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
-            IndexBuilder::ImmMmap(builder) => {
+            IndexBuilder::OnDisk(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
-            IndexBuilder::ImmRamMmap(builder) => {
+            IndexBuilder::Immutable(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
         }
@@ -68,9 +65,9 @@ impl IndexBuilder {
 
     fn finalize(self) -> OperationResult<FullTextIndex> {
         match self {
-            IndexBuilder::MutableGridstore(builder) => builder.finalize(),
-            IndexBuilder::ImmMmap(builder) => builder.finalize(),
-            IndexBuilder::ImmRamMmap(builder) => builder.finalize(),
+            IndexBuilder::Mutable(builder) => builder.finalize(),
+            IndexBuilder::OnDisk(builder) => builder.finalize(),
+            IndexBuilder::Immutable(builder) => builder.finalize(),
         }
     }
 }
@@ -89,16 +86,17 @@ fn create_builder(
 
     let empty_deleted = BitVec::new();
     let mut builder = match index_type {
-        IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
-            FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
-        ),
-        IndexType::ImmMmap => IndexBuilder::ImmMmap(FullTextIndex::builder_mmap(
+        IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_gridstore(
+            temp_dir.path().to_path_buf(),
+            config,
+        )),
+        IndexType::OnDisk => IndexBuilder::OnDisk(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
             true,
             &empty_deleted,
         )),
-        IndexType::ImmRamMmap => IndexBuilder::ImmRamMmap(FullTextIndex::builder_mmap(
+        IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
             false,
@@ -106,9 +104,9 @@ fn create_builder(
         )),
     };
     match &mut builder {
-        IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
-        IndexBuilder::ImmMmap(builder) => builder.init().unwrap(),
-        IndexBuilder::ImmRamMmap(builder) => builder.init().unwrap(),
+        IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+        IndexBuilder::OnDisk(builder) => builder.init().unwrap(),
+        IndexBuilder::Immutable(builder) => builder.init().unwrap(),
     }
     (builder, temp_dir, db)
 }
@@ -142,18 +140,18 @@ fn reopen_index(
 
     // Reopen based on index type
     match index_type {
-        IndexType::MutableGridstore => {
+        IndexType::Mutable => {
             FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, false)
                 .unwrap()
                 .expect("Failed to reopen MutableGridstore index")
         }
-        IndexType::ImmMmap => {
+        IndexType::OnDisk => {
             // Reopen with is_on_disk = true (mmap directly)
             FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, true, &deleted)
                 .unwrap()
                 .expect("Failed to reopen ImmMmap index")
         }
-        IndexType::ImmRamMmap => {
+        IndexType::Immutable => {
             // Reopen with is_on_disk = false (load into RAM)
             // This is the path that will call ImmutableFullTextIndex::open_mmap
             FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, false, &deleted)
@@ -518,8 +516,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
 /// full-text index is enabled.
 #[rstest]
 fn test_phrase_matching_respects_array_boundaries(
-    #[values(IndexType::MutableGridstore, IndexType::ImmMmap, IndexType::ImmRamMmap)]
-    index_type: IndexType,
+    #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
     let hw = HardwareCounterCell::new();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
@@ -586,8 +583,7 @@ fn test_phrase_matching_respects_array_boundaries(
 /// Single-element arrays and plain strings should still work normally.
 #[rstest]
 fn test_phrase_matching_single_element_array(
-    #[values(IndexType::MutableGridstore, IndexType::ImmMmap, IndexType::ImmRamMmap)]
-    index_type: IndexType,
+    #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
     let hw = HardwareCounterCell::new();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);

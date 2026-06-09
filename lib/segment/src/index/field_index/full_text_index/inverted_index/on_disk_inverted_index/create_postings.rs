@@ -7,7 +7,7 @@ use fs_err::File;
 use posting_list::{PostingList, PostingListComponents};
 use zerocopy::IntoBytes;
 
-use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::types::{
+use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::types::{
     ALIGNMENT, PostingListHeader, PostingsHeader, ZerocopyPostingValue,
 };
 

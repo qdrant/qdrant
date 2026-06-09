@@ -13,13 +13,13 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UserData,
 };
+use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
-use uio_postings::UniversalPostings;
 
 use self::create_postings::create_postings_file;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
-use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
+use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
 use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
@@ -33,10 +33,10 @@ use crate::index::field_index::full_text_index::inverted_index::postings_iterato
 };
 
 mod create_postings;
-pub mod mmap_postings_enum;
+mod on_disk_postings;
+pub mod on_disk_postings_enum;
 mod raw_posting_list;
 pub(in crate::index::field_index::full_text_index) mod types;
-mod uio_postings;
 
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
@@ -55,16 +55,15 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct MmapInvertedIndex<S: UniversalRead = MmapFile> {
+pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
     pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
     /// Number of points which are not deleted
     pub(in crate::index::field_index::full_text_index) active_points_count: usize,
-    pub(in crate::index::field_index::full_text_index) is_on_disk: bool,
 }
 
 pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRead = MmapFile> {
-    pub(in crate::index::field_index::full_text_index) postings: MmapPostingsEnum<S>,
+    pub(in crate::index::field_index::full_text_index) postings: OnDiskPostingsEnum<S>,
     pub(in crate::index::field_index::full_text_index) vocab: UniversalHashMap<str, TokenId, S>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count:
         TypedStorage<S, usize>,
@@ -84,7 +83,7 @@ impl<S: UniversalRead> Storage<S> {
     }
 }
 
-impl MmapInvertedIndex<MmapFile> {
+impl OnDiskInvertedIndex<MmapFile> {
     pub fn create(path: PathBuf, inverted_index: &ImmutableInvertedIndex) -> OperationResult<()> {
         let ImmutableInvertedIndex {
             postings,
@@ -152,11 +151,11 @@ impl MmapInvertedIndex<MmapFile> {
     }
 }
 
-impl<S: UniversalRead> MmapInvertedIndex<S> {
+impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     pub fn open(
         fs: &S::Fs,
         path: PathBuf,
-        populate: bool,
+        populate: Populate,
         has_positions: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
@@ -168,25 +167,25 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         let postings_open_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Advice(Advice::Normal),
         };
 
         let Some(postings) = (match has_positions {
-            false => UniversalPostings::<(), S>::open(
+            false => OnDiskPostings::<(), S>::open(
                 fs,
                 &postings_path,
                 postings_open_options,
                 Default::default(),
             )?
-            .map(MmapPostingsEnum::Ids),
-            true => UniversalPostings::<Positions, S>::open(
+            .map(OnDiskPostingsEnum::Ids),
+            true => OnDiskPostings::<Positions, S>::open(
                 fs,
                 &postings_path,
                 postings_open_options,
                 Default::default(),
             )?
-            .map(MmapPostingsEnum::WithPositions),
+            .map(OnDiskPostingsEnum::WithPositions),
         }) else {
             // If postings don't exist, assume the index doesn't exist on disk
             return Ok(None);
@@ -197,7 +196,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -209,7 +208,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -221,7 +220,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: Populate::from(populate),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
@@ -251,7 +250,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 deleted_points: deleted,
             },
             active_points_count: points_count,
-            is_on_disk: !populate,
         }))
     }
 
@@ -284,7 +282,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         let filter = move |idx| self.is_active(idx);
 
         fn intersection<V: ZerocopyPostingValue, S: UniversalRead>(
-            postings: &UniversalPostings<V, S>,
+            postings: &OnDiskPostings<V, S>,
             tokens: TokenSet,
             filter: impl Fn(PointOffsetType) -> bool,
         ) -> OperationResult<Vec<PointOffsetType>> {
@@ -304,8 +302,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         }
 
         match &self.storage.postings {
-            MmapPostingsEnum::Ids(postings) => intersection(postings, tokens, filter),
-            MmapPostingsEnum::WithPositions(postings) => intersection(postings, tokens, filter),
+            OnDiskPostingsEnum::Ids(postings) => intersection(postings, tokens, filter),
+            OnDiskPostingsEnum::WithPositions(postings) => intersection(postings, tokens, filter),
         }
     }
 
@@ -315,7 +313,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         let is_active = move |idx| self.is_active(idx);
 
         fn merge<V: ZerocopyPostingValue, S: UniversalRead>(
-            postings: &UniversalPostings<V, S>,
+            postings: &OnDiskPostings<V, S>,
             tokens: TokenSet,
             is_active: impl Fn(PointOffsetType) -> bool,
         ) -> OperationResult<Vec<PointOffsetType>> {
@@ -332,8 +330,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         }
 
         match &self.storage.postings {
-            MmapPostingsEnum::Ids(postings) => merge(postings, tokens, is_active),
-            MmapPostingsEnum::WithPositions(postings) => merge(postings, tokens, is_active),
+            OnDiskPostingsEnum::Ids(postings) => merge(postings, tokens, is_active),
+            OnDiskPostingsEnum::WithPositions(postings) => merge(postings, tokens, is_active),
         }
     }
 
@@ -353,7 +351,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         }
 
         fn check_intersection<V: ZerocopyPostingValue, S: UniversalRead>(
-            postings: &UniversalPostings<V, S>,
+            postings: &OnDiskPostings<V, S>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> OperationResult<bool> {
@@ -367,8 +365,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         }
 
         match &self.storage.postings {
-            MmapPostingsEnum::Ids(postings) => check_intersection(postings, tokens, point_id),
-            MmapPostingsEnum::WithPositions(postings) => {
+            OnDiskPostingsEnum::Ids(postings) => check_intersection(postings, tokens, point_id),
+            OnDiskPostingsEnum::WithPositions(postings) => {
                 check_intersection(postings, tokens, point_id)
             }
         }
@@ -385,7 +383,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         }
 
         fn check_any<V: ZerocopyPostingValue, S: UniversalRead>(
-            postings: &UniversalPostings<V, S>,
+            postings: &OnDiskPostings<V, S>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> OperationResult<bool> {
@@ -397,8 +395,8 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         }
 
         match &self.storage.postings {
-            MmapPostingsEnum::Ids(postings) => check_any(postings, tokens, point_id),
-            MmapPostingsEnum::WithPositions(postings) => check_any(postings, tokens, point_id),
+            OnDiskPostingsEnum::Ids(postings) => check_any(postings, tokens, point_id),
+            OnDiskPostingsEnum::WithPositions(postings) => check_any(postings, tokens, point_id),
         }
     }
 
@@ -408,7 +406,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         let is_active = move |idx| self.is_active(idx);
 
         match &self.storage.postings {
-            MmapPostingsEnum::WithPositions(postings) => {
+            OnDiskPostingsEnum::WithPositions(postings) => {
                 // Deduplicate phrase tokens: repeated tokens (e.g. "zn zn") must
                 // not fetch the same posting list twice, otherwise positions get
                 // added twice in `phrase_in_all_postings`.
@@ -428,7 +426,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 Ok(result.unwrap_or_default())
             }
             // cannot do phrase matching if there's no positional information
-            MmapPostingsEnum::Ids(_postings) => Ok(Vec::new()),
+            OnDiskPostingsEnum::Ids(_postings) => Ok(Vec::new()),
         }
     }
 
@@ -443,7 +441,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         }
 
         match &self.storage.postings {
-            MmapPostingsEnum::WithPositions(postings) => {
+            OnDiskPostingsEnum::WithPositions(postings) => {
                 let unique_tokens = phrase.to_token_set();
                 let result = postings.with_all_or_none_postings(
                     unique_tokens.tokens(),
@@ -459,7 +457,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 Ok(result.unwrap_or(false))
             }
             // cannot do phrase matching if there's no positional information
-            MmapPostingsEnum::Ids(_postings) => Ok(false),
+            OnDiskPostingsEnum::Ids(_postings) => Ok(false),
         }
     }
 
@@ -482,7 +480,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
     }
 
     /// No-op flusher: the on-disk state is build-time only. See the type-level
-    /// docs on [`MmapInvertedIndex`] for the deletion durability contract.
+    /// docs on [`OnDiskInvertedIndex`] for the deletion durability contract.
     #[allow(clippy::unused_self)]
     pub fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
@@ -490,10 +488,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
 
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         self.storage.ram_usage_bytes()
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
     }
 
     /// Populate all pages in the mmap.
@@ -511,7 +505,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             path,
             storage,
             active_points_count: _,
-            is_on_disk: _,
         } = self;
         let Storage {
             postings,
@@ -527,9 +520,9 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
     }
 }
 
-impl<S: UniversalRead> InvertedIndex for MmapInvertedIndex<S> {
+impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId> {
-        unreachable!("MmapInvertedIndex does not support mutable operations")
+        unreachable!("OnDiskInvertedIndex does not support mutable operations")
     }
 
     fn index_tokens(
@@ -656,11 +649,10 @@ impl<S: UniversalRead> InvertedIndex for MmapInvertedIndex<S> {
         self.storage
             .vocab
             .for_each_entry_in_iter(tokens, |user_data, token_ids| {
-                if self.is_on_disk {
-                    hw_counter.payload_index_io_read_counter().incr_delta(
-                        READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
-                    );
-                }
+                hw_counter.payload_index_io_read_counter().incr_delta(
+                    READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+                );
+
                 f(user_data, token_ids.map(unwrap_token));
                 Ok(())
             })
