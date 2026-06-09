@@ -12,6 +12,7 @@ use crate::data_types::vectors::QueryVector;
 use crate::index::VectorIndexRead;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::VectorStorageRead;
 
 impl PlainVectorIndex {
     pub fn is_small_enough_for_unindexed_search(

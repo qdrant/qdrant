@@ -88,16 +88,6 @@ impl VolatileSparseVectorStorage {
             *entry = vector.cloned();
         }
     }
-
-    pub fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count == 0 {
-            return 0;
-        }
-        let available_fraction =
-            (self.total_vector_count - self.deleted_count) as f32 / self.total_vector_count as f32;
-        let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
-        available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>())
-    }
 }
 
 impl SparseVectorStorage for VolatileSparseVectorStorage {
@@ -153,6 +143,16 @@ impl SparseVectorStorage for VolatileSparseVectorStorage {
 }
 
 impl VectorStorageRead for VolatileSparseVectorStorage {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        if self.total_vector_count == 0 {
+            return 0;
+        }
+        let available_fraction =
+            (self.total_vector_count - self.deleted_count) as f32 / self.total_vector_count as f32;
+        let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
+        available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>())
+    }
+
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
     }

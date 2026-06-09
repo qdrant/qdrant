@@ -134,6 +134,9 @@ pub trait VectorStorageRead {
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
     fn deleted_vector_bitslice(&self) -> &BitSlice;
+
+    /// Size of all available (non-deleted) vectors in bytes.
+    fn size_of_available_vectors_in_bytes(&self) -> usize;
 }
 
 /// Trait for vector storage with mutating operations.
@@ -200,10 +203,6 @@ pub trait DenseVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
             f(idx, &self.get_dense::<Random>(key));
         }
     }
-
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
-    }
 }
 
 pub trait DenseVectorStorage<T: PrimitiveVectorElement>: DenseVectorStorageRead<T> {
@@ -263,8 +262,6 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
-
-    fn size_of_available_vectors_in_bytes(&self) -> usize;
 
     /// Add the given multi-dense vectors to the storage.
     ///
@@ -478,56 +475,6 @@ impl VectorStorageEnum {
         }
     }
 
-    pub fn size_of_available_vectors_in_bytes(&self) -> usize {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseMemmap(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.size_of_available_vectors_in_bytes(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.size_of_available_vectors_in_bytes(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::SparseVolatile(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::SparseMmap(_v) => {
-                unreachable!(
-                    "Mmap sparse storage does not know its total size, get from index instead"
-                )
-            }
-            VectorStorageEnum::MultiDenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::EmptyDense(_) => 0,
-            VectorStorageEnum::EmptySparse(_) => 0,
-        }
-    }
-
     pub fn populate(&self) -> OperationResult<()> {
         match self {
             VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
@@ -689,6 +636,56 @@ impl VectorStorageEnum {
 }
 
 impl VectorStorageRead for VectorStorageEnum {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        match self {
+            VectorStorageEnum::DenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => v.size_of_available_vectors_in_bytes(),
+            VectorStorageEnum::DenseMemmap(v) => v.size_of_available_vectors_in_bytes(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.size_of_available_vectors_in_bytes(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.size_of_available_vectors_in_bytes(),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => v.size_of_available_vectors_in_bytes(),
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.size_of_available_vectors_in_bytes(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                v.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                v.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageEnum::SparseVolatile(v) => v.size_of_available_vectors_in_bytes(),
+            VectorStorageEnum::SparseMmap(_v) => {
+                unreachable!(
+                    "Mmap sparse storage does not know its total size, get from index instead"
+                )
+            }
+            VectorStorageEnum::MultiDenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.size_of_available_vectors_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                v.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                v.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                v.size_of_available_vectors_in_bytes()
+            }
+            VectorStorageEnum::EmptyDense(_) => 0,
+            VectorStorageEnum::EmptySparse(_) => 0,
+        }
+    }
+
     fn distance(&self) -> Distance {
         match self {
             VectorStorageEnum::DenseVolatile(v) => v.distance(),

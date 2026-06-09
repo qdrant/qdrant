@@ -13,6 +13,7 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::{VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::VectorStorageRead;
 
 impl VectorIndexRead for HNSWIndex {
     fn search(
