@@ -111,6 +111,11 @@ impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
 }
 
 impl VectorStorageRead for EmptyDenseVectorStorage {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        // All vectors are deleted, so there are no available vectors.
+        0
+    }
+
     fn distance(&self) -> Distance {
         self.distance
     }

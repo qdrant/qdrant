@@ -301,6 +301,10 @@ where
     T: PrimitiveVectorElement,
     S: UniversalRead,
 {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    }
+
     fn distance(&self) -> Distance {
         self.distance
     }
