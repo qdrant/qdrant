@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
+use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use rand::rngs::StdRng;
@@ -9,6 +10,7 @@ use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 
 use super::ReadOnlyQuantizedVectors;
+use crate::common::live_reload::LiveReload;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{
@@ -251,4 +253,64 @@ fn assert_internal_scorer_eq(
         (Err(_), Err(_)) => {}
         _ => panic!("read-only and read-write internal scorer support diverged"),
     }
+}
+
+/// `live_reload` on a chunked quantized storage reopens its backing without
+/// disturbing the data: scores match before and after. There is no public append
+/// API to drive growth here; the chunked reload primitive is covered by
+/// `ChunkedVectorsRead`'s own tests.
+#[test]
+fn live_reload_chunked_preserves_scores() {
+    let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();
+    let quant_dir = tempfile::Builder::new().prefix("quant").tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(SEED);
+
+    let storage = build_on_disk_storage(dir.path(), &mut rng);
+    let on_disk = storage.is_on_disk();
+
+    // Binary quantization with the mutable storage type produces the chunked
+    // (appendable) layout — the only one `live_reload` acts on.
+    QuantizedVectors::create(
+        &storage,
+        &binary_config(false),
+        QuantizedVectorsStorageType::Mutable,
+        quant_dir.path(),
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    let mut ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
+        &MmapFs,
+        quant_dir.path(),
+        storage.distance(),
+        storage.datatype(),
+        None,
+        on_disk,
+    )
+    .unwrap()
+    .expect("quantization config exists");
+
+    let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
+    let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
+
+    let before: Vec<_> = {
+        let scorer = ro
+            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
+            .unwrap();
+        sample.iter().map(|&id| scorer.score_point(id)).collect()
+    };
+
+    let empty = SortedSlice::new(&[]).unwrap();
+    ro.live_reload(&MmapFs, &empty, &empty, &HardwareCounterCell::disposable())
+        .unwrap();
+
+    let after: Vec<_> = {
+        let scorer = ro
+            .raw_scorer(query, HardwareCounterCell::disposable())
+            .unwrap();
+        sample.iter().map(|&id| scorer.score_point(id)).collect()
+    };
+
+    assert_eq!(before, after);
 }

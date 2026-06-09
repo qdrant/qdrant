@@ -1,4 +1,5 @@
 mod lifecycle;
+mod live_reload;
 mod storage;
 #[cfg(test)]
 mod tests;

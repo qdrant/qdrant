@@ -18,7 +18,7 @@ use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 /// so the mutable storage format can be loaded by the read-only quantized storage.
 #[derive(Debug)]
 pub struct QuantizedChunkedStorageRead<S: UniversalRead> {
-    data: ChunkedVectorsRead<u8, S>,
+    pub(super) data: ChunkedVectorsRead<u8, S>,
 }
 
 impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {

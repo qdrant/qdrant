@@ -14,6 +14,7 @@ use smallvec::SmallVec;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
+mod live_reload;
 mod offsets;
 
 pub use offsets::{
@@ -97,8 +98,16 @@ where
         &self.quantized_storage
     }
 
+    pub fn storage_mut(&mut self) -> &mut QuantizedStorage {
+        &mut self.quantized_storage
+    }
+
     pub fn offsets_storage(&self) -> &TMultivectorOffsetsStorage {
         &self.offsets
+    }
+
+    pub fn offsets_storage_mut(&mut self) -> &mut TMultivectorOffsetsStorage {
+        &mut self.offsets
     }
 
     pub fn new(
