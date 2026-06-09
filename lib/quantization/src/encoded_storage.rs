@@ -20,6 +20,8 @@ use fs_err::File;
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
 
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>>;
+
     fn iter_batch(
         &self,
         offsets: &[PointOffsetType],
@@ -136,6 +138,11 @@ impl TestEncodedStorage {
 #[cfg(feature = "testing")]
 impl EncodedStorage for TestEncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index)
+            .unwrap_or(Cow::Borrowed(&[]))
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
         let start = self
             .quantized_vector_size
             .get()
@@ -145,7 +152,7 @@ impl EncodedStorage for TestEncodedStorage {
             .get()
             .saturating_mul(index as usize + 1);
 
-        Cow::Borrowed(self.data.get(start..end).unwrap_or(&[]))
+        Some(Cow::Borrowed(self.data.get(start..end)?))
     }
 
     fn upsert_vector(

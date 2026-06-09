@@ -364,6 +364,22 @@ impl Distance {
     }
 }
 
+/// Map a segment [`Distance`] to the TurboQuant [`DistanceType`].
+///
+/// Uses the true Cosine mapping (`Cosine → Cosine`); the legacy quantizers fold
+/// Cosine into Dot for backwards-compat, but do so with an explicit match rather
+/// than this conversion.
+impl From<Distance> for quantization::DistanceType {
+    fn from(distance: Distance) -> Self {
+        match distance {
+            Distance::Cosine => quantization::DistanceType::Cosine,
+            Distance::Euclid => quantization::DistanceType::L2,
+            Distance::Dot => quantization::DistanceType::Dot,
+            Distance::Manhattan => quantization::DistanceType::L1,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Order {
     LargeBetter,
