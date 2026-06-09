@@ -314,8 +314,6 @@ pub enum DocumentOptions {
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches;
-
     use validator::Validate as _;
 
     use super::*;
