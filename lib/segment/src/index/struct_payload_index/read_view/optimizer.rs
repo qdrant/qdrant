@@ -72,12 +72,9 @@ where
             } else {
                 None
             },
-            // Drop `min_should` to `None` (match-all) only when it's a pure
-            // no-op: an empty condition list with `min_count == 0`. An empty
-            // list with `min_count > 0` is unsatisfiable (match-none) and must
-            // be kept -- dropping it silently degrades match-none into match-all
-            // (issue #9369). A non-empty list is always kept so `check_min_should`
-            // can compare the matched count against `min_count`.
+            // Keep an empty `min_should` when `min_count > 0`: it's
+            // unsatisfiable (match-none), and dropping it would match all
+            // (issue #9369). Only the no-op (empty, `min_count == 0`) is dropped.
             min_should: if let Some(MinShould {
                 conditions,
                 min_count,
