@@ -9,7 +9,7 @@ use collection::operations::routing::RoutingToken;
 /// Clients send a stable value (for example a user or session id); requests with
 /// the same value are consistently routed to the same shard replicas, avoiding the
 /// "blinking" of results caused by deferred updates. See [`RoutingToken`].
-pub const ROUTING_TOKEN_HEADER: &str = "X-Qdrant-Routing-Token";
+pub const ROUTING_TOKEN_HEADER: &str = api::HTTP_HEADER_ROUTING_TOKEN;
 
 /// Actix extractor for the optional [`RoutingToken`] supplied via the
 /// [`ROUTING_TOKEN_HEADER`] HTTP header.

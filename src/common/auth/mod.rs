@@ -185,7 +185,17 @@ impl AuthKeys {
             } = claims;
 
             if let Some(value_exists) = value_exists {
-                self.validate_value_exists(&value_exists).await?;
+                // Route the stateful existence check with the caller's routing token
+                // (the same header used for their reads) so it lands on the same replica
+                // and stays consistent with what those reads see. Seeding from the claim
+                // instead would be useless when claims are shared across tokens — it would
+                // pin every validation to a single replica.
+                let routing_token = get_header(api::HTTP_HEADER_ROUTING_TOKEN)
+                    .filter(|token| !token.is_empty())
+                    .map(|token| RoutingToken::from_bytes(token.as_bytes()));
+
+                self.validate_value_exists(&value_exists, routing_token)
+                    .await?;
             }
 
             return Ok((access, InferenceToken(sub), AuthType::Jwt, subject));
@@ -202,7 +212,11 @@ impl AuthKeys {
         ))
     }
 
-    async fn validate_value_exists(&self, value_exists: &ValueExists) -> Result<(), AuthError> {
+    async fn validate_value_exists(
+        &self,
+        value_exists: &ValueExists,
+        routing_token: Option<RoutingToken>,
+    ) -> Result<(), AuthError> {
         let scroll_req = ScrollRequestInternal {
             offset: None,
             limit: Some(1),
@@ -211,15 +225,6 @@ impl AuthKeys {
             with_vector: WithVector::Bool(false),
             order_by: None,
         };
-
-        // Stateful JWT validation checks whether matching points exist. Deferred
-        // points can make that existence flip between requests (a point appearing or
-        // disappearing) and differ across replicas, which would make the same token
-        // pass and then fail. Route deterministically, seeded by the claim, so a
-        // given token consistently checks the same replica and stays stable.
-        let routing_token = serde_json::to_vec(value_exists)
-            .ok()
-            .map(|claim| RoutingToken::from_bytes(&claim));
 
         let res = self
             .toc
