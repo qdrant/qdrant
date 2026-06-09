@@ -12,4 +12,5 @@ pub use field_index_read::FieldIndexRead;
 pub use payload_field_index::{PayloadFieldIndex, PayloadFieldIndexRead};
 #[allow(unused_imports)]
 pub(crate) use read_only::LiveReload;
+pub use read_only::ReadOnlyFieldIndex;
 pub use value_indexer::ValueIndexer;

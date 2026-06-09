@@ -19,14 +19,13 @@ use common::universal_io::UniversalRead;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
-use crate::id_tracker::IdTrackerEnum;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
-use crate::index::field_index::FieldIndex;
+use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
-use crate::index::struct_payload_index::{StructPayloadIndex, StructPayloadIndexReadView};
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::vector_storage::VectorStorageEnum;
+use crate::index::struct_payload_index::StructPayloadIndexReadView;
+use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
+use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -42,7 +41,7 @@ pub struct ReadOnlyHNSWIndex<S: UniversalRead> {
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
     config: HnswGraphConfig,
     path: PathBuf,
     graph: GraphLayers,
@@ -62,10 +61,10 @@ type ReadView<'a, S> = HNSWIndexReadView<
     ReadOnlyQuantizedVectors<S>,
     StructPayloadIndexReadView<
         'a,
-        PayloadStorageEnum,
-        IdTrackerEnum,
-        VectorStorageEnum,
-        FieldIndex,
+        ReadOnlyPayloadStorage<S>,
+        ReadOnlyIdTrackerEnum<S>,
+        VectorStorageReadEnum<S>,
+        ReadOnlyFieldIndex<S>,
     >,
 >;
 
