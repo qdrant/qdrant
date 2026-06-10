@@ -297,6 +297,37 @@ impl Segment {
     where
         F: FnOnce(&mut Segment) -> OperationResult<bool>,
     {
+        self.handle_segment_op_and_failure(op_num, true, operation)
+    }
+
+    /// Variant of [`Self::handle_segment_version_and_failure`] that runs the operation even when
+    /// `op_num` is below the segment version, instead of skipping it as already-applied.
+    ///
+    /// For idempotent structural schema operations (create/delete vector storage): the segment
+    /// version is a point-data high-water mark and does not imply a schema op was applied to this
+    /// segment. Version-skipping a replayed `CreateVectorName` leaves a segment without a vector
+    /// that later replayed upserts reference, so those upserts are wrongly declined with "Not
+    /// existing vector name" and their points are lost. The underlying `*_impl` are idempotent.
+    pub(super) fn handle_segment_schema_op_and_failure<F>(
+        &mut self,
+        op_num: SeqNumberType,
+        operation: F,
+    ) -> OperationResult<bool>
+    where
+        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+    {
+        self.handle_segment_op_and_failure(op_num, false, operation)
+    }
+
+    fn handle_segment_op_and_failure<F>(
+        &mut self,
+        op_num: SeqNumberType,
+        skip_stale: bool,
+        operation: F,
+    ) -> OperationResult<bool>
+    where
+        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+    {
         if let Some(SegmentFailedState {
             version: failed_version,
             point_id: _failed_point_id,
@@ -312,7 +343,7 @@ impl Segment {
             } // else: Re-try operation
         }
 
-        let res = self.handle_segment_version(op_num, operation);
+        let res = self.handle_segment_version(op_num, skip_stale, operation);
 
         if let Some(error) = get_service_error(&res) {
             // ToDo: Recover previous segment state
@@ -406,13 +437,14 @@ impl Segment {
     fn handle_segment_version<F>(
         &mut self,
         op_num: SeqNumberType,
+        skip_stale: bool,
         operation: F,
     ) -> OperationResult<bool>
     where
         F: FnOnce(&mut Segment) -> OperationResult<bool>,
     {
         // Global version to check if operation has already been applied, then skip without execution
-        if self.version.unwrap_or(0) > op_num {
+        if skip_stale && self.version.unwrap_or(0) > op_num {
             return Ok(false);
         }
 
