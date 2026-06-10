@@ -26,6 +26,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
     open_appendable_memmap_vector_storage_half,
 };
+use crate::vector_storage::turbo::open_appendable_turbo_vector_storage;
 use crate::vector_storage::{
     MultiVectorStorage, MultiVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
     VectorStorageRead,
@@ -440,7 +441,8 @@ pub fn open_appendable_memmap_vector_storage(
             populate,
         ),
         VectorStorageDatatype::Turbo4 => {
-            unimplemented!("turbo4 datatype storage not yet wired up")
+            open_appendable_turbo_vector_storage(vector_storage_path, size, distance, populate)
+                .map(|s| VectorStorageEnum::DenseTurbo(Box::new(s)))
         }
     }
 }

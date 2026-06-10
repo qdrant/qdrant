@@ -128,6 +128,9 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
+            VectorStorageEnum::DenseTurbo(_) => Err(OperationError::service_error(
+                "Cannot quantize a Turbo4 vector storage; it is already quantized",
+            )),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::MultiDenseVolatile(v) => Self::create_multi_impl(

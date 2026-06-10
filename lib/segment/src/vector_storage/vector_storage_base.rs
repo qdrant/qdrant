@@ -21,6 +21,7 @@ use super::multi_dense::volatile_multi_dense_vector_storage::VolatileMultiDenseV
 use super::sparse::empty_sparse_vector_storage::EmptySparseVectorStorage;
 use super::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use super::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
+use super::turbo::TurboVectorStorage;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
@@ -308,9 +309,7 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
 
-    /// Call `f` with the raw bytes of the vector if it exists.
-    ///
-    /// Uses `bytemuck::cast_slice` on the borrowed data — zero copy, zero allocation.
+    /// Call `f` with the raw encoded bytes of the vector if it exists.
     fn with_dense_tq_bytes_opt<P: AccessPattern, R>(
         &self,
         key: PointOffsetType,
@@ -364,6 +363,7 @@ pub enum VectorStorageEnum {
     DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     DenseAppendableMemmapByte(Box<AppendableMmapDenseVectorStorage<VectorElementTypeByte>>),
     DenseAppendableMemmapHalf(Box<AppendableMmapDenseVectorStorage<VectorElementTypeHalf>>),
+    DenseTurbo(Box<TurboVectorStorage>),
     SparseVolatile(VolatileSparseVectorStorage),
     SparseMmap(MmapSparseVectorStorage),
     MultiDenseVolatile(VolatileMultiDenseVectorStorage<VectorElementType>),
@@ -404,6 +404,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(_) => None,
             VectorStorageEnum::DenseAppendableMemmapByte(_) => None,
             VectorStorageEnum::DenseAppendableMemmapHalf(_) => None,
+            VectorStorageEnum::DenseTurbo(_) => None,
             VectorStorageEnum::SparseVolatile(_) => None,
             VectorStorageEnum::SparseMmap(_) => None,
             VectorStorageEnum::MultiDenseVolatile(s) => Some(s.multi_vector_config()),
@@ -454,6 +455,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 VectorInternal::from(vec![1.0; v.vector_dim()])
             }
+            VectorStorageEnum::DenseTurbo(v) => VectorInternal::from(vec![1.0; v.vector_dim()]),
             VectorStorageEnum::SparseVolatile(_) => VectorInternal::from(SparseVector::default()),
             VectorStorageEnum::SparseMmap(_) => VectorInternal::from(SparseVector::default()),
             VectorStorageEnum::MultiDenseVolatile(v) => {
@@ -502,6 +504,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.populate()?,
+            VectorStorageEnum::DenseTurbo(vs) => vs.populate()?,
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.populate()?,
             VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
@@ -539,6 +542,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseTurbo(vs) => vs.clear_cache()?,
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.clear_cache()?,
             VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
@@ -585,6 +589,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 v.with_dense_bytes_opt::<P, R>(key, f)
             }
+            VectorStorageEnum::DenseTurbo(v) => v.with_dense_tq_bytes_opt::<P, R>(key, f),
             VectorStorageEnum::SparseVolatile(_) => None,
             VectorStorageEnum::SparseMmap(_) => None,
             VectorStorageEnum::MultiDenseVolatile(_) => None,
@@ -622,6 +627,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => return v.get_dense_vector_layout(),
+            VectorStorageEnum::DenseTurbo(v) => return v.get_dense_tq_vector_layout(),
             VectorStorageEnum::SparseVolatile(_) => {}
             VectorStorageEnum::SparseMmap(_) => {}
             VectorStorageEnum::MultiDenseVolatile(_) => {}
@@ -667,6 +673,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 v.size_of_available_vectors_in_bytes()
             }
+            VectorStorageEnum::DenseTurbo(v) => v.size_of_available_vectors_in_bytes(),
             VectorStorageEnum::SparseVolatile(v) => v.size_of_available_vectors_in_bytes(),
             VectorStorageEnum::SparseMmap(_v) => {
                 unreachable!(
@@ -713,6 +720,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.distance(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.distance(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.distance(),
+            VectorStorageEnum::DenseTurbo(v) => v.distance(),
             VectorStorageEnum::SparseVolatile(v) => v.distance(),
             VectorStorageEnum::SparseMmap(v) => v.distance(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.distance(),
@@ -749,6 +757,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.datatype(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.datatype(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.datatype(),
+            VectorStorageEnum::DenseTurbo(v) => v.datatype(),
             VectorStorageEnum::SparseVolatile(v) => v.datatype(),
             VectorStorageEnum::SparseMmap(v) => v.datatype(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.datatype(),
@@ -787,6 +796,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.is_on_disk(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_on_disk(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseTurbo(v) => v.is_on_disk(),
             VectorStorageEnum::SparseVolatile(v) => v.is_on_disk(),
             VectorStorageEnum::SparseMmap(v) => v.is_on_disk(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.is_on_disk(),
@@ -823,6 +833,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.total_vector_count(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.total_vector_count(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.total_vector_count(),
+            VectorStorageEnum::DenseTurbo(v) => v.total_vector_count(),
             VectorStorageEnum::SparseVolatile(v) => v.total_vector_count(),
             VectorStorageEnum::SparseMmap(v) => v.total_vector_count(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.total_vector_count(),
@@ -859,6 +870,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector::<P>(key),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector::<P>(key),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector::<P>(key),
+            VectorStorageEnum::DenseTurbo(v) => v.get_vector::<P>(key),
             VectorStorageEnum::SparseVolatile(v) => v.get_vector::<P>(key),
             VectorStorageEnum::SparseMmap(v) => v.get_vector::<P>(key),
             VectorStorageEnum::MultiDenseVolatile(v) => v.get_vector::<P>(key),
@@ -903,6 +915,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 v.read_vectors::<P, U>(keys, callback)
             }
+            VectorStorageEnum::DenseTurbo(v) => v.read_vectors::<P, U>(keys, callback),
             VectorStorageEnum::SparseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
             VectorStorageEnum::SparseMmap(v) => v.read_vectors::<P, U>(keys, callback),
             VectorStorageEnum::MultiDenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
@@ -945,6 +958,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector_opt::<P>(key),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector_opt::<P>(key),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector_opt::<P>(key),
+            VectorStorageEnum::DenseTurbo(v) => v.get_vector_opt::<P>(key),
             VectorStorageEnum::SparseVolatile(v) => v.get_vector_opt::<P>(key),
             VectorStorageEnum::SparseMmap(v) => v.get_vector_opt::<P>(key),
             VectorStorageEnum::MultiDenseVolatile(v) => v.get_vector_opt::<P>(key),
@@ -981,6 +995,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.is_deleted_vector(key),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_deleted_vector(key),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::DenseTurbo(v) => v.is_deleted_vector(key),
             VectorStorageEnum::SparseVolatile(v) => v.is_deleted_vector(key),
             VectorStorageEnum::SparseMmap(v) => v.is_deleted_vector(key),
             VectorStorageEnum::MultiDenseVolatile(v) => v.is_deleted_vector(key),
@@ -1017,6 +1032,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_count(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_count(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_count(),
+            VectorStorageEnum::DenseTurbo(v) => v.deleted_vector_count(),
             VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_count(),
             VectorStorageEnum::SparseMmap(v) => v.deleted_vector_count(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_count(),
@@ -1053,6 +1069,7 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::DenseTurbo(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::SparseMmap(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_bitslice(),
@@ -1100,6 +1117,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 v.insert_vector(key, vector, hw_counter)
             }
+            VectorStorageEnum::DenseTurbo(v) => v.insert_vector(key, vector, hw_counter),
             VectorStorageEnum::SparseVolatile(v) => v.insert_vector(key, vector, hw_counter),
             VectorStorageEnum::SparseMmap(v) => v.insert_vector(key, vector, hw_counter),
             VectorStorageEnum::MultiDenseVolatile(v) => v.insert_vector(key, vector, hw_counter),
@@ -1146,6 +1164,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.flusher(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.flusher(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.flusher(),
+            VectorStorageEnum::DenseTurbo(v) => v.flusher(),
             VectorStorageEnum::SparseVolatile(v) => v.flusher(),
             VectorStorageEnum::SparseMmap(v) => v.flusher(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.flusher(),
@@ -1182,6 +1201,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.files(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.files(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.files(),
+            VectorStorageEnum::DenseTurbo(v) => v.files(),
             VectorStorageEnum::SparseVolatile(v) => v.files(),
             VectorStorageEnum::SparseMmap(v) => v.files(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.files(),
@@ -1218,6 +1238,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.immutable_files(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.immutable_files(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.immutable_files(),
+            VectorStorageEnum::DenseTurbo(v) => v.immutable_files(),
             VectorStorageEnum::SparseVolatile(v) => v.immutable_files(),
             VectorStorageEnum::SparseMmap(v) => v.immutable_files(),
             VectorStorageEnum::MultiDenseVolatile(v) => v.immutable_files(),
@@ -1254,6 +1275,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.delete_vector(key),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.delete_vector(key),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.delete_vector(key),
+            VectorStorageEnum::DenseTurbo(v) => v.delete_vector(key),
             VectorStorageEnum::SparseVolatile(v) => v.delete_vector(key),
             VectorStorageEnum::SparseMmap(v) => v.delete_vector(key),
             VectorStorageEnum::MultiDenseVolatile(v) => v.delete_vector(key),
