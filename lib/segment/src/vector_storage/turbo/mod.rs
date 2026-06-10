@@ -124,6 +124,14 @@ impl TurboVectorStorage {
         self.quantizer.precompute_query(&preprocessed)
     }
 
+    /// Asymmetric score of a precomputed query against already-fetched encoded
+    /// `bytes`, applying the metric sign convention. Does no IO and no hardware
+    /// accounting — callers that read from storage own those.
+    pub fn score_query_bytes(&self, query: &EncodedQueryTQ, bytes: &[u8]) -> ScoreType {
+        let score = self.quantizer.score_precomputed(query, bytes);
+        if self.invert_score() { -score } else { score }
+    }
+
     /// Asymmetric score of a precomputed query against the stored vector `key`.
     pub fn score_encoded_query(
         &self,
@@ -134,8 +142,7 @@ impl TurboVectorStorage {
         let bytes = self.storage.get_quantized_vector(key);
         hw_counter.vector_io_read().incr_delta(bytes.len());
         hw_counter.cpu_counter().incr_delta(bytes.len());
-        let score = self.quantizer.score_precomputed(query, &bytes);
-        if self.invert_score() { -score } else { score }
+        self.score_query_bytes(query, &bytes)
     }
 
     /// Symmetric score between two stored vectors, selected by their offsets.
@@ -1084,6 +1091,77 @@ mod tests {
                             "symmetric: vector {q} not closest to itself \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                         );
+                    }
+                }
+            }
+        }
+    }
+
+    /// End-to-end check of [`TurboCustomQueryScorer`] for the multi-vector
+    /// (reco) path: with a single positive equal to a stored vector, the
+    /// best-score and sum-score combinators must both rank that vector first,
+    /// which exercises query transform/preprocessing and `score_by` plumbing on
+    /// top of the same asymmetric scoring used by the nearest path.
+    #[test]
+    fn custom_reco_scorer_ranks_positive_first() {
+        use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::turbo_custom_query_scorer::TurboCustomQueryScorer;
+
+        const COUNT: usize = 16;
+
+        /// Offset of the highest-scoring stored vector.
+        fn top_scored(scorer: &impl QueryScorer, count: usize) -> usize {
+            let scores: Vec<ScoreType> = (0..count as PointOffsetType)
+                .map(|k| scorer.score_stored(k))
+                .collect();
+            (0..count)
+                .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
+                .unwrap()
+        }
+
+        for distance in [
+            Distance::Dot,
+            Distance::Cosine,
+            Distance::Euclid,
+            Distance::Manhattan,
+        ] {
+            for dim in [4, 128, 256] {
+                for seed in SEEDS {
+                    let dir = Builder::new().prefix("turbo_reco").tempdir().unwrap();
+                    let hw_counter = HardwareCounterCell::new();
+                    let mut storage =
+                        open_appendable_turbo_vector_storage(dir.path(), dim, distance, true)
+                            .unwrap();
+                    let inputs = make_vectors(dim, COUNT, seed);
+                    insert_all(&mut storage, &inputs, &hw_counter);
+
+                    for q in 0..COUNT {
+                        // One positive (the stored vector itself), no negatives.
+                        let reco =
+                            || RecoQuery::new(vec![inputs[q].clone()], Vec::<DenseVector>::new());
+
+                        let best = TurboCustomQueryScorer::new(
+                            RecoBestScoreQuery::from(reco()),
+                            &storage,
+                            HardwareCounterCell::new(),
+                        );
+                        let sum = TurboCustomQueryScorer::new(
+                            RecoSumScoresQuery::from(reco()),
+                            &storage,
+                            HardwareCounterCell::new(),
+                        );
+
+                        for (kind, top) in [
+                            ("best", top_scored(&best, COUNT)),
+                            ("sum", top_scored(&sum, COUNT)),
+                        ] {
+                            assert_eq!(
+                                top, q,
+                                "reco ({kind}) positive {q} not ranked first \
+                                 (dim {dim}, {distance:?}, seed {seed:#x})",
+                            );
+                        }
                     }
                 }
             }
