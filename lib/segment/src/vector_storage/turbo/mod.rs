@@ -125,36 +125,25 @@ impl TurboVectorStorage {
     }
 
     /// Asymmetric score of a precomputed query against already-fetched encoded
-    /// `bytes`, applying the metric sign convention. Does no IO and no hardware
-    /// accounting — callers that read from storage own those.
+    /// `bytes`, applying the metric sign convention. Pure: no IO, no hardware
+    /// accounting — the scorer that owns the [`HardwareCounterCell`] does those.
     pub fn score_query_bytes(&self, query: &EncodedQueryTQ, bytes: &[u8]) -> ScoreType {
         let score = self.quantizer.score_precomputed(query, bytes);
         if self.invert_score() { -score } else { score }
     }
 
-    /// Asymmetric score of a precomputed query against the stored vector `key`.
-    pub fn score_encoded_query(
-        &self,
-        query: &EncodedQueryTQ,
-        key: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
-        let bytes = self.storage.get_quantized_vector(key);
-        hw_counter.vector_io_read().incr_delta(bytes.len());
-        hw_counter.cpu_counter().incr_delta(bytes.len());
-        self.score_query_bytes(query, &bytes)
-    }
-
     /// Symmetric score between two stored vectors, selected by their offsets.
+    ///
+    /// Pure: reads the two encoded vectors and scores them, but does no hardware
+    /// accounting (the scorer counts the two-vector cost). Kept on the storage
+    /// because symmetric scoring needs the private quantizer.
     pub fn score_internal_encoded(
         &self,
         point_a: PointOffsetType,
         point_b: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let v1 = self.storage.get_quantized_vector(point_a);
         let v2 = self.storage.get_quantized_vector(point_b);
-        hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
         let score = self.quantizer.score_symmetric(&v1, &v2);
         if self.invert_score() { -score } else { score }
     }

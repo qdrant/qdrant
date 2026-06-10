@@ -49,8 +49,12 @@ impl QueryScorer for TurboQueryScorer<'_> {
     type TVector = [VectorElementType];
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.storage
-            .score_encoded_query(&self.query, idx, &self.hardware_counter)
+        // One stored vector of IO/CPU work; the per-vector byte cost is the
+        // counter multiplier set in `new`.
+        let bytes = self.storage.get_quantized_vector(idx);
+        self.hardware_counter.vector_io_read().incr();
+        self.hardware_counter.cpu_counter().incr();
+        self.storage.score_query_bytes(&self.query, &bytes)
     }
 
     fn score(&self, _v2: &[VectorElementType]) -> ScoreType {
@@ -58,8 +62,10 @@ impl QueryScorer for TurboQueryScorer<'_> {
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.storage
-            .score_internal_encoded(point_a, point_b, &self.hardware_counter)
+        // Both stored vectors are read and processed: two vectors of IO/CPU work.
+        self.hardware_counter.vector_io_read().incr_delta(2);
+        self.hardware_counter.cpu_counter().incr_delta(2);
+        self.storage.score_internal_encoded(point_a, point_b)
     }
 
     // TODO(TQDT): add inline scoring support

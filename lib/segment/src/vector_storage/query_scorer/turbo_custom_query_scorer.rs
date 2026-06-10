@@ -65,11 +65,11 @@ where
     type TVector = [VectorElementType];
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        // Read the stored vector once, then score every sub-query against it.
+        // Read the stored vector once (one vector of IO), then score every
+        // sub-query against it — each sub-query is one vector of CPU work.
+        // The per-vector byte cost is the counter multiplier set in `new`.
         let bytes = self.storage.get_quantized_vector(idx);
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(bytes.len());
+        self.hardware_counter.vector_io_read().incr();
 
         let cpu_counter = self.hardware_counter.cpu_counter();
         self.query.score_by(|query| {
