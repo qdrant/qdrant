@@ -36,6 +36,22 @@ impl Segment {
             return Ok(false);
         }
 
+        // Start from a clean slate. A prior `delete_vector_name` removes the
+        // storage/index directories, but that removal is best-effort: it logs a
+        // warning and continues on failure (and a crash mid-delete leaves them
+        // too), so the directories can still be on disk. If we reopened those
+        // stale files here, the recreated vector would resurrect data from
+        // points that were never re-upserted (visible after a reload). Remove
+        // any leftovers first.
+        let storage_path = get_vector_storage_path(&self.segment_path, vector_name);
+        let index_path = get_vector_index_path(&self.segment_path, vector_name);
+        if storage_path.exists() {
+            fs_err::remove_dir_all(&storage_path)?;
+        }
+        if index_path.exists() {
+            fs_err::remove_dir_all(&index_path)?;
+        }
+
         match config {
             VectorNameConfig::Dense(wrapper) => {
                 let internal = wrapper.dense.to_internal(false);
