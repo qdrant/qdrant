@@ -7,16 +7,15 @@ use common::universal_io::UniversalRead;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::InvertedIndex;
 
-use crate::id_tracker::IdTrackerEnum;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
-use crate::index::field_index::FieldIndex;
+use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
 use crate::index::sparse_index::sparse_vector_index::read_view::SparseVectorIndexReadView;
-use crate::index::struct_payload_index::{StructPayloadIndex, StructPayloadIndexReadView};
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::vector_storage::VectorStorageEnum;
+use crate::index::struct_payload_index::StructPayloadIndexReadView;
+use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
+use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 /// Read-only, generic-over-storage counterpart of [`SparseVectorIndex`].
@@ -30,28 +29,24 @@ pub struct ReadOnlySparseVectorIndex<S: UniversalRead, TInvertedIndex: InvertedI
     config: SparseIndexConfig,
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
     inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
     search_scratch_pool: SearchScratchPool,
 }
 
-/// Read-only view over a [`ReadOnlySparseVectorIndex`].
-///
-/// The top-level backends are read-only ([`ReadOnlyIdTrackerEnum`] /
-/// [`VectorStorageReadEnum`]), while the payload index view is still built over
-/// the in-memory enums of [`StructPayloadIndex`].
+/// Read-only view over a [`ReadOnlySparseVectorIndex`]: all backends are read-only.
 type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
     'a,
     ReadOnlyIdTrackerEnum<S>,
     VectorStorageReadEnum<S>,
     StructPayloadIndexReadView<
         'a,
-        PayloadStorageEnum,
-        IdTrackerEnum,
-        VectorStorageEnum,
-        FieldIndex,
+        ReadOnlyPayloadStorage<S>,
+        ReadOnlyIdTrackerEnum<S>,
+        VectorStorageReadEnum<S>,
+        ReadOnlyFieldIndex<S>,
     >,
     TInvertedIndex,
 >;

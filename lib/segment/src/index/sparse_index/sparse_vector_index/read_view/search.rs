@@ -1,22 +1,27 @@
+use std::collections::HashMap;
+
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
+use sparse::common::types::DimId;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
 
 use super::SparseVectorIndexReadView;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::index::query_estimator::adjust_to_available_vectors;
+use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::query::TransformInto;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead, check_deleted_condition};
 
 impl<I, V, P, TInvertedIndex> SparseVectorIndexReadView<'_, I, V, P, TInvertedIndex>
@@ -26,6 +31,74 @@ where
     P: PayloadIndexRead,
     TInvertedIndex: InvertedIndex,
 {
+    /// Search a batch of query vectors, remapping idf weights when required.
+    pub fn search(
+        &self,
+        vectors: &[&QueryVector],
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let mut results = Vec::with_capacity(vectors.len());
+        let mut prefiltered_points = None;
+
+        for vector in vectors {
+            check_process_stopped(&query_context.is_stopped())?;
+
+            let search_results = if query_context.is_require_idf() {
+                let vector = (*vector).clone().transform(|mut vector| {
+                    match &mut vector {
+                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {
+                            return Err(OperationError::WrongSparse);
+                        }
+                        VectorInternal::Sparse(sparse) => {
+                            query_context.remap_idf_weights(&sparse.indices, &mut sparse.values)
+                        }
+                    }
+
+                    Ok(vector)
+                })?;
+
+                self.search_query(&vector, filter, top, &mut prefiltered_points, query_context)?
+            } else {
+                self.search_query(vector, filter, top, &mut prefiltered_points, query_context)?
+            };
+
+            results.push(search_results);
+        }
+        Ok(results)
+    }
+
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
+        self.searches_telemetry.get_telemetry_data(detail)
+    }
+
+    pub fn indexed_vector_count(&self) -> usize {
+        self.inverted_index.vector_count()
+    }
+
+    pub fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        self.inverted_index.total_sparse_vectors_size()
+    }
+
+    /// Update statistics for idf-dot similarity.
+    pub fn fill_idf_statistics(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let iter = idf.iter_mut().filter_map(|(dim_id, count)| {
+            let offset = self.indices_tracker.remap_index(*dim_id)?;
+            Some((count, offset))
+        });
+        self.inverted_index
+            .posting_list_len_batch(iter, hw_counter, |count, len| {
+                *count += len;
+                Ok(())
+            })?;
+        Ok(())
+    }
+
     fn get_query_cardinality(
         &self,
         filter: &Filter,
