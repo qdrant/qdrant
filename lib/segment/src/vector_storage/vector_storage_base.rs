@@ -309,9 +309,7 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
 
-    /// Call `f` with the raw bytes of the vector if it exists.
-    ///
-    /// Uses `bytemuck::cast_slice` on the borrowed data — zero copy, zero allocation.
+    /// Call `f` with the raw encoded bytes of the vector if it exists.
     fn with_dense_tq_bytes_opt<P: AccessPattern, R>(
         &self,
         key: PointOffsetType,
@@ -591,9 +589,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 v.with_dense_bytes_opt::<P, R>(key, f)
             }
-            // TQ-encoded bytes aren't f32-layout; the only consumer (HNSW `inline_storage`
-            // graph-links) is already gated off for Turbo by get_vector_layout() returning Err.
-            VectorStorageEnum::DenseTurbo(_) => None,
+            VectorStorageEnum::DenseTurbo(v) => v.with_dense_tq_bytes_opt::<P, R>(key, f),
             VectorStorageEnum::SparseVolatile(_) => None,
             VectorStorageEnum::SparseMmap(_) => None,
             VectorStorageEnum::MultiDenseVolatile(_) => None,
@@ -631,8 +627,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => return v.get_dense_vector_layout(),
-            // Quantized layout differs from f32; not exposed through the generic interface.
-            VectorStorageEnum::DenseTurbo(_) => {}
+            VectorStorageEnum::DenseTurbo(v) => return v.get_dense_tq_vector_layout(),
             VectorStorageEnum::SparseVolatile(_) => {}
             VectorStorageEnum::SparseMmap(_) => {}
             VectorStorageEnum::MultiDenseVolatile(_) => {}
