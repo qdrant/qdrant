@@ -1199,6 +1199,95 @@ fn test_deferred_point_read_operations() {
     );
 }
 
+/// A deferred point is invisible to ordinary (`VisibleOnly`) per-point reads,
+/// but the copy-on-write move path must still be able to read its data via the
+/// `*_with_behavior(WithDeferred)` accessors.
+///
+/// Regression test for a spurious "No point with id ... found" error: the CoW
+/// move path read the source point's payload with `VisibleOnly`, which raised
+/// `PointIdError` for a deferred source point (e.g. a point upserted under
+/// `prevent_unoptimized` whose internal id is beyond the deferred threshold).
+#[test]
+fn test_deferred_point_with_behavior_accessors() {
+    let hw_counter = HardwareCounterCell::new();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    // Threshold so any new point lands beyond the cutoff (deferred).
+    let mut segment = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+        Some(0),
+        true,
+    )
+    .unwrap();
+
+    let point_id = PointIdType::from(42u64);
+    let vector = vec![0.1, 0.2, 0.3, 0.4];
+    let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&vector));
+    let payload: Payload = serde_json::from_str(r#"{"number": 7}"#).unwrap();
+
+    segment
+        .upsert_point(0, point_id, vectors, &hw_counter)
+        .unwrap();
+    segment
+        .set_full_payload(0, point_id, &payload, &hw_counter)
+        .unwrap();
+
+    assert!(
+        segment.point_is_deferred(point_id),
+        "point must be deferred for this regression scenario",
+    );
+
+    // VisibleOnly hides the deferred point: both payload and vector reads
+    // fail to resolve it (this is exactly what made the CoW move path raise a
+    // spurious PointNotFound before the fix).
+    assert!(
+        matches!(
+            segment.payload(point_id, &hw_counter),
+            Err(PointIdError { missed_point_id }) if missed_point_id == point_id,
+        ),
+        "VisibleOnly payload read must not resolve a deferred point",
+    );
+    assert!(
+        matches!(
+            segment.all_vectors(point_id, &hw_counter),
+            Err(PointIdError { missed_point_id }) if missed_point_id == point_id,
+        ),
+        "VisibleOnly vector read must not resolve a deferred point",
+    );
+
+    // WithDeferred resolves the deferred point with its real data — this is
+    // what the CoW move path now uses, fixing the spurious PointNotFound.
+    let with_deferred_payload = segment
+        .payload_with_behavior(point_id, DeferredBehavior::WithDeferred, &hw_counter)
+        .expect("WithDeferred payload read must resolve a deferred point");
+    assert_eq!(with_deferred_payload, payload);
+
+    let with_deferred_vectors = segment
+        .all_vectors_with_behavior(point_id, DeferredBehavior::WithDeferred, &hw_counter)
+        .expect("WithDeferred vector read must resolve a deferred point");
+    assert!(
+        with_deferred_vectors.contains_key(DEFAULT_VECTOR_NAME),
+        "WithDeferred vector read must return the deferred point's vector",
+    );
+}
+
 #[test]
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_sparse() {

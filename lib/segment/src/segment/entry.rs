@@ -92,18 +92,43 @@ impl ReadSegmentEntry for Segment {
         self.with_view(|view| view.vector(vector_name, point_id, hw_counter))
     }
 
+    fn vector_with_behavior(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<VectorInternal>> {
+        self.with_view(|view| {
+            view.vector_with_behavior(vector_name, point_id, deferred_behavior, hw_counter)
+        })
+    }
+
     fn all_vectors(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>> {
-        let mut result = NamedVectors::default();
-        for vector_name in self.vector_data.keys() {
-            if let Some(vec) = self.vector(vector_name, point_id, hw_counter)? {
-                result.insert(vector_name.clone(), vec);
+        self.all_vectors_with_behavior(point_id, DeferredBehavior::VisibleOnly, hw_counter)
+    }
+
+    fn all_vectors_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors<'_>> {
+        self.with_view(|view| {
+            let mut result = NamedVectors::default();
+            for vector_name in view.vector_data.keys() {
+                if let Some(vec) =
+                    view.vector_with_behavior(vector_name, point_id, deferred_behavior, hw_counter)?
+                {
+                    result.insert(vector_name.clone(), vec);
+                }
             }
-        }
-        Ok(result)
+            Ok(result)
+        })
     }
 
     fn payload(
@@ -112,6 +137,15 @@ impl ReadSegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         self.with_view(|view| view.payload(point_id, hw_counter))
+    }
+
+    fn payload_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        self.with_view(|view| view.payload_with_behavior(point_id, deferred_behavior, hw_counter))
     }
 
     fn retrieve(
