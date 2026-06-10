@@ -4,7 +4,10 @@ use std::sync::atomic::AtomicBool;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::vector_storage_base::VectorStorageEnum;
-use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageRead as _};
+use super::{
+    DenseTQVectorStorage, DenseVectorStorage, MultiVectorStorage, SparseVectorStorage,
+    VectorStorageRead as _,
+};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -21,6 +24,18 @@ fn fill_dense<T: PrimitiveVectorElement>(
 ) -> OperationResult<()> {
     let dim = storage.vector_dim();
     let placeholder: Cow<[T]> = Cow::Owned(vec![T::default(); dim]);
+    let mut iter = std::iter::repeat_n((placeholder, true), count);
+    storage.update_from(&mut iter, stopped)?;
+    Ok(())
+}
+
+pub(super) fn fill_turbo(
+    storage: &mut impl DenseTQVectorStorage,
+    count: usize,
+    stopped: &AtomicBool,
+) -> OperationResult<()> {
+    let size = storage.quantized_vector_size();
+    let placeholder: Cow<[u8]> = Cow::Owned(vec![0u8; size]);
     let mut iter = std::iter::repeat_n((placeholder, true), count);
     storage.update_from(&mut iter, stopped)?;
     Ok(())
@@ -98,6 +113,8 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 fill_dense(&mut **v, count, &stopped)
             }
+
+            VectorStorageEnum::DenseTurbo(v) => fill_turbo(&mut **v, count, &stopped),
 
             VectorStorageEnum::MultiDenseVolatile(v) => fill_multi(v, count, &stopped),
             #[cfg(test)]

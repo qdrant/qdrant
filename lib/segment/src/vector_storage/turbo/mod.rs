@@ -8,10 +8,6 @@
 //! It intentionally implements only [`VectorStorageRead`] + [`VectorStorage`],
 //! **not** `DenseVectorStorage<T>`.
 
-// Scaffold: nothing constructs `TurboVectorStorage` yet. Remove once it is wired
-// into `VectorStorageEnum::DenseTurbo`.
-#![allow(dead_code)]
-
 mod turbo_encoded_vectors;
 
 use std::borrow::Cow;
@@ -116,6 +112,17 @@ impl TurboVectorStorage {
                 .map(|i| *i as f32)
                 .collect::<Vec<_>>(),
         ))
+    }
+}
+
+impl std::fmt::Debug for TurboVectorStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TurboVectorStorage")
+            .field("dim", &self.dim)
+            .field("distance", &self.distance)
+            .field("total_vector_count", &self.storage.vectors_count())
+            .field("deleted_count", &self.deleted_count)
+            .finish_non_exhaustive()
     }
 }
 
@@ -337,6 +344,7 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::DenseVector;
+    use crate::vector_storage::prefill_deleted::fill_turbo;
 
     /// Deterministic test vectors in `[-1, 1]`, seeded so that the storage and
     /// the independent oracle observe exactly the same inputs across runs.
@@ -907,6 +915,57 @@ mod tests {
             let mut offsets: Vec<PointOffsetType> = seen.iter().map(|(_, o, _)| *o).collect();
             offsets.sort_unstable();
             assert_eq!(offsets, (0..COUNT as PointOffsetType).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn deleted_placeholders_load_and_score_without_panic() {
+        const COUNT: usize = 4;
+        let stopped = AtomicBool::new(false);
+
+        for distance in [
+            Distance::Dot,
+            Distance::Cosine,
+            Distance::Euclid,
+            Distance::Manhattan,
+        ] {
+            for dim in [1, 127, 128] {
+                let dir = Builder::new()
+                    .prefix("turbo_placeholder")
+                    .tempdir()
+                    .unwrap();
+                let mut storage =
+                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+
+                // Append COUNT deleted placeholders, exactly as prefill does.
+                fill_turbo(&mut storage, COUNT, &stopped).unwrap();
+                assert_eq!(storage.total_vector_count(), COUNT);
+                assert_eq!(storage.deleted_vector_count(), COUNT);
+
+                // A real (normalized) query for the asymmetric path.
+                let query = make_vectors(dim, 1, 0x5EED)[0].clone();
+                let precomputed = storage.quantizer.precompute_query(&query);
+
+                for key in 0..COUNT as PointOffsetType {
+                    // Load: dequantize keeps the original dim and stays finite.
+                    let loaded = DenseVector::try_from(storage.get_vector::<Random>(key)).unwrap();
+                    assert_eq!(loaded.len(), dim);
+                    assert!(loaded.iter().all(|x| x.is_finite()));
+
+                    // Score the raw placeholder bytes on both paths: finite, no panic.
+                    let bytes = storage.get_quantized_vector(key);
+                    let sym = storage
+                        .quantizer
+                        .score_symmetric(bytes.as_ref(), bytes.as_ref());
+                    let asym = storage
+                        .quantizer
+                        .score_precomputed(&precomputed, bytes.as_ref());
+                    assert!(
+                        sym.is_finite() && asym.is_finite(),
+                        "placeholder score not finite (dim {dim}, {distance:?}): sym {sym}, asym {asym}",
+                    );
+                }
+            }
         }
     }
 

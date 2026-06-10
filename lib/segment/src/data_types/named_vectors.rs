@@ -356,9 +356,9 @@ impl<'a> NamedVectors<'a> {
             Some(VectorStorageDatatype::Float16) => config
                 .distance
                 .preprocess_vector::<VectorElementTypeHalf>(dense_vector),
-            Some(VectorStorageDatatype::Turbo4) => {
-                unimplemented!("turbo4 datatype storage not yet wired up")
-            }
+            Some(VectorStorageDatatype::Turbo4) => config
+                .distance
+                .preprocess_vector::<VectorElementType>(dense_vector), // Turbo only needs normal preprocessing.
         }
     }
 }

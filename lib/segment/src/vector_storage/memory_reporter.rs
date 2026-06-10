@@ -68,6 +68,8 @@ impl MemoryReporter for VectorStorageEnum {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
 
+            VectorStorageEnum::DenseTurbo(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+
             // Volatile sparse: in-memory
             VectorStorageEnum::SparseVolatile(v) => {
                 ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
