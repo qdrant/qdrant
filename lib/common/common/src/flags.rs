@@ -28,6 +28,9 @@ pub struct FeatureFlags {
     ///
     /// Enabled by default in Qdrant 1.17.1+
     pub single_file_mmap_vector_storage: bool,
+
+    /// Use io_uring-based payload storage implementation.
+    pub async_payload_storage: bool,
 }
 
 impl Default for FeatureFlags {
@@ -37,6 +40,7 @@ impl Default for FeatureFlags {
             incremental_hnsw_building: true,
             appendable_quantization: true,
             single_file_mmap_vector_storage: false,
+            async_payload_storage: false,
         }
     }
 }
@@ -56,6 +60,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         incremental_hnsw_building,
         appendable_quantization,
         single_file_mmap_vector_storage,
+        async_payload_storage,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -63,6 +68,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *incremental_hnsw_building = true;
         *appendable_quantization = true;
         *single_file_mmap_vector_storage = true;
+        *async_payload_storage = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);
