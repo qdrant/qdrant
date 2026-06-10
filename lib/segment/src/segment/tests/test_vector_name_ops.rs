@@ -483,3 +483,66 @@ fn test_persistence_after_delete_with_data() {
         );
     }
 }
+
+/// Regression test for the WAL-replay version-skip bug.
+///
+/// `handle_segment_version` skips an operation when `segment.version > op_num`, treating it as
+/// already applied. That premise holds for point data but not for structural schema ops: a
+/// segment's version is the *maximum* op it ever applied, not proof it saw every earlier op. A
+/// segment created partway through a run (or loaded from a config that no longer lists the
+/// vector) can have a high version yet never have received an early `CreateVectorName`.
+///
+/// If the replayed create is version-skipped, the segment never gets the vector's storage, and a
+/// later replayed upsert naming it is declined with "Not existing vector name" -- silently losing
+/// its points on reload. The create must therefore run regardless of the segment version; its
+/// `*_impl` is idempotent, so doing so on a segment that already has the vector is a no-op.
+#[test]
+fn test_create_vector_name_applies_below_segment_version() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_appendable_segment_with_data(dir.path());
+    let hw = hw();
+
+    // Points were upserted at op 1..=NUM_POINTS, so the segment sits at that version.
+    let segment_version = segment.version();
+    assert_eq!(segment_version, NUM_POINTS as u64);
+
+    // Replay a `CreateVectorName` whose op_num predates the segment version -- exactly what
+    // happens when a historical schema op replays against a segment that has advanced past it.
+    // It must still create the storage, not be skipped as already-applied.
+    let stale_op_num = segment_version - 1;
+    let created = segment
+        .create_vector_name(stale_op_num, "v2", &dense_vector_name_config(DIM))
+        .unwrap();
+    assert!(
+        created,
+        "below-version CreateVectorName must be applied, not version-skipped",
+    );
+    assert!(
+        segment.segment_config.vector_data.contains_key("v2"),
+        "vector storage must exist after a below-version CreateVectorName",
+    );
+
+    // An upsert naming the new vector must now validate against the segment instead of being
+    // declined with "Not existing vector name".
+    let new_point = (NUM_POINTS as u64 + 1).into();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![9.0f32; DIM].into());
+    vectors.insert("v2".to_owned(), vec![1.0f32; DIM].into());
+    segment
+        .upsert_point(NUM_POINTS as u64 + 1, new_point, vectors, &hw)
+        .expect("upsert naming the below-version vector must not be declined");
+
+    // The vector and its data survive a reload.
+    let segment_path = segment.data_path();
+    let segment_uuid = segment.uuid;
+    segment.flush(true).unwrap();
+    drop(segment);
+
+    let stopped = AtomicBool::new(false);
+    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped).unwrap();
+    assert!(loaded.segment_config.vector_data.contains_key("v2"));
+    assert!(
+        loaded.vector("v2", new_point, &hw).unwrap().is_some(),
+        "point must keep its below-version vector after reload",
+    );
+}
