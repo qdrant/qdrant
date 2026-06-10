@@ -1,14 +1,3 @@
-// NOTE: This module does NOT compile yet. It is the "naive reuse" version of the
-// read-only HNSW index that delegates search to the existing
-// [`HNSWIndexReadView`] search implementation. It is here to show the shape; two
-// things still block compilation:
-//   1. The view struct reuses the same `I`/`V` type params for both the
-//      standalone storages and the (always in-RAM) payload view, so building the
-//      view in `with_view` fails (`id_tracker` wants `ReadOnlyIdTrackerEnum<S>`,
-//      the payload view forces `IdTrackerEnum`).
-//   2. The search body builds scorers from the concrete `VectorStorageEnum` /
-//      `QuantizedVectors` (`new_raw_scorer`, `FilteredScorer::new`, ...), which
-//      do not accept `VectorStorageReadEnum<S>` / `QuantizedVectorsRead<S>`.
 mod read;
 
 use std::path::PathBuf;
@@ -19,6 +8,7 @@ use common::universal_io::UniversalRead;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -71,6 +61,16 @@ type ReadView<'a, S> = HNSWIndexReadView<
 impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
     pub fn is_on_disk(&self) -> bool {
         self.is_on_disk
+    }
+
+    /// Read underlying graph data from disk into the disk cache.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.graph.populate()
+    }
+
+    /// Drop the graph's disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.graph.clear_cache()
     }
 
     /// Borrow all backing storages and hand a read view to `f`, mirroring

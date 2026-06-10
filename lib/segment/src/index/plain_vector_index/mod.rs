@@ -1,8 +1,7 @@
 mod lifecycle;
 mod read;
 
-#[allow(dead_code)]
-mod read_only;
+pub mod read_only;
 mod read_view;
 
 use std::sync::Arc;
