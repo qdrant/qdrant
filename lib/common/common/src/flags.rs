@@ -28,6 +28,9 @@ pub struct FeatureFlags {
     ///
     /// Enabled by default in Qdrant 1.17.1+
     pub single_file_mmap_vector_storage: bool,
+
+    /// Use io_uring-based payload storage implementation.
+    pub async_payload_storage: bool,
 }
 
 impl Default for FeatureFlags {
@@ -37,6 +40,7 @@ impl Default for FeatureFlags {
             incremental_hnsw_building: true,
             appendable_quantization: true,
             single_file_mmap_vector_storage: false,
+            async_payload_storage: false,
         }
     }
 }
@@ -46,23 +50,24 @@ impl FeatureFlags {
     pub fn is_default(self) -> bool {
         self == FeatureFlags::default()
     }
+
+    fn all() -> Self {
+        Self {
+            all: true,
+            incremental_hnsw_building: true,
+            appendable_quantization: true,
+            single_file_mmap_vector_storage: true,
+            async_payload_storage: true,
+        }
+    }
 }
 
 /// Initializes the global feature flags with `flags`. Must only be called once at
 /// startup or otherwise throws a warning and discards the values.
 pub fn init_feature_flags(mut flags: FeatureFlags) {
-    let FeatureFlags {
-        all,
-        incremental_hnsw_building,
-        appendable_quantization,
-        single_file_mmap_vector_storage,
-    } = &mut flags;
-
     // If all is set, explicitly set all feature flags
-    if *all {
-        *incremental_hnsw_building = true;
-        *appendable_quantization = true;
-        *single_file_mmap_vector_storage = true;
+    if flags.all {
+        flags = FeatureFlags::all();
     }
 
     let res = FEATURE_FLAGS.set(flags);
