@@ -241,7 +241,9 @@ mod tests {
         fn sparse_len(v: &VectorPersisted) -> usize {
             match v {
                 VectorPersisted::Sparse(s) => s.indices.len(),
-                other => panic!("expected sparse vector, got {other:?}"),
+                VectorPersisted::Dense(_) | VectorPersisted::MultiDense(_) => {
+                    panic!("expected sparse vector, got {v:?}")
+                }
             }
         }
 
