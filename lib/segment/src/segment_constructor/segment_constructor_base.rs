@@ -38,8 +38,6 @@ use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
-#[cfg(target_os = "linux")]
-use crate::payload_storage::get_async_payload_storage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
 use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
@@ -48,6 +46,8 @@ use crate::types::{
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
     VectorStorageDatatype, VectorStorageType,
 };
+#[cfg(target_os = "linux")]
+use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::dense_vector_storage::{
     open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
 };
@@ -217,7 +217,7 @@ pub(crate) fn create_payload_storage(
 ) -> OperationResult<PayloadStorageEnum> {
     #[cfg(target_os = "linux")]
     match config.payload_storage_type {
-        PayloadStorageType::Mmap if get_async_payload_storage() => {
+        PayloadStorageType::Mmap if get_async_scorer() => {
             let storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), false);
 
             match storage {

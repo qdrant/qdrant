@@ -55,8 +55,6 @@ pub struct PerformanceConfig {
     pub outgoing_shard_transfers_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub async_payload_storage: Option<bool>,
     #[serde(default, flatten)]
     pub load_concurrency: LoadConcurrencyConfig,
 }
