@@ -1059,8 +1059,8 @@ mod tests {
                     let inputs = make_vectors(dim, COUNT, seed);
                     insert_all(&mut storage, &inputs, &hw_counter);
 
-                    for q in 0..COUNT {
-                        let encoded = storage.preprocess_query(inputs[q].clone());
+                    for (q, query_vec) in inputs.iter().enumerate() {
+                        let encoded = storage.preprocess_query(query_vec.clone());
                         let scorer =
                             TurboQueryScorer::new(encoded, &storage, HardwareCounterCell::new());
 
@@ -1136,10 +1136,10 @@ mod tests {
                     let inputs = make_vectors(dim, COUNT, seed);
                     insert_all(&mut storage, &inputs, &hw_counter);
 
-                    for q in 0..COUNT {
+                    for (q, query_vec) in inputs.iter().enumerate() {
                         // One positive (the stored vector itself), no negatives.
                         let reco =
-                            || RecoQuery::new(vec![inputs[q].clone()], Vec::<DenseVector>::new());
+                            || RecoQuery::new(vec![query_vec.clone()], Vec::<DenseVector>::new());
 
                         let best = TurboCustomQueryScorer::new(
                             RecoBestScoreQuery::from(reco()),
