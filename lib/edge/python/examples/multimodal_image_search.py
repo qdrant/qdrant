@@ -148,7 +148,6 @@ def main() -> None:
         )
     )
     print_results(f"Image query: {user_image_query}", image_results)
-    shard.close()
 
 if __name__ == "__main__":
     main()
