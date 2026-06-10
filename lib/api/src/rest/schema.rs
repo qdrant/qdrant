@@ -342,7 +342,11 @@ mod tests {
 
     #[test]
     fn test_vector_struct_single_rejects_non_finite() {
-        assert!(VectorStruct::Single(vec![1.0, f32::NAN]).validate().is_err());
+        assert!(
+            VectorStruct::Single(vec![1.0, f32::NAN])
+                .validate()
+                .is_err()
+        );
         assert!(
             VectorStruct::Single(vec![f32::NEG_INFINITY])
                 .validate()

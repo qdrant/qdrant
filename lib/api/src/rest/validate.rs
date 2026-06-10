@@ -340,18 +340,34 @@ mod tests {
 
     #[test]
     fn vector_input_dense_rejects_nan() {
-        assert!(VectorInput::DenseVector(vec![1.0, f32::NAN]).validate().is_err());
+        assert!(
+            VectorInput::DenseVector(vec![1.0, f32::NAN])
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]
     fn vector_input_dense_rejects_inf() {
-        assert!(VectorInput::DenseVector(vec![f32::INFINITY, 1.0]).validate().is_err());
-        assert!(VectorInput::DenseVector(vec![f32::NEG_INFINITY]).validate().is_err());
+        assert!(
+            VectorInput::DenseVector(vec![f32::INFINITY, 1.0])
+                .validate()
+                .is_err()
+        );
+        assert!(
+            VectorInput::DenseVector(vec![f32::NEG_INFINITY])
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]
     fn vector_input_dense_accepts_finite() {
-        assert!(VectorInput::DenseVector(vec![1.0, -2.5, 3.0]).validate().is_ok());
+        assert!(
+            VectorInput::DenseVector(vec![1.0, -2.5, 3.0])
+                .validate()
+                .is_ok()
+        );
     }
 
     #[test]
