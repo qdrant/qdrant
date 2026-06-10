@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 
-use super::StructPayloadIndexReadView;
+use super::{StructPayloadIndexReadView, is_match_except_strings};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
@@ -37,11 +37,16 @@ where
             key: full_path,
             ..condition.clone()
         };
+        let primary_condition = if is_match_except_strings(&full_path_condition) {
+            FieldCondition::new_is_empty(full_path_condition.key.clone(), false)
+        } else {
+            full_path_condition
+        };
         indexes
             .iter()
             .find_map(|index| {
                 index
-                    .estimate_cardinality(&full_path_condition, hw_counter)
+                    .estimate_cardinality(&primary_condition, hw_counter)
                     .transpose()
             })
             .transpose()

@@ -18,7 +18,9 @@ use crate::index::field_index::FieldIndexRead;
 use crate::index::payload_config::PayloadConfig;
 use crate::index::visited_pool::VisitedPool;
 use crate::payload_storage::PayloadStorageRead;
-use crate::types::{PayloadKeyType, VectorNameBuf};
+use crate::types::{
+    AnyVariants, FieldCondition, Match, MatchExcept, PayloadKeyType, VectorNameBuf,
+};
 use crate::vector_storage::VectorStorageRead;
 
 /// Read-only view over a [`StructPayloadIndex`].
@@ -69,4 +71,13 @@ where
     pub fn available_point_count(&self) -> usize {
         self.id_tracker.available_point_count()
     }
+}
+
+fn is_match_except_strings(condition: &FieldCondition) -> bool {
+    matches!(
+        &condition.r#match,
+        Some(Match::Except(MatchExcept {
+            except: AnyVariants::Strings(_)
+        }))
+    )
 }

@@ -1399,6 +1399,88 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
     );
 }
 
+#[test]
+fn test_keyword_except_matches_non_string_payloads() {
+    let dir = Builder::new().prefix("keyword_except").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let key = JsonPath::new("mixed");
+
+    let payloads = [
+        Some(payload_json! {"mixed": "keep"}),
+        Some(payload_json! {"mixed": "drop"}),
+        Some(payload_json! {"mixed": true}),
+        Some(payload_json! {"mixed": 42}),
+        Some(payload_json! {"mixed": null}),
+        None,
+    ];
+    let payload_count = payloads.len();
+
+    for (idx, payload) in payloads.into_iter().enumerate() {
+        let idx = idx as PointOffsetType;
+        let point_id = u64::from(idx);
+        segment
+            .upsert_point(
+                point_id,
+                point_id.into(),
+                only_default_vector(&vec![idx as f32; DIM]),
+                &hw_counter,
+            )
+            .unwrap();
+        if let Some(payload) = payload {
+            segment
+                .set_full_payload(point_id, point_id.into(), &payload, &hw_counter)
+                .unwrap();
+        }
+    }
+
+    segment
+        .create_field_index(10, &key, Some(&Keyword.into()), &hw_counter)
+        .unwrap();
+
+    let excluded: IndexSet<String, FnvBuildHasher> = ["drop".to_owned()].into_iter().collect();
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        key.clone(),
+        Match::new_except(AnyVariants::Strings(excluded)),
+    )));
+    let is_stopped = AtomicBool::new(false);
+
+    let estimation = segment
+        .payload_index
+        .borrow()
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
+        .unwrap();
+    assert_eq!(estimation.primary_clauses.len(), 1);
+    match estimation.primary_clauses.first().unwrap() {
+        PrimaryCondition::Condition(field_condition) => {
+            assert_eq!(**field_condition, FieldCondition::new_is_empty(key, false));
+        }
+        clause => panic!("unexpected primary clause: {clause:?}"),
+    }
+
+    let mut queried = segment
+        .payload_index
+        .borrow()
+        .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
+        .unwrap();
+    queried.sort_unstable();
+    assert_eq!(queried, vec![0, 2, 3]);
+
+    let checked = segment
+        .payload_index
+        .borrow()
+        .with_view(|v| {
+            v.filter_context(&filter, &hw_counter)
+                .map(|filter_context| {
+                    (0..payload_count as PointOffsetType)
+                        .filter(|point_id| filter_context.check(*point_id))
+                        .collect_vec()
+                })
+        })
+        .unwrap();
+    assert_eq!(checked, vec![0, 2, 3]);
+}
+
 fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
