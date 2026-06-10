@@ -14,6 +14,7 @@ use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
+use self::read_view::{SparseVectorIndexReadView, SparseVectorIndexReadViewEnum};
 use super::indices_tracker::IndicesTracker;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
@@ -22,8 +23,10 @@ use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
-mod search;
+mod read_view;
 mod vector_index_impl;
+
+pub mod read_only;
 
 #[derive(Debug)]
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
@@ -215,6 +218,34 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
     pub fn inverted_index(&self) -> &TInvertedIndex {
         &self.inverted_index
+    }
+
+    /// Borrow all backing storages and hand a read view to `f`.
+    ///
+    /// Mirrors the dense indexes: the shared search logic lives on
+    /// [`SparseVectorIndexReadView`], so both this mutable index and the
+    /// read-only counterpart drive the exact same code.
+    pub fn with_view<R>(
+        &self,
+        f: impl FnOnce(SparseVectorIndexReadViewEnum<'_, TInvertedIndex>) -> R,
+    ) -> R {
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let payload_index = self.payload_index.borrow();
+
+        payload_index.with_view(|payload_index_view| {
+            let read_view = SparseVectorIndexReadView {
+                config: self.config,
+                id_tracker: &*id_tracker,
+                vector_storage: &*vector_storage,
+                payload_index: payload_index_view,
+                inverted_index: &self.inverted_index,
+                searches_telemetry: &self.searches_telemetry,
+                indices_tracker: &self.indices_tracker,
+                search_scratch_pool: &self.search_scratch_pool,
+            };
+            f(read_view)
+        })
     }
 
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector
