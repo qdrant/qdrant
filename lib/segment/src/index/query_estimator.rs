@@ -203,6 +203,10 @@ const MIN_SHOULD_MAX_COMBINATIONS: u128 = 100_000;
 /// (`C(n, i + 1) = C(n, i) * (n - i) / (i + 1)`), which stays exact at every
 /// step, and short-circuits as soon as the running value exceeds `limit`.
 fn combinations_at_most(n: usize, k: usize, limit: u128) -> bool {
+    if k > n {
+        // C(n, k) == 0, which is within any limit.
+        return true;
+    }
     // C(n, k) == C(n, n - k); iterate over the smaller exponent.
     let k = k.min(n - k);
     let mut combinations: u128 = 1;
@@ -633,6 +637,8 @@ mod tests {
         // Degenerate exponents.
         assert!(combinations_at_most(64, 0, 1)); // C(n, 0) = 1
         assert!(combinations_at_most(64, 64, 1)); // C(n, n) = 1
+        assert!(combinations_at_most(5, 6, 0)); // C(n, k) = 0 when k > n
+        assert!(combinations_at_most(0, 1, 0)); // also safe for n = 0
         // Astronomically large counts must not overflow and must report "too big".
         assert!(!combinations_at_most(60, 20, MIN_SHOULD_MAX_COMBINATIONS)); // ~4.2e15
         assert!(!combinations_at_most(64, 32, MIN_SHOULD_MAX_COMBINATIONS)); // ~1.8e18
