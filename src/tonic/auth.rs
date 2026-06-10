@@ -200,7 +200,7 @@ mod tests {
     fn extracts_routing_token_from_metadata() {
         let mut req = tonic::Request::new(());
         req.metadata_mut()
-            .insert("x-qdrant-routing-token", "user-42".parse().unwrap());
+            .insert(api::HTTP_HEADER_ROUTING_TOKEN, "user-42".parse().unwrap());
         assert_eq!(
             extract_routing_token(&req),
             Some(RoutingToken::from_bytes(b"user-42")),
@@ -216,7 +216,7 @@ mod tests {
     fn empty_metadata_yields_none() {
         let mut req = tonic::Request::new(());
         req.metadata_mut()
-            .insert("x-qdrant-routing-token", "".parse().unwrap());
+            .insert(api::HTTP_HEADER_ROUTING_TOKEN, "".parse().unwrap());
         assert_eq!(extract_routing_token(&req), None);
     }
 }

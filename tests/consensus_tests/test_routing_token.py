@@ -31,6 +31,7 @@ def retrieve_marker(peer_uri, headers={}):
         f"{peer_uri}/collections/{COLLECTION_NAME}/points",
         json={"ids": [POINT_ID], "with_payload": True},
         headers=headers,
+        timeout=10,
     )
     assert_http_ok(r)
     points = r.json()["result"]
@@ -38,7 +39,10 @@ def retrieve_marker(peer_uri, headers={}):
 
 
 def create_snapshot(peer_uri):
-    r = requests.post(f"{peer_uri}/collections/{COLLECTION_NAME}/snapshots?wait=true")
+    r = requests.post(
+        f"{peer_uri}/collections/{COLLECTION_NAME}/snapshots?wait=true",
+        timeout=30,
+    )
     assert_http_ok(r)
     return r.json()["result"]["name"]
 
@@ -50,6 +54,7 @@ def recover_snapshot_no_sync(peer_uri, snapshot_url):
     r = requests.put(
         f"{peer_uri}/collections/{COLLECTION_NAME}/snapshots/recover",
         json={"location": snapshot_url, "priority": "no_sync"},
+        timeout=60,
     )
     assert_http_ok(r)
 
@@ -58,7 +63,7 @@ def split_by_local_replica(peer_api_uris):
     """Split peers into those that hold a local replica of shard 0 and those that don't."""
     hosts, non_hosts = [], []
     for uri in peer_api_uris:
-        r = requests.get(f"{uri}/collections/{COLLECTION_NAME}/cluster")
+        r = requests.get(f"{uri}/collections/{COLLECTION_NAME}/cluster", timeout=10)
         assert_http_ok(r)
         local_shards = r.json()["result"]["local_shards"]
         if any(shard["shard_id"] == 0 for shard in local_shards):
