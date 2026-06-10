@@ -6,6 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::universal_io::UniversalRead;
 use parking_lot::Mutex;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
@@ -45,6 +46,23 @@ type ReadView<'a, S> = PlainVectorIndexReadView<
 >;
 
 impl<S: UniversalRead> ReadOnlyPlainVectorIndex<S> {
+    /// Read-only mirror of `PlainVectorIndex::new`: wires the shared backends.
+    pub fn open(
+        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
+        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    ) -> OperationResult<Self> {
+        Ok(Self {
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            payload_index,
+            filtered_searches_telemetry: OperationDurationsAggregator::new(),
+            unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
+        })
+    }
+
     pub fn with_view<R>(&self, f: impl FnOnce(ReadView<'_, S>) -> R) -> R {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
