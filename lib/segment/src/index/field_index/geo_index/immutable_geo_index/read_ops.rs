@@ -46,8 +46,8 @@ impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
         idx: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
-        ImmutableGeoIndex::check_values_any(self, idx, |p| check_fn(p))
+    ) -> OperationResult<bool> {
+        Ok(ImmutableGeoIndex::check_values_any(self, idx, check_fn))
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {

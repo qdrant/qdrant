@@ -165,12 +165,11 @@ where
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
-            let struct_filtered_context =
-                self.struct_filtered_context(filter, deferred_behavior, hw_counter)?;
+            let optimized_filter = self.optimized_filter(filter, deferred_behavior, hw_counter)?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .stop_if(is_stopped)
-                .filter(move |i| struct_filtered_context.check(*i));
+                .filter(move |i| optimized_filter.check(*i));
 
             Ok(EitherVariant::A(matched_points))
         } else {
@@ -209,11 +208,10 @@ where
                     EitherVariant::B(iter)
                 } else {
                     // Some conditions are primary clauses, some are not
-                    let struct_filtered_context =
-                        self.struct_filtered_context(filter, deferred_behavior, hw_counter)?;
+                    let optimized_filter =
+                        self.optimized_filter(filter, deferred_behavior, hw_counter)?;
                     let iter = joined_primary_iterator.filter(move |&id| {
-                        !visited_list.check_and_update_visited(id)
-                            && struct_filtered_context.check(id)
+                        !visited_list.check_and_update_visited(id) && optimized_filter.check(id)
                     });
                     EitherVariant::C(iter)
                 });
@@ -221,8 +219,7 @@ where
 
             // We can't use primary conditions, so we fall back to iterating over all ids
             // and applying full filter.
-            let struct_filtered_context =
-                self.struct_filtered_context(filter, deferred_behavior, hw_counter)?;
+            let optimized_filter = self.optimized_filter(filter, deferred_behavior, hw_counter)?;
 
             let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
@@ -232,7 +229,7 @@ where
                     i.cpu_counter()
                 })
                 .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
+                    !visited_list.check_and_update_visited(id) && optimized_filter.check(id)
                 });
 
             Ok(EitherVariant::D(iter))
@@ -257,7 +254,7 @@ where
         filter: &'b Filter,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn FilterContext + 'b>> {
-        Ok(Box::new(self.struct_filtered_context(
+        Ok(Box::new(self.optimized_filter(
             filter,
             DeferredBehavior::VisibleOnly,
             hw_counter,

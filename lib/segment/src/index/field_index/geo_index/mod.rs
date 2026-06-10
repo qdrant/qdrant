@@ -148,7 +148,7 @@ impl GeoIndexRead for GeoIndex {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         match self {
             GeoIndex::Mutable(index) => {
                 GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)

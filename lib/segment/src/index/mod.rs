@@ -11,7 +11,6 @@ pub mod query_optimization;
 pub mod read_only;
 mod sample_estimation;
 pub mod sparse_index;
-mod struct_filter_context;
 pub mod struct_payload_index;
 pub mod vector_index_base;
 mod vector_index_search_common;

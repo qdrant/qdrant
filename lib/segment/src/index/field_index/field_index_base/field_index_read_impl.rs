@@ -101,7 +101,7 @@ impl PayloadFieldIndexRead for FieldIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
         match self {
             FieldIndex::IntIndex(idx) => idx.condition_checker(condition, hw_acc),
             FieldIndex::DatetimeIndex(idx) => idx.condition_checker(condition, hw_acc),

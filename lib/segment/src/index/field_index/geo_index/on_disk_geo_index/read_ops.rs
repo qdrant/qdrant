@@ -45,7 +45,7 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         OnDiskGeoIndex::check_values_any(self, idx, hw_counter, |p| check_fn(p))
     }
 

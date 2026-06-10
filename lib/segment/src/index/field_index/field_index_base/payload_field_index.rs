@@ -56,7 +56,7 @@ pub trait PayloadFieldIndexRead {
         &'a self,
         _condition: &FieldCondition,
         _hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>>;
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>>;
 
     /// Index-aware check for conditions that need parameters held by
     /// the index (today: full-text tokenizers).

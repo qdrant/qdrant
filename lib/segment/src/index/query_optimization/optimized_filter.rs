@@ -1,5 +1,7 @@
 use common::types::PointOffsetType;
 
+use crate::payload_storage::FilterContext;
+
 pub type ConditionCheckerFn<'a> = Box<dyn Fn(PointOffsetType) -> bool + 'a>;
 
 pub enum OptimizedCondition<'a> {
@@ -22,6 +24,12 @@ pub struct OptimizedFilter<'a> {
     pub must: Option<Vec<OptimizedCondition<'a>>>,
     /// All conditions must NOT match
     pub must_not: Option<Vec<OptimizedCondition<'a>>>,
+}
+
+impl FilterContext for OptimizedFilter<'_> {
+    fn check(&self, point_id: PointOffsetType) -> bool {
+        check_optimized_filter(self, point_id)
+    }
 }
 
 pub fn check_optimized_filter(filter: &OptimizedFilter, point_id: PointOffsetType) -> bool {

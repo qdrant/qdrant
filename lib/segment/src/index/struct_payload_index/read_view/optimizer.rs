@@ -167,7 +167,7 @@ where
                         payload_provider.clone(),
                         deferred_behavior,
                         hw_counter,
-                    );
+                    )?;
                     Ok((OptimizedCondition::Checker(condition_checker), estimation))
                 }
             })
