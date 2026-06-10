@@ -25,7 +25,7 @@ use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, VECTORS_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::vectors::{
     TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
@@ -77,6 +77,27 @@ impl std::fmt::Debug for TurboMultiVectorStorage {
     }
 }
 
+/// Open (create-or-load) a TurboQuant multivector storage whose encoded records
+/// live in a single mmap file (non-appendable). Counterpart to `open_turbo_vector_storage`.
+pub fn open_turbo_multi_vector_storage(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+    populate: bool,
+) -> OperationResult<TurboMultiVectorStorage> {
+    open_turbo_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        populate,
+        |vectors_path, quantized_vector_size| {
+            TurboEncodedVectorStorage::open_mmap(vectors_path, quantized_vector_size, populate)
+        },
+    )
+}
+
 /// Open (create-or-load) an appendable TurboQuant multivector storage backed by
 /// chunked mmap files. Counterpart to `open_appendable_turbo_vector_storage`.
 pub fn open_appendable_turbo_multi_vector_storage(
@@ -86,27 +107,49 @@ pub fn open_appendable_turbo_multi_vector_storage(
     multi_vector_config: MultiVectorConfig,
     in_ram: bool,
 ) -> OperationResult<TurboMultiVectorStorage> {
+    open_turbo_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        in_ram,
+        |vectors_path, quantized_vector_size| {
+            TurboEncodedVectorStorage::open_chunked_mmap(
+                vectors_path,
+                quantized_vector_size,
+                in_ram,
+            )
+        },
+    )
+}
+
+/// Shared create-or-load logic for both record backends; offsets and deleted
+/// flags are backend-independent.
+fn open_turbo_multi_vector_storage_impl(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+    populate: bool,
+    open_storage: impl FnOnce(&Path, usize) -> OperationResult<TurboEncodedVectorStorage>,
+) -> OperationResult<TurboMultiVectorStorage> {
     fs_err::create_dir_all(path)?;
 
     let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
 
-    let storage = TurboEncodedVectorStorage::open_chunked_mmap(
-        &path.join(VECTORS_PATH),
-        quantizer.quantized_size(),
-        in_ram,
-    )?;
+    let storage = open_storage(&path.join(VECTORS_PATH), quantizer.quantized_size())?;
 
     let offsets = ChunkedVectors::open(
         MmapFs,
         &path.join(OFFSETS_PATH),
         1,
         AdviceSetting::Global,
-        Some(in_ram),
+        Some(populate),
     )?;
 
     let deleted = BitvecFlags::new(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), in_ram)?,
+        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), populate)?,
     )?;
     let deleted_count = deleted.count_trues();
 
@@ -365,28 +408,37 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
         let disposed_hw = HardwareCounterCell::disposable();
         let start_index = self.offsets.len() as PointOffsetType;
 
-        for (blob, deleted) in other_vectors {
-            check_process_stopped(stopped)?;
+        // The record writes are delegated to the backend dispatcher (the single-mmap
+        // backend cannot upsert); here we only flatten blobs into fixed-size records,
+        // siphoning off per-point inner counts and deleted flags as they stream by.
+        let mut metas: Vec<(PointOffsetType, bool)> = Vec::new();
+        let mut malformed = None;
+        let records = other_vectors
+            .map_while(|(blob, deleted)| {
+                if blob.is_empty() || blob.len() % record_size != 0 {
+                    malformed = Some(blob.len());
+                    return None;
+                }
+                metas.push(((blob.len() / record_size) as PointOffsetType, deleted));
+                Some(blob)
+            })
+            .flat_map(|blob| -> Box<dyn Iterator<Item = Cow<'a, [u8]>> + 'a> {
+                match blob {
+                    Cow::Borrowed(blob) => {
+                        Box::new(blob.chunks_exact(record_size).map(Cow::Borrowed))
+                    }
+                    Cow::Owned(blob) => Box::new((0..blob.len() / record_size).map(move |i| {
+                        Cow::Owned(blob[i * record_size..(i + 1) * record_size].to_vec())
+                    })),
+                }
+            });
+        let inner_range = self.storage.update_from(records, stopped)?;
 
-            if blob.is_empty() || blob.len() % record_size != 0 {
-                return Err(OperationError::service_error(format!(
-                    "Malformed multi TQ blob of {} bytes, expected a positive multiple of {record_size}",
-                    blob.len(),
-                )));
-            }
-            let count = (blob.len() / record_size) as PointOffsetType;
-
-            // Inner records are appended at the end of the inner space.
-            let inner_start = self.storage.vectors_count() as PointOffsetType;
-            for (i, record) in blob.chunks_exact(record_size).enumerate() {
-                self.storage.upsert_vector(
-                    inner_start + i as PointOffsetType,
-                    record,
-                    &disposed_hw,
-                )?;
-            }
-
-            let key = self.offsets.len() as PointOffsetType;
+        // Register one offset record per point now that the inner records are in place,
+        // then surface a malformed blob.
+        let mut inner_start = inner_range.start;
+        for (i, (count, deleted)) in metas.iter().copied().enumerate() {
+            let key = start_index + i as PointOffsetType;
             let offset = MultivectorMmapOffset {
                 offset: inner_start,
                 count,
@@ -395,6 +447,13 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
             self.offsets
                 .insert(key as VectorOffsetType, &[offset], &disposed_hw)?;
             self.set_deleted(key, deleted);
+            inner_start += count;
+        }
+
+        if let Some(len) = malformed {
+            return Err(OperationError::service_error(format!(
+                "Malformed multi TQ blob of {len} bytes, expected a positive multiple of {record_size}",
+            )));
         }
 
         Ok(start_index..self.offsets.len() as PointOffsetType)
@@ -603,10 +662,18 @@ mod tests {
         }
     }
 
-    /// Build via `update_from` from oracle-encoded blobs across two batches,
-    /// verify ranges, persisted bytes, deleted flags, and zero-record placeholders.
-    #[test]
-    fn update_from_builds_and_matches_independent_oracle() {
+    /// Build via `update_from` from oracle-encoded blobs across two batches into a
+    /// storage from `open`, then reopen and verify ranges, persisted bytes, deleted
+    /// flags, and zero-record placeholders.
+    fn run_update_from_build(
+        open: fn(
+            &Path,
+            usize,
+            Distance,
+            MultiVectorConfig,
+            bool,
+        ) -> OperationResult<TurboMultiVectorStorage>,
+    ) {
         const COUNT: usize = 24;
         const DELETED: PointOffsetType = 3;
         // Deletion landing in the second batch so `start + offset` arithmetic is exercised.
@@ -638,7 +705,7 @@ mod tests {
                     .collect();
 
                 {
-                    let mut storage = open_appendable_turbo_multi_vector_storage(
+                    let mut storage = open(
                         dir.path(),
                         dim,
                         distance,
@@ -669,7 +736,7 @@ mod tests {
                     storage.flusher()().unwrap();
                 }
 
-                let storage = open_appendable_turbo_multi_vector_storage(
+                let storage = open(
                     dir.path(),
                     dim,
                     distance,
@@ -697,6 +764,42 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Build path for the chunked-appendable backend.
+    #[test]
+    fn update_from_builds_and_matches_independent_oracle() {
+        run_update_from_build(open_appendable_turbo_multi_vector_storage);
+    }
+
+    /// Build path for the non-appendable single-file backend: `update_from`
+    /// bulk-appends + re-mmaps across repeated calls, while runtime
+    /// `insert_vector` stays unsupported.
+    #[test]
+    fn mmap_update_from_builds_and_matches_independent_oracle() {
+        // Runtime per-point insert is unsupported for the single-file backend.
+        let dir = Builder::new().prefix("turbo_multi_mmap").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        let mut storage = open_turbo_multi_vector_storage(
+            dir.path(),
+            128,
+            Distance::Dot,
+            MultiVectorConfig::default(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            storage
+                .insert_vector(
+                    0,
+                    TypedMultiDenseVectorRef::from(&multi_of(128, 2, 7)).into(),
+                    &hw_counter,
+                )
+                .is_err(),
+            "insert_vector must be unsupported on the single-file mmap backend",
+        );
+
+        run_update_from_build(open_turbo_multi_vector_storage);
     }
 
     /// `update_from` copies one storage into a fresh one verbatim — the
@@ -1184,8 +1287,9 @@ mod tests {
         .unwrap();
         assert_matches_model(&storage, &model, &oracle, "source final");
 
-        // Optimizer-style copy into a fresh appendable storage via update_from.
-        let mut dst = open_appendable_turbo_multi_vector_storage(
+        // Optimizer-style copy into the read-only single-file backend via
+        // update_from, checked live and again after a flush/drop/reload.
+        let mut dst = open_turbo_multi_vector_storage(
             dst_dir.path(),
             dim,
             distance,
@@ -1203,8 +1307,18 @@ mod tests {
             });
             assert_eq!(dst.update_from(&mut it, &stopped).unwrap(), 0..total);
         }
-        dst.flusher()().unwrap();
         assert_matches_model(&dst, &model, &oracle, "dst after copy");
+        dst.flusher()().unwrap();
+        drop(dst);
+        let dst = open_turbo_multi_vector_storage(
+            dst_dir.path(),
+            dim,
+            distance,
+            MultiVectorConfig::default(),
+            true,
+        )
+        .unwrap();
+        assert_matches_model(&dst, &model, &oracle, "dst after reload");
     }
 
     const SEEDS_PER_CELL: u64 = 16;
