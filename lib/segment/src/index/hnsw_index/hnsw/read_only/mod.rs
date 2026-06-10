@@ -1,6 +1,6 @@
 mod read;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -8,14 +8,17 @@ use common::universal_io::UniversalRead;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
+use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_layers::{GraphLayers, LoadOption};
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
+use crate::types::HnswConfig;
+use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -59,6 +62,70 @@ type ReadView<'a, S> = HNSWIndexReadView<
 >;
 
 impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
+    /// Read-only mirror of `HNSWIndex::open`: loads the graph through `fs`.
+    pub fn open(
+        fs: &S::Fs,
+        path: &Path,
+        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
+        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+        hnsw_config: HnswConfig,
+    ) -> OperationResult<Self> {
+        let config_path = HnswGraphConfig::get_config_path(path);
+        let config = match HnswGraphConfig::load_via(fs, &config_path)? {
+            Some(config) => config,
+            None => {
+                let vector_storage = vector_storage.borrow();
+                let available_vectors = vector_storage.available_vector_count();
+                let full_scan_threshold = vector_storage
+                    .size_of_available_vectors_in_bytes()
+                    .checked_div(available_vectors)
+                    .and_then(|avg_vector_size| {
+                        hnsw_config
+                            .full_scan_threshold
+                            .saturating_mul(BYTES_IN_KB)
+                            .checked_div(avg_vector_size)
+                    })
+                    .unwrap_or(1);
+
+                HnswGraphConfig::new(
+                    hnsw_config.m,
+                    hnsw_config.ef_construct,
+                    full_scan_threshold,
+                    hnsw_config.max_indexing_threads,
+                    hnsw_config.payload_m,
+                    available_vectors,
+                )
+            }
+        };
+
+        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
+
+        // read-only never rewrites the graph
+        let do_convert = false;
+
+        let load_option = if is_on_disk {
+            LoadOption::OnDiskMmap
+        } else {
+            LoadOption::RamFromUniversal { fs: fs.clone() }
+        };
+
+        let graph = GraphLayers::load(path, load_option, do_convert)?;
+
+        Ok(Self {
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            payload_index,
+            config,
+            path: path.to_owned(),
+            graph,
+            searches_telemetry: HNSWSearchesTelemetry::new(),
+            is_on_disk,
+        })
+    }
+
     pub fn is_on_disk(&self) -> bool {
         self.is_on_disk
     }
