@@ -1,13 +1,14 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 
-use super::StructPayloadIndexReadView;
+use super::{StructPayloadIndexReadView, has_only_match_and_range};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexRead, PrimaryCondition, ResolvedHasId,
 };
+use crate::index::query_estimator::combine_should_estimations;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::json_path::JsonPath;
@@ -37,14 +38,38 @@ where
             key: full_path,
             ..condition.clone()
         };
-        indexes
-            .iter()
-            .find_map(|index| {
-                index
-                    .estimate_cardinality(&full_path_condition, hw_counter)
-                    .transpose()
+        if has_only_match_and_range(&full_path_condition) {
+            let estimations = indexes
+                .iter()
+                .filter_map(|index| {
+                    index
+                        .estimate_cardinality(&full_path_condition, hw_counter)
+                        .transpose()
+                })
+                .collect::<OperationResult<Vec<_>>>()?;
+
+            Ok(match estimations.len() {
+                0 | 1 => None,
+                _ => {
+                    let mut combined =
+                        combine_should_estimations(&estimations, self.available_point_count());
+                    if !combined.primary_clauses.is_empty() {
+                        combined.primary_clauses =
+                            vec![PrimaryCondition::Condition(Box::new(full_path_condition))];
+                    }
+                    Some(combined)
+                }
             })
-            .transpose()
+        } else {
+            indexes
+                .iter()
+                .find_map(|index| {
+                    index
+                        .estimate_cardinality(&full_path_condition, hw_counter)
+                        .transpose()
+                })
+                .transpose()
+        }
     }
 
     pub(super) fn query_field<'q>(
@@ -57,12 +82,27 @@ where
                 let Some(field_indexes) = self.field_indexes.get(&field_condition.key) else {
                     return Ok(None);
                 };
-                field_indexes
-                    .iter()
-                    .find_map(|field_index| {
-                        field_index.filter(field_condition, hw_counter).transpose()
-                    })
-                    .transpose()
+                if has_only_match_and_range(field_condition) {
+                    let iterators = field_indexes
+                        .iter()
+                        .filter_map(|field_index| {
+                            field_index.filter(field_condition, hw_counter).transpose()
+                        })
+                        .collect::<OperationResult<Vec<_>>>()?;
+
+                    if iterators.len() < 2 {
+                        Ok(None)
+                    } else {
+                        Ok(Some(Box::new(iterators.into_iter().flatten())))
+                    }
+                } else {
+                    field_indexes
+                        .iter()
+                        .find_map(|field_index| {
+                            field_index.filter(field_condition, hw_counter).transpose()
+                        })
+                        .transpose()
+                }
             }
             PrimaryCondition::Ids(ids) => {
                 Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))

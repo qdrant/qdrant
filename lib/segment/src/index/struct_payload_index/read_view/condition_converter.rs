@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use serde_json::Value;
 
-use super::StructPayloadIndexReadView;
+use super::{StructPayloadIndexReadView, has_only_match_and_range};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
@@ -38,10 +38,28 @@ where
             Condition::Field(field_condition) => field_indexes
                 .get(&field_condition.key)
                 .and_then(|indexes| {
-                    indexes.iter().find_map(move |index| {
-                        let hw_acc = hw_counter.new_accumulator();
-                        index.condition_checker(field_condition, hw_acc)
-                    })
+                    if has_only_match_and_range(field_condition) {
+                        let checkers = indexes
+                            .iter()
+                            .filter_map(|index| {
+                                let hw_acc = hw_counter.new_accumulator();
+                                index.condition_checker(field_condition, hw_acc)
+                            })
+                            .collect::<Vec<_>>();
+
+                        if checkers.len() < 2 {
+                            None
+                        } else {
+                            Some(Box::new(move |point_id| {
+                                checkers.iter().any(|checker| checker(point_id))
+                            }) as ConditionCheckerFn)
+                        }
+                    } else {
+                        indexes.iter().find_map(move |index| {
+                            let hw_acc = hw_counter.new_accumulator();
+                            index.condition_checker(field_condition, hw_acc)
+                        })
+                    }
                 })
                 .unwrap_or_else(|| {
                     let hw = hw_counter.fork();
