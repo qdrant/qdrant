@@ -8,8 +8,8 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexRead, PrimaryCondition, ResolvedHasId,
 };
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::index::struct_filter_context::StructFilterContext;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition};
@@ -71,12 +71,12 @@ where
         }
     }
 
-    pub fn struct_filtered_context<'q>(
+    pub fn optimized_filter<'q>(
         &'q self,
         filter: &'q Filter,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<StructFilterContext<'q>> {
+    ) -> OperationResult<OptimizedFilter<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
         let (optimized_filter, _) = self.optimize_filter(
@@ -87,7 +87,7 @@ where
             hw_counter,
         )?;
 
-        Ok(StructFilterContext::new(optimized_filter))
+        Ok(optimized_filter)
     }
 
     pub(in crate::index) fn condition_cardinality(

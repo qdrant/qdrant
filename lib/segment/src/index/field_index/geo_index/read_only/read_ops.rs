@@ -86,7 +86,7 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
                 GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
@@ -243,7 +243,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        read_ops::condition_checker(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+        Ok(read_ops::condition_checker(self, condition, hw_acc))
     }
 }

@@ -66,7 +66,7 @@ pub trait GeoIndexRead {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool;
+    ) -> OperationResult<bool>;
 
     fn values_count(&self, idx: PointOffsetType) -> usize;
 
@@ -212,6 +212,7 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
+                .unwrap_or(false) // TODO(uio): handle errors
             },
         ))));
     }
@@ -224,6 +225,7 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
+                .unwrap_or(false) // TODO(uio): handle errors
             },
         ))));
     }
@@ -236,6 +238,7 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
+                .unwrap_or(false) // TODO(uio): handle errors
             },
         ))));
     }
@@ -347,6 +350,7 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
             geo.check_values_any(point_id, &hw_counter, &|value| {
                 geo_radius.check_point(value)
             })
+            .unwrap_or(false) // TODO(uio): handle errors
         }));
     }
     if let Some(geo_bounding_box) = *geo_bounding_box {
@@ -354,6 +358,7 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
             geo.check_values_any(point_id, &hw_counter, &|value| {
                 geo_bounding_box.check_point(value)
             })
+            .unwrap_or(false) // TODO(uio): handle errors
         }));
     }
     if let Some(geo_polygon) = geo_polygon.as_ref() {
@@ -362,6 +367,7 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
             geo.check_values_any(point_id, &hw_counter, &|value| {
                 polygon_wrapper.check_point(value)
             })
+            .unwrap_or(false) // TODO(uio): handle errors
         }));
     }
     None

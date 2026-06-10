@@ -180,7 +180,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
         condition_checker(self, condition, hw_acc)
     }
 
@@ -280,7 +280,7 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'a>> {
+) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -295,7 +295,9 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
         is_null: _,
     } = condition;
 
-    let cond_match = r#match.as_ref()?;
+    let Some(cond_match) = r#match.as_ref() else {
+        return Ok(None);
+    };
     let hw_counter = hw_acc.get_counter_cell();
 
     // FullTextIndex serves Text / TextAny / Phrase only. Other
@@ -307,26 +309,23 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
         Match::Phrase(MatchPhrase { phrase }) => (phrase, PayloadMatchQueryType::Phrase),
         Match::Value(MatchValue { value: _ })
         | Match::Any(MatchAny { any: _ })
-        | Match::Except(MatchExcept { except: _ }) => return None,
+        | Match::Except(MatchExcept { except: _ }) => return Ok(None),
     };
 
     let query_opt = match query_type {
         PayloadMatchQueryType::Phrase => index.parse_phrase_query(text, &hw_counter),
         PayloadMatchQueryType::Text => index.parse_text_query(text, &hw_counter),
         PayloadMatchQueryType::TextAny => index.parse_text_any_query(text, &hw_counter),
+    }?;
+
+    let Some(parsed_query) = query_opt else {
+        return Ok(Some(Box::new(|_| false)));
     };
 
-    // Empty query or parse error: legacy behaviour returns a checker
-    // that always says false. FIXME(uio): the error arm silently
-    // ignores errors — see the existing TODO on `check_match` below.
-    let Ok(Some(parsed_query)) = query_opt else {
-        return Some(Box::new(|_| false));
-    };
-
-    Some(Box::new(move |point_id: PointOffsetType| {
+    Ok(Some(Box::new(move |point_id: PointOffsetType| {
         // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
         index.check_match(&parsed_query, point_id).unwrap_or(false)
-    }))
+    })))
 }
 
 /// Body for [`PayloadFieldIndexRead::special_check_condition`]. Shared.

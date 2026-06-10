@@ -6,10 +6,12 @@ use common::types::DeferredBehavior;
 use serde_json::Value;
 
 use super::StructPayloadIndexReadView;
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
@@ -31,31 +33,23 @@ where
         payload_provider: PayloadProvider<S>,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> ConditionCheckerFn<'b> {
+    ) -> OperationResult<ConditionCheckerFn<'b>> {
         let id_tracker = self.id_tracker;
         let field_indexes = self.field_indexes;
-        match condition {
-            Condition::Field(field_condition) => field_indexes
-                .get(&field_condition.key)
-                .and_then(|indexes| {
-                    indexes.iter().find_map(move |index| {
-                        let hw_acc = hw_counter.new_accumulator();
-                        index.condition_checker(field_condition, hw_acc)
-                    })
-                })
-                .unwrap_or_else(|| {
-                    let hw = hw_counter.fork();
-                    Box::new(move |point_id| {
-                        payload_provider.with_payload(
-                            point_id,
-                            |payload| {
-                                check_field_condition(field_condition, &payload, field_indexes, &hw)
-                                    .unwrap(/* TODO(uio): handle errors */)
-                            },
-                            &hw,
-                        )
-                    })
-                }),
+        Ok(match condition {
+            Condition::Field(field_condition) => {
+                field_condition_checker(
+                    field_indexes,
+                    &field_condition.key,
+                    hw_counter,
+                    field_condition,
+                    payload_provider,
+                    |payload, hw| {
+                        check_field_condition(field_condition, &payload, field_indexes, hw)
+                            .unwrap(/* TODO(uio): handle errors */)
+                    },
+                )?
+            }
             // is_empty / is_null are served by NullIndex via
             // `condition_checker`. NullIndex is built alongside every
             // index from #6088 (released in v1.13.5) onwards, so the
@@ -65,51 +59,27 @@ where
             // fast-path, on the assumption that ~5 minor releases of
             // upgrades have effectively migrated those segments.
             Condition::IsEmpty(is_empty) => {
-                let key = is_empty.is_empty.key.clone();
-                let field_condition = FieldCondition::new_is_empty(key.clone(), true);
-                let payload_provider = payload_provider.clone();
-                field_indexes
-                    .get(&key)
-                    .and_then(|indexes| {
-                        indexes.iter().find_map(|index| {
-                            let hw_acc = hw_counter.new_accumulator();
-                            index.condition_checker(&field_condition, hw_acc)
-                        })
-                    })
-                    .unwrap_or_else(|| {
-                        let hw = hw_counter.fork();
-                        Box::new(move |point_id| {
-                            payload_provider.with_payload(
-                                point_id,
-                                |payload| check_is_empty_condition(is_empty, &payload),
-                                &hw,
-                            )
-                        })
-                    })
+                let key = &is_empty.is_empty.key;
+                field_condition_checker(
+                    field_indexes,
+                    key,
+                    hw_counter,
+                    &FieldCondition::new_is_empty(key.clone(), true),
+                    payload_provider,
+                    |payload, _| check_is_empty_condition(is_empty, &payload),
+                )?
             }
 
             Condition::IsNull(is_null) => {
-                let key = is_null.is_null.key.clone();
-                let field_condition = FieldCondition::new_is_null(key.clone(), true);
-                let payload_provider = payload_provider.clone();
-                field_indexes
-                    .get(&key)
-                    .and_then(|indexes| {
-                        indexes.iter().find_map(|index| {
-                            let hw_acc = hw_counter.new_accumulator();
-                            index.condition_checker(&field_condition, hw_acc)
-                        })
-                    })
-                    .unwrap_or_else(|| {
-                        let hw = hw_counter.fork();
-                        Box::new(move |point_id| {
-                            payload_provider.with_payload(
-                                point_id,
-                                |payload| check_is_null_condition(is_null, &payload),
-                                &hw,
-                            )
-                        })
-                    })
+                let key = &is_null.is_null.key;
+                field_condition_checker(
+                    field_indexes,
+                    key,
+                    hw_counter,
+                    &FieldCondition::new_is_null(key.clone(), true),
+                    payload_provider,
+                    |payload, _| check_is_null_condition(is_null, &payload),
+                )?
             }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
             Condition::HasId(has_id) => {
@@ -200,6 +170,31 @@ where
                 Box::new(move |internal_id| segment_ids.contains(&internal_id))
             }
             Condition::Filter(_) => unreachable!(),
+        })
+    }
+}
+
+fn field_condition_checker<'a>(
+    field_indexes: &'a HashMap<JsonPath, Vec<impl FieldIndexRead>>,
+    key: &JsonPath,
+    hw_counter: &HardwareCounterCell,
+    field_condition: &FieldCondition,
+    payload_provider: PayloadProvider<impl PayloadStorageRead + 'a>,
+    check: impl Fn(OwnedPayloadRef, &HardwareCounterCell) -> bool + 'a,
+) -> OperationResult<ConditionCheckerFn<'a>> {
+    // 1. Find first index that can check condition.
+    if let Some(indexes) = field_indexes.get(key) {
+        for index in indexes {
+            let hw_acc = hw_counter.new_accumulator();
+            if let Some(checker) = index.condition_checker(field_condition, hw_acc)? {
+                return Ok(checker);
+            }
         }
     }
+
+    // 2. None found => fallback to payload check.
+    let hw_counter = hw_counter.fork();
+    Ok(Box::new(move |point_id| {
+        payload_provider.with_payload(point_id, |payload| check(payload, &hw_counter), &hw_counter)
+    }))
 }

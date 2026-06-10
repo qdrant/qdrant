@@ -129,7 +129,7 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
+    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
         self.inner.condition_checker(condition, hw_acc)
     }
 }
