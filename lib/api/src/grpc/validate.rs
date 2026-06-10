@@ -290,6 +290,37 @@ impl Validate for grpc::FieldCondition {
         // and later panics when the geo index processes it.
         if let Some(geo_polygon) = geo_polygon {
             geo_polygon.validate()?;
+            // Shape validation above does not check coordinate ranges.
+            if let Some(exterior) = &geo_polygon.exterior {
+                for point in &exterior.points {
+                    validate_geo_point(point)?;
+                }
+            }
+            for interior in &geo_polygon.interiors {
+                for point in &interior.points {
+                    validate_geo_point(point)?;
+                }
+            }
+        }
+
+        // Reject out-of-range coordinates in the bounding-box / radius
+        // sub-conditions. Latitude outside [-90, 90] or longitude outside
+        // [-180, 180] is accepted by prost decoding but panics once the geo
+        // index encodes it as a geohash. Mirrors
+        // `segment::types::GeoPoint::validate` (the api crate does not depend on
+        // segment).
+        if let Some(geo_bounding_box) = geo_bounding_box {
+            if let Some(top_left) = &geo_bounding_box.top_left {
+                validate_geo_point(top_left)?;
+            }
+            if let Some(bottom_right) = &geo_bounding_box.bottom_right {
+                validate_geo_point(bottom_right)?;
+            }
+        }
+        if let Some(geo_radius) = geo_radius
+            && let Some(center) = &geo_radius.center
+        {
+            validate_geo_point(center)?;
         }
 
         Ok(())
@@ -552,15 +583,109 @@ impl Validate for super::qdrant::points_selector::PointsSelectorOneOf {
     }
 }
 
+/// Reject geo coordinates outside the valid WGS84 ranges
+/// (latitude in `[-90, 90]`, longitude in `[-180, 180]`).
+///
+/// Out-of-range coordinates are accepted by prost decoding and are not covered
+/// by the geo polygon shape validation; they reach the geo index and panic
+/// during geohash encoding, which expects pre-validated input. This mirrors
+/// `segment::types::GeoPoint::validate`; the bounds are duplicated here because
+/// the `api` crate does not depend on `segment`.
+fn validate_geo_point(point: &grpc::GeoPoint) -> Result<(), ValidationErrors> {
+    const MIN_LON: f64 = -180.0;
+    const MAX_LON: f64 = 180.0;
+    const MIN_LAT: f64 = -90.0;
+    const MAX_LAT: f64 = 90.0;
+
+    if !(MIN_LON..=MAX_LON).contains(&point.lon) || !(MIN_LAT..=MAX_LAT).contains(&point.lat) {
+        let mut errors = ValidationErrors::new();
+        errors.add(
+            "geo",
+            ValidationError::new(
+                "Geo coordinate out of range: latitude must be within [-90, 90] and longitude within [-180, 180]",
+            ),
+        );
+        return Err(errors);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
         CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest,
-        DenseVectorCreationConfig, GeoLineString, GeoPoint, GeoPolygon, SearchPoints,
-        UpdateCollection, create_vector_name_request,
+        DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
+        GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request,
     };
+
+    #[test]
+    fn test_geo_field_condition_rejects_out_of_range_coordinates() {
+        // Valid coordinates pass.
+        let valid = FieldCondition {
+            geo_radius: Some(GeoRadius {
+                center: Some(GeoPoint {
+                    lat: 52.5,
+                    lon: 13.4,
+                }),
+                radius: 1000.0,
+            }),
+            ..Default::default()
+        };
+        assert!(valid.validate().is_ok());
+
+        // Latitude out of range (> 90) is rejected instead of panicking in the
+        // geo index during geohash encoding.
+        let bad_radius = FieldCondition {
+            geo_radius: Some(GeoRadius {
+                center: Some(GeoPoint {
+                    lat: 200.0,
+                    lon: 13.4,
+                }),
+                radius: 1000.0,
+            }),
+            ..Default::default()
+        };
+        assert!(bad_radius.validate().is_err());
+
+        // Longitude out of range (< -180) in a bounding-box corner is rejected.
+        let bad_box = FieldCondition {
+            geo_bounding_box: Some(GeoBoundingBox {
+                top_left: Some(GeoPoint {
+                    lat: 50.0,
+                    lon: -190.0,
+                }),
+                bottom_right: Some(GeoPoint {
+                    lat: 40.0,
+                    lon: 13.4,
+                }),
+            }),
+            ..Default::default()
+        };
+        assert!(bad_box.validate().is_err());
+
+        // A well-formed polygon (>= 4 points, closed ring) whose coordinates are
+        // out of range is rejected; shape validation alone would accept it.
+        let bad_polygon = FieldCondition {
+            geo_polygon: Some(GeoPolygon {
+                exterior: Some(GeoLineString {
+                    points: vec![
+                        GeoPoint { lat: 0.0, lon: 0.0 },
+                        GeoPoint {
+                            lat: 100.0,
+                            lon: 0.0,
+                        },
+                        GeoPoint { lat: 1.0, lon: 1.0 },
+                        GeoPoint { lat: 0.0, lon: 0.0 },
+                    ],
+                }),
+                interiors: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(bad_polygon.validate().is_err());
+    }
 
     #[test]
     fn test_good_request() {
