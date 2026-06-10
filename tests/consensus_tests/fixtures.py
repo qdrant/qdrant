@@ -153,6 +153,7 @@ def create_collection(
     sparse_vectors=True,
     default_segment_number=None,
     on_disk_payload=None,
+    read_fan_out_factor=None,
     fail_on_error=True,
 ):
     payload = {
@@ -160,6 +161,7 @@ def create_collection(
         "shard_number": shard_number,
         "replication_factor": replication_factor,
         "write_consistency_factor": write_consistency_factor,
+        "read_fan_out_factor": read_fan_out_factor,
         "sharding_method": sharding_method,
         "optimizers_config": {
             "indexing_threshold": indexing_threshold,
