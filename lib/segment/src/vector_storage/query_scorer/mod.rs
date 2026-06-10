@@ -14,6 +14,7 @@ pub mod multi_custom_query_scorer;
 pub mod multi_metric_query_scorer;
 pub mod sparse_custom_query_scorer;
 pub mod sparse_metric_query_scorer;
+pub mod turbo_query_scorer;
 
 pub trait QueryScorer {
     type TVector: ?Sized;

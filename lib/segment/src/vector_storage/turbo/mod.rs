@@ -18,10 +18,10 @@ use std::sync::atomic::AtomicBool;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::turboquant::{TQBits, TQMode};
+use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode};
 
 use self::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use crate::common::Flusher;
@@ -29,7 +29,9 @@ use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::{DenseTQVectorStorage, VectorStorage, VectorStorageRead};
 
@@ -96,6 +98,58 @@ impl TurboVectorStorage {
             _ => {}
         }
         previous
+    }
+
+    /// Whether scores must be negated to follow qdrant's "higher = better"
+    /// convention: TurboQuant returns a distance (lower = better) for the
+    /// Euclid/Manhattan metrics, mirroring `VectorParameters::invert`.
+    fn invert_score(&self) -> bool {
+        matches!(self.distance, Distance::Euclid | Distance::Manhattan)
+    }
+
+    /// Preprocess a raw query for this storage's distance (e.g. cosine
+    /// normalization) and precompute its asymmetric-scoring encoding.
+    ///
+    /// The returned [`EncodedQueryTQ`] is reused across all `score_encoded_*`
+    /// calls so the Hadamard rotation runs once, not per score.
+    pub fn preprocess_query(&self, query: DenseVector) -> EncodedQueryTQ {
+        let preprocessed = match self.distance {
+            Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(query),
+            Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(query),
+            Distance::Dot => <DotProductMetric as Metric<VectorElementType>>::preprocess(query),
+            Distance::Manhattan => {
+                <ManhattanMetric as Metric<VectorElementType>>::preprocess(query)
+            }
+        };
+        self.quantizer.precompute_query(&preprocessed)
+    }
+
+    /// Asymmetric score of a precomputed query against the stored vector `key`.
+    pub fn score_encoded_query(
+        &self,
+        query: &EncodedQueryTQ,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        let bytes = self.storage.get_quantized_vector(key);
+        hw_counter.vector_io_read().incr_delta(bytes.len());
+        hw_counter.cpu_counter().incr_delta(bytes.len());
+        let score = self.quantizer.score_precomputed(query, &bytes);
+        if self.invert_score() { -score } else { score }
+    }
+
+    /// Symmetric score between two stored vectors, selected by their offsets.
+    pub fn score_internal_encoded(
+        &self,
+        point_a: PointOffsetType,
+        point_b: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        let v1 = self.storage.get_quantized_vector(point_a);
+        let v2 = self.storage.get_quantized_vector(point_b);
+        hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
+        let score = self.quantizer.score_symmetric(&v1, &v2);
+        if self.invert_score() { -score } else { score }
     }
 
     fn dequantize_vector(&self, quantized: Cow<[u8]>) -> CowVector<'_> {
@@ -964,6 +1018,73 @@ mod tests {
                         sym.is_finite() && asym.is_finite(),
                         "placeholder score not finite (dim {dim}, {distance:?}): sym {sym}, asym {asym}",
                     );
+                }
+            }
+        }
+    }
+
+    /// End-to-end check of [`TurboQueryScorer`] for the `Nearest` path across
+    /// every distance: query preprocessing, the asymmetric/symmetric scoring
+    /// arithmetic and the "higher = better" sign convention must all line up so
+    /// that a stored vector scores best against itself.
+    #[test]
+    fn nearest_scorer_ranks_self_first() {
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
+
+        const COUNT: usize = 16;
+
+        for distance in [
+            Distance::Dot,
+            Distance::Cosine,
+            Distance::Euclid,
+            Distance::Manhattan,
+        ] {
+            // dim=1 is skipped: unit vectors collapse to ±1 and self-ranking is
+            // ambiguous (mirrored in the codec sanity checks above).
+            for dim in [4, 127, 128, 256] {
+                for seed in SEEDS {
+                    let dir = Builder::new().prefix("turbo_scorer").tempdir().unwrap();
+                    let hw_counter = HardwareCounterCell::new();
+                    let mut storage =
+                        open_appendable_turbo_vector_storage(dir.path(), dim, distance, true)
+                            .unwrap();
+                    let inputs = make_vectors(dim, COUNT, seed);
+                    insert_all(&mut storage, &inputs, &hw_counter);
+
+                    for q in 0..COUNT {
+                        let encoded = storage.preprocess_query(inputs[q].clone());
+                        let scorer =
+                            TurboQueryScorer::new(encoded, &storage, HardwareCounterCell::new());
+
+                        // Asymmetric path: the query must score best against its
+                        // own stored (lossy) encoding.
+                        let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
+                            .map(|k| scorer.score_stored(k))
+                            .collect();
+                        let best = (0..COUNT)
+                            .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
+                            .unwrap();
+                        assert_eq!(
+                            best, q,
+                            "asymmetric: vector {q} not ranked first \
+                             (dim {dim}, {distance:?}, seed {seed:#x}): scores {scores:?}",
+                        );
+
+                        // Symmetric path: identical stored bytes must score best.
+                        let best_internal = (0..COUNT as PointOffsetType)
+                            .max_by(|&a, &b| {
+                                let sa = scorer.score_internal(q as PointOffsetType, a);
+                                let sb = scorer.score_internal(q as PointOffsetType, b);
+                                sa.partial_cmp(&sb).unwrap()
+                            })
+                            .unwrap();
+                        assert_eq!(
+                            best_internal, q as PointOffsetType,
+                            "symmetric: vector {q} not closest to itself \
+                             (dim {dim}, {distance:?}, seed {seed:#x})",
+                        );
+                    }
                 }
             }
         }

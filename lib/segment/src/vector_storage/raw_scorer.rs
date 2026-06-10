@@ -28,6 +28,7 @@ use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
 use crate::vector_storage::query_scorer::sparse_metric_query_scorer::SparseMetricQueryScorer;
+use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
 
 pub trait RawScorer {
@@ -77,7 +78,19 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseTurbo(_) => unimplemented!("turbo4 scoring not yet wired up"),
+        VectorStorageEnum::DenseTurbo(vs) => match query {
+            QueryVector::Nearest(vector) => {
+                let encoded_query = vs.preprocess_query(vector.try_into()?);
+                raw_scorer_from_query_scorer(TurboQueryScorer::new(encoded_query, vs, hc))
+            }
+            QueryVector::RecommendBestScore(_)
+            | QueryVector::RecommendSumScores(_)
+            | QueryVector::Discover(_)
+            | QueryVector::Context(_)
+            | QueryVector::FeedbackNaive(_) => Err(OperationError::service_error(
+                "TurboQuant storage supports only nearest queries (reco/discover/context/feedback not yet wired up)",
+            )),
+        },
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),
