@@ -12645,6 +12645,11 @@
             "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.17.1+",
             "default": false,
             "type": "boolean"
+          },
+          "async_payload_storage": {
+            "description": "Use io_uring-based payload storage implementation.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },

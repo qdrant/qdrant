@@ -9,6 +9,8 @@ use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::defaults::log_load_timing;
 use common::flags::FeatureFlags;
+#[cfg(target_os = "linux")]
+use common::flags::feature_flags;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::{Advice, AdviceSetting};
@@ -222,7 +224,7 @@ pub(crate) fn create_payload_storage(
 ) -> OperationResult<PayloadStorageEnum> {
     #[cfg(target_os = "linux")]
     match config.payload_storage_type {
-        PayloadStorageType::Mmap if get_async_scorer() => {
+        PayloadStorageType::Mmap if get_async_scorer() && feature_flags().async_payload_storage => {
             let storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), false);
 
             match storage {
