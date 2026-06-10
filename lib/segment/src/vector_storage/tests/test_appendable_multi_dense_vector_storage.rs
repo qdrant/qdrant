@@ -115,7 +115,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
         .enumerate()
         .filter(|(_, d)| *d)
         .for_each(|(i, _)| {
-            storage.delete_vector(i as PointOffsetType).unwrap();
+            let was_deleted = storage.delete_vector(i as PointOffsetType).unwrap();
+            assert!(was_deleted, "deleting a live vector must return true");
         });
     assert_eq!(
         storage.deleted_vector_count(),
@@ -141,8 +142,14 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     assert_eq!(closest[2].idx, 0);
 
     // Delete 1, redelete 2
-    storage.delete_vector(1 as PointOffsetType).unwrap();
-    storage.delete_vector(2 as PointOffsetType).unwrap();
+    assert!(
+        storage.delete_vector(1 as PointOffsetType).unwrap(),
+        "deleting a live vector must return true"
+    );
+    assert!(
+        !storage.delete_vector(2 as PointOffsetType).unwrap(),
+        "redeleting a deleted vector must return false"
+    );
     assert_eq!(
         storage.deleted_vector_count(),
         3,
@@ -167,8 +174,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     assert_eq!(closest[1].idx, 0);
 
     // Delete all
-    storage.delete_vector(0 as PointOffsetType).unwrap();
-    storage.delete_vector(4 as PointOffsetType).unwrap();
+    assert!(storage.delete_vector(0 as PointOffsetType).unwrap());
+    assert!(storage.delete_vector(4 as PointOffsetType).unwrap());
     assert_eq!(
         storage.deleted_vector_count(),
         5,

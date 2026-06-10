@@ -215,7 +215,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.set_deleted(key, true))
+        Ok(!self.set_deleted(key, true))
     }
 }
 
