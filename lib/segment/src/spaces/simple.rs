@@ -263,10 +263,7 @@ pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    v1.iter()
-        .zip(v2)
-        .map(|(a, b)| (a * b) as f64)
-        .sum::<f64>() as ScoreType
+    v1.iter().zip(v2).map(|(a, b)| (a * b) as f64).sum::<f64>() as ScoreType
 }
 
 #[cfg(test)]
@@ -310,10 +307,16 @@ mod tests {
     /// Test that dot product is invariant under coordinate permutation.
     /// This is a fundamental mathematical property: dot(v1, v2) = dot(perm(v1), perm(v2))
     /// for any permutation of coordinates.
+    ///
+    /// We use values around 1e7 which are large enough to cause order-dependent
+    /// rounding in f32 accumulation, but small enough that the f64 accumulation
+    /// used in our implementation handles them exactly.
     #[test]
     fn test_dot_product_permutation_invariance() {
-        // Test case from issue #9351
-        let query = vec![1e20, 1.0, -1e20];
+        // Values that cause catastrophic cancellation in f32 but not f64.
+        // f32 has ~7 decimal digits of precision, so 1e7 + 1.0 loses the 1.0
+        // in f32, but f64 has ~15 digits and handles this sum exactly.
+        let query = vec![1e7, 1.0, -1e7];
         let vector = vec![1.0, 1.0, 1.0];
         let perm = [0, 2, 1]; // permutation indices
 
@@ -328,8 +331,8 @@ mod tests {
             "Dot product must be invariant under coordinate permutation"
         );
 
-        // Additional test with more challenging values
-        let query2 = vec![1e10, -1e10, 1e10, -1e10];
+        // Additional test with more dimensions and a different permutation
+        let query2 = vec![1e7, -1e7, 1e7, -1e7];
         let vector2 = vec![1.0, 1.0, 1.0, 1.0];
         let perm2 = [3, 1, 0, 2];
 

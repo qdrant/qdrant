@@ -186,7 +186,8 @@ pub(crate) unsafe fn dot_similarity_neon(
             ptr2 = ptr2.add(16);
             i += 16;
         }
-        let mut result = (vaddvq_f32(sum1) + vaddvq_f32(sum2) + vaddvq_f32(sum3) + vaddvq_f32(sum4)) as f64;
+        let mut result =
+            (vaddvq_f32(sum1) + vaddvq_f32(sum2) + vaddvq_f32(sum3) + vaddvq_f32(sum4)) as f64;
         for i in 0..n - m {
             result += ((*ptr1.add(i)) * (*ptr2.add(i))) as f64;
         }
