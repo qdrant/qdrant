@@ -3,6 +3,8 @@ use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
 
+pub type DynConditionChecker<'a> = Box<dyn ConditionChecker + 'a>;
+
 /// A check that tests whether points satisfy a condition.
 pub trait ConditionChecker {
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool>;
@@ -25,7 +27,7 @@ impl<F: Fn(PointOffsetType) -> OperationResult<bool>> ConditionChecker for F {
 }
 
 pub enum OptimizedCondition<'a> {
-    Checker(Box<dyn ConditionChecker + 'a>),
+    Checker(DynConditionChecker<'a>),
     /// Nested filter
     Filter(OptimizedFilter<'a>),
 }

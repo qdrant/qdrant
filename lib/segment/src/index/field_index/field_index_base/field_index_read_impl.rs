@@ -14,7 +14,7 @@ use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -101,7 +101,7 @@ impl PayloadFieldIndexRead for FieldIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
         match self {
             FieldIndex::IntIndex(idx) => idx.condition_checker(condition, hw_acc),
             FieldIndex::DatetimeIndex(idx) => idx.condition_checker(condition, hw_acc),

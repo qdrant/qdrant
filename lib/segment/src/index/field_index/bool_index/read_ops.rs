@@ -29,7 +29,7 @@ use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -268,7 +268,7 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     idx: &'a N,
     condition: &FieldCondition,
     _hw_acc: HwMeasurementAcc,
-) -> Option<Box<dyn ConditionChecker + 'a>> {
+) -> Option<DynConditionChecker<'a>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
