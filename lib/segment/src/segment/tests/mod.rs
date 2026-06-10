@@ -1658,3 +1658,56 @@ fn test_deleted_deferred_point_count() {
         assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
     }
 }
+
+/// A field index dropped between flusher capture and execution (a `DropIndex`
+/// racing the background flush) must not abort the rest of the flush sequence.
+///
+/// Aborting used to leave the field indexes flushed before the cancellation
+/// point durably ahead of payload storage and point versions; WAL replay then
+/// re-derived filter-based operations through that too-new index and silently
+/// skipped points whose payload still needed the operation re-applied.
+#[test]
+fn test_flush_survives_concurrent_field_index_drop() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    segment
+        .upsert_point(
+            1,
+            1.into(),
+            only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{"num": 20}"#).unwrap();
+    segment
+        .set_full_payload(2, 1.into(), &payload, &hw_counter)
+        .unwrap();
+    segment
+        .create_field_index(
+            3,
+            &JsonPath::new("num"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+            &hw_counter,
+        )
+        .unwrap();
+
+    // Capture the flushers (as the background flush thread does), then drop the
+    // index before executing them.
+    let flusher = segment
+        .flusher(true)
+        .expect("segment has unflushed changes");
+    segment
+        .delete_field_index(4, &JsonPath::new("num"))
+        .unwrap();
+
+    flusher().expect("flush must not fail");
+
+    // The flush must skip the dropped index storage and still complete the
+    // sequence: payload storage, point versions, and the segment state captured
+    // at version 3. A cancelled (aborted) flush would have left the persisted
+    // version at 0.
+    assert_eq!(segment.persistent_version(), 3);
+}
