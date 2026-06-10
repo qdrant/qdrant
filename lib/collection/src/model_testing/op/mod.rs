@@ -428,9 +428,12 @@ impl Op {
             22 => {
                 // CreateVectorName: pick a candidate currently absent from the active set.
                 // If all candidates are active, fall back to a regular upsert.
+                // Multivector (`MultiDense`) candidates are excluded while their reload
+                // divergence is unresolved — see the note on `INITIAL_ACTIVE`.
                 let inactive: Vec<&'static super::VectorCandidate> = ALL_CANDIDATES
                     .iter()
                     .filter(|c| !active.contains(c.name))
+                    .filter(|c| !matches!(c.kind, VectorKind::MultiDense(_)))
                     .collect();
                 if inactive.is_empty() {
                     return upsert_fallback(rng, active, id_pool);
