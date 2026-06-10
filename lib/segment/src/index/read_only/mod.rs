@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use common::universal_io::{MmapFile, UniversalRead};
@@ -12,12 +15,16 @@ use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndex
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
+use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::hnsw_index::hnsw::read_only::ReadOnlyHNSWIndex;
 use crate::index::plain_vector_index::read_only::ReadOnlyPlainVectorIndex;
 use crate::index::sparse_index::sparse_vector_index::read_only::ReadOnlySparseVectorIndex;
+use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::index::vector_index_base::VectorIndexRead;
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams};
+use crate::types::{Filter, Indexes, SearchParams, VectorDataConfig};
+use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
+use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 /// Read-only counterpart of [`super::VectorIndexEnum`].
 ///
@@ -47,7 +54,55 @@ pub enum VectorIndexReadEnum<S: UniversalRead> {
     ),
 }
 
+/// Shared read-only backends plus the `fs`/`path` an index opens its files from.
+pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalRead> {
+    pub fs: &'a S::Fs,
+    pub path: &'a Path,
+    pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+    pub payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    pub quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
+}
+
 impl<S: UniversalRead> VectorIndexReadEnum<S> {
+    /// Open the read-only dense vector index from its config (sparse: follow-up).
+    #[allow(dead_code)] // pending: read-only segment constructor
+    pub fn open(
+        vector_config: &VectorDataConfig,
+        args: ReadOnlyVectorIndexOpenArgs<'_, S>,
+    ) -> OperationResult<Self>
+    where
+        // The HNSW graph keeps its universal-IO storage handle alive behind a
+        // boxed trait object, which must outlive the index.
+        S: 'static,
+    {
+        let ReadOnlyVectorIndexOpenArgs {
+            fs,
+            path,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            quantized_vectors,
+        } = args;
+        Ok(match &vector_config.index {
+            Indexes::Plain {} => Self::Plain(Box::new(ReadOnlyPlainVectorIndex::open(
+                id_tracker,
+                vector_storage,
+                quantized_vectors,
+                payload_index,
+            )?)),
+            Indexes::Hnsw(hnsw_config) => Self::Hnsw(Box::new(ReadOnlyHNSWIndex::open(
+                fs,
+                path,
+                id_tracker,
+                vector_storage,
+                quantized_vectors,
+                payload_index,
+                *hnsw_config,
+            )?)),
+        })
+    }
+
     /// Returns true if underlying index files are configured to stay on disk.
     pub fn is_on_disk(&self) -> bool {
         match self {
