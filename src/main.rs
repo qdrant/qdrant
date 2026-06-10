@@ -412,6 +412,14 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_default(),
     );
 
+    segment::payload_storage::set_async_payload_storage(
+        settings
+            .storage
+            .performance
+            .async_payload_storage
+            .unwrap_or_default(),
+    );
+
     welcome(&settings);
 
     //
