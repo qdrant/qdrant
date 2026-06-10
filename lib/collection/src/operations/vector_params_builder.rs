@@ -19,6 +19,8 @@ impl VectorParamsBuilder {
                 on_disk: None,
                 datatype: None,
                 multivector_config: None,
+                data_integrity_check: None,
+                magnitude_bound: None,
             },
         }
     }

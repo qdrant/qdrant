@@ -646,6 +646,45 @@ mod tests {
         assert!(payload_checker.check(2, &query));
     }
 
+    /// Regression test for <https://github.com/qdrant/qdrant/issues/9255>
+    ///
+    /// Points without the filtered payload key must not satisfy a positive match.
+    #[test]
+    fn match_on_missing_payload_key_returns_false() {
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut payload_storage: PayloadStorageEnum =
+            PayloadStorageEnum::InMemoryPayloadStorage(InMemoryPayloadStorage::default());
+        let mut id_tracker = InMemoryIdTracker::new();
+
+        id_tracker.set_link(0.into(), 0).unwrap();
+        id_tracker.set_link(1.into(), 1).unwrap();
+        payload_storage
+            .overwrite(
+                0,
+                &payload_json! { "color": "red" },
+                &hw_counter,
+            )
+            .unwrap();
+        // Point 1 has no payload at all.
+
+        let payload_checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                id_tracker,
+            ))),
+            HashMap::new(),
+        );
+
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("color"),
+            "red".to_owned().into(),
+        )));
+
+        assert!(payload_checker.check(0, &filter));
+        assert!(!payload_checker.check(1, &filter));
+    }
+
     /// Regression test for <https://github.com/qdrant/qdrant/issues/8936>
     ///
     /// Verifies that `MatchTextAny` inside a `NestedCondition` uses the

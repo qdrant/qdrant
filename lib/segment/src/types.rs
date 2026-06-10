@@ -1735,9 +1735,19 @@ pub struct VectorDataConfig {
     /// Vector specific configuration to set specific storage element type
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
+    /// Reject non-finite vector components on ingest and query when enabled.
+    /// Defaults to enabled when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_integrity_check: Option<bool>,
+    /// Reject vectors whose L2 norm exceeds this bound on ingest and query.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub magnitude_bound: Option<f32>,
 }
 
 impl VectorDataConfig {
+    pub fn data_integrity_check_enabled(&self) -> bool {
+        self.data_integrity_check.unwrap_or(true)
+    }
     /// Whether this vector data can be appended to
     ///
     /// This requires an index and storage type that both support appending.
@@ -1770,6 +1780,8 @@ impl VectorDataConfig {
             quantization_config: _,
             multivector_config,
             datatype,
+            data_integrity_check: _,
+            magnitude_bound: _,
         } = self;
 
         if *size != other.size {
@@ -1852,6 +1864,13 @@ pub struct SparseVectorDataConfig {
     /// Default: none
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifier: Option<Modifier>,
+    /// Reject non-finite vector components on ingest and query when enabled.
+    /// Defaults to enabled when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_integrity_check: Option<bool>,
+    /// Reject vectors whose L2 norm exceeds this bound on ingest and query.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub magnitude_bound: Option<f32>,
 }
 
 /// If the storage type is not in config, it means it is the OnDisk variant
@@ -1860,6 +1879,10 @@ fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorag
 }
 
 impl SparseVectorDataConfig {
+    pub fn data_integrity_check_enabled(&self) -> bool {
+        self.data_integrity_check.unwrap_or(true)
+    }
+
     pub fn is_indexed(&self) -> bool {
         true
     }

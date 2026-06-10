@@ -213,6 +213,8 @@ pub fn build_segment_optimizer_config(
                         .cloned(),
                     multivector_config: *multivector_config,
                     datatype: datatype.map(VectorStorageDatatype::from),
+            data_integrity_check: None,
+            magnitude_bound: None,
                 },
             )
         })

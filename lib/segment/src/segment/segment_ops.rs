@@ -22,10 +22,12 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
 use crate::id_tracker::{IdTracker, IdTrackerRead};
+use crate::index::VectorIndexEnum;
+use crate::index::plain_vector_index::PlainVectorIndex;
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndex};
 use crate::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
-    SnapshotFormat, VectorName,
+    Indexes, Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
+    SnapshotFormat, VectorName, VectorNameBuf,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorageRead;
@@ -640,6 +642,41 @@ impl Segment {
 
         // Do not delete extra payload indices, because collection-level information about
         // the payload indices might be incomplete due to migrations from older versions.
+
+        Ok(())
+    }
+
+    /// Downgrade HNSW vector indexes to plain indexes so optimizers rebuild them.
+    ///
+    /// Used when payload index schema changes affect HNSW payload subgraphs, e.g.
+    /// toggling `is_tenant` on a field.
+    pub(crate) fn invalidate_hnsw_indexes(&mut self) -> OperationResult<()> {
+        let hnsw_vectors: Vec<VectorNameBuf> = self
+            .segment_config
+            .vector_data
+            .iter()
+            .filter_map(|(vector_name, vector_data)| {
+                matches!(vector_data.index, Indexes::Hnsw(_)).then(|| vector_name.clone())
+            })
+            .collect();
+
+        for vector_name in hnsw_vectors {
+            let Some(vector_data) = self.vector_data.get(&vector_name) else {
+                continue;
+            };
+
+            if let Some(vector_config) = self.segment_config.vector_data.get_mut(&vector_name) {
+                vector_config.index = Indexes::Plain {};
+            }
+
+            let plain_index = PlainVectorIndex::new(
+                self.id_tracker.clone(),
+                vector_data.vector_storage.clone(),
+                vector_data.quantized_vectors.clone(),
+                self.payload_index.clone(),
+            );
+            *vector_data.vector_index.borrow_mut() = VectorIndexEnum::Plain(plain_index);
+        }
 
         Ok(())
     }

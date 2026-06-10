@@ -91,6 +91,8 @@ fn test_byte_storage_hnsw(
                 quantization_config: None,
                 multivector_config: None,
                 datatype: Some(storage_data_type),
+            data_integrity_check: None,
+            magnitude_bound: None,
             },
         )]),
         sparse_vector_data: Default::default(),

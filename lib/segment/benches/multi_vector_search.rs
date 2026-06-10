@@ -83,6 +83,8 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
                 quantization_config: None,
                 multivector_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
             },
         )]),
         sparse_vector_data: Default::default(),

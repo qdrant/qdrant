@@ -605,6 +605,11 @@ impl NonAppendableSegmentEntry for Segment {
         field_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
+            let previous_schema = segment
+                .payload_index
+                .borrow()
+                .with_view(|view| view.indexed_fields().get(key).cloned());
+
             let is_incompatible = segment
                 .payload_index
                 .borrow_mut()
@@ -612,6 +617,13 @@ impl NonAppendableSegmentEntry for Segment {
 
             if is_incompatible {
                 segment.version_tracker.set_payload_index_schema(key, None);
+
+                let tenant_flag_changed = previous_schema.is_some_and(|previous| {
+                    previous.is_tenant() != field_schema.is_tenant()
+                });
+                if tenant_flag_changed {
+                    segment.invalidate_hnsw_indexes()?;
+                }
             }
 
             Ok(true)

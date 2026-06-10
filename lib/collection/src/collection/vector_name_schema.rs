@@ -106,6 +106,8 @@ fn dense_config_to_params(config: &DenseVectorConfig) -> VectorParams {
         quantization_config: None,
         on_disk: None,
         datatype: datatype.map(storage_datatype_to_collection),
+            data_integrity_check: None,
+            magnitude_bound: None,
         multivector_config: *multivector_config,
     }
 }
@@ -118,6 +120,8 @@ fn sparse_config_to_params(config: &SparseVectorConfig) -> SparseVectorParams {
             full_scan_threshold: None,
             on_disk: None,
             datatype: Some(storage_datatype_to_collection(dt)),
+            data_integrity_check: None,
+            magnitude_bound: None,
         }),
         modifier: *modifier,
     }

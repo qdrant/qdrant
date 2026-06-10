@@ -425,6 +425,12 @@ pub struct VectorParams {
     /// Configuration for multi-vector search
     #[prost(message, optional, tag = "7")]
     pub multivector_config: ::core::option::Option<MultiVectorConfig>,
+    /// Reject non-finite vector components when enabled. Defaults to enabled when unset.
+    #[prost(bool, optional, tag = "8")]
+    pub data_integrity_check: ::core::option::Option<bool>,
+    /// Reject vectors whose L2 norm exceeds this bound.
+    #[prost(float, optional, tag = "9")]
+    pub magnitude_bound: ::core::option::Option<f32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -510,6 +516,12 @@ pub struct SparseVectorParams {
     /// If set - apply modifier to the vector values
     #[prost(enumeration = "Modifier", optional, tag = "2")]
     pub modifier: ::core::option::Option<i32>,
+    /// Reject non-finite vector components when enabled. Defaults to enabled when unset.
+    #[prost(bool, optional, tag = "3")]
+    pub data_integrity_check: ::core::option::Option<bool>,
+    /// Reject vectors whose L2 norm exceeds this bound.
+    #[prost(float, optional, tag = "4")]
+    pub magnitude_bound: ::core::option::Option<f32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -35,15 +35,23 @@ where
         let id_tracker = self.id_tracker;
         let field_indexes = self.field_indexes;
         match condition {
-            Condition::Field(field_condition) => field_indexes
-                .get(&field_condition.key)
-                .and_then(|indexes| {
-                    indexes.iter().find_map(move |index| {
-                        let hw_acc = hw_counter.new_accumulator();
-                        index.condition_checker(field_condition, hw_acc)
+            Condition::Field(field_condition) => {
+                let indexed_checkers = field_indexes
+                    .get(&field_condition.key)
+                    .map(|indexes| {
+                        indexes
+                            .iter()
+                            .filter_map(|index| {
+                                let hw_acc = hw_counter.new_accumulator();
+                                index.condition_checker(field_condition, hw_acc)
+                            })
+                            .collect::<Vec<_>>()
                     })
-                })
-                .unwrap_or_else(|| {
+                    .filter(|checkers| !checkers.is_empty());
+
+                if let Some(checkers) = indexed_checkers {
+                    Box::new(move |point_id| checkers.iter().any(|checker| checker(point_id)))
+                } else {
                     let hw = hw_counter.fork();
                     Box::new(move |point_id| {
                         payload_provider.with_payload(
@@ -55,7 +63,8 @@ where
                             &hw,
                         )
                     })
-                }),
+                }
+            }
             // is_empty / is_null are served by NullIndex via
             // `condition_checker`. NullIndex is built alongside every
             // index from #6088 (released in v1.13.5) onwards, so the

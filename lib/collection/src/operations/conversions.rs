@@ -729,6 +729,8 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             on_disk,
             datatype,
             multivector_config,
+            data_integrity_check,
+            magnitude_bound,
         } = vector_params;
         Ok(Self {
             size: NonZeroU64::new(size).ok_or_else(|| {
@@ -744,6 +746,8 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             multivector_config: multivector_config
                 .map(MultiVectorConfig::try_from)
                 .transpose()?,
+            data_integrity_check,
+            magnitude_bound,
         })
     }
 }
@@ -792,7 +796,12 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
     fn try_from(
         sparse_vector_params: api::grpc::qdrant::SparseVectorParams,
     ) -> Result<Self, Self::Error> {
-        let api::grpc::qdrant::SparseVectorParams { index, modifier } = sparse_vector_params;
+        let api::grpc::qdrant::SparseVectorParams {
+            index,
+            modifier,
+            data_integrity_check,
+            magnitude_bound,
+        } = sparse_vector_params;
         Ok(Self {
             index: index
                 .map(|index_config| -> Result<_, Status> {
@@ -808,13 +817,20 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                     // XXX: Invalid values silently converted to None
                     api::grpc::qdrant::Modifier::try_from(x).ok())
                 .map(Modifier::from),
+            data_integrity_check,
+            magnitude_bound,
         })
     }
 }
 
 impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
     fn from(sparse_vector_params: SparseVectorParams) -> Self {
-        let SparseVectorParams { index, modifier } = sparse_vector_params;
+        let SparseVectorParams {
+            index,
+            modifier,
+            data_integrity_check,
+            magnitude_bound,
+        } = sparse_vector_params;
         Self {
             index: index.map(|index_config| {
                 let SparseIndexParams {
@@ -829,6 +845,8 @@ impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
                 }
             }),
             modifier: modifier.map(|modifier| api::grpc::qdrant::Modifier::from(modifier) as i32),
+            data_integrity_check,
+            magnitude_bound,
         }
     }
 }
@@ -1401,6 +1419,8 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             on_disk,
             datatype,
             multivector_config,
+            data_integrity_check,
+            magnitude_bound,
         } = value;
         api::grpc::qdrant::VectorParams {
             size: size.get(),
@@ -1416,6 +1436,8 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             on_disk,
             datatype: datatype.map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
             multivector_config: multivector_config.map(api::grpc::qdrant::MultiVectorConfig::from),
+            data_integrity_check,
+            magnitude_bound,
         }
     }
 }

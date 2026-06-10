@@ -37,6 +37,8 @@ pub fn build_simple_segment(
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -66,6 +68,8 @@ pub fn build_simple_segment_with_payload_storage(
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -93,6 +97,8 @@ pub fn build_multivec_segment(
             quantization_config: None,
             multivector_config: None,
             datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
         },
     );
     vectors_config.insert(
@@ -105,6 +111,8 @@ pub fn build_multivec_segment(
             quantization_config: None,
             multivector_config: None,
             datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
         },
     );
 
@@ -128,6 +136,7 @@ mod tests {
     use super::*;
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::only_default_vector;
+    use crate::types::PointIdType;
     use crate::entry::entry_point::{ReadSegmentEntry as _, SegmentEntry as _};
     use crate::payload_json;
 
@@ -157,6 +166,13 @@ mod tests {
             Err(OperationError::WrongVectorDimension { .. }) => (),
             Err(_) => panic!("Wrong error"),
             Ok(_) => panic!("Operation with wrong vector should fail"),
+        };
+
+        let nan_vec = vec![f32::NAN, 0.0, 1.0, 1.0];
+        match segment.upsert_point(1, PointIdType::from(121), only_default_vector(&nan_vec), &hw_counter) {
+            Err(OperationError::ValidationError { .. }) => (),
+            Err(_) => panic!("Wrong error"),
+            Ok(_) => panic!("Operation with non-finite vector should fail"),
         };
 
         segment

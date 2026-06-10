@@ -22,6 +22,8 @@ pub struct EdgeVectorParamsBuilder {
     datatype: Option<VectorStorageDatatype>,
     quantization_config: Option<QuantizationConfig>,
     hnsw_config: Option<HnswConfig>,
+    data_integrity_check: Option<bool>,
+    magnitude_bound: Option<f32>,
 }
 
 impl EdgeVectorParamsBuilder {
@@ -34,6 +36,8 @@ impl EdgeVectorParamsBuilder {
             datatype: None,
             quantization_config: None,
             hnsw_config: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
         }
     }
 
@@ -68,6 +72,16 @@ impl EdgeVectorParamsBuilder {
         self
     }
 
+    pub fn data_integrity_check(mut self, data_integrity_check: bool) -> Self {
+        self.data_integrity_check = Some(data_integrity_check);
+        self
+    }
+
+    pub fn magnitude_bound(mut self, magnitude_bound: f32) -> Self {
+        self.magnitude_bound = Some(magnitude_bound);
+        self
+    }
+
     pub fn build(self) -> EdgeVectorParams {
         // Exhaustively destructure Self and construct EdgeVectorParams:
         // adding a field to either type forces a compile error here.
@@ -79,6 +93,8 @@ impl EdgeVectorParamsBuilder {
             datatype,
             quantization_config,
             hnsw_config,
+            data_integrity_check,
+            magnitude_bound,
         } = self;
         EdgeVectorParams {
             size,
@@ -88,6 +104,8 @@ impl EdgeVectorParamsBuilder {
             datatype,
             quantization_config,
             hnsw_config,
+            data_integrity_check,
+            magnitude_bound,
         }
     }
 }

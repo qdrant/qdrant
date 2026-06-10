@@ -2,18 +2,101 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use ordered_float::OrderedFloat;
 use tempfile::Builder;
 use uuid::Uuid;
 
+use crate::data_types::index::IntegerIndexParams;
 use crate::data_types::vectors::only_default_vector;
 use crate::entry::{NonAppendableSegmentEntry, SegmentEntry};
+use crate::fixtures::payload_context_fixture::{
+    create_id_tracker_fixture, create_payload_storage_fixture,
+};
+use crate::fixtures::payload_fixtures::INT_KEY;
+use crate::index::PayloadIndex;
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadConfig, PayloadIndexType,
 };
+use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
+use crate::payload_json;
+use crate::payload_storage::PayloadStorageEnum;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-use crate::types::{Distance, Payload, PayloadFieldSchema, PayloadSchemaType};
+use crate::types::{
+    Condition, Distance, FieldCondition, Filter, Match, MatchValue, Payload, PayloadFieldSchema,
+    PayloadSchemaParams, PayloadSchemaType, Range, RangeInterface, ValueVariants,
+};
+
+#[test]
+fn integer_index_match_and_range_use_or_logic() {
+    // See: <https://github.com/qdrant/qdrant/issues/9066>
+    let dir = Builder::new().prefix("match_range_or").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut payload_storage = create_payload_storage_fixture(1, 42);
+    payload_storage
+        .overwrite(0, &payload_json! { "int": 5 }, &hw_counter)
+        .unwrap();
+
+    let payload_storage = std::sync::Arc::new(atomic_refcell::AtomicRefCell::new(
+        PayloadStorageEnum::from(payload_storage),
+    ));
+    let id_tracker = std::sync::Arc::new(atomic_refcell::AtomicRefCell::new(
+        create_id_tracker_fixture(1),
+    ));
+
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        std::collections::HashMap::new(),
+        dir.path(),
+        true,
+        true,
+    )
+    .unwrap();
+
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+    let schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(
+        IntegerIndexParams {
+            lookup: Some(true),
+            range: Some(true),
+            ..Default::default()
+        },
+    ));
+
+    index.build_index(&field, &schema, &hw_counter).unwrap();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition {
+        key: field,
+        r#match: Some(Match::Value(MatchValue {
+            value: ValueVariants::Integer(999),
+        })),
+        range: Some(RangeInterface::Float(Range {
+            lt: None,
+            gt: None,
+            gte: Some(OrderedFloat(0.0)),
+            lte: Some(OrderedFloat(10.0)),
+        })),
+        geo_bounding_box: None,
+        geo_radius: None,
+        geo_polygon: None,
+        values_count: None,
+        is_empty: None,
+        is_null: None,
+    }));
+
+    let results = index
+        .with_view(|view| {
+            view.query_points(&filter, &hw_counter, &AtomicBool::new(false))
+        })
+        .unwrap();
+
+    assert!(
+        results.contains(&0),
+        "point with int=5 must match via range even though match=999 fails"
+    );
+}
 
 #[test]
 fn test_load_payload_index() {

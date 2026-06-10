@@ -36,6 +36,10 @@ message VectorParams {
   optional Datatype datatype = 6;
   // Configuration for multi-vector search
   optional MultiVectorConfig multivector_config = 7;
+  // Reject non-finite vector components when enabled. Defaults to enabled when unset.
+  optional bool data_integrity_check = 8;
+  // Reject vectors whose L2 norm exceeds this bound.
+  optional float magnitude_bound = 9;
 }
 
 message VectorParamsDiff {
@@ -82,6 +86,10 @@ message SparseVectorParams {
   optional SparseIndexConfig index = 1;
   // If set - apply modifier to the vector values
   optional Modifier modifier = 2;
+  // Reject non-finite vector components when enabled. Defaults to enabled when unset.
+  optional bool data_integrity_check = 3;
+  // Reject vectors whose L2 norm exceeds this bound.
+  optional float magnitude_bound = 4;
 }
 
 message SparseVectorConfig {

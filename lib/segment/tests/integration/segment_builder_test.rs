@@ -323,6 +323,8 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
                 quantization_config: None,
                 multivector_config: None,
                 datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
             },
         )]),
         sparse_vector_data: Default::default(),
@@ -564,6 +566,8 @@ fn test_segment_builder_rejects_target_with_extra_vector_name() {
             quantization_config: None,
             multivector_config: None,
             datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
         },
     );
 
@@ -611,6 +615,8 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
             quantization_config: None,
             multivector_config: None,
             datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
         },
     );
     drop(template);

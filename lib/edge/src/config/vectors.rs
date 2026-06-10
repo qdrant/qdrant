@@ -34,6 +34,10 @@ pub struct EdgeVectorParams {
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hnsw_config: Option<HnswConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_integrity_check: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub magnitude_bound: Option<f32>,
 }
 
 impl EdgeVectorParams {
@@ -56,6 +60,8 @@ impl EdgeVectorParams {
             datatype,
             quantization_config,
             hnsw_config: _, // edge does not use per-vector HNSW config
+            data_integrity_check,
+            magnitude_bound,
         } = self;
 
         let resolved_quantization_config = quantization_config.as_ref().or(global_quantization);
@@ -69,6 +75,8 @@ impl EdgeVectorParams {
             quantization_config,
             multivector_config: *multivector_config,
             datatype: *datatype,
+            data_integrity_check: *data_integrity_check,
+            magnitude_bound: *magnitude_bound,
         }
     }
 
@@ -85,6 +93,8 @@ impl EdgeVectorParams {
             datatype: _,
             quantization_config,
             hnsw_config,
+            data_integrity_check: _,
+            magnitude_bound: _,
         } = self;
         DenseVectorOptimizerConfig {
             on_disk: *on_disk,
@@ -104,6 +114,8 @@ impl EdgeVectorParams {
             quantization_config, // edge uses global only
             multivector_config,
             datatype,
+            data_integrity_check,
+            magnitude_bound,
         } = v;
         Self {
             size: *size,
@@ -116,6 +128,8 @@ impl EdgeVectorParams {
                 Indexes::Plain {} => None,
                 Indexes::Hnsw(hnsw_config) => Some(*hnsw_config),
             },
+            data_integrity_check: *data_integrity_check,
+            magnitude_bound: *magnitude_bound,
         }
     }
 }
@@ -135,6 +149,10 @@ pub struct EdgeSparseVectorParams {
     pub modifier: Option<Modifier>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_integrity_check: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub magnitude_bound: Option<f32>,
 }
 
 impl EdgeSparseVectorParams {
@@ -149,6 +167,8 @@ impl EdgeSparseVectorParams {
             on_disk: _,
             modifier,
             datatype,
+            data_integrity_check,
+            magnitude_bound,
         } = self;
         SparseVectorDataConfig {
             index: SparseIndexConfig {
@@ -158,6 +178,8 @@ impl EdgeSparseVectorParams {
             },
             storage_type: SparseVectorStorageType::Mmap,
             modifier: *modifier,
+            data_integrity_check: *data_integrity_check,
+            magnitude_bound: *magnitude_bound,
         }
     }
 
@@ -169,6 +191,8 @@ impl EdgeSparseVectorParams {
             on_disk,
             modifier: _,
             datatype: _,
+            data_integrity_check: _,
+            magnitude_bound: _,
         } = self;
         shard::optimizers::config::SparseVectorOptimizerConfig { on_disk: *on_disk }
     }
@@ -178,6 +202,8 @@ impl EdgeSparseVectorParams {
             index,
             storage_type: _, // edge uses on_disk from index_type
             modifier,
+            data_integrity_check,
+            magnitude_bound,
         } = s;
         let SparseIndexConfig {
             full_scan_threshold,
@@ -189,6 +215,8 @@ impl EdgeSparseVectorParams {
             on_disk: Some(index_type.is_on_disk()),
             modifier: *modifier,
             datatype: *datatype,
+            data_integrity_check: *data_integrity_check,
+            magnitude_bound: *magnitude_bound,
         }
     }
 }

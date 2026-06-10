@@ -202,10 +202,14 @@ where
                     .stop_if(is_stopped);
 
                 return Ok(if all_conditions_are_primary {
-                    // All conditions are primary clauses,
-                    // We can avoid post-filtering
-                    let iter = joined_primary_iterator
-                        .filter(move |&id| !visited_list.check_and_update_visited(id));
+                    // All conditions are primary clauses. Still post-filter so points
+                    // missing indexed payload fields cannot slip through index-only paths.
+                    let struct_filtered_context =
+                        self.struct_filtered_context(filter, hw_counter)?;
+                    let iter = joined_primary_iterator.filter(move |&id| {
+                        !visited_list.check_and_update_visited(id)
+                            && struct_filtered_context.check(id)
+                    });
                     EitherVariant::B(iter)
                 } else {
                     // Some conditions are primary clauses, some are not

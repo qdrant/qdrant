@@ -11,6 +11,19 @@ use serde_json::Value;
 
 use super::types::{AggregatorError, Group};
 
+/// Avoid excessive memory allocation and allocation failures on huge limits.
+/// See <https://github.com/qdrant/qdrant/issues/8406>.
+const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
+
+fn safe_allocation_capacity(size: usize) -> usize {
+    size.min(LARGEST_REASONABLE_ALLOCATION_SIZE)
+}
+
+fn safe_product_capacity(a: usize, b: usize) -> usize {
+    a.saturating_mul(b)
+        .min(LARGEST_REASONABLE_ALLOCATION_SIZE)
+}
+
 type Hits = AHashMap<PointIdType, ScoredPoint>;
 pub(super) struct GroupsAggregator {
     groups: AHashMap<GroupId, Hits>,
@@ -31,13 +44,13 @@ impl GroupsAggregator {
         order: Option<Order>,
     ) -> Self {
         Self {
-            groups: AHashMap::with_capacity(groups),
+            groups: AHashMap::with_capacity(safe_allocation_capacity(groups)),
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
-            full_groups: AHashSet::with_capacity(groups),
-            group_best_scores: AHashMap::with_capacity(groups),
-            all_ids: AHashSet::with_capacity(groups * group_size),
+            full_groups: AHashSet::with_capacity(safe_allocation_capacity(groups)),
+            group_best_scores: AHashMap::with_capacity(safe_allocation_capacity(groups)),
+            all_ids: AHashSet::with_capacity(safe_product_capacity(groups, group_size)),
             order,
         }
     }
@@ -73,7 +86,9 @@ impl GroupsAggregator {
             let group = self
                 .groups
                 .entry(group_key.clone())
-                .or_insert_with(|| AHashMap::with_capacity(self.max_group_size));
+                .or_insert_with(|| {
+                    AHashMap::with_capacity(safe_allocation_capacity(self.max_group_size))
+                });
 
             let entry = group.entry(point.id);
 
@@ -386,6 +401,13 @@ mod unit_tests {
             let group_id_score: Vec<_> = group.hits.into_iter().map(|x| (x.id, x.score)).collect();
             assert_eq!(expected_id_score, group_id_score);
         }
+    }
+
+    #[test]
+    fn test_new_with_huge_limits_does_not_panic() {
+        // See: <https://github.com/qdrant/qdrant/issues/8406>
+        let _aggregator =
+            GroupsAggregator::new(usize::MAX, usize::MAX, "docId".parse().unwrap(), None);
     }
 
     #[test]

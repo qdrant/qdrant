@@ -68,6 +68,8 @@ impl From<SegmentConfigV5> for SegmentConfig {
                     },
                     multivector_config: None,
                     datatype: None,
+            data_integrity_check: None,
+            magnitude_bound: None,
                 };
 
                 (vector_name, new_data)

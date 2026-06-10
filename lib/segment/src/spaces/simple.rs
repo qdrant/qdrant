@@ -73,7 +73,13 @@ impl Metric<VectorElementType> for EuclidMetric {
 
 impl MetricPostProcessing for EuclidMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
-        score.abs().sqrt()
+        // Raw euclidean similarity is a negative sum of squares; some code paths may
+        // call postprocess more than once, so treat already-positive values as distances.
+        if score <= 0.0 {
+            score.abs().sqrt()
+        } else {
+            score
+        }
     }
 }
 
@@ -207,7 +213,7 @@ impl Metric<VectorElementType> for CosineMetric {
 
 impl MetricPostProcessing for CosineMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
-        score
+        score.clamp(-1.0, 1.0)
     }
 }
 
@@ -274,5 +280,18 @@ mod tests {
                 "renormalization is not stable (vector #{attempt})"
             );
         }
+    }
+
+    #[test]
+    fn cosine_postprocess_clamps_to_unit_interval() {
+        assert_eq!(CosineMetric::postprocess(1.000_000_1), 1.0);
+        assert_eq!(CosineMetric::postprocess(-1.000_000_1), -1.0);
+        assert_eq!(CosineMetric::postprocess(0.5), 0.5);
+    }
+
+    #[test]
+    fn euclid_postprocess_returns_non_negative_distance() {
+        assert!((EuclidMetric::postprocess(-4.0) - 2.0).abs() < f32::EPSILON);
+        assert!((EuclidMetric::postprocess(2.0) - 2.0).abs() < f32::EPSILON);
     }
 }

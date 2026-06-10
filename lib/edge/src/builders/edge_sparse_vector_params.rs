@@ -18,6 +18,8 @@ pub struct EdgeSparseVectorParamsBuilder {
     on_disk: Option<bool>,
     modifier: Option<Modifier>,
     datatype: Option<VectorStorageDatatype>,
+    data_integrity_check: Option<bool>,
+    magnitude_bound: Option<f32>,
 }
 
 impl EdgeSparseVectorParamsBuilder {
@@ -46,6 +48,16 @@ impl EdgeSparseVectorParamsBuilder {
         self
     }
 
+    pub fn data_integrity_check(mut self, data_integrity_check: bool) -> Self {
+        self.data_integrity_check = Some(data_integrity_check);
+        self
+    }
+
+    pub fn magnitude_bound(mut self, magnitude_bound: f32) -> Self {
+        self.magnitude_bound = Some(magnitude_bound);
+        self
+    }
+
     pub fn build(self) -> EdgeSparseVectorParams {
         // Exhaustively destructure Self and construct EdgeSparseVectorParams:
         // adding a field to either type forces a compile error here.
@@ -54,12 +66,16 @@ impl EdgeSparseVectorParamsBuilder {
             on_disk,
             modifier,
             datatype,
+            data_integrity_check,
+            magnitude_bound,
         } = self;
         EdgeSparseVectorParams {
             full_scan_threshold,
             on_disk,
             modifier,
             datatype,
+            data_integrity_check,
+            magnitude_bound,
         }
     }
 }
