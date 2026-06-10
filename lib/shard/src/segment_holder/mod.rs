@@ -687,8 +687,23 @@ impl SegmentHolder {
                             .lock()
                             .add_dependency(idx, appendable_idx, op_num);
 
-                        let mut all_vectors = write_segment.all_vectors(point_id, hw_counter)?;
-                        let mut payload = write_segment.payload(point_id, hw_counter)?;
+                        // Read the latest head of the point, including a
+                        // deferred head that is invisible to ordinary
+                        // (`VisibleOnly`) reads. A deferred source point would
+                        // otherwise yield empty vectors and make `payload`
+                        // fail with `PointIdError`, surfacing as a spurious
+                        // "No point with id ... found" on a plain upsert that
+                        // races a `prevent_unoptimized` optimization.
+                        let mut all_vectors = write_segment.all_vectors_with_behavior(
+                            point_id,
+                            DeferredBehavior::WithDeferred,
+                            hw_counter,
+                        )?;
+                        let mut payload = write_segment.payload_with_behavior(
+                            point_id,
+                            DeferredBehavior::WithDeferred,
+                            hw_counter,
+                        )?;
 
                         point_cow_operation(point_id, &mut all_vectors, &mut payload);
 

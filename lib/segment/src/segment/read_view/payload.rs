@@ -47,7 +47,20 @@ where
     ) -> OperationResult<Payload> {
         // Single-point retrieval observes the visible snapshot; deferred
         // mutations stay hidden until the optimizer rolls a fresh segment.
-        let internal_id = self.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly)?;
+        self.payload_with_behavior(point_id, DeferredBehavior::VisibleOnly, hw_counter)
+    }
+
+    /// Retrieve payload by external point ID with explicit deferred semantics.
+    /// With [`DeferredBehavior::WithDeferred`] this also resolves points whose
+    /// only head is a deferred mutation (invisible to reads) — used by the
+    /// copy-on-write move path which must relocate deferred points.
+    pub fn payload_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        let internal_id = self.lookup_internal_id(point_id, deferred_behavior)?;
         self.payload_by_offset(internal_id, hw_counter)
     }
 
