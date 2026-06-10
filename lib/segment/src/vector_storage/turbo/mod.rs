@@ -8,6 +8,7 @@
 //! It intentionally implements only [`VectorStorageRead`] + [`VectorStorage`],
 //! **not** `DenseVectorStorage<T>`.
 
+pub mod multi;
 mod turbo_encoded_vectors;
 
 use std::borrow::Cow;
