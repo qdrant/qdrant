@@ -1,3 +1,4 @@
+use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
@@ -55,31 +56,31 @@ impl ConditionChecker for OptimizedFilter<'_> {
         } = self;
 
         // `should`: at least one matches.
-        if let Some(conditions) = should {
-            let mut matched = false;
-            for condition in conditions {
-                if condition.check(point_id)? {
-                    matched = true;
-                    break;
-                }
-            }
-            if !matched {
-                return Ok(false);
-            }
+        if let Some(conditions) = should
+            && !conditions
+                .iter()
+                .try_any(|condition| condition.check(point_id))?
+        {
+            return Ok(false);
         }
 
         // `min_should`: at least `min_count` match.
         if let Some(min_should) = min_should {
+            let OptimizedMinShould {
+                conditions,
+                min_count,
+            } = min_should;
             let mut matched = 0;
-            for condition in &min_should.conditions {
+
+            for condition in conditions {
                 if condition.check(point_id)? {
                     matched += 1;
-                    if matched == min_should.min_count {
+                    if matched == *min_count {
                         break;
                     }
                 }
             }
-            if matched < min_should.min_count {
+            if matched < *min_count {
                 return Ok(false);
             }
         }
