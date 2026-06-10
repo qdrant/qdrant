@@ -3,7 +3,8 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::vector_storage::DenseTQVectorStorage;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::turbo::TurboVectorStorage;
 use crate::vector_storage::vector_storage_base::VectorStorageRead;
@@ -21,12 +22,20 @@ pub struct TurboQueryScorer<'a> {
 
 impl<'a> TurboQueryScorer<'a> {
     pub fn new(
-        query: EncodedQueryTQ,
+        query: DenseVector,
         storage: &'a TurboVectorStorage,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self {
-        // Disk reads only cost vector IO when the encoded blob is not resident.
-        hardware_counter.set_vector_io_read_multiplier(usize::from(storage.is_on_disk()));
+        // Preprocess (per distance) and precompute the query once, so the
+        // Hadamard rotation runs here rather than per scored point.
+        let query = storage.preprocess_query(query);
+
+        hardware_counter.set_cpu_multiplier(storage.quantized_vector_size());
+        if storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(storage.quantized_vector_size());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
 
         Self {
             query,
@@ -53,6 +62,7 @@ impl QueryScorer for TurboQueryScorer<'_> {
             .score_internal_encoded(point_a, point_b, &self.hardware_counter)
     }
 
+    // TODO(TQDT): add inline scoring support
     type SupportsBytes = False;
     fn score_bytes(&self, enabled: Self::SupportsBytes, _bytes: &[u8]) -> ScoreType {
         match enabled {}

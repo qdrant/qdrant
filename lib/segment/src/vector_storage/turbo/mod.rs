@@ -1060,9 +1060,11 @@ mod tests {
                     insert_all(&mut storage, &inputs, &hw_counter);
 
                     for (q, query_vec) in inputs.iter().enumerate() {
-                        let encoded = storage.preprocess_query(query_vec.clone());
-                        let scorer =
-                            TurboQueryScorer::new(encoded, &storage, HardwareCounterCell::new());
+                        let scorer = TurboQueryScorer::new(
+                            query_vec.clone(),
+                            &storage,
+                            HardwareCounterCell::new(),
+                        );
 
                         // Asymmetric path: the query must score best against its
                         // own stored (lossy) encoding.

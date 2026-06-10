@@ -4,6 +4,7 @@ use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
 use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::vector_storage::DenseTQVectorStorage;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::turbo::TurboVectorStorage;
@@ -42,8 +43,12 @@ where
             .transform(|raw_vector| Ok(storage.preprocess_query(raw_vector)))
             .unwrap();
 
-        // Disk reads only cost vector IO when the encoded blob is not resident.
-        hardware_counter.set_vector_io_read_multiplier(usize::from(storage.is_on_disk()));
+        hardware_counter.set_cpu_multiplier(storage.quantized_vector_size());
+        if storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(storage.quantized_vector_size());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
 
         Self {
             query,
@@ -65,9 +70,12 @@ where
         self.hardware_counter
             .vector_io_read()
             .incr_delta(bytes.len());
-        self.hardware_counter.cpu_counter().incr_delta(bytes.len());
-        self.query
-            .score_by(|query| self.storage.score_query_bytes(query, &bytes))
+
+        let cpu_counter = self.hardware_counter.cpu_counter();
+        self.query.score_by(|query| {
+            cpu_counter.incr();
+            self.storage.score_query_bytes(query, &bytes)
+        })
     }
 
     fn score(&self, _v2: &[VectorElementType]) -> ScoreType {
@@ -78,6 +86,7 @@ where
         unimplemented!("Custom scorer compares against multiple vectors, not just one");
     }
 
+    // TODO(TQDT): add inline scoring support
     type SupportsBytes = False;
     fn score_bytes(&self, enabled: Self::SupportsBytes, _bytes: &[u8]) -> ScoreType {
         match enabled {}

@@ -334,14 +334,11 @@ pub fn raw_turbo_scorer_impl<'a>(
     hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
-        QueryVector::Nearest(vector) => {
-            let encoded_query = vector_storage.preprocess_query(vector.try_into()?);
-            raw_scorer_from_query_scorer(TurboQueryScorer::new(
-                encoded_query,
-                vector_storage,
-                hardware_counter,
-            ))
-        }
+        QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(TurboQueryScorer::new(
+            vector.try_into()?,
+            vector_storage,
+            hardware_counter,
+        )),
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
             let query_scorer = TurboCustomQueryScorer::new(
