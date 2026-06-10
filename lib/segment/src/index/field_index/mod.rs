@@ -143,6 +143,17 @@ impl CardinalityEstimation {
                 },
             })
     }
+
+    /// Expected number of filter evaluations if we were to scan every point.
+    ///
+    /// When there is no primary clause, we can't walk an index to avoid evaluating
+    /// every point, so we must scan every point.
+    pub fn full_scan_evals(&self, available_points: usize) -> usize {
+        self.primary_clauses
+            .is_empty()
+            .then(|| available_points)
+            .unwrap_or(self.exp)
+    }
 }
 
 pub trait EstimationMerge: Iterator<Item = CardinalityEstimation> {

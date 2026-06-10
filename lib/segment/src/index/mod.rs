@@ -1,3 +1,4 @@
+mod bitmap_filter_context;
 pub mod field_index;
 pub mod hnsw_index;
 mod key_encoding;
@@ -17,5 +18,6 @@ pub mod vector_index_base;
 mod vector_index_search_common;
 mod visited_pool;
 
+pub use bitmap_filter_context::BitmapFilterContext;
 pub use payload_index_base::*;
 pub use vector_index_base::*;
