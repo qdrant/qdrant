@@ -3,6 +3,10 @@ name: Build and push a branch gpu image to ghcr
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   branch-gpu-build-and-push:
     runs-on: [self-hosted, linux, x64]
