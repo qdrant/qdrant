@@ -6,7 +6,9 @@ use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
-use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracker;
+use crate::id_tracker::mutable_id_tracker::read_only::{
+    LiveReloadResult, ReadOnlyAppendableIdTracker,
+};
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -34,6 +36,14 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
                 fs,
                 segment_path,
             )?))
+        }
+    }
+
+    /// Reload externally-applied changes, dispatching to the active variant.
+    pub fn live_reload(&mut self) -> OperationResult<LiveReloadResult> {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.live_reload(),
+            Self::Immutable(id_tracker) => id_tracker.live_reload(),
         }
     }
 }
