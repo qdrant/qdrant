@@ -332,3 +332,40 @@ pub async fn run(
     );
     verify::assert_matches_model(&reloaded, &model, "reloaded");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// End-to-end smoke run: 10k seeded ops against a single-shard collection, including
+    /// the per-op verification ops, the end-of-run live check, and the final close+reopen
+    /// reload check. Catches harness rot (op/model drift, fixture breakage) on every
+    /// `cargo test` run.
+    ///
+    /// Single shard, optimizer disabled, no mid-run restarts: keeps the run fast and
+    /// deterministic (no background segment churn) and steers clear of the known-unfixed
+    /// multi-shard reload bug class, so this stays green as a regression gate for the
+    /// harness itself rather than a bug-finder (that's the binary's job).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness_no_optimizer() {
+        let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
+        run(
+            42,     // seed
+            10_000, // op_num
+            1,      // shard_count
+            500,    // id_pool
+            storage_dir.path(),
+            true,  // disable_optimizer
+            10,    // max_segment_size_kb
+            5,     // indexing_threshold_kb
+            5,     // flush_interval_sec
+            0.0,   // restart_probability
+            2500,  // swarm_interval: a few redraws within the run
+            false, // on_disk
+            false, // pre_restart_check
+            false, // enable_force_off
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await;
+    }
+}
