@@ -25,6 +25,9 @@ pub enum StorageError {
     },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
+    // operation requires distributed mode, but node runs standalone
+    #[error("{description}")]
+    StandaloneMode { description: String },
     #[error("Storage locked: {description}")]
     Locked { description: String },
     #[error("Timeout: {description}")]
@@ -65,6 +68,12 @@ impl StorageError {
     pub fn bad_request(description: impl Into<String>) -> Self {
         Self::BadRequest {
             description: description.into(),
+        }
+    }
+
+    pub fn standalone_mode() -> Self {
+        Self::StandaloneMode {
+            description: "Qdrant is running in standalone mode".into(),
         }
     }
 

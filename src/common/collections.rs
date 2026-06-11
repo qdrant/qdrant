@@ -259,9 +259,7 @@ pub async fn do_update_collection_cluster(
     )?;
 
     if dispatcher.consensus_state().is_none() {
-        return Err(StorageError::bad_request(
-            "Distributed mode disabled".to_string(),
-        ));
+        return Err(StorageError::standalone_mode());
     }
     let consensus_state = dispatcher.consensus_state().unwrap();
 
