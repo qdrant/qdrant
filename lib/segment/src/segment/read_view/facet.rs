@@ -1,52 +1,3 @@
-//! Approximate facet read path.
-//!
-//! [`SegmentReadView::approximate_facet`] is the entry point; it walks a small
-//! decision tree (see the diagram in PR #9208) before producing a
-//! `value -> count` map. Two cardinalities drive the choice:
-//!
-//! - **Facet cardinality** — how many distinct values the field has. When it is
-//!   large relative to the requested `limit` we *sample* a candidate set of
-//!   values first ([`Self::sampled_approximate_facet`]); otherwise we visit
-//!   every value ([`Self::full_approximate_facet`]).
-//! - **Filter cardinality** — how many points the request filter matches. This
-//!   picks between the two terminal operations below.
-//!
-//! ## Terminal operations
-//!
-//! Both produce *exact* counts; sampling only affects *which* values appear.
-//!
-//! - [`Self::visit_filter_iter`] iterates the filtered points and hashes each
-//!   point's facet value(s) into the count map. Fewer filter checks (the
-//!   filter's own posting drives the scan) but one value hash per matched
-//!   point. Preferred when the filter is selective.
-//! - [`Self::visit_facet_iter`] iterates the value postings and checks the
-//!   filter for each point. More filter checks (one per posting element) but no
-//!   value hashing. Preferred when the filter is broad.
-//!
-//! The filter is applied either *lazily* (a full condition evaluation per
-//! checked point) or through a [`BitmapFilterContext`] materialized once and
-//! probed per point — see [`FilterProbe`].
-//!
-//! ## Sampling
-//!
-//! When sampling, the candidate values restrict both operations:
-//!
-//! 1. **Iterative novelty sampling** ([`Self::collect_candidate_values`]).
-//!    Stream point IDs in random order (filtered, if a filter is given), look
-//!    up each point's values, and collect distinct values until the sample
-//!    target ([`sample_target_for`]) is reached, the stream is exhausted, or too
-//!    many consecutive draws fail to contribute a new value.
-//! 2. **Exact-count post-pass.** Count each candidate exactly: either one
-//!    [`Self::visit_facet_iter`] per candidate posting, or a single
-//!    [`Self::visit_filter_iter`] over a `match-any(candidates)` filter (so the
-//!    filtered points are visited once instead of once per candidate).
-//!
-//! The Monte-Carlo simulation in `facet-sampling-mc` (see thread context for
-//! PR #9208) suggests a sample target of `max(request.limit * 10, 1000)` gives
-//! ≥90% recall on top-K for Zipf-distributed fields with cardinality up to
-//! `10^5`, and trivially-correct results on UUID-style fields (where every
-//! value has count 1 and "top-K" is "any K").
-
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -55,38 +6,38 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
+use roaring::RoaringBitmap;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::facets::{FacetParams, FacetValue, FacetValueRef};
 use crate::id_tracker::IdTrackerRead;
+use crate::index::PayloadIndexRead;
 use crate::index::field_index::{CardinalityEstimation, FacetIndex};
-use crate::index::{BitmapFilterContext, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{Condition, FieldCondition, Filter, IntPayloadType, Match, ValueVariants};
 
-/// Filter selectivity below which [`SegmentReadView::walk_filter_index`] beats
-/// [`SegmentReadView::walk_facet_index`].
+/// Filter selectivity below which [`SegmentReadView::visit_filter_iter`] beats
+/// [`SegmentReadView::visit_facet_iter`].
 ///
-/// When the filter is expected to match less than this fraction of the
-/// segment, iterating its (few) matches and hashing their values is cheaper
-/// than checking the filter against every value posting. Picked from rudimentary
-/// benchmarking of two scenarios: a collection with few keys, and a collection
-/// with almost a unique key per point.
+/// If iterating the whole filter iterator would skip at least this ratio of
+/// the segment, then choose this. If we would need to evaluate more, then go over
+/// the facet index directly.
 //
-// TODO(facets): define a better estimate for this decision. The question is:
-// what is more expensive, to hash the same value excessively, or to check the
-// filter too many times?
+// TODO(facets): benchmark the two regimes separately; they likely want
+// different thresholds now that the full-scan probe is precomputed.
 const ITER_FILTER_INDEX_SELECTIVITY: f64 = 0.3;
 
 /// Multiplier from the user-facing `limit` to the per-segment sampling budget.
 ///
 /// Together with [`MIN_SAMPLE_TARGET`] this determines how many distinct
 /// candidate values the sampling phase tries to collect before falling back
-/// to the exact-count post-pass. Calibrated from a Monte-Carlo sweep — see
-/// the module docs.
+/// to the exact-count post-pass. Calibrated from a Monte-Carlo sweep --
+///  a sample target of `max(request.limit * 10, 1000)` gives
+/// ≥90% recall on top-K for Zipf-distributed fields with cardinality up to
+/// `10^5`
 const OVERSAMPLE_FACTOR: usize = 10;
 
 /// Lower bound on the per-segment sampling budget.
@@ -99,12 +50,7 @@ const MIN_SAMPLE_TARGET: usize = 1000;
 /// any new candidate value before we give up. Bounds the rejection cost when
 /// the long tail of unique values is too thin to make progress (e.g. heavily
 /// skewed distributions where the top ~K values dominate the total mass).
-const MAX_EMPTY_POINTS: usize = 4096;
-
-/// Compute the per-segment sampling target from a user-facing `limit`.
-fn sample_target_for(limit: usize) -> usize {
-    (limit.saturating_mul(OVERSAMPLE_FACTOR)).max(MIN_SAMPLE_TARGET)
-}
+const MAX_NO_NEW_POINTS: usize = 4096;
 
 /// Build a `field MATCH ANY [candidates]` filter.
 ///
@@ -140,26 +86,30 @@ fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> F
 
 /// How the user filter is applied to individual points.
 ///
-/// The variant is chosen by comparing the expected number of `check` calls
-/// against the cost of materializing the filter
-/// ([`CardinalityEstimation::full_scan_evals`]): a lazy check costs a full
-/// condition evaluation, a probe against a materialized bitmap is nearly free,
-/// but the bitmap costs one evaluation pass up front.
+/// A lazy check costs a full condition evaluation per call; a materialized
+/// bitmap makes each check nearly free, but costs one filter evaluation pass
+/// up front.
+///
+/// The full-scan path checks every posting element at least once, so it
+/// materializes ([`FilterProbe::Precomputed`]). The sampling path touches only
+/// the candidate postings and rarely checks the same point twice (the random
+/// draw is without replacement; a point recurs only when it holds several
+/// candidate values), so materialization doesn't pay off there
+/// ([`FilterProbe::Lazy`]).
 pub enum FilterProbe<'a> {
-    // todo: don't precompute, use bloom filter instead
     /// Evaluate the filter lazily on each check.
     Lazy {
         context: Box<dyn ConditionChecker<Error = OperationError> + 'a>,
     },
-    /// The filter was materialized into a bitmap.
-    Precomputed(BitmapFilterContext),
+    /// The filter was materialized into a bitmap of matching points.
+    Precomputed(RoaringBitmap),
 }
 
 impl<'a> FilterProbe<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         match self {
             FilterProbe::Lazy { context, .. } => context.check_infallible(point_id),
-            FilterProbe::Precomputed(bitmap) => bitmap.check(point_id),
+            FilterProbe::Precomputed(bitmap) => bitmap.contains(point_id),
         }
     }
 }
@@ -198,11 +148,7 @@ where
         }
     }
 
-    /// Full-scan approximate-facet strategy: aggregate counts over every
-    /// distinct value in the index.
-    ///
-    /// Prefer [`Self::approximate_facet`] for the strategy-aware entry point;
-    /// call this directly only when scanning is explicitly required.
+    /// Aggregate counts over every distinct value in the index.
     fn full_approximate_facet(
         &self,
         facet_index: &impl FacetIndex,
@@ -230,10 +176,21 @@ where
             // Iterate the filter, then hash each value to get counts
             self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped, hw_counter)
         } else {
-            // Check each values' points against the filter, count total per value
-            let probe = FilterProbe::Lazy {
-                context: self.payload_index.filter_context(filter, hw_counter)?,
-            };
+            // Every posting element gets checked, so materializing the filter
+            // once is cheaper than that many per-point evaluations.
+            let bitmap = self
+                .payload_index
+                .iter_filtered_points(
+                    filter,
+                    &cardinality,
+                    hw_counter,
+                    is_stopped,
+                    DeferredBehavior::VisibleOnly,
+                )?
+                .collect();
+            let probe = FilterProbe::Precomputed(bitmap);
+
+            // Check each values' points against the filter, count total per value.
             self.visit_facet_iter(facet_index, &probe, None, is_stopped, hw_counter)
         }
     }
@@ -248,7 +205,8 @@ where
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        let sample_target = sample_target_for(request.limit);
+        let sample_target =
+            (request.limit.saturating_mul(OVERSAMPLE_FACTOR)).max(MIN_SAMPLE_TARGET);
 
         let Some(filter) = &request.filter else {
             // No filter: extract each values' count from the index, but sample candidates first
@@ -466,7 +424,7 @@ where
             hw_counter,
             |_point_id, vals_iter: &mut dyn Iterator<Item = FacetValueRef<'_>>| {
                 for v in vals_iter {
-                    if empty_streak >= MAX_EMPTY_POINTS || seen.len() >= sample_target {
+                    if empty_streak >= MAX_NO_NEW_POINTS || seen.len() >= sample_target {
                         is_finished.store(true, Ordering::Relaxed);
                         break;
                     }
