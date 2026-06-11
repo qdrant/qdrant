@@ -5,6 +5,9 @@ on:
     - cron: '30 6 * * *'  # At 06:30
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   UV_VERSION: 0.9.17

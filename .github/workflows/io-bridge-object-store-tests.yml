@@ -13,6 +13,9 @@ on:
       - "lib/common/common/src/universal_io/**"
       - ".github/workflows/io-bridge-object-store-tests.yml"
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
