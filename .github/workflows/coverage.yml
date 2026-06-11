@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "0 0 * * *" # Every day at midnight UTC
 
+permissions:
+  contents: read
+
 env:
   UV_VERSION: 0.9.17
 

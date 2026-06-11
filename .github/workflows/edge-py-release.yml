@@ -9,6 +9,8 @@ on:
         default: false
         required: true
 
+permissions:
+  contents: read
 
 jobs:
   edge-py-linux:
