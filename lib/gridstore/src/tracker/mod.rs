@@ -11,7 +11,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
     OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
-    UniversalWrite,
+    UniversalWrite, UserData,
 };
 use smallvec::SmallVec;
 
@@ -388,6 +388,18 @@ impl<S: UniversalRead> Tracker<S> {
             // No pending update, use real data
             None => self.get_raw(point_offset),
         }
+    }
+
+    /// Iterate page pointers for the given point offsets.
+    ///
+    /// Issues batched reads against the underlying storage, so async backends
+    /// can fetch entries in parallel.
+    pub fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffset)>,
+    {
+        Iter::new(point_offsets, &self.storage, &self.pending_updates)
     }
 
     /// Get the page pointers for a batch of point offsets.
