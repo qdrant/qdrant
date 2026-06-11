@@ -346,6 +346,26 @@ impl Settings {
 
     pub fn validate_and_warn(&self) {
         //
+        // API keys
+        //
+        // An empty key is treated as unset (see `AuthKeys::try_create`), so a key
+        // that unexpectedly resolves to an empty string (e.g. an unset environment
+        // variable or a secret that resolved to nothing) silently disables that
+        // credential rather than enforcing it. Warn so the misconfiguration is visible.
+        for (name, key) in [
+            ("api_key", &self.service.api_key),
+            ("alt_api_key", &self.service.alt_api_key),
+            ("read_only_api_key", &self.service.read_only_api_key),
+        ] {
+            if key.as_deref().is_some_and(str::is_empty) {
+                log::warn!(
+                    "Service {name} is set but empty, it is treated as unset and \
+                     authentication may be disabled",
+                );
+            }
+        }
+
+        //
         // JWT RBAC
         //
         // Using HMAC-SHA256, recommended secret size is 32 bytes
