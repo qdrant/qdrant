@@ -236,8 +236,20 @@ impl TurboMultiVectorStorage {
             .unwrap_or_default();
 
         if count > offset.capacity {
+            let mut new_key = self.storage.vectors_count() as PointOffsetType;
+            // Skip the chunk tail if the range fits a whole chunk but not the tail,
+            // so a point's records never straddle a boundary and reads can borrow.
+            let left = self.storage.remaining_chunk_capacity(new_key);
+            if count as usize > left
+                && count as usize
+                    <= self
+                        .storage
+                        .remaining_chunk_capacity(new_key + left as PointOffsetType)
+            {
+                new_key += left as PointOffsetType;
+            }
             offset = MultivectorMmapOffset {
-                offset: self.storage.vectors_count() as PointOffsetType,
+                offset: new_key,
                 count,
                 capacity: count,
             };
@@ -284,16 +296,6 @@ impl TurboMultiVectorStorage {
 }
 
 impl VectorStorageRead for TurboMultiVectorStorage {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
-            let total_size = self.storage.vectors_count() * self.quantizer.quantized_size();
-            (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
-        } else {
-            0
-        }
-    }
-
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -328,6 +330,16 @@ impl VectorStorageRead for TurboMultiVectorStorage {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.get_bitslice()
+    }
+
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        if self.total_vector_count() > 0 {
+            let total_size = self.storage.vectors_count() * self.quantizer.quantized_size();
+            (total_size as u128 * self.available_vector_count() as u128
+                / self.total_vector_count() as u128) as usize
+        } else {
+            0
+        }
     }
 }
 
@@ -387,16 +399,12 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
     }
 
     fn get_multi_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        let offset = self.get_offset::<P>(key).expect("vector not found");
-        if offset.count == 1 {
-            return self.storage.get_quantized_vector(offset.offset);
-        }
-        let record_size = self.quantizer.quantized_size();
-        let mut blob = Vec::with_capacity(offset.count as usize * record_size);
-        for inner_id in offset.offset..offset.offset + offset.count {
-            blob.extend_from_slice(&self.storage.get_quantized_vector(inner_id));
-        }
-        Cow::Owned(blob)
+        self.get_offset::<P>(key)
+            .and_then(|offset| {
+                self.storage
+                    .get_multi_opt(offset.offset, offset.count as usize)
+            })
+            .expect("Multivector not found")
     }
 
     fn update_from<'a>(
@@ -408,10 +416,7 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
         let disposed_hw = HardwareCounterCell::disposable();
         let start_index = self.offsets.len() as PointOffsetType;
 
-        // The record writes are delegated to the backend dispatcher (the single-mmap
-        // backend cannot upsert); here we only flatten blobs into fixed-size records,
-        // siphoning off per-point inner counts and deleted flags as they stream by.
-        let mut metas: Vec<(PointOffsetType, bool)> = Vec::new();
+        let mut metas: Vec<(u32, bool)> = Vec::new();
         let mut malformed = None;
         let records = other_vectors
             .map_while(|(blob, deleted)| {
@@ -419,7 +424,7 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
                     malformed = Some(blob.len());
                     return None;
                 }
-                metas.push(((blob.len() / record_size) as PointOffsetType, deleted));
+                metas.push(((blob.len() / record_size) as u32, deleted));
                 Some(blob)
             })
             .flat_map(|blob| -> Box<dyn Iterator<Item = Cow<'a, [u8]>> + 'a> {
@@ -469,6 +474,7 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal};
+    use crate::vector_storage::common::CHUNK_SIZE;
 
     /// Deterministic multivectors of unit inner vectors; point `i` gets `(i % 4) + 1` inner vectors.
     fn make_multi_vectors(dim: usize, count: usize, seed: u64) -> Vec<MultiDenseVectorInternal> {
@@ -921,24 +927,36 @@ mod tests {
         // Inner record count probe; valid while nothing is deleted.
         let inner_records =
             |s: &TurboMultiVectorStorage| s.size_of_available_vectors_in_bytes() / record_size;
+        let oracle = Oracle::new(DIM, distance);
+        // Byte-exact stored blob vs the oracle encoding of `m`.
+        let assert_blob = |s: &TurboMultiVectorStorage, m: &MultiDenseVectorInternal| {
+            assert_eq!(
+                s.get_multi_tq::<Random>(0).as_ref(),
+                oracle.encode_multi(m).concat().as_slice(),
+            );
+        };
 
         // count=3 allocates 3 records.
+        let initial = multi_of(DIM, 3, 1);
         storage
             .insert_vector(
                 0,
-                TypedMultiDenseVectorRef::from(&multi_of(DIM, 3, 1)).into(),
+                TypedMultiDenseVectorRef::from(&initial).into(),
                 &hw_counter,
             )
             .unwrap();
         assert_eq!(storage.total_vector_count(), 1);
         assert_eq!(inner_records(&storage), 3);
         assert_eq!(storage.get_multi_tq::<Random>(0).len(), 3 * record_size);
+        assert_blob(&storage, &initial);
 
-        // Shrink to count=2: in place, no inner-space growth, capacity stays 3.
+        // Shrink to count=2: in place, no inner-space growth, capacity stays 3,
+        // and the in-place overwrite stores the new bytes.
+        let shrunk = multi_of(DIM, 2, 2);
         storage
             .insert_vector(
                 0,
-                TypedMultiDenseVectorRef::from(&multi_of(DIM, 2, 2)).into(),
+                TypedMultiDenseVectorRef::from(&shrunk).into(),
                 &hw_counter,
             )
             .unwrap();
@@ -950,17 +968,20 @@ mod tests {
                 .count(),
             2
         );
+        assert_blob(&storage, &shrunk);
 
         // Regrow to count=3: still within capacity, no inner-space growth.
+        let regrown = multi_of(DIM, 3, 3);
         storage
             .insert_vector(
                 0,
-                TypedMultiDenseVectorRef::from(&multi_of(DIM, 3, 3)).into(),
+                TypedMultiDenseVectorRef::from(&regrown).into(),
                 &hw_counter,
             )
             .unwrap();
         assert_eq!(inner_records(&storage), 3);
         assert_eq!(storage.get_multi_tq::<Random>(0).len(), 3 * record_size);
+        assert_blob(&storage, &regrown);
 
         // Grow to count=5: re-append, old range becomes garbage (3 + 5 records).
         let grown = multi_of(DIM, 5, 4);
@@ -976,10 +997,88 @@ mod tests {
         assert_eq!(storage.get_multi_tq::<Random>(0).len(), 5 * record_size);
 
         // The re-appended content is the new multivector, byte-exact vs the oracle.
+        assert_blob(&storage, &grown);
+    }
+
+    /// `insert_multi` skips the chunk tail when a fresh range would straddle the
+    /// boundary (mirroring the multi-dense storage), so reads stay borrowable.
+    /// `update_from` appends without skipping, so its ranges can still straddle
+    /// and reads fall back to a correct owned copy.
+    #[test]
+    fn insert_skips_chunk_tail_so_reads_borrow() {
+        const DIM: usize = 128;
+        let distance = Distance::Dot;
+        let dir = Builder::new()
+            .prefix("turbo_multi_straddle")
+            .tempdir()
+            .unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        let stopped = AtomicBool::new(false);
+
+        let mut storage = open_appendable_turbo_multi_vector_storage(
+            dir.path(),
+            DIM,
+            distance,
+            MultiVectorConfig::default(),
+            true,
+        )
+        .unwrap();
+        let record_size = storage.quantized_vector_size();
+        // Mirror of the backend's chunk geometry (`ChunkedVectors`, dim = record_size).
+        let records_per_chunk = CHUNK_SIZE / record_size;
         let oracle = Oracle::new(DIM, distance);
+
+        // Fill the first chunk up to one slot before the boundary with a single
+        // bulk point of raw zero records (no quantization cost).
+        let filler = vec![0u8; (records_per_chunk - 1) * record_size];
+        let mut it = std::iter::once((Cow::from(filler.as_slice()), false));
+        storage.update_from(&mut it, &stopped).unwrap();
+        assert_eq!(storage.storage.vectors_count(), records_per_chunk - 1);
+
+        // count=3 does not fit the chunk's single remaining slot: the tail is
+        // skipped and the range starts at the next chunk boundary.
+        let multi = multi_of(DIM, 3, 7);
+        storage
+            .insert_vector(
+                1,
+                TypedMultiDenseVectorRef::from(&multi).into(),
+                &hw_counter,
+            )
+            .unwrap();
+        let offset = storage.get_offset::<Random>(1).unwrap();
+        assert_eq!(offset.offset as usize, records_per_chunk);
+        assert_eq!(offset.count, 3);
+        // One padding slot at the chunk tail, never referenced by any offset.
+        assert_eq!(storage.storage.vectors_count(), records_per_chunk + 3);
+
+        // Within one chunk the getter borrows, and the bytes are exact.
+        let blob = storage.get_multi_tq::<Random>(1);
+        assert!(matches!(blob, Cow::Borrowed(_)));
         assert_eq!(
-            storage.get_multi_tq::<Random>(0).as_ref(),
-            oracle.encode_multi(&grown).concat().as_slice(),
+            blob.as_ref(),
+            oracle.encode_multi(&multi).concat().as_slice(),
+        );
+
+        // `update_from` does not skip: pad to one slot before the second chunk
+        // boundary, then append a 3-record point straddling it.
+        let pad = records_per_chunk - 4;
+        let straddler = multi_of(DIM, 3, 8);
+        let blobs = [
+            vec![0u8; pad * record_size],
+            oracle.encode_multi(&straddler).concat(),
+        ];
+        let mut it = blobs.iter().map(|b| (Cow::from(b.as_slice()), false));
+        storage.update_from(&mut it, &stopped).unwrap();
+        let offset = storage.get_offset::<Random>(3).unwrap();
+        assert_eq!(offset.offset as usize, 2 * records_per_chunk - 1);
+
+        // The straddling range cannot be borrowed; the copy fallback assembles
+        // the right bytes.
+        let blob = storage.get_multi_tq::<Random>(3);
+        assert!(matches!(blob, Cow::Owned(_)));
+        assert_eq!(
+            blob.as_ref(),
+            oracle.encode_multi(&straddler).concat().as_slice(),
         );
     }
 
@@ -1072,7 +1171,7 @@ mod tests {
             assert_eq!(storage.available_vector_count(), COUNT - 1);
             assert_eq!(
                 storage.size_of_available_vectors_in_bytes(),
-                (total_inner * record_size) as usize * (COUNT - 1) / COUNT,
+                (total_inner * record_size) * (COUNT - 1) / COUNT,
             );
         }
     }
@@ -1103,6 +1202,69 @@ mod tests {
         assert!(storage.get_vector_opt::<Random>(0).is_none());
         assert_eq!(storage.multi_vector_config(), &MultiVectorConfig::default());
         assert_eq!(storage.vector_dim(), DIM);
+    }
+
+    /// `read_vectors` invokes the callback once per key, threading the caller's
+    /// user data and offset through, and yields the same vectors as `get_vector`.
+    #[test]
+    fn read_vectors_threads_user_data_and_matches_get_vector() {
+        const DIM: usize = 128;
+        const COUNT: usize = 8;
+
+        for seed in SEEDS {
+            let distance = Distance::Dot;
+            let dir = Builder::new()
+                .prefix("turbo_multi_read_batch")
+                .tempdir()
+                .unwrap();
+            let hw_counter = HardwareCounterCell::new();
+
+            let mut storage = open_appendable_turbo_multi_vector_storage(
+                dir.path(),
+                DIM,
+                distance,
+                MultiVectorConfig::default(),
+                true,
+            )
+            .unwrap();
+            insert_all(
+                &mut storage,
+                &make_multi_vectors(DIM, COUNT, seed),
+                &hw_counter,
+            );
+
+            // User data is an arbitrary tag we expect echoed back beside each offset.
+            let keys: Vec<(usize, PointOffsetType)> =
+                (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
+
+            let mut seen: Vec<(usize, PointOffsetType, MultiDenseVectorInternal)> = Vec::new();
+            storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                seen.push((tag, offset, to_multi(vector)));
+            });
+
+            // Order is not guaranteed (the trait permits parallel reads), so check
+            // each callback against its own offset, not its arrival position.
+            assert_eq!(seen.len(), COUNT);
+            for (tag, offset, multi) in &seen {
+                // The tag paired with this offset must travel back glued to it.
+                assert_eq!(
+                    *tag,
+                    *offset as usize * 10,
+                    "user data not threaded to its offset (seed {seed:#x})"
+                );
+                let direct = to_multi(storage.get_vector::<Random>(*offset));
+                assert_eq!(
+                    multi.flattened_vectors, direct.flattened_vectors,
+                    "read_vectors disagrees with get_vector (seed {seed:#x})"
+                );
+                assert_eq!(multi.dim, direct.dim);
+            }
+
+            // Every requested offset was visited exactly once.
+            let mut offsets: Vec<PointOffsetType> = seen.iter().map(|(_, o, _)| *o).collect();
+            offsets.sort_unstable();
+            assert_eq!(offsets, (0..COUNT as PointOffsetType).collect::<Vec<_>>());
+        }
     }
 
     /// One point in the reference model.
