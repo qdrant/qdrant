@@ -17,7 +17,7 @@ use super::facet_index::FacetIndex;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::facets::{FacetHit, FacetValueRef};
+use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::payload_config::IndexMutability;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
@@ -211,6 +211,21 @@ impl FacetIndex for BoolIndex {
     ) -> OperationResult<()> {
         BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
             f(FacetValueRef::Bool(value), iter)
+        })
+    }
+
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        let bools = values.filter_map(|value| match value {
+            FacetValue::Bool(b) => Some(b),
+            _ => None,
+        });
+        BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
+            f(FacetValue::Bool(b), iter)
         })
     }
 

@@ -1,8 +1,6 @@
 use common::types::PointOffsetType;
 use roaring::RoaringBitmap;
 
-use crate::payload_storage::FilterContext;
-
 /// A [`FilterContext`] backed by a pre-materialized set of matching points.
 ///
 /// Built by evaluating a filter once (e.g. collecting
@@ -25,7 +23,7 @@ pub struct BitmapFilterContext(RoaringBitmap);
 
 impl BitmapFilterContext {
     /// Whether `point_id` matched the filter.
-    fn check(&self, point_id: PointOffsetType) -> bool {
+    pub fn check(&self, point_id: PointOffsetType) -> bool {
         self.0.contains(point_id)
     }
 
@@ -36,12 +34,6 @@ impl BitmapFilterContext {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-}
-
-impl FilterContext for BitmapFilterContext {
-    fn check(&self, point_id: PointOffsetType) -> bool {
-        BitmapFilterContext::check(self, point_id)
     }
 }
 

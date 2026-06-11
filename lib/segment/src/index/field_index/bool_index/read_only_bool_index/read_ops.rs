@@ -7,7 +7,7 @@ use super::super::read_ops::{self, BoolIndexRead};
 use super::ReadOnlyBoolIndex;
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::{FacetHit, FacetValueRef};
+use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
@@ -133,6 +133,21 @@ impl<S: UniversalRead> FacetIndex for ReadOnlyBoolIndex<S> {
     ) -> OperationResult<()> {
         BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
             f(FacetValueRef::Bool(value), iter)
+        })
+    }
+
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        let bools = values.filter_map(|value| match value {
+            FacetValue::Bool(b) => Some(b),
+            _ => None,
+        });
+        BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
+            f(FacetValue::Bool(b), iter)
         })
     }
 
