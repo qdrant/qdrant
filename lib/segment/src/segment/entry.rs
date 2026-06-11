@@ -477,12 +477,27 @@ impl StorageSegmentEntry for Segment {
                     _ => OperationError::service_error(format!("Failed to flush {what}: {err}")),
                 };
 
+                // Cancelled = the storage was dropped after flusher capture (e.g. a concurrent
+                // vector name deletion). Skip it but keep flushing: aborting mid-sequence would
+                // leave the already-flushed components durably ahead of the rest (notably the
+                // point versions), breaking the per-point consistency WAL replay relies on.
+                // The drop itself is a versioned operation that replay re-applies. Field
+                // indexes get the same treatment in `StructPayloadIndex::flusher`.
+                let skip_if_cancelled = |result: OperationResult<()>, what| match result {
+                    Ok(()) => Ok(()),
+                    Err(OperationError::Cancelled { description }) => {
+                        log::debug!("Skipping flush of dropped {what}: {description}");
+                        Ok(())
+                    }
+                    Err(err) => Err(wrap_err(err, what)),
+                };
+
                 id_tracker_mapping_flusher().map_err(|err| wrap_err(err, "id_tracker mapping"))?;
                 for vector_storage_flusher in vector_storage_flushers {
-                    vector_storage_flusher().map_err(|err| wrap_err(err, "vector_storage"))?;
+                    skip_if_cancelled(vector_storage_flusher(), "vector_storage")?;
                 }
                 for quantization_flusher in quantization_flushers {
-                    quantization_flusher().map_err(|err| wrap_err(err, "quantized vectors"))?;
+                    skip_if_cancelled(quantization_flusher(), "quantized vectors")?;
                 }
                 payload_index_flusher().map_err(|err| wrap_err(err, "payload_index"))?;
                 // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
