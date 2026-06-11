@@ -1,3 +1,5 @@
+pub mod iter;
+
 #[cfg(test)]
 mod tests;
 
@@ -13,6 +15,7 @@ use common::universal_io::{
 };
 use smallvec::SmallVec;
 
+pub use self::iter::{Iter, PointerItem};
 use crate::Result;
 use crate::error::GridstoreError;
 
