@@ -264,3 +264,86 @@ impl AuthKeys {
         can_write || alt_can_write
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use collection::shards::channel_service::ChannelService;
+    use common::budget::ResourceBudget;
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::settings::Settings;
+
+    /// Service config from the bundled defaults, with the given API keys set.
+    fn config(api_key: Option<&str>, alt: Option<&str>, read_only: Option<&str>) -> ServiceConfig {
+        let mut cfg = Settings::new(None).unwrap().service;
+        cfg.api_key = api_key.map(String::from);
+        cfg.alt_api_key = alt.map(String::from);
+        cfg.read_only_api_key = read_only.map(String::from);
+        cfg
+    }
+
+    /// An empty, temp-dir backed `TableOfContent`. `try_create` only stores it,
+    /// so this is enough to exercise key parsing. `TempDir` must outlive `toc`.
+    fn test_toc() -> (Arc<TableOfContent>, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Settings::new(None).unwrap().storage;
+        cfg.storage_path = dir.path().to_path_buf();
+        cfg.snapshots_path = dir.path().join("snapshots");
+        cfg.temp_path = None;
+        let toc = TableOfContent::new(
+            &cfg,
+            ResourceBudget::default(),
+            ChannelService::new(6333, false, None, None),
+            0,
+            None,
+        )
+        .unwrap();
+        (Arc::new(toc), dir)
+    }
+
+    #[test]
+    fn empty_api_keys_are_treated_as_unset() {
+        let (toc, _dir) = test_toc();
+        for cfg in [
+            config(Some(""), None, None),
+            config(None, None, Some("")),
+            config(Some(""), Some(""), Some("")),
+        ] {
+            assert!(AuthKeys::try_create(&cfg, toc.clone()).is_none());
+        }
+    }
+
+    #[test]
+    fn single_char_api_keys_are_used() {
+        let (toc, _dir) = test_toc();
+
+        let rw = AuthKeys::try_create(&config(Some("x"), None, None), toc.clone()).unwrap();
+        assert!(rw.can_write("x"));
+        assert!(!rw.can_write(""));
+        assert!(!rw.can_write("y"));
+
+        let ro = AuthKeys::try_create(&config(None, None, Some("r")), toc).unwrap();
+        assert!(ro.can_read("r"));
+        assert!(!ro.can_read(""));
+        assert!(!ro.can_write("r"));
+    }
+
+    #[test]
+    fn empty_jwt_secret_is_treated_as_unset() {
+        let mut cfg = config(Some(""), Some(""), None);
+        cfg.jwt_rbac = Some(true);
+        let (parser, alt_parser) = AuthKeys::get_jwt_parser(&cfg);
+        assert!(parser.is_none());
+        assert!(alt_parser.is_none());
+    }
+
+    #[test]
+    fn single_char_jwt_secret_is_used() {
+        let mut cfg = config(Some("x"), None, None);
+        cfg.jwt_rbac = Some(true);
+        let (parser, alt_parser) = AuthKeys::get_jwt_parser(&cfg);
+        assert!(parser.is_some());
+        assert!(alt_parser.is_none());
+    }
+}
