@@ -3,7 +3,6 @@ pub mod iter;
 #[cfg(test)]
 mod tests;
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
@@ -105,23 +104,6 @@ impl ValuePointer {
             page_id,
             block_offset,
             length,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ValuePointersBatch<U> {
-    pub valid: Vec<(U, ValuePointer)>,
-    pub empty: Vec<U>,
-    pub out_of_range: Vec<U>,
-}
-
-impl<U> Default for ValuePointersBatch<U> {
-    fn default() -> Self {
-        Self {
-            valid: Vec::new(),
-            empty: Vec::new(),
-            out_of_range: Vec::new(),
         }
     }
 }
@@ -400,65 +382,6 @@ impl<S: UniversalRead> Tracker<S> {
         I: Iterator<Item = (U, PointOffset)>,
     {
         Iter::new(point_offsets, &self.storage, &self.pending_updates)
-    }
-
-    /// Get the page pointers for a batch of point offsets.
-    ///
-    /// Issues a single batched read against the underlying storage, so async backends can fetch
-    /// all entries in parallel.
-    pub fn get_batch<U>(
-        &self,
-        point_offsets: impl Iterator<Item = (U, PointOffset)>,
-    ) -> Result<ValuePointersBatch<U>> {
-        let header_size = size_of::<TrackerHeader>();
-        let item_size = size_of::<OptionalPointer>();
-
-        let storage_len = self.storage.len::<u8>()?;
-
-        let pointers = RefCell::new(ValuePointersBatch::default());
-
-        let ranges = point_offsets.filter_map(|(user_data, point_offset)| {
-            if let Some(pending) = self.pending_updates.get(&point_offset) {
-                debug_assert!(!pending.is_empty(), "pending updates must not be empty");
-
-                // Honor the pending update either way: `Some` is the in-memory pointer, `None`
-                // is a pending unset. Falling through to the persisted pointer on `None` would
-                // resurrect the stale on-disk value (see `get`, which returns `pending.current`
-                // directly).
-                match pending.current {
-                    Some(pointer) => pointers.borrow_mut().valid.push((user_data, pointer)),
-                    None => pointers.borrow_mut().empty.push(user_data),
-                }
-                return None;
-            }
-
-            let byte_offset = header_size + item_size * point_offset as usize;
-
-            if storage_len < (byte_offset + item_size) as _ {
-                pointers.borrow_mut().out_of_range.push(user_data);
-                return None;
-            }
-
-            Some((user_data, ReadRange::one(byte_offset as _)))
-        });
-
-        let pointers_iter = self
-            .storage
-            .read_iter::<Random, OptionalPointer, _>(ranges)?;
-
-        for result in pointers_iter {
-            let (user_data, pointer) = result?;
-            let &[pointer] = pointer.as_ref() else {
-                unreachable!();
-            };
-
-            match pointer.to_option() {
-                Some(pointer) => pointers.borrow_mut().valid.push((user_data, pointer)),
-                None => pointers.borrow_mut().empty.push(user_data),
-            }
-        }
-
-        Ok(pointers.into_inner())
     }
 
     /// Iterate over the pointers in the tracker
