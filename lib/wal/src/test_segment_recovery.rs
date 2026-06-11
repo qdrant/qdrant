@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::num::NonZeroUsize;
 
 use fs_err as fs;
@@ -80,4 +81,43 @@ fn test_handling_missing_empty_segment() {
     let num = wal.num_entries();
 
     assert_eq!(num, entry_count as u64);
+}
+
+/// Overlapping closed segments (e.g. from a partially-completed manual segment
+/// truncation or a copying accident) must not panic via `unimplemented!()`.
+/// They should surface as `InvalidData` so the storage layer can handle the
+/// corrupt-segment case instead of crashing the process.
+#[test]
+fn test_overlapping_closed_segments_return_invalid_data() {
+    let dir = Builder::new().prefix("wal").tempdir().unwrap();
+    // 2 entries per segment for predictable layout.
+    let options = WalOptions {
+        segment_capacity: 4096,
+        segment_queue_len: 0,
+        retain_closed: NonZeroUsize::new(4).unwrap(),
+    };
+
+    let mut wal = Wal::with_options(dir.path(), &options).unwrap();
+    // Write 10 entries of 2 kB each to fill 4 closed segments (entries 0-1,
+    // 2-3, 4-5, 6-7) plus one open segment (entries 8-9).
+    let entry: [u8; 2000] = [0u8; 2000];
+    for _ in 0..10 {
+        wal.append(&&entry[..]).unwrap();
+    }
+    assert_eq!(wal.closed_segments.len(), 4);
+    drop(wal);
+
+    // closed-2 covers entries [2, 4).  Copying it as closed-3 creates an
+    // overlap: a segment claiming to start at 3 falls inside [2, 4).
+    let src = dir.path().join("closed-2");
+    let dst = dir.path().join("closed-3");
+    fs::copy(&src, &dst).unwrap();
+
+    let err = Wal::with_options(dir.path(), &options)
+        .expect_err("overlapping segments must not open successfully");
+    assert_eq!(
+        err.kind(),
+        ErrorKind::InvalidData,
+        "expected InvalidData, got: {err}"
+    );
 }
