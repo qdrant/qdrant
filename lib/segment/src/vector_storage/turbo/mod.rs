@@ -9,6 +9,8 @@
 //! **not** `DenseVectorStorage<T>`.
 
 pub mod multi;
+#[cfg(test)]
+mod test;
 mod turbo_encoded_vectors;
 
 use std::borrow::Cow;
