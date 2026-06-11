@@ -1,12 +1,13 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
+use itertools::Itertools;
 
 use super::bool_index::{BoolIndex, ReadOnlyBoolIndex};
 use super::map_index::MapIndex;
 use super::map_index::read_only::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::{FacetHit, FacetValueRef};
+use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::types::{IntPayloadType, UuidIntType};
 
 pub trait FacetIndex {
@@ -23,6 +24,16 @@ pub trait FacetIndex {
         points: impl Iterator<Item = PointOffsetType>,
         hw_counter: &HardwareCounterCell,
         f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
+    ) -> OperationResult<()>;
+
+    /// Like [`Self::for_each_value_map`], but visits only the given `values`
+    /// (cost ∝ requested values, not index cardinality). Values absent from the
+    /// index or of a mismatched variant are skipped.
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()>;
 
     /// Call a closure on each value in the index.
@@ -47,6 +58,24 @@ pub trait FacetIndex {
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
     ) -> OperationResult<()>;
+
+    /// Candidate-restricted analog of [`Self::for_each_count_per_value`]: counts
+    /// only the given `values` (via [`Self::for_values_map`]). `deferred_internal_id`
+    /// behaves identically — `Some(threshold)` counts only points `< threshold`.
+    fn for_counts_per_value(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        deferred_internal_id: Option<PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(FacetHit<FacetValue>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        let max_id = deferred_internal_id.unwrap_or(PointOffsetType::MAX);
+        self.for_values_map(values, hw_counter, |value, ids| {
+            // Postings are sorted, so `take_while` matches `range_cardinality(..threshold)`.
+            let count = ids.dedup().take_while(|&id| id < max_id).count();
+            f(FacetHit { value, count })
+        })
+    }
 
     /// Like [`for_each_value`] but skips values whose only points are deferred.
     ///
@@ -192,6 +221,38 @@ impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
             }
             FacetIndexEnum::BoolReadOnly(index) => {
                 FacetIndex::for_each_value_map(*index, hw_counter, f)
+            }
+        }
+    }
+
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            FacetIndexEnum::Keyword(index) => {
+                FacetIndex::for_values_map(*index, values, hw_counter, f)
+            }
+            FacetIndexEnum::Int(index) => FacetIndex::for_values_map(*index, values, hw_counter, f),
+            FacetIndexEnum::Uuid(index) => {
+                FacetIndex::for_values_map(*index, values, hw_counter, f)
+            }
+            FacetIndexEnum::Bool(index) => {
+                FacetIndex::for_values_map(*index, values, hw_counter, f)
+            }
+            FacetIndexEnum::KeywordReadOnly(index) => {
+                FacetIndex::for_values_map(*index, values, hw_counter, f)
+            }
+            FacetIndexEnum::IntReadOnly(index) => {
+                FacetIndex::for_values_map(*index, values, hw_counter, f)
+            }
+            FacetIndexEnum::UuidReadOnly(index) => {
+                FacetIndex::for_values_map(*index, values, hw_counter, f)
+            }
+            FacetIndexEnum::BoolReadOnly(index) => {
+                FacetIndex::for_values_map(*index, values, hw_counter, f)
             }
         }
     }

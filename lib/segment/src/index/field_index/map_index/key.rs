@@ -7,6 +7,7 @@ use common::persisted_hashmap::Key;
 use ecow::EcoString;
 
 use super::BLOCK_SIZE_KEYWORD;
+use crate::data_types::facets::FacetValue;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::types::{IntPayloadType, UuidIntType};
 
@@ -14,6 +15,10 @@ pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default + 'static;
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned;
+
+    /// Borrow this key type out of a [`FacetValue`], or `None` if the variant
+    /// doesn't match (e.g. a keyword value against an integer index).
+    fn from_facet_value(value: &FacetValue) -> Option<&Self>;
 
     fn gridstore_block_size() -> usize {
         size_of::<<Self as MapIndexKey>::Owned>()
@@ -31,6 +36,13 @@ impl MapIndexKey for str {
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned {
         EcoString::from(self)
+    }
+
+    fn from_facet_value(value: &FacetValue) -> Option<&Self> {
+        match value {
+            FacetValue::Keyword(keyword) => Some(keyword.as_str()),
+            _ => None,
+        }
     }
 
     fn gridstore_block_size() -> usize {
@@ -52,6 +64,13 @@ impl MapIndexKey for IntPayloadType {
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned {
         *self
     }
+
+    fn from_facet_value(value: &FacetValue) -> Option<&Self> {
+        match value {
+            FacetValue::Int(int) => Some(int),
+            _ => None,
+        }
+    }
 }
 
 impl MapIndexKey for UuidIntType {
@@ -59,5 +78,12 @@ impl MapIndexKey for UuidIntType {
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned {
         *self
+    }
+
+    fn from_facet_value(value: &FacetValue) -> Option<&Self> {
+        match value {
+            FacetValue::Uuid(uuid) => Some(uuid),
+            _ => None,
+        }
     }
 }

@@ -7,7 +7,7 @@
 //! - **Facet cardinality** — how many distinct values the field has. When it is
 //!   large relative to the requested `limit` we *sample* a candidate set of
 //!   values first ([`Self::sampled_approximate_facet`]); otherwise we visit
-//!   every value ([`Self::approximate_facet_scan`]).
+//!   every value ([`Self::full_approximate_facet`]).
 //! - **Filter cardinality** — how many points the request filter matches. This
 //!   picks between the two terminal operations below.
 //!
@@ -15,11 +15,11 @@
 //!
 //! Both produce *exact* counts; sampling only affects *which* values appear.
 //!
-//! - [`Self::walk_filter_index`] iterates the filtered points and hashes each
+//! - [`Self::visit_filter_iter`] iterates the filtered points and hashes each
 //!   point's facet value(s) into the count map. Fewer filter checks (the
 //!   filter's own posting drives the scan) but one value hash per matched
 //!   point. Preferred when the filter is selective.
-//! - [`Self::walk_facet_index`] iterates the value postings and checks the
+//! - [`Self::visit_facet_iter`] iterates the value postings and checks the
 //!   filter for each point. More filter checks (one per posting element) but no
 //!   value hashing. Preferred when the filter is broad.
 //!
@@ -33,16 +33,16 @@
 //!
 //! 1. **Iterative novelty sampling** ([`Self::collect_candidate_values`]).
 //!    Stream point IDs in random order (filtered, if a filter is given), look
-//!    up each point's values, and collect distinct values until `SAMPLE_TARGET`
-//!    are found, the stream is exhausted, or too many consecutive draws fail to
-//!    contribute a new value.
+//!    up each point's values, and collect distinct values until the sample
+//!    target ([`sample_target_for`]) is reached, the stream is exhausted, or too
+//!    many consecutive draws fail to contribute a new value.
 //! 2. **Exact-count post-pass.** Count each candidate exactly: either one
-//!    `walk_facet_index` per candidate posting, or a single `walk_filter_index`
-//!    over a `match-any(candidates)` filter (so the filtered points are visited
-//!    once instead of once per candidate).
+//!    [`Self::visit_facet_iter`] per candidate posting, or a single
+//!    [`Self::visit_filter_iter`] over a `match-any(candidates)` filter (so the
+//!    filtered points are visited once instead of once per candidate).
 //!
 //! The Monte-Carlo simulation in `facet-sampling-mc` (see thread context for
-//! PR #9208) suggests `SAMPLE_TARGET = max(request.limit * 10, 1000)` gives
+//! PR #9208) suggests a sample target of `max(request.limit * 10, 1000)` gives
 //! ≥90% recall on top-K for Zipf-distributed fields with cardinality up to
 //! `10^5`, and trivially-correct results on UUID-style fields (where every
 //! value has count 1 and "top-K" is "any K").
@@ -94,17 +94,10 @@ const OVERSAMPLE_FACTOR: usize = 10;
 /// little headroom against per-segment rank variance, so we enforce a floor.
 const MIN_SAMPLE_TARGET: usize = 1000;
 
-/// Batch size for the inner random-id iteration loop. Picked so that
-/// `for_points_values` is invoked over a meaningful chunk of point IDs at
-/// once (amortises any per-call overhead) while still letting us stop early
-/// once `SAMPLE_TARGET` distinct values are collected. Setting this to 1
-/// recovers the per-point semantics; the Monte-Carlo simulation showed no
-/// measurable accuracy difference between B=1 and B=32.
 /// Maximum number of consecutive points that may be drawn without introducing
-/// any new candidate value before we give up. This bounds the rejection cost
-/// when the long tail of unique values is too thin to make further progress
-/// (e.g. very heavily skewed distributions where the top ~K values dominate
-/// the total mass).
+/// any new candidate value before we give up. Bounds the rejection cost when
+/// the long tail of unique values is too thin to make progress (e.g. heavily
+/// skewed distributions where the top ~K values dominate the total mass).
 const MAX_EMPTY_POINTS: usize = 4096;
 
 /// Compute the per-segment sampling target from a user-facing `limit`.
@@ -209,7 +202,7 @@ where
     ///
     /// Prefer [`Self::approximate_facet`] for the strategy-aware entry point;
     /// call this directly only when scanning is explicitly required.
-    pub fn full_approximate_facet(
+    fn full_approximate_facet(
         &self,
         facet_index: &impl FacetIndex,
         request: &FacetParams,
@@ -218,7 +211,7 @@ where
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let Some(filter) = &request.filter else {
             // No filter: count how many visible points each value has.
-            return self.get_facet_counts(facet_index, None);
+            return self.get_facet_counts(facet_index, None, hw_counter);
         };
 
         let cardinality = self
@@ -247,7 +240,7 @@ where
     /// Sampling approximate-facet strategy for high-cardinality facet fields.
     ///
     /// Gets a set of candidates by random sampling, then calculates their counts.
-    pub(super) fn sampled_approximate_facet(
+    fn sampled_approximate_facet(
         &self,
         facet_index: &impl FacetIndex,
         request: &FacetParams,
@@ -266,15 +259,14 @@ where
                 hw_counter,
             )?;
 
-            return self.get_facet_counts(facet_index, Some(candidates));
+            return self.get_facet_counts(facet_index, Some(candidates), hw_counter);
         };
 
         let probe = FilterProbe::Lazy {
             context: self.payload_index.filter_context(filter, hw_counter)?,
         };
 
-        // Phase 1: sample candidate values, applying the filter to the random
-        // draws via a probe (see [`FilterProbe`]).
+        // Phase 1: sample candidate values that match the filter.
         let candidates = self.collect_candidate_values(
             sample_target,
             facet_index,
@@ -326,9 +318,7 @@ where
     }
 
     /// **Walk filter index.** Iterate the points matching `filter` and hash the
-    /// facet value(s) of each into a count map, keeping only values for which
-    /// `keep` returns `true` (always, for the full scan; candidate membership,
-    /// for sampling).
+    /// facet value(s) of each into a count map.
     ///
     /// `iter_filtered_points` with [`DeferredBehavior::VisibleOnly`] already
     /// excludes deferred and soft-deleted points, so the yielded ids can be
@@ -371,19 +361,9 @@ where
         let mut hits = HashMap::new();
 
         let max_id = self.deferred_internal_id().unwrap_or(PointOffsetType::MAX);
-        // todo(perf): pass candidates list to for_each_value_map and for_each_count_per_value
-        facet_index.for_each_value_map(hw_counter, |value, iter| {
-            check_process_stopped(is_stopped)?;
 
-            let value = value.to_owned();
-            if candidates
-                .as_ref()
-                .is_some_and(|candidates| !candidates.contains(&value))
-            {
-                // skip non-candidate
-                return Ok(());
-            }
-
+        // Count a value's posting points that are visible and pass the probe.
+        let count_matching = |iter: &mut dyn Iterator<Item = PointOffsetType>| -> usize {
             #[cfg(debug_assertions)]
             let iter = {
                 let mut prev_id = None;
@@ -394,17 +374,36 @@ where
                 })
             };
 
-            let count = iter
-                .dedup()
+            iter.dedup()
                 .take_while(|&point_id| point_id < max_id)
                 .filter(|&point_id| probe.check(point_id))
-                .count();
+                .count()
+        };
 
-            if count > 0 {
-                hits.insert(value.to_owned(), count);
+        match candidates {
+            // Sampling: visit only the candidate values' postings.
+            Some(candidates) => {
+                facet_index.for_values_map(candidates.into_iter(), hw_counter, |value, iter| {
+                    check_process_stopped(is_stopped)?;
+                    let count = count_matching(iter);
+                    if count > 0 {
+                        hits.insert(value, count);
+                    }
+                    Ok(())
+                })?;
             }
-            Ok(())
-        })?;
+            // Full scan: visit every value's posting.
+            None => {
+                facet_index.for_each_value_map(hw_counter, |value, iter| {
+                    check_process_stopped(is_stopped)?;
+                    let count = count_matching(iter);
+                    if count > 0 {
+                        hits.insert(value.to_owned(), count);
+                    }
+                    Ok(())
+                })?;
+            }
+        }
 
         Ok(hits)
     }
@@ -413,20 +412,35 @@ where
         &self,
         facet_index: &impl FacetIndex,
         candidates: Option<HashSet<FacetValue>>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<HashMap<FacetValue, usize>, OperationError> {
         let mut hits = HashMap::new();
-        // todo: accept candidates into for_each_count_per_value
-        facet_index.for_each_count_per_value(self.deferred_internal_id(), |hit| {
-            let value = hit.value.to_owned();
-            if hit.count > 0
-                && candidates
-                    .as_ref()
-                    .is_none_or(|candidates| candidates.contains(&value))
-            {
-                hits.insert(value, hit.count);
+        let deferred_internal_id = self.deferred_internal_id();
+        match candidates {
+            // Sampling: count only the candidate values, looking each up directly.
+            Some(candidates) => {
+                facet_index.for_counts_per_value(
+                    candidates.into_iter(),
+                    deferred_internal_id,
+                    hw_counter,
+                    |hit| {
+                        if hit.count > 0 {
+                            hits.insert(hit.value, hit.count);
+                        }
+                        Ok(())
+                    },
+                )?;
             }
-            Ok(())
-        })?;
+            // No sampling: count every value in the index.
+            None => {
+                facet_index.for_each_count_per_value(deferred_internal_id, |hit| {
+                    if hit.count > 0 {
+                        hits.insert(hit.value.to_owned(), hit.count);
+                    }
+                    Ok(())
+                })?;
+            }
+        }
         Ok(hits)
     }
 
@@ -501,11 +515,7 @@ where
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
-        let facet_index = self.payload_index.facet_index_for(key).ok_or_else(|| {
-            OperationError::MissingMapIndexForFacet {
-                key: key.to_string(),
-            }
-        })?;
+        let facet_index = self.facet_index_for(key)?;
         let mut values = BTreeSet::new();
 
         if let Some(filter) = filter {

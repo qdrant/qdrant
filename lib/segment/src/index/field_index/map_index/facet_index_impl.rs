@@ -10,7 +10,7 @@ use super::key::MapIndexKey;
 use super::read_only::ReadOnlyMapIndex;
 use super::read_ops::MapIndexRead;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::{FacetHit, FacetValueRef};
+use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::field_index::facet_index::FacetIndex;
 
 impl<N: MapIndexKey + ?Sized> FacetIndex for MapIndex<N>
@@ -64,6 +64,15 @@ where
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
         MapIndexRead::for_each_value_map(self, hw_counter, |value, iter| f(value.into(), iter))
+    }
+
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        MapIndexRead::for_values_map(self, values, hw_counter, f)
     }
 
     fn for_each_count_per_value(
@@ -138,6 +147,15 @@ where
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
         MapIndexRead::for_each_value_map(self, hw_counter, |value, iter| f(value.into(), iter))
+    }
+
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        MapIndexRead::for_values_map(self, values, hw_counter, f)
     }
 
     fn for_each_count_per_value(
