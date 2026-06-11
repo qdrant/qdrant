@@ -6,7 +6,6 @@ use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalWrite};
-use quantization::EncodedStorage;
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -59,19 +58,12 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
 
     /// Returns multiple continuous vectors given a start `index` and a `count` of vectors to return.
     ///
-    /// This function returns `None` iff the vector is out of bounds.
-    /// If a chunk boundary is crossed, this function returns a Cow::Owned copy of the vectors.
+    /// This function returns `None` if the vector is out of bounds or is located across multiple chunks.
     pub fn get_many<P>(&self, index: PointOffsetType, count: usize) -> Option<Cow<'_, [u8]>>
     where
         P: AccessPattern,
     {
-        self.data.get_many::<P>(index as usize, count).or_else(|| {
-            let mut blob = Vec::with_capacity(count * self.data.dim());
-            for inner_id in index..index + count as u32 {
-                blob.extend_from_slice(&self.get_vector_data_opt(inner_id)?);
-            }
-            Some(Cow::Owned(blob))
-        })
+        self.data.get_many::<P>(index as usize, count)
     }
 }
 
