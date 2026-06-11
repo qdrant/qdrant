@@ -384,17 +384,6 @@ impl<S: UniversalRead> Tracker<S> {
         Iter::new(point_offsets, &self.storage, &self.pending_updates)
     }
 
-    /// Iterate over the pointers in the tracker
-    /// Starts from the given point offset
-    pub fn iter_pointers(
-        &self,
-        from: PointOffset,
-        max: PointOffset,
-    ) -> impl Iterator<Item = (PointOffset, Result<Option<ValuePointer>>)> + '_ {
-        let to = self.next_pointer_offset.min(max.saturating_add(1));
-        (from..to).map(move |i| (i, self.get(i)))
-    }
-
     pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {
         Ok(self.get(point_offset)?.is_some())
     }
