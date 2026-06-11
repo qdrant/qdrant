@@ -4,8 +4,8 @@ use std::ops::ControlFlow;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::UniversalRead;
+use common::generic_consts::AccessPattern;
+use common::universal_io::{UniversalRead, UserData};
 use lz4_flex::compress_prepend_size;
 
 use crate::Result;
@@ -13,7 +13,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PointOffset, Tracker, ValuePointer, ValuePointersBatch};
+use crate::tracker::{PointOffset, PointerItem, Tracker, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -117,20 +117,28 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
     ) -> Result<(), E>
     where
         P: AccessPattern,
+        U: UserData,
         E: From<GridstoreError>,
     {
         let point_offsets = point_offsets
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
-        let ValuePointersBatch {
-            valid,
-            empty,
-            out_of_range,
-        } = self.tracker.get_batch(point_offsets)?;
+        let mut pointers = Vec::new();
+
+        for result in self.tracker.iter(point_offsets)? {
+            let ((user_data, point_offset), pointer) = result?;
+
+            let PointerItem::Valid(pointer) = pointer else {
+                callback(user_data, point_offset, None)?;
+                continue;
+            };
+
+            pointers.push(((user_data, point_offset), pointer));
+        }
 
         self.pages.read_batch_from_pages::<P, _, _>(
             self.config,
-            valid.into_iter(),
+            pointers.into_iter(),
             |(user_data, point_offset), bytes| {
                 hw_counter_cell.incr_delta(bytes.len());
 
@@ -139,10 +147,6 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
                 callback(user_data, point_offset, Some(value))
             },
         )?;
-
-        for (user_data, point_offset) in empty.into_iter().chain(out_of_range) {
-            callback(user_data, point_offset, None)?;
-        }
 
         Ok(())
     }
