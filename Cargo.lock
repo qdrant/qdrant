@@ -5805,7 +5805,6 @@ name = "qdrant-edge-py"
 version = "0.7.2"
 dependencies = [
  "ahash",
- "bm25",
  "bytemuck",
  "derive_more 2.1.1",
  "edge",

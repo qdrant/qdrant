@@ -19,7 +19,6 @@ abi3 = ["pyo3/abi3-py310"]
 
 
 [dependencies]
-bm25 = { path = "../../bm25" }
 edge = { path = ".." }
 edge-py-codegen = { path = "./codegen" }
 segment = { path = "../../segment", default-features = false }
