@@ -6,7 +6,6 @@ on:
     - cron: "0 0 * * *"  # every day at midnight
 
 permissions:
-  contents: read
   packages: write
 
 jobs:
