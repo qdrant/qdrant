@@ -187,9 +187,12 @@ impl Wal {
         {
             match start_index.cmp(&next_start_index) {
                 Ordering::Less => {
-                    // TODO: figure out what to do here.
-                    // Current thinking is the previous segment should be truncated.
-                    unimplemented!()
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "overlapping segments: segment at {start_index} overlaps with already-covered range up to {next_start_index}"
+                        ),
+                    ));
                 }
                 Ordering::Equal => {
                     next_start_index = start_index + segment.len() as u64;
