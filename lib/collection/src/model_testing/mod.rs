@@ -337,6 +337,10 @@ pub async fn run(
 mod tests {
     use super::*;
 
+    // Windows CI is significantly slower; keep the smoke run short there.
+    #[cfg(target_os = "windows")]
+    const OP_NUM: usize = 1_000;
+    #[cfg(not(target_os = "windows"))]
     const OP_NUM: usize = 10_000;
     const ID_POOL: u64 = 500;
 
