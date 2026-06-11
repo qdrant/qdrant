@@ -25,7 +25,7 @@ use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, VECTORS_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::vectors::{
     TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
@@ -374,34 +374,28 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
         let disposed_hw = HardwareCounterCell::disposable();
         let start_index = self.offsets.len() as PointOffsetType;
 
-        let mut metas: Vec<(u32, bool)> = Vec::new();
-        let mut malformed = None;
-        let records = other_vectors
-            .map_while(|(blob, deleted)| {
-                if blob.is_empty() || blob.len() % record_size != 0 {
-                    malformed = Some(blob.len());
-                    return None;
-                }
-                metas.push(((blob.len() / record_size) as u32, deleted));
-                Some(blob)
-            })
-            .flat_map(|blob| -> Box<dyn Iterator<Item = Cow<'a, [u8]>> + 'a> {
-                match blob {
-                    Cow::Borrowed(blob) => {
-                        Box::new(blob.chunks_exact(record_size).map(Cow::Borrowed))
-                    }
-                    Cow::Owned(blob) => Box::new((0..blob.len() / record_size).map(move |i| {
-                        Cow::Owned(blob[i * record_size..(i + 1) * record_size].to_vec())
-                    })),
-                }
-            });
-        let inner_range = self.storage.update_from(records, stopped)?;
+        for (blob, deleted) in other_vectors {
+            check_process_stopped(stopped)?;
+            if blob.is_empty() || blob.len() % record_size != 0 {
+                return Err(OperationError::service_error(format!(
+                    "Malformed multi TQ blob of {} bytes, expected a positive multiple of {record_size}",
+                    blob.len(),
+                )));
+            }
 
-        // Register one offset record per point now that the inner records are in place,
-        // then surface a malformed blob.
-        let mut inner_start = inner_range.start;
-        for (i, (count, deleted)) in metas.iter().copied().enumerate() {
-            let key = start_index + i as PointOffsetType;
+            // Unlike `insert_multi`, append without skipping chunk tails: a range
+            // may straddle a boundary, reads then fall back to an owned copy.
+            let key = self.offsets.len() as PointOffsetType;
+            let inner_start = self.storage.vectors_count() as PointOffsetType;
+            for (i, record) in blob.chunks_exact(record_size).enumerate() {
+                self.storage.upsert_vector(
+                    inner_start + i as PointOffsetType,
+                    record,
+                    &disposed_hw,
+                )?;
+            }
+
+            let count = (blob.len() / record_size) as u32;
             let offset = MultivectorMmapOffset {
                 offset: inner_start,
                 count,
@@ -410,13 +404,6 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
             self.offsets
                 .insert(key as VectorOffsetType, &[offset], &disposed_hw)?;
             self.set_deleted(key, deleted);
-            inner_start += count;
-        }
-
-        if let Some(len) = malformed {
-            return Err(OperationError::service_error(format!(
-                "Malformed multi TQ blob of {len} bytes, expected a positive multiple of {record_size}",
-            )));
         }
 
         Ok(start_index..self.offsets.len() as PointOffsetType)

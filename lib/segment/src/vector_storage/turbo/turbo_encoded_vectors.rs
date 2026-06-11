@@ -149,7 +149,7 @@ impl TurboEncodedVectorStorage {
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
             Self::Mmap(storage) => Self::update_from_mmap(storage, vectors, stopped),
-            Self::ChunkedMmap(storage) => storage.update_from(vectors, stopped),
+            Self::ChunkedMmap(storage) => Self::update_from_chunked(storage, vectors, stopped),
         }
     }
 
@@ -179,5 +179,24 @@ impl TurboEncodedVectorStorage {
         storage.reload()?;
 
         Ok(start_index..end_index)
+    }
+
+    /// Bulk-append already-encoded vectors, returning the appended key range.
+    fn update_from_chunked<'a>(
+        storage: &mut QuantizedChunkedStorage<MmapFile>,
+        vectors: impl Iterator<Item = Cow<'a, [u8]>>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let disposed_hw = HardwareCounterCell::disposable();
+        let start_index = storage.vectors_count() as PointOffsetType;
+        let mut key = start_index;
+
+        for vector in vectors {
+            check_process_stopped(stopped)?;
+            storage.upsert_vector(key, &vector, &disposed_hw)?;
+            key += 1;
+        }
+
+        Ok(start_index..key)
     }
 }
