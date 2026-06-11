@@ -4,10 +4,44 @@ use common::universal_io::{MmapFile, MmapFs};
 use rstest::rstest;
 use tempfile::Builder;
 
-use super::{PointerUpdates, Tracker, ValuePointer};
-use crate::tracker::{BlockOffset, OptionalPointer, PageId};
+use super::*;
 
 type TestTracker = Tracker<MmapFile>;
+
+impl TestTracker {
+    /// Get the length of the mapping
+    /// Excludes None values
+    /// Warning: performs a full scan of the tracker.
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn mapping_len(&self) -> Result<usize> {
+        let mut count = 0;
+        for i in 0..self.next_pointer_offset {
+            if self.get(i).ok().flatten().is_some() {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mapping_len().unwrap_or(0) == 0
+    }
+
+    /// Return the size of the underlying file
+    pub fn mmap_file_size(&self) -> Result<usize> {
+        self.storage
+            .len::<u8>()
+            .map(|u| u as usize)
+            .map_err(Into::into)
+    }
+
+    pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
+        let pending_updates = std::mem::take(&mut self.pending_updates);
+        let res = self.write_pending(pending_updates)?;
+        self.storage.flusher()()?;
+        Ok(res)
+    }
+}
 
 #[test]
 fn test_file_name() {

@@ -464,35 +464,6 @@ impl<S: UniversalRead> Tracker<S> {
     pub fn populate(&self) -> Result<()> {
         self.storage.populate().map_err(Into::into)
     }
-
-    /// Get the length of the mapping
-    /// Excludes None values
-    /// Warning: performs a full scan of the tracker.
-    #[cfg(test)]
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn mapping_len(&self) -> Result<usize> {
-        let mut count = 0;
-        for i in 0..self.next_pointer_offset {
-            if self.get(i).ok().flatten().is_some() {
-                count += 1;
-            }
-        }
-        Ok(count)
-    }
-
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.mapping_len().unwrap_or(0) == 0
-    }
-
-    /// Return the size of the underlying file
-    #[cfg(test)]
-    pub fn mmap_file_size(&self) -> Result<usize> {
-        self.storage
-            .len::<u8>()
-            .map(|u| u as usize)
-            .map_err(Into::into)
-    }
 }
 
 // Write operations and constructors -- require UniversalWrite
@@ -584,14 +555,6 @@ where
     pub fn flusher(&self) -> crate::gridstore::Flusher {
         let inner = self.storage.flusher();
         Box::new(move || inner().map_err(Into::into))
-    }
-
-    #[cfg(test)]
-    pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
-        let pending_updates = std::mem::take(&mut self.pending_updates);
-        let res = self.write_pending(pending_updates)?;
-        self.storage.flusher()()?;
-        Ok(res)
     }
 
     /// Write the current page header to the storage
