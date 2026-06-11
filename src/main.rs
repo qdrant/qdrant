@@ -289,11 +289,20 @@ fn init_channel_service(
     persistent_consensus_state: &Persistent,
     is_distributed_deployment: bool,
 ) -> anyhow::Result<ChannelService> {
+    // Empty API keys are treated as unset (as in `AuthKeys::try_create`), so they
+    // are not attached to outgoing internal requests as empty `api-key` headers.
+    let api_key = settings.service.api_key.clone().filter(|k| !k.is_empty());
+    let alt_api_key = settings
+        .service
+        .alt_api_key
+        .clone()
+        .filter(|k| !k.is_empty());
+
     let mut channel_service = ChannelService::new(
         settings.service.http_port,
         settings.service.enable_tls,
-        settings.service.api_key.clone(),
-        settings.service.alt_api_key.clone(),
+        api_key.clone(),
+        alt_api_key,
     );
 
     if is_distributed_deployment {
@@ -309,7 +318,7 @@ fn init_channel_service(
             connection_timeout,
             settings.cluster.p2p.connection_pool_size,
             tls_config,
-            settings.service.api_key.clone(),
+            api_key,
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
         channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
@@ -813,4 +822,27 @@ fn main() -> anyhow::Result<()> {
     drop(toc_arc);
     drop(settings);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_api_keys_are_not_forwarded_on_internal_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let persistent = Persistent::load_or_init(dir.path(), true, false, None).unwrap();
+        let mut settings = Settings::new(None).unwrap();
+
+        settings.service.api_key = Some(String::new());
+        settings.service.alt_api_key = Some(String::new());
+        let channel_service = init_channel_service(&settings, &persistent, false).unwrap();
+        assert_eq!(channel_service.api_key, None);
+        assert_eq!(channel_service.alt_api_key, None);
+
+        settings.service.api_key = Some("x".to_string());
+        let channel_service = init_channel_service(&settings, &persistent, false).unwrap();
+        assert_eq!(channel_service.api_key.as_deref(), Some("x"));
+        assert_eq!(channel_service.alt_api_key, None);
+    }
 }
