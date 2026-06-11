@@ -1088,6 +1088,75 @@ mod tests {
         }
     }
 
+    /// `score_bytes` must agree with `score_stored` on a stored vector's own
+    /// encoded bytes, for both the nearest and the multi-vector (reco) scorers —
+    /// the inline-rescoring path scores the exact same TQ bytes the storage
+    /// holds, so the two must produce identical scores.
+    #[test]
+    fn score_bytes_matches_score_stored() {
+        use common::typelevel::True;
+
+        use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::turbo_custom_query_scorer::TurboCustomQueryScorer;
+        use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
+
+        const COUNT: usize = 8;
+
+        for distance in [
+            Distance::Dot,
+            Distance::Cosine,
+            Distance::Euclid,
+            Distance::Manhattan,
+        ] {
+            for dim in [4, 128] {
+                for seed in SEEDS {
+                    let dir = Builder::new()
+                        .prefix("turbo_score_bytes")
+                        .tempdir()
+                        .unwrap();
+                    let hw_counter = HardwareCounterCell::new();
+                    let mut storage =
+                        open_appendable_turbo_vector_storage(dir.path(), dim, distance, true)
+                            .unwrap();
+                    let inputs = make_vectors(dim, COUNT, seed);
+                    insert_all(&mut storage, &inputs, &hw_counter);
+
+                    let nearest = TurboQueryScorer::new(
+                        inputs[0].clone(),
+                        &storage,
+                        HardwareCounterCell::new(),
+                    );
+                    let reco = TurboCustomQueryScorer::new(
+                        RecoBestScoreQuery::from(RecoQuery::new(
+                            vec![inputs[1].clone()],
+                            vec![inputs[2].clone()],
+                        )),
+                        &storage,
+                        HardwareCounterCell::new(),
+                    );
+
+                    for key in 0..COUNT as PointOffsetType {
+                        let bytes = storage.get_quantized_vector(key);
+
+                        assert_eq!(
+                            nearest.score_bytes(True, &bytes),
+                            nearest.score_stored(key),
+                            "nearest score_bytes != score_stored at {key} \
+                             (dim {dim}, {distance:?}, seed {seed:#x})",
+                        );
+                        assert_eq!(
+                            reco.score_bytes(True, &bytes),
+                            reco.score_stored(key),
+                            "reco score_bytes != score_stored at {key} \
+                             (dim {dim}, {distance:?}, seed {seed:#x})",
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// End-to-end check of [`TurboCustomQueryScorer`] for the multi-vector
     /// (reco) path: with a single positive equal to a stored vector, the
     /// best-score and sum-score combinators must both rank that vector first,

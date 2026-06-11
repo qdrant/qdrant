@@ -1,5 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::typelevel::False;
+use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
@@ -86,9 +86,14 @@ where
         unimplemented!("Custom scorer compares against multiple vectors, not just one");
     }
 
-    // TODO(TQDT): add inline scoring support
-    type SupportsBytes = False;
-    fn score_bytes(&self, enabled: Self::SupportsBytes, _bytes: &[u8]) -> ScoreType {
-        match enabled {}
+    type SupportsBytes = True;
+    fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
+        // `bytes` are an already-fetched TQ-encoded vector: no IO, and one
+        // vector of CPU work per sub-query (matching `score_stored`).
+        let cpu_counter = self.hardware_counter.cpu_counter();
+        self.query.score_by(|query| {
+            cpu_counter.incr();
+            self.storage.score_query_bytes(query, bytes)
+        })
     }
 }
