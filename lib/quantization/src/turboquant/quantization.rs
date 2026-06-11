@@ -299,15 +299,24 @@ impl TurboQuantizer {
         // bytes twice for every dequantize call.
         let unpacked: Vec<f64> = unpacked_iter.collect();
 
-        // Stored `scaling_factor` is `l2/cn_quant` for Dot/Cosine/L2 (`l2 ==
-        // 1.0` for Cosine). To recover the original l2 length we either
-        // multiply by `cn_quant` recomputed from the unpacked centroids
-        // (Dot/Cosine — `l2` isn't stored separately) or read the dedicated
-        // `l2_length` field (L2 stores it directly, no recompute needed).
-        // For TQ+, `cn_quant` is measured in the EC-reverted (rescaled) space,
-        // matching `compute_centroid_norm`'s convention.
-        let recovered_l2 = match self.distance {
-            DistanceType::Dot | DistanceType::Cosine => {
+        // Reconstruct as `c · l2/cn`, the same renorm convention the scorers
+        // use (`score_symmetric` / `score_precomputed` multiply the centroid
+        // dot by `scaling_factor = l2/cn`), NOT `c · l2/sqrt(d)`. Scaling by
+        // the measured centroid norm makes the read-back norm exactly `l2`,
+        // which makes quantize(dequantize(x)) a fixed point for padding-free
+        // dims: re-quantizing a read-back reproduces both the codes and the
+        // stored norm, so repeated requantization (e.g. the copy-on-write
+        // point move between segments) cannot drift the vector. With the old
+        // `sqrt(d)` denominator every extra round-trip rescaled the read-back
+        // by `cn/sqrt(d)`, degrading (or inflating) it geometrically.
+        let scale = match self.distance {
+            // `scaling_factor` is already `l2/cn` (`1/cn` for Cosine).
+            DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => scaling_factor,
+            // L1 stores the raw `l2` only; divide by the centroid norm
+            // recomputed from the unpacked codes. For TQ+, `cn_quant` is
+            // measured in the EC-reverted (rescaled) space, matching
+            // `compute_centroid_norm`'s convention.
+            DistanceType::L1 => {
                 let cn_quant = match &self.error_correction {
                     Some(ec) => unpacked
                         .iter()
@@ -320,13 +329,9 @@ impl TurboQuantizer {
                         .sqrt(),
                     None => unpacked.iter().map(|&x| x * x).sum::<f64>().sqrt(),
                 };
-                scaling_factor * cn_quant
+                scaling_factor / cn_quant
             }
-            DistanceType::L2 => f64::from(extras.l2_length()),
-            DistanceType::L1 => scaling_factor,
         };
-
-        let scale = recovered_l2 / (self.padded_dim as f64).sqrt();
         match &self.error_correction {
             // TQ+: stored centroids approximate `X+`; revert EC to recover the
             // rescaled coordinate before applying the length scale.

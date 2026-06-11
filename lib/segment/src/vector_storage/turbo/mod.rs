@@ -251,6 +251,24 @@ fn open_turbo_vector_storage_impl(
     })
 }
 
+/// Quantize then dequantize `vector` exactly as a [`TurboVectorStorage`] with this
+/// `distance` does across `insert_vector` + `get_vector`. Pure function of its inputs:
+/// the quantizer is fully determined by `(dim, distance)` (the rotation derives from
+/// fixed seeds), so the result is identical across storage instances, segment rebuilds,
+/// and reloads. Lets model-based tests predict the read-back value of a Turbo4-backed
+/// vector without opening a storage.
+pub fn turbo_storage_roundtrip(vector: &[f32], distance: Distance) -> Vec<f32> {
+    let dim = vector.len();
+    let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+    let mut buf = vec![0.0; quantizer.get_padded_dim()];
+    let encoded = quantizer.quantize(vector, &mut buf);
+    // Mirror of `TurboVectorStorage::dequantize_vector`: dequantize, rotate back, drop
+    // the padding tail, cast to f32.
+    let mut dequantized = quantizer.dequantize::<f64>(&encoded);
+    quantizer.rotation.apply_inverse(&mut dequantized);
+    dequantized[..dim].iter().map(|&x| x as f32).collect()
+}
+
 impl VectorStorageRead for TurboVectorStorage {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.quantized_vector_size()
@@ -395,6 +413,35 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::DenseVector;
     use crate::vector_storage::prefill_deleted::fill_turbo;
+
+    /// The quantize -> dequantize round-trip must be a fixed point for
+    /// padding-free dims: `dequantize` scales by the measured centroid norm
+    /// (`l2/cn`), so re-quantizing a read-back reproduces both the codes and
+    /// the stored norm. Without this, every value-based point relocation
+    /// (e.g. the copy-on-write move between segments) rescales the vector by
+    /// `cn/sqrt(d)`, drifting it geometrically. Padded dims (odd for Bits4)
+    /// are excluded: truncating the padding tail on read makes the round-trip
+    /// only approximately stable there.
+    #[test]
+    fn roundtrip_is_fixed_point_for_padding_free_dims() {
+        for dim in [8usize, 128, 1024] {
+            let mut rng = StdRng::seed_from_u64(42);
+            let original: Vec<f32> = (0..dim).map(|_| rng.random_range(0.0f32..1.0)).collect();
+            let once = turbo_storage_roundtrip(&original, Distance::Dot);
+
+            // Read-back norm equals the original norm exactly (up to f32).
+            let orig_norm: f32 = original.iter().map(|&x| x * x).sum::<f32>().sqrt();
+            let once_norm: f32 = once.iter().map(|&x| x * x).sum::<f32>().sqrt();
+            assert!(
+                (once_norm / orig_norm - 1.0).abs() < 1e-5,
+                "dim {dim}: read-back norm {once_norm} != original norm {orig_norm}",
+            );
+
+            // Further round-trips are bitwise identical.
+            let twice = turbo_storage_roundtrip(&once, Distance::Dot);
+            assert_eq!(twice, once, "dim {dim}: roundtrip is not a fixed point");
+        }
+    }
 
     /// Deterministic test vectors in `[-1, 1]`, seeded so that the storage and
     /// the independent oracle observe exactly the same inputs across runs.
