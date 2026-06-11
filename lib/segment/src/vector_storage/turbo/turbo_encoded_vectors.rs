@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
 use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
@@ -58,28 +57,6 @@ impl TurboEncodedVectorStorage {
         match self {
             Self::Mmap(s) => s.get_vector_data(key),
             Self::ChunkedMmap(s) => s.get_vector_data(key),
-        }
-    }
-
-    /// Raw encoded blob of multiple, continuous vectors (no dequantization).
-    /// Returns `None` if vector read was out of bounds.
-    /// Returns the vectors borrowed if allowed by the storage backend (e.g. within a single chunk).
-    pub(super) fn get_multi_opt(
-        &self,
-        key: PointOffsetType,
-        count: usize,
-    ) -> Option<Cow<'_, [u8]>> {
-        match self {
-            Self::Mmap(s) => s.get_many::<Random>(key, count),
-            Self::ChunkedMmap(s) => s.get_many::<Random>(key, count),
-        }
-    }
-
-    /// Record slots left in the current chunk at `start`; unlimited for the single-file backend.
-    pub(super) fn remaining_chunk_capacity(&self, start: PointOffsetType) -> usize {
-        match self {
-            Self::Mmap(_) => usize::MAX,
-            Self::ChunkedMmap(s) => s.get_remaining_chunk_keys(start),
         }
     }
 
@@ -172,7 +149,7 @@ impl TurboEncodedVectorStorage {
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
             Self::Mmap(storage) => Self::update_from_mmap(storage, vectors, stopped),
-            Self::ChunkedMmap(storage) => Self::update_from_chunked_mmap(storage, vectors, stopped),
+            Self::ChunkedMmap(storage) => storage.update_from(vectors, stopped),
         }
     }
 
@@ -202,24 +179,5 @@ impl TurboEncodedVectorStorage {
         storage.reload()?;
 
         Ok(start_index..end_index)
-    }
-
-    /// Chunked backend: append each encoded vector through the chunked structure.
-    fn update_from_chunked_mmap<'a>(
-        storage: &mut QuantizedChunkedStorage<MmapFile>,
-        vectors: impl Iterator<Item = Cow<'a, [u8]>>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let disposed_hw = HardwareCounterCell::disposable();
-        let start_index = storage.vectors_count() as PointOffsetType;
-        let mut key = start_index;
-
-        for vector in vectors {
-            check_process_stopped(stopped)?;
-            storage.upsert_vector(key, &vector, &disposed_hw)?;
-            key += 1;
-        }
-
-        Ok(start_index..key)
     }
 }

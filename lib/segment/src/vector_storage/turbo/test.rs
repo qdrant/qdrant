@@ -10,10 +10,7 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use tempfile::Builder;
 
-use super::multi::{
-    TurboMultiVectorStorage, open_appendable_turbo_multi_vector_storage,
-    open_turbo_multi_vector_storage,
-};
+use super::multi::{TurboMultiVectorStorage, open_appendable_turbo_multi_vector_storage};
 use super::*;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVectorRef};
@@ -243,9 +240,9 @@ fn congruent_upsert_read_all_distances() {
 }
 
 /// Drive the same randomized op sequence against both appendable storages in
-/// lockstep, checking full congruence after every op, then copy both into the
-/// read-only single-file backend via `update_from` (the optimizer move) and
-/// check the destinations live and after a reload.
+/// lockstep, checking full congruence after every op, then copy both into
+/// fresh storages via `update_from` (the optimizer move) and check the
+/// destinations live and after a reload.
 fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
     let mut rng = StdRng::seed_from_u64(seed);
     let dense_dir = Builder::new().prefix("tq_congr_dense").tempdir().unwrap();
@@ -318,8 +315,8 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
     // Optimizer-style copy: byte-identical encoded streams plus deleted flags.
     let total = dense.total_vector_count() as PointOffsetType;
     let mut dense_dst =
-        open_turbo_vector_storage(dense_dst_dir.path(), dim, distance, false).unwrap();
-    let mut multi_dst = open_turbo_multi_vector_storage(
+        open_appendable_turbo_vector_storage(dense_dst_dir.path(), dim, distance, false).unwrap();
+    let mut multi_dst = open_appendable_turbo_multi_vector_storage(
         multi_dst_dir.path(),
         dim,
         distance,
@@ -351,8 +348,9 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
     multi_dst.flusher()().unwrap();
     drop(dense_dst);
     drop(multi_dst);
-    let dense_dst = open_turbo_vector_storage(dense_dst_dir.path(), dim, distance, true).unwrap();
-    let multi_dst = open_turbo_multi_vector_storage(
+    let dense_dst =
+        open_appendable_turbo_vector_storage(dense_dst_dir.path(), dim, distance, true).unwrap();
+    let multi_dst = open_appendable_turbo_multi_vector_storage(
         multi_dst_dir.path(),
         dim,
         distance,

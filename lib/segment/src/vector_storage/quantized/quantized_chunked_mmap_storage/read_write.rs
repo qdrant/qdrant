@@ -1,5 +1,7 @@
 use std::borrow::Cow;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
@@ -8,7 +10,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalWrite};
 use quantization::EncodedStorage;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
@@ -72,6 +74,25 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
             }
             Some(Cow::Owned(blob))
         })
+    }
+
+    /// Bulk-append already-encoded vectors, returning the appended key range.
+    pub fn update_from<'a>(
+        &mut self,
+        vectors: impl Iterator<Item = Cow<'a, [u8]>>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let disposed_hw = HardwareCounterCell::disposable();
+        let start_index = self.vectors_count() as PointOffsetType;
+        let mut key = start_index;
+
+        for vector in vectors {
+            check_process_stopped(stopped)?;
+            self.upsert_vector(key, &vector, &disposed_hw)?;
+            key += 1;
+        }
+
+        Ok(start_index..key)
     }
 }
 

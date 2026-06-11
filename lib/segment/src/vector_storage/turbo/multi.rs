@@ -18,9 +18,9 @@ use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
+use quantization::EncodedStorage;
 use quantization::turboquant::quantization::TurboQuantizer;
 
-use super::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, VECTORS_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -33,6 +33,7 @@ use crate::data_types::vectors::{
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::{
     MultiTQVectorStorage, VectorOffsetType, VectorStorage, VectorStorageRead,
 };
@@ -42,7 +43,7 @@ const OFFSETS_PATH: &str = "tq_offsets.dat";
 /// Multivector storage for TurboQuant encoded inner vectors.
 pub struct TurboMultiVectorStorage {
     /// Flat inner-vector space: one fixed-size encoded record per inner vector.
-    storage: TurboEncodedVectorStorage,
+    storage: QuantizedChunkedStorage<MmapFile>,
 
     /// Maps each point to its record range in the inner space.
     offsets: ChunkedVectors<MultivectorMmapOffset, MmapFile>,
@@ -77,29 +78,7 @@ impl std::fmt::Debug for TurboMultiVectorStorage {
     }
 }
 
-/// Open (create-or-load) a TurboQuant multivector storage whose encoded records
-/// live in a single mmap file (non-appendable). Counterpart to `open_turbo_vector_storage`.
-pub fn open_turbo_multi_vector_storage(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-    populate: bool,
-) -> OperationResult<TurboMultiVectorStorage> {
-    open_turbo_multi_vector_storage_impl(
-        path,
-        dim,
-        distance,
-        multi_vector_config,
-        populate,
-        |vectors_path, quantized_vector_size| {
-            TurboEncodedVectorStorage::open_mmap(vectors_path, quantized_vector_size, populate)
-        },
-    )
-}
-
-/// Open (create-or-load) an appendable TurboQuant multivector storage backed by
-/// chunked mmap files. Counterpart to `open_appendable_turbo_vector_storage`.
+/// Open (create-or-load) an appendable TurboQuant multivector storage backed by chunked mmap files.
 pub fn open_appendable_turbo_multi_vector_storage(
     path: &Path,
     dim: usize,
@@ -107,49 +86,28 @@ pub fn open_appendable_turbo_multi_vector_storage(
     multi_vector_config: MultiVectorConfig,
     in_ram: bool,
 ) -> OperationResult<TurboMultiVectorStorage> {
-    open_turbo_multi_vector_storage_impl(
-        path,
-        dim,
-        distance,
-        multi_vector_config,
-        in_ram,
-        |vectors_path, quantized_vector_size| {
-            TurboEncodedVectorStorage::open_chunked_mmap(
-                vectors_path,
-                quantized_vector_size,
-                in_ram,
-            )
-        },
-    )
-}
-
-/// Shared create-or-load logic for both record backends; offsets and deleted
-/// flags are backend-independent.
-fn open_turbo_multi_vector_storage_impl(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-    populate: bool,
-    open_storage: impl FnOnce(&Path, usize) -> OperationResult<TurboEncodedVectorStorage>,
-) -> OperationResult<TurboMultiVectorStorage> {
     fs_err::create_dir_all(path)?;
 
     let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
 
-    let storage = open_storage(&path.join(VECTORS_PATH), quantizer.quantized_size())?;
+    let storage = QuantizedChunkedStorage::new(
+        MmapFs,
+        &path.join(VECTORS_PATH),
+        quantizer.quantized_size(),
+        in_ram,
+    )?;
 
     let offsets = ChunkedVectors::open(
         MmapFs,
         &path.join(OFFSETS_PATH),
         1,
         AdviceSetting::Global,
-        Some(populate),
+        Some(in_ram),
     )?;
 
     let deleted = BitvecFlags::new(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), populate)?,
+        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), in_ram)?,
     )?;
     let deleted_count = deleted.count_trues();
 
@@ -209,7 +167,7 @@ impl TurboMultiVectorStorage {
     fn dequantize_multi(&self, offset: MultivectorMmapOffset) -> CowVector<'_> {
         let mut flattened = Vec::with_capacity(offset.count as usize * self.dim);
         for inner_id in offset.offset..offset.offset + offset.count {
-            let encoded = self.storage.get_quantized_vector(inner_id);
+            let encoded = self.storage.get_vector_data(inner_id);
             self.dequantize_inner_into(&encoded, &mut flattened);
         }
         CowVector::MultiDense(CowMultiVector::Owned(TypedMultiDenseVector {
@@ -239,12 +197,12 @@ impl TurboMultiVectorStorage {
             let mut new_key = self.storage.vectors_count() as PointOffsetType;
             // Skip the chunk tail if the range fits a whole chunk but not the tail,
             // so a point's records never straddle a boundary and reads can borrow.
-            let left = self.storage.remaining_chunk_capacity(new_key);
+            let left = self.storage.get_remaining_chunk_keys(new_key);
             if count as usize > left
                 && count as usize
                     <= self
                         .storage
-                        .remaining_chunk_capacity(new_key + left as PointOffsetType)
+                        .get_remaining_chunk_keys(new_key + left as PointOffsetType)
             {
                 new_key += left as PointOffsetType;
             }
@@ -402,7 +360,7 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
         self.get_offset::<P>(key)
             .and_then(|offset| {
                 self.storage
-                    .get_multi_opt(offset.offset, offset.count as usize)
+                    .get_many::<P>(offset.offset, offset.count as usize)
             })
             .expect("Multivector not found")
     }
@@ -668,18 +626,11 @@ mod tests {
         }
     }
 
-    /// Build via `update_from` from oracle-encoded blobs across two batches into a
-    /// storage from `open`, then reopen and verify ranges, persisted bytes, deleted
-    /// flags, and zero-record placeholders.
-    fn run_update_from_build(
-        open: fn(
-            &Path,
-            usize,
-            Distance,
-            MultiVectorConfig,
-            bool,
-        ) -> OperationResult<TurboMultiVectorStorage>,
-    ) {
+    /// Build via `update_from` from oracle-encoded blobs across two batches,
+    /// then reopen and verify ranges, persisted bytes, deleted flags, and
+    /// zero-record placeholders.
+    #[test]
+    fn update_from_builds_and_matches_independent_oracle() {
         const COUNT: usize = 24;
         const DELETED: PointOffsetType = 3;
         // Deletion landing in the second batch so `start + offset` arithmetic is exercised.
@@ -711,7 +662,7 @@ mod tests {
                     .collect();
 
                 {
-                    let mut storage = open(
+                    let mut storage = open_appendable_turbo_multi_vector_storage(
                         dir.path(),
                         dim,
                         distance,
@@ -742,7 +693,7 @@ mod tests {
                     storage.flusher()().unwrap();
                 }
 
-                let storage = open(
+                let storage = open_appendable_turbo_multi_vector_storage(
                     dir.path(),
                     dim,
                     distance,
@@ -770,42 +721,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    /// Build path for the chunked-appendable backend.
-    #[test]
-    fn update_from_builds_and_matches_independent_oracle() {
-        run_update_from_build(open_appendable_turbo_multi_vector_storage);
-    }
-
-    /// Build path for the non-appendable single-file backend: `update_from`
-    /// bulk-appends + re-mmaps across repeated calls, while runtime
-    /// `insert_vector` stays unsupported.
-    #[test]
-    fn mmap_update_from_builds_and_matches_independent_oracle() {
-        // Runtime per-point insert is unsupported for the single-file backend.
-        let dir = Builder::new().prefix("turbo_multi_mmap").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
-        let mut storage = open_turbo_multi_vector_storage(
-            dir.path(),
-            128,
-            Distance::Dot,
-            MultiVectorConfig::default(),
-            false,
-        )
-        .unwrap();
-        assert!(
-            storage
-                .insert_vector(
-                    0,
-                    TypedMultiDenseVectorRef::from(&multi_of(128, 2, 7)).into(),
-                    &hw_counter,
-                )
-                .is_err(),
-            "insert_vector must be unsupported on the single-file mmap backend",
-        );
-
-        run_update_from_build(open_turbo_multi_vector_storage);
     }
 
     /// `update_from` copies one storage into a fresh one verbatim — the
@@ -1449,9 +1364,9 @@ mod tests {
         .unwrap();
         assert_matches_model(&storage, &model, &oracle, "source final");
 
-        // Optimizer-style copy into the read-only single-file backend via
-        // update_from, checked live and again after a flush/drop/reload.
-        let mut dst = open_turbo_multi_vector_storage(
+        // Optimizer-style copy into a fresh storage via update_from, checked
+        // live and again after a flush/drop/reload.
+        let mut dst = open_appendable_turbo_multi_vector_storage(
             dst_dir.path(),
             dim,
             distance,
@@ -1472,7 +1387,7 @@ mod tests {
         assert_matches_model(&dst, &model, &oracle, "dst after copy");
         dst.flusher()().unwrap();
         drop(dst);
-        let dst = open_turbo_multi_vector_storage(
+        let dst = open_appendable_turbo_multi_vector_storage(
             dst_dir.path(),
             dim,
             distance,

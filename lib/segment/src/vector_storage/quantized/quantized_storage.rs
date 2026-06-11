@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::{AccessPattern, Random};
+use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -56,20 +56,6 @@ impl QuantizedStorage<MmapFile> {
             self.quantized_vector_size.get(),
         )?;
         Ok(())
-    }
-
-    pub fn get_many<P>(&self, index: PointOffsetType, count: usize) -> Option<Cow<'_, [u8]>>
-    where
-        P: AccessPattern,
-    {
-        let start = (self.quantized_vector_size.get() * index as usize) as u64;
-        let length = self.quantized_vector_size.get() as u64 * count as u64;
-        self.storage
-            .read::<P, u8>(ReadRange {
-                byte_offset: start,
-                length,
-            })
-            .ok()
     }
 }
 
