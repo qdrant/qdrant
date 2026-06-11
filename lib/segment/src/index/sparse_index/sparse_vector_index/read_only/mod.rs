@@ -1,12 +1,15 @@
 mod read;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::storage_version::StorageVersion as _;
 use common::universal_io::UniversalRead;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::InvertedIndex;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
@@ -52,6 +55,40 @@ type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
 >;
 
 impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<S, TInvertedIndex> {
+    /// Load the read-only sparse index from disk (config + inverted index +
+    /// indices tracker), wiring in the shared read-only backends. Read-only
+    /// mirror of `SparseVectorIndex::try_load` — it never builds.
+    pub fn open(
+        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+        path: &Path,
+    ) -> OperationResult<Self> {
+        let stored_version = TInvertedIndex::Version::load(path)?;
+        if stored_version != Some(TInvertedIndex::Version::current()) {
+            return Err(OperationError::service_error_light(format!(
+                "Sparse index version mismatch, expected {}, found {}",
+                TInvertedIndex::Version::current(),
+                stored_version.map_or_else(|| "none".to_string(), |v| v.to_string()),
+            )));
+        }
+
+        let config = SparseIndexConfig::load(&SparseIndexConfig::get_config_path(path))?;
+        let inverted_index = TInvertedIndex::open(path)?;
+        let indices_tracker = IndicesTracker::open(path)?;
+
+        Ok(Self {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            inverted_index,
+            searches_telemetry: SparseSearchesTelemetry::new(),
+            indices_tracker,
+            search_scratch_pool: SearchScratchPool::new(),
+        })
+    }
+
     pub fn inverted_index(&self) -> &TInvertedIndex {
         &self.inverted_index
     }
