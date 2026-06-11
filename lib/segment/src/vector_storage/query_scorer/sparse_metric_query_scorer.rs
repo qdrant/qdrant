@@ -49,8 +49,6 @@ impl<'a> SparseMetricQueryScorer<'a> {
 }
 
 impl QueryScorer for SparseMetricQueryScorer<'_> {
-    type TVector = SparseVector;
-
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self
@@ -59,11 +57,6 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
             .expect("Sparse vector not found");
 
         self.score_ref(&stored)
-    }
-
-    #[inline]
-    fn score(&self, v2: &SparseVector) -> ScoreType {
-        self.score_ref(v2)
     }
 
     #[inline]

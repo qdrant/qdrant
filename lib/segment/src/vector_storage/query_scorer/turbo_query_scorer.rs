@@ -3,7 +3,7 @@ use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::DenseVector;
 use crate::vector_storage::DenseTQVectorStorage;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::turbo::TurboVectorStorage;
@@ -46,17 +46,11 @@ impl<'a> TurboQueryScorer<'a> {
 }
 
 impl QueryScorer for TurboQueryScorer<'_> {
-    type TVector = [VectorElementType];
-
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let bytes = self.storage.get_quantized_vector(idx);
         self.hardware_counter.vector_io_read().incr();
         self.hardware_counter.cpu_counter().incr();
         self.storage.score_query_bytes(&self.query, &bytes)
-    }
-
-    fn score(&self, _v2: &[VectorElementType]) -> ScoreType {
-        unimplemented!("This method is not expected to be called for turbo scorer");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

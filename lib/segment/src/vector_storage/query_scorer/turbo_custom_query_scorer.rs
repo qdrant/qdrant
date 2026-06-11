@@ -3,7 +3,7 @@ use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::DenseVector;
 use crate::vector_storage::DenseTQVectorStorage;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -62,8 +62,6 @@ impl<TQuery> QueryScorer for TurboCustomQueryScorer<'_, TQuery>
 where
     TQuery: Query<EncodedQueryTQ>,
 {
-    type TVector = [VectorElementType];
-
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         // Read the stored vector once (one vector of IO), then score every
         // sub-query against it — each sub-query is one vector of CPU work.
@@ -76,10 +74,6 @@ where
             cpu_counter.incr();
             self.storage.score_query_bytes(query, &bytes)
         })
-    }
-
-    fn score(&self, _v2: &[VectorElementType]) -> ScoreType {
-        unimplemented!("This method is not expected to be called for turbo scorer");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

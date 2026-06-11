@@ -88,8 +88,6 @@ where
     TEncodedVectors: quantization::EncodedVectors,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
-    type TVector = [TElement];
-
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
         debug_assert_eq!(ids.len(), scores.len());
 
@@ -115,10 +113,6 @@ where
             self.quantized_storage
                 .score_point(this, idx, &self.hardware_counter)
         })
-    }
-
-    fn score(&self, _v2: &[TElement]) -> ScoreType {
-        unimplemented!("This method is not expected to be called for quantized scorer");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
