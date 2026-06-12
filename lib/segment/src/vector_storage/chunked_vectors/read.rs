@@ -214,14 +214,22 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             let (vectors, _) = maybe_uninit_fill_from(
                 &mut vectors_buffer,
                 keys.iter().map(|&key| {
-                    self.get_many_impl(key.offset(), 1, force_sequential)
-                        .expect("vectors read")
+                    let vector = self
+                        .get_many_impl(key.offset(), 1, force_sequential)
+                        .expect("vectors read");
+                    // Start pulling the first lines into cache early; the rest
+                    // is prefetched one vector ahead in the scoring loop below.
+                    prefetch_first_line(vector.as_ref());
+                    vector
                 }),
             );
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
             for (vector_idx, vec) in vectors.iter().enumerate() {
+                if let Some(next) = vectors.get(vector_idx + 1) {
+                    prefetch_full(next.as_ref());
+                }
                 callback(batch_offset + vector_idx, vec.as_ref());
             }
         }
@@ -317,6 +325,34 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
 
         0
     }
+}
+
+#[inline(always)]
+fn prefetch_first_line<T>(slice: &[T]) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+        _mm_prefetch(slice.as_ptr().cast::<i8>(), _MM_HINT_T0);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = slice;
+}
+
+#[inline(always)]
+fn prefetch_full<T>(slice: &[T]) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+        let bytes = std::mem::size_of_val(slice);
+        let ptr = slice.as_ptr().cast::<i8>();
+        let mut offset = 0;
+        while offset < bytes {
+            _mm_prefetch(ptr.add(offset), _MM_HINT_T0);
+            offset += 64;
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = slice;
 }
 
 pub(super) fn read_status_len<Fs: UniversalReadFs>(
