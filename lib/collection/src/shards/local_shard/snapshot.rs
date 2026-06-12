@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
@@ -28,13 +29,56 @@ use wal::{Wal, WalOptions};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
 
+/// Maximum time a new snapshot attempt waits for the previous snapshot of the same shard to
+/// finish.
+///
+/// Waiting happens in async context, before any blocking thread or lock is occupied, and is
+/// always safe to cancel. The timeout is longer than the streamed snapshot write idle timeout
+/// (`SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT`, 5 minutes), so that a snapshot queued behind a stalled
+/// streamed snapshot is still around to proceed once the stalled one times out and unwinds.
+const SHARD_SNAPSHOT_PERMIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// Maximum time the snapshot task waits for the segment holder lock.
+///
+/// This wait happens on a blocking thread and cannot be cancelled, so it must be bounded — a
+/// wedged lock holder must never pin blocking threads indefinitely. Snapshots are serialized
+/// through the shard snapshot permit before reaching this lock, so contention here comes from
+/// optimizers, which hold this lock only for bounded local work (proxying and finalization),
+/// never across network-paced writes. The timeout is generous to never fail on legitimate
+/// contention.
+const SEGMENT_HOLDER_LOCK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         let task = {
             let _runtime = self.search_runtime.tokio_handle().enter();
 
             let segments = self.segments.clone();
-            cancel::blocking::spawn_cancel_on_drop(move |_| segments.read().snapshot_manifest())
+            cancel::blocking::spawn_cancel_on_drop(move |cancel| {
+                // This runs on a blocking thread, where an unbounded lock wait would pin the
+                // thread for as long as the current lock holder is stuck (e.g. a snapshot paced
+                // by a stalled remote consumer). Wait in slices, so the thread is freed early
+                // when the request is dropped, and bounded in total.
+                const LOCK_WAIT_SLICE: Duration = Duration::from_secs(1);
+                let deadline = Instant::now() + SEGMENT_HOLDER_LOCK_TIMEOUT;
+                let segments = loop {
+                    if cancel.is_cancelled() {
+                        return Err(OperationError::cancelled(
+                            "snapshot manifest request was cancelled",
+                        ));
+                    }
+                    if let Some(guard) = segments.try_read_for(LOCK_WAIT_SLICE) {
+                        break guard;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(OperationError::timeout(
+                            SEGMENT_HOLDER_LOCK_TIMEOUT,
+                            "acquire segment holder lock for snapshot manifest",
+                        ));
+                    }
+                };
+                segments.snapshot_manifest()
+            })
         };
 
         Ok(task.await??)
@@ -46,7 +90,12 @@ impl LocalShard {
         Ok(())
     }
 
-    /// Create snapshot for local shard into `target_path`
+    /// Create snapshot for local shard
+    ///
+    /// At most one snapshot of a shard is created at a time: the returned future first waits
+    /// for any in-flight snapshot of this shard to finish — in async context, where the wait is
+    /// cancellable and threadless — and fails with a transient [`CollectionError::Timeout`]
+    /// after [`SHARD_SNAPSHOT_PERMIT_TIMEOUT`].
     pub async fn get_snapshot_creator(
         &self,
         temp_path: &Path,
@@ -79,6 +128,7 @@ impl LocalShard {
 
         let tar = tar.clone();
         let temp_path = temp_path.to_path_buf();
+        let snapshot_semaphore = Arc::clone(&self.snapshot_semaphore);
 
         let plunger_notify = if !save_wal {
             // If we are not saving WAL, we still need to make sure that all submitted by this point
@@ -90,11 +140,37 @@ impl LocalShard {
         };
 
         let future = async move {
+            // Take the shard snapshot permit: at most one snapshot per shard is created at a
+            // time. Waiting for an in-flight snapshot happens here, in async context, instead of
+            // on the segment holder lock inside the blocking task below. Snapshots can be paced
+            // by a slow remote consumer (streamed shard transfers), so waiting on that lock can
+            // pin a blocking thread for a long time — with retried transfers, one thread per
+            // attempt, eventually exhausting the blocking pool.
+            let snapshot_permit = tokio::time::timeout(
+                SHARD_SNAPSHOT_PERMIT_TIMEOUT,
+                snapshot_semaphore.acquire_owned(),
+            )
+            .await
+            .map_err(|_elapsed| {
+                CollectionError::timeout(
+                    SHARD_SNAPSHOT_PERMIT_TIMEOUT,
+                    "wait until the previous snapshot of this shard is finished",
+                )
+            })?
+            .map_err(|_closed| {
+                CollectionError::service_error("Shard snapshot semaphore is closed")
+            })?;
+
             if let Some(plunger_notify) = plunger_notify {
                 plunger_notify.await?;
             }
 
             let handle = tokio::task::spawn_blocking(move || {
+                // Hold the permit for all snapshot work: both the segment holder lock and the
+                // WAL lock below are held across writes into the (possibly network-paced) tar
+                // archive.
+                let _snapshot_permit = snapshot_permit;
+
                 // Do not change segments while snapshotting
                 snapshot_all_segments(
                     segments.clone(),
@@ -272,6 +348,7 @@ pub fn snapshot_all_segments(
         segment_config,
         payload_index_schema,
         deferred_internal_id,
+        SEGMENT_HOLDER_LOCK_TIMEOUT,
         |segment| {
             let read_segment = segment.read();
             let request_segment_manifest = if let Some(manifest) = manifest {
@@ -309,6 +386,11 @@ pub fn snapshot_all_segments(
 /// the segment holder while segments are in proxified state. That means no other actors can
 /// take a write lock while this operation is running.
 ///
+/// Acquiring the segment holder lock is bounded by `segments_lock_timeout`: this function runs
+/// on a blocking thread and the wait cannot be cancelled, so it must never wait indefinitely.
+/// On timeout a transient [`OperationError::Timeout`] error is returned and the operation can
+/// be retried.
+///
 /// As part of this process, a new segment is created. All proxies direct their writes to this
 /// segment. The segment is added to the collection if it has any operations, otherwise it is
 /// deleted when all segments are unproxied again.
@@ -323,12 +405,20 @@ pub fn proxy_all_segments_and_apply<F>(
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     deferred_internal_id: Option<PointOffsetType>,
+    segments_lock_timeout: Duration,
     mut operation: F,
 ) -> OperationResult<()>
 where
     F: FnMut(&RwLock<dyn StorageSegmentEntry>) -> OperationResult<()>,
 {
-    let segments_lock = segments.upgradable_read();
+    let segments_lock = segments
+        .try_upgradable_read_for(segments_lock_timeout)
+        .ok_or_else(|| {
+            OperationError::timeout(
+                segments_lock_timeout,
+                "acquire segment holder lock for snapshot",
+            )
+        })?;
 
     // Proxy all segments
     // Proxied segments are sorted by flush ordering
