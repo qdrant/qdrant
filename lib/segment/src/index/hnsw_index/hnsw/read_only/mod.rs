@@ -13,7 +13,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::graph_layers::{GraphLayers, LoadOption};
+use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -24,8 +24,8 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 /// Read-only, generic-over-storage counterpart of [`HNSWIndex`].
 ///
-/// The graph itself stays a plain [`GraphLayers`] (it materializes into RAM or
-/// mmap on load via [`GraphLayers::load`] over a [`UniversalRead`] filesystem),
+/// The graph itself stays a plain [`GraphLayers`] (it materializes into RAM on
+/// load via [`GraphLayers::load_via`] over a [`UniversalRead`] filesystem),
 /// so only the id tracker, vector storage and quantized vectors are
 /// parameterized by the backing storage `S`.
 ///
@@ -102,16 +102,7 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
 
         let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
 
-        // read-only never rewrites the graph
-        let do_convert = false;
-
-        let load_option = if is_on_disk {
-            LoadOption::OnDiskMmap
-        } else {
-            LoadOption::RamFromUniversal { fs: fs.clone() }
-        };
-
-        let graph = GraphLayers::load(path, load_option, do_convert)?;
+        let graph = GraphLayers::load_via(fs, path)?;
 
         Ok(Self {
             id_tracker,

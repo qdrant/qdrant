@@ -668,7 +668,45 @@ impl GraphLayers {
         })
     }
 
+    /// Load purely through universal IO, without the local-mmap and format
+    /// conversion paths of [`Self::load`]. Used by the read-only index.
+    pub fn load_via<Fs>(fs: &Fs, dir: &Path) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs,
+    {
+        let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir))?;
+
+        Ok(Self {
+            hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
+            links: Self::load_links_via(fs, dir)?,
+            entry_points: graph_data.entry_points.into_owned(),
+            visited_pool: VisitedPool::new(),
+        })
+    }
+
     fn load_links<Fs>(dir: &Path, load_option: LoadOption<Fs>) -> OperationResult<GraphLinks>
+    where
+        Fs: UniversalReadFs,
+    {
+        match &load_option {
+            LoadOption::OnDiskMmap => {
+                for format in [
+                    GraphLinksFormat::CompressedWithVectors,
+                    GraphLinksFormat::Compressed,
+                    GraphLinksFormat::Plain,
+                ] {
+                    let path = GraphLayers::get_links_path(dir, format);
+                    if path.exists() {
+                        return GraphLinks::load_from_mmap(&path, format);
+                    }
+                }
+                Err(OperationError::service_error("No links file found"))
+            }
+            LoadOption::RamFromUniversal { fs } => Self::load_links_via(fs, dir),
+        }
+    }
+
+    fn load_links_via<Fs>(fs: &Fs, dir: &Path) -> OperationResult<GraphLinks>
     where
         Fs: UniversalReadFs,
     {
@@ -678,17 +716,8 @@ impl GraphLayers {
             GraphLinksFormat::Plain,
         ] {
             let path = GraphLayers::get_links_path(dir, format);
-            match &load_option {
-                LoadOption::OnDiskMmap => {
-                    if path.exists() {
-                        return GraphLinks::load_from_mmap(&path, format);
-                    }
-                }
-                LoadOption::RamFromUniversal { fs } => {
-                    if fs.exists(&path)? {
-                        return GraphLinks::load_from_universal_file(fs, &path, format);
-                    }
-                }
+            if fs.exists(&path)? {
+                return GraphLinks::load_from_universal_file(fs, &path, format);
             }
         }
         Err(OperationError::service_error("No links file found"))
