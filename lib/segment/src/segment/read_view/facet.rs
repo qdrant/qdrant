@@ -20,15 +20,13 @@ use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{Condition, FieldCondition, Filter, IntPayloadType, Match, ValueVariants};
 
 /// Filter selectivity below which [`SegmentReadView::visit_filter_iter`] beats
-/// [`SegmentReadView::visit_facet_iter`].
+/// [`SegmentReadView::visit_facet_iter`] on the full (non-sampling) path.
 ///
-/// If iterating the whole filter iterator would skip at least this ratio of
-/// the segment, then choose this. If we would need to evaluate more, then go over
-/// the facet index directly.
-//
-// TODO(facets): benchmark the two regimes separately; they likely want
-// different thresholds now that the full-scan probe is precomputed.
-const ITER_FILTER_INDEX_SELECTIVITY: f64 = 0.3;
+/// The filter-iter cost grows linearly with selectivity, while the posting
+/// walk with a precomputed probe is nearly flat.
+///
+/// If we make the filter-iter cheaper, we can increase this value.
+const ITER_FILTER_INDEX_SELECTIVITY: f64 = 0.1;
 
 /// Multiplier from the user-facing `limit` to the per-segment sampling budget.
 ///
@@ -137,12 +135,35 @@ where
         }
 
         let facet_index = self.facet_index_for(&request.key)?;
-        // Decide strategy based on facet cardinality vs requested limit.
-        let unique_count = facet_index.unique_values_count();
-        let use_sampling = unique_count > request.limit.saturating_mul(OVERSAMPLE_FACTOR);
+        let sample_target = MIN_SAMPLE_TARGET.max(request.limit.saturating_mul(OVERSAMPLE_FACTOR));
+
+        // Sampling pays off when there are many more unique values than requested,
+        // and the filter (if any) is broad enough for random draws to be cheap.
+        let unique_values_count = facet_index.unique_values_count();
+        let use_sampling = if unique_values_count > sample_target {
+            match &request.filter {
+                // Random sampling is too expensive with a restrictive filter,
+                // check if we should abort sampling
+                Some(filter) => {
+                    // Expected number of draws from random id stream to reach `sample_target` values
+                    let expected_draws =
+                        sample_target.saturating_mul(available_points / unique_values_count.max(1));
+                    !self.should_pre_filter(filter, Some(expected_draws), hw_counter)?
+                }
+                None => true,
+            }
+        } else {
+            false
+        };
 
         if use_sampling {
-            self.sampled_approximate_facet(&facet_index, request, is_stopped, hw_counter)
+            self.sampled_approximate_facet(
+                &facet_index,
+                request,
+                sample_target,
+                is_stopped,
+                hw_counter,
+            )
         } else {
             self.full_approximate_facet(&facet_index, request, is_stopped, hw_counter)
         }
@@ -176,7 +197,7 @@ where
             // Iterate the filter, then hash each value to get counts
             self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped, hw_counter)
         } else {
-            // Every posting element gets checked, so materializing the filter
+            // Every posting element will be checked, so materializing the filter
             // once is cheaper than that many per-point evaluations.
             let bitmap = self
                 .payload_index
@@ -202,12 +223,10 @@ where
         &self,
         facet_index: &impl FacetIndex,
         request: &FacetParams,
+        sample_target: usize,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        let sample_target =
-            (request.limit.saturating_mul(OVERSAMPLE_FACTOR)).max(MIN_SAMPLE_TARGET);
-
         let Some(filter) = &request.filter else {
             // No filter: extract each values' count from the index, but sample candidates first
             let candidates = self.collect_candidate_values(
@@ -299,8 +318,7 @@ where
             DeferredBehavior::VisibleOnly,
         )?;
         facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
-            // todo: maybe we can avoid `unique`, it's approximate after all
-            iter.unique().for_each(|value| {
+            iter.for_each(|value| {
                 let value = value.to_owned();
                 *hits.entry(value).or_insert(0) += 1;
             });
