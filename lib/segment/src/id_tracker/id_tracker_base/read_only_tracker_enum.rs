@@ -1,7 +1,10 @@
+use std::path::Path;
+
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracker;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
@@ -10,6 +13,29 @@ use crate::types::{PointIdType, SeqNumberType};
 pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
     Appendable(ReadOnlyAppendableIdTracker<S>),
     Immutable(ReadOnlyImmutableIdTracker<S>),
+}
+
+impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
+    /// Open the read-only ID tracker, mirroring the writable `create_segment_id_tracker` selection.
+    pub fn open(
+        fs: &S::Fs,
+        segment_path: &Path,
+        mutable_id_tracker: bool,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Self> {
+        if mutable_id_tracker {
+            Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open(
+                fs,
+                segment_path,
+                deferred_internal_id,
+            )?))
+        } else {
+            Ok(Self::Immutable(ReadOnlyImmutableIdTracker::open(
+                fs,
+                segment_path,
+            )?))
+        }
+    }
 }
 
 impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {

@@ -1,4 +1,5 @@
 pub mod id_tracker_read;
+mod lifecycle;
 
 use std::path::PathBuf;
 
