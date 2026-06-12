@@ -18,7 +18,7 @@ use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_p
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
-use crate::turboquant::{EncodedQueryTQ, TQBits, TQMode};
+use crate::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
@@ -53,6 +53,10 @@ pub fn new_turbo_quantizer_from_metadata(metadata: &Metadata) -> std::io::Result
         metadata.bits,
         metadata.mode,
         metadata.vector_parameters.distance_type,
+        // The secondary-quantization layer keeps the original full-padded
+        // rotation: its encoding is already persisted with it, and Bits1_5
+        // depends on rotating into the padding.
+        TQRotation::Padded,
         error_correction,
     ))
 }

@@ -75,6 +75,26 @@ pub enum TQMode {
     Plus,
 }
 
+/// Which coordinates the Hadamard rotation spans.
+///
+/// WARNING: the choice is baked into the encoding of every quantized vector —
+/// changing it for an existing storage silently corrupts all stored vectors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TQRotation {
+    /// Rotate the whole zero-padded buffer (`padded_dim` coordinates). The
+    /// rotation spreads the input energy across the padding, so a dequantized
+    /// vector truncated back to `dim` loses the tail's share of energy.
+    /// Required for [`TQBits::Bits1_5`], whose extra precision comes exactly
+    /// from rotating into the x1.5 padding.
+    Padded,
+    /// Rotate only the original `dim` coordinates; the zero padding stays
+    /// exactly zero through both the rotation and its inverse. Used by the
+    /// TQ-as-datatype storages, where vectors are reconstructed from the codes
+    /// alone: the padding tail never mixes into the real coordinates, so
+    /// truncating it on read-back is lossless.
+    Unpadded,
+}
+
 /// Encoded query type for Turbo Quant.
 pub struct EncodedQueryTQ {
     /// SIMD-encoded query for the asymmetric scoring path. For TQ+, the
