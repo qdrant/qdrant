@@ -108,9 +108,13 @@ async fn test_hw_metrics_cancellation() {
         );
     }
 
-    // Cancellation and draining hardware counters is asynchronous on CI runners.
-    // Poll with a bounded timeout to avoid timing-sensitive flakes.
-    let wait_timeout = Duration::from_secs(2);
+    // Cancellation and draining hardware counters is asynchronous: the
+    // counters are only drained once the timed-out search task reaches a
+    // cancellation checkpoint and is dropped, which on oversubscribed CI
+    // runners has been observed to take longer than 2s (see #9184). The loop
+    // exits as soon as the drain happens, so a generous ceiling adds no
+    // latency to healthy runs.
+    let wait_timeout = Duration::from_secs(60);
     let poll_interval = Duration::from_millis(10);
     let wait_started = std::time::Instant::now();
     while outer_hw.get_cpu() == 0 {
