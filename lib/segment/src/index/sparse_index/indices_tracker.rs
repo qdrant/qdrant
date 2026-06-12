@@ -23,7 +23,7 @@ impl IndicesTracker {
     }
 
     /// Universal-IO variant of [`Self::open`].
-    pub fn open_via<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> universal_io::Result<Self> {
+    pub fn open_universal<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> universal_io::Result<Self> {
         read_json_via(fs, Self::file_path(path))
     }
 

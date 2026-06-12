@@ -479,7 +479,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
     /// Load purely through universal IO, without the legacy-header upgrade
     /// write path of [`Self::load`]. Used by the read-only index.
-    pub fn load_via(fs: &S::Fs, path: &Path) -> Result<Self> {
+    pub fn load_universal(fs: &S::Fs, path: &Path) -> Result<Self> {
         let file_header: InvertedIndexFileHeader =
             read_json_via(fs, Self::index_config_file_path(path))?;
 
