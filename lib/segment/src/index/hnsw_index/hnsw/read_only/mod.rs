@@ -25,7 +25,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// Read-only, generic-over-storage counterpart of [`HNSWIndex`].
 ///
 /// The graph itself stays a plain [`GraphLayers`] (it materializes into RAM on
-/// load via [`GraphLayers::load_via`] over a [`UniversalRead`] filesystem),
+/// load via [`GraphLayers::load_universal`] over a [`UniversalRead`] filesystem),
 /// so only the id tracker, vector storage and quantized vectors are
 /// parameterized by the backing storage `S`.
 ///
@@ -72,7 +72,7 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
         hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
         let config_path = HnswGraphConfig::get_config_path(path);
-        let config = match HnswGraphConfig::load_via(fs, &config_path)? {
+        let config = match HnswGraphConfig::load_universal(fs, &config_path)? {
             Some(config) => config,
             None => {
                 let vector_storage = vector_storage.borrow();
@@ -99,7 +99,7 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
             }
         };
 
-        let graph = GraphLayers::load_via(fs, path)?;
+        let graph = GraphLayers::load_universal(fs, path)?;
 
         Ok(Self {
             id_tracker,

@@ -73,7 +73,7 @@ impl HNSWIndex {
         } = args;
 
         let config_path = HnswGraphConfig::get_config_path(path);
-        let config = match HnswGraphConfig::load_via(&MmapFs, &config_path)? {
+        let config = match HnswGraphConfig::load_universal(&MmapFs, &config_path)? {
             Some(config) => config,
             None => {
                 let vector_storage = vector_storage.borrow();

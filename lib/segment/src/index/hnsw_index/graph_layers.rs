@@ -675,7 +675,7 @@ impl GraphLayers {
 
     /// Load purely through universal IO, without the local-mmap and format
     /// conversion paths of [`Self::load`]. Used by the read-only index.
-    pub fn load_via<Fs>(fs: &Fs, dir: &Path) -> OperationResult<Self>
+    pub fn load_universal<Fs>(fs: &Fs, dir: &Path) -> OperationResult<Self>
     where
         Fs: UniversalReadFs,
     {
@@ -683,7 +683,7 @@ impl GraphLayers {
 
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: Self::load_links_via(fs, dir)?,
+            links: Self::load_links_universal(fs, dir)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
@@ -707,11 +707,11 @@ impl GraphLayers {
                 }
                 Err(OperationError::service_error("No links file found"))
             }
-            LoadOption::RamFromUniversal { fs } => Self::load_links_via(fs, dir),
+            LoadOption::RamFromUniversal { fs } => Self::load_links_universal(fs, dir),
         }
     }
 
-    fn load_links_via<Fs>(fs: &Fs, dir: &Path) -> OperationResult<GraphLinks>
+    fn load_links_universal<Fs>(fs: &Fs, dir: &Path) -> OperationResult<GraphLinks>
     where
         Fs: UniversalReadFs,
     {
