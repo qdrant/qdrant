@@ -89,8 +89,6 @@ impl<
     TVectorStorage: MultiVectorStorageRead<TElement>,
 > QueryScorer for MultiMetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
-    type TVector = TypedMultiDenseVector<TElement>;
-
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi::<Random>(idx);
@@ -99,14 +97,6 @@ impl<
             .incr_delta(stored.as_ref().vectors_count());
 
         self.score_multi(TypedMultiDenseVectorRef::from(&self.query), stored.as_ref())
-    }
-
-    #[inline]
-    fn score(&self, v2: &TypedMultiDenseVector<TElement>) -> ScoreType {
-        self.score_multi(
-            TypedMultiDenseVectorRef::from(&self.query),
-            TypedMultiDenseVectorRef::from(v2),
-        )
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {

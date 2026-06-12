@@ -18,8 +18,6 @@ pub mod turbo_custom_query_scorer;
 pub mod turbo_query_scorer;
 
 pub trait QueryScorer {
-    type TVector: ?Sized;
-
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType;
 
     /// Score a batch of points
@@ -32,8 +30,6 @@ pub trait QueryScorer {
             scores[idx] = self.score_stored(*id);
         }
     }
-
-    fn score(&self, v2: &Self::TVector) -> ScoreType;
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 

@@ -4,7 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::DenseVector;
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -78,8 +78,6 @@ impl<TEncodedVectors> QueryScorer for QuantizedQueryScorer<'_, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors,
 {
-    type TVector = [VectorElementType];
-
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
         debug_assert_eq!(ids.len(), scores.len());
 
@@ -100,10 +98,6 @@ where
             .incr_delta(self.quantized_data.quantized_vector_size());
         self.quantized_data
             .score_point(&self.query, idx, &self.hardware_counter)
-    }
-
-    fn score(&self, _v2: &[VectorElementType]) -> ScoreType {
-        unimplemented!("This method is not expected to be called for quantized scorer");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
