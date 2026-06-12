@@ -292,7 +292,14 @@ mod tests {
                 for &distance in SUPPORTED_DISTANCES {
                     let predicted_extra_size = TqVectorExtras::size_for(bits, distance, mode);
 
-                    let tq = TurboQuantizer::new(dim, bits, mode, distance, None);
+                    let tq = TurboQuantizer::new(
+                        dim,
+                        bits,
+                        mode,
+                        distance,
+                        crate::turboquant::TQRotation::Padded,
+                        None,
+                    );
                     let (l2_length, centroid_norm, expected_scaling) = example_extras(distance);
                     let expected_ec = match mode {
                         TQMode::Plus => Some(-0.5),

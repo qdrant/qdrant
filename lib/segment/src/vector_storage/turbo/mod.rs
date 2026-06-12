@@ -24,7 +24,7 @@ use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode};
+use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
 use self::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use crate::common::Flusher;
@@ -41,6 +41,7 @@ use crate::vector_storage::{DenseTQVectorStorage, VectorStorage, VectorStorageRe
 // TurboQuant DataType (TQDT) always uses 4 bits without shift+scale error correction.
 const TQDT_BITS: TQBits = TQBits::Bits4;
 const TQDT_MODE: TQMode = TQMode::Normal;
+const TQDT_ROTATION: TQRotation = TQRotation::Unpadded;
 
 const VECTORS_PATH: &str = "tq_vectors.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -155,7 +156,7 @@ impl TurboVectorStorage {
         let mut dequantized = self.quantizer.dequantize::<f64>(&quantized);
 
         // Rotate back
-        self.quantizer.rotation.apply_inverse(&mut dequantized);
+        self.quantizer.apply_inverse_rotation(&mut dequantized);
 
         // Drop the padding tail: callers expect the original dimensionality.
         CowVector::Dense(Cow::Owned(
@@ -231,7 +232,14 @@ fn open_turbo_vector_storage_impl(
 ) -> OperationResult<TurboVectorStorage> {
     fs_err::create_dir_all(path)?;
 
-    let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+    let quantizer = TurboQuantizer::new(
+        dim,
+        TQDT_BITS,
+        TQDT_MODE,
+        distance.into(),
+        TQDT_ROTATION,
+        None,
+    );
 
     let storage = open_storage(&path.join(VECTORS_PATH), quantizer.quantized_size())?;
 
@@ -441,7 +449,14 @@ mod tests {
                 // Independent oracle, computed up front and fully independently of the
                 // storage: a fresh quantizer configured exactly like the storage's
                 // internal one, plus `Vec<>`s standing in as a reference store.
-                let oracle = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+                let oracle = TurboQuantizer::new(
+                    dim,
+                    TQDT_BITS,
+                    TQDT_MODE,
+                    distance.into(),
+                    TQDT_ROTATION,
+                    None,
+                );
                 let mut buf = vec![0.0f64; oracle.get_padded_dim()];
 
                 let inputs = make_vectors(dim, COUNT, seed);
@@ -557,7 +572,14 @@ mod tests {
                 let stopped = AtomicBool::new(false);
 
                 // Independent oracle, configured exactly like the storage's quantizer.
-                let oracle = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+                let oracle = TurboQuantizer::new(
+                    dim,
+                    TQDT_BITS,
+                    TQDT_MODE,
+                    distance.into(),
+                    TQDT_ROTATION,
+                    None,
+                );
                 let mut buf = vec![0.0f64; oracle.get_padded_dim()];
                 let inputs = make_vectors(dim, COUNT, seed);
                 let expected_bytes: Vec<Vec<u8>> = inputs
@@ -1255,7 +1277,14 @@ mod tests {
 
     impl Oracle {
         fn new(dim: usize, distance: Distance) -> Self {
-            let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+            let quantizer = TurboQuantizer::new(
+                dim,
+                TQDT_BITS,
+                TQDT_MODE,
+                distance.into(),
+                TQDT_ROTATION,
+                None,
+            );
             Self { quantizer, dim }
         }
 
@@ -1268,7 +1297,7 @@ mod tests {
         /// back, drop the padding tail, cast to f32.
         fn dequantize(&self, encoded: &[u8]) -> DenseVector {
             let mut d = self.quantizer.dequantize::<f64>(encoded);
-            self.quantizer.rotation.apply_inverse(&mut d);
+            self.quantizer.apply_inverse_rotation(&mut d);
             d[..self.dim].iter().map(|&x| x as f32).collect()
         }
 
