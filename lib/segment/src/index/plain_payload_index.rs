@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
@@ -21,7 +22,7 @@ use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
-use crate::index::query_optimization::optimized_filter::{ConditionChecker, DynConditionChecker};
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
@@ -336,6 +337,8 @@ pub struct PlainFilterContext<'a> {
 }
 
 impl ConditionChecker for PlainFilterContext<'_> {
+    type Error = OperationError;
+
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(self.condition_checker.check(point_id, self.filter))
     }

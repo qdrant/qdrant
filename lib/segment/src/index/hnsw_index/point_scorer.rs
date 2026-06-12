@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
@@ -8,9 +9,8 @@ use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use smallvec::SmallVec;
 
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -70,7 +70,7 @@ pub struct ScorerFilters<'a> {
     vec_deleted: &'a BitSlice,
 }
 
-type DynConditionChecker<'a> = BoxCow<'a, dyn ConditionChecker + 'a>;
+type DynConditionChecker<'a> = BoxCow<'a, dyn ConditionChecker<Error = OperationError> + 'a>;
 
 impl<'a> ScorerFilters<'a> {
     /// Return true if vector satisfies current search context for given point:
