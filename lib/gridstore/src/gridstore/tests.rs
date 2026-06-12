@@ -1369,7 +1369,7 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
             pointers.into_iter().enumerate(),
             |idx, bytes| {
                 batch_results[idx] = Some(bytes.into_owned());
-                Ok(())
+                Ok(true)
             },
         )
         .unwrap();

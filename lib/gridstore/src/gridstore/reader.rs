@@ -112,15 +112,23 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
-        callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
         E: From<GridstoreError>,
     {
-        self.view()
-            .read_values::<P, _, _>(point_offsets, callback, hw_counter_cell)
+        self.view().read_values::<P, _, _>(
+            point_offsets,
+            move |user_data, point_offset, value| -> Result<_, E> {
+                callback(user_data, point_offset, value)?;
+                Ok(true)
+            },
+            hw_counter_cell,
+        )?;
+
+        Ok(())
     }
 
     /// Return the storage size in bytes (approximate: total page capacity).

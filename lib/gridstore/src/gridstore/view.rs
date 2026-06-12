@@ -112,9 +112,9 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
     pub fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
-        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
-    ) -> Result<(), E>
+    ) -> Result<bool, E>
     where
         P: AccessPattern,
         U: UserData,
@@ -129,7 +129,10 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
             let ((user_data, point_offset), pointer) = result?;
 
             let PointerItem::Valid(pointer) = pointer else {
-                callback(user_data, point_offset, None)?;
+                if !callback(user_data, point_offset, None)? {
+                    return Ok(false);
+                }
+
                 continue;
             };
 
@@ -146,9 +149,7 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
                 let value = V::from_bytes(&decompressed);
                 callback(user_data, point_offset, Some(value))
             },
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Iterate over all the values in the storage.
