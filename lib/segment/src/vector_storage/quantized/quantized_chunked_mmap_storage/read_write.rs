@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
+use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalWrite};
@@ -48,6 +48,22 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
     pub fn clear_cache(&self) -> OperationResult<()> {
         let Self { data } = self;
         data.clear_cache()
+    }
+
+    /// Record slots left in the chunk containing `start`.
+    pub fn get_remaining_chunk_keys(&self, start: PointOffsetType) -> usize {
+        self.data
+            .get_remaining_chunk_keys(start as VectorOffsetType)
+    }
+
+    /// Returns multiple continuous vectors given a start `index` and a `count` of vectors to return.
+    ///
+    /// This function returns `None` if the vector is out of bounds or is located across multiple chunks.
+    pub fn get_many<P>(&self, index: PointOffsetType, count: usize) -> Option<Cow<'_, [u8]>>
+    where
+        P: AccessPattern,
+    {
+        self.data.get_many::<P>(index as usize, count)
     }
 }
 

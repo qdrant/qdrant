@@ -341,6 +341,35 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
     }
 }
 
+/// Read + bulk-ingest access to a multivector storage of TurboQuant encoded
+/// inner vectors. Multi counterpart of [`DenseTQVectorStorage`].
+pub trait MultiTQVectorStorage: VectorStorageRead {
+    /// Original dimension of each inner vector, without quantization applied.
+    fn vector_dim(&self) -> usize;
+
+    /// Size in bytes of one encoded inner vector.
+    fn quantized_vector_size(&self) -> usize;
+
+    fn multi_vector_config(&self) -> &MultiVectorConfig;
+
+    /// Concatenated encoded inner vectors of one point; the inner vector count
+    /// is `len() / quantized_vector_size()`. Merge/retrieval API only — scoring
+    /// must read inner records individually to avoid the concatenation.
+    fn get_multi_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]>;
+
+    /// Add the given multi TQ vectors to the storage.
+    ///
+    /// # Returns
+    /// The range of point offsets that were added to the storage.
+    ///
+    /// If stopped, the operation returns a cancellation error.
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>>;
+}
+
 #[derive(Debug)]
 pub enum VectorStorageEnum {
     DenseVolatile(VolatileDenseVectorStorage<VectorElementType>),
