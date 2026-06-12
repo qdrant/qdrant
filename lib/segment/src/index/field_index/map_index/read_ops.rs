@@ -1,6 +1,8 @@
 use std::borrow::{Borrow, Cow};
 use std::hash::{BuildHasher, Hash};
+use std::marker::PhantomData;
 
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Blob;
@@ -8,10 +10,12 @@ use indexmap::IndexSet;
 
 use super::key::MapIndexKey;
 use super::{IdIter, MapIndex};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
+use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::telemetry::PayloadIndexTelemetry;
 
 /// Read-only operations supported by every map-index storage variant
@@ -23,7 +27,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`MapIndex`] can call them generically. Variants that don't need
 /// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the
 /// storage-backed `Universal` variant uses it to track payload-index IO.
-pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a> {
+pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -191,6 +195,50 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a> {
             Ok(())
         })?;
         Ok(Box::new(points.into_iter()))
+    }
+
+    /// Condition checker for [`crate::types::Match::Value`].
+    fn match_value_checker(
+        &'a self,
+        hw_counter: HardwareCounterCell,
+        value: impl Borrow<N> + 'a,
+    ) -> DynConditionChecker<'a> {
+        Box::new(MapConditionChecker {
+            index: self,
+            hw_counter,
+            predicate: move |v: &N| v == value.borrow(),
+            _key: PhantomData,
+        })
+    }
+
+    /// Condition checker for
+    /// - [`crate::types::Match::Any`] (when `negate` is `false`),
+    /// - [`crate::types::Match::Except`] (when `negate` is `true`).
+    fn match_any_checker<K, A>(
+        &'a self,
+        hw_counter: HardwareCounterCell,
+        list: IndexSet<K, A>,
+        negate: bool,
+    ) -> DynConditionChecker<'a>
+    where
+        A: BuildHasher + 'a,
+        K: Borrow<N> + Hash + Eq + 'a,
+    {
+        if list.len() < INDEXSET_ITER_THRESHOLD {
+            Box::new(MapConditionChecker {
+                index: self,
+                hw_counter,
+                predicate: move |value: &N| list.iter().any(|e| e.borrow() == value) != negate,
+                _key: PhantomData,
+            })
+        } else {
+            Box::new(MapConditionChecker {
+                index: self,
+                hw_counter,
+                predicate: move |value: &N| list.contains(value) != negate,
+                _key: PhantomData,
+            })
+        }
     }
 }
 
@@ -406,5 +454,26 @@ where
             Self::Immutable(index) => index.storage_type(),
             Self::OnDisk(index) => index.storage_type(),
         }
+    }
+}
+
+struct MapConditionChecker<'a, T, N: ?Sized, F> {
+    index: &'a T,
+    hw_counter: HardwareCounterCell,
+    predicate: F,
+    _key: PhantomData<fn(&N)>,
+}
+
+impl<'a, N, T, F> ConditionChecker for MapConditionChecker<'a, T, N, F>
+where
+    N: MapIndexKey + ?Sized + 'a,
+    T: MapIndexRead<'a, N>,
+    F: Fn(&N) -> bool,
+{
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        self.index
+            .check_values_any(point_id, &self.hw_counter, &self.predicate)
     }
 }

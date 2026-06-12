@@ -20,7 +20,6 @@ use crate::index::field_index::{
 };
 use crate::index::query_estimator::combine_should_estimations;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
-use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
     ValueVariants,
@@ -267,44 +266,13 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
     match cond_match {
         Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
-        }) => {
-            let keyword = keyword.clone();
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, &hw_counter, |value| value == keyword.as_str())
-            }))
-        }
+        }) => Some(index.match_value_checker(hw_counter, keyword.clone())),
         Match::Any(MatchAny {
             any: AnyVariants::Strings(list),
-        }) => {
-            let list = list.clone();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        list.iter().any(|s| s.as_str() == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| list.contains(value))
-                }))
-            }
-        }
+        }) => Some(index.match_any_checker(hw_counter, list.clone(), false)),
         Match::Except(MatchExcept {
             except: AnyVariants::Strings(list),
-        }) => {
-            let list = list.clone();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|s| s.as_str() == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
-        }
+        }) => Some(index.match_any_checker(hw_counter, list.clone(), true)),
         // Conditions this index can't serve: Match::Text/TextAny/Phrase
         // (handled by FullTextIndex) and value-type mismatches (e.g.
         // Match::Value(Integer) against a string-keyed map).
