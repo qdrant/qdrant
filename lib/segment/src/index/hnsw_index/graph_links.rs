@@ -261,6 +261,14 @@ impl GraphLinks {
         self.borrow_owner().as_bytes()
     }
 
+    /// Whether the links are mmap-backed rather than resident in RAM.
+    pub fn is_on_disk(&self) -> bool {
+        match self.borrow_owner() {
+            GraphLinksEnum::Ram(_) => false,
+            GraphLinksEnum::Mmap(_) => true,
+        }
+    }
+
     pub fn format(&self) -> GraphLinksFormat {
         match self.view().compression {
             CompressionInfo::Uncompressed { .. } => GraphLinksFormat::Plain,

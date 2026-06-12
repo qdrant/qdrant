@@ -39,7 +39,6 @@ pub struct ReadOnlyHNSWIndex<S: UniversalRead> {
     path: PathBuf,
     graph: GraphLayers,
     searches_telemetry: HNSWSearchesTelemetry,
-    is_on_disk: bool,
 }
 
 /// Read-only view over a [`ReadOnlyHNSWIndex`].
@@ -100,8 +99,6 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
             }
         };
 
-        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
-
         let graph = GraphLayers::load_via(fs, path)?;
 
         Ok(Self {
@@ -113,12 +110,12 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
             path: path.to_owned(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
-            is_on_disk,
         })
     }
 
+    /// Reports the loaded graph's actual residency, not the config intent.
     pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+        self.graph.is_on_disk()
     }
 
     /// Read underlying graph data from disk into the disk cache.

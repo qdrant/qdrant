@@ -620,6 +620,11 @@ impl GraphLayers {
     pub fn num_points(&self) -> usize {
         self.links.num_points()
     }
+
+    /// Whether the links are mmap-backed rather than resident in RAM.
+    pub fn is_on_disk(&self) -> bool {
+        self.links.is_on_disk()
+    }
 }
 
 pub enum LoadOption<Fs: UniversalReadFs> {
