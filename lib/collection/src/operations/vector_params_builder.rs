@@ -7,7 +7,7 @@ use std::num::NonZeroU64;
 use segment::types::{Distance, QuantizationConfig};
 
 use crate::operations::config_diff::HnswConfigDiff;
-use crate::operations::types::VectorParams;
+use crate::operations::types::{Datatype, VectorParams};
 
 pub struct VectorParamsBuilder {
     vector_params: VectorParams,
@@ -46,6 +46,11 @@ impl VectorParamsBuilder {
 
     pub fn with_quantization_config(mut self, quantization_config: QuantizationConfig) -> Self {
         self.vector_params.quantization_config = Some(quantization_config);
+        self
+    }
+
+    pub fn with_datatype(mut self, datatype: Datatype) -> Self {
+        self.vector_params.datatype = Some(datatype);
         self
     }
 

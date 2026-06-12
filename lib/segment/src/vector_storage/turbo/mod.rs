@@ -315,6 +315,31 @@ fn open_turbo_vector_storage_impl(
     })
 }
 
+/// Quantize then dequantize `vector` exactly as a [`TurboVectorStorage`] with this
+/// `distance` does across `insert_vector` + `get_vector`. Pure function of its inputs:
+/// the quantizer is fully determined by `(dim, distance)` (the rotation derives from
+/// fixed seeds), so the result is identical across storage instances, segment rebuilds,
+/// and reloads. Lets model-based tests predict the read-back value of a Turbo4-backed
+/// vector without opening a storage.
+pub fn turbo_storage_roundtrip(vector: &[f32], distance: Distance) -> Vec<f32> {
+    let dim = vector.len();
+    let quantizer = TurboQuantizer::new(
+        dim,
+        TQDT_BITS,
+        TQDT_MODE,
+        distance.into(),
+        TQDT_ROTATION,
+        None,
+    );
+    let mut buf = vec![0.0; quantizer.get_padded_dim()];
+    let encoded = quantizer.quantize(vector, &mut buf);
+    // Mirror of `TurboVectorStorage::dequantize_vector`: dequantize, rotate back, drop
+    // the padding tail, cast to f32.
+    let mut dequantized = quantizer.dequantize::<f64>(&encoded);
+    quantizer.apply_inverse_rotation(&mut dequantized);
+    dequantized[..dim].iter().map(|&x| x as f32).collect()
+}
+
 impl VectorStorageRead for TurboVectorStorage {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.quantized_vector_size()

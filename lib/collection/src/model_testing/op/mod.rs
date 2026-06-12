@@ -25,11 +25,12 @@ use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
     MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    PointIdType, VectorNameBuf, WithPayloadInterface, WithVector,
+    PointIdType, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
+use segment::vector_storage::turbo::turbo_storage_roundtrip;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::{ALL_CANDIDATES, Model, ModelEntry, VectorKind, VectorValue};
+use super::{ALL_CANDIDATES, Model, ModelEntry, VectorKind, VectorValue, kind_of};
 use crate::operations::point_ops::UpdateMode;
 
 /// Operations driven against both the live `Collection` and the model.
@@ -611,6 +612,12 @@ impl Op {
                         multivector_config: Some(MultiVectorConfig::default()),
                         datatype: None,
                     }),
+                    VectorKind::DenseTurbo(dim) => VectorNameConfig::dense(DenseVectorConfig {
+                        size: dim as usize,
+                        distance: Distance::Dot,
+                        multivector_config: None,
+                        datatype: Some(VectorStorageDatatype::Turbo4),
+                    }),
                 };
                 Op::CreateVectorName {
                     name: pick.name.to_string(),
@@ -861,9 +868,87 @@ pub(super) fn has_num(payload: &Payload) -> bool {
 /// Build a new `ModelEntry` from a fresh upsert.
 pub(super) fn model_entry_from(vecs: &NamedVectors, payload: &Payload) -> ModelEntry {
     ModelEntry {
-        vectors: vecs.clone(),
+        vectors: vecs
+            .iter()
+            .map(|(name, value)| (name.clone(), model_vector(name, value)))
+            .collect(),
         payload: payload.clone(),
     }
+}
+
+/// Predicted engine read-back for `value` stored under `name`. Turbo4-backed dense
+/// vectors are lossy: the engine stores 4-bit quantized codes and returns the
+/// dequantized vector, so the model must record that round-trip instead of the inserted
+/// value. The round-trip is deterministic (fixed rotation seeds), shared across
+/// segments and reloads. The engine still receives the original vector: the round-trip
+/// is not idempotent (re-quantizing a read-back shifts the stored norm), so
+/// canonicalizing at generation time would not converge.
+pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
+    match (kind_of(name), value) {
+        (VectorKind::DenseTurbo(_), VectorValue::Dense(v)) => {
+            // Every fixture vector uses Dot (see `fixture::fixture` and the
+            // CreateVectorName generator arm above).
+            VectorValue::Dense(turbo_storage_roundtrip(v, Distance::Dot))
+        }
+        _ => value.clone(),
+    }
+}
+
+/// Compare a returned dense vector against the model's prediction for `name`.
+/// Exact for full-precision names. Turbo4 read-backs are compared with a tiny
+/// relative tolerance: a copy-on-write point move re-quantizes the dequantized
+/// read-back, and although the codes and the centroid norm are reproduced, the
+/// re-measured stored norm passes through two f64 rotation round-trips and can
+/// land a few ulps off, uniformly rescaling the read-back at ulp scale. Real
+/// divergences (wrong codes, stale vector) are orders of magnitude larger than
+/// this tolerance.
+pub(super) fn dense_matches(name: &str, actual: &[f32], expected: &[f32]) -> bool {
+    if actual.len() != expected.len() {
+        return false;
+    }
+    match kind_of(name) {
+        VectorKind::DenseTurbo(_) => actual.iter().zip(expected).all(|(&a, &e)| {
+            let tol = f32::max(1e-5 * f32::max(a.abs(), e.abs()), 1e-6);
+            (a - e).abs() <= tol
+        }),
+        VectorKind::Dense(_) | VectorKind::Sparse | VectorKind::MultiDense(_) => actual == expected,
+    }
+}
+
+/// Human-readable breakdown of a dense mismatch for panic messages: per-component
+/// deltas plus a uniform-scale probe. A uniform engine/model ratio across all
+/// components is the signature of a re-quantization rescale (e.g. the Turbo4
+/// copy-on-write degradation, where read-backs come back scaled by `cn/sqrt(d)`),
+/// as opposed to per-component noise or a stale/wrong vector.
+pub(super) fn dense_diff(actual: &[f32], expected: &[f32]) -> String {
+    if actual.len() != expected.len() {
+        return format!(
+            "length mismatch: engine {} vs model {}",
+            actual.len(),
+            expected.len(),
+        );
+    }
+    let diffs: Vec<f32> = actual.iter().zip(expected).map(|(&a, &e)| a - e).collect();
+    let max_abs_diff = diffs.iter().fold(0.0f32, |m, d| m.max(d.abs()));
+    let ratios: Vec<f32> = actual
+        .iter()
+        .zip(expected)
+        .map(|(&a, &e)| if e.abs() > 1e-12 { a / e } else { f32::NAN })
+        .collect();
+    // Judge uniformity on the finite ratios only: a near-zero expected component
+    // yields a NaN ratio, and a genuinely uniform rescale should still be labeled
+    // as such when one component sits at zero.
+    let finite: Vec<f32> = ratios.iter().copied().filter(|r| r.is_finite()).collect();
+    let uniform = !finite.is_empty() && finite.iter().all(|r| (r - finite[0]).abs() < 1e-5);
+    let scale_note = if uniform {
+        format!(
+            "UNIFORM engine/model scale {:.6} (single rescale)",
+            finite[0]
+        )
+    } else {
+        "non-uniform ratios (per-component divergence)".to_string()
+    };
+    format!("max_abs_diff={max_abs_diff:e}; diffs={diffs:?}; ratios={ratios:?}; {scale_note}")
 }
 
 /// Sort sparse indices ascending and drop entries with zero value (mirrors the engine's
