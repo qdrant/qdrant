@@ -230,6 +230,22 @@ where
         Ok(new_id)
     }
 
+    /// Widen the recorded length to at least `len` without writing any vector data.
+    ///
+    /// Reload-time repair hook: flushers snapshot `status.len` at creation time but msync
+    /// chunk data at execution time, so a crash can leave durable rows (and durable
+    /// references to them in a sibling store) beyond the recorded length. The data is
+    /// already on disk; only the length lagged. Clamped to the physically existing chunk
+    /// space so a corrupt caller-supplied value can't make reads address missing chunks.
+    pub fn ensure_len_at_least(&mut self, len: usize) {
+        let physical_capacity = self.inner.chunks.len() * self.inner.config.chunk_size_vectors;
+        let len = len.min(physical_capacity);
+        if len > self.status.len {
+            self.status.len = len;
+            self.inner.len = len;
+        }
+    }
+
     pub fn flusher(&self) -> Flusher {
         Box::new({
             let status_flusher = self.status.flusher();

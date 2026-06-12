@@ -573,8 +573,9 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedVectors::open(MmapFs, &vectors_path, dim, madvise, Some(populate))?;
+    let mut vectors = ChunkedVectors::open(MmapFs, &vectors_path, dim, madvise, Some(populate))?;
     let offsets = ChunkedVectors::open(MmapFs, &offsets_path, 1, madvise, Some(populate))?;
+    repair_vectors_len(&mut vectors, &offsets);
 
     let deleted = BitvecFlags::new(
         MmapFs,
@@ -590,6 +591,52 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         multi_vector_config,
         deleted_count,
     })
+}
+
+/// Reload-time repair for the two-store flush skew.
+///
+/// `vectors` and `offsets` are flushed independently, and each flusher snapshots its
+/// `status.len` at creation time while msyncing chunk data at execution time. A point
+/// re-upserted through the append path in that window rewrites its `offsets` entry in
+/// place to a freshly-appended row region; the entry can land durably while `vectors`'
+/// recorded length still predates the rows it references. The rows themselves are
+/// durable (the storage flusher msyncs `vectors` before `offsets`), so it suffices to
+/// widen the recorded length to cover the maximum referenced row-end. Without this,
+/// reads of such entries are rejected and, worse, a WAL-replayed append reuses those
+/// rows (`new_key = vectors.len()`) and overwrites another point's data.
+fn repair_vectors_len<T: PrimitiveVectorElement>(
+    vectors: &mut ChunkedVectors<T, MmapFile>,
+    offsets: &ChunkedVectors<MultivectorMmapOffset, MmapFile>,
+) {
+    let mut max_row_end = 0;
+    for key in 0..offsets.len() {
+        let Some(entry) = offsets.get::<Sequential>(key as VectorOffsetType) else {
+            continue;
+        };
+        let &[
+            MultivectorMmapOffset {
+                offset,
+                count: _,
+                // The reserved region is `offset..offset + capacity`; `count` only shrinks
+                // within it on in-place re-upserts, and the original append recorded
+                // `offset + capacity` as the length contribution.
+                capacity,
+            },
+        ] = entry.as_ref()
+        else {
+            unreachable!("multi-vector offsets are stored as vectors of length 1");
+        };
+        max_row_end = max_row_end.max(offset as usize + capacity as usize);
+    }
+    if max_row_end > vectors.len() {
+        log::warn!(
+            "Multi-vector offsets reference rows beyond the recorded vectors length \
+             ({} > {}); widening it (stale length snapshot from an interrupted flush)",
+            max_row_end,
+            vectors.len(),
+        );
+        vectors.ensure_len_at_least(max_row_end);
+    }
 }
 
 /// Find files related to this dense vector storage
@@ -674,5 +721,90 @@ mod tests {
             storage_files, found_files,
             "find_storage_files must find same files that storage reports",
         );
+    }
+
+    /// Reproduces the on-disk state left by an interrupted flush: rows and the offsets
+    /// entries referencing them are durable, but the vectors store's recorded length
+    /// (`status.dat`) is stale. Without `repair_vectors_len`, reopening makes those
+    /// points unreadable and lets appends overwrite their rows.
+    #[test]
+    fn repair_stale_vectors_len_on_reload() {
+        const POINT_COUNT: PointOffsetType = 100;
+        const DIM: usize = 4;
+
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        let hw_counter = HardwareCounterCell::disposable();
+
+        let mut expected = Vec::new();
+        {
+            let mut storage =
+                open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+                    dir.path(),
+                    DIM,
+                    Distance::Dot,
+                    MultiVectorConfig::default(),
+                    AdviceSetting::Global,
+                    false,
+                )
+                .unwrap();
+            for internal_id in 0..POINT_COUNT {
+                let size = rng.random_range(2..=4);
+                let vectors = std::iter::repeat_with(|| {
+                    std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                        .take(DIM)
+                        .collect()
+                })
+                .take(size)
+                .collect::<Vec<Vec<_>>>();
+                let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
+                storage
+                    .insert_vector(internal_id, VectorRef::from(&multivec), &hw_counter)
+                    .unwrap();
+                expected.push(multivec);
+            }
+            storage.flusher()().unwrap();
+        }
+
+        // Rewind the recorded length to 1 row, leaving the row data and the offsets
+        // entries untouched: the exact skew an interrupted flush persists.
+        let status_file = ChunkedVectorsRead::<VectorElementType, MmapFile>::status_file(
+            &dir.path().join(VECTORS_DIR_PATH),
+        );
+        let mut status_bytes = fs::read(&status_file).unwrap();
+        let true_len = usize::from_ne_bytes(
+            status_bytes[..std::mem::size_of::<usize>()]
+                .try_into()
+                .unwrap(),
+        );
+        assert!(true_len > 1, "fixture must have appended multiple rows");
+        status_bytes[..std::mem::size_of::<usize>()].copy_from_slice(&1usize.to_ne_bytes());
+        fs::write(&status_file, &status_bytes).unwrap();
+
+        let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            MultiVectorConfig::default(),
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            storage.vectors.len(),
+            true_len,
+            "repair must restore the full recorded length",
+        );
+        for (internal_id, multivec) in expected.iter().enumerate() {
+            let read = storage
+                .get_multi_opt::<Random>(internal_id as PointOffsetType)
+                .unwrap_or_else(|| panic!("point {internal_id} unreadable after reload"));
+            assert_eq!(
+                read.as_vec_ref().flattened_vectors,
+                multivec.flattened_vectors.as_slice(),
+                "point {internal_id} content diverged after reload",
+            );
+        }
     }
 }
