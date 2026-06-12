@@ -79,7 +79,7 @@ fn build_tokens_processor(value: TextPreprocessingConfig) -> TokensProcessor {
     // stopwords. That hack is deprecated: use `stemmer: {"type": "none"}` plus an
     // empty stopword set instead. We still tolerate it for now to avoid breaking
     // existing configs on upgrade, but emit a warning so users can migrate.
-    if stopwords.is_none() && Language::from_str(&language).is_err() {
+    if stopwords.is_none() && stemmer.is_none() && Language::from_str(&language).is_err() {
         log::warn!(
             "BM25 text preprocessing: language {language:?} is not recognized; \
              stemming and stopwords are disabled as a side effect. This behavior \

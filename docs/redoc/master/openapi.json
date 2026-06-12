@@ -11563,7 +11563,7 @@
             "$ref": "#/components/schemas/TokenizerType"
           },
           "language": {
-            "description": "Defines which language to use for text preprocessing. This parameter is used to construct default stopwords filter and stemmer. To disable language-specific processing, set this to `\"language\": \"none\"`. If not specified, English is assumed.",
+            "description": "Defines which language to use for text preprocessing. This parameter is used to construct default stopwords filter and stemmer. To disable language-specific processing, set `stemmer` to `{\"type\": \"none\"}` and configure an empty stopword set. The legacy `\"language\": \"none\"` hack is deprecated and may be rejected in a future release. If not specified, English is assumed.",
             "type": "string",
             "nullable": true
           },
