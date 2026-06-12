@@ -1,7 +1,8 @@
 mod reader;
+pub(crate) mod view;
+
 #[cfg(test)]
 mod tests;
-pub(crate) mod view;
 
 use std::cmp;
 use std::path::PathBuf;
