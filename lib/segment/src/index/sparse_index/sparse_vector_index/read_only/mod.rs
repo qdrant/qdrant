@@ -66,7 +66,7 @@ impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<
         path: &Path,
         load_inverted_index: impl FnOnce() -> common::universal_io::Result<TInvertedIndex>,
     ) -> OperationResult<Self> {
-        let stored_version = TInvertedIndex::Version::load_via(fs, path)?;
+        let stored_version = TInvertedIndex::Version::load_universal(fs, path)?;
         if stored_version != Some(TInvertedIndex::Version::current()) {
             return Err(OperationError::service_error_light(format!(
                 "Sparse index version mismatch, expected {}, found {}",
@@ -75,9 +75,10 @@ impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<
             )));
         }
 
-        let config = SparseIndexConfig::load_via(fs, &SparseIndexConfig::get_config_path(path))?;
+        let config =
+            SparseIndexConfig::load_universal(fs, &SparseIndexConfig::get_config_path(path))?;
         let inverted_index = load_inverted_index()?;
-        let indices_tracker = IndicesTracker::open_via(fs, path)?;
+        let indices_tracker = IndicesTracker::open_universal(fs, path)?;
 
         Ok(Self {
             config,

@@ -122,7 +122,8 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
             quantized_vectors: _,
         } = args;
 
-        let config = SparseIndexConfig::load_via(fs, &SparseIndexConfig::get_config_path(path))?;
+        let config =
+            SparseIndexConfig::load_universal(fs, &SparseIndexConfig::get_config_path(path))?;
 
         // Low-memory mode downgrades `ImmutableRam` to `Mmap` (same on-disk format).
         let effective_index_type = match config.index_type {
@@ -147,7 +148,7 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedImmutableRam::load_via::<S>(fs, path),
+                    || InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path),
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
@@ -157,7 +158,7 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedMmap::load_via(&MmapFs, path),
+                    || InvertedIndexCompressedMmap::load_universal(&MmapFs, path),
                 )?))
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
@@ -167,7 +168,7 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedImmutableRam::load_via::<S>(fs, path),
+                    || InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path),
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
@@ -177,7 +178,7 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedMmap::load_via(&MmapFs, path),
+                    || InvertedIndexCompressedMmap::load_universal(&MmapFs, path),
                 )?))
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
@@ -187,7 +188,7 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedImmutableRam::load_via::<S>(fs, path),
+                    || InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path),
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
@@ -197,7 +198,7 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedMmap::load_via(&MmapFs, path),
+                    || InvertedIndexCompressedMmap::load_universal(&MmapFs, path),
                 )?))
             }
             (_, VectorStorageDatatype::Turbo4) => {

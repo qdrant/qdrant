@@ -139,11 +139,13 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
     /// Load purely through universal IO, streaming the postings through `fs`
     /// instead of a local mmap. Used by the read-only index.
-    pub fn load_via<S>(fs: &S::Fs, path: &Path) -> Result<Self>
+    pub fn load_universal<S>(fs: &S::Fs, path: &Path) -> Result<Self>
     where
         S: UniversalRead + 'static,
     {
-        Self::from_mmap_index(InvertedIndexCompressedMmap::<W, S>::load_via(fs, path)?)
+        Self::from_mmap_index(InvertedIndexCompressedMmap::<W, S>::load_universal(
+            fs, path,
+        )?)
     }
 
     /// Materialize an mmap-layout index into owned in-RAM postings.
@@ -163,7 +165,7 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
         Ok(InvertedIndexCompressedImmutableRam {
             postings: postings.transform_in_place(Option::unwrap),
             vector_count: mmap_inverted_index.file_header.vector_count,
-            // populated by `load`/`load_via` when missing from a legacy header
+            // populated by `load`/`load_universal` when missing from a legacy header
             total_sparse_size: mmap_inverted_index
                 .file_header
                 .total_sparse_size
