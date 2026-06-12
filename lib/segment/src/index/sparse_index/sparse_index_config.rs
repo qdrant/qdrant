@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::fs::{atomic_save_json, read_json};
+use common::universal_io::{UniversalReadFs, read_json_via};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +89,11 @@ impl SparseIndexConfig {
 
     pub fn load(path: &Path) -> OperationResult<Self> {
         Ok(read_json(path)?)
+    }
+
+    /// Universal-IO variant of [`Self::load`].
+    pub fn load_via<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
+        Ok(read_json_via(fs, path)?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {

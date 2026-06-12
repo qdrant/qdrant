@@ -5,7 +5,7 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::VecExt;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, Result, UserData};
+use common::universal_io::{MmapFs, Result, UniversalRead, UserData};
 
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
@@ -37,21 +37,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 
     fn open(path: &Path) -> Result<Self> {
         let mmap_inverted_index = InvertedIndexCompressedMmap::<W, Storage>::load(&MmapFs, path)?;
-
-        let hw_counter = HardwareCounterCell::disposable();
-        let mut postings = vec![None; mmap_inverted_index.file_header.posting_count];
-        mmap_inverted_index.for_each_view(&hw_counter, |id, view| {
-            postings[id as usize] = Some(view.to_owned());
-            Ok(())
-        })?;
-
-        mmap_inverted_index.clear_cache()?;
-
-        Ok(InvertedIndexCompressedImmutableRam {
-            postings: postings.transform_in_place(Option::unwrap),
-            vector_count: mmap_inverted_index.file_header.vector_count,
-            total_sparse_size: mmap_inverted_index.total_sparse_vectors_size(),
-        })
+        Self::from_mmap_index(mmap_inverted_index)
     }
 
     fn save(&self, path: &Path) -> Result<()> {
@@ -151,6 +137,40 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 }
 
 impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
+    /// Load purely through universal IO, streaming the postings through `fs`
+    /// instead of a local mmap. Used by the read-only index.
+    pub fn load_via<S>(fs: &S::Fs, path: &Path) -> Result<Self>
+    where
+        S: UniversalRead + 'static,
+    {
+        Self::from_mmap_index(InvertedIndexCompressedMmap::<W, S>::load_via(fs, path)?)
+    }
+
+    /// Materialize an mmap-layout index into owned in-RAM postings.
+    fn from_mmap_index<S>(mmap_inverted_index: InvertedIndexCompressedMmap<W, S>) -> Result<Self>
+    where
+        S: UniversalRead + 'static,
+    {
+        let hw_counter = HardwareCounterCell::disposable();
+        let mut postings = vec![None; mmap_inverted_index.file_header.posting_count];
+        mmap_inverted_index.for_each_view(&hw_counter, |id, view| {
+            postings[id as usize] = Some(view.to_owned());
+            Ok(())
+        })?;
+
+        mmap_inverted_index.clear_cache()?;
+
+        Ok(InvertedIndexCompressedImmutableRam {
+            postings: postings.transform_in_place(Option::unwrap),
+            vector_count: mmap_inverted_index.file_header.vector_count,
+            // populated by `load`/`load_via` when missing from a legacy header
+            total_sparse_size: mmap_inverted_index
+                .file_header
+                .total_sparse_size
+                .unwrap_or(0),
+        })
+    }
+
     #[inline]
     fn get<'a>(
         &'a self,

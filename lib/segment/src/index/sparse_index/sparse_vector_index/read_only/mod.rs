@@ -55,16 +55,18 @@ type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
 >;
 
 impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<S, TInvertedIndex> {
-    /// Load the read-only sparse index from disk (config + inverted index +
-    /// indices tracker), wiring in the shared read-only backends. Read-only
-    /// mirror of `SparseVectorIndex::try_load` — it never builds.
+    /// Universal-IO mirror of `SparseVectorIndex::try_load`: version gate,
+    /// config and indices tracker load via `fs`; the inverted index comes from
+    /// `load_inverted_index` (RAM layouts stream via `fs`, mmap layouts stay local).
     pub fn open(
+        fs: &S::Fs,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         path: &Path,
+        load_inverted_index: impl FnOnce() -> common::universal_io::Result<TInvertedIndex>,
     ) -> OperationResult<Self> {
-        let stored_version = TInvertedIndex::Version::load(path)?;
+        let stored_version = TInvertedIndex::Version::load_via(fs, path)?;
         if stored_version != Some(TInvertedIndex::Version::current()) {
             return Err(OperationError::service_error_light(format!(
                 "Sparse index version mismatch, expected {}, found {}",
@@ -73,9 +75,9 @@ impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<
             )));
         }
 
-        let config = SparseIndexConfig::load(&SparseIndexConfig::get_config_path(path))?;
-        let inverted_index = TInvertedIndex::open(path)?;
-        let indices_tracker = IndicesTracker::open(path)?;
+        let config = SparseIndexConfig::load_via(fs, &SparseIndexConfig::get_config_path(path))?;
+        let inverted_index = load_inverted_index()?;
+        let indices_tracker = IndicesTracker::open_via(fs, path)?;
 
         Ok(Self {
             config,
