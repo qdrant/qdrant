@@ -131,7 +131,11 @@ impl TurboMultiVectorStorage {
     fn get_offset<P: AccessPattern>(&self, key: PointOffsetType) -> Option<MultivectorMmapOffset> {
         let record = self.offsets.get::<P>(key as VectorOffsetType)?;
         let &[offset] = record.as_ref() else {
-            unreachable!("multi-vector offsets are stored as vectors of length 1");
+            debug_assert!(
+                false,
+                "multi-vector offsets are stored as vectors of length 1"
+            );
+            return None;
         };
         Some(offset)
     }
