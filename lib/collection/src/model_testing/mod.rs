@@ -1,0 +1,410 @@
+mod apply;
+mod fixture;
+mod op;
+mod trace;
+mod verify;
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
+use segment::types::{Payload, PointIdType, VectorNameBuf};
+use sparse::common::sparse_vector::SparseVector;
+
+use crate::shards::shard::PeerId;
+
+const PEER_ID: PeerId = 1;
+const COLLECTION_NAME: &str = "test";
+
+/// Static metadata for every vector name the test might ever activate. Four names start
+/// active in the fixture; the remaining two are exclusively reachable through
+/// `Op::CreateVectorName`.
+pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
+    VectorCandidate {
+        name: "a",
+        kind: VectorKind::Dense(4),
+    },
+    VectorCandidate {
+        name: "b",
+        kind: VectorKind::Dense(6),
+    },
+    VectorCandidate {
+        name: "c",
+        kind: VectorKind::Dense(5),
+    },
+    VectorCandidate {
+        name: "s",
+        kind: VectorKind::Sparse,
+    },
+    VectorCandidate {
+        name: "u",
+        kind: VectorKind::Sparse,
+    },
+    VectorCandidate {
+        name: "m",
+        kind: VectorKind::MultiDense(4),
+    },
+];
+
+/// Names present in the collection schema at fixture time.
+// "m" (multivector) is temporarily disabled while its reload divergence is unresolved.
+pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "s"];
+
+pub(super) struct VectorCandidate {
+    pub(super) name: &'static str,
+    pub(super) kind: VectorKind,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(super) enum VectorKind {
+    Dense(u64),
+    Sparse,
+    /// ColBERT-style multi-vector: each point stores a matrix of `dim`-wide rows. Scoring
+    /// uses MaxSim across query rows × stored rows.
+    MultiDense(u64),
+}
+
+pub(super) fn kind_of(name: &str) -> VectorKind {
+    ALL_CANDIDATES
+        .iter()
+        .find(|c| c.name == name)
+        .map(|c| c.kind)
+        .unwrap_or_else(|| panic!("unknown vector name: {name}"))
+}
+
+// BTreeMap for deterministic iteration order — several op generators sample from `model.keys()`
+// with a seeded RNG, and reservoir sampling order is iteration-order-dependent. AHashMap's
+// `RandomState` seeds with per-process entropy, which breaks workload determinism even for a
+// fixed `--seed`. BTreeMap's natural ordering by `PointIdType` is stable across runs.
+type Model = BTreeMap<PointIdType, ModelEntry>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ModelEntry {
+    pub(super) vectors: BTreeMap<VectorNameBuf, VectorValue>,
+    pub(super) payload: Payload,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum VectorValue {
+    Dense(Vec<f32>),
+    /// Stored canonicalized: sorted by index, zero-valued entries dropped. The engine returns
+    /// sparse vectors in this form, so storing them canonically makes round-trip equality work.
+    Sparse(SparseVector),
+    /// ColBERT-style multi-vector: a matrix of rows, each of the configured dim.
+    MultiDense(Vec<Vec<f32>>),
+}
+
+/// Soak entrypoint — drives `op_num` randomized operations against a fresh collection,
+/// continuously verifying it against an in-memory model. Reproducible for a given `seed`.
+///
+/// Storage is rooted at `storage_path`. Any pre-existing `collection/` and `snapshots/`
+/// subdirectories are wiped at the start of each run; copy them out beforehand if you
+/// need to preserve a previous run for post-mortem inspection.
+///
+/// `shutdown` lets the caller request an early stop (e.g. on Ctrl-C). The op loop
+/// checks it before each iteration and exits cleanly when set; post-run verification
+/// + summary + reload still run with whatever ops were applied.
+#[allow(clippy::too_many_arguments)]
+pub async fn run(
+    seed: u64,
+    op_num: usize,
+    shard_count: u32,
+    id_pool: u64,
+    storage_path: &Path,
+    disable_optimizer: bool,
+    max_segment_size_kb: usize,
+    indexing_threshold_kb: usize,
+    flush_interval_sec: u64,
+    restart_probability: f64,
+    swarm_interval: usize,
+    on_disk: bool,
+    pre_restart_check: bool,
+    enable_force_off: bool,
+    shutdown: Arc<AtomicBool>,
+) {
+    let (collection_dir, snapshots_dir, mut collection) = fixture::fixture(
+        shard_count,
+        storage_path,
+        disable_optimizer,
+        max_segment_size_kb,
+        indexing_threshold_kb,
+        flush_interval_sec,
+        on_disk,
+    )
+    .await;
+
+    // Trace lives at the storage-path root (next to `collection/` and `snapshots/`) so the
+    // fixture's per-run wipe of those subdirs leaves it alone; `File::create` truncates so each
+    // run starts fresh. Schema is documented in `trace.rs`.
+    let trace_path = storage_path.join("trace.log");
+    let mut trace = trace::Trace::create(&trace_path)
+        .unwrap_or_else(|e| panic!("failed to create trace at {}: {e}", trace_path.display()));
+    trace.header(
+        seed,
+        op_num,
+        shard_count,
+        id_pool,
+        disable_optimizer,
+        max_segment_size_kb,
+        indexing_threshold_kb,
+        flush_interval_sec,
+        restart_probability,
+        swarm_interval,
+        enable_force_off,
+    );
+
+    let mut model: Model = Model::new();
+    let mut active_names: BTreeSet<VectorNameBuf> =
+        INITIAL_ACTIVE.iter().map(|s| s.to_string()).collect();
+    let rng = &mut SmallRng::seed_from_u64(seed);
+
+    // Swarm-testing config (Groce et al., ISSTA 2012): disable a random subset of ops. Recomputed
+    // every `swarm_interval` ops so one long run becomes a sequence of swarm sub-tests (broader
+    // feature-interaction coverage than a single fixed config). Drawn from the seeded rng so it's
+    // reproducible; each redraw is logged with its op tick so a failure is attributable to the
+    // config that was live. (This consumes rng draws, so the op stream differs from a non-swarm
+    // build for the same seed.)
+    let mut swarm = op::Swarm::random(rng, enable_force_off);
+    let initial_enabled = swarm.enabled_ops();
+    trace.swarm(0, &initial_enabled);
+    println!("model_testing: op:0 swarm -> {initial_enabled:?}");
+
+    let bar = ProgressBar::new(op_num as u64);
+    bar.set_style(
+        ProgressStyle::default_bar()
+            // Single line with a fixed-width bar: a multi-line (`{msg}\n…`) template plus a
+            // full-width `{wide_bar}` can't be repainted in place — the bar line hits the
+            // terminal-width auto-wrap boundary and occupies one more physical row than indicatif
+            // clears, so stale `{msg}` lines stick and smear together. A fixed-width `{bar}` never
+            // reaches that boundary; `{msg:24}` is width-padded so a changing op kind (longest is
+            // "OverwritePayloadByFilter", 24 chars) doesn't shift the bar left/right each frame.
+            .template("{msg:24} [{elapsed_precise}] {bar:40} {pos}/{len} ({per_sec}, eta:{eta})")
+            .expect("Failed to create progress style"),
+    );
+
+    let mut applied = 0usize;
+    for i in 0..op_num {
+        if shutdown.load(Ordering::Relaxed) {
+            log::info!("shutdown received at op:{i}, exiting loop");
+            break;
+        }
+        // Recompute the swarm config at each interval boundary (op 0 was drawn before the loop).
+        if i > 0 && i % swarm_interval == 0 {
+            let prev = swarm.enabled_ops();
+            swarm = op::Swarm::random(rng, enable_force_off);
+            let next = swarm.enabled_ops();
+            // Trace keeps the full enabled set (for reproducibility); the console shows only the
+            // delta vs. the previous config — that's what changed.
+            trace.swarm(i, &next);
+            let enabled: Vec<&str> = next.iter().copied().filter(|n| !prev.contains(n)).collect();
+            let disabled: Vec<&str> = prev.iter().copied().filter(|n| !next.contains(n)).collect();
+            let kept: Vec<&str> = next.iter().copied().filter(|n| prev.contains(n)).collect();
+            // `suspend` clears the bar, runs the closure, then redraws — without it the bar's next
+            // repaint overwrites the last printed line (the `=kept` one). Plain `println!`
+            // (stdout) inside keeps it visible when piped, unlike `bar.println` which routes
+            // through the bar's stderr draw target and is swallowed on a non-TTY.
+            bar.suspend(|| {
+                println!("model_testing: op:{i} regen swarm Δ\n  +{enabled:?}\n  -{disabled:?}\n  ={kept:?}");
+            });
+        }
+        // Roll for a mid-run restart BEFORE generating an op so an iteration is either
+        // a restart OR an apply (not both). The `> 0.0` short-circuits the rng draw at
+        // the default value, so workload determinism is preserved for `--restart-probability 0`
+        // (which matches the previous no-restart default exactly).
+        let do_restart = restart_probability > 0.0 && rng.random::<f64>() < restart_probability;
+        if do_restart {
+            log::debug!("op:{i} Restart");
+            bar.set_message("Restart");
+            let (pre_segments, _) = verify::run_summary(&collection).await;
+            trace.restart(i, model.len(), pre_segments);
+            // Verify the LIVE collection against the model *before* closing. This splits a
+            // restart failure into its two possible causes: if this assert fires, the engine
+            // diverged from the model while serving (an apply-path bug); if it passes but the
+            // post-reload assert below fires, the divergence was introduced by close+reopen (a
+            // durability / WAL-replay bug). Without this split, a "restart at op:N" panic can't
+            // distinguish the two.
+            //
+            // Opt-in (`--pre-restart-check`, off by default): the full pre-close scroll is slow,
+            // and reading the whole collection warms caches / forces lazy loads that can mask a
+            // reload divergence — so the default cold close+reopen surfaces more bugs. Enable the
+            // check when you need to attribute a failure to the apply path vs. the reload path.
+            if pre_restart_check {
+                let live_pre = verify::collect_model_from_collection(&collection).await;
+                verify::assert_matches_model(
+                    &live_pre,
+                    &model,
+                    &format!("pre-restart (live) at op:{i}"),
+                );
+            }
+            // Close + reopen + full model verification. Does NOT force a flush — mirrors
+            // what a real user gets from `stop_gracefully`, which is the path that exposes
+            // the WAL-replay bug class.
+            //
+            // `Collection::load` (inside `reopen_collection`) draws its own
+            // "Recovering collection" progress bar to stderr. Two independent indicatif bars on
+            // the same stream fight over the cursor — our op bar keeps overwriting the recovery
+            // bar, so it never visibly advances. Hide our bar for the duration of the reopen so
+            // the recovery bar owns the terminal, then restore it. The leading newline drops the
+            // recovery bar onto a fresh line (a fresh indicatif bar's first draw lands at the
+            // cursor without clearing, so it would otherwise share our bar's last frame's line);
+            // the trailing newline preserves the recovery bar's final frame in scrollback instead
+            // of letting the op loop's next tick `\r`-overwrite it.
+            bar.set_draw_target(ProgressDrawTarget::hidden());
+            eprintln!();
+            collection.stop_gracefully().await;
+            drop(collection);
+            collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
+            // `Collection::load` returns before tail-of-WAL ops queued to the
+            // update worker have been applied — that's an intentional fast-start
+            // feature. Wait for the queue to drain so the scroll below observes
+            // all WAL-replayed state.
+            verify::wait_for_pending_updates(&collection).await;
+            let live = verify::collect_model_from_collection(&collection).await;
+            verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
+            eprintln!();
+            bar.set_draw_target(ProgressDrawTarget::stderr());
+        } else {
+            let op = op::Op::random(rng, &model, &active_names, id_pool, &swarm);
+            log::debug!("op:{i} {op:?}");
+            bar.set_message(op.kind());
+            // Log BEFORE apply so a panic preserves the offending op in the trace.
+            trace.op(i, &op);
+            apply::apply(&collection, &mut model, &mut active_names, &op).await;
+        }
+        bar.inc(1);
+        applied += 1;
+    }
+    bar.finish();
+
+    let interrupted = shutdown.load(Ordering::Relaxed);
+    if interrupted {
+        eprintln!("model_testing: verifying live state...");
+    }
+    log::debug!("all ops applied, verifying live collection against model");
+    let live = verify::collect_model_from_collection(&collection).await;
+    let (live_extra, live_missing) = verify::id_diff(&live, &model);
+    let (segments, optimized) = verify::run_summary(&collection).await;
+    trace.live_verify(
+        applied,
+        model.len(),
+        live.len(),
+        segments,
+        optimized,
+        &live_extra,
+        &live_missing,
+    );
+    verify::assert_matches_model(&live, &model, "live");
+
+    // Confirm the segment optimizer actually fired — but skip on shutdown (short run may
+    // not have triggered) or when the optimizer is intentionally disabled.
+    if !interrupted && !disable_optimizer {
+        verify::wait_for_optimizer(&collection).await;
+    }
+
+    println!(
+        "model_testing: {applied} ops applied, {} live points, {segments} segments, {optimized} \
+         optimized points",
+        model.len(),
+    );
+
+    if interrupted {
+        eprintln!("model_testing: reopening to verify reload...");
+    }
+    // Close and reopen, then re-verify — mirrors gridstore tests.rs:488-516.
+    collection.stop_gracefully().await;
+    drop(collection);
+    let collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
+    // Same reason as the mid-run restart above — drain deferred WAL ops before scrolling.
+    verify::wait_for_pending_updates(&collection).await;
+
+    let reloaded = verify::collect_model_from_collection(&collection).await;
+    let (reload_extra, reload_missing) = verify::id_diff(&reloaded, &model);
+    trace.reload_verify(
+        applied,
+        model.len(),
+        reloaded.len(),
+        &reload_extra,
+        &reload_missing,
+    );
+    verify::assert_matches_model(&reloaded, &model, "reloaded");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Windows CI is significantly slower; keep the smoke run short there.
+    #[cfg(target_os = "windows")]
+    const OP_NUM: usize = 1_000;
+    #[cfg(not(target_os = "windows"))]
+    const OP_NUM: usize = 10_000;
+    const ID_POOL: u64 = 500;
+
+    /// End-to-end smoke run: [`OP_NUM`] seeded ops against a single-shard collection, including
+    /// the per-op verification ops, the end-of-run live check, and the final close+reopen
+    /// reload check. Catches harness rot (op/model drift, fixture breakage) on every
+    /// `cargo test` run.
+    ///
+    /// Single shard, optimizer disabled, no mid-run restarts: keeps the run fast and
+    /// deterministic (no background segment churn) and steers clear of the known-unfixed
+    /// multi-shard reload bug class, so this stays green as a regression gate for the
+    /// harness itself rather than a bug-finder (that's the binary's job).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness_no_optimizer_no_restarts() {
+        let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let seed = rand::rng().random();
+        run(
+            seed,    // fresh seed each run
+            OP_NUM,  // op_num
+            1,       // shard_count
+            ID_POOL, // id_pool
+            storage_dir.path(),
+            true,  // disable_optimizer
+            10,    // max_segment_size_kb
+            5,     // indexing_threshold_kb
+            5,     // flush_interval_sec
+            0.0,   // restart_probability
+            2500,  // swarm_interval: a few redraws within the run
+            false, // on_disk
+            false, // pre_restart_check
+            false, // enable_force_off
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await;
+    }
+
+    /// Same configuration as [`harness_no_optimizer_no_restarts`], plus seeded mid-run
+    /// restarts (~20 expected at p=0.002 over 10k ops): each one is a cold close+reopen+full
+    /// model verification, so the WAL-replay path is exercised throughout the run
+    /// instead of only at the final reload check.
+    ///
+    /// Note: the restart roll consumes one rng draw per iteration, so even for the same
+    /// seed the op stream differs from a no-restart run.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness_no_optimizer_restarts() {
+        let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let seed = rand::rng().random();
+        run(
+            seed,    // fresh seed each run
+            OP_NUM,  // op_num
+            1,       // shard_count
+            ID_POOL, // id_pool
+            storage_dir.path(),
+            true,  // disable_optimizer
+            10,    // max_segment_size_kb
+            5,     // indexing_threshold_kb
+            5,     // flush_interval_sec
+            0.002, // restart_probability
+            2500,  // swarm_interval: a few redraws within the run
+            false, // on_disk
+            false, // pre_restart_check
+            false, // enable_force_off
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await;
+    }
+}

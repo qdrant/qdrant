@@ -12,7 +12,7 @@ edition = "2024"
 workspace = true
 
 [features]
-testing = []
+testing = ["common/testing", "segment/testing", "shard/testing"]
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 data-consistency-check = []
 staging = ["shard/staging"]

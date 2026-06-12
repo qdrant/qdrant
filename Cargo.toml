@@ -19,7 +19,7 @@ workspace = true
 
 [features]
 default = []
-service_debug = ["parking_lot/deadlock_detection"]
+service_debug = ["parking_lot/deadlock_detection", "collection/testing"]
 tracing = [
     "api/tracing",
     "collection/tracing",
@@ -67,6 +67,8 @@ anyhow = "1.0.98"
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { workspace = true }
+ctrlc = "3.5.2"
+env_logger = { workspace = true }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
@@ -339,6 +341,13 @@ required-features = ["service_debug"]
 [[bin]]
 name = "segment_inspector"
 path = "src/segment_inspector.rs"
+test = false
+bench = false
+required-features = ["service_debug"]
+
+[[bin]]
+name = "model_testing"
+path = "src/model_testing.rs"
 test = false
 bench = false
 required-features = ["service_debug"]
