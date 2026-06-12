@@ -8196,6 +8196,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "api",
+ "clap",
+ "collection",
+ "common",
+ "ctrlc",
+ "env_logger",
+ "fs-err",
+ "reqwest 0.13.4",
+ "segment",
+ "shard",
+ "storage",
+ "tempfile",
+ "tikv-jemallocator",
+ "tokio",
+ "url",
+ "uuid",
+ "wal",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
