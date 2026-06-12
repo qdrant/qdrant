@@ -8,15 +8,19 @@ use crate::turboquant::simd::{
     score_1bit_internal, score_2bit_internal, score_2bit_internal_weighted, score_4bit_internal,
     score_4bit_internal_weighted,
 };
-use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode};
+use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode, TQRotation};
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
-    pub rotation: HadamardRotation,
+    rotation: HadamardRotation,
     pub(super) bits: TQBits,
     pub(super) mode: TQMode,
     pub(super) distance: DistanceType,
     pub(crate) padded_dim: usize,
+    /// Number of leading coordinates the rotation spans: `padded_dim` for
+    /// [`TQRotation::Padded`], the original `dim` for [`TQRotation::Unpadded`]
+    /// (the zero padding then stays exactly zero through rotation).
+    rotation_dim: usize,
     pub(super) error_correction: Option<ErrorCorrection>,
 }
 
@@ -106,6 +110,7 @@ impl TurboQuantizer {
             mode: _,
             distance: _,
             padded_dim: _,
+            rotation_dim: _,
             error_correction,
         } = self;
 
@@ -129,16 +134,29 @@ impl TurboQuantizer {
         bits: TQBits,
         mode: TQMode,
         distance: DistanceType,
+        rotation_span: TQRotation,
         error_correction: Option<ErrorCorrection>,
     ) -> Self {
+        // Bits1_5 encodes extra precision by rotating *into* its x1.5 padding;
+        // an unpadded rotation would leave half the codes carrying nothing.
+        debug_assert!(
+            !(matches!(bits, TQBits::Bits1_5) && rotation_span == TQRotation::Unpadded),
+            "Bits1_5 requires TQRotation::Padded",
+        );
+
         let padded_dim = Self::padded_dim(dim, bits);
-        let rotation = HadamardRotation::new(padded_dim);
+        let rotation_dim = match rotation_span {
+            TQRotation::Padded => padded_dim,
+            TQRotation::Unpadded => dim,
+        };
+        let rotation = HadamardRotation::new(rotation_dim);
         TurboQuantizer {
             rotation,
             bits,
             mode,
             distance,
             padded_dim,
+            rotation_dim,
             error_correction,
         }
     }
@@ -165,8 +183,9 @@ impl TurboQuantizer {
             *b = v;
         }
 
-        // Rotate the vector.
-        self.rotation.apply(buf);
+        // Rotate the vector. For an unpadded rotation only the original
+        // coordinates are touched — the zero padding stays exactly zero.
+        self.rotation.apply(&mut buf[..self.rotation_dim]);
 
         let l2_length = self.compute_l2_length(buf);
 
@@ -346,6 +365,14 @@ impl TurboQuantizer {
         self.padded_dim
     }
 
+    /// Undo the rotation applied during quantization on a `padded_dim`-sized
+    /// dequantized buffer. Only the rotated prefix is touched: for
+    /// [`TQRotation::Unpadded`] the padding tail is left as-is (it carries
+    /// nothing but quantized zeros and is dropped by the caller).
+    pub fn apply_inverse_rotation(&self, buf: &mut [f64]) {
+        self.rotation.apply_inverse(&mut buf[..self.rotation_dim]);
+    }
+
     /// Similarity score between two vectors that were both encoded with this
     /// quantizer. Returns an approximate `<v1, v2>` for Dot and `cos(θ)` for
     /// Cosine.
@@ -389,9 +416,9 @@ impl TurboQuantizer {
             DistanceType::L1 => {
                 // Fallback case for L1, where we need to fully dequantize both vectors.
                 let mut deq_v1: Vec<f64> = self.dequantize(v1);
-                self.rotation.apply_inverse(deq_v1.as_mut_slice());
+                self.apply_inverse_rotation(deq_v1.as_mut_slice());
                 let mut deq_v2: Vec<f64> = self.dequantize(v2);
-                self.rotation.apply_inverse(deq_v2.as_mut_slice());
+                self.apply_inverse_rotation(deq_v2.as_mut_slice());
                 deq_v1
                     .iter()
                     .zip(deq_v2.iter())
@@ -462,7 +489,7 @@ impl TurboQuantizer {
             .chain(std::iter::repeat(0.0))
             .take(self.padded_dim)
             .collect();
-        self.rotation.apply(&mut rotated);
+        self.rotation.apply(&mut rotated[..self.rotation_dim]);
 
         let l2_norm = match self.distance {
             DistanceType::L1 | DistanceType::L2 | DistanceType::Dot => {
@@ -555,7 +582,7 @@ impl TurboQuantizer {
             }
             DistanceType::L1 => {
                 let mut deq_v: Vec<f64> = self.dequantize(vec);
-                self.rotation.apply_inverse(deq_v.as_mut_slice());
+                self.apply_inverse_rotation(deq_v.as_mut_slice());
                 query
                     .query
                     .as_ref()
@@ -578,7 +605,25 @@ mod tests {
     use super::*;
 
     fn make_tq(dim: usize, bits: TQBits, distance: DistanceType) -> TurboQuantizer {
-        TurboQuantizer::new(dim, bits, TQMode::Normal, distance, None)
+        TurboQuantizer::new(
+            dim,
+            bits,
+            TQMode::Normal,
+            distance,
+            TQRotation::Padded,
+            None,
+        )
+    }
+
+    fn make_tq_unpadded(dim: usize, bits: TQBits, distance: DistanceType) -> TurboQuantizer {
+        TurboQuantizer::new(
+            dim,
+            bits,
+            TQMode::Normal,
+            distance,
+            TQRotation::Unpadded,
+            None,
+        )
     }
 
     /// Build a vector pair that has a given magnitude of similarity, tuned by `similarity`.
@@ -1200,6 +1245,178 @@ mod tests {
                     for (i, &v) in out.iter().take(dim).enumerate() {
                         assert_eq!(v, expected, "dim={dim}, bits={bits:?}, idx={idx}, i={i}");
                     }
+                }
+            }
+        }
+    }
+
+    /// With [`TQRotation::Unpadded`], the rotation must never touch the zero
+    /// padding: after `preprocess_into` every padded coordinate is *exactly*
+    /// 0.0, for every bit width's padding amount.
+    #[test]
+    fn unpadded_rotation_keeps_padding_zero() {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            // All odd, so every bit width gets a non-empty padding tail.
+            for &dim in &[3usize, 7, 127, 513, 1025] {
+                for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
+                    let tq = make_tq_unpadded(dim, bits, distance);
+                    assert!(tq.padded_dim > dim, "test requires a padded dim");
+
+                    let v = random_vector(dim, &mut rng);
+                    // Poison the scratch tail to prove it is overwritten with zeros.
+                    let mut buf = vec![f64::NAN; tq.padded_dim];
+                    tq.preprocess_into(&v, &mut buf);
+
+                    for (i, &x) in buf[dim..].iter().enumerate() {
+                        assert!(
+                            x == 0.0,
+                            "dim={dim}, bits={bits:?}, {distance:?}: \
+                             padding coord {} is {x}, expected exactly 0.0",
+                            dim + i,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// For dims that need no padding, `Unpadded` and `Padded` rotations span
+    /// the same coordinates and must be byte- and score-identical, so existing
+    /// padding-free storages are unaffected by the rotation-span choice.
+    #[test]
+    fn unpadded_rotation_matches_padded_for_padding_free_dims() {
+        let mut rng = StdRng::seed_from_u64(7);
+
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            // Multiples of 8 are padding-free for every supported bit width.
+            for &dim in &[8usize, 64, 128, 512] {
+                for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
+                    let padded = make_tq(dim, bits, distance);
+                    let unpadded = make_tq_unpadded(dim, bits, distance);
+                    assert_eq!(padded.padded_dim, dim);
+
+                    let raw = random_vector(dim, &mut rng);
+                    let v = match distance {
+                        DistanceType::Cosine => normalize_vector(&raw),
+                        DistanceType::Dot => raw,
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
+                    };
+
+                    let mut buf = vec![0.0f64; dim];
+                    let q_padded = padded.quantize(&v, &mut buf);
+                    let q_unpadded = unpadded.quantize(&v, &mut buf);
+                    assert_eq!(
+                        q_padded, q_unpadded,
+                        "dim={dim}, bits={bits:?}, {distance:?}: encoded bytes diverge",
+                    );
+
+                    let s_padded = asymmetric_score_helper(&padded, &v, &q_padded);
+                    let s_unpadded = asymmetric_score_helper(&unpadded, &v, &q_unpadded);
+                    assert_eq!(
+                        s_padded, s_unpadded,
+                        "dim={dim}, bits={bits:?}, {distance:?}: scores diverge",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Score quality must hold for padded (odd) dims with the unpadded
+    /// rotation: same tolerance as `score_approximates_true_similarity`.
+    #[test]
+    fn unpadded_rotation_score_accuracy_padded_dims() {
+        let bits = TQBits::Bits4;
+
+        for dim in [127, 513, 1025] {
+            let mut rng = StdRng::seed_from_u64(42);
+
+            for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
+                let tq = make_tq_unpadded(dim, bits, distance);
+                let mut buf = vec![0.0f64; tq.padded_dim];
+
+                for &similarity in &[0.2f32, 0.5, 0.8] {
+                    let (a_raw, b_raw) =
+                        generate_random_vector_pair_with_similarity(dim, similarity, &mut rng);
+                    let (a, b) = match distance {
+                        DistanceType::Cosine => {
+                            (normalize_vector(&a_raw), normalize_vector(&b_raw))
+                        }
+                        DistanceType::Dot => (a_raw, b_raw),
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
+                    };
+
+                    let true_score = dot_f32_impl(a.iter().copied(), b.iter().copied());
+
+                    let a_q = tq.quantize(&a, &mut buf);
+                    let b_q = tq.quantize(&b, &mut buf);
+
+                    let sym = tq.score_symmetric(&a_q, &b_q);
+                    let asym = asymmetric_score_helper(&tq, &a, &b_q);
+
+                    let scale = match distance {
+                        DistanceType::Cosine => 1.0,
+                        DistanceType::Dot => (l2_norm(&a) * l2_norm(&b)) as f32,
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
+                    };
+                    let tol = 0.05 * scale;
+
+                    assert!(
+                        (sym - true_score).abs() < tol,
+                        "symmetric: dim={dim}, {distance:?}, similarity={similarity}: \
+                         got {sym}, expected {true_score} (tol {tol})"
+                    );
+                    assert!(
+                        (asym - true_score).abs() < tol,
+                        "asymmetric: dim={dim}, {distance:?}, similarity={similarity}: \
+                         got {asym}, expected {true_score} (tol {tol})"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The motivating property for [`TQRotation::Unpadded`] (TQ-as-datatype):
+    /// re-quantizing a dequantized read-back must reproduce the same centroid
+    /// codes even for padded (odd) dims. With a padded rotation the truncated
+    /// padding tail re-enters quantization and perturbs every coordinate; with
+    /// an unpadded rotation the padding stays zero on both sides of the trip.
+    #[test]
+    fn unpadded_rotation_roundtrip_preserves_codes_for_padded_dims() {
+        let bits = TQBits::Bits4;
+
+        for dim in [7, 127, 513, 1025] {
+            let mut rng = StdRng::seed_from_u64(42);
+
+            for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
+                let tq = make_tq_unpadded(dim, bits, distance);
+                let mut buf = vec![0.0f64; tq.padded_dim];
+
+                for _ in 0..8 {
+                    let raw = random_vector(dim, &mut rng);
+                    let v = match distance {
+                        DistanceType::Cosine => normalize_vector(&raw),
+                        DistanceType::Dot => raw,
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
+                    };
+
+                    let q1 = tq.quantize(&v, &mut buf);
+
+                    // Read-back exactly like the TQ-datatype storages do:
+                    // dequantize, rotate back, drop the padding tail.
+                    let mut deq = tq.dequantize::<f64>(&q1);
+                    tq.apply_inverse_rotation(&mut deq);
+                    let readback: Vec<f32> = deq[..dim].iter().map(|&x| x as f32).collect();
+
+                    let q2 = tq.quantize(&readback, &mut buf);
+
+                    let (codes1, _) = tq.split_vector(&q1);
+                    let (codes2, _) = tq.split_vector(&q2);
+                    assert_eq!(
+                        codes1, codes2,
+                        "dim={dim}, {distance:?}: centroid codes changed on round-trip",
+                    );
                 }
             }
         }

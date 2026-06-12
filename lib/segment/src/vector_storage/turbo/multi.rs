@@ -21,7 +21,7 @@ use common::universal_io::{MmapFile, MmapFs};
 use quantization::EncodedStorage;
 use quantization::turboquant::quantization::TurboQuantizer;
 
-use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, VECTORS_PATH};
+use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
@@ -88,7 +88,14 @@ pub fn open_appendable_turbo_multi_vector_storage(
 ) -> OperationResult<TurboMultiVectorStorage> {
     fs_err::create_dir_all(path)?;
 
-    let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+    let quantizer = TurboQuantizer::new(
+        dim,
+        TQDT_BITS,
+        TQDT_MODE,
+        distance.into(),
+        TQDT_ROTATION,
+        None,
+    );
 
     let storage = QuantizedChunkedStorage::new(
         MmapFs,
@@ -159,7 +166,7 @@ impl TurboMultiVectorStorage {
     /// Decode one inner record into `out`: dequantize, rotate back, drop the padding tail.
     fn dequantize_inner_into(&self, encoded: &[u8], out: &mut Vec<VectorElementType>) {
         let mut dequantized = self.quantizer.dequantize::<f64>(encoded);
-        self.quantizer.rotation.apply_inverse(&mut dequantized);
+        self.quantizer.apply_inverse_rotation(&mut dequantized);
         out.extend(
             dequantized[..self.dim]
                 .iter()
@@ -500,7 +507,14 @@ mod tests {
         fn new(dim: usize, distance: Distance) -> Self {
             // TQDT_BITS / TQDT_MODE come from turbo/mod.rs via the production
             // `use super::{…}` + the test module's `use super::*;` (same as the dense tests).
-            let quantizer = TurboQuantizer::new(dim, TQDT_BITS, TQDT_MODE, distance.into(), None);
+            let quantizer = TurboQuantizer::new(
+                dim,
+                TQDT_BITS,
+                TQDT_MODE,
+                distance.into(),
+                TQDT_ROTATION,
+                None,
+            );
             Self { quantizer, dim }
         }
 
@@ -516,7 +530,7 @@ mod tests {
         /// Mirror of the storage's per-record decode: dequantize, rotate back, drop padding.
         fn dequantize(&self, encoded: &[u8]) -> DenseVector {
             let mut d = self.quantizer.dequantize::<f64>(encoded);
-            self.quantizer.rotation.apply_inverse(&mut d);
+            self.quantizer.apply_inverse_rotation(&mut d);
             d[..self.dim].iter().map(|&x| x as f32).collect()
         }
 
