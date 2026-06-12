@@ -92,7 +92,7 @@ impl SparseIndexConfig {
     }
 
     /// Universal-IO variant of [`Self::load`].
-    pub fn load_via<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
+    pub fn load_universal<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
         Ok(read_json_via(fs, path)?)
     }
 

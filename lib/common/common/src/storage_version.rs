@@ -40,7 +40,7 @@ pub trait StorageVersion {
     }
 
     /// Universal-IO variant of [`Self::load`].
-    fn load_via<Fs: UniversalReadFs>(
+    fn load_universal<Fs: UniversalReadFs>(
         fs: &Fs,
         dir_path: &Path,
     ) -> universal_io::Result<Option<Version>> {
