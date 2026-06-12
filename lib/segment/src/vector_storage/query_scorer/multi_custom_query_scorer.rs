@@ -112,8 +112,6 @@ impl<
     TQuery: Query<TypedMultiDenseVector<TElement>>,
 > QueryScorer for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
-    type TVector = TypedMultiDenseVector<TElement>;
-
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi::<Random>(idx);
@@ -133,11 +131,6 @@ impl<
                 vectors_read.incr_delta(vector.vectors_count());
                 scores[idx] = self.score_ref(vector);
             });
-    }
-
-    #[inline]
-    fn score(&self, against: &TypedMultiDenseVector<TElement>) -> ScoreType {
-        self.score_ref(TypedMultiDenseVectorRef::from(against))
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

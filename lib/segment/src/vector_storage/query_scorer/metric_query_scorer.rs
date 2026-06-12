@@ -56,6 +56,12 @@ impl<
             hardware_counter,
         }
     }
+
+    #[inline]
+    fn score(&self, v2: &[TElement]) -> ScoreType {
+        self.hardware_counter.cpu_counter().incr();
+        TMetric::similarity(&self.query, v2)
+    }
 }
 
 impl<
@@ -64,8 +70,6 @@ impl<
     TVectorStorage: DenseVectorStorageRead<TElement>,
 > QueryScorer for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
-    type TVector = [TElement];
-
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
@@ -84,12 +88,6 @@ impl<
             .for_each_in_dense_batch(ids, |idx, vector| {
                 scores[idx] = TMetric::similarity(&self.query, vector);
             });
-    }
-
-    #[inline]
-    fn score(&self, v2: &[TElement]) -> ScoreType {
-        self.hardware_counter.cpu_counter().incr();
-        TMetric::similarity(&self.query, v2)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

@@ -71,6 +71,19 @@ impl<
             hardware_counter,
         }
     }
+
+    /// Score the query against an explicit vector (not one stored in the
+    /// storage). Used internally by `score_stored`/`score_stored_batch`/
+    /// [`QueryScorer::score_bytes`].
+    #[inline]
+    fn score(&self, against: &[TElement]) -> ScoreType {
+        let cpu_counter = self.hardware_counter.cpu_counter();
+
+        self.query.score_by(|example| {
+            cpu_counter.incr();
+            TMetric::similarity(example, against)
+        })
+    }
 }
 
 impl<
@@ -80,8 +93,6 @@ impl<
     TStoredQuery: Query<TypedDenseVector<TElement>>,
 > QueryScorer for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
-    type TVector = [TElement];
-
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_dense::<Random>(idx);
@@ -98,16 +109,6 @@ impl<
 
         self.vector_storage
             .for_each_in_dense_batch(ids, |idx, vector| scores[idx] = self.score(vector));
-    }
-
-    #[inline]
-    fn score(&self, against: &[TElement]) -> ScoreType {
-        let cpu_counter = self.hardware_counter.cpu_counter();
-
-        self.query.score_by(|example| {
-            cpu_counter.incr();
-            TMetric::similarity(example, against)
-        })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

@@ -97,8 +97,6 @@ where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
 {
-    type TVector = ();
-
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
         debug_assert_eq!(ids.len(), scores.len());
 
@@ -124,10 +122,6 @@ where
         // quantized multivector storage handles hardware counter to batch vector IO
         self.quantized_multivector_storage
             .score_point(&self.query, idx, &self.hardware_counter)
-    }
-
-    fn score(&self, _v2: &()) -> ScoreType {
-        unimplemented!("This method is not expected to be called for quantized scorer");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
