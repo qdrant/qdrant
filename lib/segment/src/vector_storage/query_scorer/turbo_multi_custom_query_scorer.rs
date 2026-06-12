@@ -56,8 +56,6 @@ impl<TQuery> QueryScorer for TurboMultiCustomQueryScorer<'_, TQuery>
 where
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
-    type TVector = ();
-
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         // Account the point read once, then fold per-example MaxSim over it.
         self.storage.account_point_read(idx, &self.hardware_counter);
@@ -65,10 +63,6 @@ where
             self.storage
                 .score_point_max_similarity(query, idx, &self.hardware_counter)
         })
-    }
-
-    fn score(&self, _v2: &()) -> ScoreType {
-        unimplemented!("This method is not expected to be called for turbo scorer");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

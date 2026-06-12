@@ -39,16 +39,10 @@ impl<'a> TurboMultiQueryScorer<'a> {
 }
 
 impl QueryScorer for TurboMultiQueryScorer<'_> {
-    type TVector = ();
-
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.storage.account_point_read(idx, &self.hardware_counter);
         self.storage
             .score_point_max_similarity(&self.query, idx, &self.hardware_counter)
-    }
-
-    fn score(&self, _v2: &()) -> ScoreType {
-        unimplemented!("This method is not expected to be called for turbo scorer");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
