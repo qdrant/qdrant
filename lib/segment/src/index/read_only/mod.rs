@@ -6,7 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::{MmapFile, UniversalRead};
+use common::universal_io::{MmapFile, MmapFs, UniversalRead};
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::InvertedIndex;
@@ -104,8 +104,20 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
     /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
     /// `MutableRam` has no read-only representation.
     #[allow(dead_code)] // pending: read-only segment constructor
-    pub fn open_sparse(args: ReadOnlyVectorIndexOpenArgs<'_, S>) -> OperationResult<Self> {
-        let config = SparseIndexConfig::load(&SparseIndexConfig::get_config_path(args.path))?;
+    pub fn open_sparse(args: ReadOnlyVectorIndexOpenArgs<'_, S>) -> OperationResult<Self>
+    where
+        S: 'static,
+    {
+        let ReadOnlyVectorIndexOpenArgs {
+            fs,
+            path,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            quantized_vectors: _,
+        } = args;
+
+        let config = SparseIndexConfig::load_via(fs, &SparseIndexConfig::get_config_path(path))?;
 
         // Low-memory mode downgrades `ImmutableRam` to `Mmap` (same on-disk format).
         let effective_index_type = match config.index_type {
@@ -117,15 +129,6 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
             SparseIndexType::Mmap => SparseIndexType::Mmap,
         };
 
-        let ReadOnlyVectorIndexOpenArgs {
-            fs: _,
-            path,
-            id_tracker,
-            vector_storage,
-            payload_index,
-            quantized_vectors: _,
-        } = args;
-
         let index = match (effective_index_type, config.datatype.unwrap_or_default()) {
             (SparseIndexType::MutableRam, _) => {
                 return Err(OperationError::service_error(
@@ -134,50 +137,62 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
                 Self::SparseCompressedImmutableRamF32(Box::new(ReadOnlySparseVectorIndex::open(
+                    fs,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
+                    || InvertedIndexCompressedImmutableRam::load_via::<S>(fs, path),
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
                 Self::SparseCompressedMmapF32(Box::new(ReadOnlySparseVectorIndex::open(
+                    fs,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
+                    || InvertedIndexCompressedMmap::load_via(&MmapFs, path),
                 )?))
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
                 Self::SparseCompressedImmutableRamF16(Box::new(ReadOnlySparseVectorIndex::open(
+                    fs,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
+                    || InvertedIndexCompressedImmutableRam::load_via::<S>(fs, path),
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
                 Self::SparseCompressedMmapF16(Box::new(ReadOnlySparseVectorIndex::open(
+                    fs,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
+                    || InvertedIndexCompressedMmap::load_via(&MmapFs, path),
                 )?))
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
                 Self::SparseCompressedImmutableRamU8(Box::new(ReadOnlySparseVectorIndex::open(
+                    fs,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
+                    || InvertedIndexCompressedImmutableRam::load_via::<S>(fs, path),
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
                 Self::SparseCompressedMmapU8(Box::new(ReadOnlySparseVectorIndex::open(
+                    fs,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
+                    || InvertedIndexCompressedMmap::load_via(&MmapFs, path),
                 )?))
             }
             (_, VectorStorageDatatype::Turbo4) => {

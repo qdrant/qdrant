@@ -5,6 +5,8 @@ use atomicwrites::{AllowOverwrite, AtomicFile};
 use fs_err::File;
 use semver::Version;
 
+use crate::universal_io::{self, OkNotFound as _, UniversalReadFs, read_whole_via};
+
 pub const VERSION_FILE: &str = "version.info";
 
 /// Structure to save and load version with which the storage was create
@@ -35,6 +37,23 @@ pub trait StorageVersion {
             Error::other(format!("Can't parse version from {version_file:?}: {err}"))
         })?;
         Ok(Some(version))
+    }
+
+    /// Universal-IO variant of [`Self::load`].
+    fn load_via<Fs: UniversalReadFs>(
+        fs: &Fs,
+        dir_path: &Path,
+    ) -> universal_io::Result<Option<Version>> {
+        let version_file = dir_path.join(VERSION_FILE);
+        read_whole_via(fs, &version_file, |bytes| {
+            std::str::from_utf8(&bytes)
+                .map_err(Error::other)?
+                .parse::<Version>()
+                .map_err(|err| {
+                    Error::other(format!("Can't parse version from {version_file:?}: {err}")).into()
+                })
+        })
+        .ok_not_found()
     }
 
     fn save(dir_path: &Path) -> Result<()> {

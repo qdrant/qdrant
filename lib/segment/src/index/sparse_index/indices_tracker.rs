@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
 use common::fs::{atomic_save_json, read_json};
+use common::universal_io::{self, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::types::{DimId, DimOffset};
@@ -19,6 +20,11 @@ impl IndicesTracker {
     pub fn open(path: &Path) -> std::io::Result<Self> {
         let path = Self::file_path(path);
         read_json(&path)
+    }
+
+    /// Universal-IO variant of [`Self::open`].
+    pub fn open_via<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> universal_io::Result<Self> {
+        read_json_via(fs, Self::file_path(path))
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {

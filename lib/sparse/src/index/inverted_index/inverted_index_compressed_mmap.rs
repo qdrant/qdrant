@@ -17,6 +17,7 @@ use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
     OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs, UserData,
+    read_json_via,
 };
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -471,6 +472,40 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
             index.file_header.total_sparse_size =
                 Some(index.calculate_total_sparse_size(&hw_counter)?);
             atomic_save_json(&config_file_path, &index.file_header)?;
+        }
+
+        Ok(index)
+    }
+
+    /// Load purely through universal IO, without the legacy-header upgrade
+    /// write path of [`Self::load`]. Used by the read-only index.
+    pub fn load_via(fs: &S::Fs, path: &Path) -> Result<Self> {
+        let file_header: InvertedIndexFileHeader =
+            read_json_via(fs, Self::index_config_file_path(path))?;
+
+        let storage = fs.open(
+            Self::index_file_path(path),
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                populate: Populate::No,
+                advice: AdviceSetting::Advice(Advice::Normal),
+            },
+            Default::default(),
+        )?;
+
+        let mut index = Self {
+            path: path.to_owned(),
+            storage,
+            file_header,
+            _phantom: PhantomData,
+        };
+
+        if index.file_header.total_sparse_size.is_none() {
+            // legacy header: compute in memory, never write back
+            let hw_counter = HardwareCounterCell::disposable();
+            index.file_header.total_sparse_size =
+                Some(index.calculate_total_sparse_size(&hw_counter)?);
         }
 
         Ok(index)
