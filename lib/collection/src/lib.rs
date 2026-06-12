@@ -17,6 +17,8 @@ mod update_handler;
 pub mod wal_delta;
 
 pub mod events;
+#[cfg(feature = "testing")]
+pub mod model_testing;
 #[cfg(test)]
 mod tests;
 
