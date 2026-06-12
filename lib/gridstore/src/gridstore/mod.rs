@@ -3,7 +3,7 @@ mod reader;
 mod tests;
 pub(crate) mod view;
 
-use std::ops::ControlFlow;
+use std::cmp;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use ahash::AHashMap;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::{AccessPattern, Random};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{MmapFile, UniversalReadFileOps, UniversalWrite};
 use itertools::Itertools;
@@ -420,30 +420,49 @@ where
         self.tracker.read().pointer_count()
     }
 
-    pub fn iter<F, E>(
-        &self,
-        mut callback: F,
-        hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<(), E>
+    pub fn iter<F, E>(&self, mut callback: F, hw_counter: HwMetricRefCounter) -> Result<(), E>
     where
-        F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
+        F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<GridstoreError>,
     {
-        const BATCH_SIZE: usize = 128;
+        let mut current_offset = 0;
+        let mut max_offset = PointOffset::MAX;
 
-        let mut from_offset = 0;
-        // Iterate in batches to allow releasing read locks, see:
-        // <https://github.com/qdrant/qdrant/pull/7983>
-        while let ControlFlow::Continue(next_offset) = self.with_view(|view| {
-            view.iter(
-                from_offset,
-                PointOffset::MAX,
-                BATCH_SIZE,
-                &mut callback,
-                hw_counter,
-            )
-        })? {
-            from_offset = next_offset;
+        let mut should_continue = true;
+
+        while current_offset < max_offset && should_continue {
+            self.with_view(|view| -> Result<_, E> {
+                max_offset = view.max_point_offset();
+
+                if current_offset >= max_offset {
+                    return Ok(());
+                }
+
+                const BATCH_SIZE: u32 = 256;
+                let end_offset = current_offset.saturating_add(BATCH_SIZE);
+                let end_offset = cmp::min(end_offset, max_offset);
+
+                let point_offsets =
+                    (current_offset..end_offset).map(|point_offset| ((), point_offset));
+
+                should_continue = view.read_values::<Sequential, _, _>(
+                    point_offsets,
+                    |_, point_offset, value| -> Result<_, E> {
+                        let Some(value) = value else {
+                            return Ok(true);
+                        };
+
+                        callback(point_offset, value)
+                    },
+                    &hw_counter,
+                )?;
+
+                if should_continue {
+                    current_offset = end_offset;
+                }
+
+                Ok(())
+            })?;
         }
 
         Ok(())
