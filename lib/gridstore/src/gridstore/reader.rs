@@ -1,11 +1,10 @@
-use std::debug_assert_matches;
-use std::ops::ControlFlow;
+use std::cmp;
 use std::path::PathBuf;
 
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::AccessPattern;
+use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{UniversalRead, UniversalReadFs, read_json_via};
 
 use super::view::GridstoreView;
@@ -89,26 +88,37 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         self.view().get_value::<P>(point_offset, hw_counter)
     }
 
+    // TODO: Unify with `read_values`?
     pub fn iter<F, E>(
         &self,
         max_id: PointOffset,
-        callback: F,
+        mut callback: F,
         hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<(), E>
+    ) -> Result<(), E>
     where
-        F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
+        F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let control_flow = self
-            .view()
-            .iter(0, max_id, usize::MAX, callback, hw_counter)?;
+        let max_id = cmp::min(max_id, self.max_point_offset());
 
-        // we set usize::MAX as the max iteration, so we should always iterate the entire thing.
-        debug_assert_matches!(control_flow, ControlFlow::Break(()));
+        let point_offsets = (0..max_id).map(|point_offset| ((), point_offset));
+
+        self.view().read_values::<Sequential, _, _>(
+            point_offsets,
+            |_, point_offset, value| {
+                let Some(value) = value else {
+                    return Ok(true);
+                };
+
+                callback(point_offset, value)
+            },
+            &hw_counter,
+        )?;
 
         Ok(())
     }
 
+    // TODO: Unify with `iter`?
     pub fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
