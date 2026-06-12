@@ -40,7 +40,6 @@ impl<'a> TurboMultiQueryScorer<'a> {
 
 impl QueryScorer for TurboMultiQueryScorer<'_> {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.storage.account_point_read(idx, &self.hardware_counter);
         self.storage
             .score_point_max_similarity(&self.query, idx, &self.hardware_counter)
     }

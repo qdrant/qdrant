@@ -21,6 +21,7 @@ use common::universal_io::{MmapFile, MmapFs};
 use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use smallvec::{SmallVec, smallvec};
 
 use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, VECTORS_PATH};
 use crate::common::Flusher;
@@ -304,22 +305,9 @@ impl TurboMultiVectorStorage {
             .collect()
     }
 
-    /// Account the vector IO of reading point `key`'s offset record and all its
-    /// encoded inner records once. Scorers call this before folding a query that
-    /// may carry several sub-queries, so IO is counted once, not per sub-query.
-    pub fn account_point_read(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) {
-        if let Some(offset) = self.get_offset::<Random>(key) {
-            hw_counter.vector_io_read().incr_delta(
-                size_of::<MultivectorMmapOffset>()
-                    + self.quantizer.quantized_size() * offset.count as usize,
-            );
-        }
-    }
-
     /// Asymmetric MaxSim score of a precomputed multi-query against stored point
     /// `key`: each inner query vector takes its best similarity to any of the
-    /// point's inner records, summed. Counts CPU only; the caller accounts the
-    /// point read once via [`Self::account_point_read`].
+    /// point's inner records, summed.
     pub fn score_point_max_similarity(
         &self,
         query: &[EncodedQueryTQ],
@@ -327,15 +315,26 @@ impl TurboMultiVectorStorage {
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let Some(offset) = self.get_offset::<Random>(key) else {
-            return 0.0;
+            log::error!("Multivector not found");
+            return ScoreType::NEG_INFINITY;
         };
 
-        let mut max_sim = vec![ScoreType::NEG_INFINITY; query.len()];
-        for inner_id in offset.offset..offset.offset + offset.count {
-            let bytes = self.storage.get_vector_data(inner_id);
+        let records = self
+            .storage
+            .get_many::<Random>(offset.offset, offset.count as usize)
+            .expect("Multivector not found");
+
+        hw_counter
+            .cpu_counter()
+            .incr_delta(records.len() * query.len());
+
+        hw_counter.vector_io_read().incr_delta(records.len());
+
+        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
+
+        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
             for (qi, inner_query) in query.iter().enumerate() {
-                hw_counter.cpu_counter().incr_delta(bytes.len());
-                let sim = self.signed(self.quantizer.score_precomputed(inner_query, &bytes));
+                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
                 if max_sim[qi] < sim {
                     max_sim[qi] = sim;
                 }
@@ -356,21 +355,33 @@ impl TurboMultiVectorStorage {
             self.get_offset::<Random>(point_a),
             self.get_offset::<Random>(point_b),
         ) else {
-            return 0.0;
+            log::error!("Multivector not found");
+            return ScoreType::NEG_INFINITY;
         };
 
-        hw_counter.vector_io_read().incr_delta(
-            self.quantizer.quantized_size() * (offset_a.count + offset_b.count) as usize,
-        );
+        let records_a = self
+            .storage
+            .get_many::<Random>(offset_a.offset, offset_a.count as usize)
+            .expect("Multivector not found");
 
+        let records_b = self
+            .storage
+            .get_many::<Random>(offset_b.offset, offset_b.count as usize)
+            .expect("Multivector not found");
+
+        hw_counter
+            .cpu_counter()
+            .incr_delta(records_a.len() * offset_b.count as usize);
+        hw_counter
+            .vector_io_read()
+            .incr_delta(records_a.len() + records_b.len());
+
+        let quantized_size = self.quantizer.quantized_size();
         let mut sum = 0.0;
-        for a in offset_a.offset..offset_a.offset + offset_a.count {
-            let bytes_a = self.storage.get_vector_data(a);
+        for bytes_a in records_a.chunks_exact(quantized_size) {
             let mut max_sim = ScoreType::NEG_INFINITY;
-            for b in offset_b.offset..offset_b.offset + offset_b.count {
-                let bytes_b = self.storage.get_vector_data(b);
-                hw_counter.cpu_counter().incr_delta(bytes_a.len());
-                let sim = self.signed(self.quantizer.score_symmetric(&bytes_a, &bytes_b));
+            for bytes_b in records_b.chunks_exact(quantized_size) {
+                let sim = self.signed(self.quantizer.score_symmetric(bytes_a, bytes_b));
                 if sim > max_sim {
                     max_sim = sim;
                 }

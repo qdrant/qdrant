@@ -57,8 +57,6 @@ where
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        // Account the point read once, then fold per-example MaxSim over it.
-        self.storage.account_point_read(idx, &self.hardware_counter);
         self.query.score_by(|query| {
             self.storage
                 .score_point_max_similarity(query, idx, &self.hardware_counter)
