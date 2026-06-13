@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::StorageVersion as _;
+use common::universal_io::MmapFs;
 use fs_err as fs;
 use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::SparseVector;
@@ -150,7 +151,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     fn try_load(
         path: &Path,
     ) -> OperationResult<(SparseIndexConfig, TInvertedIndex, IndicesTracker)> {
-        let stored_version = TInvertedIndex::Version::load(path)?;
+        let stored_version = TInvertedIndex::Version::load_universal(&MmapFs, path)?;
 
         if stored_version != Some(TInvertedIndex::Version::current()) {
             return Err(OperationError::service_error_light(format!(
