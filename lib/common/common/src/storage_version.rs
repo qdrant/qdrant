@@ -1,8 +1,7 @@
-use std::io::{Error, Read, Result, Write};
+use std::io::{Error, Result, Write};
 use std::path::Path;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use fs_err::File;
 use semver::Version;
 
 use crate::universal_io::{self, OkNotFound as _, UniversalReadFs, read_whole_via};
@@ -22,24 +21,6 @@ pub trait StorageVersion {
 
     /// Loads and parses the version from the given directory.
     /// Returns `None` if the version file is not found.
-    fn load(dir_path: &Path) -> Result<Option<Version>> {
-        let version_file = dir_path.join(VERSION_FILE);
-        let mut contents = String::new();
-        let mut file = match File::open(&version_file) {
-            Ok(file) => file,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(None);
-            }
-            Err(err) => return Err(err),
-        };
-        file.read_to_string(&mut contents)?;
-        let version = contents.parse().map_err(|err| {
-            Error::other(format!("Can't parse version from {version_file:?}: {err}"))
-        })?;
-        Ok(Some(version))
-    }
-
-    /// Universal-IO variant of [`Self::load`].
     fn load_universal<Fs: UniversalReadFs>(
         fs: &Fs,
         dir_path: &Path,

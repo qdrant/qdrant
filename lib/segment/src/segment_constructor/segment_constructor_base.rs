@@ -675,7 +675,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
     // 2. Delete dirs without proper `version.info` file inside.
     // These segments are not properly saved.
     // Likely, the server crashed during saving.
-    if SegmentVersion::load(path)?.is_none() {
+    if SegmentVersion::load_universal(&MmapFs, path)?.is_none() {
         log::warn!("Deleting segment without version file: {}", path.display());
         safe_delete_with_suffix(path).map_err(|err| {
             OperationError::service_error(format!("failed to delete leftover segment: {err}"))
@@ -723,7 +723,7 @@ pub fn load_segment(
 ) -> OperationResult<Segment> {
     let total_started = Instant::now();
 
-    let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
+    let stored_version = SegmentVersion::load_universal(&MmapFs, path)?.ok_or_else(|| {
         OperationError::service_error(format!(
             "Segment version file not found in segment: {}",
             path.display()
