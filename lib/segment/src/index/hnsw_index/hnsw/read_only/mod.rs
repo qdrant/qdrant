@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
@@ -39,6 +39,7 @@ pub struct ReadOnlyHNSWIndex<S: UniversalRead> {
     path: PathBuf,
     graph: GraphLayers,
     searches_telemetry: HNSWSearchesTelemetry,
+    is_on_disk: bool,
 }
 
 /// Read-only view over a [`ReadOnlyHNSWIndex`].
@@ -70,7 +71,12 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
         quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         hnsw_config: HnswConfig,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Self>
+    where
+        // The graph keeps its universal-IO storage handle alive behind a
+        // boxed trait object, which must outlive the index.
+        S: 'static,
+    {
         let config_path = HnswGraphConfig::get_config_path(path);
         let config = match HnswGraphConfig::load_universal(fs, &config_path)? {
             Some(config) => config,
@@ -99,7 +105,16 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
             }
         };
 
-        let graph = GraphLayers::load_universal(fs, path)?;
+        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
+
+        // Keep the graph lazily on disk when configured so; otherwise populate
+        // it into RAM on load (blocking).
+        let populate = if is_on_disk {
+            Populate::No
+        } else {
+            Populate::Blocking
+        };
+        let graph = GraphLayers::load_universal(fs, path, populate)?;
 
         Ok(Self {
             id_tracker,
@@ -110,12 +125,12 @@ impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
             path: path.to_owned(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
+            is_on_disk,
         })
     }
 
-    /// Reports the loaded graph's actual residency, not the config intent.
     pub fn is_on_disk(&self) -> bool {
-        self.graph.is_on_disk()
+        self.is_on_disk
     }
 
     /// Read underlying graph data from disk into the disk cache.

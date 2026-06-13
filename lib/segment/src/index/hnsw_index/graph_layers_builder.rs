@@ -10,6 +10,7 @@ use common::bitvec::BitSliceExt;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, atomic_save_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
+use common::universal_io::{MmapFs, Populate};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distr::Uniform;
 use rand::{Rng, RngExt};
@@ -225,11 +226,18 @@ impl GraphLayersBuilder {
             atomic_save(&links_path, |writer| {
                 serialize_graph_links(edges, format_param, self.hnsw_m, writer)
             })?;
-            links = GraphLinks::load_from_mmap(&links_path, format_param.as_format())?;
+            // On-disk build path: keep the links lazily on disk (no populate).
+            links = GraphLinks::load_universal(
+                &MmapFs,
+                &links_path,
+                format_param.as_format(),
+                Populate::No,
+            )?;
         } else {
             // Since we'll keep it in the RAM anyway, we can afford to build in the RAM too.
             links = GraphLinks::new_from_edges(edges, format_param, self.hnsw_m)?;
-            atomic_save(&links_path, |writer| writer.write_all(links.as_bytes()))?;
+            let bytes = links.as_bytes()?;
+            atomic_save(&links_path, |writer| writer.write_all(bytes))?;
         }
 
         let entry_points = self.entry_points.into_inner();

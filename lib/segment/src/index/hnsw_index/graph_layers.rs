@@ -33,7 +33,7 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, read_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
+use common::universal_io::{MmapFs, Populate, UniversalReadFs, read_bin_via};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -620,11 +620,6 @@ impl GraphLayers {
     pub fn num_points(&self) -> usize {
         self.links.num_points()
     }
-
-    /// Whether the links are mmap-backed rather than resident in RAM.
-    pub fn is_on_disk(&self) -> bool {
-        self.links.is_on_disk()
-    }
 }
 
 pub enum LoadOption<Fs: UniversalReadFs> {
@@ -652,6 +647,7 @@ impl GraphLayers {
     ) -> OperationResult<Self>
     where
         Fs: UniversalReadFs,
+        Fs::File: 'static,
     {
         let graph_data_path = GraphLayers::get_path(dir);
         let graph_data: GraphLayerData = match &load_option {
@@ -675,15 +671,19 @@ impl GraphLayers {
 
     /// Load purely through universal IO, without the local-mmap and format
     /// conversion paths of [`Self::load`]. Used by the read-only index.
-    pub fn load_universal<Fs>(fs: &Fs, dir: &Path) -> OperationResult<Self>
+    ///
+    /// `populate` fills the OS page cache on open (blocking); pass `false` to
+    /// keep the links lazily on disk.
+    pub fn load_universal<Fs>(fs: &Fs, dir: &Path, populate: Populate) -> OperationResult<Self>
     where
         Fs: UniversalReadFs,
+        Fs::File: 'static,
     {
         let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir))?;
 
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: Self::load_links_universal(fs, dir)?,
+            links: Self::load_links_universal(fs, dir, populate)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
@@ -692,28 +692,26 @@ impl GraphLayers {
     fn load_links<Fs>(dir: &Path, load_option: LoadOption<Fs>) -> OperationResult<GraphLinks>
     where
         Fs: UniversalReadFs,
+        Fs::File: 'static,
     {
         match &load_option {
-            LoadOption::OnDiskMmap => {
-                for format in [
-                    GraphLinksFormat::CompressedWithVectors,
-                    GraphLinksFormat::Compressed,
-                    GraphLinksFormat::Plain,
-                ] {
-                    let path = GraphLayers::get_links_path(dir, format);
-                    if path.exists() {
-                        return GraphLinks::load_from_mmap(&path, format);
-                    }
-                }
-                Err(OperationError::service_error("No links file found"))
+            // Keep the links lazily on disk: open via mmap without populating.
+            LoadOption::OnDiskMmap => Self::load_links_universal(&MmapFs, dir, Populate::No),
+            // Load through the universal backend and populate into RAM.
+            LoadOption::RamFromUniversal { fs } => {
+                Self::load_links_universal(fs, dir, Populate::Blocking)
             }
-            LoadOption::RamFromUniversal { fs } => Self::load_links_universal(fs, dir),
         }
     }
 
-    fn load_links_universal<Fs>(fs: &Fs, dir: &Path) -> OperationResult<GraphLinks>
+    fn load_links_universal<Fs>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+    ) -> OperationResult<GraphLinks>
     where
         Fs: UniversalReadFs,
+        Fs::File: 'static,
     {
         for format in [
             GraphLinksFormat::CompressedWithVectors,
@@ -722,7 +720,7 @@ impl GraphLayers {
         ] {
             let path = GraphLayers::get_links_path(dir, format);
             if fs.exists(&path)? {
-                return GraphLinks::load_from_universal_file(fs, &path, format);
+                return GraphLinks::load_universal(fs, &path, format, populate);
             }
         }
         Err(OperationError::service_error("No links file found"))
@@ -745,8 +743,12 @@ impl GraphLayers {
 
         let start = std::time::Instant::now();
 
-        let links =
-            GraphLinks::load_from_universal_file(&MmapFs, &plain_path, GraphLinksFormat::Plain)?;
+        let links = GraphLinks::load_universal(
+            &MmapFs,
+            &plain_path,
+            GraphLinksFormat::Plain,
+            Populate::No,
+        )?;
         let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
             let edges = links.to_edges();
