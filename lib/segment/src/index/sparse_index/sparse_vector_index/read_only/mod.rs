@@ -55,16 +55,24 @@ type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
 >;
 
 impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<S, TInvertedIndex> {
-    /// Universal-IO mirror of `SparseVectorIndex::try_load`: version gate,
-    /// config and indices tracker load via `fs`; the inverted index comes from
-    /// `load_inverted_index` (RAM layouts stream via `fs`, mmap layouts stay local).
+    /// Universal-IO mirror of `SparseVectorIndex::finish`: version gate and
+    /// indices tracker load via `fs`, then assemble from the caller-loaded
+    /// `config` and already-constructed `inverted_index`.
+    ///
+    /// The caller (the [`VectorIndexReadEnum`] dispatcher) loads `config` to pick
+    /// the concrete inverted-index type, constructs it, and hands both here — so
+    /// this stays free of inverted-index construction callbacks, just as
+    /// `SparseVectorIndex` does.
+    ///
+    /// [`VectorIndexReadEnum`]: crate::index::read_only::VectorIndexReadEnum
     pub fn open(
         fs: &S::Fs,
+        config: SparseIndexConfig,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         path: &Path,
-        load_inverted_index: impl FnOnce() -> common::universal_io::Result<TInvertedIndex>,
+        inverted_index: TInvertedIndex,
     ) -> OperationResult<Self> {
         let stored_version = TInvertedIndex::Version::load_universal(fs, path)?;
         if stored_version != Some(TInvertedIndex::Version::current()) {
@@ -75,9 +83,6 @@ impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<
             )));
         }
 
-        let config =
-            SparseIndexConfig::load_universal(fs, &SparseIndexConfig::get_config_path(path))?;
-        let inverted_index = load_inverted_index()?;
         let indices_tracker = IndicesTracker::open_universal(fs, path)?;
 
         Ok(Self {

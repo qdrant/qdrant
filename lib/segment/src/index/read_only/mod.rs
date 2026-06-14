@@ -6,7 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::{MmapFile, MmapFs, UniversalRead};
+use common::universal_io::UniversalRead;
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::InvertedIndex;
@@ -33,7 +33,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// Wraps each read-capable index type with its read-only newtype. The mutable
 /// RAM sparse index is intentionally absent because it has no persisted
 /// read-only representation.
-pub enum VectorIndexReadEnum<S: UniversalRead> {
+pub enum VectorIndexReadEnum<S: UniversalRead + 'static> {
     Plain(Box<ReadOnlyPlainVectorIndex<S>>),
     Hnsw(Box<ReadOnlyHNSWIndex<S>>),
     SparseCompressedImmutableRamF32(
@@ -45,19 +45,19 @@ pub enum VectorIndexReadEnum<S: UniversalRead> {
     SparseCompressedImmutableRamU8(
         Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedImmutableRam<QuantizedU8>>>,
     ),
-    SparseCompressedMmapF32(
-        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<f32, MmapFile>>>,
+    SparseCompressedStoredF32(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<f32, S>>>,
     ),
-    SparseCompressedMmapF16(
-        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<f16, MmapFile>>>,
+    SparseCompressedStoredF16(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<f16, S>>>,
     ),
-    SparseCompressedMmapU8(
-        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<QuantizedU8, MmapFile>>>,
+    SparseCompressedStoredU8(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<QuantizedU8, S>>>,
     ),
 }
 
 /// Shared read-only backends plus the `fs`/`path` an index opens its files from.
-pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalRead> {
+pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalRead + 'static> {
     pub fs: &'a S::Fs,
     pub path: &'a Path,
     pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
@@ -66,7 +66,7 @@ pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalRead> {
     pub quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
 }
 
-impl<S: UniversalRead> VectorIndexReadEnum<S> {
+impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
     /// Open the read-only dense vector index from its config (sparse: follow-up).
     #[allow(dead_code)] // pending: read-only segment constructor
     pub fn open(
@@ -104,10 +104,7 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
     /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
     /// `MutableRam` has no read-only representation.
     #[allow(dead_code)] // pending: read-only segment constructor
-    pub fn open_sparse(args: ReadOnlyVectorIndexOpenArgs<'_, S>) -> OperationResult<Self>
-    where
-        S: 'static,
-    {
+    pub fn open_sparse(args: ReadOnlyVectorIndexOpenArgs<'_, S>) -> OperationResult<Self> {
         let ReadOnlyVectorIndexOpenArgs {
             fs,
             path,
@@ -139,61 +136,67 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
                 Self::SparseCompressedImmutableRamF32(Box::new(ReadOnlySparseVectorIndex::open(
                     fs,
+                    config,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path),
+                    InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path)?,
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
-                Self::SparseCompressedMmapF32(Box::new(ReadOnlySparseVectorIndex::open(
+                Self::SparseCompressedStoredF32(Box::new(ReadOnlySparseVectorIndex::open(
                     fs,
+                    config,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedMmap::load_universal(&MmapFs, path),
+                    InvertedIndexCompressedMmap::load_universal(fs, path)?,
                 )?))
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
                 Self::SparseCompressedImmutableRamF16(Box::new(ReadOnlySparseVectorIndex::open(
                     fs,
+                    config,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path),
+                    InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path)?,
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
-                Self::SparseCompressedMmapF16(Box::new(ReadOnlySparseVectorIndex::open(
+                Self::SparseCompressedStoredF16(Box::new(ReadOnlySparseVectorIndex::open(
                     fs,
+                    config,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedMmap::load_universal(&MmapFs, path),
+                    InvertedIndexCompressedMmap::load_universal(fs, path)?,
                 )?))
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
                 Self::SparseCompressedImmutableRamU8(Box::new(ReadOnlySparseVectorIndex::open(
                     fs,
+                    config,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path),
+                    InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path)?,
                 )?))
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
-                Self::SparseCompressedMmapU8(Box::new(ReadOnlySparseVectorIndex::open(
+                Self::SparseCompressedStoredU8(Box::new(ReadOnlySparseVectorIndex::open(
                     fs,
+                    config,
                     id_tracker,
                     vector_storage,
                     payload_index,
                     path,
-                    || InvertedIndexCompressedMmap::load_universal(&MmapFs, path),
+                    InvertedIndexCompressedMmap::load_universal(fs, path)?,
                 )?))
             }
             (_, VectorStorageDatatype::Turbo4) => {
@@ -213,9 +216,9 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedMmapF32(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedMmapF16(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedMmapU8(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedStoredF32(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedStoredF16(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().is_on_disk(),
         }
     }
 
@@ -226,9 +229,9 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
-            Self::SparseCompressedMmapF32(index) => index.inverted_index().populate()?,
-            Self::SparseCompressedMmapF16(index) => index.inverted_index().populate()?,
-            Self::SparseCompressedMmapU8(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedStoredF32(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedStoredF16(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().populate()?,
         };
         Ok(())
     }
@@ -240,15 +243,15 @@ impl<S: UniversalRead> VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
-            Self::SparseCompressedMmapF32(index) => index.inverted_index().clear_cache()?,
-            Self::SparseCompressedMmapF16(index) => index.inverted_index().clear_cache()?,
-            Self::SparseCompressedMmapU8(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedStoredF32(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedStoredF16(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().clear_cache()?,
         };
         Ok(())
     }
 }
 
-impl<S: UniversalRead> VectorIndexRead for VectorIndexReadEnum<S> {
+impl<S: UniversalRead + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -269,13 +272,13 @@ impl<S: UniversalRead> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamU8(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
-            Self::SparseCompressedMmapF32(index) => {
+            Self::SparseCompressedStoredF32(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
-            Self::SparseCompressedMmapF16(index) => {
+            Self::SparseCompressedStoredF16(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
-            Self::SparseCompressedMmapU8(index) => {
+            Self::SparseCompressedStoredU8(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
         }
@@ -288,9 +291,9 @@ impl<S: UniversalRead> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamF32(index) => index.get_telemetry_data(detail),
             Self::SparseCompressedImmutableRamF16(index) => index.get_telemetry_data(detail),
             Self::SparseCompressedImmutableRamU8(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedMmapF32(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedMmapF16(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedMmapU8(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedStoredF32(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedStoredF16(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedStoredU8(index) => index.get_telemetry_data(detail),
         }
     }
 
@@ -301,9 +304,9 @@ impl<S: UniversalRead> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
-            Self::SparseCompressedMmapF32(index) => index.indexed_vector_count(),
-            Self::SparseCompressedMmapF16(index) => index.indexed_vector_count(),
-            Self::SparseCompressedMmapU8(index) => index.indexed_vector_count(),
+            Self::SparseCompressedStoredF32(index) => index.indexed_vector_count(),
+            Self::SparseCompressedStoredF16(index) => index.indexed_vector_count(),
+            Self::SparseCompressedStoredU8(index) => index.indexed_vector_count(),
         }
     }
 
@@ -320,9 +323,9 @@ impl<S: UniversalRead> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamU8(index) => {
                 index.size_of_searchable_vectors_in_bytes()
             }
-            Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedStoredF32(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedStoredF16(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedStoredU8(index) => index.size_of_searchable_vectors_in_bytes(),
         }
     }
 
@@ -343,9 +346,9 @@ impl<S: UniversalRead> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamU8(index) => {
                 index.fill_idf_statistics(idf, hw_counter)
             }
-            Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedStoredF32(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedStoredF16(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedStoredU8(index) => index.fill_idf_statistics(idf, hw_counter),
         }
     }
 
@@ -356,9 +359,9 @@ impl<S: UniversalRead> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedImmutableRamF32(index) => index.is_index(),
             Self::SparseCompressedImmutableRamF16(index) => index.is_index(),
             Self::SparseCompressedImmutableRamU8(index) => index.is_index(),
-            Self::SparseCompressedMmapF32(index) => index.is_index(),
-            Self::SparseCompressedMmapF16(index) => index.is_index(),
-            Self::SparseCompressedMmapU8(index) => index.is_index(),
+            Self::SparseCompressedStoredF32(index) => index.is_index(),
+            Self::SparseCompressedStoredF16(index) => index.is_index(),
+            Self::SparseCompressedStoredU8(index) => index.is_index(),
         }
     }
 }
