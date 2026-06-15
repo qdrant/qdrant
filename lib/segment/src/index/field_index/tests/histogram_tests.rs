@@ -280,6 +280,6 @@ fn test_save_load_histogram() {
         .unwrap();
     histogram.save(dir.path()).unwrap();
 
-    let loaded_histogram = Histogram::<f64>::load_via(&MmapFs, dir.path()).unwrap();
+    let loaded_histogram = Histogram::<f64>::load_universal(&MmapFs, dir.path()).unwrap();
     assert_eq!(histogram, loaded_histogram);
 }

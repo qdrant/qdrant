@@ -31,9 +31,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::fs::{atomic_save, read_bin};
+use common::fs::atomic_save;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
+use common::universal_io::{MmapFs, Populate, UniversalReadFs, read_bin_via};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -622,55 +622,53 @@ impl GraphLayers {
     }
 }
 
-pub enum LoadOption<Fs: UniversalReadFs> {
-    /// Open as a mmap without populating it.
-    OnDiskMmap,
-    /// Load whole file into RAM using a generic backend.
-    RamFromUniversal { fs: Fs },
-}
-
-impl LoadOption<MmapFs> {
-    pub fn on_disk_mmap() -> Self {
-        Self::OnDiskMmap
-    }
-
-    pub fn ram_from_mmap() -> Self {
-        Self::RamFromUniversal { fs: MmapFs }
-    }
-}
-
 impl GraphLayers {
-    pub fn load<Fs>(
-        dir: &Path,
-        load_option: LoadOption<Fs>,
-        compress: bool,
-    ) -> OperationResult<Self>
-    where
-        Fs: UniversalReadFs,
-    {
-        let graph_data_path = GraphLayers::get_path(dir);
-        let graph_data: GraphLayerData = match &load_option {
-            LoadOption::OnDiskMmap => read_bin(&graph_data_path)?,
-            LoadOption::RamFromUniversal { fs } => read_bin_via(fs, &graph_data_path)?,
-        };
-
+    /// Load via local mmap, optionally converting the links to the compressed
+    /// format first. Used by the (mutable) on-disk HNSW index.
+    ///
+    /// `populate` fills the OS page cache for the links on open (e.g.
+    /// [`Populate::Blocking`] to keep them in RAM, [`Populate::No`] to keep them
+    /// lazily on disk).
+    pub fn load(dir: &Path, populate: Populate, compress: bool) -> OperationResult<Self> {
         if compress {
-            // TODO: use `Fs` within this function? It writes data, and we don't have `UniversalWriteFs` yet.
-            //       It is not enabled as per `LINK_COMPRESSION_CONVERT_EXISTING` anyway.
+            // `convert_to_compressed` writes data, and we don't have a
+            // `UniversalWriteFs` yet, so it stays on local mmap IO. It is not
+            // enabled as per `super::hnsw::LINK_COMPRESSION_CONVERT_EXISTING`.
+            let graph_data: GraphLayerData = read_bin_via(&MmapFs, GraphLayers::get_path(dir))?;
             Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0))?;
         }
 
+        Self::load_universal(&MmapFs, dir, populate)
+    }
+
+    /// Load purely through universal IO, without the format conversion path of
+    /// [`Self::load`]. Used by the read-only index.
+    ///
+    /// `populate` fills the OS page cache for the links on open; see
+    /// [`Self::load`].
+    pub fn load_universal<Fs>(fs: &Fs, dir: &Path, populate: Populate) -> OperationResult<Self>
+    where
+        Fs: UniversalReadFs,
+        Fs::File: 'static,
+    {
+        let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir))?;
+
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: Self::load_links(dir, load_option)?,
+            links: Self::load_links_universal(fs, dir, populate)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
     }
 
-    fn load_links<Fs>(dir: &Path, load_option: LoadOption<Fs>) -> OperationResult<GraphLinks>
+    fn load_links_universal<Fs>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+    ) -> OperationResult<GraphLinks>
     where
         Fs: UniversalReadFs,
+        Fs::File: 'static,
     {
         for format in [
             GraphLinksFormat::CompressedWithVectors,
@@ -678,17 +676,8 @@ impl GraphLayers {
             GraphLinksFormat::Plain,
         ] {
             let path = GraphLayers::get_links_path(dir, format);
-            match &load_option {
-                LoadOption::OnDiskMmap => {
-                    if path.exists() {
-                        return GraphLinks::load_from_mmap(&path, format);
-                    }
-                }
-                LoadOption::RamFromUniversal { fs } => {
-                    if fs.exists(&path)? {
-                        return GraphLinks::load_from_universal_file(fs, &path, format);
-                    }
-                }
+            if fs.exists(&path)? {
+                return GraphLinks::load_universal(fs, &path, format, populate);
             }
         }
         Err(OperationError::service_error("No links file found"))
@@ -711,8 +700,12 @@ impl GraphLayers {
 
         let start = std::time::Instant::now();
 
-        let links =
-            GraphLinks::load_from_universal_file(&MmapFs, &plain_path, GraphLinksFormat::Plain)?;
+        let links = GraphLinks::load_universal(
+            &MmapFs,
+            &plain_path,
+            GraphLinksFormat::Plain,
+            Populate::No,
+        )?;
         let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
             let edges = links.to_edges();
@@ -906,7 +899,7 @@ mod tests {
         let res1 = search_in_graph(&query, top, &vector_holder, &graph1);
         drop(graph1);
 
-        let graph2 = GraphLayers::load(dir.path(), LoadOption::ram_from_mmap(), compress).unwrap();
+        let graph2 = GraphLayers::load(dir.path(), Populate::Blocking, compress).unwrap();
         if compress {
             assert_eq!(graph2.links.format(), GraphLinksFormat::Compressed);
         } else {
