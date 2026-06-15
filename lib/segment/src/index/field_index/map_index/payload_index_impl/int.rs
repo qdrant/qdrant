@@ -127,7 +127,7 @@ where
 // Shared bodies for `MapIndex<IntPayloadType>` and
 // `ReadOnlyMapIndex<IntPayloadType, S>`.
 
-fn filter_impl<'a, T: MapIndexRead<IntPayloadType>>(
+fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     index: &'a T,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
@@ -165,8 +165,8 @@ fn filter_impl<'a, T: MapIndexRead<IntPayloadType>>(
     Ok(result)
 }
 
-fn estimate_cardinality_impl<T: MapIndexRead<IntPayloadType>>(
-    index: &T,
+fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
+    index: &'a T,
     condition: &FieldCondition,
     hw_counter: &HardwareCounterCell,
 ) -> Option<CardinalityEstimation> {
@@ -219,8 +219,8 @@ fn estimate_cardinality_impl<T: MapIndexRead<IntPayloadType>>(
     }
 }
 
-fn for_each_payload_block_impl<T: MapIndexRead<IntPayloadType>>(
-    index: &T,
+fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
+    index: &'a T,
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
@@ -240,7 +240,7 @@ fn for_each_payload_block_impl<T: MapIndexRead<IntPayloadType>>(
     })
 }
 
-fn condition_checker_impl<'a, T: MapIndexRead<IntPayloadType> + 'a>(
+fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,

@@ -12,10 +12,10 @@ use super::{ContainerSegment, ImmutableMapIndex};
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
-impl<N, S> MapIndexRead<N> for ImmutableMapIndex<N, S>
+impl<'a, N, S> MapIndexRead<'a, N> for ImmutableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
-    N: MapIndexKey + ?Sized,
+    N: MapIndexKey + ?Sized + 'a,
     S: UniversalRead,
 {
     fn check_values_any(
@@ -29,14 +29,11 @@ where
             .check_values_any(idx, |v| check_fn(v.borrow())))
     }
 
-    fn get_values<'a>(
+    fn get_values(
         &'a self,
         idx: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         Some(
             self.point_to_values
                 .get_values(idx)?

@@ -103,7 +103,7 @@ where
     }
 }
 
-impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for InMemoryMapIndex<N>
+impl<'a, N: MapIndexKey + ?Sized + 'a> MapIndexRead<'a, N> for InMemoryMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -120,14 +120,11 @@ where
             .unwrap_or(false))
     }
 
-    fn get_values<'a>(
+    fn get_values(
         &'a self,
         idx: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         Some(
             self.point_to_values
                 .get(idx as usize)?

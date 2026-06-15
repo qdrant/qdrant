@@ -17,7 +17,8 @@ use crate::index::payload_config::StorageType;
 /// `except_set`, `values_is_empty`) are picked up from the trait's default
 /// impls — they only depend on the required methods, so no per-variant
 /// dispatch is needed for them.
-impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for ReadOnlyMapIndex<N, S>
+impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, N>
+    for ReadOnlyMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -36,14 +37,11 @@ where
         }
     }
 
-    fn get_values<'a>(
+    fn get_values(
         &'a self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         let boxed: Box<dyn Iterator<Item = Cow<'a, N>> + 'a> = match self {
             ReadOnlyMapIndex::Appendable(index) => Box::new(index.get_values(idx, hw_counter)?),
             ReadOnlyMapIndex::Immutable(index) => Box::new(index.get_values(idx, hw_counter)?),

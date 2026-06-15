@@ -23,7 +23,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`MapIndex`] can call them generically. Variants that don't need
 /// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the
 /// storage-backed `Universal` variant uses it to track payload-index IO.
-pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
+pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a> {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -31,13 +31,11 @@ pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
         check_fn: impl Fn(&N) -> bool,
     ) -> OperationResult<bool>;
 
-    fn get_values<'a>(
+    fn get_values(
         &'a self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a;
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>;
 
     fn values_count(&self, idx: PointOffsetType) -> Option<usize>;
 
@@ -120,13 +118,13 @@ pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
     /// # Returns
     ///
     /// * `CardinalityEstimation` - estimation of cardinality
-    fn except_cardinality<'a>(
-        &'a self,
-        excluded: impl Iterator<Item = &'a N>,
+    fn except_cardinality<'b>(
+        &self,
+        excluded: impl Iterator<Item = &'b N>,
         hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation
     where
-        N: 'a,
+        N: 'b,
     {
         // Minimal case: we exclude as many points as possible.
         let excluded_value_counts: Vec<_> = excluded
@@ -174,7 +172,7 @@ pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
         }
     }
 
-    fn except_set<'a, K, A>(
+    fn except_set<K, A>(
         &'a self,
         excluded: &'a IndexSet<K, A>,
         hw_counter: &'a HardwareCounterCell,
@@ -196,7 +194,7 @@ pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
     }
 }
 
-impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for MapIndex<N>
+impl<'a, N: MapIndexKey + ?Sized + 'a> MapIndexRead<'a, N> for MapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -213,14 +211,11 @@ where
         }
     }
 
-    fn get_values<'a>(
+    fn get_values(
         &'a self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         let boxed: Box<dyn Iterator<Item = Cow<'a, N>> + 'a> = match self {
             MapIndex::Mutable(index) => Box::new(index.get_values(idx, hw_counter)?),
             MapIndex::Immutable(index) => Box::new(index.get_values(idx, hw_counter)?),
@@ -347,8 +342,8 @@ where
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
-            points_count: <Self as MapIndexRead<N>>::get_indexed_points(self),
-            points_values_count: <Self as MapIndexRead<N>>::get_values_count(self),
+            points_count: <Self as MapIndexRead<'_, N>>::get_indexed_points(self),
+            points_values_count: <Self as MapIndexRead<'_, N>>::get_values_count(self),
             histogram_bucket_size: None,
             index_type: match self {
                 MapIndex::Mutable(_) => "mutable_map",
@@ -362,13 +357,13 @@ where
     /// [`MapIndexRead::values_count`] for callers outside this module who
     /// don't have the (`pub(super)`) trait in scope.
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        <Self as MapIndexRead<N>>::values_count(self, idx).unwrap_or(0)
+        <Self as MapIndexRead<'_, N>>::values_count(self, idx).unwrap_or(0)
     }
 
     /// `bool`-returning convenience wrapper around
     /// [`MapIndexRead::values_is_empty`]; see [`Self::values_count`] for why.
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
-        <Self as MapIndexRead<N>>::values_is_empty(self, idx)
+        <Self as MapIndexRead<'_, N>>::values_is_empty(self, idx)
     }
 
     /// Convenience wrapper around [`MapIndexRead::get_values`] that boxes the
@@ -379,14 +374,14 @@ where
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
-        let iter = <Self as MapIndexRead<N>>::get_values(self, idx, hw_counter)?;
+        let iter = <Self as MapIndexRead<'_, N>>::get_values(self, idx, hw_counter)?;
         Some(Box::new(iter))
     }
 
     /// Convenience wrapper around [`MapIndexRead::ram_usage_bytes`]; see
     /// [`Self::values_count`] for why.
     pub fn ram_usage_bytes(&self) -> usize {
-        <Self as MapIndexRead<N>>::ram_usage_bytes(self)
+        <Self as MapIndexRead<'_, N>>::ram_usage_bytes(self)
     }
 
     pub fn is_on_disk(&self) -> bool {
