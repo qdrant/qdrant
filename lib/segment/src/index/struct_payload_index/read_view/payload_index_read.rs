@@ -18,11 +18,12 @@ use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
 };
 use crate::index::query_estimator::estimate_filter;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::json_path::JsonPath;
-use crate::payload_storage::{FilterContext, PayloadStorageRead};
+use crate::payload_storage::PayloadStorageRead;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
@@ -169,7 +170,7 @@ where
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .stop_if(is_stopped)
-                .filter(move |i| optimized_filter.check(*i));
+                .filter(move |i| optimized_filter.check_infallible(*i));
 
             Ok(EitherVariant::A(matched_points))
         } else {
@@ -211,7 +212,8 @@ where
                     let optimized_filter =
                         self.optimized_filter(filter, deferred_behavior, hw_counter)?;
                     let iter = joined_primary_iterator.filter(move |&id| {
-                        !visited_list.check_and_update_visited(id) && optimized_filter.check(id)
+                        !visited_list.check_and_update_visited(id)
+                            && optimized_filter.check_infallible(id)
                     });
                     EitherVariant::C(iter)
                 });
@@ -229,7 +231,8 @@ where
                     i.cpu_counter()
                 })
                 .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id) && optimized_filter.check(id)
+                    !visited_list.check_and_update_visited(id)
+                        && optimized_filter.check_infallible(id)
                 });
 
             Ok(EitherVariant::D(iter))
@@ -253,7 +256,7 @@ where
         &'b self,
         filter: &'b Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Box<dyn FilterContext + 'b>> {
+    ) -> OperationResult<Box<dyn ConditionChecker + 'b>> {
         Ok(Box::new(self.optimized_filter(
             filter,
             DeferredBehavior::VisibleOnly,

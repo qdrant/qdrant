@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::DeferredBehavior;
+use itertools::Itertools;
 use rand::seq::{IteratorRandom, SliceRandom};
 
 use crate::common::operation_error::OperationResult;
@@ -64,15 +65,14 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
         let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
-        Ok(self
-            .id_tracker
+        self.id_tracker
             .point_mappings()
             .iter_random_visible()
             .stop_if(is_stopped)
-            .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-            .map(|(external_id, _)| external_id)
+            .try_filter(move |(_, internal_id)| filter_context.check(*internal_id))
+            .map_ok(|(external_id, _)| external_id)
             .take(limit)
-            .collect())
+            .collect()
     }
 
     pub fn read_random_filtered(

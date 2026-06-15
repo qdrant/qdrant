@@ -29,7 +29,7 @@ pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool;
+    ) -> OperationResult<bool>;
 
     fn get_values<'a>(
         &'a self,
@@ -205,7 +205,7 @@ where
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         match self {
             MapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
             MapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),

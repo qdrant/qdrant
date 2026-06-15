@@ -1,5 +1,7 @@
 use common::types::PointOffsetType;
 
+use crate::common::operation_error::OperationResult;
+
 const MAX_ESTIMATED_POINTS: usize = 1000;
 
 /// Returns (expected cardinality ± confidence interval at 0.99)
@@ -19,17 +21,17 @@ fn confidence_agresti_coull_interval(trials: usize, positive: usize, total: usiz
 /// Iteratively samples points until the decision could be made with confidence
 pub fn sample_check_cardinality(
     sample_points: impl Iterator<Item = PointOffsetType>,
-    checker: impl Fn(PointOffsetType) -> bool,
+    checker: impl Fn(PointOffsetType) -> OperationResult<bool>,
     threshold: usize,
     total_points: usize,
-) -> bool {
+) -> OperationResult<bool> {
     let mut matched_points = 0;
     let mut total_checked = 0;
 
     let mut exp = 0;
     let mut interval;
     for idx in sample_points.take(MAX_ESTIMATED_POINTS) {
-        matched_points += usize::from(checker(idx));
+        matched_points += usize::from(checker(idx)?);
         total_checked += 1;
 
         let estimation =
@@ -38,15 +40,15 @@ pub fn sample_check_cardinality(
         interval = estimation.1;
 
         if exp - interval > threshold as i64 {
-            return true;
+            return Ok(true);
         }
 
         if exp + interval < threshold as i64 {
-            return false;
+            return Ok(false);
         }
     }
 
-    exp > threshold as i64
+    Ok(exp > threshold as i64)
 }
 
 #[cfg(test)]
@@ -81,10 +83,11 @@ mod tests {
     fn test_sample_check_cardinality() {
         let res = sample_check_cardinality(
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].into_iter(),
-            |idx| idx % 2 == 0,
+            |idx| Ok(idx % 2 == 0),
             10_000,
             100_000,
-        );
+        )
+        .unwrap();
 
         assert!(res)
     }

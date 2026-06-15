@@ -29,7 +29,7 @@ use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -268,7 +268,7 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     idx: &'a N,
     condition: &FieldCondition,
     _hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'a>> {
+) -> Option<Box<dyn ConditionChecker + 'a>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -290,7 +290,7 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
         }) => {
             let is_true = *is_true;
             Some(Box::new(move |point_id: PointOffsetType| {
-                idx.check_values_any(point_id, is_true)
+                Ok(idx.check_values_any(point_id, is_true))
             }))
         }
         Match::Value(MatchValue {

@@ -28,7 +28,7 @@ use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType, RangeInterface};
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> PayloadFieldIndex
@@ -95,7 +95,7 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
         Ok(query::condition_checker(self, condition, hw_acc))
     }
 }

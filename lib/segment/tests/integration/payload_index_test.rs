@@ -759,7 +759,7 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
             .borrow()
             .point_mappings()
             .iter_internal()
-            .filter(|x| filter_context.check(*x))
+            .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()
             .len()
     });
@@ -824,7 +824,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
             .borrow()
             .point_mappings()
             .iter_internal()
-            .filter(|x| filter_context.check(*x))
+            .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()
             .len()
     });
@@ -895,7 +895,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
             .borrow()
             .point_mappings()
             .iter_internal()
-            .filter(|x| filter_context.check(*x))
+            .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()
             .len()
     });
@@ -1443,7 +1443,7 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
             .borrow()
             .point_mappings()
             .iter_internal()
-            .filter(|x| filter_context.check(*x))
+            .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()
             .len()
     });

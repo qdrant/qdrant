@@ -78,7 +78,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             let context = plain_index.filter_context(&filter, &hw_counter).unwrap();
             let filtered_sample = sample
                 .into_iter()
-                .filter(|id| context.check(*id))
+                .filter(|id| context.check(*id).unwrap())
                 .collect_vec();
             result_size += filtered_sample.len();
             query_count += 1;
@@ -101,7 +101,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             let context = plain_index.filter_context(&filter, &hw_counter).unwrap();
             let filtered_sample = sample
                 .into_iter()
-                .filter(|id| context.check(*id))
+                .filter(|id| context.check(*id).unwrap())
                 .collect_vec();
             result_size += filtered_sample.len();
             query_count += 1;
@@ -117,7 +117,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             let context = plain_index.filter_context(&filter, &hw_counter).unwrap();
             let filtered_sample = sample
                 .into_iter()
-                .filter(|id| context.check(*id))
+                .filter(|id| context.check(*id).unwrap())
                 .collect_vec();
             result_size += filtered_sample.len();
             query_count += 1;
@@ -177,7 +177,10 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
                 .collect_vec();
             let filtered_count = struct_index.with_view(|v| {
                 let context = v.filter_context(&filter, &hw_counter).unwrap();
-                sample.into_iter().filter(|id| context.check(*id)).count()
+                sample
+                    .into_iter()
+                    .filter(|id| context.check(*id).unwrap())
+                    .count()
             });
             result_size += filtered_count;
             query_count += 1;

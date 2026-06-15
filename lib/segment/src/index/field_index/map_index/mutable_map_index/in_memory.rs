@@ -112,11 +112,12 @@ where
         idx: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
-        self.point_to_values
+    ) -> OperationResult<bool> {
+        Ok(self
+            .point_to_values
             .get(idx as usize)
             .map(|values| values.iter().any(|v| check_fn(v.borrow())))
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
     fn get_values<'a>(

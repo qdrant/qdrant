@@ -29,13 +29,13 @@ fn test_filtering_context_consistency() {
 
         let plain_context = plain_index.filter_context(&filter, &hw_counter).unwrap();
         let plain_result = (0..NUM_POINTS)
-            .filter(|point_id| plain_context.check(*point_id as PointOffsetType))
+            .filter(|point_id| plain_context.check(*point_id as PointOffsetType).unwrap())
             .collect_vec();
 
         let struct_result = struct_index.with_view(|v| {
             let struct_context = v.filter_context(&filter, &hw_counter).unwrap();
             (0..NUM_POINTS)
-                .filter(|point_id| struct_context.check(*point_id as PointOffsetType))
+                .filter(|point_id| struct_context.check(*point_id as PointOffsetType).unwrap())
                 .collect_vec()
         });
         assert_eq!(plain_result, struct_result, "filter: {filter:#?}");
