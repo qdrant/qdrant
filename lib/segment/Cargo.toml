@@ -36,6 +36,10 @@ rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
 anyhow = { workspace = true }
+io_bridge_object_store = { path = "../common/io_bridge_object_store" }
+object_store = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }

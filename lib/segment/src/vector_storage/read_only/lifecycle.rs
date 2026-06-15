@@ -15,7 +15,6 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
     /// Open the read-only counterpart of a dense vector storage from its
     /// `VectorDataConfig`, mirroring `open_vector_storage`. Sparse storages are
     /// opened separately via `ReadOnlySparseVectorStorage::open`.
-    #[allow(dead_code)] // pending: read-only segment constructor will use this
     pub fn open(
         fs: &S::Fs,
         vector_config: &VectorDataConfig,
