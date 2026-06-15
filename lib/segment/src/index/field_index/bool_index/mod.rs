@@ -222,7 +222,7 @@ impl FacetIndex for BoolIndex {
     ) -> OperationResult<()> {
         let bools = values.filter_map(|value| match value {
             FacetValue::Bool(b) => Some(b),
-            _ => None,
+            FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Uuid(_) => None,
         });
         BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
             f(FacetValue::Bool(b), iter)

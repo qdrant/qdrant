@@ -12,8 +12,9 @@ use crate::data_types::facets::{FacetParams, FacetValue, FacetValueRef};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::{CardinalityEstimation, FacetIndex};
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::json_path::JsonPath;
-use crate::payload_storage::{FilterContext, PayloadStorageRead};
+use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{Condition, FieldCondition, Filter, IntPayloadType, Match, ValueVariants};
@@ -96,7 +97,7 @@ fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> F
 pub enum FilterProbe<'a> {
     /// Evaluate the filter lazily on each check.
     Lazy {
-        context: Box<dyn FilterContext + 'a>,
+        context: Box<dyn ConditionChecker + 'a>,
     },
     /// The filter was materialized into a bitmap of matching points.
     Precomputed(RoaringBitmap),
@@ -105,7 +106,7 @@ pub enum FilterProbe<'a> {
 impl<'a> FilterProbe<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         match self {
-            FilterProbe::Lazy { context, .. } => context.check(point_id),
+            FilterProbe::Lazy { context, .. } => context.check_infallible(point_id),
             FilterProbe::Precomputed(bitmap) => bitmap.contains(point_id),
         }
     }
