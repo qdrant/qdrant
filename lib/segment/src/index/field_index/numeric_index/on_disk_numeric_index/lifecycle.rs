@@ -131,7 +131,7 @@ where
             return Ok(None);
         };
 
-        let histogram = Histogram::<T>::load_via(fs, path)?;
+        let histogram = Histogram::<T>::load_universal(fs, path)?;
 
         let pairs_options = OpenOptions {
             writeable: false,

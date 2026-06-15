@@ -58,7 +58,10 @@ impl HnswGraphConfig {
         path.join(HNSW_INDEX_CONFIG_FILE)
     }
 
-    pub fn load_via<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Option<Self>> {
+    pub fn load_universal<Fs: UniversalReadFs>(
+        fs: &Fs,
+        path: &Path,
+    ) -> OperationResult<Option<Self>> {
         Ok(read_json_via(fs, path).ok_not_found()?)
     }
 

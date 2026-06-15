@@ -52,7 +52,7 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         }
     }
 
-    pub fn load_via<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
+    pub fn load_universal<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
         let config_path = path.join(CONFIG_PATH);
         let borders_path = path.join(BORDERS_PATH);
 

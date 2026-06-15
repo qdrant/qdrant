@@ -2,14 +2,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::graph_layers::{GraphLayers, LoadOption};
+use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::HnswConfig;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -73,7 +73,7 @@ impl HNSWIndex {
         } = args;
 
         let config_path = HnswGraphConfig::get_config_path(path);
-        let config = match HnswGraphConfig::load_via(&MmapFs, &config_path)? {
+        let config = match HnswGraphConfig::load_universal(&MmapFs, &config_path)? {
             Some(config) => config,
             None => {
                 let vector_storage = vector_storage.borrow();
@@ -104,13 +104,15 @@ impl HNSWIndex {
 
         let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
 
-        let load_option = if is_on_disk {
-            LoadOption::on_disk_mmap()
+        // Keep the links lazily on disk when configured so; otherwise populate
+        // them into RAM on load (blocking).
+        let populate = if is_on_disk {
+            Populate::No
         } else {
-            LoadOption::ram_from_mmap()
+            Populate::Blocking
         };
 
-        let graph = GraphLayers::load(path, load_option, do_convert)?;
+        let graph = GraphLayers::load(path, populate, do_convert)?;
 
         Ok(HNSWIndex {
             id_tracker,
