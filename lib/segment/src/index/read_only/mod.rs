@@ -1,3 +1,5 @@
+mod live_reload;
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
