@@ -17,7 +17,7 @@ use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
 };
-use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer};
+use crate::types::{Condition, FieldCondition, Match, OwnedPayloadRef, PayloadContainer};
 use crate::vector_storage::VectorStorageRead;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
@@ -182,12 +182,46 @@ fn field_condition_checker<'a>(
     payload_provider: PayloadProvider<impl PayloadStorageRead + 'a>,
     check: impl Fn(OwnedPayloadRef, &HardwareCounterCell) -> bool + 'a,
 ) -> OperationResult<ConditionCheckerFn<'a>> {
+    // `Match::Except` corner case: keyword / int / uuid map indexes only
+    // know about values of their own key type. A point whose payload at
+    // the same key holds a value of a different type (e.g. `Value::Bool`
+    // against a keyword index) — either as the sole value or mixed into
+    // an array such as `["red", true]` — leaves those off-type values
+    // invisible to `check_values_any`. The payload-aware `Match::Except`
+    // semantics in `condition_checker.rs` treat off-type values as PASSING
+    // the except filter, so a `false` answer from the index can't be
+    // trusted as final. See issue #9068.
+    //
+    // Fix: when the indexed checker returns `false`, defer to the
+    // payload-aware checker for that single point. The common fast path
+    // (point has indexed values that satisfy `Except`) is preserved —
+    // `index_checker` returns `true` and we skip the payload lookup.
+    // We pay a payload read only for the minority of points the index
+    // rejects, where re-checking is necessary to distinguish
+    // "wrong-type payload" / "mixed-type array" (must pass Except) from
+    // "all values excepted" or "null / missing payload" (must fail).
+    let is_except = matches!(field_condition.r#match, Some(Match::Except(_)));
+
     // 1. Find first index that can check condition.
     if let Some(indexes) = field_indexes.get(key) {
         for index in indexes {
             let hw_acc = hw_counter.new_accumulator();
-            if let Some(checker) = index.condition_checker(field_condition, hw_acc)? {
-                return Ok(checker);
+            if let Some(index_checker) = index.condition_checker(field_condition, hw_acc)? {
+                if is_except {
+                    let payload_provider = payload_provider.clone();
+                    let hw_counter = hw_counter.fork();
+                    return Ok(Box::new(move |point_id| {
+                        if index_checker(point_id) {
+                            return true;
+                        }
+                        payload_provider.with_payload(
+                            point_id,
+                            |payload| check(payload, &hw_counter),
+                            &hw_counter,
+                        )
+                    }));
+                }
+                return Ok(index_checker);
             }
         }
     }
