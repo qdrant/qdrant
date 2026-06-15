@@ -29,7 +29,8 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
                 deleted.push(internal_id);
             }
         }
-        deleted.sort_unstable();
+
+        debug_assert!(deleted.is_sorted());
 
         Ok(LiveReloadResult {
             inserted: Vec::new(),
