@@ -212,3 +212,7 @@ harness = false
 [[bench]]
 name = "hnsw_incremental_build"
 harness = false
+
+[[bench]]
+name = "facets"
+harness = false
