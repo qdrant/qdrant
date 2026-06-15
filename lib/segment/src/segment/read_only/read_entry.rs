@@ -34,7 +34,7 @@ use crate::types::{
 /// `false` and the `appendable_flag` passed into the view builders is hard-coded
 /// accordingly. All other operations delegate to the shared `SegmentReadView`,
 /// exactly like the mutable `Segment`.
-impl<S: UniversalRead> ReadSegmentEntry for ReadOnlySegment<S> {
+impl<S: UniversalRead + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
     fn version(&self) -> SeqNumberType {
         self.version.unwrap_or(0)
     }

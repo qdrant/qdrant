@@ -22,7 +22,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 mod lifecycle;
 mod read_entry;
 
-pub struct ReadOnlySegment<S: UniversalRead> {
+pub struct ReadOnlySegment<S: UniversalRead + 'static> {
     pub uuid: Uuid,
     /// Initial version this segment was created at
     pub initial_version: Option<SeqNumberType>,
@@ -42,13 +42,13 @@ pub struct ReadOnlySegment<S: UniversalRead> {
     pub segment_config: SegmentConfig,
 }
 
-pub struct ReadOnlyVectorData<S: UniversalRead> {
+pub struct ReadOnlyVectorData<S: UniversalRead + 'static> {
     pub vector_index: Arc<AtomicRefCell<VectorIndexReadEnum<S>>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
 }
 
-impl<S: UniversalRead> VectorDataRead for ReadOnlyVectorData<S> {
+impl<S: UniversalRead + 'static> VectorDataRead for ReadOnlyVectorData<S> {
     type IndexRef<'a>
         = AtomicRef<'a, VectorIndexReadEnum<S>>
     where
@@ -83,7 +83,7 @@ pub type ReadOnlySegmentReadViewFor<'s, S> = SegmentReadView<
     ReadOnlyVectorData<S>,
 >;
 
-impl<S: UniversalRead> ReadOnlySegment<S> {
+impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
     pub fn with_view<T>(&self, f: impl FnOnce(ReadOnlySegmentReadViewFor<'_, S>) -> T) -> T {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();

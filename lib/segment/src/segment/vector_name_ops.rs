@@ -13,8 +13,8 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::segment::VectorData;
 use crate::segment_constructor::{
-    create_sparse_vector_index, create_sparse_vector_storage, get_vector_index_path,
-    get_vector_storage_path, open_vector_storage,
+    create_sparse_vector_storage, get_vector_index_path, get_vector_storage_path,
+    open_or_create_sparse_vector_index, open_vector_storage,
 };
 use crate::types::{
     SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorStorageType,
@@ -177,7 +177,7 @@ impl Segment {
         // Create sparse vector index
         let vector_index_path = get_vector_index_path(&self.segment_path, vector_name);
         let stopped = AtomicBool::new(false);
-        let vector_index = create_sparse_vector_index(SparseVectorIndexOpenArgs {
+        let vector_index = open_or_create_sparse_vector_index(SparseVectorIndexOpenArgs {
             config: effective_config.index,
             id_tracker: self.id_tracker.clone(),
             vector_storage: vector_storage.clone(),

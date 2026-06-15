@@ -25,9 +25,9 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use super::{
-    create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
-    create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
-    get_vector_storage_path, open_vector_storage,
+    create_mutable_id_tracker, create_payload_storage, create_sparse_vector_storage,
+    get_payload_index_path, get_vector_index_path, get_vector_storage_path,
+    open_or_create_sparse_vector_index, open_vector_storage,
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -698,7 +698,7 @@ impl SegmentBuilder {
 
                 let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
 
-                let index = create_sparse_vector_index(SparseVectorIndexOpenArgs {
+                let index = open_or_create_sparse_vector_index(SparseVectorIndexOpenArgs {
                     config: sparse_vector_config.index,
                     id_tracker: id_tracker_arc.clone(),
                     vector_storage: vector_storage_arc.clone(),

@@ -26,6 +26,7 @@ use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
+use common::universal_io::MmapFs;
 use segment::types::{SeqNumberType, ShardKey};
 use semver::Version;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
@@ -225,7 +226,7 @@ impl Collection {
         optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> Self {
         let start_time = std::time::Instant::now();
-        let stored_version = CollectionVersion::load(path)
+        let stored_version = CollectionVersion::load_universal(&MmapFs, path)
             .expect("Can't read collection version")
             .expect("Collection version is not found");
 
