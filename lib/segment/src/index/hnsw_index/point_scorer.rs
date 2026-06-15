@@ -60,7 +60,7 @@ pub struct FilteredScorer<'a> {
 }
 
 pub struct ScorerFilters<'a> {
-    filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
+    filter_context: Option<DynConditionChecker<'a>>,
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
     /// If there are no flags for some points, they are considered deleted.
@@ -69,6 +69,8 @@ pub struct ScorerFilters<'a> {
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
     vec_deleted: &'a BitSlice,
 }
+
+type DynConditionChecker<'a> = BoxCow<'a, dyn ConditionChecker + 'a>;
 
 impl<'a> ScorerFilters<'a> {
     /// Return true if vector satisfies current search context for given point:
@@ -121,7 +123,7 @@ impl<'a> FilteredScorer<'a> {
         query: QueryVector,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
+        filter_context: Option<DynConditionChecker<'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -148,7 +150,7 @@ impl<'a> FilteredScorer<'a> {
         point_id: PointOffsetType,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
+        filter_context: Option<DynConditionChecker<'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -289,7 +291,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         queries: &[&QueryVector],
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
+        filter_context: Option<DynConditionChecker<'a>>,
         top: usize,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
