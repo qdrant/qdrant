@@ -34,19 +34,27 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
     ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static {
         let store = self.clone();
         let prefix_path = prefix.to_path_buf();
-        let prefix = build_key(prefix);
+        // object_store lists by whole path segment; emulate the byte-prefix
+        // contract (list the parent dir, then filter) — see `local_list_files`.
+        let prefix_str = prefix.to_string_lossy().into_owned();
+        let dir_prefix = prefix
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map(build_dir_prefix);
 
         async move {
             use futures::TryStreamExt;
 
             match store
-                .list(Some(&prefix))
+                .list(dir_prefix.as_ref())
                 .try_collect::<Vec<object_store::ObjectMeta>>()
                 .await
             {
                 Ok(entries) => Ok(entries
                     .into_iter()
-                    .map(|e| PathBuf::from(e.location.to_string()))
+                    .map(|e| e.location.to_string())
+                    .filter(|key| key.starts_with(&prefix_str))
+                    .map(PathBuf::from)
                     .collect()),
                 Err(object_store::Error::NotFound { .. }) => {
                     Err(UniversalIoError::NotFound { path: prefix_path })
@@ -294,6 +302,29 @@ mod tests {
     #[test]
     fn kind_is_inmemory_tagged_as_s3() {
         assert_eq!(<Arc<InMemory> as AsyncRead>::kind(), UniversalKind::S3);
+    }
+
+    #[test]
+    fn list_files_byte_prefixes_final_component() {
+        let runtime = BridgeRuntime::global();
+        let store = inmemory_with(
+            &runtime,
+            &[
+                ("dir/page_0.dat", b"a"),
+                ("dir/page_1.dat", b"b"),
+                ("dir/tracker.dat", b"c"),
+                ("dir/sub/page_9.dat", b"d"),
+                ("other/page_0.dat", b"e"),
+            ],
+        );
+        let mut files: Vec<String> = runtime
+            .block_on(store.list_files(Path::new("dir/page_")))
+            .expect("list_files")
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(files, ["dir/page_0.dat", "dir/page_1.dat"]);
     }
 
     #[test]
