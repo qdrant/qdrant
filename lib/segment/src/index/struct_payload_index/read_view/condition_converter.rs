@@ -9,7 +9,7 @@ use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
@@ -33,23 +33,18 @@ where
         payload_provider: PayloadProvider<S>,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<ConditionCheckerFn<'b>> {
+    ) -> OperationResult<Box<dyn ConditionChecker + 'b>> {
         let id_tracker = self.id_tracker;
         let field_indexes = self.field_indexes;
         Ok(match condition {
-            Condition::Field(field_condition) => {
-                field_condition_checker(
-                    field_indexes,
-                    &field_condition.key,
-                    hw_counter,
-                    field_condition,
-                    payload_provider,
-                    |payload, hw| {
-                        check_field_condition(field_condition, &payload, field_indexes, hw)
-                            .unwrap(/* TODO(uio): handle errors */)
-                    },
-                )?
-            }
+            Condition::Field(field_condition) => field_condition_checker(
+                field_indexes,
+                &field_condition.key,
+                hw_counter,
+                field_condition,
+                payload_provider,
+                |payload, hw| check_field_condition(field_condition, &payload, field_indexes, hw),
+            )?,
             // is_empty / is_null are served by NullIndex via
             // `condition_checker`. NullIndex is built alongside every
             // index from #6088 (released in v1.13.5) onwards, so the
@@ -66,7 +61,7 @@ where
                     hw_counter,
                     &FieldCondition::new_is_empty(key.clone(), true),
                     payload_provider,
-                    |payload, _| check_is_empty_condition(is_empty, &payload),
+                    |payload, _| Ok(check_is_empty_condition(is_empty, &payload)),
                 )?
             }
 
@@ -78,7 +73,7 @@ where
                     hw_counter,
                     &FieldCondition::new_is_null(key.clone(), true),
                     payload_provider,
-                    |payload, _| check_is_null_condition(is_null, &payload),
+                    |payload, _| Ok(check_is_null_condition(is_null, &payload)),
                 )?
             }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
@@ -90,15 +85,17 @@ where
                         id_tracker.internal_id_with_behavior(*external_id, deferred_behavior)
                     })
                     .collect();
-                Box::new(move |point_id| segment_ids.contains(&point_id))
+                Box::new(move |point_id| Ok(segment_ids.contains(&point_id)))
             }
             Condition::HasVector(has_vector) => {
                 if let Some(vector_storage) =
                     self.vector_storages.get(&has_vector.has_vector).cloned()
                 {
-                    Box::new(move |point_id| !vector_storage.borrow().is_deleted_vector(point_id))
+                    Box::new(move |point_id| {
+                        Ok(!vector_storage.borrow().is_deleted_vector(point_id))
+                    })
                 } else {
-                    Box::new(|_point_id| false)
+                    Box::new(|_point_id| Ok(false))
                 }
             }
             Condition::Nested(nested) => {
@@ -147,11 +144,11 @@ where
                                         &hw,
                                     ) {
                                         // If at least one nested object matches, return true
-                                        return true;
+                                        return Ok(true);
                                     }
                                 }
                             }
-                            false
+                            Ok(false)
                         },
                         &hw,
                     )
@@ -167,7 +164,7 @@ where
                     })
                     .collect();
 
-                Box::new(move |internal_id| segment_ids.contains(&internal_id))
+                Box::new(move |internal_id| Ok(segment_ids.contains(&internal_id)))
             }
             Condition::Filter(_) => unreachable!(),
         })
@@ -180,8 +177,8 @@ fn field_condition_checker<'a>(
     hw_counter: &HardwareCounterCell,
     field_condition: &FieldCondition,
     payload_provider: PayloadProvider<impl PayloadStorageRead + 'a>,
-    check: impl Fn(OwnedPayloadRef, &HardwareCounterCell) -> bool + 'a,
-) -> OperationResult<ConditionCheckerFn<'a>> {
+    check: impl Fn(OwnedPayloadRef, &HardwareCounterCell) -> OperationResult<bool> + 'a,
+) -> OperationResult<Box<dyn ConditionChecker + 'a>> {
     // 1. Find first index that can check condition.
     if let Some(indexes) = field_indexes.get(key) {
         for index in indexes {

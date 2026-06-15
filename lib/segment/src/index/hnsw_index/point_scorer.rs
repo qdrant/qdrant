@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
-use crate::payload_storage::FilterContext;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -31,7 +31,7 @@ use crate::vector_storage::{VectorStorageEnum, new_raw_scorer};
 /// ┌─────────────────┐ ┌───────────────┐   ┌────────────────┐ ┌─┤ - Euclidean │
 /// │ RawScorer ◄─────┼─┤ QueryScorer ◄─┼───│ Metric ◄───────┼─┘ └─────────────┘
 /// │                 │ └───────────────┘   │                │    - Vector Distance
-/// │ FilterContext   │  - Access patterns  │ Query  ◄───────┼─┐
+/// │ ConditionChecker│  - Access patterns  │ Query  ◄───────┼─┐
 /// │                 │                     │                │ │  Query
 /// │ deleted_points  │                     │ TVectorStorage │ │ ┌──────────────────┐
 /// │ deleted_vectors │                     └────────────────┘ └─┤ - RecoQuery      │
@@ -49,7 +49,7 @@ use crate::vector_storage::{VectorStorageEnum, new_raw_scorer};
 ///  ┌─────────────────┐  ┌───────────────┐
 ///  │ [RawScorer] ◄───┼──┤ QueryScorer ◄─┼── (ditto)
 ///  │                 │  └───────────────┘
-///  │ FilterContext   │
+///  │ ConditionChecker│
 ///  └─────────────────┘
 /// ```
 pub struct FilteredScorer<'a> {
@@ -60,7 +60,7 @@ pub struct FilteredScorer<'a> {
 }
 
 pub struct ScorerFilters<'a> {
-    filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+    filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
     /// If there are no flags for some points, they are considered deleted.
@@ -78,7 +78,7 @@ impl<'a> ScorerFilters<'a> {
             && self
                 .filter_context
                 .as_ref()
-                .is_none_or(|f| f.check(point_id))
+                .is_none_or(|f| f.check_infallible(point_id))
     }
 
     fn as_borrowed(&'a self) -> Self {
@@ -121,7 +121,7 @@ impl<'a> FilteredScorer<'a> {
         query: QueryVector,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -148,7 +148,7 @@ impl<'a> FilteredScorer<'a> {
         point_id: PointOffsetType,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -289,7 +289,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         queries: &[&QueryVector],
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
         top: usize,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,

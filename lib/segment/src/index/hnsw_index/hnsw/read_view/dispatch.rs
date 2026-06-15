@@ -155,7 +155,7 @@ where
                         |idx| filter_context.check(idx),
                         self.config.full_scan_threshold,
                         available_vector_count, // Check cardinality among available vectors
-                    )
+                    )?
                 };
 
                 if use_graph {

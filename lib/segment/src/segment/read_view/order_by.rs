@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType};
-use itertools::Either;
+use itertools::{Either, Itertools};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
@@ -123,27 +123,26 @@ where
         };
 
         let filtered_iter = match filter {
-            None => Either::Left(directed_range_iter),
+            None => Either::Left(directed_range_iter.map(Ok)),
             Some(filter) => {
                 let filter_context = self.payload_index.filter_context(filter, hw_counter)?;
 
                 Either::Right(
                     directed_range_iter
-                        .filter(move |(_, internal_id)| filter_context.check(*internal_id)),
+                        .try_filter(move |(_, internal_id)| filter_context.check(*internal_id)),
                 )
             }
         };
 
-        let reads = filtered_iter
-            .stop_if(is_stopped)
-            .filter_map(|(value, internal_id)| {
+        filtered_iter.stop_if(is_stopped).process_results(|it| {
+            it.filter_map(|(value, internal_id)| {
                 self.id_tracker
                     .external_id(internal_id)
                     .map(|external_id| (value, external_id))
             })
             .take(limit.unwrap_or(usize::MAX))
-            .collect();
-        Ok(reads)
+            .collect()
+        })
     }
 
     pub fn read_ordered_filtered<'a>(

@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Read-only operations available on every payload field index.
@@ -56,7 +56,7 @@ pub trait PayloadFieldIndexRead {
         &'a self,
         _condition: &FieldCondition,
         _hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<ConditionCheckerFn<'a>>>;
+    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>>;
 
     /// Index-aware check for conditions that need parameters held by
     /// the index (today: full-text tokenizers).

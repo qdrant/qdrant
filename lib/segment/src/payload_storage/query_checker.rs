@@ -13,9 +13,9 @@ use crate::common::operation_error::OperationResult;
 use crate::common::utils::{IndexesMap, check_is_empty, check_is_null};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndexRead;
+use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::{ConditionChecker, PayloadStorageRead};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
     OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType, VectorNameBuf,
@@ -270,8 +270,8 @@ impl SimpleConditionChecker {
 }
 
 #[cfg(feature = "testing")]
-impl ConditionChecker for SimpleConditionChecker {
-    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
+impl SimpleConditionChecker {
+    pub fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
         let hw_counter = HardwareCounterCell::new(); // No measurements needed as this is only for test!
 
         let payload_storage_guard = self.payload_storage.borrow();

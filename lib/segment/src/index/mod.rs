@@ -4,6 +4,7 @@ mod key_encoding;
 mod memory_reporter;
 pub mod payload_config;
 mod payload_index_base;
+#[cfg(feature = "testing")]
 pub mod plain_payload_index;
 pub mod plain_vector_index;
 pub mod query_estimator;

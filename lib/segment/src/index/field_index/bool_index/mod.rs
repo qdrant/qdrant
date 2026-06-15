@@ -19,7 +19,7 @@ use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::IndexMutability;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::FieldCondition;
 
@@ -140,7 +140,7 @@ impl PayloadFieldIndexRead for BoolIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
         Ok(read_ops::condition_checker(self, condition, hw_acc))
     }
 }

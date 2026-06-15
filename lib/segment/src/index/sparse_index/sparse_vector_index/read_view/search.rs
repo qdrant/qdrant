@@ -268,7 +268,7 @@ where
             Some(filter) => {
                 let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
-                    not_deleted_condition(idx) && filter_context.check(idx)
+                    not_deleted_condition(idx) && filter_context.check_infallible(idx)
                 };
                 Ok(search_context.search(&matches_filter_condition))
             }

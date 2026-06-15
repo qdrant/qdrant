@@ -27,7 +27,7 @@ use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::utils::check_boundaries;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, Range, RangeInterface, ValueVariants,
 };
@@ -304,7 +304,7 @@ pub(super) fn condition_checker<'a, T, I>(
     index: &'a I,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'a>>
+) -> Option<Box<dyn ConditionChecker + 'a>>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
     I: NumericIndexRead<T>,
@@ -339,11 +339,11 @@ where
 
     let hw_counter = hw_acc.get_counter_cell();
     Some(Box::new(move |point_id: PointOffsetType| {
-        index.check_values_any(
+        Ok(index.check_values_any(
             point_id,
             |value| typed_range.check_range(*value),
             &hw_counter,
-        )
+        ))
     }))
 }
 

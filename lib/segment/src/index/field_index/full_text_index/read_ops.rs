@@ -13,7 +13,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::types::{
     FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
     PayloadKeyType,
@@ -180,7 +180,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
         condition_checker(self, condition, hw_acc)
     }
 
@@ -280,7 +280,7 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -319,12 +319,11 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     }?;
 
     let Some(parsed_query) = query_opt else {
-        return Ok(Some(Box::new(|_| false)));
+        return Ok(Some(Box::new(|_| Ok(false))));
     };
 
-    Ok(Some(Box::new(move |point_id: PointOffsetType| {
-        // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
-        index.check_match(&parsed_query, point_id).unwrap_or(false)
+    Ok(Some(Box::new(move |point_id| {
+        index.check_match(&parsed_query, point_id)
     })))
 }
 

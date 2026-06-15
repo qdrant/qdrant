@@ -150,7 +150,7 @@ fn test_filtering_context_consistency() {
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_0, &hw_counter).unwrap();
             let check_res0: Vec<_> = (0..NUM_POINTS as PointOffsetType)
-                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();
             (res0, check_res0)
         });
@@ -191,7 +191,7 @@ fn test_filtering_context_consistency() {
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_1, &hw_counter).unwrap();
             let check_res1: Vec<_> = (0..NUM_POINTS as PointOffsetType)
-                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();
             (res1, check_res1)
         });
@@ -229,7 +229,7 @@ fn test_filtering_context_consistency() {
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_2, &hw_counter).unwrap();
             let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
-                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();
             (res2, check_res2)
         });
@@ -277,7 +277,7 @@ fn test_filtering_context_consistency() {
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_3, &hw_counter).unwrap();
             let check_res3: Vec<_> = (0..NUM_POINTS as PointOffsetType)
-                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();
             (res3, check_res3)
         });

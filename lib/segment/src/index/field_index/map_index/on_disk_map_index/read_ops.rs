@@ -23,7 +23,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for OnDisk
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
         // Measure self.deleted access.
@@ -38,14 +38,12 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for OnDisk
             .is_some_and(|b| b);
 
         if is_deleted {
-            return false;
+            return Ok(false);
         }
 
-        // FIXME: don't silently ignore errors. Log error? Update ConditionCheckerFn?
         self.storage
             .point_to_values
             .check_values_any(idx, |v| check_fn(v), &hw_counter)
-            .unwrap_or(false)
     }
 
     fn get_values<'a>(

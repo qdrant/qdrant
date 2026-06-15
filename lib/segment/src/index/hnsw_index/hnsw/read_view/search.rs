@@ -12,10 +12,10 @@ use crate::index::PayloadIndexRead;
 use crate::index::hnsw_index::graph_layers::{GraphLayersWithVectors, SearchAlgorithm};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
-use crate::payload_storage::FilterContext;
 use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query::DiscoverQuery;
@@ -361,7 +361,7 @@ fn construct_search_scorer<'a, V, Q>(
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
     hardware_counter: HardwareCounterCell,
-    filter_context: Option<Box<dyn FilterContext + 'a>>,
+    filter_context: Option<Box<dyn ConditionChecker + 'a>>,
 ) -> OperationResult<FilteredScorer<'a>>
 where
     V: VectorStorageRead + RawScorerBuilder,
@@ -387,7 +387,7 @@ fn construct_batch_searcher<'a, V, Q>(
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
     hardware_counter: HardwareCounterCell,
-    filter_context: Option<Box<dyn FilterContext + 'a>>,
+    filter_context: Option<Box<dyn ConditionChecker + 'a>>,
 ) -> OperationResult<BatchFilteredSearcher<'a>>
 where
     V: VectorStorageRead + RawScorerBuilder,

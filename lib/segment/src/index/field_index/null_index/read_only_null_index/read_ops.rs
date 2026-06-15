@@ -10,7 +10,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> NullIndexRead for ReadOnlyNullIndex<S> {
@@ -68,7 +68,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<ConditionCheckerFn<'a>>> {
+    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
         Ok(read_ops::condition_checker(self, condition, hw_acc))
     }
 }
