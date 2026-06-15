@@ -149,10 +149,11 @@ impl CardinalityEstimation {
     /// When there is no primary clause, we can't walk an index to avoid evaluating
     /// every point, so we must scan every point.
     pub fn full_scan_evals(&self, available_points: usize) -> usize {
-        self.primary_clauses
-            .is_empty()
-            .then(|| available_points)
-            .unwrap_or(self.exp)
+        if self.primary_clauses.is_empty() {
+            available_points
+        } else {
+            self.exp
+        }
     }
 }
 

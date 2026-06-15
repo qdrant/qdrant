@@ -41,7 +41,7 @@ impl MapIndexKey for str {
     fn from_facet_value(value: &FacetValue) -> Option<&Self> {
         match value {
             FacetValue::Keyword(keyword) => Some(keyword.as_str()),
-            _ => None,
+            FacetValue::Uuid(_) | FacetValue::Int(_) | FacetValue::Bool(_) => None,
         }
     }
 
@@ -68,7 +68,7 @@ impl MapIndexKey for IntPayloadType {
     fn from_facet_value(value: &FacetValue) -> Option<&Self> {
         match value {
             FacetValue::Int(int) => Some(int),
-            _ => None,
+            FacetValue::Keyword(_) | FacetValue::Uuid(_) | FacetValue::Bool(_) => None,
         }
     }
 }
@@ -83,7 +83,7 @@ impl MapIndexKey for UuidIntType {
     fn from_facet_value(value: &FacetValue) -> Option<&Self> {
         match value {
             FacetValue::Uuid(uuid) => Some(uuid),
-            _ => None,
+            FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Bool(_) => None,
         }
     }
 }
