@@ -64,8 +64,14 @@ impl SegmentHolder {
         let max_applied_version = segment_reads.iter().map(|s| s.version()).max().unwrap_or(0);
 
         if !sync && self.is_background_flushing() {
-            // There is already a background flush ongoing, return current max persisted version
-            return Ok(self.get_max_persisted_version(segment_reads, lock_order));
+            // There is already a background flush ongoing, return current max persisted version.
+            // Cap by pending retirees like the main path below, but leave their destruction to
+            // the next full pass.
+            let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
+            return Ok(match self.pending_retiree_ack_cap() {
+                Some(ack_cap) => min(persisted_version, ack_cap),
+                None => persisted_version,
+            });
         }
 
         // This lock also prevents multiple parallel sync flushes
@@ -107,7 +113,21 @@ impl SegmentHolder {
             );
         }
 
-        Ok(self.get_max_persisted_version(segment_reads, lock_order))
+        // Persisted versions at this point reflect completed flushes only (an ongoing
+        // background pass was joined by `lock_flushing` above; a freshly spawned one has not
+        // updated them yet), so the result is a durable waterline: every segment's state up to
+        // it is on disk. Retired segments scheduled at or below it can have their data
+        // destroyed, since all copies moved out of them are durable in their targets by now.
+        //
+        // Retirees that remain on disk cap the returned version (and with it the WAL
+        // acknowledge): their files contradict operations past their cap, so those operations
+        // must stay replayable until the files are gone. See `SegmentHolder::retire_segment`.
+        let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
+        let pending_ack_cap = self.drop_retired_segments(persisted_version)?;
+        Ok(match pending_ack_cap {
+            Some(ack_cap) => min(persisted_version, ack_cap),
+            None => persisted_version,
+        })
     }
 
     fn non_appendable_then_appendable_segments_ids(&self) -> impl Iterator<Item = SegmentId> {

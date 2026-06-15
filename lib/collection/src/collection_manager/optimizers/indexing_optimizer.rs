@@ -568,6 +568,14 @@ mod tests {
             "Testing that only largest segment is not Mmap"
         );
 
+        // Optimizations retire their source segments rather than dropping them; the files are
+        // destroyed once a flush confirms the optimized data is durable (see
+        // `SegmentHolder::retire_segment`). Flush to mature the retirees before counting dirs.
+        locked_holder
+            .read()
+            .flush_all(true, true)
+            .expect("failed to flush segment holder");
+
         let segment_dirs = fs::read_dir(segments_dir.path()).unwrap().collect_vec();
         assert_eq!(
             segment_dirs.len(),

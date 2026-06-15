@@ -42,6 +42,17 @@ pub type SegmentId = usize;
 /// All occurrences of a point across segments: (segment_id, version, is_deferred).
 type PointOccurrences = SmallVec<[(SegmentId, SeqNumberType, bool); 2]>;
 
+/// A segment swapped out by an optimization, awaiting data destruction.
+/// See [`SegmentHolder::retire_segment`].
+#[derive(Debug)]
+struct RetiredSegment {
+    /// Destroy the data once the durable waterline reaches this version.
+    drop_after: SeqNumberType,
+    /// While the files are on disk, cap the WAL acknowledge at this version.
+    ack_cap: SeqNumberType,
+    segment: LockedSegment,
+}
+
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
     /// Keep segments sorted by their ID for deterministic iteration order
@@ -68,6 +79,11 @@ pub struct SegmentHolder {
     /// Dependency graph also stores the maximum version of the operation, which created the dependency,
     /// so we can clear all dependencies after flushing up to certain operation.
     flush_dependency: Arc<Mutex<TopoSort<SegmentId, SeqNumberType>>>,
+
+    /// Segments swapped out by an optimization whose data destruction is deferred until the
+    /// durable waterline passes their recorded version.
+    /// See [`SegmentHolder::retire_segment`].
+    retired_segments: Mutex<Vec<RetiredSegment>>,
 
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.
@@ -367,6 +383,101 @@ impl SegmentHolder {
     /// Return appendable segment IDs sorted by IDs
     pub fn appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.appendable_segments.keys().copied().collect()
+    }
+
+    /// Schedule a segment that was swapped out of the holder for data destruction once the
+    /// durable waterline reaches `drop_after`.
+    ///
+    /// Points are copy-on-write moved between segments in memory; WAL replay can only re-derive
+    /// such a move if the source's pre-image copy of the point is still on disk. Destroying a
+    /// replaced segment's data right at the swap breaks that: the moved copies may exist only in
+    /// unflushed appendable segments, and a restart before they are persisted loses the points
+    /// (`flush_all` computes exactly when that can no longer happen, see `drop_retired_segments`).
+    ///
+    /// Until then the retired files stay on disk. A restart in the meantime loads them as
+    /// regular segments next to their replacement; the load-time deduplication resolves the
+    /// overlap, the same recovery state as a crash between swap and drop.
+    ///
+    /// `ack_cap` is the version up to which the retired files are truthful: the wrapped
+    /// segment's persisted version. Beyond it the files contradict newer state that lives in
+    /// other segments (most importantly deletions: the files keep a deleted point positively
+    /// alive, and an absence in the replacement segment cannot outvote it at load time). While
+    /// the files are on disk the WAL acknowledge is capped at `ack_cap`, so a restart replays
+    /// those operations and re-applies them; the same pin the proxy imposed while the
+    /// optimization ran, extended until the files are gone.
+    pub fn retire_segment(
+        &self,
+        drop_after: SeqNumberType,
+        ack_cap: SeqNumberType,
+        segment: LockedSegment,
+    ) {
+        self.retired_segments.lock().push(RetiredSegment {
+            drop_after,
+            ack_cap,
+            segment,
+        });
+    }
+
+    /// The WAL acknowledge cap imposed by pending retired segments, if any.
+    /// See [`SegmentHolder::retire_segment`].
+    pub(super) fn pending_retiree_ack_cap(&self) -> Option<SeqNumberType> {
+        self.retired_segments
+            .lock()
+            .iter()
+            .map(|retiree| retiree.ack_cap)
+            .min()
+    }
+
+    /// Destroy the data of retired segments whose `drop_after` version is covered by the
+    /// durable waterline `persisted_version` (every segment's state up to that version is on
+    /// disk, so all copies moved out of the retired segments are durable in their targets, and
+    /// replay of any still-unacknowledged operation on them is an idempotent no-op).
+    ///
+    /// Returns the WAL acknowledge cap of the retirees that remain: the minimum of their
+    /// `ack_cap` values (see [`SegmentHolder::retire_segment`]), or `None` when nothing is
+    /// pending.
+    ///
+    /// Like the WAL acknowledge, the maturity waterline is capped by the first failed
+    /// operation: its effects are not in the segments, and recovering it may need the retired
+    /// pre-images.
+    ///
+    /// Perf note: the waterline is the minimum persisted version across all segments, so a
+    /// freshly created appendable segment (which reports `persistent_version() == 0` until its
+    /// first flush) holds the waterline near zero and keeps retirees from maturing. Under heavy
+    /// optimizer churn this lets the retired-segment backlog and the capped WAL grow, slowing
+    /// startup replay. A fresh segment cannot hold any operation from before it existed, so it
+    /// could report its creation version as vacuously persisted (e.g. floor
+    /// `Segment::persistent_version()` on a stamped `initial_version`) and stop dragging the
+    /// waterline down. Left out here to keep this fix surgical: it changes the segment
+    /// durability contract for every caller and deserves its own change.
+    fn drop_retired_segments(
+        &self,
+        persisted_version: SeqNumberType,
+    ) -> OperationResult<Option<SeqNumberType>> {
+        let waterline = match self.failed_operation.iter().min() {
+            Some(failed) => persisted_version.min(*failed),
+            None => persisted_version,
+        };
+        let mut matured: Vec<_> = {
+            let mut retired = self.retired_segments.lock();
+            let (matured, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut *retired)
+                .into_iter()
+                .partition(|retiree| retiree.drop_after <= waterline);
+            *retired = keep;
+            matured
+        };
+        // Destroy in retirement order (`drop_after` grows with each optimization; a re-queue
+        // below can leave the list unordered): a retiree can hold the last extra reference to a
+        // later retiree's segment (a proxy keeps its shared write segment alive), and
+        // `drop_data` needs sole ownership. On failure, re-queue the unprocessed remainder;
+        // abandoning a matured retiree would release its acknowledge cap while its files are
+        // still on disk.
+        matured.sort_by_key(|retiree| retiree.drop_after);
+        let mut matured = matured.into_iter();
+        let result = matured.try_for_each(|retiree| retiree.segment.drop_data());
+        self.retired_segments.lock().extend(matured);
+        result?;
+        Ok(self.pending_retiree_ack_cap())
     }
 
     /// Return non-appendable segment IDs sorted by IDs

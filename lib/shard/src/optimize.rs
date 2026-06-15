@@ -549,6 +549,7 @@ fn finish_optimization(
 
     // Replace proxy segments with new optimized segment
     let point_count = optimized_segment.available_point_count();
+    let optimized_segment_version = optimized_segment.version();
     let mut writable_segment_holder = RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
 
     let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
@@ -587,10 +588,27 @@ fn finish_optimization(
             .try_for_each(|chunk| read_segment_holder.deduplicate_points(chunk, hw_counter))?;
     }
 
-    // It is important to update manifest before we drop proxy data,
+    // It is important to update manifest before we retire proxy data,
     // as we don't want to have a situation, where new segment is not yet registered, but
     // old segment data is already dropped.
     read_segment_holder.sync_segment_manifest(None)?;
+
+    // Don't destroy the replaced segments' data yet. Points were copy-on-write moved out of
+    // them (and out of the optimized segment's in-memory state, which the next optimization
+    // bakes into its build output) while their new copies may still sit unflushed in appendable
+    // segments. WAL replay can only re-derive those moves from the on-disk pre-images, so the
+    // files must survive until the durable waterline covers this optimization; `flush_all`
+    // destroys them at that point. A restart in the meantime loads them next to their
+    // replacement and load-time deduplication resolves the overlap.
+    //
+    // While the files are on disk, the WAL acknowledge stays capped at the wrapped segment's
+    // persisted version (the same pin the proxy imposed while the optimization ran), so every
+    // operation the files contradict, deletions in particular, is replayed and re-applied on a
+    // restart.
+    for proxy in proxies {
+        let ack_cap = proxy.get().read().persistent_version();
+        read_segment_holder.retire_segment(optimized_segment_version, ack_cap, proxy);
+    }
 
     drop(read_segment_holder);
     // Allow updates again
@@ -598,12 +616,6 @@ fn finish_optimization(
 
     // Drop all pointers to proxies, so we can de-arc them
     drop(locked_proxies);
-
-    // Only remove data after we ensure the consistency of the collection.
-    // If remove fails - we will still have operational collection with reported error.
-    for proxy in proxies {
-        proxy.drop_data()?;
-    }
 
     Ok(point_count)
 }

@@ -231,6 +231,16 @@ mod tests {
             }
         }
 
+        // The optimization retires the source segment rather than dropping it; its files are
+        // destroyed once a flush confirms the optimized data is durable (see
+        // `SegmentHolder::retire_segment`). Flush to mature the retiree before asserting.
+        drop(segment_guard);
+        drop(holder_guard);
+        locked_holder
+            .read()
+            .flush_all(true, true)
+            .expect("failed to flush segment holder");
+
         // Check old segment data is removed from disk
         assert!(!original_segment_path.exists());
     }
