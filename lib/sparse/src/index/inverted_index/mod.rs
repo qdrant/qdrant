@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
@@ -11,7 +10,6 @@ use common::universal_io::{Result, UniversalIoError, UserData};
 use super::posting_list_common::PostingListIter;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::DimOffset;
-use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 pub mod inverted_index_compressed_immutable_ram;
 pub mod inverted_index_compressed_mmap;
@@ -32,9 +30,6 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     type Version: StorageVersion;
 
     fn is_on_disk(&self) -> bool;
-
-    /// Open existing index based on path
-    fn open(path: &Path) -> Result<Self>;
 
     /// Save index
     fn save(&self, path: &Path) -> Result<()>;
@@ -78,9 +73,6 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         vector: RemappedSparseVector,
         old_vector: Option<RemappedSparseVector>,
     );
-
-    /// Create inverted index from ram index
-    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, path: P) -> Result<Self>;
 
     /// Number of indexed vectors
     fn vector_count(&self) -> usize;

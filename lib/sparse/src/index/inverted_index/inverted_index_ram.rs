@@ -7,7 +7,7 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Result, UserData};
+use common::universal_io::{MmapFs, Result, UserData};
 #[cfg(feature = "testing")]
 use fs_err as fs;
 #[cfg(feature = "testing")]
@@ -47,10 +47,6 @@ impl InvertedIndex for InvertedIndexRam {
 
     fn is_on_disk(&self) -> bool {
         false
-    }
-
-    fn open(_path: &Path) -> Result<Self> {
-        panic!("InvertedIndexRam is not supposed to be loaded");
     }
 
     fn save(&self, _path: &Path) -> Result<()> {
@@ -118,10 +114,6 @@ impl InvertedIndex for InvertedIndexRam {
         self.upsert(id, vector, old_vector);
     }
 
-    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, _path: P) -> Result<Self> {
-        Ok(ram_index.into_owned())
-    }
-
     fn vector_count(&self) -> usize {
         self.vector_count
     }
@@ -139,6 +131,20 @@ impl InvertedIndex for InvertedIndexRam {
 }
 
 impl InvertedIndexRam {
+    /// A RAM index is never persisted, so it cannot be opened from a path.
+    pub fn open(_fs: &MmapFs, _path: &Path) -> Result<Self> {
+        panic!("InvertedIndexRam is not supposed to be loaded");
+    }
+
+    /// Build a RAM index from a RAM index (takes ownership of the source).
+    pub fn from_ram_index<P: AsRef<Path>>(
+        _fs: &MmapFs,
+        ram_index: Cow<InvertedIndexRam>,
+        _path: P,
+    ) -> Result<Self> {
+        Ok(ram_index.into_owned())
+    }
+
     /// New empty inverted index
     pub fn empty() -> InvertedIndexRam {
         InvertedIndexRam {

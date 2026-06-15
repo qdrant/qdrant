@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::aligned_vec::ACow;
-use common::fs::{atomic_save_json, read_json};
+use common::fs::atomic_save_json;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
@@ -16,7 +16,7 @@ use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs, UserData,
+    MmapFs, OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs, UserData,
     read_json_via,
 };
 use serde::{Deserialize, Serialize};
@@ -92,20 +92,13 @@ impl<W: Weight> PostingListFileHeader<W> {
     }
 }
 
-impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompressedMmap<W, S>
-where
-    S::Fs: Default,
-{
+impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompressedMmap<W, S> {
     type Iter<'a> = CompressedPostingListIterator<'a, W>;
 
     type Version = Version;
 
     fn is_on_disk(&self) -> bool {
         true
-    }
-
-    fn open(path: &Path) -> Result<Self> {
-        Self::load(&S::Fs::default(), path)
     }
 
     fn save(&self, path: &Path) -> Result<()> {
@@ -178,11 +171,6 @@ where
         panic!("Cannot upsert into a read-only Mmap inverted index")
     }
 
-    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, path: P) -> Result<Self> {
-        let index = InvertedIndexCompressedImmutableRam::from_ram_index(ram_index, &path)?;
-        Self::convert_and_save(&S::Fs::default(), &index, path)
-    }
-
     fn vector_count(&self) -> usize {
         self.file_header.vector_count
     }
@@ -205,6 +193,23 @@ where
 
 impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<W, S> {
     const HEADER_SIZE: usize = size_of::<PostingListFileHeader<W>>();
+
+    /// Open an existing on-disk index through `fs`. Equivalent to [`Self::load`].
+    pub fn open(fs: &S::Fs, path: &Path) -> Result<Self> {
+        Self::load(fs, path)
+    }
+
+    /// Build an on-disk index from a RAM index, writing it through `fs`.
+    pub fn from_ram_index<P: AsRef<Path>>(
+        fs: &S::Fs,
+        ram_index: Cow<InvertedIndexRam>,
+        path: P,
+    ) -> Result<Self> {
+        // The intermediate RAM index is built in memory; its no-op `MmapFs` is
+        // irrelevant. The conversion writes through the real `fs`.
+        let index = InvertedIndexCompressedImmutableRam::from_ram_index(&MmapFs, ram_index, &path)?;
+        Self::convert_and_save(fs, &index, path)
+    }
 
     pub fn index_file_path(path: &Path) -> PathBuf {
         path.join(INDEX_FILE_NAME)
@@ -445,7 +450,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         // read index config file
         let config_file_path = Self::index_config_file_path(path.as_ref());
         // if the file header does not exist, the index is malformed
-        let file_header: InvertedIndexFileHeader = read_json(&config_file_path)?;
+        let file_header: InvertedIndexFileHeader = read_json_via(fs, &config_file_path)?;
         // open index data via universal IO
         let file_path = Self::index_file_path(path.as_ref());
         let storage = fs.open(
@@ -598,6 +603,7 @@ mod tests {
         let inverted_index_ram = builder.build();
         let tmp_dir_path = Builder::new().prefix("test_index_dir1").tempdir().unwrap();
         let inverted_index_ram = InvertedIndexCompressedImmutableRam::from_ram_index(
+            &MmapFs,
             Cow::Borrowed(&inverted_index_ram),
             &tmp_dir_path,
         )

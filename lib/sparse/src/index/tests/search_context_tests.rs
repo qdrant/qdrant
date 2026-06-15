@@ -3,6 +3,7 @@
 mod tests {
     use std::any::TypeId;
     use std::borrow::Cow;
+    use std::path::Path;
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -10,12 +11,12 @@ mod tests {
     use common::types::{PointOffsetType, ScoredPointOffset};
     #[cfg(target_os = "linux")]
     use common::universal_io::IoUringFile;
-    use common::universal_io::MmapFile;
+    use common::universal_io::{MmapFile, MmapFs, UniversalRead};
     use tempfile::TempDir;
 
     use crate::SearchScratch;
     use crate::common::sparse_vector::RemappedSparseVector;
-    use crate::common::types::QuantizedU8;
+    use crate::common::types::{QuantizedU8, Weight};
     use crate::index::inverted_index::InvertedIndex;
     use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
     use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
@@ -75,20 +76,49 @@ mod tests {
         true
     }
 
+    /// Test-only bridge to the per-type inherent constructors. Production builds
+    /// inverted indexes through the segment dispatcher (`create_sparse_vector_index`),
+    /// but the generic `#[instantiate_tests]` harness needs to construct each `I`
+    /// uniformly from a RAM index.
+    trait BuildFromRam: InvertedIndex {
+        fn build_from_ram(ram_index: InvertedIndexRam, path: &Path) -> Self;
+    }
+
+    impl<W: Weight, S: UniversalRead + 'static> BuildFromRam for InvertedIndexCompressedMmap<W, S>
+    where
+        S::Fs: Default,
+    {
+        fn build_from_ram(ram_index: InvertedIndexRam, path: &Path) -> Self {
+            Self::from_ram_index(&S::Fs::default(), Cow::Owned(ram_index), path).unwrap()
+        }
+    }
+
+    impl<W: Weight> BuildFromRam for InvertedIndexCompressedImmutableRam<W> {
+        fn build_from_ram(ram_index: InvertedIndexRam, path: &Path) -> Self {
+            Self::from_ram_index(&MmapFs, Cow::Owned(ram_index), path).unwrap()
+        }
+    }
+
+    impl BuildFromRam for InvertedIndexRam {
+        fn build_from_ram(ram_index: InvertedIndexRam, _path: &Path) -> Self {
+            ram_index
+        }
+    }
+
     /// Helper struct to store both an index and a temporary directory
     struct TestIndex<I: InvertedIndex> {
         index: I,
         _temp_dir: TempDir,
     }
 
-    impl<I: InvertedIndex> TestIndex<I> {
+    impl<I: BuildFromRam> TestIndex<I> {
         fn from_ram(ram_index: InvertedIndexRam) -> Self {
             let temp_dir = tempfile::Builder::new()
                 .prefix("test_index_dir")
                 .tempdir()
                 .unwrap();
             TestIndex {
-                index: I::from_ram_index(Cow::Owned(ram_index), &temp_dir).unwrap(),
+                index: I::build_from_ram(ram_index, temp_dir.path()),
                 _temp_dir: temp_dir,
             }
         }
@@ -114,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_query<I: InvertedIndex>() {
+    fn test_empty_query<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram(InvertedIndexRam::empty());
 
         let hw_counter = HardwareCounterCell::disposable();
@@ -134,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn search_test<I: InvertedIndex>() {
+    fn search_test<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram({
             let mut builder = InvertedIndexBuilder::new();
             builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
@@ -189,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn search_with_update_test<I: InvertedIndex + 'static>() {
+    fn search_with_update_test<I: BuildFromRam + 'static>() {
         if TypeId::of::<I>() != TypeId::of::<InvertedIndexRam>() {
             // Only InvertedIndexRam supports upserts
             return;
@@ -288,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn search_with_hot_key_test<I: InvertedIndex>() {
+    fn search_with_hot_key_test<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram({
             let mut builder = InvertedIndexBuilder::new();
             builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
@@ -391,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn pruning_single_to_end_test<I: InvertedIndex>() {
+    fn pruning_single_to_end_test<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram({
             let mut builder = InvertedIndexBuilder::new();
             builder.add(1, [(1, 10.0)].into());
@@ -424,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn pruning_multi_to_end_test<I: InvertedIndex>() {
+    fn pruning_multi_to_end_test<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram({
             let mut builder = InvertedIndexBuilder::new();
             builder.add(1, [(1, 10.0)].into());
@@ -460,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn pruning_multi_under_prune_test<I: InvertedIndex>() {
+    fn pruning_multi_under_prune_test<I: BuildFromRam>() {
         if !I::Iter::reliable_max_next_weight() {
             return;
         }
@@ -507,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn promote_longest_test<I: InvertedIndex>() {
+    fn promote_longest_test<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram({
             let mut builder = InvertedIndexBuilder::new();
             builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
@@ -541,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_search_all_test<I: InvertedIndex>() {
+    fn plain_search_all_test<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram({
             let mut builder = InvertedIndexBuilder::new();
             builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
@@ -596,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_search_gap_test<I: InvertedIndex>() {
+    fn plain_search_gap_test<I: BuildFromRam>() {
         let index = TestIndex::<I>::from_ram({
             let mut builder = InvertedIndexBuilder::new();
             builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
