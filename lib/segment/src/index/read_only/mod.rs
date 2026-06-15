@@ -205,7 +205,10 @@ impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
                     InvertedIndexCompressedMmap::load_universal(fs, path)?,
                 )?))
             }
-            (_, VectorStorageDatatype::Turbo4) => {
+            (
+                SparseIndexType::ImmutableRam | SparseIndexType::Mmap,
+                VectorStorageDatatype::Turbo4,
+            ) => {
                 return Err(OperationError::service_error(
                     "Turbo4 datatype storage is not yet supported",
                 ));
