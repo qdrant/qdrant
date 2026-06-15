@@ -35,11 +35,6 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         false
     }
 
-    fn open(path: &Path) -> Result<Self> {
-        let mmap_inverted_index = InvertedIndexCompressedMmap::<W, Storage>::load(&MmapFs, path)?;
-        Self::from_mmap_index(mmap_inverted_index)
-    }
-
     fn save(&self, path: &Path) -> Result<()> {
         InvertedIndexCompressedMmap::<W, Storage>::convert_and_save(&MmapFs, self, path)?;
         Ok(())
@@ -96,7 +91,35 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         panic!("Cannot upsert into a read-only RAM inverted index")
     }
 
-    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, _path: P) -> Result<Self> {
+    fn vector_count(&self) -> usize {
+        self.vector_count
+    }
+
+    fn total_sparse_vectors_size(&self) -> usize {
+        self.total_sparse_size
+    }
+
+    fn max_index(&self) -> Option<DimOffset> {
+        self.postings
+            .len()
+            .checked_sub(1)
+            .map(|len| len as DimOffset)
+    }
+}
+
+impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
+    /// Open an existing on-disk index through `fs`, copying it into RAM.
+    pub fn open(fs: &MmapFs, path: &Path) -> Result<Self> {
+        let mmap_inverted_index = InvertedIndexCompressedMmap::<W, Storage>::load(fs, path)?;
+        Self::from_mmap_index(mmap_inverted_index)
+    }
+
+    /// Build a RAM index from another RAM index (re-encoding the postings).
+    pub fn from_ram_index<P: AsRef<Path>>(
+        _fs: &MmapFs,
+        ram_index: Cow<InvertedIndexRam>,
+        _path: P,
+    ) -> Result<Self> {
         let mut postings = Vec::with_capacity(ram_index.postings.len());
         for old_posting_list in &ram_index.postings {
             let mut new_posting_list = CompressedPostingBuilder::new();
@@ -120,23 +143,6 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         })
     }
 
-    fn vector_count(&self) -> usize {
-        self.vector_count
-    }
-
-    fn total_sparse_vectors_size(&self) -> usize {
-        self.total_sparse_size
-    }
-
-    fn max_index(&self) -> Option<DimOffset> {
-        self.postings
-            .len()
-            .checked_sub(1)
-            .map(|len| len as DimOffset)
-    }
-}
-
-impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
     /// Load purely through universal IO, streaming the postings through `fs`
     /// instead of a local mmap. Used by the read-only index.
     pub fn load_universal<S>(fs: &S::Fs, path: &Path) -> Result<Self>
@@ -229,6 +235,7 @@ mod tests {
         let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
         let inverted_index_immutable_ram =
             InvertedIndexCompressedImmutableRam::<W>::from_ram_index(
+                &MmapFs,
                 Cow::Borrowed(inverted_index_ram),
                 tmp_dir_path.path(),
             )
@@ -238,7 +245,7 @@ mod tests {
             .unwrap();
 
         let loaded_inverted_index =
-            InvertedIndexCompressedImmutableRam::<W>::open(tmp_dir_path.path()).unwrap();
+            InvertedIndexCompressedImmutableRam::<W>::open(&MmapFs, tmp_dir_path.path()).unwrap();
         assert_eq!(inverted_index_immutable_ram, loaded_inverted_index);
     }
 }
