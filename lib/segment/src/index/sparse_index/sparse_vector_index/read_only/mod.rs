@@ -1,12 +1,15 @@
 mod read;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::storage_version::StorageVersion as _;
 use common::universal_io::UniversalRead;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::InvertedIndex;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
@@ -52,6 +55,48 @@ type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
 >;
 
 impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<S, TInvertedIndex> {
+    /// Universal-IO mirror of `SparseVectorIndex::finish`: version gate and
+    /// indices tracker load via `fs`, then assemble from the caller-loaded
+    /// `config` and already-constructed `inverted_index`.
+    ///
+    /// The caller (the [`VectorIndexReadEnum`] dispatcher) loads `config` to pick
+    /// the concrete inverted-index type, constructs it, and hands both here — so
+    /// this stays free of inverted-index construction callbacks, just as
+    /// `SparseVectorIndex` does.
+    ///
+    /// [`VectorIndexReadEnum`]: crate::index::read_only::VectorIndexReadEnum
+    pub fn open(
+        fs: &S::Fs,
+        config: SparseIndexConfig,
+        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+        path: &Path,
+        inverted_index: TInvertedIndex,
+    ) -> OperationResult<Self> {
+        let stored_version = TInvertedIndex::Version::load_universal(fs, path)?;
+        if stored_version != Some(TInvertedIndex::Version::current()) {
+            return Err(OperationError::service_error_light(format!(
+                "Sparse index version mismatch, expected {}, found {}",
+                TInvertedIndex::Version::current(),
+                stored_version.map_or_else(|| "none".to_string(), |v| v.to_string()),
+            )));
+        }
+
+        let indices_tracker = IndicesTracker::open_universal(fs, path)?;
+
+        Ok(Self {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            inverted_index,
+            searches_telemetry: SparseSearchesTelemetry::new(),
+            indices_tracker,
+            search_scratch_pool: SearchScratchPool::new(),
+        })
+    }
+
     pub fn inverted_index(&self) -> &TInvertedIndex {
         &self.inverted_index
     }
