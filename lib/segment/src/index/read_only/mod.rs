@@ -66,7 +66,6 @@ pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalRead> {
 
 impl<S: UniversalRead> VectorIndexReadEnum<S> {
     /// Open the read-only dense vector index from its config (sparse: follow-up).
-    #[allow(dead_code)] // pending: read-only segment constructor
     pub fn open(
         vector_config: &VectorDataConfig,
         args: ReadOnlyVectorIndexOpenArgs<'_, S>,
