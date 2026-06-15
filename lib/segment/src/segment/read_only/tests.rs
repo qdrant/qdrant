@@ -303,3 +303,147 @@ fn read_only_segment_over_s3() {
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
     assert_query_equivalence(&mutable, &read_only);
 }
+
+/// Open + query a segment from S3 through a local disk cache
+/// (`DiskCacheFs<BlobFile>`), measuring cold (lazy S3 block fetch) vs warm
+/// (local cache hit) latency. The cache mirrors only the blocks the queries
+/// touch, so a large segment can be served without pulling it whole.
+///
+/// Ignored by default; run with a server up:
+/// `S3_INTEGRATION_TEST=1 cargo test -p segment read_only_segment_over_s3_disk_cache -- --ignored --nocapture`
+#[test]
+#[ignore = "requires a running S3-compatible server (set S3_INTEGRATION_TEST=1)"]
+fn read_only_segment_over_s3_disk_cache() {
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    use bytes::Bytes;
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+    };
+    use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
+    use io_bridge_object_store::{BlobBackend, BlobFile};
+    use object_store::ObjectStoreExt;
+    use object_store::aws::AmazonS3;
+    use object_store::path::Path as ObjectPath;
+
+    if std::env::var("S3_INTEGRATION_TEST").as_deref() != Ok("1") {
+        eprintln!("skipping read_only_segment_over_s3_disk_cache: set S3_INTEGRATION_TEST=1");
+        return;
+    }
+
+    let aws_config = AwsConfig {
+        bucket: std::env::var("RUSTFS_BUCKET").unwrap_or_else(|_| "test-bucket".into()),
+        region: Some("us-east-1".into()),
+        endpoint: Some(
+            std::env::var("RUSTFS_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".into()),
+        ),
+        credentials: AwsCredentials::Static {
+            access_key_id: std::env::var("RUSTFS_ACCESS_KEY")
+                .unwrap_or_else(|_| "rustfsadmin".into()),
+            secret_access_key: std::env::var("RUSTFS_SECRET_KEY")
+                .unwrap_or_else(|_| "rustfsadmin".into()),
+            session_token: None,
+        },
+    };
+
+    // Build + upload an immutable segment.
+    let segments_dir = Builder::new()
+        .prefix("ro_cache_segments")
+        .tempdir()
+        .unwrap();
+    let temp_dir = Builder::new().prefix("ro_cache_builder").tempdir().unwrap();
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_uuid = mutable.uuid;
+    let local_path = mutable.data_path();
+    let key_prefix = format!("seg/{segment_uuid}");
+
+    let store = AmazonS3::build_store(&aws_config).expect("build S3 store");
+    let upload_runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+    upload_runtime.block_on(async {
+        for entry in walkdir::WalkDir::new(&local_path) {
+            let entry = entry.unwrap();
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let rel = entry.path().strip_prefix(&local_path).unwrap();
+            let key = format!("{key_prefix}/{}", rel.to_string_lossy());
+            let bytes = std::fs::read(entry.path()).unwrap();
+            store
+                .put(&ObjectPath::from(key.as_str()), Bytes::from(bytes).into())
+                .await
+                .expect("upload segment file");
+        }
+    });
+
+    // S3 remote behind a fresh (cold) local disk cache. `remote_dir = "seg"` is a
+    // logical prefix (never exists locally) stripped from the S3 keys.
+    type S3File = BlobFile<Arc<AmazonS3>>;
+    let cache_dir = Builder::new().prefix("ro_cache_local").tempdir().unwrap();
+    let fs = DiskCacheFs::<S3File>::from_context(DiskCacheFsContext {
+        config: Arc::new(
+            DiskCacheConfig::new(
+                std::path::PathBuf::from("seg"),
+                cache_dir.path().to_path_buf(),
+            )
+            .unwrap(),
+        ),
+        remote: aws_config,
+    })
+    .expect("disk-cache fs");
+
+    // Cold: empty cache → every touched block is fetched from S3 on demand.
+    let t = Instant::now();
+    let read_only =
+        ReadOnlySegment::<DiskCache<S3File>>::open(&fs, Path::new(&key_prefix), segment_uuid, None)
+            .expect("read-only open over S3 + disk cache");
+    let open_cold = t.elapsed();
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+
+    let query = QueryVector::Nearest(VectorInternal::Dense(
+        (0..DIM).map(|j| (j % 5) as f32 + 0.25).collect(),
+    ));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let run_search = || {
+        read_only
+            .search_batch(
+                DEFAULT_VECTOR_NAME,
+                &[&query],
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .unwrap()
+    };
+
+    let t = Instant::now();
+    let cold_hits = run_search();
+    let search_cold = t.elapsed();
+    let t = Instant::now();
+    let warm_hits = run_search();
+    let search_warm = t.elapsed();
+
+    assert!(!cold_hits[0].is_empty());
+    assert_eq!(cold_hits, warm_hits);
+
+    // Full correctness vs the local mutable reference (over the cached S3 fs).
+    assert_query_equivalence(&mutable, &read_only);
+
+    let cached_bytes: u64 = walkdir::WalkDir::new(cache_dir.path())
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum();
+
+    eprintln!(
+        "[s3+disk-cache] points={NUM_POINTS} open(cold)={open_cold:?} \
+         search(cold)={search_cold:?} search(warm)={search_warm:?} cached={} KiB",
+        cached_bytes / 1024,
+    );
+}
