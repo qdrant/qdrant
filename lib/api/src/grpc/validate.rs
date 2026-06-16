@@ -622,6 +622,7 @@ mod tests {
         DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
         GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request,
     };
+    use crate::grpc::{StrDistFunc, StrDistParamsExpression};
 
     #[test]
     fn test_geo_field_condition_rejects_out_of_range_coordinates() {
@@ -916,6 +917,9 @@ mod tests {
             good_request.validate().is_ok(),
             "non-empty str_dist query should not error on validation"
         );
+    }
+
+    #[test]
     fn test_field_condition_validates_geo_polygon() {
         use crate::grpc::qdrant::FieldCondition;
 

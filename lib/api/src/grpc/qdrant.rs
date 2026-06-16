@@ -6417,8 +6417,7 @@ pub mod expression {
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StrDistParamsExpression {
     #[prost(string, tag = "1")]
     pub field: ::prost::alloc::string::String,
@@ -7807,8 +7806,8 @@ impl StrDistFunc {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            StrDistFunc::Levenshtein => "Levenshtein",
-            StrDistFunc::JaroWinkler => "JaroWinkler",
+            Self::Levenshtein => "Levenshtein",
+            Self::JaroWinkler => "JaroWinkler",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.

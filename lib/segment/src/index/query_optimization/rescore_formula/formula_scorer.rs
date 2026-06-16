@@ -66,20 +66,6 @@ impl FriendlyName for std::string::String {
     }
 }
 
-impl StructPayloadIndex {
-    pub fn formula_scorer<'s, 'q>(
-        &'s self,
-        parsed_formula: &'q ParsedFormula,
-        prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
-        hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<FormulaScorer<'q>>
-    where
-        's: 'q,
-    {
-        let ParsedFormula {
-            payload_vars,
-            conditions,
-            defaults,
 impl<'a> FormulaScorer<'a> {
     pub(crate) fn new(
         formula: ParsedExpression,
