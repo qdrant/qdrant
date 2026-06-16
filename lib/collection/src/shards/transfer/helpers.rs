@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::replica_set_state::ReplicaState;
-use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard::PeerId;
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 
 pub fn validate_transfer_exists(
@@ -209,61 +209,4 @@ pub fn validate_transfer(
     }
 
     Ok(())
-}
-
-/// Selects a best peer to transfer shard from.
-///
-/// Requirements:
-/// 1. Peer should have an active replica of the shard
-/// 2. There should be no active transfers from this peer with the same shard
-/// 3. Prefer peer with the lowest number of active transfers
-///
-/// If there are no peers that satisfy the requirements, returns `None`.
-pub fn suggest_transfer_source(
-    shard_id: ShardId,
-    target_peer: PeerId,
-    current_transfers: &[ShardTransfer],
-    shard_peers: &HashMap<PeerId, ReplicaState>,
-) -> Option<PeerId> {
-    let mut candidates = HashSet::new();
-
-    for (&peer_id, &state) in shard_peers {
-        // We allow transfers *from* `ReshardingScaleDown` replicas, because they contain a *superset*
-        // of points in a regular replica
-        let is_active = matches!(
-            state,
-            ReplicaState::Active | ReplicaState::ReshardingScaleDown
-        );
-
-        if is_active && peer_id != target_peer {
-            candidates.insert(peer_id);
-        }
-    }
-
-    let currently_transferring = current_transfers
-        .iter()
-        .filter(|transfer| transfer.shard_id == shard_id)
-        .flat_map(|transfer| [transfer.from, transfer.to])
-        .collect::<HashSet<PeerId>>();
-
-    candidates = candidates
-        .difference(&currently_transferring)
-        .cloned()
-        .collect();
-
-    let transfer_counts = current_transfers
-        .iter()
-        .fold(HashMap::new(), |mut counts, transfer| {
-            *counts.entry(transfer.from).or_insert(0_usize) += 1;
-            counts
-        });
-
-    // Sort candidates by the number of active transfers
-    let mut candidates = candidates
-        .into_iter()
-        .map(|peer_id| (peer_id, transfer_counts.get(&peer_id).unwrap_or(&0)))
-        .collect::<Vec<(PeerId, &usize)>>();
-    candidates.sort_unstable_by_key(|(_, count)| **count);
-
-    candidates.first().map(|(peer_id, _)| *peer_id)
 }

@@ -199,10 +199,6 @@ impl ExtendedPointId {
         }
     }
 
-    pub fn is_num_id(&self) -> bool {
-        matches!(self, ExtendedPointId::NumId(..))
-    }
-
     pub fn is_uuid(&self) -> bool {
         matches!(self, ExtendedPointId::Uuid(..))
     }
@@ -364,6 +360,22 @@ impl Distance {
         match self.distance_order() {
             Order::LargeBetter => score > threshold,
             Order::SmallBetter => score < threshold,
+        }
+    }
+}
+
+/// Map a segment [`Distance`] to the TurboQuant [`DistanceType`].
+///
+/// Uses the true Cosine mapping (`Cosine → Cosine`); the legacy quantizers fold
+/// Cosine into Dot for backwards-compat, but do so with an explicit match rather
+/// than this conversion.
+impl From<Distance> for quantization::DistanceType {
+    fn from(distance: Distance) -> Self {
+        match distance {
+            Distance::Cosine => quantization::DistanceType::Cosine,
+            Distance::Euclid => quantization::DistanceType::L2,
+            Distance::Dot => quantization::DistanceType::Dot,
+            Distance::Manhattan => quantization::DistanceType::L1,
         }
     }
 }
@@ -595,6 +607,7 @@ pub struct SearchParams {
     /// Params relevant to HNSW index
     /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub hnsw_ef: Option<usize>,
 
     /// Search without approximation. If set to true, search may run long but with exact results.
@@ -843,12 +856,6 @@ pub enum BinaryQuantizationEncoding {
     OneAndHalfBits,
 }
 
-impl BinaryQuantizationEncoding {
-    pub fn is_one_bit(&self) -> bool {
-        matches!(self, BinaryQuantizationEncoding::OneBit)
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct BinaryQuantizationConfig {
@@ -886,10 +893,6 @@ pub enum TurboQuantBitSize {
 pub struct TurboQuantQuantizationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
-
-    // TODO(turbo): Remove before release
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plus: Option<bool>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1192,6 +1195,17 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1, max = 100))]
     pub max_resident_memory_percent: Option<u8>,
+
+    /// Reject disk-consuming update operations (e.g. upsert, set payload) when
+    /// the filesystem hosting Qdrant storage is filled above this percentage
+    /// of its total capacity. Value in [1, 100]. Applied uniformly to external
+    /// and internal (replication) traffic — rejection is deterministic so it
+    /// does not cause replica divergence. Delete operations are not affected,
+    /// so callers can still free disk space. Free space is sampled with a
+    /// small TTL cache; the gate may take a few seconds to react.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, max = 100))]
+    pub max_disk_usage_percent: Option<u8>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -1221,6 +1235,7 @@ impl Hash for StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            max_disk_usage_percent,
         } = self;
         enabled.hash(state);
         max_query_limit.hash(state);
@@ -1242,6 +1257,7 @@ impl Hash for StrictModeConfig {
         sparse_config.hash(state);
         max_payload_index_count.hash(state);
         max_resident_memory_percent.hash(state);
+        max_disk_usage_percent.hash(state);
     }
 }
 
@@ -1255,13 +1271,11 @@ pub struct StrictModeConfigOutput {
 
     /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1))]
     #[anonymize(false)]
     pub max_query_limit: Option<usize>,
 
     /// Max allowed `timeout` parameter.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1))]
     #[anonymize(false)]
     pub max_timeout: Option<usize>,
 
@@ -1342,13 +1356,17 @@ pub struct StrictModeConfigOutput {
 
     /// Max number of payload indexes in a collection
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 0))]
     pub max_payload_index_count: Option<usize>,
 
     /// Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub max_resident_memory_percent: Option<u8>,
+
+    /// Reject disk-consuming update operations when the storage filesystem exceeds this percentage of total capacity (1-100)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub max_disk_usage_percent: Option<u8>,
 }
 
 impl From<StrictModeConfig> for StrictModeConfigOutput {
@@ -1375,6 +1393,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            max_disk_usage_percent,
         } = config;
 
         Self {
@@ -1399,6 +1418,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
             max_payload_index_count,
             max_resident_memory_percent,
+            max_disk_usage_percent,
         }
     }
 }
@@ -1491,17 +1511,6 @@ impl SegmentConfig {
                 .sparse_vector_data
                 .values()
                 .any(|config| config.is_indexed())
-    }
-
-    /// Check if all vector storages are indexed
-    pub fn are_all_vectors_indexed(&self) -> bool {
-        self.vector_data
-            .values()
-            .all(|config| config.index.is_indexed())
-            && self
-                .sparse_vector_data
-                .values()
-                .all(|config| config.is_indexed())
     }
 
     /// Check if any vector storage is on-disk
@@ -1638,6 +1647,8 @@ pub enum VectorStorageDatatype {
     Float16,
     // Unsigned 8-bit integer
     Uint8,
+    // TurboQuant 4-bit compressed storage
+    Turbo4,
 }
 
 #[derive(
@@ -2370,6 +2381,24 @@ impl Display for PayloadFieldSchema {
     }
 }
 
+impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
+    type Error = OperationError;
+
+    /// Extracts the full-text tokenizer params from a payload schema — used by
+    /// the read-only full-text index `open`, the only index whose read
+    /// behavior depends on its build-time config. Errors if the schema is not
+    /// a text index.
+    fn try_from(schema: &PayloadFieldSchema) -> Result<Self, Self::Error> {
+        let expanded = schema.expand();
+        let PayloadSchemaParams::Text(config) = expanded.as_ref() else {
+            return Err(OperationError::service_error(
+                "expected a text payload schema for a full-text index",
+            ));
+        };
+        Ok(config.clone())
+    }
+}
+
 impl PayloadFieldSchema {
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
@@ -2470,33 +2499,6 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
                 "payload field with type {data_type:?} has parameters of type {:?}",
                 params.kind(),
             )),
-        }
-    }
-}
-
-pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
-    match value {
-        Value::Null => None,
-        Value::Bool(_) => None,
-        Value::Number(num) => {
-            if num.is_i64() {
-                Some(PayloadSchemaType::Integer)
-            } else if num.is_f64() {
-                Some(PayloadSchemaType::Float)
-            } else {
-                None
-            }
-        }
-        Value::String(_) => Some(PayloadSchemaType::Keyword),
-        Value::Array(_) => None,
-        Value::Object(obj) => {
-            let lon_op = obj.get("lon").and_then(|x| x.as_f64());
-            let lat_op = obj.get("lat").and_then(|x| x.as_f64());
-
-            if let (Some(_), Some(_)) = (lon_op, lat_op) {
-                return Some(PayloadSchemaType::Geo);
-            }
-            None
         }
     }
 }
@@ -2647,12 +2649,6 @@ impl Match {
 
     pub fn new_text(text: &str) -> Self {
         Self::Text(MatchText { text: text.into() })
-    }
-
-    pub fn new_phrase(phrase: &str) -> Self {
-        Self::Phrase(MatchPhrase {
-            phrase: phrase.into(),
-        })
     }
 
     pub fn new_any(any: AnyVariants) -> Self {
@@ -2906,7 +2902,7 @@ impl ValuesCount {
         let count = match value {
             Value::Null => 0,
             Value::Array(array) => array.len(),
-            _ => 1,
+            Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => 1,
         };
 
         self.check_count(count)
@@ -3453,8 +3449,7 @@ pub enum Condition {
 #[serde(
     expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
 )]
-#[allow(clippy::large_enum_variant)]
-#[allow(dead_code)]
+#[allow(clippy::large_enum_variant, dead_code)]
 enum ConditionUntagged {
     Field(FieldCondition),
     IsEmpty(IsEmptyCondition),
@@ -3709,7 +3704,7 @@ impl WithPayloadInterface {
     pub fn is_required(&self) -> bool {
         match self {
             WithPayloadInterface::Bool(b) => *b,
-            _ => true,
+            WithPayloadInterface::Fields(_) | WithPayloadInterface::Selector(_) => true,
         }
     }
 }
@@ -4156,22 +4151,33 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
+    use std::assert_matches;
+
     use itertools::Itertools;
     use rstest::rstest;
-    use serde::de::DeserializeOwned;
     use serde_json;
+    use validator::Validate;
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
 
-    #[allow(dead_code)]
-    fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
-        record: T,
-    ) {
-        let binary_entity = rmp_serde::to_vec(&record).expect("serialization ok");
-        let de_record: T = rmp_serde::from_slice(&binary_entity).expect("deserialization ok");
+    #[test]
+    fn test_search_params_rejects_zero_hnsw_ef() {
+        let params = SearchParams {
+            hnsw_ef: Some(0),
+            ..Default::default()
+        };
 
-        assert_eq!(record, de_record);
+        let err = params.validate().unwrap_err().to_string();
+        assert!(err.contains("hnsw_ef"), "error was: {err}");
+
+        let params = SearchParams {
+            hnsw_ef: Some(1),
+            ..Default::default()
+        };
+        params.validate().unwrap();
     }
 
     #[test]
@@ -4275,17 +4281,17 @@ mod tests {
         // IsEmptyCondition (no "key" field at top level, uses "is_empty" instead)
         let is_empty_json = r#"{"is_empty": {"key": "optional_field"}}"#;
         let condition: Condition = serde_json::from_str(is_empty_json).unwrap();
-        assert!(matches!(condition, Condition::IsEmpty(_)));
+        assert_matches!(condition, Condition::IsEmpty(_));
 
         // HasIdCondition
         let has_id_json = r#"{"has_id": [1, 2, 3]}"#;
         let condition: Condition = serde_json::from_str(has_id_json).unwrap();
-        assert!(matches!(condition, Condition::HasId(_)));
+        assert_matches!(condition, Condition::HasId(_));
 
         // Nested Filter
         let nested_json = r#"{"nested": {"key": "items", "filter": {"must": []}}}"#;
         let condition: Condition = serde_json::from_str(nested_json).unwrap();
-        assert!(matches!(condition, Condition::Nested(_)));
+        assert_matches!(condition, Condition::Nested(_));
     }
 
     #[test]

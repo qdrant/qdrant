@@ -5,15 +5,14 @@ use futures::future::BoxFuture;
 use storage::audit::{audit_trust_forwarded_headers, extract_tracing_id};
 use storage::rbac::Access;
 use tonic::Status;
-use tonic::body::BoxBody;
 use tower::{Layer, Service};
 
 use super::forwarded;
 use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType, log_denied_auth};
 use crate::common::inference::api_keys::InferenceToken;
 
-type Request = tonic::codegen::http::Request<tonic::transport::Body>;
-type Response = tonic::codegen::http::Response<BoxBody>;
+type Request<Body> = http::Request<Body>;
+type Response<Body> = http::Response<Body>;
 
 #[derive(Clone)]
 pub struct AuthMiddleware<S> {
@@ -21,7 +20,13 @@ pub struct AuthMiddleware<S> {
     service: S,
 }
 
-async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, Status> {
+async fn check<Body>(
+    auth_keys: Arc<AuthKeys>,
+    mut req: Request<Body>,
+) -> Result<Request<Body>, Status>
+where
+    Body: Send + 'static,
+{
     // When the audit logger trusts forwarded headers, prefer the raw
     // `X-Forwarded-For` value so audit entries record the real client address
     // rather than the proxy address.  Fall back to the TCP peer address.
@@ -63,8 +68,9 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         return Ok(req);
     }
 
+    let headers = req.headers();
     let (access, inference_token, auth_type, subject) = auth_keys
-        .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
+        .validate_request(move |key| headers.get(key).and_then(|val| val.to_str().ok()))
         .await
         .map_err(|e| {
             log_denied_auth(path, remote.clone(), tracing_id.clone(), &e);
@@ -94,10 +100,12 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
     Ok(req)
 }
 
-impl<S> Service<Request> for AuthMiddleware<S>
+impl<S, ReqBody, RespBody> Service<Request<ReqBody>> for AuthMiddleware<S>
 where
-    S: Service<Request, Response = Response> + Clone + Send + 'static,
+    S: Service<Request<ReqBody>, Response = Response<RespBody>> + Clone + Send + 'static,
     S::Future: Send + 'static,
+    ReqBody: Send + 'static,
+    RespBody: Default,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -107,14 +115,14 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, request: Request) -> Self::Future {
+    fn call(&mut self, request: Request<ReqBody>) -> Self::Future {
         let auth_keys = self.auth_keys.clone();
         let mut service = self.service.clone();
 
         Box::pin(async move {
             match check(auth_keys, request).await {
                 Ok(req) => service.call(req).await,
-                Err(e) => Ok(e.to_http()),
+                Err(e) => Ok(e.into_http()),
             }
         })
     }

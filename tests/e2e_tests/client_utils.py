@@ -38,6 +38,25 @@ class ClientUtils:
             time.sleep(1)
         return False
 
+    def wait_for_cluster_ready(self, expected_peers: int, timeout: int = 60) -> bool:
+        """Wait until consensus has elected a leader, all expected peers are visible, and pending operations have drained."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                status = self.client.cluster_status()
+                if (getattr(status, "status", None) == "enabled"
+                        and len(status.peers) >= expected_peers
+                        and status.raft_info.leader is not None
+                        and status.raft_info.pending_operations == 0):
+                    print(f"Cluster ready with {len(status.peers)} peers, leader={status.raft_info.leader}")
+                    return True
+            except Exception:
+                pass
+
+            print(f"Waiting for cluster to form ({expected_peers} peers expected)...")
+            time.sleep(0.5)
+        return False
+
     def wait_for_collection_loaded(self, collection_name: str, timeout: int = 10) -> bool:
         """Wait for a specific collection to be loaded."""
         for _ in range(timeout):

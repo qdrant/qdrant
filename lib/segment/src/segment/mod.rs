@@ -1,20 +1,20 @@
 mod entry;
-mod facet;
-mod formula_rescore;
 pub mod memory;
-mod order_by;
-mod sampling;
-mod scroll;
 mod search;
 mod segment_ops;
+pub mod vector_data_read;
 mod vector_name_ops;
 mod version_tracker;
 
 pub mod snapshot;
 
+mod as_view;
+mod read_view;
 #[cfg(test)]
 mod tests;
-mod vectors;
+
+#[allow(dead_code)]
+mod read_only;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -24,7 +24,6 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::is_alive_lock::IsAliveLock;
 use common::storage_version::StorageVersion;
-use common::types::PointOffsetType;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -84,24 +83,20 @@ pub struct Segment {
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
+    /// Route mutating ops through clone-and-tombstone so the underlying
+    /// vector and payload storages are never written in place. Intended for
+    /// S3-backed storages that prefer pure appends.
+    ///
+    /// Runtime-only — not persisted in the segment state file. Only takes
+    /// effect when [`Segment::is_appendable`] is also true, see
+    /// [`Segment::is_append_only`].
+    pub append_only_mutations: bool,
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub(crate) deferred_point_status: Option<DeferredPointStatus>,
-}
-
-#[derive(Debug)]
-pub struct DeferredPointStatus {
-    /// Points with internal id >= this value are hidden from reads.
-    /// Available for appendable segments only.
-    pub(crate) deferred_internal_id: PointOffsetType,
-
-    /// Amount of deleted deferred points. Must kept track of properly to be able
-    /// to calculate the amount of available deferred and visible points.
-    pub(crate) deferred_deleted_count: usize,
 }
 
 pub struct VectorData {

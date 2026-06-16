@@ -1,5 +1,7 @@
+use std::borrow::Cow;
 use std::ops::ControlFlow;
 
+use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
@@ -11,7 +13,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PointOffset, Tracker, ValuePointer};
+use crate::tracker::{PointOffset, Tracker, ValuePointer, ValuePointersBatch};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -30,14 +32,14 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 /// [`Tracker<S>`]).
 ///
 /// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
-pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
+pub struct GridstoreView<'a, V, S: UniversalRead> {
     pub(super) config: &'a StorageConfig,
     pub(super) tracker: &'a Tracker<S>,
     pub(super) pages: &'a Pages<S>,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
+impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
     pub(crate) fn new(
         config: &'a StorageConfig,
         tracker: &'a Tracker<S>,
@@ -65,12 +67,15 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     }
 
     /// Read raw value from the pages, considering that values can span more than one page.
-    pub fn read_from_pages<P: AccessPattern>(&self, pointer: ValuePointer) -> Result<Vec<u8>> {
+    pub fn read_from_pages<P: AccessPattern>(
+        &self,
+        pointer: ValuePointer,
+    ) -> Result<Cow<'_, [u8]>> {
         self.pages.read_from_pages::<P>(pointer, self.config)
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
     pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
         match self.config.compression {
             Compression::None => value,
@@ -78,10 +83,10 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         }
     }
 
-    pub(super) fn decompress(&self, value: Vec<u8>) -> Vec<u8> {
+    pub(super) fn decompress<'val>(&self, value: Cow<'val, [u8]>) -> Cow<'val, [u8]> {
         match self.config.compression {
             Compression::None => value,
-            Compression::LZ4 => decompress_lz4(&value),
+            Compression::LZ4 => decompress_lz4(&value).into(),
         }
     }
 
@@ -102,6 +107,44 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         let value = V::from_bytes(&decompressed);
 
         Ok(Some(value))
+    }
+
+    pub fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        E: From<GridstoreError>,
+    {
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+
+        let ValuePointersBatch {
+            valid,
+            empty,
+            out_of_range,
+        } = self.tracker.get_batch(point_offsets)?;
+
+        self.pages.read_batch_from_pages::<P, _, _>(
+            self.config,
+            valid.into_iter(),
+            |(user_data, point_offset), bytes| {
+                hw_counter_cell.incr_delta(bytes.len());
+
+                let decompressed = self.decompress(bytes);
+                let value = V::from_bytes(&decompressed);
+                callback(user_data, point_offset, Some(value))
+            },
+        )?;
+
+        for (user_data, point_offset) in empty.into_iter().chain(out_of_range) {
+            callback(user_data, point_offset, None)?;
+        }
+
+        Ok(())
     }
 
     /// Iterate over all the values in the storage.

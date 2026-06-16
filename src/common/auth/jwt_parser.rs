@@ -36,6 +36,7 @@ impl JwtParser {
         let claims = match decode::<Claims>(token, &self.key, &self.validation) {
             Ok(token_data) => token_data.claims,
             Err(e) => {
+                #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
                 return match e.kind() {
                     ErrorKind::ExpiredSignature | ErrorKind::InvalidSignature => {
                         Some(Err(AuthError::Forbidden(e.to_string())))
@@ -53,6 +54,8 @@ impl JwtParser {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use serde_json::json;
     use storage::rbac::{
         Access, CollectionAccess, CollectionAccessList, CollectionAccessMode, GlobalAccessMode,
@@ -144,10 +147,7 @@ mod tests {
 
         let secret = "secret";
         let parser = JwtParser::new(secret);
-        assert!(matches!(
-            parser.decode(&token),
-            Some(Err(AuthError::Forbidden(_)))
-        ));
+        assert_matches!(parser.decode(&token), Some(Err(AuthError::Forbidden(_))));
 
         // Remove the exp claim and it should work
         claims.exp = None;
@@ -173,7 +173,7 @@ mod tests {
         let secret = "secret";
         let parser = JwtParser::new(secret);
 
-        assert!(matches!(parser.decode(&token), Some(Ok(_))));
+        assert_matches!(parser.decode(&token), Some(Ok(_)));
     }
 
     #[test]
@@ -187,10 +187,10 @@ mod tests {
         };
         let token = create_token(&claims);
 
-        assert!(matches!(
+        assert_matches!(
             JwtParser::new("wrong-secret").decode(&token),
-            Some(Err(AuthError::Forbidden(_)))
-        ));
+            Some(Err(AuthError::Forbidden(_))),
+        );
 
         assert!(JwtParser::new("secret").decode("foo.bar.baz").is_none());
     }

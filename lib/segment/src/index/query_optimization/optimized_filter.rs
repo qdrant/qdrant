@@ -1,9 +1,31 @@
+use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 
-pub type ConditionCheckerFn<'a> = Box<dyn Fn(PointOffsetType) -> bool + 'a>;
+use crate::common::operation_error::OperationResult;
+
+/// A check that tests whether points satisfy a condition.
+pub trait ConditionChecker {
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool>;
+
+    /// Same as [`Self::check`] but without [`OperationResult`].
+    fn check_infallible(&self, point_id: PointOffsetType) -> bool {
+        // This method is a workaround to keep the performance on-par.
+        // It's faster to do `.unwrap_or(false)` *inside* the trait method
+        // because the compiler can't inline `&dyn Trait` methods.
+        //
+        // TODO(uio): remove this method and handle errors properly.
+        self.check(point_id).unwrap_or(false)
+    }
+}
+
+impl<F: Fn(PointOffsetType) -> OperationResult<bool>> ConditionChecker for F {
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        self(point_id)
+    }
+}
 
 pub enum OptimizedCondition<'a> {
-    Checker(ConditionCheckerFn<'a>),
+    Checker(Box<dyn ConditionChecker + 'a>),
     /// Nested filter
     Filter(OptimizedFilter<'a>),
 }
@@ -24,58 +46,79 @@ pub struct OptimizedFilter<'a> {
     pub must_not: Option<Vec<OptimizedCondition<'a>>>,
 }
 
-pub fn check_optimized_filter(filter: &OptimizedFilter, point_id: PointOffsetType) -> bool {
-    check_should(&filter.should, point_id)
-        && check_min_should(&filter.min_should, point_id)
-        && check_must(&filter.must, point_id)
-        && check_must_not(&filter.must_not, point_id)
-}
+impl ConditionChecker for OptimizedFilter<'_> {
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        let OptimizedFilter {
+            should,
+            min_should,
+            must,
+            must_not,
+        } = self;
 
-pub fn check_condition(condition: &OptimizedCondition, point_id: PointOffsetType) -> bool {
-    match condition {
-        OptimizedCondition::Filter(filter) => check_optimized_filter(filter, point_id),
-        OptimizedCondition::Checker(checker) => checker(point_id),
-    }
-}
-
-fn check_should(should: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {
-    let check = |condition| check_condition(condition, point_id);
-    match should {
-        None => true,
-        Some(conditions) => conditions.iter().any(check),
-    }
-}
-
-fn check_min_should(min_should: &Option<OptimizedMinShould>, point_id: PointOffsetType) -> bool {
-    let check = |condition| check_condition(condition, point_id);
-    match min_should {
-        None => true,
-        Some(OptimizedMinShould {
-            conditions,
-            min_count,
-        }) => {
-            conditions
+        // `should`: at least one matches.
+        if let Some(conditions) = should
+            && !conditions
                 .iter()
-                .filter(|cond| check(cond))
-                .take(*min_count)
-                .count()
-                == *min_count
+                .try_any(|condition| condition.check(point_id))?
+        {
+            return Ok(false);
+        }
+
+        // `min_should`: at least `min_count` match.
+        if let Some(min_should) = min_should {
+            let OptimizedMinShould {
+                conditions,
+                min_count,
+            } = min_should;
+            let mut matched = 0;
+
+            for condition in conditions {
+                if condition.check(point_id)? {
+                    matched += 1;
+                    if matched == *min_count {
+                        break;
+                    }
+                }
+            }
+            if matched < *min_count {
+                return Ok(false);
+            }
+        }
+
+        // `must`: all match.
+        if let Some(conditions) = must {
+            for condition in conditions {
+                if !condition.check(point_id)? {
+                    return Ok(false);
+                }
+            }
+        }
+
+        // `must_not`: none match.
+        if let Some(conditions) = must_not {
+            for condition in conditions {
+                if condition.check(point_id)? {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+}
+
+impl ConditionChecker for OptimizedCondition<'_> {
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        match self {
+            OptimizedCondition::Filter(filter) => filter.check(point_id),
+            OptimizedCondition::Checker(checker) => checker.check(point_id),
         }
     }
-}
 
-fn check_must(must: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {
-    let check = |condition| check_condition(condition, point_id);
-    match must {
-        None => true,
-        Some(conditions) => conditions.iter().all(check),
-    }
-}
-
-fn check_must_not(must: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {
-    let check = |condition| !check_condition(condition, point_id);
-    match must {
-        None => true,
-        Some(conditions) => conditions.iter().all(check),
+    fn check_infallible(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            OptimizedCondition::Filter(filter) => filter.check_infallible(point_id),
+            OptimizedCondition::Checker(checker) => checker.check_infallible(point_id),
+        }
     }
 }

@@ -1,10 +1,14 @@
+use std::env::var_os;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result, anyhow};
 use flate2::read::GzDecoder;
 use fs_err as fs;
 use fs_err::File;
 use indicatif::{ProgressBar, ProgressDrawTarget};
+use serde::Deserialize;
 
 pub enum Dataset {
     // https://github.com/qdrant/sparse-vectors-experiments
@@ -56,9 +60,7 @@ fn download_cached(url: &str) -> Result<PathBuf> {
     };
 
     // Cache directory, e.g. "target/datasets".
-    let cache_dir = workspace_dir()
-        .join(std::env::var_os("CARGO_TARGET_DIR").unwrap_or_else(|| "target".into()))
-        .join("datasets");
+    let cache_dir = cargo_target_dir()?.join("datasets");
 
     // Cache file path, e.g. "target/datasets/base_full.csr".
     let cache_path = cache_dir.join(basename);
@@ -102,14 +104,27 @@ fn download_cached(url: &str) -> Result<PathBuf> {
     Ok(cache_path)
 }
 
-fn workspace_dir() -> PathBuf {
-    let output = std::process::Command::new(env!("CARGO"))
-        .arg("locate-project")
-        .arg("--workspace")
-        .arg("--message-format=plain")
+fn cargo_target_dir() -> Result<&'static PathBuf> {
+    static CACHED: OnceLock<PathBuf> = OnceLock::new();
+
+    if let Some(cached) = CACHED.get() {
+        return Ok(cached);
+    }
+
+    #[derive(Deserialize)]
+    struct Metadata {
+        target_directory: PathBuf,
+    }
+
+    let result = Command::new(var_os("CARGO").context("$CARGO not set")?)
+        .args(["metadata", "--no-deps", "--format-version=1"])
         .output()
-        .unwrap()
-        .stdout;
-    let cargo_path = Path::new(std::str::from_utf8(&output).unwrap().trim());
-    cargo_path.parent().unwrap().to_path_buf()
+        .context("Failed to run `cargo metadata`")?;
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        anyhow::bail!("`cargo metadata` failed:\n{stderr}");
+    }
+    let metadata: Metadata = serde_json::from_slice(&result.stdout)
+        .context("Failed to parse `cargo metadata` output")?;
+    Ok(CACHED.get_or_init(|| metadata.target_directory))
 }

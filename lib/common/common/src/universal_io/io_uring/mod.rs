@@ -1,29 +1,32 @@
 mod error;
+mod pipeline;
 mod pool;
-mod read_iter;
 mod runtime;
 
 #[cfg(test)]
 mod tests;
 
-use std::borrow::Cow;
 use std::io::{self, Read as _, Seek as _};
+use std::ops::Range;
 use std::os::fd::AsRawFd as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
+use aligned_vec::avec_rt;
 use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt as _, OpenOptionsExt as _};
 
 use self::error::*;
+use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
-use self::read_iter::*;
 use self::runtime::*;
+use super::traits::{OpenExtra, UniversalReadFileOps, UniversalReadFs};
 use super::*;
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IoUringFile {
     file: Arc<fs::File>,
     /// Whether the file was opened with `O_DIRECT` flag. This allows reads to be shorter
@@ -40,31 +43,88 @@ impl IoUringFile {
     }
 }
 
-impl UniversalReadFileOps for IoUringFile {
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
+/// Filesystem handle for `io_uring`-backed files. No per-instance state
+/// today; the per-call `prevent_caching` knob lives on
+/// [`OpenOptions`](super::OpenOptions).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringFs;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringContextConfig;
+
+impl UniversalReadFileOps for IoUringFs {
+    type ContextConfig = IoUringContextConfig;
+
+    fn from_context(_ctx: Self::ContextConfig) -> Result<Self> {
+        Ok(Self)
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
+    }
+
+    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+        local_file_ops::local_create(path, expected_length)
+    }
+
+    fn create_dir(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_create_dir(path)
+    }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<()> {
+        local_file_ops::local_remove_dir(path)
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        local_file_ops::local_atomic_save(path, bytes)
     }
 }
 
-impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
+/// Per-open backend extras for [`IoUringFs::open`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoUringOpenExtra {
+    /// Open with `O_DIRECT` to bypass the OS page cache. Requires
+    /// block-aligned reads at runtime.
+    pub prevent_caching: bool,
+}
+
+impl OpenExtra for IoUringOpenExtra {
+    fn with_prevent_caching(self, prevent_caching: bool) -> Self {
+        let Self { prevent_caching: _ } = self;
+        Self { prevent_caching }
+    }
+}
+
+impl UniversalReadFs for IoUringFs {
+    type File = IoUringFile;
+    type OpenExtra = IoUringOpenExtra;
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: IoUringOpenExtra,
+    ) -> Result<IoUringFile> {
         // Check that io_uring is supported on this system.
         pool::check_io_uring_support()?;
 
         let OpenOptions {
             writeable,
             need_sequential: _,
-            disk_parallel: _,
             populate: _,
             advice: _,
-            prevent_caching,
         } = options;
+        let IoUringOpenExtra { prevent_caching } = extra;
 
-        let direct_io = prevent_caching.unwrap_or(false);
+        let direct_io = prevent_caching;
         let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
 
         let file = fs::OpenOptions::new()
@@ -75,74 +135,47 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             .open(path.as_ref())
             .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
 
-        let file = Self {
+        Ok(IoUringFile {
             file: Arc::new(file),
             direct_io,
-        };
-
-        Ok(file)
+        })
     }
+}
 
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let mut items = vec![T::zeroed(); range.length as usize];
-        let bytes = bytemuck::cast_slice_mut(&mut items);
-        self.file.read_exact_at(bytes, range.byte_offset)?;
-        Ok(Cow::Owned(items))
-    }
+impl UniversalRead for IoUringFile {
+    type Fs = IoUringFs;
 
-    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
-        &'a self,
-        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        for record in self.read_iter::<P, Meta>(ranges)? {
-            let (meta, items) = record?;
-            callback(meta, &items)?;
-        }
-
-        Ok(())
-    }
-
-    fn read_iter<P: AccessPattern, Meta>(
-        &self,
-        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
-        let fd = self.fd();
-        let direct_io = self.direct_io;
-        let ranges = ranges
-            .into_iter()
-            .map(move |(meta, range)| (meta, fd, direct_io, range));
-        Ok(IoUringReadIter::new(ranges)?
-            .map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))))
-    }
-
-    fn read_multi<'a, P: AccessPattern, Meta: 'a>(
-        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()>
+    type BorrowedReadPipeline<'a, U>
+        = BorrowedIoUringPipeline<'a, U>
     where
         Self: 'a,
-    {
-        for record in Self::read_multi_iter::<'a, P, Meta>(reads)? {
-            let (meta, items) = record?;
-            callback(meta, &items)?;
-        }
+        U: UserData;
 
+    type OwnedReadPipeline<U>
+        = OwnedIoUringPipeline<U>
+    where
+        U: UserData;
+
+    fn reopen(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn read_multi_iter<'a, P: AccessPattern, Meta>(
-        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>> {
-        let ranges = reads
-            .into_iter()
-            .map(|(meta, file, range)| (meta, file.fd(), file.direct_io, range));
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+        if self.direct_io {
+            // direct_io needs special handling
+            let mut pipeline = BorrowedIoUringPipeline::<()>::new()?;
+            pipeline.schedule::<P>((), self, range, align)?;
+            let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
+            return Ok(bytes);
+        }
 
-        Ok(IoUringReadIter::new(ranges)?
-            .map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))))
+        let len = (range.end - range.start) as usize;
+        let mut bytes = avec_rt!([align] | 0u8; len);
+        self.file.read_exact_at(&mut bytes, range.start)?;
+        Ok(ACow::Owned(bytes))
     }
 
-    fn len(&self) -> Result<u64> {
+    fn len<T>(&self) -> Result<u64> {
         let byte_len = self.file.metadata()?.len();
 
         let items_len = byte_len / size_of::<T>() as u64;
@@ -180,15 +213,14 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         UniversalKind::IoUring
     }
 }
-
-impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
-    fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
+impl UniversalWrite for IoUringFile {
+    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let bytes = bytemuck::cast_slice(items);
         self.file.write_all_at(bytes, byte_offset)?;
         Ok(())
     }
 
-    fn write_batch<'a>(
+    fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
@@ -201,7 +233,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                     return Ok(None);
                 };
 
-                let entry = state.write((), self.fd(), byte_offset, items);
+                let entry = state.write((), self.fd(), byte_offset, bytemuck::cast_slice(items));
                 Ok(Some(entry))
             })?;
 
@@ -216,7 +248,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         Ok(())
     }
 
-    fn write_multi<'a>(
+    fn write_multi<'a, T: bytemuck::Pod>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {
@@ -236,7 +268,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                     }
                 })?;
 
-                let entry = state.write((), file.fd(), byte_offset, items);
+                let entry = state.write((), file.fd(), byte_offset, bytemuck::cast_slice(items));
                 Ok(Some(entry))
             })?;
 

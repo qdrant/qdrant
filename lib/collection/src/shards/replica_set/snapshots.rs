@@ -330,6 +330,69 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Replace the in-memory local shard (if any) with a dummy and remove its on-disk
+    /// data files.
+    ///
+    /// Used by shard snapshot transfers to free disk space before the receiving node
+    /// downloads the new snapshot, avoiding having both the old data and the incoming
+    /// snapshot on disk at the same time. The configuration files and replica state
+    /// are preserved, so the shard directory remains a valid (empty) shard.
+    ///
+    /// A dummy shard is left in place of the real one so that APIs still report a local
+    /// shard while the data is being cleared and recovered, rather than reporting none.
+    /// The subsequent `restore_local_replica_from` call drops this dummy and installs
+    /// the recovered shard.
+    ///
+    /// Only safe to call while the shard is in a state that prevents user requests
+    /// (`PartialSnapshot` during a shard transfer). Do NOT call this from a
+    /// user-triggered URL recovery path, where the shard may still be serving queries.
+    ///
+    /// Writes the shard initializing flag before clearing, so that a crash between
+    /// here and the end of the subsequent `restore_local_replica_from` call causes
+    /// the shard to be loaded as a dummy on startup and re-recovered.
+    pub async fn clear_local_for_snapshot_recovery(
+        &self,
+        collection_path: &Path,
+    ) -> CollectionResult<()> {
+        // Callers must only invoke this while the shard is in a state that cannot
+        // be a source of truth (e.g. `PartialSnapshot` during a shard transfer).
+        // Clearing a source-of-truth replica would silently drop data that may
+        // still be serving queries.
+        if self
+            .peer_state(self.this_peer_id())
+            .is_some_and(|s| s.can_be_source_of_truth())
+        {
+            return Err(CollectionError::service_error(format!(
+                "clear_local_for_snapshot_recovery called on a peer that can be source-of-truth {}:{}",
+                self.collection_id, self.shard_id,
+            )));
+        }
+
+        let mut local = self.local.write().await;
+
+        // Mark the shard as initializing before touching disk, so a crash during or
+        // after clearing is detected on next startup and the shard is reloaded as a
+        // dummy that triggers recovery.
+        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
+        let flag_file = tokio_fs::File::create(&shard_flag).await?;
+        flag_file.sync_all().await?;
+        sync_parent_dir_async(&shard_flag).await?;
+
+        // Replace the local shard with a dummy rather than removing it entirely, so APIs
+        // keep reporting a local shard while the data is cleared and the replacement
+        // snapshot is recovered. `restore_local_replica_from` drops this dummy afterwards.
+        let dummy = Shard::Dummy(DummyShard::new(
+            "Local shard is being cleared for snapshot recovery",
+        ));
+        if let Some(shard) = local.replace(dummy) {
+            shard.stop_gracefully().await;
+        }
+
+        LocalShard::clear(&self.shard_path).await?;
+
+        Ok(())
+    }
+
     pub async fn get_partial_snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         self.local
             .read()

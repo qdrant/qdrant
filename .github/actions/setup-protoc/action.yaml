@@ -1,0 +1,47 @@
+name: Install Protoc
+description: "Install a pinned protoc by downloading the release zip directly (no GitHub API calls)"
+
+inputs:
+  version:
+    description: "Protoc version, without the leading 'v'"
+    required: false
+    default: "34.1"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download and install protoc ${{ inputs.version }}
+      shell: bash
+      env:
+        PROTOC_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64)    suffix="linux-x86_64" ;;
+          Linux-ARM64)  suffix="linux-aarch_64" ;;
+          macOS-X64)    suffix="osx-x86_64" ;;
+          macOS-ARM64)  suffix="osx-aarch_64" ;;
+          Windows-X64)  suffix="win64" ;;
+          Windows-X86)  suffix="win32" ;;
+          *)
+            echo "::error::Unsupported runner: $RUNNER_OS-$RUNNER_ARCH"
+            exit 1
+            ;;
+        esac
+
+        install_dir="$RUNNER_TEMP/protoc-$PROTOC_VERSION"
+        zip="$RUNNER_TEMP/protoc.zip"
+        url="https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-${suffix}.zip"
+
+        echo "Downloading $url"
+        curl -fsSL --retry 3 --retry-delay 2 -o "$zip" "$url"
+
+        mkdir -p "$install_dir"
+        unzip -q -o "$zip" -d "$install_dir"
+        rm -f "$zip"
+
+        chmod +x "$install_dir/bin/"* 2>/dev/null || true
+
+        echo "$install_dir/bin" >> "$GITHUB_PATH"
+        "$install_dir/bin/protoc" --version

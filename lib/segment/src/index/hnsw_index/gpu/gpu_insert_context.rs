@@ -96,7 +96,6 @@ impl ShaderBuilderParameters for GpuInsertResources {
 }
 
 impl GpuInsertResources {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         gpu_vector_storage: &GpuVectorStorage,
         groups_count: usize,
@@ -180,7 +179,6 @@ impl GpuInsertResources {
 }
 
 impl<'a> GpuInsertContext<'a> {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         gpu_vector_storage: &'a GpuVectorStorage,
         // Parallel inserts count.
@@ -492,7 +490,7 @@ mod tests {
     use crate::index::hnsw_index::links_container::LinksContainer;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageRead};
 
     #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
     #[repr(C)]

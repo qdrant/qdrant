@@ -7,7 +7,8 @@ use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SizeStats, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, StrictModeConfig, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
@@ -15,8 +16,8 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use tokio::runtime::Handle;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
@@ -49,7 +50,7 @@ impl DummyShard {
         Ok(())
     }
 
-    pub fn on_strict_mode_config_update(&mut self) {}
+    pub fn on_strict_mode_config_update(&mut self, _new_strict_mode: &StrictModeConfig) {}
 
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         LocalShardTelemetry {
@@ -129,7 +130,7 @@ impl ShardOperation for DummyShard {
     async fn scroll_by(
         &self,
         _: Arc<ScrollRequestInternal>,
-        _: &Handle,
+        _: &AdaptiveSearchHandle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -143,7 +144,7 @@ impl ShardOperation for DummyShard {
         _: &WithPayloadInterface,
         _: &WithVector,
         _: Option<&Filter>,
-        _: &Handle,
+        _: &AdaptiveSearchHandle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
         _: DeferredBehavior,
@@ -158,7 +159,7 @@ impl ShardOperation for DummyShard {
     async fn core_search(
         &self,
         _: Arc<CoreSearchRequestBatch>,
-        _: &Handle,
+        _: &AdaptiveSearchHandle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -168,7 +169,7 @@ impl ShardOperation for DummyShard {
     async fn count(
         &self,
         _: Arc<CountRequestInternal>,
-        _: &Handle,
+        _: &AdaptiveSearchHandle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
         _: DeferredBehavior,
@@ -181,7 +182,7 @@ impl ShardOperation for DummyShard {
         _: Arc<PointRequestInternal>,
         _: &WithPayload,
         _: &WithVector,
-        _: &Handle,
+        _: &AdaptiveSearchHandle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
         _: DeferredBehavior,
@@ -192,7 +193,7 @@ impl ShardOperation for DummyShard {
     async fn query_batch(
         &self,
         _requests: Arc<Vec<ShardQueryRequest>>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         _timeout: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -202,7 +203,7 @@ impl ShardOperation for DummyShard {
     async fn facet(
         &self,
         _: Arc<FacetParams>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {

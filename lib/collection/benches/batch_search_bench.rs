@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use api::rest::SearchRequestInternal;
+use collection::common::adaptive_handle::AdaptiveSearchHandle;
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
@@ -55,7 +56,7 @@ fn batch_search_bench(c: &mut Criterion) {
 
     let runtime = Runtime::new().unwrap();
     let search_runtime = Runtime::new().unwrap();
-    let search_runtime_handle = search_runtime.handle();
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
     let handle = runtime.handle().clone();
 
     let wal_config = WalConfig {
@@ -109,7 +110,7 @@ fn batch_search_bench(c: &mut Criterion) {
             Default::default(),
             payload_index_schema,
             handle.clone(),
-            handle.clone(),
+            search_runtime_handle.clone(),
             ResourceBudget::default(),
             optimizers_config,
         ))
@@ -171,7 +172,7 @@ fn batch_search_bench(c: &mut Criterion) {
                                 Arc::new(CoreSearchRequestBatch {
                                     searches: vec![search_query.into()],
                                 }),
-                                search_runtime_handle,
+                                &search_runtime_handle,
                                 None,
                                 hw_acc,
                             )
@@ -206,7 +207,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     let hw_acc = HwMeasurementAcc::new();
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .core_search(Arc::new(search_query), search_runtime_handle, None, hw_acc)
+                        .core_search(Arc::new(search_query), &search_runtime_handle, None, hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

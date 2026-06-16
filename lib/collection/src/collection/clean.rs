@@ -13,6 +13,7 @@ use tokio::sync::watch::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
 use super::Collection;
+use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
@@ -255,6 +256,57 @@ impl ShardCleanTask {
     }
 }
 
+/// Submit a no-op operation to a local shard and wait for it to be visible.
+///
+/// The update queue is FIFO and per-shard, so when the no-op acks at
+/// `WaitUntil::Visible` every operation queued before it has also been
+/// applied to segments. This is used as a barrier to flush pending
+/// operations before we read segment state directly (e.g. via scroll).
+async fn drain_update_queue(
+    shard_holder: &WeakShardHolder,
+    shard_id: ShardId,
+) -> CollectionResult<()> {
+    let shard = {
+        let Some(shard_holder) = shard_holder.upgrade() else {
+            return Err(CollectionError::not_found("Shard holder dropped"));
+        };
+        let shard_holder = shard_holder.read().await;
+        let Some(shard) = shard_holder.get_shard(shard_id) else {
+            return Err(CollectionError::not_found(format!(
+                "Shard {shard_id} not found",
+            )));
+        };
+        if !shard.is_local().await {
+            return Err(CollectionError::not_found(format!(
+                "Shard {shard_id} is not a local shard",
+            )));
+        }
+
+        shard.clone()
+    };
+
+    // Use empty delete points as plunger
+    let barrier = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
+        PointOperations::DeletePoints { ids: vec![] },
+    ));
+    shard
+        .update_local(
+            barrier,
+            WaitUntil::Visible,
+            None,
+            HwMeasurementAcc::disposable(),
+            false,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to drain update queue before clean: {err}",
+            ))
+        })?;
+
+    Ok(())
+}
+
 async fn clean_task(
     shard_holder: WeakShardHolder,
     shard_id: ShardId,
@@ -262,6 +314,18 @@ async fn clean_task(
 ) -> CollectionResult<()> {
     // Do not measure the hardware usage of these deletes as clean the shard is always considered an internal operation
     // users should not be billed for.
+
+    // Drain whatever is currently in the update queue before we start
+    // scrolling. Cleanup scrolls segment storage directly and does not see
+    // operations that are still pending in the queue. Without this drain,
+    // pending operations that target this shard could be applied *after*
+    // we have computed the set of points to delete - leaving invalid
+    // points behind that this cleanup pass would never catch.
+    //
+    // The write hash ring must be committed before cleanup is invoked, so
+    // any operation queued *after* this barrier is routed via the new
+    // hash ring and will not land on this shard.
+    drain_update_queue(&shard_holder, shard_id).await?;
 
     let mut offset = None;
     let mut deleted_points = 0;
@@ -294,7 +358,7 @@ async fn clean_task(
                 None,
                 None,
                 HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
-                DeferredBehavior::IncludeAll,   // Include also deferred points in the cleanup task.
+                DeferredBehavior::WithDeferred, // Include also deferred points in the cleanup task.
             )
             .await
         {
@@ -331,10 +395,9 @@ async fn clean_task(
             .collect();
 
         // Delete points from local shard
-        let delete_operation =
-            OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
-                crate::operations::point_ops::PointOperations::DeletePoints { ids },
-            ));
+        let delete_operation = OperationWithClockTag::from(
+            CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }),
+        );
         if let Err(err) = shard
             .update_local(
                 delete_operation,

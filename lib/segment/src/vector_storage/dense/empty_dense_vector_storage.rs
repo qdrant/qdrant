@@ -13,7 +13,9 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
+};
 
 /// Placeholder vector storage that contains no data.
 ///
@@ -82,18 +84,38 @@ pub fn new_empty_dense_vector_storage(
     ))
 }
 
-impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
+impl DenseVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
     }
 
     fn get_dense<P: AccessPattern>(&self, _key: PointOffsetType) -> Cow<'_, [VectorElementType]> {
-        debug_assert!(false, "get_dense called on EmptyDenseVectorStorage");
+        // All slots are deleted; downstream paths (e.g. optimization's
+        // `update_from`) still need a properly-sized placeholder per slot so
+        // the destination's index→offset layout stays aligned. The deletion
+        // flag from `is_deleted_vector` keeps the placeholder from being read.
         Cow::Owned(vec![0.0; self.dim])
     }
 }
 
-impl VectorStorage for EmptyDenseVectorStorage {
+impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
+    fn update_from<'a>(
+        &mut self,
+        _other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        Err(OperationError::service_error(
+            "Cannot update empty vector storage",
+        ))
+    }
+}
+
+impl VectorStorageRead for EmptyDenseVectorStorage {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        // All vectors are deleted, so there are no available vectors.
+        0
+    }
+
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -111,7 +133,7 @@ impl VectorStorage for EmptyDenseVectorStorage {
     }
 
     fn get_vector<P: AccessPattern>(&self, _key: PointOffsetType) -> CowVector<'_> {
-        debug_assert!(false, "get_vector called on EmptyDenseVectorStorage");
+        // See `get_dense` for why we return a sized placeholder rather than asserting.
         CowVector::from(vec![0.0; self.dim])
     }
 
@@ -119,6 +141,20 @@ impl VectorStorage for EmptyDenseVectorStorage {
         None
     }
 
+    fn is_deleted_vector(&self, _key: PointOffsetType) -> bool {
+        true
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.num_points
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted_bitvec.as_bitslice()
+    }
+}
+
+impl VectorStorage for EmptyDenseVectorStorage {
     fn insert_vector(
         &mut self,
         _key: PointOffsetType,
@@ -127,16 +163,6 @@ impl VectorStorage for EmptyDenseVectorStorage {
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Cannot insert into empty vector storage",
-        ))
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        _other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        _stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        Err(OperationError::service_error(
-            "Cannot update empty vector storage",
         ))
     }
 
@@ -150,18 +176,6 @@ impl VectorStorage for EmptyDenseVectorStorage {
 
     fn delete_vector(&mut self, _key: PointOffsetType) -> OperationResult<bool> {
         Ok(false) // Already deleted
-    }
-
-    fn is_deleted_vector(&self, _key: PointOffsetType) -> bool {
-        true
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.num_points
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted_bitvec.as_bitslice()
     }
 }
 

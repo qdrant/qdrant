@@ -27,7 +27,7 @@ use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectorStorage, QuantizedVectors,
 };
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, MultiVectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 pub const ELEMENTS_PER_SUBGROUP: usize = 4;
@@ -95,6 +95,9 @@ impl ShaderBuilderParameters for GpuVectorStorage {
             }
             VectorStorageDatatype::Uint8 => {
                 defines.insert("VECTOR_STORAGE_ELEMENT_UINT8".to_owned(), None);
+            }
+            VectorStorageDatatype::Turbo4 => {
+                unimplemented!("turbo4 datatype storage not yet wired up")
             }
         }
 
@@ -480,6 +483,10 @@ impl GpuVectorStorage {
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(vector_storage) => {
                 Self::new_multi_f16(device, vector_storage.as_ref(), stopped)
             }
+            // TODO(TQDT): GPU f16 fallback
+            VectorStorageEnum::DenseTurbo(_) => Err(OperationError::from(
+                gpu::GpuError::NotSupported("Turbo4 vectors are not supported on GPU".to_string()),
+            )),
             VectorStorageEnum::EmptyDense(_) | VectorStorageEnum::EmptySparse(_) => {
                 Err(OperationError::service_error(
                     "Cannot create GPU vector storage for empty vector storage",

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use api::rest::SearchRequestInternal;
+use collection::common::adaptive_handle::AdaptiveSearchHandle;
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
@@ -91,7 +92,7 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
             Default::default(),
             payload_index_schema,
             handle.clone(),
-            handle.clone(),
+            AdaptiveSearchHandle::new_fixed(handle.clone()),
             ResourceBudget::default(),
             optimizers_config,
         ))
@@ -157,7 +158,7 @@ fn some_filters() -> Vec<Option<Filter>> {
 fn batch_search_bench(c: &mut Criterion) {
     let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime_handle = search_runtime.handle();
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
 
     let mut group = c.benchmark_group("batch-search-bench");
 
@@ -187,7 +188,7 @@ fn batch_search_bench(c: &mut Criterion) {
 
                     let hw_acc = HwMeasurementAcc::new();
                     let result = shard
-                        .query_batch(Arc::new(searches), search_runtime_handle, None, hw_acc)
+                        .query_batch(Arc::new(searches), &search_runtime_handle, None, hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -218,7 +219,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     let hw_acc = HwMeasurementAcc::new();
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .core_search(Arc::new(search_query), search_runtime_handle, None, hw_acc)
+                        .core_search(Arc::new(search_query), &search_runtime_handle, None, hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -237,7 +238,7 @@ fn batch_search_bench(c: &mut Criterion) {
 fn batch_rrf_query_bench(c: &mut Criterion) {
     let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime_handle = search_runtime.handle();
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
 
     let mut group = c.benchmark_group("batch-rrf-bench");
 
@@ -288,7 +289,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
 
                     let hw_acc = HwMeasurementAcc::new();
                     let result = shard
-                        .query_batch(Arc::new(searches), search_runtime_handle, None, hw_acc)
+                        .query_batch(Arc::new(searches), &search_runtime_handle, None, hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -307,7 +308,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
 fn batch_rescore_bench(c: &mut Criterion) {
     let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime_handle = search_runtime.handle();
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
 
     let mut group = c.benchmark_group("batch-rescore-bench");
 
@@ -345,7 +346,7 @@ fn batch_rescore_bench(c: &mut Criterion) {
 
                     let hw_acc = HwMeasurementAcc::new();
                     let result = shard
-                        .query_batch(Arc::new(searches), search_runtime_handle, None, hw_acc)
+                        .query_batch(Arc::new(searches), &search_runtime_handle, None, hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

@@ -10,7 +10,7 @@ use fs_err as fs;
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
-use segment::entry::ReadSegmentEntry;
+use segment::entry::StorageSegmentEntry;
 use segment::types::{SegmentConfig, SnapshotFormat};
 use shard::files::{APPLIED_SEQ_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
@@ -31,7 +31,7 @@ use crate::shards::local_shard::{LocalShard, LocalShardClocks};
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         let task = {
-            let _runtime = self.search_runtime.enter();
+            let _runtime = self.search_runtime.tokio_handle().enter();
 
             let segments = self.segments.clone();
             cancel::blocking::spawn_cancel_on_drop(move |_| segments.read().snapshot_manifest())
@@ -326,7 +326,7 @@ pub fn proxy_all_segments_and_apply<F>(
     mut operation: F,
 ) -> OperationResult<()>
 where
-    F: FnMut(&RwLock<dyn ReadSegmentEntry>) -> OperationResult<()>,
+    F: FnMut(&RwLock<dyn StorageSegmentEntry>) -> OperationResult<()>,
 {
     let segments_lock = segments.upgradable_read();
 

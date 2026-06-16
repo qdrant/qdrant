@@ -2,15 +2,17 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use ahash::AHashMap;
+use common::bitvec::BitSliceExt;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
 use super::immutable_postings_enum::ImmutablePostings;
-use super::mmap_inverted_index::MmapInvertedIndex;
-use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use super::mutable_inverted_index::MutableInvertedIndex;
+use super::on_disk_inverted_index::OnDiskInvertedIndex;
+use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
 use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
@@ -282,7 +284,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             return false; // Already removed or never actually existed
         }
         self.point_to_tokens_count[idx as usize] = 0;
-        self.points_count -= 1;
+        self.points_count = self.points_count.saturating_sub(1);
         true
     }
 
@@ -306,13 +308,15 @@ impl InvertedIndex for ImmutableInvertedIndex {
         Ok(self.postings.posting_len(token_id))
     }
 
-    fn vocab_with_postings_len_iter(
+    fn for_each_vocab_with_postings_len(
         &self,
-    ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_ {
-        self.vocab.iter().filter_map(|(token, &token_id)| {
-            self.postings
-                .posting_len(token_id)
-                .map(|len| Ok((token.as_str(), len)))
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.vocab.iter().try_for_each(|(token, &token_id)| {
+            if let Some(len) = self.postings.posting_len(token_id) {
+                f(token.as_str(), len)?;
+            }
+            Ok(())
         })
     }
 
@@ -346,8 +350,14 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
-    fn get_token_id(&self, token: &str, _: &HardwareCounterCell) -> Option<TokenId> {
-        self.vocab.get(token).copied()
+    fn for_each_token_id<'a, U: UserData>(
+        &self,
+        tokens: impl Iterator<Item = (U, &'a str)>,
+        _: &HardwareCounterCell,
+        mut f: impl FnMut(U, Option<TokenId>),
+    ) -> OperationResult<()> {
+        tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));
+        Ok(())
     }
 }
 
@@ -485,33 +495,49 @@ fn create_compressed_postings_with_positions(
             .collect()
 }
 
-impl TryFrom<&MmapInvertedIndex> for ImmutableInvertedIndex {
+impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
+    for ImmutableInvertedIndex
+{
     type Error = OperationError;
 
-    fn try_from(index: &MmapInvertedIndex) -> OperationResult<Self> {
+    fn try_from(index: &OnDiskInvertedIndex<S>) -> OperationResult<Self> {
         let postings = match &index.storage.postings {
-            MmapPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
-            MmapPostingsEnum::WithPositions(postings) => {
+            OnDiskPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
+            OnDiskPostingsEnum::WithPositions(postings) => {
                 ImmutablePostings::WithPositions(postings.all_postings()?)
             }
         };
 
-        let vocab: HashMap<String, TokenId> = index
-            .storage
-            .vocab
-            .iter()
-            .map(|(token_str, token_id)| (token_str.to_owned(), token_id[0]))
-            .collect();
+        let mut vocab = HashMap::with_capacity(index.storage.vocab.keys_count());
+        index.storage.vocab.for_each_entry(|token_str, token_id| {
+            vocab.insert(token_str.to_owned(), token_id[0]);
+            OperationResult::Ok(())
+        })?;
 
         debug_assert!(
             postings.len() == vocab.len(),
             "postings and vocab must be the same size",
         );
 
+        // The in-RAM index uses `count == 0` as its deletion marker. The mmap
+        // variant tracks deletions in a separate in-memory bitmask and leaves
+        // `point_to_tokens_count` untouched on disk, so we apply the bitmask
+        // here when materializing the count vector.
+        let mut point_to_tokens_count = index
+            .storage
+            .point_to_tokens_count
+            .read_whole()?
+            .into_owned();
+        for (idx, count) in point_to_tokens_count.iter_mut().enumerate() {
+            if index.storage.deleted_points.get_bit(idx).unwrap_or(false) {
+                *count = 0;
+            }
+        }
+
         Ok(ImmutableInvertedIndex {
             postings,
             vocab,
-            point_to_tokens_count: index.storage.point_to_tokens_count.to_vec(),
+            point_to_tokens_count,
             points_count: index.points_count(),
         })
     }
@@ -529,14 +555,12 @@ impl ImmutableInvertedIndex {
 
         let postings_bytes = postings.ram_usage_bytes();
         // HashMap per-slot overhead: hash (u64) + metadata pointer
-        let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let hashmap_entry_overhead = size_of::<u64>() + size_of::<usize>();
         let vocab_base_bytes = vocab.capacity()
-            * (std::mem::size_of::<String>()
-                + std::mem::size_of::<TokenId>()
-                + hashmap_entry_overhead);
+            * (size_of::<String>() + size_of::<TokenId>() + hashmap_entry_overhead);
         // Account for actual heap-allocated string data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
-        let pttc_bytes = point_to_tokens_count.capacity() * std::mem::size_of::<usize>();
+        let pttc_bytes = point_to_tokens_count.capacity() * size_of::<usize>();
         postings_bytes + vocab_base_bytes + vocab_heap_bytes + pttc_bytes
     }
 }

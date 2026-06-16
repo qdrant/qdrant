@@ -1,28 +1,32 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::AccessPattern;
+use common::generic_consts::{AccessPattern, Random};
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
 use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage};
+use crate::vector_storage::{
+    SparseVectorStorage, SparseVectorStorageRead, VectorStorage, VectorStorageRead,
+};
 
-const DELETED_DIRNAME: &str = "deleted";
-const STORAGE_DIRNAME: &str = "store";
+pub(crate) const DELETED_DIRNAME: &str = "deleted";
+pub(crate) const STORAGE_DIRNAME: &str = "store";
 
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
@@ -32,7 +36,7 @@ pub struct MmapSparseVectorStorage {
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
     /// depend on its length.
-    deleted: BitvecFlags,
+    deleted: BitvecFlags<MmapFile>,
     /// Current number of deleted vectors.
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
@@ -53,7 +57,7 @@ impl MmapSparseVectorStorage {
     fn open(path: &Path) -> OperationResult<Self> {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Gridstore::open(storage_dir).map_err(|err| {
+        let storage = Gridstore::open(MmapFs, storage_dir).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
             ))
@@ -65,7 +69,10 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+        let deleted = BitvecFlags::new(
+            MmapFs,
+            DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+        )?;
 
         let deleted_count = deleted.count_trues();
         let next_point_offset = deleted
@@ -94,7 +101,7 @@ impl MmapSparseVectorStorage {
             ..Default::default()
         };
 
-        let storage = Gridstore::new(storage_dir, storage_config).map_err(|err| {
+        let storage = Gridstore::new(MmapFs, storage_dir, storage_config).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))
@@ -106,7 +113,10 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+        let deleted = BitvecFlags::new(
+            MmapFs,
+            DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+        )?;
 
         Ok(Self {
             storage,
@@ -179,7 +189,7 @@ impl MmapSparseVectorStorage {
     }
 }
 
-impl SparseVectorStorage for MmapSparseVectorStorage {
+impl SparseVectorStorageRead for MmapSparseVectorStorage {
     fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
         self.get_sparse_opt::<P>(key)?
             .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
@@ -194,9 +204,64 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
             .map(SparseVector::try_from)
             .transpose()
     }
+
+    fn for_each_in_sparse_batch<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
+    where
+        F: FnMut(usize, SparseVector),
+    {
+        let point_offsets = keys.iter().copied().enumerate();
+
+        let callback = |value_idx, _, sparse_vector| {
+            if let Some(sparse_vector) = sparse_vector {
+                callback(value_idx, SparseVector::try_from(sparse_vector)?);
+            }
+
+            Ok(())
+        };
+
+        self.storage.read_values::<Random, _, _>(
+            point_offsets,
+            callback,
+            HardwareCounterCell::disposable().vector_io_read(),
+        )
+    }
 }
 
-impl VectorStorage for MmapSparseVectorStorage {
+impl SparseVectorStorage for MmapSparseVectorStorage {
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        let hw_counter = HardwareCounterCell::disposable(); // This function is only used for internal operations. No need to measure.
+        let start_index = self.next_point_offset as PointOffsetType;
+        for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
+            // Do not perform preprocessing - vectors should be already processed
+            let other_vector = other_vector.as_ref();
+            let new_id = self.next_point_offset as PointOffsetType;
+            self.next_point_offset += 1;
+            self.set_deleted(new_id, other_deleted);
+
+            let vector = (!other_deleted).then_some(other_vector);
+            self.update_stored(new_id, vector, &hw_counter)?;
+        }
+
+        // return cancelled error if stopped
+        check_process_stopped(stopped)?;
+
+        Ok(start_index..self.next_point_offset as PointOffsetType)
+    }
+}
+
+impl VectorStorageRead for MmapSparseVectorStorage {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        unreachable!("Mmap sparse storage does not know its total size, get from index instead")
+    }
+
     fn distance(&self) -> crate::types::Distance {
         super::SPARSE_VECTOR_DISTANCE
     }
@@ -218,6 +283,30 @@ impl VectorStorage for MmapSparseVectorStorage {
             .unwrap_or_else(CowVector::default_sparse)
     }
 
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
+            let Some(sparse_vector) = sparse_vector else {
+                return Ok(());
+            };
+
+            let sparse_vector = SparseVector::try_from(sparse_vector)?;
+            callback(user_data, point_offset, CowVector::from(sparse_vector));
+            Ok(())
+        };
+
+        self.storage
+            .read_values::<P, _, _>(
+                keys.into_iter(),
+                callback,
+                HardwareCounterCell::disposable().vector_io_read(),
+            )
+            .expect("sparse vectors read")
+    }
+
     /// Get vector by key, if it exists.
     ///
     /// Ignore any error
@@ -228,6 +317,20 @@ impl VectorStorage for MmapSparseVectorStorage {
         }
     }
 
+    fn is_deleted_vector(&self, key: common::types::PointOffsetType) -> bool {
+        self.deleted.get(key)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.get_bitslice()
+    }
+}
+
+impl VectorStorage for MmapSparseVectorStorage {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -239,30 +342,6 @@ impl VectorStorage for MmapSparseVectorStorage {
         self.set_deleted(key, false);
         self.update_stored(key, Some(vector), hw_counter)?;
         Ok(())
-    }
-
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        let hw_counter = HardwareCounterCell::disposable(); // This function is only used for internal operations. No need to measure.
-        let start_index = self.next_point_offset as PointOffsetType;
-        for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
-            // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other_vector.as_vec_ref().try_into()?;
-            let new_id = self.next_point_offset as PointOffsetType;
-            self.next_point_offset += 1;
-            self.set_deleted(new_id, other_deleted);
-
-            let vector = (!other_deleted).then_some(other_vector);
-            self.update_stored(new_id, vector, &hw_counter)?;
-        }
-
-        // return cancelled error if stopped
-        check_process_stopped(stopped)?;
-
-        Ok(start_index..self.next_point_offset as PointOffsetType)
     }
 
     fn flusher(&self) -> crate::common::Flusher {
@@ -301,18 +380,6 @@ impl VectorStorage for MmapSparseVectorStorage {
 
         Ok(was_deleted)
     }
-
-    fn is_deleted_vector(&self, key: common::types::PointOffsetType) -> bool {
-        self.deleted.get(key)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.get_bitslice()
-    }
 }
 
 /// Find files related to this sparse vector storage
@@ -329,6 +396,8 @@ pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<
 
 #[cfg(test)]
 mod test {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 

@@ -27,7 +27,10 @@ pub struct EdgeOptimizersConfig {
     /// Indexing threshold in KB; segments above this get HNSW index. If not set, default is used.
     #[serde(alias = "indexing_threshold_kb")]
     pub indexing_threshold: Option<usize>,
-    /// If true, block updates when unoptimized segments exceed indexing threshold.
+    /// If true, points written to unoptimized segments larger than the indexing threshold are
+    /// stored as deferred points: they are persisted but skipped from read/search until the
+    /// segments are optimized. Updates with `wait=true` return only after the deferred points
+    /// become visible.
     #[serde(default)]
     pub prevent_unoptimized: Option<bool>,
 }

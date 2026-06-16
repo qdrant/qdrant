@@ -194,7 +194,6 @@ impl ConsensusOpWal {
 
                 // Check that new entry index is sequential (it's not greater than next WAL index),
                 // or truncate entries at the tail of WAL, if it overwrites some
-                #[allow(clippy::comparison_chain)] // stupid ahh diagnostics 🙄
                 if new_entry_wal_index > next_wal_index {
                     return Err(StorageError::service_error(format!(
                         "Can't append entry with Raft index {} (expected WAL index {}), \
@@ -400,6 +399,8 @@ fn into_raft_result<T>(result: Result<Option<T>, StorageError>) -> raft::Result<
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use raft::eraftpb::Entry;
 
     use super::*;
@@ -484,10 +485,10 @@ mod tests {
         }];
 
         // Some errors can't be corrected
-        assert!(matches!(
+        assert_matches!(
             wal.append_entries(broken_entry),
-            Err(StorageError::ServiceError { .. })
-        ));
+            Err(StorageError::ServiceError { .. }),
+        );
     }
 
     #[test]

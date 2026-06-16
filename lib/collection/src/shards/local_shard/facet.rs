@@ -11,12 +11,12 @@ use itertools::{Itertools, process_results};
 use segment::data_types::facets::{FacetParams, FacetValue, FacetValueHit};
 use segment::types::{Condition, FieldCondition, Filter, Match};
 use shard::common::stopping_guard::StoppingGuard;
-use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 impl LocalShard {
@@ -24,7 +24,7 @@ impl LocalShard {
     pub async fn approx_facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
@@ -76,17 +76,16 @@ impl LocalShard {
             })
         })?;
 
-        // We can't just select top values, because we need to aggregate across segments,
-        // which we can't assume to select the same best top.
-        //
-        // We need all values to be able to aggregate correctly across segments
+        // Per-segment top-k selection is unsafe (same value can rank
+        // differently across segments), so we must merge the full per-segment
+        // maps. Once merged, we can safely keep only `limit` hits — the
+        // coordinator oversamples enough to keep cross-shard aggregation
+        // accurate.
         let top_hits = merged_hits
             .map(|map| {
-                map.iter()
-                    .map(|(value, count)| FacetValueHit {
-                        value: value.to_owned(),
-                        count: *count,
-                    })
+                map.into_iter()
+                    .map(|(value, count)| FacetValueHit { value, count })
+                    .k_largest(request.limit)
                     .collect_vec()
             })
             .unwrap_or_default();
@@ -98,7 +97,7 @@ impl LocalShard {
     pub async fn exact_facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
@@ -135,7 +134,7 @@ impl LocalShard {
                         search_runtime_handle,
                         hw_acc,
                         Some(timeout.saturating_sub(instant.elapsed())),
-                        DeferredBehavior::Exclude,
+                        DeferredBehavior::VisibleOnly,
                     )
                     .await?
                     .len();
@@ -156,7 +155,7 @@ impl LocalShard {
     async fn unique_values(
         &self,
         request: Arc<FacetParams>,
-        handle: &Handle,
+        handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<FacetValue>> {

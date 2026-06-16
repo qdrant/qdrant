@@ -1,8 +1,10 @@
+pub mod recovery_guard;
 mod resharding;
 pub(crate) mod shard_mapping;
 pub mod shared_shard_holder;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::debug_assert_matches;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -19,7 +21,6 @@ use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
-use parking_lot::Mutex;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use segment::utils::fs::move_all;
@@ -35,10 +36,12 @@ pub use self::shared_shard_holder::*;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
 use super::transfer::RecoveryStage;
-use super::transfer::transfer_tasks_pool::{RecoveryProgress, TransferTasksPool};
+use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshot_stream::SnapshotStream;
+use crate::common::timeout_writer::TimeoutWriter;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -55,6 +58,9 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_holder::recovery_guard::{
+    ActiveRecoveries, RecoveryProgressHandle, ShardRecoveryGuard,
+};
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
@@ -62,10 +68,23 @@ const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
+/// Abort a streamed snapshot if its consumer reads no data for this long.
+///
+/// The streaming write holds a read lock on the shard's segment holder and
+/// occupies a blocking thread, so a stalled consumer must not be allowed to
+/// block it forever. See [`TimeoutWriter`].
+const SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 pub struct ShardHolder {
     /// `BTreeMap` for deterministic iteration order by `ShardId` — iteration is externally
     /// observable (fan-out, telemetry, consensus state apply).
-    shards: BTreeMap<ShardId, ShardReplicaSet>,
+    ///
+    /// Values are `Arc` so consumers can clone a handle, drop the outer
+    /// `ShardHolder` lock, and still operate on the shard. This matters
+    /// especially for searches: holding the `ShardHolder` read lock across
+    /// every `core_search` await would block writers (e.g. shard creation)
+    /// for the duration of the search.
+    shards: BTreeMap<ShardId, Arc<ShardReplicaSet>>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
@@ -80,7 +99,8 @@ pub struct ShardHolder {
     sharding_method: ShardingMethod,
     /// Active snapshot recoveries on this peer (destination side of transfers).
     /// Tracks progress of downloading, unpacking, and restoring snapshots.
-    active_recoveries: Mutex<HashMap<ShardId, Arc<Mutex<RecoveryProgress>>>>,
+    /// Entries are added and removed via [`ShardRecoveryGuard`].
+    active_recoveries: ActiveRecoveries,
 }
 
 impl ShardHolder {
@@ -123,20 +143,15 @@ impl ShardHolder {
             key_mapping,
             shard_id_to_key_mapping,
             sharding_method,
-            active_recoveries: Mutex::new(HashMap::new()),
+            active_recoveries: ActiveRecoveries::default(),
         })
     }
 
     pub async fn stop_gracefully(&mut self) {
         let futures = std::mem::take(&mut self.shards)
             .into_values()
-            .map(|shard| shard.stop_gracefully());
+            .map(|shard| async move { shard.stop_gracefully().await });
         futures::future::join_all(futures).await;
-    }
-
-    #[cfg(feature = "testing")]
-    pub async fn stop_gracefully_owned(mut self) {
-        self.stop_gracefully().await;
     }
 
     pub async fn save_key_mapping_to_tar(
@@ -209,8 +224,12 @@ impl ShardHolder {
         shard_id: ShardId,
         shard_key: &ShardKey,
     ) -> CollectionResult<()> {
+        // Idempotent: only rewrite the mapping if the shard id is actually
+        // present under this key. A replay after a successful removal finds
+        // nothing to remove and skips the unnecessary disk write.
         self.key_mapping.write_optional(|key_mapping| {
-            if !key_mapping.contains_key(shard_key) {
+            let shard_ids = key_mapping.get(shard_key)?;
+            if !shard_ids.contains(&shard_id) {
                 return None;
             }
 
@@ -232,7 +251,7 @@ impl ShardHolder {
         shard: ShardReplicaSet,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
-        let evicted = self.shards.insert(shard_id, shard);
+        let evicted = self.shards.insert(shard_id, Arc::new(shard));
         if let Some(evicted) = evicted {
             debug_assert!(false, "Overwriting existing shard id {shard_id}");
             evicted.stop_gracefully().await;
@@ -300,11 +319,9 @@ impl ShardHolder {
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
             let shard_key = ids_to_key.get(shard_id).cloned();
-            debug_assert!(
-                matches!(
-                    (self.sharding_method, &shard_key),
-                    (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)),
-                ),
+            debug_assert_matches!(
+                (self.sharding_method, &shard_key),
+                (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)),
                 "auto sharding cannot have shard key, custom sharding must have shard key ({:?}, {shard_key:?})",
                 self.sharding_method,
             );
@@ -338,7 +355,7 @@ impl ShardHolder {
         extra_shards: AHashMap<ShardId, ShardReplicaSet>,
     ) -> CollectionResult<()> {
         for (extra_shard_id, extra_shard) in extra_shards {
-            let evicted = self.shards.insert(extra_shard_id, extra_shard);
+            let evicted = self.shards.insert(extra_shard_id, Arc::new(extra_shard));
             if let Some(evicted) = evicted {
                 evicted.stop_gracefully().await;
             }
@@ -363,31 +380,23 @@ impl ShardHolder {
         self.shards.contains_key(&shard_id)
     }
 
-    pub fn get_shard(&self, shard_id: ShardId) -> Option<&ShardReplicaSet> {
+    pub fn get_shard(&self, shard_id: ShardId) -> Option<&Arc<ShardReplicaSet>> {
         self.shards.get(&shard_id)
     }
 
-    pub fn get_shard_mut(&mut self, shard_id: ShardId) -> Option<&mut ShardReplicaSet> {
-        self.shards.get_mut(&shard_id)
-    }
-
-    pub fn get_shards(&self) -> impl Iterator<Item = (ShardId, &ShardReplicaSet)> {
+    pub fn get_shards(&self) -> impl Iterator<Item = (ShardId, &Arc<ShardReplicaSet>)> {
         self.shards.iter().map(|(id, shard)| (*id, shard))
     }
 
-    pub fn all_shards(&self) -> impl Iterator<Item = &ShardReplicaSet> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &Arc<ShardReplicaSet>> {
         self.shards.values()
-    }
-
-    pub fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardReplicaSet> {
-        self.shards.values_mut()
     }
 
     pub fn split_by_shard<O: SplitByShard + Clone>(
         &self,
         operation: O,
         shard_keys_selection: &Option<ShardKey>,
-    ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
+    ) -> CollectionResult<Vec<(&Arc<ShardReplicaSet>, O)>> {
         let Some(hashring) = self.rings.get(&shard_keys_selection.clone()) else {
             return if let Some(shard_key) = shard_keys_selection {
                 Err(CollectionError::bad_input(format!(
@@ -464,47 +473,6 @@ impl ShardHolder {
         Ok(any_removed)
     }
 
-    /// Await for a given shard transfer to complete.
-    ///
-    /// The returned inner result defines whether it successfully finished or whether it was
-    /// aborted/cancelled.
-    pub fn await_shard_transfer_end(
-        &self,
-        transfer: ShardTransferKey,
-        timeout: Duration,
-    ) -> impl Future<Output = CollectionResult<Result<(), ()>>> {
-        let mut subscriber = self.shard_transfer_changes.subscribe();
-        let receiver = async move {
-            loop {
-                match subscriber.recv().await {
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        return Err(CollectionError::service_error(
-                            "Failed to await shard transfer end: failed to listen for shard transfer changes, channel closed",
-                        ));
-                    }
-                    Err(err @ tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        return Err(CollectionError::service_error(format!(
-                            "Failed to await shard transfer end: failed to listen for shard transfer changes, channel lagged behind: {err}",
-                        )));
-                    }
-                    Ok(ShardTransferChange::Finish(key)) if key == transfer => return Ok(Ok(())),
-                    Ok(ShardTransferChange::Abort(key)) if key == transfer => return Ok(Err(())),
-                    Ok(_) => {}
-                }
-            }
-        };
-
-        async move {
-            match tokio::time::timeout(timeout, receiver).await {
-                Ok(operation) => Ok(operation?),
-                // Timeout
-                Err(err) => Err(CollectionError::service_error(format!(
-                    "Awaiting for shard transfer end timed out: {err}"
-                ))),
-            }
-        }
-    }
-
     /// The count of incoming and outgoing shard transfers on the given peer
     ///
     /// This only includes shard transfers that are in consensus for the current collection. A
@@ -520,18 +488,13 @@ impl ShardHolder {
         (incoming, outgoing)
     }
 
-    /// Start tracking recovery progress for a shard (destination side)
-    pub fn start_shard_recovery(&self, shard_id: ShardId) -> Arc<Mutex<RecoveryProgress>> {
-        let progress = Arc::new(Mutex::new(RecoveryProgress::new()));
-        self.active_recoveries
-            .lock()
-            .insert(shard_id, Arc::clone(&progress));
-        progress
-    }
-
-    /// Stop tracking recovery progress for a shard
-    pub fn finish_shard_recovery(&self, shard_id: ShardId) {
-        self.active_recoveries.lock().remove(&shard_id);
+    /// Start tracking recovery progress for a shard (destination side).
+    ///
+    /// Returns a [`ShardRecoveryGuard`] that must be held for the duration of the
+    /// recovery. Dropping the guard - on success, error, or cancellation - stops
+    /// tracking and removes the progress entry.
+    pub fn start_shard_recovery(&self, shard_id: ShardId) -> ShardRecoveryGuard {
+        self.active_recoveries.start(shard_id)
     }
 
     pub fn get_shard_transfer_info(
@@ -549,13 +512,7 @@ impl ShardHolder {
 
             // Check for active recovery on destination shard first, then sender task status
             let target_shard = to_shard_id.unwrap_or(shard_id);
-            let recovery_comment = self
-                .active_recoveries
-                .lock()
-                .get(&target_shard)
-                .and_then(|p| p.lock().format_comment());
-
-            let comment = recovery_comment.or_else(|| {
+            let comment = self.active_recoveries.comment(target_shard).or_else(|| {
                 tasks_pool
                     .get_task_status(&shard_transfer.key())
                     .map(|p| p.comment)
@@ -614,7 +571,7 @@ impl ShardHolder {
     pub fn select_shards<'a>(
         &'a self,
         shard_selector: &'a ShardSelectorInternal,
-    ) -> CollectionResult<Vec<(&'a ShardReplicaSet, Option<&'a ShardKey>)>> {
+    ) -> CollectionResult<Vec<(&'a Arc<ShardReplicaSet>, Option<&'a ShardKey>)>> {
         let mut res = Vec::new();
 
         match shard_selector {
@@ -895,7 +852,7 @@ impl ShardHolder {
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
@@ -1074,13 +1031,6 @@ impl ShardHolder {
         res
     }
 
-    /// Count how many shard replicas are on the given peer.
-    pub fn count_peer_shards(&self, peer_id: PeerId) -> usize {
-        self.get_shards()
-            .filter(|(_, replica_set)| replica_set.peer_state(peer_id).is_some())
-            .count()
-    }
-
     pub fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
         self.shard_transfers
             .read()
@@ -1215,7 +1165,7 @@ impl ShardHolder {
     ///
     /// This method is cancel safe.
     pub async fn stream_shard_snapshot(
-        shard: OwnedRwLockReadGuard<ShardHolder, ShardReplicaSet>,
+        shard: OwnedRwLockReadGuard<ShardHolder, Arc<ShardReplicaSet>>,
         collection_name: &str,
         shard_id: ShardId,
         manifest: Option<SnapshotManifest>,
@@ -1240,6 +1190,13 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         let (read_half, write_half) = tokio::io::duplex(4096);
+
+        // Abort the snapshot if the consumer stops draining the stream. This
+        // write holds a read lock on the shard's segment holder and occupies a
+        // blocking thread; without a timeout, a stalled consumer (e.g. a slow or
+        // hung client) would block the segment holder and leak the thread
+        // indefinitely, wedging the whole shard.
+        let write_half = TimeoutWriter::new(write_half, SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT);
 
         let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
 
@@ -1297,6 +1254,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
+        recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
         if !self.contains_shard(shard_id) {
@@ -1312,8 +1270,8 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         // Set unpacking stage
-        if let Some(progress) = self.active_recoveries.lock().get(&shard_id) {
-            progress.lock().set_stage(RecoveryStage::Unpacking);
+        if let Some(recovery_progress) = &recovery_progress {
+            recovery_progress.lock().set_stage(RecoveryStage::Unpacking);
         }
 
         let extract = {
@@ -1354,8 +1312,8 @@ impl ShardHolder {
         extract.await??;
 
         // Set restoring stage
-        if let Some(progress) = self.active_recoveries.lock().get(&shard_id) {
-            progress.lock().set_stage(RecoveryStage::Restoring);
+        if let Some(recovery_progress) = &recovery_progress {
+            recovery_progress.lock().set_stage(RecoveryStage::Restoring);
         }
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe

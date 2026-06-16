@@ -23,7 +23,7 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
     #
     # If the port changes and the peer have to report URI change,
     # *4 out of 5 times it will fail to do so*, and the test will fail.
-    first_peer_port = get_port()
+    first_peer_port = get_port_triple()
 
     # Start bootstrap
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(

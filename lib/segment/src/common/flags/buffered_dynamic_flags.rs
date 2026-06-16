@@ -4,9 +4,11 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalRead, UniversalWrite};
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 
-use super::dynamic_mmap_flags::DynamicMmapFlags;
+use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -14,24 +16,32 @@ use crate::common::operation_error::{OperationError, OperationResult};
 ///
 /// Changes are buffered until explicitly flushed.
 #[derive(Debug)]
-pub(crate) struct BufferedDynamicFlags {
+pub(crate) struct BufferedDynamicFlags<S: UniversalRead> {
     /// Persisted flags.
-    storage: Arc<Mutex<DynamicMmapFlags>>,
+    storage: Arc<Mutex<DynamicStoredFlags<S>>>,
 
     /// Pending changes to the storage flags.
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
+
+    /// Filesystem handle used to reopen storage on resize.
+    fs: Arc<S::Fs>,
 
     /// Lock to prevent concurrent flush and drop
     is_alive_flush_lock: IsAliveLock,
 }
 
-impl BufferedDynamicFlags {
-    pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
+impl<S> BufferedDynamicFlags<S>
+where
+    S: UniversalWrite + Send + 'static,
+    S::Fs: Send + Sync + 'static,
+{
+    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
         let is_alive_flush_lock = IsAliveLock::new();
         Self {
-            storage: Arc::new(Mutex::new(mmap_flags)),
+            storage: Arc::new(Mutex::new(dynamic_flags)),
             buffer,
+            fs: Arc::new(fs),
             is_alive_flush_lock,
         }
     }
@@ -45,6 +55,7 @@ impl BufferedDynamicFlags {
         let Self {
             storage,
             buffer: _,
+            fs: _,
             is_alive_flush_lock: _,
         } = self;
         storage.lock().clear_cache()?;
@@ -71,6 +82,7 @@ impl BufferedDynamicFlags {
         // Weak reference to detect when the storage has been deleted
         let flags_weak = Arc::downgrade(&self.storage);
         let buffer_weak = Arc::downgrade(&self.buffer);
+        let fs = Arc::clone(&self.fs);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
@@ -90,12 +102,15 @@ impl BufferedDynamicFlags {
 
             // resize if needed
             if required_len > flags_guard.len() {
-                flags_guard.set_len(required_len)?;
+                flags_guard.set_len(&*fs, required_len)?;
             }
 
-            for (&index, &value) in &updates {
-                flags_guard.set(index as usize, value);
-            }
+            flags_guard.set_ascending_bits(
+                updates
+                    .iter()
+                    .map(|(index, value)| (u64::from(*index), *value))
+                    .sorted_by_key(|(index, _value)| *index),
+            )?;
 
             flags_guard.flusher()()?;
 
@@ -121,15 +136,24 @@ fn reconcile_persisted_buffer(
         .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
+#[duplicate::duplicate_item(
+    tests_mod       S               Fs              cfg_predicate;
+    [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];
+    [tests_uring]   [IoUringFile]   [IoUringFs]     [cfg(target_os = "linux")];
+)]
+#[cfg_predicate]
 #[cfg(test)]
-mod tests {
+mod tests_mod {
 
     use common::types::PointOffsetType;
+    #[cfg_predicate]
+    use common::universal_io::{Fs, S};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
     use crate::common::flags::buffered_dynamic_flags::BufferedDynamicFlags;
-    use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+    use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 
     #[test]
     fn test_buffered_flags_growth_persistence() {
@@ -140,22 +164,24 @@ mod tests {
 
         // Start with smaller flags
         {
-            let mut mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            mmap_flags.set_len(3).unwrap();
-            mmap_flags.set(0, true);
-            mmap_flags.set(2, true);
+            let mut mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            mmap_flags.set_len(&Fs::default(), 3).unwrap();
+            mmap_flags.set(0, true).unwrap();
+            mmap_flags.set(2, true).unwrap();
             mmap_flags.flusher()().unwrap();
         }
 
         // Grow and update with BufferedDynamicFlags
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
             // Initial state should match
-            assert_eq!(flags.count_flags(), 2);
+            assert_eq!(flags.count_flags().unwrap(), 2);
             assert_eq!(flags.len(), 3);
 
             drop(flags);
@@ -176,18 +202,19 @@ mod tests {
 
         // Verify growth persisted
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
             assert_eq!(mmap_flags.len(), 9);
 
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
             let flags = buffered_flags.storage.lock();
 
             let expected_trues = vec![0, 1, 2, 5, 7];
-            let actual_trues: Vec<_> = flags.iter_trues().collect();
+            let actual_trues: Vec<_> = flags.iter_trues().unwrap().collect();
             assert_eq!(actual_trues, expected_trues);
 
-            assert_eq!(flags.count_flags(), 5);
-            assert_eq!(flags.len() - flags.count_flags(), 4);
+            assert_eq!(flags.count_flags().unwrap(), 5);
+            assert_eq!(flags.len() - flags.count_flags().unwrap(), 4);
         }
     }
 
@@ -205,11 +232,12 @@ mod tests {
 
         // Create initial flags
         {
-            let mut mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            mmap_flags.set_len(num_flags).unwrap();
+            let mut mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            mmap_flags.set_len(&Fs::default(), num_flags).unwrap();
 
             for (i, &value) in initial_flags.iter().enumerate() {
-                mmap_flags.set(i, value);
+                mmap_flags.set(i, value).unwrap();
             }
 
             mmap_flags.flusher()().unwrap();
@@ -228,13 +256,14 @@ mod tests {
 
         // Apply updates and flush
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Verify initial state loaded correctly
             let initial_true_count = initial_flags.iter().filter(|&&b| b).count();
             assert_eq!(
-                buffered_flags.storage.lock().count_flags(),
+                buffered_flags.storage.lock().count_flags().unwrap(),
                 initial_true_count
             );
 
@@ -250,8 +279,9 @@ mod tests {
 
         // Verify persistence
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Calculate expected final state
             let mut expected_state = initial_flags.clone();
@@ -261,13 +291,13 @@ mod tests {
 
             let expected_true_count = expected_state.iter().filter(|&&b| b).count();
             let flags = buffered_flags.storage.lock();
-            assert_eq!(flags.count_flags(), expected_true_count);
+            assert_eq!(flags.count_flags().unwrap(), expected_true_count);
             assert_eq!(flags.len(), num_flags);
 
             // Verify specific values for a sample
             for i in (0..num_flags).step_by(100) {
                 let expected = expected_state[i];
-                let actual = flags.get(i);
+                let actual = flags.get(i).unwrap();
                 assert_eq!(actual, expected, "Mismatch at index {i}");
             }
         }
@@ -282,7 +312,8 @@ mod tests {
 
         // Initial empty state
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
             mmap_flags.flusher()().unwrap();
         }
 
@@ -297,8 +328,9 @@ mod tests {
         for (cycle_num, updates) in cycles.iter().enumerate() {
             // Apply updates and flush
             {
-                let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-                let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+                let mmap_flags =
+                    DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+                let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
                 // The flusher will handle length expansion as needed
 
@@ -313,11 +345,12 @@ mod tests {
 
             // Verify state after each cycle
             {
-                let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-                let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+                let mmap_flags =
+                    DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+                let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
                 for (i, &expected) in expected_state.iter().enumerate() {
-                    let actual = buffered_flags.storage.lock().get(i);
+                    let actual = buffered_flags.storage.lock().get(i).unwrap();
                     assert_eq!(
                         actual, expected,
                         "Cycle {cycle_num}, index {i}: expected {expected}, got {actual}"
@@ -326,7 +359,7 @@ mod tests {
 
                 let expected_true_count = expected_state.iter().filter(|&&b| b).count();
                 assert_eq!(
-                    buffered_flags.storage.lock().count_flags(),
+                    buffered_flags.storage.lock().count_flags().unwrap(),
                     expected_true_count
                 );
             }
@@ -342,8 +375,9 @@ mod tests {
 
         // Test with single true flag
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             buffered_flags.buffer_set(0, true);
 
@@ -353,17 +387,18 @@ mod tests {
 
         // Verify single flag persisted
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
             assert_eq!(flags.len(), 1);
-            assert_eq!(flags.count_flags(), 1);
-            assert_eq!(flags.len() - flags.count_flags(), 0);
-            assert!(flags.get(0));
+            assert_eq!(flags.count_flags().unwrap(), 1);
+            assert_eq!(flags.len() - flags.count_flags().unwrap(), 0);
+            assert!(flags.get(0).unwrap());
 
-            let trues: Vec<_> = flags.iter_trues().collect();
+            let trues: Vec<_> = flags.iter_trues().unwrap().collect();
             assert_eq!(trues, vec![0]);
         }
     }
@@ -377,8 +412,9 @@ mod tests {
 
         // Test with very sparse indices (large gaps)
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Set flags at sparse indices
             buffered_flags.buffer_set(0, true);
@@ -392,26 +428,27 @@ mod tests {
 
         // Verify sparse indices persisted correctly
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
             assert_eq!(flags.len(), 100001);
-            assert_eq!(flags.count_flags(), 4);
+            assert_eq!(flags.count_flags().unwrap(), 4);
 
             // Verify specific indices
-            assert!(flags.get(0));
-            assert!(flags.get(1000));
-            assert!(flags.get(50000));
-            assert!(flags.get(100000));
+            assert!(flags.get(0).unwrap());
+            assert!(flags.get(1000).unwrap());
+            assert!(flags.get(50000).unwrap());
+            assert!(flags.get(100000).unwrap());
 
             // Verify some gaps are false
-            assert!(!flags.get(500));
-            assert!(!flags.get(25000));
-            assert!(!flags.get(75000));
+            assert!(!flags.get(500).unwrap());
+            assert!(!flags.get(25000).unwrap());
+            assert!(!flags.get(75000).unwrap());
 
-            let trues: Vec<_> = flags.iter_trues().collect();
+            let trues: Vec<_> = flags.iter_trues().unwrap().collect();
             assert_eq!(trues, vec![0, 1000, 50000, 100000]);
         }
     }
@@ -425,21 +462,23 @@ mod tests {
 
         // Create initial state
         {
-            let mut mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            mmap_flags.set_len(10).unwrap();
+            let mut mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            mmap_flags.set_len(&Fs::default(), 10).unwrap();
             for i in 0..10 {
-                mmap_flags.set(i, i % 2 == 0); // Even indices true
+                mmap_flags.set(i, i % 2 == 0).unwrap(); // Even indices true
             }
             mmap_flags.flusher()().unwrap();
         }
 
         // Test overwriting existing flags multiple times
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Initial state: [true, false, true, false, true, false, true, false, true, false]
-            assert_eq!(buffered_flags.storage.lock().count_flags(), 5);
+            assert_eq!(buffered_flags.storage.lock().count_flags().unwrap(), 5);
 
             // First overwrite: flip all values
             for i in 0..10 {
@@ -462,19 +501,20 @@ mod tests {
 
         // Verify final state (all false) persisted
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
-            assert_eq!(flags.count_flags(), 0);
-            assert_eq!(flags.len() - flags.count_flags(), 10);
+            assert_eq!(flags.count_flags().unwrap(), 0);
+            assert_eq!(flags.len() - flags.count_flags().unwrap(), 10);
 
             for i in 0..10 {
-                assert!(!flags.get(i), "Index {i} should be false");
+                assert!(!flags.get(i).unwrap(), "Index {i} should be false");
             }
 
-            let trues: Vec<_> = flags.iter_trues().collect();
+            let trues: Vec<_> = flags.iter_trues().unwrap().collect();
             assert!(trues.is_empty());
         }
     }

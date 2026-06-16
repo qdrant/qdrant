@@ -4,7 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::DenseVector;
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -41,7 +41,7 @@ where
         let original_query_prequantized = TElement::quantization_preprocess(
             quantization_config,
             TMetric::distance(),
-            original_query.as_ref(),
+            original_query,
         );
         let query = quantized_data.encode_query(&original_query_prequantized);
 
@@ -78,7 +78,19 @@ impl<TEncodedVectors> QueryScorer for QuantizedQueryScorer<'_, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors,
 {
-    type TVector = [VectorElementType];
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert_eq!(ids.len(), scores.len());
+
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(ids.len() * self.quantized_data.quantized_vector_size());
+
+        for (idx, vector) in self.quantized_data.iter_batch(ids) {
+            scores[idx] = self
+                .quantized_data
+                .score(&self.query, &vector, &self.hardware_counter);
+        }
+    }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter
@@ -86,10 +98,6 @@ where
             .incr_delta(self.quantized_data.quantized_vector_size());
         self.quantized_data
             .score_point(&self.query, idx, &self.hardware_counter)
-    }
-
-    fn score(&self, _v2: &[VectorElementType]) -> ScoreType {
-        unimplemented!("This method is not expected to be called for quantized scorer");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

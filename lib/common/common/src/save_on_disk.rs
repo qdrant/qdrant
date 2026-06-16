@@ -114,7 +114,8 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             Self::save_data_to(&self.path, &output)?;
             let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
             *write_data = output;
-            self.change_notification.notify_all();
+            drop(write_data);
+            self.notify_change();
             Ok(true)
         } else {
             Ok(false)
@@ -130,8 +131,21 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
 
         *write_data = data_copy;
-        self.change_notification.notify_all();
+        drop(write_data);
+        self.notify_change();
         Ok(output)
+    }
+
+    /// Wake up any threads waiting in [`Self::wait_for`].
+    ///
+    /// Acquires `notification_lock` around `notify_all` so that a waiter
+    /// cannot miss the notification while it is in the window between
+    /// releasing its read guard on `data` and parking on the condvar: the
+    /// waiter holds `notification_lock` across that gap, so this call blocks
+    /// until the waiter has actually parked.
+    fn notify_change(&self) {
+        let _guard = self.notification_lock.lock();
+        self.change_notification.notify_all();
     }
 
     fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {

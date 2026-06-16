@@ -156,13 +156,18 @@ impl From<UniversalIoError> for OperationError {
             UniversalIoError::Io(err) => Self::from(err),
             UniversalIoError::Mmap(err) => Self::from(err),
 
-            UniversalIoError::IoUringNotSupported(_)
+            UniversalIoError::Bincode(_)
+            | UniversalIoError::BytemuckCast(_)
+            | UniversalIoError::ZerocopySize(_)
+            | UniversalIoError::IoUringNotSupported(_)
             | UniversalIoError::NotFound { .. }
             | UniversalIoError::OutOfBounds { .. }
-            | UniversalIoError::InvalidFileIndex { .. } => Self::service_error(err.to_string()),
-            UniversalIoError::BytemuckCast(_) => Self::service_error(err.to_string()),
-            UniversalIoError::Uninitialized { .. } => Self::service_error(err.to_string()),
-            UniversalIoError::ZerocopySize(_) => Self::service_error(err.to_string()),
+            | UniversalIoError::InvalidFileIndex { .. }
+            | UniversalIoError::Uninitialized { .. }
+            | UniversalIoError::QueueIsFull
+            | UniversalIoError::S3(_)
+            | UniversalIoError::S3Config { .. }
+            | UniversalIoError::TaskPanicked(_) => Self::service_error(err.to_string()),
         }
     }
 }
@@ -202,6 +207,7 @@ impl<E> From<AtomicIoError<E>> for OperationError {
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match err.kind() {
             ErrorKind::OutOfMemory => {
                 let free_memory = Mem::new().available_memory_bytes();
@@ -273,6 +279,7 @@ impl From<GridstoreError> for OperationError {
                 Self::service_error(format!("Gridstore IO error: {err}"))
             }
             GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
+            GridstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
         }
     }
 }
@@ -289,6 +296,7 @@ pub type OperationResult<T> = Result<T, OperationError>;
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {
     match err {
         Ok(_) => None,
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         Err(error) => match error {
             OperationError::ServiceError { .. } => Some(error.clone()),
             _ => None,

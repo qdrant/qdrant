@@ -13,7 +13,7 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
-use segment::id_tracker::IdTracker;
+use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
@@ -526,6 +526,124 @@ fn test_building_cancellation() {
     assert!(
         time_fast < time_long,
         "time_early: {time_fast}, time_later: {time_long}, was_cancelled_later: {was_cancelled_later}",
+    );
+}
+
+/// `SegmentBuilder::update` must reject schema mismatches in both directions
+/// to avoid silently producing a merged segment with the wrong schema.
+///
+/// Direction A — target has a vector the source lacks. The existing check
+/// fires; documents the symmetric case for completeness.
+///
+/// Direction B — source has a vector the target lacks. This is the case the
+/// optimizer-vs-`CreateVectorName(V)` race produces: an optimizer launched
+/// before V was added captures a `target_config` without V, but a concurrent
+/// `CreateVectorName(V)` mutates the source segments to include V. Without
+/// the source-superset check, `update` would silently drop V's data and
+/// emit a broken merged segment at version >= V_opnum, breaking the next
+/// optimization round.
+#[test]
+fn test_segment_builder_rejects_target_with_extra_vector_name() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let segment1 = build_segment_1(dir.path());
+
+    let added_vector_name = "added_vec";
+    let mut target_config = segment1.segment_config.clone();
+    target_config.vector_data.insert(
+        added_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    let err = builder
+        .update(&[&segment1], &stopped, &hw_counter)
+        .expect_err("merge must reject sources missing a target vector");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing vector name") && msg.contains(added_vector_name),
+        "unexpected error message: {msg}",
+    );
+}
+
+#[test]
+fn test_segment_builder_rejects_source_with_extra_vector_name() {
+    use segment::segment_constructor::build_segment;
+
+    let source_dir = Builder::new().prefix("segment_source").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let extra_vector_name = "extra_vec";
+
+    // Build a source segment carrying both the default vector and an extra
+    // named vector — emulates a segment that received `CreateVectorName(V)`
+    // while an optimizer in flight was holding a `target_config` without V.
+    let template = build_segment_1(source_dir.path());
+    let mut source_config = template.segment_config.clone();
+    source_config.vector_data.insert(
+        extra_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+    drop(template);
+    let source_dir2 = Builder::new().prefix("segment_source2").tempdir().unwrap();
+    let mut source = build_segment(source_dir2.path(), &source_config, None, true).unwrap();
+    for i in 0..3u64 {
+        let vectors = NamedVectors::from_pairs([
+            (DEFAULT_VECTOR_NAME.to_owned(), vec![0.5, 0.5, 0.5, 0.5]),
+            (extra_vector_name.to_owned(), vec![1.0, 1.0, 1.0, 1.0]),
+        ]);
+        source
+            .upsert_point(10 + i, (100 + i).into(), vectors, &hw_counter)
+            .unwrap();
+    }
+
+    // Target schema lacks the extra vector — the optimizer's pre-`CreateVectorName` view.
+    let mut target_config = source_config.clone();
+    target_config.vector_data.remove(extra_vector_name);
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    let err = builder
+        .update(&[&source], &stopped, &hw_counter)
+        .expect_err("merge must reject a source carrying a vector not in target");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("extra vector name") && msg.contains(extra_vector_name),
+        "unexpected error message: {msg}",
     );
 }
 

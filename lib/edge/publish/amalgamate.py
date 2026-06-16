@@ -13,6 +13,7 @@ Amalgamation
 # ///
 
 import functools
+import json
 import os.path
 import re
 import shutil
@@ -25,7 +26,7 @@ from pathlib import Path
 
 import tomlkit
 
-VERSION = "0.6.1"
+VERSION = "0.7.2"
 
 # Assume this script is in <root>/lib/edge/publish/.
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
@@ -33,6 +34,7 @@ REPO_ROOT = Path(__file__).parent.parent.parent.parent
 AMALGAMATION = Path(__file__).parent / "qdrant-edge"
 
 PACKAGES_TO_INCLUDE = [
+    "bm25",
     "common",
     "edge",
     "gridstore",
@@ -55,7 +57,7 @@ def main() -> None:
     root_manifest = tomlkit.loads(
         Path(REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8")
     )
-    packages = all_file_dependencies(REPO_ROOT / "lib/edge")
+    packages = gather_packages()
 
     shutil.rmtree(AMALGAMATION, ignore_errors=True)
 
@@ -248,14 +250,11 @@ def gather_dependencies(
         for name, spec in root_manifest["workspace"]["dependencies"].items()
     }
 
-    excluded = set()
-
     def add_specs(path: tuple[str, ...], specs: dict) -> None:
         dest = None
         for name, spec in specs.items():
             spec = {"version": spec} if isinstance(spec, str) else spec
-            if name in EXCLUDED_DEPENDENCIES:
-                excluded.add(name)
+            if name in EXCLUDED_DEPENDENCIES or name in PACKAGES_TO_INCLUDE:
                 continue
             if "path" in spec or spec.get("optional") is True:
                 continue
@@ -305,28 +304,21 @@ def substitute(paths: Path | Iterable[Path], *replacements: tuple[str, str]) -> 
         assert seen, f"Pattern {pattern!r} not found"
 
 
-def all_file_dependencies(root: Path) -> dict[str, tuple[Path, tomlkit.TOMLDocument]]:
-    """Recursively collect Cargo.toml files for all dependencies.
-    Returns mapping package_name -> (path_to_package, manifest).
-    """
-    seen: set[Path] = {root}
-    stack = [root]
-    result: dict[str, tuple[Path, tomlkit.TOMLDocument]] = {}
+def gather_packages() -> dict[str, tuple[Path, tomlkit.TOMLDocument]]:
+    cargo_metadata = json.loads(
+        subprocess.check_output(
+            ["cargo", "metadata", "--format-version=1"], cwd=REPO_ROOT
+        )
+    )
+    meta_packages = {pkg["name"]: pkg for pkg in cargo_metadata["packages"]}
 
-    while stack:
-        path = stack.pop()
-        manifest = tomlkit.loads((path / "Cargo.toml").read_text(encoding="utf-8"))
-        name = manifest["package"]["name"]
-        if name in PACKAGES_TO_INCLUDE:
-            result[manifest["package"]["name"]] = (path, manifest)
-        for spec in manifest["dependencies"].values():
-            if isinstance(spec, dict) and isinstance(spec.get("path"), str):
-                dep = Path(os.path.normpath(path / spec["path"]))
-                if dep not in seen:
-                    seen.add(dep)
-                    stack.append(dep)
-
-    return dict(sorted(result.items()))
+    packages = []
+    for name in PACKAGES_TO_INCLUDE:
+        assert name in meta_packages, f"Package {name!r} not found in cargo metadata"
+        path = Path(meta_packages[name]["manifest_path"]).parent
+        manifest = tomlkit.loads((path / "Cargo.toml").read_text(encoding="utf8"))
+        packages.append((name, (path, manifest)))
+    return dict(sorted(packages))
 
 
 if __name__ == "__main__":

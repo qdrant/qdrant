@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
+use common::universal_io::MmapFs;
+use fs_err as fs;
 use fs_err::File;
 use itertools::Itertools;
 use rand::distr::Uniform;
@@ -263,8 +265,12 @@ fn test_write_across_pages() {
         .unwrap();
 
     let read_value = storage
-        .with_view(|view| view.read_from_pages::<Random>(pointer))
+        .with_view(|view| {
+            view.read_from_pages::<Random>(pointer)
+                .map(|val| val.into_owned())
+        })
         .unwrap();
+
     assert_eq!(value, read_value);
 }
 
@@ -275,12 +281,18 @@ enum Operation {
     Delete(PointOffset),
     // Get point by offset
     Get(PointOffset),
+    // Batched get of several offsets via `read_values`
+    GetBatch(Vec<PointOffset>),
     // Flush after delay
     FlushDelay(Duration),
     // Clear storage
     Clear,
     // Iter up to limit
     Iter(PointOffset),
+    // Warm the mmap cache (pages, tracker, bitmask)
+    Populate,
+    // Drop the disk cache
+    ClearCache,
 }
 
 impl Operation {
@@ -292,6 +304,9 @@ impl Operation {
             max_point_offset / 500,   // flush
             max_point_offset / 5_000, // clear
             max_point_offset / 5_000, // iter
+            max_point_offset / 10,    // get_batch
+            max_point_offset / 1_000, // populate
+            max_point_offset / 1_000, // clear_cache
         ])
         .unwrap();
 
@@ -321,6 +336,15 @@ impl Operation {
                 let limit = rng.random_range(0..=10);
                 Operation::Iter(limit)
             }
+            6 => {
+                let batch_size = rng.random_range(1..=16);
+                let offsets = (0..batch_size)
+                    .map(|_| rng.random_range(0..=max_point_offset))
+                    .collect();
+                Operation::GetBatch(offsets)
+            }
+            7 => Operation::Populate,
+            8 => Operation::ClearCache,
             op => panic!("{op} out of range"),
         }
     }
@@ -333,6 +357,9 @@ fn test_behave_like_hashmap(
 ) {
     use ahash::AHashMap;
 
+    #[cfg(target_os = "windows")]
+    let operation_count = 10_000;
+    #[cfg(not(target_os = "windows"))]
     let operation_count = 50_000;
     let max_point_offset = 10_000u32;
 
@@ -420,6 +447,36 @@ fn test_behave_like_hashmap(
                     "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
                 );
             }
+            Operation::GetBatch(point_offsets) => {
+                log::debug!("op:{i} GET_BATCH size:{}", point_offsets.len());
+                let mut batch_results: Vec<Option<Payload>> = vec![None; point_offsets.len()];
+                storage
+                    .read_values::<Random, _, GridstoreError>(
+                        point_offsets.iter().copied().enumerate(),
+                        |idx, _, value| {
+                            batch_results[idx] = value;
+                            Ok(())
+                        },
+                        hw_counter.payload_io_read_counter(),
+                    )
+                    .unwrap();
+                for (idx, &point_offset) in point_offsets.iter().enumerate() {
+                    let v_batch = &batch_results[idx];
+                    let v_model = model_hashmap.get(&point_offset).cloned();
+                    assert_eq!(
+                        v_batch, &v_model,
+                        "get_batch failed for point_offset: {point_offset} with {v_batch:?} vs {v_model:?}",
+                    );
+                }
+            }
+            Operation::Populate => {
+                log::debug!("op:{i} POPULATE");
+                storage.populate().unwrap();
+            }
+            Operation::ClearCache => {
+                log::debug!("op:{i} CLEAR_CACHE");
+                storage.clear_cache().unwrap();
+            }
             Operation::FlushDelay(delay) => {
                 let mut flush_lock_guard = has_flusher_lock.lock();
                 if *flush_lock_guard {
@@ -486,7 +543,7 @@ fn test_behave_like_hashmap(
     drop(storage);
 
     // reopen storage
-    let storage = Gridstore::<Payload>::open(dir.path().to_path_buf()).unwrap();
+    let storage = Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf()).unwrap();
     // assert same size
     assert_eq!(storage.get_storage_size_bytes().unwrap(), before_size);
     // assert same length
@@ -584,7 +641,7 @@ fn test_storage_persistence_basic() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     {
-        let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
+        let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
         assert_eq!(storage.pages.read().num_pages(), 1);
 
@@ -601,7 +658,7 @@ fn test_storage_persistence_basic() {
     }
 
     // reopen storage
-    let storage = Gridstore::<Payload>::open(path).unwrap();
+    let storage = Gridstore::<Payload>::open(MmapFs, path).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -694,7 +751,7 @@ fn test_with_real_hm_data() {
     storage.flusher()().unwrap();
     drop(storage);
 
-    let mut storage = Gridstore::open(dir.path().to_path_buf()).unwrap();
+    let mut storage = Gridstore::open(MmapFs, dir.path().to_path_buf()).unwrap();
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
     assert_eq!(storage.pages.read().num_pages(), 4);
     assert_eq!(
@@ -754,7 +811,7 @@ fn test_different_block_sizes(#[case] block_size_bytes: usize) {
         block_size_bytes: Some(block_size_bytes),
         ..Default::default()
     };
-    let mut storage = Gridstore::new(dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Gridstore::<_>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -851,7 +908,7 @@ fn test_deferred_flush() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(path).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, we expect to read the data at the time the flusher was created
@@ -933,7 +990,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let flusher = storage.flusher();
@@ -952,7 +1009,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, delete was flushed this time, expect point to be missing
@@ -977,7 +1034,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, value 4 was flushed, expect to read it
@@ -1003,28 +1060,28 @@ fn test_deferred_flush_with_delete() {
 
     // Not flushed, still expect to read value 4
     {
-        let tmp_storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 4");
     }
 
     // First flusher flushed, expect to read value 5 if we load from disk
     flusher_1_value_5().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 5");
     }
 
     // Second flusher flushed, expect point to be missing if we load from disk
     flusher_2_delete().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
         assert!(get_payload(&tmp_storage).is_none());
     }
 
     // Third flusher flushed, expect to read value 6 if we load from disk
     flusher_3_value_6().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(path).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 6");
     }
 
@@ -1064,7 +1121,7 @@ fn test_live_reload() {
     };
 
     // Step 1: Write initial data and flush
-    let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
+    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
     let payload_1 = make_payload("key", "value_1");
@@ -1073,7 +1130,7 @@ fn test_live_reload() {
     storage.flusher()().unwrap();
 
     // Step 2: Open a reader
-    let mut reader = GridstoreReader::<Payload>::open(path.clone()).unwrap();
+    let mut reader = GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone()).unwrap();
     assert_eq!(reader.max_point_offset(), 2);
 
     // Step 3: Verify reader sees initial data
@@ -1083,7 +1140,7 @@ fn test_live_reload() {
     assert_eq!(v1.as_ref(), Some(&payload_1));
 
     // Step 4: live_reload when nothing changed should be a no-op
-    reader.live_reload().unwrap();
+    reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset(), 2);
     let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
@@ -1099,7 +1156,7 @@ fn test_live_reload() {
     assert_eq!(reader.max_point_offset(), 2);
 
     // Step 6: live_reload should update max_point_offset and make new data accessible
-    reader.live_reload().unwrap();
+    reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset(), 4);
     let v2 = reader.get_value::<Random>(2, &hw_counter).unwrap();
     assert_eq!(v2.as_ref(), Some(&payload_2));
@@ -1134,7 +1191,7 @@ fn test_live_reload_across_pages() {
         page_size_bytes: Some(page_size),
         ..Default::default()
     };
-    let mut storage = Gridstore::new(path.clone(), options).unwrap();
+    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options).unwrap();
 
     let payload = minimal_payload();
 
@@ -1149,7 +1206,7 @@ fn test_live_reload_across_pages() {
     let initial_pages = storage.pages.read().num_pages();
 
     // Open reader
-    let mut reader = GridstoreReader::<Payload>::open(path.clone()).unwrap();
+    let mut reader = GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone()).unwrap();
     assert_eq!(reader.max_point_offset(), first_batch);
 
     // Verify reader can read all initial data
@@ -1175,7 +1232,7 @@ fn test_live_reload_across_pages() {
     assert_eq!(reader.max_point_offset(), first_batch);
 
     // Live reload should pick up new pages and data
-    reader.live_reload().unwrap();
+    reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset(), first_batch + second_batch);
 
     // Verify all data is readable
@@ -1253,8 +1310,206 @@ fn test_skip_deferred_flush_after_clear() {
 
     // If we reopen the storage it must still be empty
     drop(storage);
-    let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+    let storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
     assert!(storage.get_pointer(0).is_none(), "point must not exist");
     assert_eq!(storage.max_point_offset(), 0, "must have zero points");
+}
+
+/// `Pages::read_batch_from_pages` must yield the same bytes as calling
+/// `read_from_pages` for each pointer individually. Covers the small/multi-page mix
+/// and synthetic zero-length pointers.
+#[test]
+fn test_read_batch_from_pages_congruent_with_read_from_pages() {
+    // Use small pages so larger payloads span multiple pages.
+    let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    // Mix of payload sizes so we exercise both single-page and multi-page reads.
+    let num_payloads = 50u32;
+    for point_offset in 0..num_payloads {
+        let size_factor = (point_offset % 8) as usize + 1;
+        let payload = random_payload(rng, size_factor);
+        storage
+            .put_value(point_offset, &payload, hw_counter_ref)
+            .unwrap();
+    }
+
+    let mut pointers: Vec<ValuePointer> = (0..num_payloads)
+        .map(|i| storage.get_pointer(i).unwrap())
+        .collect();
+
+    // Synthetic zero-length pointer to exercise that branch.
+    pointers.push(ValuePointer::new(0, 0, 0));
+
+    pointers.shuffle(rng);
+
+    let pages = storage.pages.read();
+
+    let single_results: Vec<Vec<u8>> = pointers
+        .iter()
+        .map(|ptr| {
+            pages
+                .read_from_pages::<Random>(*ptr, &storage.config)
+                .unwrap()
+                .into_owned()
+        })
+        .collect();
+
+    let mut batch_results: Vec<Option<Vec<u8>>> = vec![None; pointers.len()];
+
+    pages
+        .read_batch_from_pages::<Random, _, GridstoreError>(
+            &storage.config,
+            pointers.into_iter().enumerate(),
+            |idx, bytes| {
+                batch_results[idx] = Some(bytes.into_owned());
+                Ok(())
+            },
+        )
+        .unwrap();
+
+    for (i, single) in single_results.iter().enumerate() {
+        assert_eq!(
+            batch_results[i].as_ref(),
+            Some(single),
+            "batch read mismatch at idx {i}, len {}",
+            single.len(),
+        );
+    }
+}
+
+/// `GridstoreView::for_each_in_batch` must yield the same values as calling
+/// `get_value` per offset, including missing/out-of-range offsets that should be
+/// silently skipped (matching `get_value`'s `Ok(None)`).
+#[test]
+fn test_for_each_in_batch_congruent_with_get_value() {
+    let (_dir, mut storage) = empty_storage();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    let num_payloads = 100u32;
+    for point_offset in 0..num_payloads {
+        let size_factor = (point_offset % 5) as usize + 1;
+        let payload = random_payload(rng, size_factor);
+        storage
+            .put_value(point_offset, &payload, hw_counter_ref)
+            .unwrap();
+    }
+
+    // Delete a few values to create gaps.
+    for &id in &[3u32, 17, 42, 88] {
+        storage.delete_value(id).unwrap();
+    }
+
+    // Build offsets including deleted points and out-of-range ones.
+    let mut offsets: Vec<u32> = (0..num_payloads).collect();
+    offsets.push(num_payloads + 5);
+    offsets.push(num_payloads + 100);
+    offsets.shuffle(rng);
+
+    let single_results: Vec<Option<Payload>> = offsets
+        .iter()
+        .map(|&o| storage.get_value::<Random>(o, &hw_counter).unwrap())
+        .collect();
+
+    let mut batch_results: Vec<Option<Payload>> = vec![None; offsets.len()];
+    storage
+        .read_values::<Random, _, GridstoreError>(
+            offsets.iter().copied().enumerate(),
+            |idx, _, value| {
+                batch_results[idx] = value;
+                Ok(())
+            },
+            hw_counter.payload_io_read_counter(),
+        )
+        .unwrap();
+
+    for (i, (single, batch)) in single_results.iter().zip(&batch_results).enumerate() {
+        assert_eq!(single, batch, "mismatch at idx {i} (offset {})", offsets[i]);
+    }
+}
+
+/// Regression: a value that is persisted on disk and then deleted in memory (a pending
+/// pointer-unset that hasn't been flushed) must read back as absent through *both* the single
+/// `get_value` path and the batched `read_values` path. The batched tracker lookup used to skip
+/// the `pending.current == None` case and fall through to the stale persisted pointer, so
+/// `read_values` resurrected the old value while `get_value` correctly reported it gone.
+#[test]
+fn test_batch_read_honors_pending_unset_of_flushed_value() {
+    let (_dir, mut storage) = empty_storage();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_write = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    // Write and FLUSH so the pointer is persisted on disk.
+    let payload = random_payload(rng, 3);
+    storage.put_value(0, &payload, hw_write).unwrap();
+    storage.flusher()().unwrap();
+
+    // Delete WITHOUT flushing: leaves a pending pointer-unset (`current == None`) over a
+    // persisted pointer — the exact precondition the batched read must respect.
+    storage.delete_value(0).unwrap();
+
+    let single = storage.get_value::<Random>(0, &hw_counter).unwrap();
+    assert_eq!(single, None, "single get must see the pending delete");
+
+    let mut batch = [Some(Payload::default())];
+    storage
+        .read_values::<Random, _, GridstoreError>(
+            std::iter::once((0usize, 0u32)),
+            |idx, _, value| {
+                batch[idx] = value;
+                Ok(())
+            },
+            hw_counter.payload_io_read_counter(),
+        )
+        .unwrap();
+    assert_eq!(
+        batch[0], None,
+        "batched read must also see the pending delete, not the stale persisted value",
+    );
+}
+
+/// Opening a [`GridstoreReader`] must not require a writable backend: a reader
+/// only reads. Backing it with the write-enforced `ReadOnly<MmapFile>` (which
+/// `debug_assert!`s every open is non-writable) only succeeds if the reader
+/// opens its pages and tracker read-only.
+#[test]
+fn read_only_reader_over_write_enforced_backend() {
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+
+    let hw_counter = HardwareCounterCell::new();
+
+    // Build a writable gridstore, write one value, flush, then drop it.
+    let (dir, mut storage) = empty_storage();
+    let mut payload = Payload::default();
+    payload
+        .0
+        .insert("k".to_string(), serde_json::Value::String("v".to_string()));
+    storage
+        .put_value(0, &payload, hw_counter.ref_payload_io_write_counter())
+        .unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Reopen read-only over the write-enforced backend.
+    type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let reader =
+        GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(&fs, dir.path().to_path_buf())
+            .unwrap();
+
+    let stored = reader.get_value::<Random>(0, &hw_counter).unwrap();
+    assert_eq!(stored, Some(payload));
 }

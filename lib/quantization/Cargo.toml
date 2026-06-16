@@ -64,3 +64,7 @@ harness = false
 [[bench]]
 name = "turboquant"
 harness = false
+
+[[bench]]
+name = "turbo_simd"
+harness = false

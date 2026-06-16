@@ -220,6 +220,7 @@ async fn test_scroll_dedup() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_retrieve_dedup() {
     let collection = fixture().await;
 
@@ -252,6 +253,7 @@ async fn test_retrieve_dedup() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 async fn test_search_dedup() {
     let collection = fixture().await;
 

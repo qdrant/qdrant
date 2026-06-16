@@ -38,10 +38,11 @@ def test_upserts_in_recovery_mode(tmp_path: pathlib.Path):
         "QDRANT__STORAGE__RECOVERY_MODE": "Custom recovery msg"
     }
     p = processes.pop()
+    restart_port = p.p2p_port
     p.kill()
     peer_api_uris[-1] = start_peer(
         peer_dirs[-1], f"peer_{N_PEERS}_restarted.log", bootstrap_uri,
-        extra_env=extra_env
+        port=restart_port, extra_env=extra_env
     )
 
     # Qdrant loads a dummy shard but doesn't try to recover it from other replicas by default

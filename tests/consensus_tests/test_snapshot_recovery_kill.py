@@ -7,15 +7,7 @@ import requests
 
 from .assertions import assert_http_ok
 from .fixtures import create_collection, upsert_random_points
-from .utils import (
-    assert_project_root,
-    every_test,
-    processes,
-    start_cluster,
-    start_peer,
-    wait_collection_exists_and_active_on_all_peers,
-    wait_for_peer_online, get_uri,
-)
+from .utils import *
 
 COLLECTION = "test_collection"
 
@@ -68,7 +60,7 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
         "QDRANT__STAGING__SNAPSHOT_RECOVERY_DELAY": "5.0",
     }
 
-    peer_urls, peer_dirs, bootstrap = start_cluster(tmp_path, 3, port_seed=23000, extra_env=env)
+    peer_urls, peer_dirs, bootstrap = start_cluster(tmp_path, 3, extra_env=env)
     create_collection(peer_urls[0], shard_number=3, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION, peer_api_uris=peer_urls)
     upsert_random_points(peer_urls[0], 10_000, batch_size=100)
@@ -80,7 +72,6 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
     # Kill target peer
     recovery_url = peer_urls[2]
     recovery_dir = Path(peer_dirs[2])
-    recovery_port = processes[2].http_port
 
     monitor = PartialMonitor(recovery_url)
     monitor.start()
@@ -96,7 +87,7 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
         pytest.fail("Partial state not detected")
 
     # Restart again
-    restarted = start_peer(recovery_dir, "peer_restarted.log", bootstrap, port=recovery_port, extra_env=env)
+    restarted = start_peer(recovery_dir, "peer_restarted.log", bootstrap, extra_env=env)
 
     # This checks `/readyz` which is supposed to return 200, as there will be no automatic recovery
     wait_for_peer_online(restarted)

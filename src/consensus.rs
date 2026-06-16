@@ -1483,7 +1483,6 @@ mod tests {
     use tempfile::Builder;
 
     use super::Consensus;
-    use crate::common::helpers::create_general_purpose_runtime;
     use crate::settings::ConsensusConfig;
 
     #[test]
@@ -1493,24 +1492,12 @@ mod tests {
         let mut settings = crate::Settings::new(None).expect("Can't read config.");
         settings.storage.storage_path = storage_dir.path().to_path_buf();
         tracing_subscriber::fmt::init();
-        let search_runtime =
-            crate::create_search_runtime(settings.storage.performance.max_search_threads)
-                .expect("Can't create search runtime.");
-        let update_runtime =
-            crate::create_update_runtime(settings.storage.performance.max_search_threads)
-                .expect("Can't create update runtime.");
-        let general_runtime =
-            create_general_purpose_runtime().expect("Can't create general purpose runtime.");
-        let handle = general_runtime.handle().clone();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
             Persistent::load_or_init(&settings.storage.storage_path, true, false, None).unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            search_runtime,
-            update_runtime,
-            general_runtime,
             ResourceBudget::default(),
             ChannelService::new(
                 settings.service.http_port,
@@ -1522,6 +1509,7 @@ mod tests {
             Some(operation_sender.clone()),
         )
         .unwrap();
+        let handle = toc.general_runtime_handle().clone();
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
@@ -1576,7 +1564,7 @@ mod tests {
 
         // When
 
-        // New runtime is used as timers need to be enabled.
+        // `handle` is the TOC general runtime (same as passed into `Consensus::new`).
         handle
             .block_on(
                 dispatcher.submit_collection_meta_op(

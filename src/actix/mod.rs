@@ -246,18 +246,28 @@ fn validation_error_handler(
                 }
             )
         }
-        actix_web_validator::Error::JsonPayloadError(
-            actix_web::error::JsonPayloadError::Deserialize(err),
-        ) => {
-            format!("Format error in {name}: {err}",)
+        actix_web_validator::Error::JsonPayloadError(err) =>
+        {
+            #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
+            match err {
+                actix_web::error::JsonPayloadError::Deserialize(err) => {
+                    format!("Format error in {name}: {err}")
+                }
+                _ => err.to_string(),
+            }
         }
-        err => err.to_string(),
+        actix_web_validator::Error::UrlEncodedError(_) | actix_web_validator::Error::QsError(_) => {
+            err.to_string()
+        }
     };
 
     // Build fitting response
     let response = match &err {
         actix_web_validator::Error::Validate(_) => HttpResponse::UnprocessableEntity(),
-        _ => HttpResponse::BadRequest(),
+        actix_web_validator::Error::Deserialize(_)
+        | actix_web_validator::Error::JsonPayloadError(_)
+        | actix_web_validator::Error::UrlEncodedError(_)
+        | actix_web_validator::Error::QsError(_) => HttpResponse::BadRequest(),
     }
     .json(ApiResponse::<()> {
         result: None,

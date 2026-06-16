@@ -12,7 +12,7 @@ edition = "2024"
 workspace = true
 
 [features]
-testing = []
+testing = ["common/testing", "segment/testing", "shard/testing"]
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 data-consistency-check = []
 staging = ["shard/staging"]
@@ -46,7 +46,7 @@ rmp-serde = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
 tinyvec = { workspace = true }
-siphasher = "1.0.2"
+siphasher = "1.0.3"
 smallvec = { workspace = true }
 count-min-sketch = "0.1.8"
 
@@ -95,7 +95,7 @@ tracing = { workspace = true, optional = true }
 fs4 = { workspace = true }
 
 # AWS S3 support
-object_store = { version = "0.13.2", features = ["aws"] }
+object_store = { workspace = true }
 
 
 [[bench]]

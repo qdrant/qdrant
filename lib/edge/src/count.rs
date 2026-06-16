@@ -25,7 +25,7 @@ impl EdgeShard {
                         filter.as_ref(),
                         &AtomicBool::new(false),
                         &HardwareCounterCell::disposable(),
-                        DeferredBehavior::Exclude,
+                        DeferredBehavior::VisibleOnly,
                     )
                 })
                 .process_results(|iter| iter.flatten().count())?

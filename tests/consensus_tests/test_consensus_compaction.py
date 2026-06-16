@@ -1,7 +1,6 @@
 import io
 import pathlib
 import shutil
-from time import sleep
 from typing import Any
 
 import requests
@@ -12,7 +11,6 @@ from .utils import *
 N_PEERS = 3
 N_REPLICA = 1
 N_SHARDS = 1
-CONSENSUS_WAIT_SECONDS = 0.5
 
 
 def test_consensus_compaction(tmp_path: pathlib.Path):
@@ -30,7 +28,7 @@ def test_consensus_compaction(tmp_path: pathlib.Path):
     }
 
     # Start cluster
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000, extra_env=env)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
@@ -55,7 +53,7 @@ def test_consensus_compaction(tmp_path: pathlib.Path):
     # Add extra node
     # Due to aggressive consensus WAL compaction, the peer has to join by consensus snapshot
     peer_dirs.append(make_peer_folder(tmp_path, N_PEERS))
-    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, port=21000, extra_env=env)
+    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, extra_env=env)
     peer_api_uris.append(new_url)
 
     # Wait for collection to be ready on the new peer
@@ -93,7 +91,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     }
 
     # Start cluster
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000, extra_env=env)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, sharding_method="custom")
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
@@ -121,7 +119,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     # Add extra node
     # Due to aggressive consensus WAL compaction, the peer has to join by consensus snapshot
     peer_dirs.append(make_peer_folder(tmp_path, N_PEERS))
-    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, port=21000, extra_env=env)
+    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, extra_env=env)
     peer_api_uris.append(new_url)
     wait_all_peers_up([new_url])
 
@@ -153,11 +151,18 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
     # Start cluster
     peers, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
 
+    # Wait until all peers have been promoted from learner to voter, so killing
+    # the last peer leaves a 2-of-3 voter quorum. Otherwise the survivors may
+    # be {leader voter, learner} and consensus stalls.
+    wait_for(all_peers_are_voters, peers)
+
     # Get last peer ID
     last_peer_id = get_cluster_info(peers[-1])['peer_id']
 
     # Kill last peer
-    processes.pop().kill()
+    p = processes.pop()
+    restart_port = p.p2p_port
+    p.kill()
 
     # Bootstrap collection
     create_collection(peers[0], shard_number=3, replication_factor=replication_factor)
@@ -166,7 +171,7 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
     upsert_random_points(peers[0], 1000, fail_on_error=False)
 
     # Restart last peer
-    peers[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri)
+    peers[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, port=restart_port)
     wait_for_peer_online(peers[-1])
 
     # Wait for last peer recovery
@@ -176,16 +181,25 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
 def put_metadata_key(peer_uris: list[str], key: str, value: Any):
     resp = requests.put(f"{peer_uris[0]}/cluster/metadata/keys/{key}?wait=true", json=value)
     assert_http_ok(resp)
-    sleep(CONSENSUS_WAIT_SECONDS)
     assert_consistent_metadata_key(peer_uris, key, value)
+
+
+def peer_has_metadata_key(peer_uri: str, key: str, expected_value: Any) -> bool:
+    resp = requests.get(f"{peer_uri}/cluster/metadata/keys/{key}")
+    assert_http_ok(resp)
+    return resp.json()['result'] == expected_value
 
 
 def assert_consistent_metadata_key(peer_uris: list[str], key: str, expected_value: Any):
     for peer_id, peer_uri in enumerate(peer_uris):
-        resp = requests.get(f"{peer_uri}/cluster/metadata/keys/{key}")
-        assert_http_ok(resp)
-        peer_key_value = resp.json()['result']
-        assert peer_key_value == expected_value, f"incorrect metadata key value for peers[{peer_id}] '{peer_uri}' - expected '{expected_value}' but got '{peer_key_value}'"
+        try:
+            wait_for(peer_has_metadata_key, peer_uri, key, expected_value)
+        except Exception:
+            resp = requests.get(f"{peer_uri}/cluster/metadata/keys/{key}")
+            peer_key_value = resp.json().get('result') if resp.ok else None
+            raise AssertionError(
+                f"incorrect metadata key value for peers[{peer_id}] '{peer_uri}' - expected '{expected_value}' but got '{peer_key_value}'"
+            )
 
 
 def check_shard_keys(peer_uris: list[str], collection_name: str, shard_keys: dict[int, Any]):

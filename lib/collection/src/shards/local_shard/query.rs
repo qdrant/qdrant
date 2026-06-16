@@ -14,11 +14,11 @@ use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use shard::query::planned_query::RescoreStages;
 use shard::search::CoreSearchRequestBatch;
-use tokio::runtime::Handle;
 
 use super::LocalShard;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, QueryScrollRequestInternal, ScrollOrder,
 };
@@ -60,7 +60,7 @@ impl LocalShard {
     pub async fn do_planned_query(
         &self,
         request: PlannedQuery,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -136,7 +136,7 @@ impl LocalShard {
                 &self.search_runtime,
                 timeout,
                 hw_measurement_acc,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             ),
         )
         .await
@@ -167,7 +167,7 @@ impl LocalShard {
         &self,
         root_plan: RootPlan,
         prefetch_holder: &PrefetchResults,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -204,7 +204,7 @@ impl LocalShard {
         &'a self,
         merge_plan: MergePlan,
         prefetch_holder: &'a PrefetchResults,
-        search_runtime_handle: &'a Handle,
+        search_runtime_handle: &'a AdaptiveSearchHandle,
         timeout: Duration,
         depth: usize,
         hw_counter_acc: HwMeasurementAcc,
@@ -288,7 +288,7 @@ impl LocalShard {
         &self,
         sources: Vec<Vec<ScoredPoint>>,
         rescore_params: RescoreParams,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -456,7 +456,7 @@ impl LocalShard {
         sources: Vec<Vec<ScoredPoint>>,
         mmr: MmrInternal,
         limit: usize,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {

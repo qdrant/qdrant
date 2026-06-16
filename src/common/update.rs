@@ -24,13 +24,14 @@ use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, Auth};
+use storage::rbac::{Access, AccessRequirements, Auth};
 use validator::Validate;
 
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
+use crate::common::validate_vectors::validate_vector_dimensions;
 
 #[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
@@ -322,6 +323,13 @@ pub async fn do_upsert_points(
     use point_ops::UpdateMode;
     use segment::types::Filter;
 
+    // The REST handler already runs this via `actix_web_validator::Json`, but the
+    // gRPC handler does not — without this, empty vectors entering through gRPC
+    // would only be rejected on the synchronous (wait=true) apply path.
+    operation
+        .validate()
+        .map_err(|err| StorageError::bad_input(err.to_string()))?;
+
     let toc = toc_provider
         .check_strict_mode(
             &operation,
@@ -358,6 +366,18 @@ pub async fn do_upsert_points(
             (operation, shard_key, usage, update_filter, update_mode)
         }
     };
+
+    // Validate vector dimensions early, before writing to WAL.
+    // This ensures that dimension mismatches are reported even for async (wait=false) operations,
+    // rather than being silently discarded during background processing.
+    {
+        let collection_pass = auth
+            .unlogged_access()
+            .check_collection_access(&collection_name, AccessRequirements::new())?;
+        let collection = toc.get_collection(&collection_pass).await?;
+        let vectors_config = collection.vectors_config().await;
+        validate_vector_dimensions(&operation, &vectors_config)?;
+    }
 
     // Decide which operation to use based on update_filter and update_mode
     let operation = match (update_filter, update_mode) {
@@ -1217,8 +1237,12 @@ pub async fn update(
     let UpdateParams {
         wait,
         ordering,
-        timeout: _,
+        timeout,
     } = params;
+
+    // Default missing timeout to the inter-node update timeout so REST/gRPC
+    // user requests can't wait indefinitely on a vanished client.
+    let timeout = timeout.or_else(|| Some(toc.get_channel_service().request_timeout()));
 
     // Use wait_override if present, otherwise fall back to the wait boolean
     let wait =
@@ -1270,7 +1294,7 @@ pub async fn update(
         collection_name,
         OperationWithClockTag::new(operation, clock_tag),
         wait,
-        params.timeout,
+        timeout,
         ordering,
         shard_selector,
         auth,

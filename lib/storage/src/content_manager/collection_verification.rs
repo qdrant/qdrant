@@ -2,8 +2,8 @@ use std::iter;
 use std::sync::Arc;
 
 use collection::operations::verification::{
-    StrictModeVerification, VerificationPass, check_resident_memory, check_search_batch_size,
-    check_timeout, new_unchecked_verification_pass,
+    StrictModeVerification, VerificationPass, check_disk_usage, check_resident_memory,
+    check_search_batch_size, check_timeout, new_unchecked_verification_pass,
 };
 
 use super::errors::StorageError;
@@ -59,6 +59,15 @@ where
 
         if any_consumes_memory {
             check_resident_memory(strict_mode_config, ::common::memory_usage::resident_bytes)?;
+            // Disk usage shares the same op set as memory: anything that
+            // writes new bytes (upsert, set/overwrite payload, update vectors)
+            // can also fill the disk, while deletes free it. The reader is
+            // TTL-cached (5s) so high-RPS request paths don't hammer
+            // `statvfs` — both checks run cheaply on the hot path.
+            let storage_path = toc.storage_path().to_path_buf();
+            check_disk_usage(strict_mode_config, || {
+                ::common::disk_usage::disk_usage(&storage_path)
+            })?;
         }
 
         if let Some(timeout) = timeout {

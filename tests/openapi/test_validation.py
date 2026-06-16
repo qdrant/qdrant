@@ -1,7 +1,9 @@
 import pytest
+import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
+from .helpers.settings import QDRANT_HOST
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -53,6 +55,24 @@ def test_validation_body_param(collection_name):
     assert 'hnsw_config.ef_construct' in response.json()["status"]["error"]
 
 
+def test_validation_search_hnsw_ef_zero(collection_name):
+    # HNSW search ef must be a positive beam size.
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 3,
+            "params": {"hnsw_ef": 0},
+        }
+    )
+    assert not response.ok
+    error = response.json()["status"]["error"]
+    assert 'Validation error' in error
+    assert 'hnsw_ef' in error
+
+
 def test_validation_query_param(collection_name):
     # Illegal URL parameters must trigger a validation error
     response = request_with_validation(
@@ -70,3 +90,141 @@ def test_validation_query_param(collection_name):
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
     assert 'timeout: value 0 invalid' in response.json()["status"]["error"]
+
+
+# Regression: two sibling validation errors used to panic
+# `common::validation::validate_iter` (validator's internal `add_nested` panics
+# on a second insert under the same key), surfacing as a dropped connection
+# instead of a 4xx. Length-mismatched sparse vectors with non-empty indices
+# fail validation without short-circuiting `VectorStruct::is_empty`.
+
+_INVALID_SPARSE = {"indices": [0, 1], "values": [0.0]}
+
+
+def test_validation_iter_named_vectors(collection_name):
+    # Hits VectorStruct::Named -> validate_iter (lib/api/src/rest/schema.rs).
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {"a": _INVALID_SPARSE, "b": _INVALID_SPARSE},
+                }
+            ],
+        },
+    )
+    assert not response.ok
+    assert 'Validation error' in response.json()["status"]["error"]
+
+
+def test_validation_iter_batch_named_vectors(collection_name):
+    # Hits BatchVectorStruct::Named -> validate_iter (lib/api/src/rest/validate.rs).
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/batch',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "operations": [
+                {
+                    "upsert": {
+                        "batch": {
+                            "ids": [1, 2],
+                            "vectors": {"a": [_INVALID_SPARSE, _INVALID_SPARSE]},
+                        }
+                    }
+                }
+            ]
+        },
+    )
+    assert not response.ok
+    assert 'Validation error' in response.json()["status"]["error"]
+
+
+# Regression for https://github.com/qdrant/qdrant/issues/9045
+#
+# Upserting an empty vector `[]` is rejected on the synchronous (`wait=true`)
+# path but silently accepted on the asynchronous path: the response is HTTP 200
+# `acknowledged`, the point is later discarded, and the zero-length vector can
+# reach internal code paths that assert on non-zero length (see #7967).
+@pytest.mark.parametrize("wait", ["true", "false"])
+def test_validation_empty_vector_upsert(collection_name, wait):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': wait},
+        body={"points": [{"id": 1000, "vector": []}]},
+    )
+    assert not response.ok, (
+        f"empty vector accepted with wait={wait}: "
+        f"status={response.status_code}, body={response.text}"
+    )
+
+
+@pytest.mark.parametrize("wait", ["true", "false"])
+def test_validation_empty_vector_batch_upsert(collection_name, wait):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/batch',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': wait},
+        body={
+            "operations": [
+                {"upsert": {"points": [{"id": 1001, "vector": []}]}},
+            ],
+        },
+    )
+    assert not response.ok, (
+        f"empty vector accepted in batch upsert with wait={wait}: "
+        f"status={response.status_code}, body={response.text}"
+    )
+
+
+# Regression for https://github.com/qdrant/qdrant/issues/9149
+#
+# `shard_number`, `replication_factor`, and `write_consistency_factor` must be
+# at least 1. Bypasses `request_with_validation` (which short-circuits on the
+# client-side OpenAPI minimum) so the server-side `Validate` derive is what
+# actually rejects the request — that's the contract we care about.
+@pytest.mark.parametrize(
+    "field",
+    ["shard_number", "replication_factor", "write_consistency_factor"],
+)
+def test_validation_positive_integer_zero(field):
+    name = f"test_validation_{field}_zero"
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{name}",
+        json={
+            "vectors": {"size": 4, "distance": "Dot"},
+            field: 0,
+        },
+    )
+    assert response.status_code == 422, (
+        f"expected 422 for {field}=0, got {response.status_code}: {response.text}"
+    )
+    assert field in response.json()["status"]["error"]
+
+
+# Negative integers can't fit in `u32`, so serde rejects them at deserialization
+# (HTTP 400) before the `Validate` derive runs — different status, same outcome.
+@pytest.mark.parametrize(
+    "field",
+    ["shard_number", "replication_factor", "write_consistency_factor"],
+)
+def test_validation_positive_integer_negative(field):
+    name = f"test_validation_{field}_neg"
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{name}",
+        json={
+            "vectors": {"size": 4, "distance": "Dot"},
+            field: -1,
+        },
+    )
+    assert response.status_code == 400, (
+        f"expected 400 for {field}=-1, got {response.status_code}: {response.text}"
+    )

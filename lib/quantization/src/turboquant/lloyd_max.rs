@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::turboquant::TQBits;
 
 /// 1-bit (2 centroids): Lloyd-Max for N(0,1)
@@ -36,7 +34,7 @@ impl TQBits {
     pub fn get_centroids(&self) -> &'static [f32] {
         match self {
             TQBits::Bits1 => &CENTROIDS_1BIT,
-            TQBits::Bits1_5 => unimplemented!("1.5Bit not yet implemented"),
+            TQBits::Bits1_5 => &CENTROIDS_1BIT,
             TQBits::Bits2 => &CENTROIDS_2BIT,
             TQBits::Bits4 => &CENTROIDS_4BIT,
         }
@@ -50,7 +48,7 @@ impl TQBits {
     pub fn get_centroid_boundaries(&self) -> &'static [f32] {
         match self {
             TQBits::Bits1 => &CENTROIDS_1BIT_BOUNDARIES,
-            TQBits::Bits1_5 => unimplemented!("1.5Bit not yet implemented"),
+            TQBits::Bits1_5 => &CENTROIDS_1BIT_BOUNDARIES,
             TQBits::Bits2 => &CENTROIDS_2BIT_BOUNDARIES,
             TQBits::Bits4 => &CENTROIDS_4BIT_BOUNDARIES,
         }
@@ -60,26 +58,11 @@ impl TQBits {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::turboquant::math::std_normal_cdf;
 
     /// Standard normal PDF: φ(x) = exp(-x²/2) / √(2π).
     fn std_normal_pdf(x: f64) -> f64 {
         (-0.5 * x * x).exp() / (2.0 * std::f64::consts::PI).sqrt()
-    }
-
-    /// Approximate error function (Abramowitz & Stegun 7.1.26, max error 1.5e-7).
-    fn erf_approx(x: f64) -> f64 {
-        let a = x.abs();
-        let t = 1.0 / (1.0 + 0.3275911 * a);
-        let poly = t
-            * (0.254829592
-                + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-        let result = 1.0 - poly * (-a * a).exp();
-        if x >= 0.0 { result } else { -result }
-    }
-
-    /// Standard normal CDF: Φ(x) = (1 + erf(x/√2)) / 2.
-    fn std_normal_cdf(x: f64) -> f64 {
-        0.5 * (1.0 + erf_approx(x / std::f64::consts::SQRT_2))
     }
 
     /// Approximate inverse of the standard normal CDF (Abramowitz & Stegun 26.2.23).

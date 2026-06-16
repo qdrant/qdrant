@@ -37,6 +37,15 @@ impl Collection {
         self.update_all_local(operation, WaitUntil::from(false), hw_acc, true)
             .await?;
 
+        // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
+        // new vector schema. Otherwise optimization-built destination segments use the
+        // stale dim and panic on dim mismatch when copying from sources with the new dim.
+        //
+        // Done in the background: this path is reached from consensus, where blocking can stall the
+        // whole cluster. The refresh itself is unchanged - it already ran on a spawned task either
+        // way - so this does not widen the window in which the stale config is in effect.
+        self.recreate_optimizers_background();
+
         Ok(())
     }
 
@@ -58,6 +67,14 @@ impl Collection {
             true, // Delete even in dead shards
         )
         .await?;
+
+        // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the
+        // removed vector. Without this, optimization keeps allocating storage for it
+        // using the old config.
+        //
+        // Done in the background: this path is reached from consensus, where blocking can stall the
+        // whole cluster.
+        self.recreate_optimizers_background();
 
         Ok(())
     }
@@ -226,5 +243,6 @@ fn storage_datatype_to_collection(
             crate::operations::types::Datatype::Float16
         }
         segment::types::VectorStorageDatatype::Uint8 => crate::operations::types::Datatype::Uint8,
+        segment::types::VectorStorageDatatype::Turbo4 => crate::operations::types::Datatype::Turbo4,
     }
 }

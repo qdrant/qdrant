@@ -4,6 +4,7 @@
 //! The collection layer provides the strategy via `OptimizationStrategy`.
 
 use std::collections::HashSet;
+use std::debug_assert_matches;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -13,6 +14,7 @@ use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
+use common::fs::safe_delete_with_suffix;
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
@@ -20,7 +22,7 @@ use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{OperationResult, check_process_stopped};
+use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -34,8 +36,8 @@ use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
 use crate::proxy_segment::{
-    DeletedPoints, IntendedVector, ProxyIndexChange, ProxyIndexChanges, ProxySegment,
-    ProxyVectorNameChanges,
+    DeletedPoints, IntendedVector, ProxyIndexChange, ProxyIndexChanges, ProxyVectorNameChanges,
+    UnsyncedProxySegment,
 };
 use crate::segment_holder::SegmentId;
 use crate::segment_holder::locked::LockedSegmentHolder;
@@ -101,6 +103,30 @@ pub fn unwrap_proxy(
         }
     }
     Ok(())
+}
+
+/// Remove a partially-built optimized segment left on disk when optimization is cancelled.
+///
+/// `SegmentBuilder::build` already renamed the new segment into `segments_path`, and dropping the
+/// in-memory `Segment` only releases resources without deleting the directory (deletion is the
+/// explicit `drop_data`). A graceful cancellation always happens before the segment is swapped
+/// into the holder, so it is never live at this point and is safe to delete. Best-effort: failures
+/// are logged, not propagated, so they can't mask the original cancellation error.
+///
+/// Note: this in-process cleanup is not crash safe. If the process dies between `build` and this
+/// call, the orphaned segment directory is left on disk and must be reclaimed on restart instead.
+/// See https://github.com/qdrant/qdrant/pull/9217#pullrequestreview-4381966021
+fn cleanup_cancelled_optimized_segment(segments_path: &Path, output_segment_uuid: Uuid) {
+    let orphan_path = segments_path.join(output_segment_uuid.to_string());
+    if !orphan_path.exists() {
+        return;
+    }
+    if let Err(err) = safe_delete_with_suffix(&orphan_path) {
+        log::warn!(
+            "Failed to remove cancelled optimized segment at {}: {err}",
+            orphan_path.display(),
+        );
+    }
 }
 
 /// Accumulates approximate set of points deleted in a given set of proxies
@@ -726,7 +752,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     let mut proxies = Vec::new();
     for sg in input_segments.iter() {
-        let proxy = ProxySegment::new(sg.clone());
+        let proxy = UnsyncedProxySegment::new(sg.clone());
         // Wrapped segment is fresh, so it has no operations
         // Operation with number 0 will be applied
         if let Some(extra_cow_segment) = &extra_cow_segment_opt {
@@ -760,10 +786,20 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // Also helps to ensure the delete propagation behavior in
             // `optimize_segment_propagate_changes` remains  sound.
             // See: <https://github.com/qdrant/qdrant/pull/7208>
-            debug_assert!(
-                matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
-                "during optimization, wrapped segment must not be another proxy segment"
+            debug_assert_matches!(
+                proxy.wrapped_segment(),
+                LockedSegment::Original(_),
+                "during optimization, wrapped segment must not be another proxy segment",
             );
+
+            // Now that this write lock froze the wrapped segment, finalize the proxy: this syncs
+            // `deleted_mask` from the (now immutable) segment. An upsert/delete could have raced
+            // onto the still-appendable wrapped segment between `UnsyncedProxySegment::new` and
+            // this lock; syncing here makes the mask cover the segment's full final point range —
+            // otherwise a
+            // point inserted in that window sits past the mask and scored search treats it as
+            // deleted. The type-state guarantees this happens exactly once and cannot be skipped.
+            let proxy = proxy.finalize();
 
             // replicate_field_indexes for the second time,
             // because optimized segments could have been changed.
@@ -811,6 +847,13 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // Properly cancel optimization on all error kinds
             // Unwrap proxies and add temp segment to holder
             unwrap_proxy(&segment_holder, &proxy_ids)?;
+            // A graceful cancellation always happens before the optimized segment is swapped into
+            // the holder, so the segment `build` already moved into `segments_path` is now an
+            // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may
+            // occur after the swap, where the segment is live, so they are left untouched.
+            if matches!(err, OperationError::Cancelled { .. }) {
+                cleanup_cancelled_optimized_segment(&paths.segments_path, output_segment_uuid);
+            }
             return Err(err);
         }
     };
@@ -831,6 +874,13 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // Properly cancel optimization on all error kinds
             // Unwrap proxies and add temp segment to holder
             unwrap_proxy(&segment_holder, &proxy_ids)?;
+            // A graceful cancellation always happens before the optimized segment is swapped into
+            // the holder, so the segment `build` already moved into `segments_path` is now an
+            // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may
+            // occur after the swap, where the segment is live, so they are left untouched.
+            if matches!(err, OperationError::Cancelled { .. }) {
+                cleanup_cancelled_optimized_segment(&paths.segments_path, output_segment_uuid);
+            }
             return Err(err);
         }
     };

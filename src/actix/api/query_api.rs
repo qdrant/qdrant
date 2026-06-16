@@ -28,7 +28,6 @@ use crate::settings::ServiceConfig;
 pub const THIS_FILE: &str = file!();
 
 #[post("/collections/{collection_name}/points/query")]
-#[allow(clippy::too_many_arguments)]
 async fn query_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -106,7 +105,6 @@ async fn query_points(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 #[post("/collections/{collection_name}/points/query/batch")]
 async fn query_points_batch(
     dispatcher: web::Data<Dispatcher>,
@@ -195,7 +193,6 @@ async fn query_points_batch(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 #[post("/collections/{collection_name}/points/query/groups")]
 async fn query_points_groups(
     dispatcher: web::Data<Dispatcher>,

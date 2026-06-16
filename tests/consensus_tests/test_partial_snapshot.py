@@ -180,7 +180,7 @@ def test_partial_snapshot_update_payload_index_schema(tmp_path: pathlib.Path):
 def test_partial_snapshot_recreate_payload_field_index(tmp_path: pathlib.Path):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1_000)
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1_000, wait_for_green=True)
 
     # Enable strict mode on read peer
     update_collection_parameters(read_peer, {

@@ -1,12 +1,75 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalRead, UniversalWrite};
 use roaring::RoaringBitmap;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
-use super::dynamic_mmap_flags::DynamicMmapFlags;
+use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+
+/// Shared read-only surface over a roaring-bitmap-backed flag set.
+///
+/// Implemented by both the writable [`RoaringFlags`] and the read-only
+/// [`ReadOnlyRoaringFlags`](super::read_only_roaring_flags::ReadOnlyRoaringFlags),
+/// so query logic (filter / cardinality / condition checks) can be written
+/// once and parameterized over either.
+pub trait RoaringFlagsRead {
+    /// Total length of the flags, including trailing falses.
+    fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Underlying in-memory roaring bitmap of "true" positions.
+    fn get_bitmap(&self) -> &RoaringBitmap;
+
+    fn get(&self, index: PointOffsetType) -> bool {
+        self.get_bitmap().contains(index)
+    }
+
+    fn iter_trues(&self) -> roaring::bitmap::Iter<'_> {
+        self.get_bitmap().iter()
+    }
+
+    fn iter_falses(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        // potential optimization:
+        //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
+        //      This will help by not checking the bitmap for indices that are already known to be false.
+        let len = self.len() as PointOffsetType;
+        let bitmap = self.get_bitmap();
+        Box::new((0..len).filter(move |i| !bitmap.contains(*i)))
+    }
+
+    fn count_trues(&self) -> usize {
+        self.get_bitmap().len() as usize
+    }
+
+    fn count_falses(&self) -> usize {
+        self.len().saturating_sub(self.count_trues())
+    }
+
+    /// Fill RAM cache with the backing file pages.
+    ///
+    /// Default: no-op (the bitmap is already in RAM after construction; only
+    /// backends that want to keep on-disk pages warm need to override).
+    fn populate(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    /// Drop disk cache for the backing file.
+    ///
+    /// Default: no-op (mirrors [`populate`][Self::populate] — variants that
+    /// hold everything in memory after open have no on-disk cache to drop).
+    fn clear_cache(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    /// Paths of the on-disk files backing this storage.
+    fn files(&self) -> Vec<PathBuf>;
+}
 
 /// A buffered, growable, and persistent bitslice with fast in-memory roaring bitmap.
 ///
@@ -15,9 +78,9 @@ use crate::common::operation_error::OperationResult;
 /// Changes are buffered until explicitly flushed.
 ///
 /// [1]: super::bitvec_flags::BitvecFlags
-pub struct RoaringFlags {
+pub struct RoaringFlags<S: UniversalRead> {
     /// Buffered persisted flags.
-    storage: BufferedDynamicFlags,
+    storage: BufferedDynamicFlags<S>,
 
     /// In-memory bitmap of true flags.
     // Potential optimization: add a secondary bitmap for false values for faster iter_falses implementation.
@@ -27,56 +90,53 @@ pub struct RoaringFlags {
     len: usize,
 }
 
-impl RoaringFlags {
-    pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
-        // load flags into memory
-        let bitmap = RoaringBitmap::from_sorted_iter(mmap_flags.iter_trues())
-            .expect("iter_trues iterates in sorted order");
-
-        if let Err(err) = mmap_flags.clear_cache() {
-            log::warn!("Failed to clear bitslice cache: {err}");
-        }
-
-        Self {
-            len: mmap_flags.len(),
-            storage: BufferedDynamicFlags::new(mmap_flags),
-            bitmap,
-        }
-    }
-
-    pub fn len(&self) -> usize {
+impl<S> RoaringFlagsRead for RoaringFlags<S>
+where
+    S: UniversalWrite + Send + 'static,
+    S::Fs: Send + Sync + 'static,
+{
+    fn len(&self) -> usize {
         self.len
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    pub fn get_bitmap(&self) -> &RoaringBitmap {
+    fn get_bitmap(&self) -> &RoaringBitmap {
         &self.bitmap
     }
 
-    pub fn get(&self, index: PointOffsetType) -> bool {
-        self.bitmap.contains(index)
+    fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            storage,
+            bitmap: _,
+            len: _,
+        } = self;
+        storage.clear_cache()?;
+        Ok(())
     }
 
-    pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> {
-        self.bitmap.iter()
+    fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
     }
+}
 
-    pub fn iter_falses(&self) -> impl Iterator<Item = PointOffsetType> {
-        // potential optimization:
-        //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
-        //      This will help by not checking the bitmap for indices that are already known to be false.
-        (0..self.len as PointOffsetType).filter(|&i| !self.bitmap.contains(i))
-    }
+impl<S> RoaringFlags<S>
+where
+    S: UniversalWrite + Send + 'static,
+    S::Fs: Send + Sync + 'static,
+{
+    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
+        // load flags into memory
+        let bitmap = RoaringBitmap::from_sorted_iter(dynamic_flags.iter_trues()?)
+            .expect("iter_trues iterates in sorted order");
 
-    pub fn count_trues(&self) -> usize {
-        self.bitmap.len() as usize
-    }
+        if let Err(err) = dynamic_flags.clear_cache() {
+            log::warn!("Failed to clear bitslice cache: {err}");
+        }
 
-    pub fn count_falses(&self) -> usize {
-        self.len.saturating_sub(self.count_trues())
+        Ok(Self {
+            len: dynamic_flags.len(),
+            storage: BufferedDynamicFlags::new(fs, dynamic_flags),
+            bitmap,
+        })
     }
 
     /// Set the value of a flag at the given index.
@@ -99,18 +159,21 @@ impl RoaringFlags {
         }
     }
 
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        let Self {
-            storage,
-            bitmap: _,
-            len: _,
-        } = self;
-        storage.clear_cache()?;
-        Ok(())
-    }
+    /// Set the value of a flag at the given index without changing the underlying storage.
+    /// Returns the previous value of the flag.
+    pub fn set_immutable(&mut self, index: PointOffsetType, value: bool) -> bool {
+        // update length if needed
+        let index_usize = index as usize;
+        if index_usize >= self.len {
+            self.len = index_usize + 1;
+        }
 
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.storage.files()
+        // update bitmap
+        if value {
+            !self.bitmap.insert(index)
+        } else {
+            self.bitmap.remove(index)
+        }
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -118,12 +181,21 @@ impl RoaringFlags {
     }
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
+#[duplicate::duplicate_item(
+    tests_mod       S               Fs              cfg_predicate;
+    [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];
+    [tests_uring]   [IoUringFile]   [IoUringFs]     [cfg(target_os = "linux")];
+)]
+#[cfg_predicate]
 #[cfg(test)]
-mod tests {
+mod tests_mod {
     use common::types::PointOffsetType;
+    #[cfg_predicate]
+    use common::universal_io::{Fs, S};
 
-    use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
-    use crate::common::flags::roaring_flags::RoaringFlags;
+    use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
+    use crate::common::flags::roaring_flags::{RoaringFlags, RoaringFlagsRead};
 
     #[test]
     fn test_roaring_flags_consistency_after_persistence() {
@@ -134,8 +206,9 @@ mod tests {
 
         // Create and update flags
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            let mut roaring_flags = RoaringFlags::new(mmap_flags);
+            let dynamic_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            let mut roaring_flags = RoaringFlags::new(Fs::default(), dynamic_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
             for i in 16..20 {
@@ -154,8 +227,9 @@ mod tests {
 
         // Verify bitmap consistency after reload
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let roaring_flags = RoaringFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let roaring_flags = RoaringFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Verify iteration consistency after reload
             let iter_trues: Vec<_> = roaring_flags.iter_trues().collect();

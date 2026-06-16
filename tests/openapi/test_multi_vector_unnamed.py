@@ -148,7 +148,11 @@ def test_multi_vector_validation(collection_name):
         }
     )
     assert not response.ok
-    assert 'Wrong input' in response.json()["status"]["error"]
+    # `VectorStruct` is an untagged enum with `Single` listed before
+    # `MultiDense`, so `[]` deserializes as an empty single dense vector and is
+    # rejected at the validation boundary rather than by the dimension check
+    # during apply.
+    assert 'Validation error' in response.json()["status"]["error"]
 
     # fails because it uses an empty inner vector
     response = request_with_validation(

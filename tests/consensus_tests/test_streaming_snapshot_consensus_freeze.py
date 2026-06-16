@@ -21,14 +21,7 @@ import requests
 
 os.environ.setdefault("PYTEST_CURRENT_TEST", "test_streaming_snapshot_consensus_freeze")
 
-from .utils import (
-    assert_http_ok,
-    assert_project_root,
-    get_collection_cluster_info,
-    start_cluster,
-    wait_for,
-    check_collection_green,
-)
+from .utils import *
 
 COLLECTION = "consensus_freeze_repro"
 NUM_POINTS = 50_000
@@ -130,14 +123,16 @@ def start_slow_downloads(peer_uri, shard_id, stop_event, n=2):
     deadline = time.time() + 15
     for r in results:
         while time.time() < deadline:
-            if r.get("phase") in ("streaming", "done", "error", "stopped"):
+            if r.get("phase") in ("done", "error", "stopped"):
+                break
+            if r.get("phase") == "streaming" and r.get("bytes", 0) > 0:
                 break
             time.sleep(0.2)
 
     for i, r in enumerate(results):
         print(f"  Download {i}: phase={r.get('phase')}, bytes={r.get('bytes', 0)}")
     streaming = sum(1 for r in results if r.get("phase") == "streaming" and r.get("bytes", 0) > 0)
-    assert streaming > 0, f"No downloads streaming: {results}"
+    assert streaming > 0, f"No downloads actively streaming: {[{k: r.get(k) for k in ('phase', 'bytes', 'error')} for r in results]}"
     return results, threads
 
 

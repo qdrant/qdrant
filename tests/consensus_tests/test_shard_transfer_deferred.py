@@ -110,13 +110,17 @@ def trigger_upsert_wait_true(source_uri, total_points):
     The config change (enabling optimizers) propagates through Raft and restarts
     the update workers, cancelling the old worker's deferred wait loop. Retries
     handle the transition period where the old worker may return wait_timeout.
+
+    A `timeout` query parameter is set so the server reports per-shard
+    wait_timeout in the response body (HTTP 200) instead of converting it
+    into a top-level 408 error — see point_ops.rs `is_user_timeout`.
     """
     for attempt in range(10):
         try:
             r = requests.put(
-                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true&timeout=10",
                 json={"points": make_points(total_points + 1, 1)},
-                timeout=30,
+                timeout=60,
             )
         except requests.exceptions.ReadTimeout:
             # Server still processing, retry — the update is durably applied regardless
@@ -195,13 +199,15 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     except requests.exceptions.ReadTimeout:
         pass  # Expected: server blocks forever, client times out
 
-    # This must happen before the transfer because stream_records uses wait=true
-    # internally on the last batch, which would hang with disabled optimizers.
-    # For snapshot, the update worker must also not be blocked on deferred points
-    # for the snapshot to proceed.
-    update_collection_config(source_uri, {
-        "optimizers_config": {"max_optimization_threads": "auto"},
-    })
+    # stream_records uses wait=true internally on the last batch, which would
+    # hang with disabled optimizers — enable them before the transfer.
+    # For snapshot we keep optimizers disabled so deferred state is preserved
+    # on the wire; otherwise the optimizer races ahead and indexes the segment
+    # before it's captured, defeating the point of this test.
+    if transfer_method == "stream_records":
+        update_collection_config(source_uri, {
+            "optimizers_config": {"max_optimization_threads": "auto"},
+        })
 
     src_info = get_collection_cluster_info(source_uri, COLLECTION_NAME)
     dst_info = get_collection_cluster_info(target_uri, COLLECTION_NAME)
@@ -233,12 +239,8 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     )
 
     # Verify deferred points were transferred: target should have hidden points.
-    # For snapshot, the target gets a raw segment copy preserving deferred state.
-    # The optimizer is enabled before the transfer (required to unblock the plunger
-    # and for stream_records' internal wait=true), so the exact visible count may
-    # differ from the pre-optimizer measurement due to the optimizer racing with
-    # the snapshot. The key invariant is that the target still has deferred points
-    # (not all points are visible yet).
+    # For snapshot, the target gets a raw segment copy preserving deferred state,
+    # so visible count on target should match source's pre-optimizer visible count.
     # For stream_records, points are re-inserted on the target and may not be deferred.
     target_visible = scroll_all(target_uri)
     target_visible_count = len(target_visible)
@@ -247,15 +249,17 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
             f"Snapshot transfer should preserve deferred state (not all points visible): "
             f"target visible={target_visible_count}, total={total_points}"
         )
-        assert target_visible_count >= visible_count, (
-            f"Target should have at least as many visible points as source had before optimizer: "
-            f"target visible={target_visible_count}, source visible={visible_count}"
-        )
-    else:
-        assert target_visible_count >= visible_count, (
-            f"Target should have at least as many visible points as source: "
-            f"target={target_visible_count}, source={visible_count}"
-        )
+    assert target_visible_count >= visible_count, (
+        f"Target should have at least as many visible points as source had before optimizer: "
+        f"target visible={target_visible_count}, source visible={visible_count}"
+    )
+
+    # Now enable optimizers (for snapshot — already enabled for stream_records)
+    # so the trigger_upsert_wait_true below can resolve deferred points.
+    if transfer_method == "snapshot":
+        update_collection_config(source_uri, {
+            "optimizers_config": {"max_optimization_threads": "auto"},
+        })
 
     # Trigger optimization with wait=true to ensure deferred points are resolved
     trigger_upsert_wait_true(source_uri, total_points)
@@ -289,6 +293,103 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     assert len(source_ids) == expected_total
     assert source_ids == target_ids, (
         "Source and target should have identical point sets after optimization"
+    )
+
+
+def test_shard_transfer_with_hung_deferred_wait_does_not_deadlock(tmp_path: pathlib.Path):
+    """Reproducer: a hung wait=true update on deferred points must not deadlock
+    a subsequent shard transfer.
+
+    Bug:
+    - update_local (replica_set/update.rs) holds local.read() across
+      local.get().update(...).await.
+    - With prevent_unoptimized=true and max_optimization_threads=0,
+      wait_for_deferred_points_ready (update_worker.rs) loops on tokio::select
+      over cancel.cancelled() and optimization_finished_receiver.changed().
+      The optimization_worker hits limit==0 and `continue`s without firing
+      optimization_finished_sender (optimization_worker.rs:171-174), so neither
+      branch of the select ever fires.
+    - actix-web does not cancel the response future on client disconnect, so
+      the handler keeps running and the local.read() guard stays alive after
+      the client times out.
+    - The subsequent snapshot transfer's queue_proxify_local needs
+      local.write(); tokio::sync::RwLock is write-preferring, so the queued
+      writer blocks new readers, including is_local() calls on the same
+      consensus apply path -> the apply never returns, the consensus
+      broadcast never fires, POST /cluster times out.
+
+    This test asserts the symptom: POST /cluster returns within a sane
+    deadline. Once the engine bug is fixed (e.g. wait_for_deferred_points_ready
+    polling feedback closure, or the optimizer firing optimization_finished
+    even when skipping), this test will pass without any workarounds in the
+    test code itself.
+    """
+    assert_project_root()
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+
+    create_deferred_collection(peer_api_uris[0])
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    total_points = 500
+
+    source_idx, target_idx = None, None
+    for i, uri in enumerate(peer_api_uris):
+        info = get_collection_cluster_info(uri, COLLECTION_NAME)
+        if len(info["local_shards"]) > 0:
+            source_idx = i
+        else:
+            target_idx = i
+    assert source_idx is not None and target_idx is not None
+
+    source_uri = peer_api_uris[source_idx]
+    target_uri = peer_api_uris[target_idx]
+
+    # Create deferred points
+    upsert_points(source_uri, start_id=1, count=total_points, wait=False)
+    time.sleep(3)
+
+    # Trigger the hung wait=true. Client times out at 5s; server-side
+    # wait_for_deferred_points_ready remains parked, holding local.read()
+    # through update_local.
+    try:
+        requests.put(
+            f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+            json={"points": make_points(total_points + 1, 1)},
+            timeout=5,
+        )
+        raise AssertionError("Expected timeout for wait=true with optimizers disabled")
+    except requests.exceptions.ReadTimeout:
+        pass
+
+    # Now request a snapshot transfer. With the bug present the apply path
+    # deadlocks against the held local.read() and the request fails with
+    # "Waiting for consensus operation commit failed". Without the bug it
+    # should return promptly.
+    src_info = get_collection_cluster_info(source_uri, COLLECTION_NAME)
+    dst_info = get_collection_cluster_info(target_uri, COLLECTION_NAME)
+    from_peer_id = src_info["peer_id"]
+    to_peer_id = dst_info["peer_id"]
+    shard_id = src_info["local_shards"][0]["shard_id"]
+
+    r = requests.post(
+        f"{source_uri}/collections/{COLLECTION_NAME}/cluster",
+        json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "snapshot",
+            }
+        },
+        timeout=15,
+    )
+    assert_http_ok(r), (
+        "Snapshot transfer apply deadlocked behind a hung deferred wait. "
+        "See test docstring for the lock-ordering chain."
     )
 
 

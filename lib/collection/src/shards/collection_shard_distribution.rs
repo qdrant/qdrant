@@ -31,8 +31,4 @@ impl CollectionShardDistribution {
     pub fn shard_count(&self) -> usize {
         self.shards.len()
     }
-
-    pub fn shard_replica_count(&self) -> usize {
-        self.shards.values().map(|shard| shard.len()).sum()
-    }
 }

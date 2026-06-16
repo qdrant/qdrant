@@ -2,11 +2,13 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use quantization::EncodedVectorsPQ;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
     use quantization::encoded_vectors_binary::{EncodedVectorsBin, QueryEncoding};
     use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
+    use quantization::{
+        EncodedVectorsPQ, encoded_vectors_binary, encoded_vectors_pq, encoded_vectors_u8,
+    };
     use tempfile::Builder;
 
     #[test]
@@ -26,7 +28,7 @@ mod tests {
         let data_path = dir.path().join("data.bin");
         let meta_path = dir.path().join("meta.json");
         let quantized_vector_size =
-            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let _encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
@@ -40,6 +42,7 @@ mod tests {
         .unwrap();
 
         EncodedVectorsU8::<TestEncodedStorage>::load(
+            &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
         )
@@ -63,10 +66,7 @@ mod tests {
         let data_path = dir.path().join("data.bin");
         let meta_path = dir.path().join("meta.json");
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                2,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 2);
         let _encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
@@ -80,6 +80,7 @@ mod tests {
         .unwrap();
 
         EncodedVectorsPQ::<TestEncodedStorage>::load(
+            &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
         )
@@ -102,7 +103,7 @@ mod tests {
         let data_path = dir.path().join("data.bin");
         let meta_path = dir.path().join("meta.json");
         let quantized_vector_size =
-            EncodedVectorsBin::<u8, TestEncodedStorage>::get_quantized_vector_size_from_params(
+            encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
                 vector_dim,
                 quantization::encoded_vectors_binary::Encoding::OneBit,
             );
@@ -118,6 +119,7 @@ mod tests {
         .unwrap();
 
         EncodedVectorsBin::<u8, TestEncodedStorage>::load(
+            &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
         )

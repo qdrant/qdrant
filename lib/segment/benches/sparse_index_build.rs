@@ -8,12 +8,14 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
+use segment::fixtures::sparse_fixtures::{open_sparse_index, ram_from_ram, ram_open};
 use segment::index::VectorIndex;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
@@ -22,12 +24,11 @@ use segment::index::sparse_index::sparse_vector_index::{
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::types::VectorStorageDatatype;
-use segment::vector_storage::VectorStorage;
 use segment::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use segment::vector_storage::{VectorStorage, VectorStorageRead};
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use tempfile::Builder;
 
@@ -84,8 +85,8 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
         b.iter(|| {
-            let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-                SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+            let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = open_sparse_index(
+                SparseVectorIndexOpenArgs {
                     config: index_config,
                     id_tracker: id_tracker.clone(),
                     vector_storage: vector_storage.clone(),
@@ -93,16 +94,18 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
                     path: index_dir.path(),
                     stopped: &stopped,
                     tick_progress: || (),
-                    deferred_internal_id: None,
-                })
-                .unwrap();
+                },
+                ram_open,
+                ram_from_ram,
+            )
+            .unwrap();
             assert_eq!(sparse_vector_index.indexed_vector_count(), NUM_VECTORS);
         })
     });
 
     // build once to reuse in mmap conversion benchmark
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = open_sparse_index(
+        SparseVectorIndexOpenArgs {
             config: index_config,
             id_tracker,
             vector_storage,
@@ -110,27 +113,18 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
             path: index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
-            deferred_internal_id: None,
-        })
-        .unwrap();
+        },
+        ram_open,
+        ram_from_ram,
+    )
+    .unwrap();
 
     // intent: measure mmap conversion time
-    group.bench_function("convert-mmap-index", |b| {
-        b.iter(|| {
-            let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-            let mmap_inverted_index = InvertedIndexMmap::from_ram_index(
-                Cow::Borrowed(sparse_vector_index.inverted_index()),
-                &mmap_index_dir,
-            )
-            .unwrap();
-            assert_eq!(mmap_inverted_index.vector_count(), NUM_VECTORS);
-        })
-    });
-
     group.bench_function("convert-mmap-index-f32", |b| {
         b.iter(|| {
             let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
             let mmap_inverted_index = InvertedIndexCompressedMmap::<f32>::from_ram_index(
+                &MmapFs,
                 Cow::Borrowed(sparse_vector_index.inverted_index()),
                 &mmap_index_dir,
             )
@@ -143,6 +137,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
             let mmap_inverted_index = InvertedIndexCompressedMmap::<f16>::from_ram_index(
+                &MmapFs,
                 Cow::Borrowed(sparse_vector_index.inverted_index()),
                 &mmap_index_dir,
             )

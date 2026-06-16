@@ -13,9 +13,10 @@ use crate::universal_io::{Flusher, UniversalIoError, UniversalWrite};
 ///
 /// WARN: this structure is expected to be write-only.
 #[derive(Debug)]
-pub struct SliceBufferedUpdateWrapper<S: UniversalWrite<T>, T: Copy>
+pub struct SliceBufferedUpdateWrapper<S, T>
 where
-    T: 'static,
+    S: UniversalWrite,
+    T: bytemuck::Pod,
 {
     slice: Arc<RwLock<S>>,
     len: u64,
@@ -23,12 +24,13 @@ where
     is_alive_lock: IsAliveLock,
 }
 
-impl<S: UniversalWrite<T>, T: Copy> SliceBufferedUpdateWrapper<S, T>
+impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
-    T: 'static,
+    S: UniversalWrite,
+    T: bytemuck::Pod,
 {
     pub fn new(slice_storage: S) -> Result<Self, UniversalIoError> {
-        let len = slice_storage.len()?;
+        let len = slice_storage.len::<T>()?;
         Ok(Self {
             slice: Arc::new(RwLock::new(slice_storage)),
             len,
@@ -49,12 +51,23 @@ where
         );
         self.pending_updates.lock().insert(index, value);
     }
+
+    /// Hint to the OS that pages backing the underlying storage can be reclaimed.
+    pub fn clear_cache(&self) -> Result<(), UniversalIoError> {
+        let Self {
+            slice,
+            len: _,
+            pending_updates: _,
+            is_alive_lock: _,
+        } = self;
+        slice.read().clear_ram_cache()
+    }
 }
 
 impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
-    S: UniversalWrite<T> + Send + Sync + 'static,
-    T: Sync + Send + Copy + Clone + PartialEq + 'static,
+    S: UniversalWrite + Send + Sync + 'static,
+    T: bytemuck::Pod + PartialEq + Sync + Send,
 {
     pub fn flusher(&self) -> Flusher {
         let updates = {

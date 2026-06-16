@@ -61,10 +61,13 @@ impl ShardHolder {
             assert_resharding_state_consistency(&state, ring, shard_key);
 
             if let Some(state) = state.deref() {
+                // Idempotent: a matching state means start_resharding was
+                // already applied on this peer. Caller falls through each
+                // step to reconcile any partially-applied state, so we must
+                // not short-circuit with an error that would be silently
+                // swallowed by apply_entries and cause divergence.
                 return if state.matches(resharding_key) {
-                    Err(CollectionError::bad_request(format!(
-                        "resharding {resharding_key} is already in progress:\n{state:#?}"
-                    )))
+                    Ok(())
                 } else {
                     Err(CollectionError::bad_request(format!(
                         "another resharding is in progress:\n{state:#?}"
@@ -93,15 +96,14 @@ impl ShardHolder {
         match resharding_key.direction {
             ReshardingDirection::Up => {
                 if has_shard {
-                    // Allow re-application: the shard may exist as a leftover from a
-                    // previous incomplete start attempt (e.g. crash after key_mapping
-                    // was persisted but before resharding_state was written).
-                    // create_shard_dir will clean up the stale directory and add_shard
-                    // will evict the old entry.
+                    // Idempotent: the replica set may already exist as a
+                    // leftover from a previous partial apply or as the result
+                    // of an earlier successful apply we are replaying. The
+                    // caller skips create_replica_set in that case and falls
+                    // through; we must not block on this condition.
                     log::warn!(
                         "Shard {shard_id} already exists during resharding start, \
-                         likely a leftover from a previous incomplete attempt, \
-                         it will be recreated"
+                         treating as idempotent re-apply and reusing existing replica set",
                     );
                 }
             }
@@ -157,15 +159,15 @@ impl ShardHolder {
                 .await?;
         }
 
-        self.resharding_state.write(|state| {
-            debug_assert!(
-                state.is_none(),
-                "resharding is already in progress:\n{state:#?}",
-            );
-
-            *state = Some(ReshardState::new(
-                uuid, direction, peer_id, shard_id, shard_key,
-            ));
+        // Idempotent: if matching state is already persisted (replay after a
+        // successful apply), leave it alone. Only write if missing or stale.
+        self.resharding_state.write_optional(|state| {
+            let new_state =
+                ReshardState::new(uuid, direction, peer_id, shard_id, shard_key.clone());
+            match state {
+                Some(existing) if *existing == new_state => None,
+                _ => Some(Some(new_state)),
+            }
         })?;
 
         Ok(())
@@ -269,10 +271,13 @@ impl ShardHolder {
     }
 
     pub fn finish_resharding_unchecked(&mut self, _: &ReshardKey) -> CollectionResult<()> {
-        self.resharding_state.write(|state| {
-            debug_assert!(state.is_some(), "resharding is not in progress");
-            *state = None;
-        })?;
+        // Idempotent: if state is already cleared (replay after a successful
+        // finish/abort), leave it alone so we don't spuriously touch the file.
+        self.resharding_state.write_optional(
+            |state| {
+                if state.is_some() { Some(None) } else { None }
+            },
+        )?;
 
         Ok(())
     }
@@ -406,7 +411,7 @@ impl ShardHolder {
                         // Internal operation, no performance tracking needed
                         HwMeasurementAcc::disposable(),
                         true,
-                        DeferredBehavior::IncludeAll,
+                        DeferredBehavior::WithDeferred,
                     )
                     .await?;
             }
@@ -442,8 +447,13 @@ impl ShardHolder {
 
                 // Drop the shard
                 if let Some(shard_key) = shard_key {
+                    // Idempotent: only rewrite the mapping if the shard id is
+                    // actually present under this key. A replay after a
+                    // successful abort finds nothing to remove and skips the
+                    // unnecessary disk write.
                     self.key_mapping.write_optional(|key_mapping| {
-                        if !key_mapping.contains_key(shard_key) {
+                        let shard_ids = key_mapping.get(shard_key)?;
+                        if !shard_ids.contains(&shard_id) {
                             return None;
                         }
 
@@ -464,15 +474,12 @@ impl ShardHolder {
             }
         }
 
-        self.resharding_state.write(|state| {
-            debug_assert!(
-                state
-                    .as_ref()
-                    .is_some_and(|state| state.matches(&resharding_key)),
-                "resharding {resharding_key} is not in progress:\n{state:#?}"
-            );
-
-            state.take();
+        // Idempotent: if state is already cleared, or holds a different
+        // resharding (already superseded), leave it alone. Only clear a state
+        // that matches the resharding_key we are aborting.
+        self.resharding_state.write_optional(|state| match state {
+            Some(state) if state.matches(&resharding_key) => Some(None),
+            _ => None,
         })?;
 
         Ok(())
@@ -901,6 +908,109 @@ mod tests {
         assert!(
             result.is_ok(),
             "check_finish_resharding must return Ok when no resharding is active (idempotent: already finished), got error: {result:?}",
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // check_start_resharding idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_start_check_idempotent_when_matching_resharding_active() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        // Set up ring and resharding state as they would look after a
+        // successful `start_resharding` had been applied on this peer.
+        holder
+            .rings
+            .get_mut(&None)
+            .unwrap()
+            .start_resharding(key.shard_id, key.direction);
+        holder
+            .resharding_state
+            .write(|state| {
+                *state = Some(ReshardState::new(
+                    key.uuid,
+                    key.direction,
+                    key.peer_id,
+                    key.shard_id,
+                    key.shard_key.clone(),
+                ));
+            })
+            .unwrap();
+
+        // Re-applying start for the same key must not fail. Otherwise the
+        // replay would be silently swallowed and the subsequent idempotent
+        // steps in `Collection::start_resharding` would be skipped — leaving
+        // half-applied state unreconciled on this peer.
+        let result = holder.check_start_resharding(&key);
+        assert!(
+            result.is_ok(),
+            "check_start_resharding must return Ok when the same resharding is already active (idempotent re-apply), got error: {result:?}",
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // finish_resharding_unchecked idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_finish_unchecked_idempotent_when_no_resharding_active() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        // Replay `finish` after the resharding state has already been cleared
+        // (partial apply between the state write and a subsequent step).
+        // The unchecked helper must not panic or error in this case.
+        let result = holder.finish_resharding_unchecked(&key);
+        assert!(
+            result.is_ok(),
+            "finish_resharding_unchecked must return Ok when no resharding state is present, got error: {result:?}",
+        );
+        assert!(
+            holder.resharding_state.read().is_none(),
+            "state must remain cleared after idempotent finish",
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // start_resharding_unchecked idempotency
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_start_unchecked_idempotent_when_matching_state_present() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        let expected_state = ReshardState::new(
+            key.uuid,
+            key.direction,
+            key.peer_id,
+            key.shard_id,
+            key.shard_key.clone(),
+        );
+
+        // Pre-seed matching state to simulate a replay after a successful
+        // start had already persisted the resharding state.
+        holder
+            .resharding_state
+            .write(|state| {
+                *state = Some(expected_state.clone());
+            })
+            .unwrap();
+
+        // Re-apply. `new_shard = None` matches the caller's behavior when it
+        // has detected that the replica set already exists.
+        holder
+            .start_resharding_unchecked(key.clone(), None)
+            .await
+            .expect("start_resharding_unchecked must be idempotent on replay");
+
+        assert_eq!(
+            holder.resharding_state.read().clone(),
+            Some(expected_state),
+            "matching state must be preserved verbatim across a replay",
         );
     }
 

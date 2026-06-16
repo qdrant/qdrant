@@ -4,24 +4,27 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
+use crate::SearchScratch;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::search_context::SearchContext;
-use crate::index::tests::common::{build_index, get_pooled_scores, match_all};
+use crate::index::tests::common::{build_index, match_all};
 
 fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> HwMeasurementAcc {
     let is_stopped = AtomicBool::new(false);
     let accumulator = HwMeasurementAcc::new();
     let hardware_counter = accumulator.get_counter_cell();
     let top = 10;
+    let mut scratch = SearchScratch::new_for_test();
     let mut search_context = SearchContext::new(
         query,
         top,
         index,
-        get_pooled_scores(),
+        &mut scratch,
         &is_stopped,
         &hardware_counter,
-    );
+    )
+    .unwrap();
 
     let result = search_context.search(&match_all);
     // there might be less than `top` result
@@ -40,14 +43,16 @@ fn do_plain_search<I: InvertedIndex>(
     let accumulator = HwMeasurementAcc::new();
     let hardware_counter = accumulator.get_counter_cell();
     let top = 10;
+    let mut scratch = SearchScratch::new_for_test();
     let mut search_context = SearchContext::new(
         query,
         top,
         index,
-        get_pooled_scores(),
+        &mut scratch,
         &is_stopped,
         &hardware_counter,
-    );
+    )
+    .unwrap();
 
     let result = search_context.plain_search(docs);
 

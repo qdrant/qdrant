@@ -19,12 +19,14 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
+use common::universal_io::MmapFs;
 use segment::types::{SeqNumberType, ShardKey};
 use semver::Version;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
@@ -34,6 +36,7 @@ use tokio::sync::{Mutex, RwLock};
 use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::{
     CollectionSizeAtomicStats, CollectionSizeStats, CollectionSizeStatsCache,
 };
@@ -83,13 +86,16 @@ pub struct Collection {
     is_initialized: Arc<IsReady>,
     // Update runtime handle.
     update_runtime: Handle,
-    // Search runtime handle.
-    search_runtime: Handle,
+    // Search runtime handle, wrapped to adapt its effective blocking concurrency.
+    search_runtime: AdaptiveSearchHandle,
     optimizer_resource_budget: ResourceBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
     // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
+    // Coordinates background optimizer recreation: at most one runs at a time, and requests that
+    // arrive while one is running are coalesced into a single re-run.
+    recreate_optimizers_state: Arc<RecreateOptimizersState>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -112,7 +118,7 @@ impl Collection {
         on_replica_failure: ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
-        search_runtime: Option<Handle>,
+        search_runtime: Option<AdaptiveSearchHandle>,
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
@@ -154,7 +160,9 @@ impl Collection {
                 payload_index_schema.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
-                search_runtime.clone().unwrap_or_else(Handle::current),
+                search_runtime
+                    .clone()
+                    .unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
                 None,
             )
@@ -193,10 +201,11 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
-            search_runtime: search_runtime.unwrap_or_else(Handle::current),
+            search_runtime: search_runtime.unwrap_or_else(AdaptiveSearchHandle::current),
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            recreate_optimizers_state: Default::default(),
         })
     }
 
@@ -211,13 +220,13 @@ impl Collection {
         on_replica_failure: replica_set::ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
-        search_runtime: Option<Handle>,
+        search_runtime: Option<AdaptiveSearchHandle>,
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> Self {
         let start_time = std::time::Instant::now();
-        let stored_version = CollectionVersion::load(path)
+        let stored_version = CollectionVersion::load_universal(&MmapFs, path)
             .expect("Can't read collection version")
             .expect("Collection version is not found");
 
@@ -279,7 +288,9 @@ impl Collection {
                 abort_shard_transfer.clone(),
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
-                search_runtime.clone().unwrap_or_else(Handle::current),
+                search_runtime
+                    .clone()
+                    .unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
             )
             .await;
@@ -310,10 +321,11 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
-            search_runtime: search_runtime.unwrap_or_else(Handle::current),
+            search_runtime: search_runtime.unwrap_or_else(AdaptiveSearchHandle::current),
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            recreate_optimizers_state: Default::default(),
         }
     }
 
@@ -397,10 +409,13 @@ impl Collection {
         new_state: ReplicaState,
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
-        let shard_holder = self.shards_holder.read().await;
-        let replica_set = shard_holder
+        let mut replica_set = self
+            .shards_holder
+            .read()
+            .await
             .get_shard(shard_id)
-            .ok_or_else(|| shard_not_found_error(shard_id))?;
+            .ok_or_else(|| shard_not_found_error(shard_id))?
+            .clone();
 
         log::debug!(
             "Changing shard {}:{shard_id} replica state from {:?} to {new_state:?}",
@@ -446,62 +461,78 @@ impl Collection {
             )));
         }
 
-        // Update replica status
-        replica_set
-            .ensure_replica_with_state(peer_id, new_state)
-            .await?;
+        // Abort resharding *before* persisting the new replica state.
+        //
+        // If we did this after the persist, a crash between the durable
+        // `replica_state.json` write and `abort_resharding` would leave
+        // `resharding_state.json` stuck `Some` on the replaying peer (a
+        // `current_state`-based gate reads `Dead` from disk on replay and
+        // skips the abort). Doing it first means a partial-apply crash
+        // either re-runs the whole entry (replica state still reads as a
+        // resharding state, gate fires, the idempotent abort re-runs) or no
+        // longer needs the abort to fire at all (resharding_state already
+        // cleared by the prior attempt). Either way, every peer converges.
+        //
+        // Covers both directions: up (`Resharding`) and down (`ReshardingScaleDown`).
+        // For up, `abort_resharding` drops the shard entirely; we detect the
+        // missing shard below and skip the persist. For down, the shard
+        // stays, abort just reverts the receiver back to `Active`, and the
+        // persist below overwrites that with `Dead`.
+        if new_state == ReplicaState::Dead && current_state.is_some_and(|s| s.is_resharding()) {
+            let reshard_key = self
+                .shards_holder
+                .read()
+                .await
+                .resharding_state
+                .read()
+                .as_ref()
+                .map(|state| state.key());
+
+            if let Some(reshard_key) = reshard_key {
+                // Drop replica set `Arc`, so that `abort_resharding` can drop shard cleanly
+                drop(replica_set);
+
+                self.abort_resharding(reshard_key, false).await?;
+
+                // Check if shard was dropped (when resharding up), and return early if so
+                let Some(rs) = self.shards_holder.read().await.get_shard(shard_id).cloned() else {
+                    return Ok(());
+                };
+
+                replica_set = rs;
+            }
+        }
 
         if new_state == ReplicaState::Dead {
-            let resharding_state = shard_holder.resharding_state.read().clone();
-
             let all_nodes_fixed_cancellation = self
                 .channel_service
                 .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+
             let related_transfers = if all_nodes_fixed_cancellation {
-                shard_holder.get_related_transfers(peer_id, shard_id)
+                self.shards_holder
+                    .read()
+                    .await
+                    .get_related_transfers(peer_id, shard_id)
             } else {
                 // This is the old buggy logic, but we have to keep it
                 // for maintaining consistency in a cluster with mixed versions.
-                shard_holder.get_transfers(|transfer| {
+                self.shards_holder.read().await.get_transfers(|transfer| {
                     transfer.shard_id == shard_id
                         && (transfer.from == peer_id || transfer.to == peer_id)
                 })
             };
 
-            // Functions below lock `shard_holder`!
-            drop(shard_holder);
-
-            let mut abort_resharding_result = CollectionResult::Ok(());
-
-            // Abort resharding, if resharding shard is marked as `Dead`.
-            //
-            // This branch should only be triggered, if resharding is currently at `MigratingPoints`
-            // stage, because target shard should be marked as `Active`, when all resharding transfers
-            // are successfully completed, and so the check *right above* this one would be triggered.
-            //
-            // So, if resharding reached `ReadHashRingCommitted`, this branch *won't* be triggered,
-            // and resharding *won't* be cancelled. The update request should *fail* with "failed to
-            // update all replicas of a shard" error.
-            //
-            // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
-            // then `Collection::abort_resharding` call should return an error, so no special handling
-            // is needed.
-            let is_resharding = current_state
-                .as_ref()
-                .is_some_and(ReplicaState::is_resharding);
-            if is_resharding && let Some(state) = resharding_state {
-                abort_resharding_result = self.abort_resharding(state.key(), false).await;
-            }
-
             // Terminate transfer if source or target replicas are now dead
             for transfer in related_transfers {
-                self.abort_shard_transfer_and_resharding(transfer.key(), None)
+                self.abort_shard_transfer_and_resharding(transfer.key())
                     .await?;
             }
-
-            // Propagate resharding errors now
-            abort_resharding_result?;
         }
+
+        // Update replica status
+        replica_set
+            .ensure_replica_with_state(peer_id, new_state)
+            .await?;
 
         // If not initialized yet, we need to check if it was initialized by this call
         if !self.is_initialized.check_ready() {
@@ -663,7 +694,7 @@ impl Collection {
         }
 
         for transfer in self.get_related_transfers(peer_id).await {
-            self.abort_shard_transfer_and_resharding(transfer.key(), None)
+            self.abort_shard_transfer_and_resharding(transfer.key())
                 .await?;
         }
 
@@ -793,7 +824,7 @@ impl Collection {
 
             // Select shard transfer method, prefer user configured method or choose one now
             // If all peers are 1.8+, we try WAL delta transfer, otherwise we use the default method
-            let default_method = self.default_shard_transfer_method().await;
+            let default_method = self.default_shard_transfer_method();
             let shard_transfer_method = self
                 .shared_storage_config
                 .default_shard_transfer_method
@@ -953,5 +984,106 @@ struct CollectionVersion;
 impl StorageVersion for CollectionVersion {
     fn current_raw() -> &'static str {
         env!("CARGO_PKG_VERSION")
+    }
+}
+
+/// Coordinates background optimizer recreation so at most one recreation runs at a time.
+///
+/// This tracks two things - "a task is running" and "another run is queued" - packed into a single
+/// atomic. They cannot be two independent atomics: deciding to stop (in [`Self::finish_run`]) and
+/// deciding to coalesce (in [`Self::request`]) each read *and* write a combination of the two, so
+/// the transition must be one atomic compare-and-swap. With separate atomics a request could be
+/// lost - a task stops while a concurrent request believes it coalesced into it.
+///
+/// See [`Collection::recreate_optimizers_background`].
+#[derive(Default)]
+struct RecreateOptimizersState {
+    state: AtomicU8,
+}
+
+/// No recreation task is running.
+const RECREATE_IDLE: u8 = 0;
+/// A recreation task is running; no further run is queued.
+const RECREATE_RUNNING: u8 = 1;
+/// A recreation task is running and another run is queued for when it finishes.
+const RECREATE_RUNNING_PENDING: u8 = 2;
+
+impl RecreateOptimizersState {
+    /// Register a recreation request.
+    ///
+    /// Returns `true` if the caller must spawn a new recreation task, or `false` if a task is
+    /// already running - in which case the request is coalesced into a single queued re-run.
+    fn request(&self) -> bool {
+        let prev =
+            self.state
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
+                    RECREATE_IDLE => Some(RECREATE_RUNNING),
+                    RECREATE_RUNNING => Some(RECREATE_RUNNING_PENDING),
+                    // Already queued, nothing to change.
+                    _ => None,
+                });
+        // We must spawn exactly when we moved the state out of idle.
+        prev == Ok(RECREATE_IDLE)
+    }
+
+    /// Record that the running task finished one recreation.
+    ///
+    /// Returns `true` if it must run again (a request arrived while it was running), or `false` if
+    /// it should stop. When it stops, the state returns to idle so the next request spawns anew.
+    fn finish_run(&self) -> bool {
+        let prev =
+            self.state
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
+                    RECREATE_RUNNING_PENDING => Some(RECREATE_RUNNING),
+                    RECREATE_RUNNING => Some(RECREATE_IDLE),
+                    // Idle would mean finish_run was called without a running task.
+                    _ => None,
+                });
+        // We run again exactly when we consumed a queued re-run.
+        prev == Ok(RECREATE_RUNNING_PENDING)
+    }
+}
+
+#[cfg(test)]
+mod recreate_optimizers_state_tests {
+    use super::RecreateOptimizersState;
+
+    #[test]
+    fn first_request_spawns() {
+        let state = RecreateOptimizersState::default();
+        assert!(state.request(), "first request must spawn a task");
+    }
+
+    #[test]
+    fn requests_while_running_are_coalesced() {
+        let state = RecreateOptimizersState::default();
+        assert!(state.request());
+
+        // Several requests arrive while the task runs: none spawns, all collapse into one re-run.
+        assert!(!state.request());
+        assert!(!state.request());
+    }
+
+    #[test]
+    fn finish_without_pending_stops_then_next_request_spawns() {
+        let state = RecreateOptimizersState::default();
+        state.request();
+
+        assert!(!state.finish_run(), "no queued request, so it must stop");
+        // Back to idle: a fresh request spawns a new task again.
+        assert!(
+            state.request(),
+            "a request after stopping must spawn a new task"
+        );
+    }
+
+    #[test]
+    fn finish_with_pending_runs_once_more_then_stops() {
+        let state = RecreateOptimizersState::default();
+        state.request();
+        state.request(); // coalesced -> queued re-run
+
+        assert!(state.finish_run(), "queued request, so it must run again");
+        assert!(!state.finish_run(), "no further requests, so it stops");
     }
 }

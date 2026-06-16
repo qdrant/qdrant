@@ -1,13 +1,15 @@
+#![expect(clippy::wildcard_enum_match_arm, reason = "benchmarks")]
+
 use std::hint::black_box;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use permutation_iterator::Permutor;
-use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
+use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_binary::{
-    EncodedQueryBQ, EncodedVectorsBin, Encoding, QueryEncoding,
+    self, EncodedQueryBQ, EncodedVectorsBin, Encoding, QueryEncoding,
 };
 use rand::{RngExt, SeedableRng};
 
@@ -34,11 +36,10 @@ fn binary_bench(c: &mut Criterion) {
         vectors.push(vector);
     }
 
-    let quantized_vector_size =
-        EncodedVectorsBin::<u128, TestEncodedStorage>::get_quantized_vector_size_from_params(
-            vector_dim,
-            Encoding::OneBit,
-        );
+    let quantized_vector_size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u128>(
+        vector_dim,
+        Encoding::OneBit,
+    );
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -81,11 +82,10 @@ fn binary_bench(c: &mut Criterion) {
         });
     });
 
-    let quantized_vector_size =
-        EncodedVectorsBin::<u8, TestEncodedStorage>::get_quantized_vector_size_from_params(
-            vector_dim,
-            Encoding::OneBit,
-        );
+    let quantized_vector_size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
+        vector_dim,
+        Encoding::OneBit,
+    );
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -141,11 +141,10 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         vectors.push(vector);
     }
 
-    let quantized_vector_size =
-        EncodedVectorsBin::<u128, TestEncodedStorage>::get_quantized_vector_size_from_params(
-            vector_dim,
-            Encoding::OneBit,
-        );
+    let quantized_vector_size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u128>(
+        vector_dim,
+        Encoding::OneBit,
+    );
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -204,11 +203,10 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         });
     });
 
-    let quantized_vector_size =
-        EncodedVectorsBin::<u8, TestEncodedStorage>::get_quantized_vector_size_from_params(
-            vector_dim,
-            Encoding::OneBit,
-        );
+    let quantized_vector_size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
+        vector_dim,
+        Encoding::OneBit,
+    );
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),

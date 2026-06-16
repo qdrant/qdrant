@@ -16,6 +16,7 @@ testing = ["common/testing"]
 
 [dependencies]
 bitpacking = { workspace = true }
+blink-alloc = { workspace = true }
 gridstore = { path = "../gridstore" }
 bincode = { workspace = true }
 common = { path = "../common/common" }
@@ -32,6 +33,7 @@ validator = { workspace = true }
 itertools = { workspace = true }
 parking_lot = { workspace = true }
 log = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -39,7 +41,9 @@ dataset = { path = "../common/dataset" }
 fs-err = { workspace = true, features = ["debug"] }
 generic-tests = { workspace = true }
 indicatif = { workspace = true }
+sha2 = { workspace = true }
 sparse = { path = ".", features = ["testing"] }
+zerocopy = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }

@@ -2,18 +2,22 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use dataset::Dataset;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools as _;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use segment::fixtures::sparse_fixtures::fixture_sparse_index_from_iter;
+use segment::fixtures::sparse_fixtures::{
+    fixture_sparse_index_from_iter, mmap_from_ram, mmap_open, open_sparse_index, ram_from_ram,
+    ram_open,
+};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
-use segment::index::{PayloadIndex, VectorIndex};
+use segment::index::{PayloadIndex, VectorIndexRead};
 use segment::payload_json;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{Condition, FieldCondition, Filter};
@@ -48,12 +52,12 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let query_vectors = Csr::open(Dataset::NeurIps2023Queries.download().unwrap())
         .unwrap()
         .iter()
-        .map(|v| v.unwrap())
+        .unwrap()
         .collect_vec();
     sparse_vector_index_search_benchmark_impl(
         c,
         "neurips2023-1M",
-        dataset_vectors.iter().map(|v| v.unwrap()),
+        dataset_vectors.iter().unwrap(),
         &query_vectors,
     );
 }
@@ -78,6 +82,8 @@ fn sparse_vector_index_search_benchmark_impl(
         progress("Indexing (1/2)", vectors_len).wrap_iter(vectors),
         FULL_SCAN_THRESHOLD,
         SparseIndexType::MutableRam,
+        ram_open,
+        ram_from_ram,
     )
     .unwrap();
 
@@ -104,17 +110,20 @@ fn sparse_vector_index_search_benchmark_impl(
     let sparse_index_config =
         SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None);
     let pb = progress("Indexing (2/2)", vectors_len);
-    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            config: sparse_index_config,
-            id_tracker: sparse_vector_index.id_tracker().clone(),
-            vector_storage: sparse_vector_index.vector_storage().clone(),
-            payload_index: sparse_vector_index.payload_index().clone(),
-            path: mmap_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || pb.inc(1),
-            deferred_internal_id: None,
-        })
+    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>> =
+        open_sparse_index(
+            SparseVectorIndexOpenArgs {
+                config: sparse_index_config,
+                id_tracker: sparse_vector_index.id_tracker().clone(),
+                vector_storage: sparse_vector_index.vector_storage().clone(),
+                payload_index: sparse_vector_index.payload_index().clone(),
+                path: mmap_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || pb.inc(1),
+            },
+            mmap_open::<f32>,
+            mmap_from_ram::<f32>,
+        )
         .unwrap();
     pb.finish_and_clear();
     assert_eq!(sparse_vector_index_mmap.indexed_vector_count(), vectors_len);

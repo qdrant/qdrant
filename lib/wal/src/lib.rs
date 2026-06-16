@@ -8,7 +8,6 @@ use std::{fmt, mem, ops, result, thread};
 
 use fs_err as fs;
 use fs_err::File;
-use fs4::fs_std::FileExt;
 use log::{debug, info, trace};
 pub use segment::{Entry, Segment};
 
@@ -22,7 +21,7 @@ pub mod test_utils;
 #[cfg(test)]
 mod test_segment_recovery;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WalOptions {
     /// The segment capacity. Defaults to 32MiB.
     pub segment_capacity: usize,
@@ -136,7 +135,7 @@ impl Wal {
         // Windows workaround. Directories cannot be exclusively held so we create a proxy file
         // inside the tmp directory which is used for locking. This is done because:
         // - A Windows directory is not a file unlike in Linux, so we cannot open it with
-        //   `File::open` nor lock it with `try_lock_exclusive`
+        //   `File::open` nor lock it with `try_lock`
         // - We want this to be auto-deleted together with the `TempDir`
         #[cfg(target_os = "windows")]
         let mut path = path.as_ref().to_path_buf();
@@ -153,9 +152,16 @@ impl Wal {
             dir
         };
 
-        if !dir.file().try_lock_exclusive()? {
-            return Err(fs4::lock_contended_error());
-        }
+        // Use `fs4`'s `flock(2)`-based lock rather than `dir.try_lock()`.
+        //
+        // `dir.try_lock()` resolves to the inherent `fs_err`/`std` `File::try_lock`,
+        // which is gated to a fixed list of targets in stdlib and returns
+        // `ErrorKind::Unsupported` ("try_lock() not supported") on others — notably
+        // Android. `fs4::FileExt::try_lock` issues a direct `flock(LOCK_EX | LOCK_NB)`
+        // syscall, which Android supports. We call it via UFCS on the underlying
+        // `std::fs::File` because the trait method collides with the inherent one
+        // (which would otherwise win method resolution).
+        fs4::FileExt::try_lock(dir.file())?;
 
         // Holds open segments in the directory.
         let mut open_segments: Vec<OpenSegment> = Vec::new();
@@ -181,9 +187,12 @@ impl Wal {
         {
             match start_index.cmp(&next_start_index) {
                 Ordering::Less => {
-                    // TODO: figure out what to do here.
-                    // Current thinking is the previous segment should be truncated.
-                    unimplemented!()
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "overlapping segments: segment at {start_index} overlaps with already-covered range up to {next_start_index}"
+                        ),
+                    ));
                 }
                 Ordering::Equal => {
                     next_start_index = start_index + segment.len() as u64;
@@ -270,10 +279,10 @@ impl Wal {
         let start_index = self.open_segment_start_index();
 
         // If there is an empty closed segment, remove it before adding the new one.
-        if let Some(last_closed) = self.closed_segments.last()
-            && last_closed.segment.is_empty()
+        if let Some(empty_segment) = self
+            .closed_segments
+            .pop_if(|last_closed| last_closed.segment.is_empty())
         {
-            let empty_segment = self.closed_segments.pop().unwrap();
             empty_segment.segment.delete()?;
         }
 
@@ -617,7 +626,7 @@ fn open_dir_entry(entry: fs::DirEntry) -> Result<Option<WalSegment>> {
 
 #[cfg(test)]
 mod test {
-    use std::io::Write;
+    use std::io::{ErrorKind, Write};
     use std::num::{NonZeroU8, NonZeroUsize};
 
     use fs_err as fs;
@@ -630,7 +639,7 @@ mod test {
 
     /// Windows has very slow IO
     #[cfg(target_os = "windows")]
-    const QC_TESTS: u64 = 10;
+    const QC_TESTS: u64 = 3;
 
     #[cfg(not(target_os = "windows"))]
     const QC_TESTS: u64 = 50;
@@ -1256,7 +1265,7 @@ mod test {
         let dir = Builder::new().prefix("wal").tempdir().unwrap();
         let wal = Wal::open(dir.path()).unwrap();
         assert_eq!(
-            fs4::lock_contended_error().kind(),
+            ErrorKind::WouldBlock,
             Wal::open(dir.path()).unwrap_err().kind()
         );
         drop(wal);
@@ -1275,7 +1284,8 @@ mod test {
         };
 
         let mut wal = Wal::with_options(dir.path(), &options).unwrap();
-        let entries = EntryGenerator::new().take(entry_count).collect::<Vec<_>>();
+        // Fixed-size entries make the segment boundaries deterministic.
+        let entries = vec![vec![0; 32]; entry_count];
 
         for entry in &entries {
             wal.append(entry).unwrap();

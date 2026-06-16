@@ -1,3 +1,6 @@
+#![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
+use std::assert_matches;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::path::Path;
@@ -185,10 +188,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         )
         .await;
 
-    assert!(
-        matches!(result, Err(CollectionError::BadInput { .. })),
-        "{result:?}"
-    );
+    assert_matches!(result, Err(CollectionError::BadInput { .. }));
 
     let full_search_request = SearchRequestInternal {
         vector: NamedVector {

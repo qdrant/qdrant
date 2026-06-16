@@ -19,12 +19,14 @@ mod memory_reporter;
 pub mod null_index;
 pub mod numeric_index;
 mod numeric_point;
+mod on_disk_point_to_values;
+pub mod schema_transition;
 mod stat_tools;
-mod stored_point_to_values;
 #[cfg(test)]
 mod tests;
 mod utils;
 
+pub use facet_index::FacetIndex;
 pub use field_index_base::*;
 
 use crate::utils::maybe_arc::MaybeArc;
@@ -109,17 +111,35 @@ impl CardinalityEstimation {
                     Condition::Field(field_condition) => {
                         primary_field_condition.as_ref() == field_condition
                     }
-                    _ => false,
+                    Condition::IsEmpty(_)
+                    | Condition::IsNull(_)
+                    | Condition::HasId(_)
+                    | Condition::HasVector(_)
+                    | Condition::Nested(_)
+                    | Condition::Filter(_)
+                    | Condition::CustomIdChecker(_) => false,
                 },
                 PrimaryCondition::Ids(ids) => match condition {
                     Condition::HasId(has_id) => ids.point_ids.deref() == has_id.has_id.deref(),
-                    _ => false,
+                    Condition::Field(_)
+                    | Condition::IsEmpty(_)
+                    | Condition::IsNull(_)
+                    | Condition::HasVector(_)
+                    | Condition::Nested(_)
+                    | Condition::Filter(_)
+                    | Condition::CustomIdChecker(_) => false,
                 },
                 PrimaryCondition::HasVector(has_vector) => match condition {
                     Condition::HasVector(vector_condition) => {
                         has_vector == &vector_condition.has_vector
                     }
-                    _ => false,
+                    Condition::Field(_)
+                    | Condition::IsEmpty(_)
+                    | Condition::IsNull(_)
+                    | Condition::HasId(_)
+                    | Condition::Nested(_)
+                    | Condition::Filter(_)
+                    | Condition::CustomIdChecker(_) => false,
                 },
             })
     }

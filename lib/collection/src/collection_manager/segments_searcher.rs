@@ -26,11 +26,11 @@ use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::search::CoreSearchRequestBatch;
 use shard::search_result_aggregator::BatchResultAggregator;
 use shard::segment_holder::locked::LockedSegmentHolder;
-use tokio::runtime::Handle;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 
@@ -173,7 +173,7 @@ impl SegmentsSearcher {
         batch_request: &CoreSearchRequestBatch,
         collection_config: &CollectionConfigInternal,
         timeout: Duration,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         is_stopped_guard: &StoppingGuard,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<QueryContext>> {
@@ -211,7 +211,7 @@ impl SegmentsSearcher {
     pub async fn search(
         segments: LockedSegmentHolder,
         batch_request: Arc<CoreSearchRequestBatch>,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
         sampling_enabled: bool,
         query_context: QueryContext,
         timeout: Duration,
@@ -388,7 +388,7 @@ impl SegmentsSearcher {
         points: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -420,7 +420,7 @@ impl SegmentsSearcher {
     pub async fn read_filtered(
         segments: LockedSegmentHolder,
         filter: Option<&Filter>,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
         hw_measurement_acc: HwMeasurementAcc,
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
@@ -476,7 +476,7 @@ impl SegmentsSearcher {
     pub async fn rescore_with_formula(
         segments: LockedSegmentHolder,
         arc_ctx: Arc<FormulaContext>,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
         hw_measurement_acc: HwMeasurementAcc,
         timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -761,6 +761,9 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Op
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
+    use std::assert_matches;
     use std::sync::atomic::AtomicBool;
 
     use ahash::AHashSet;
@@ -847,7 +850,7 @@ mod tests {
         let result = SegmentsSearcher::search(
             segment_holder,
             Arc::new(batch_request),
-            &Handle::current(),
+            &AdaptiveSearchHandle::current_for_tests(),
             true,
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
             TEST_TIMEOUT,
@@ -917,7 +920,7 @@ mod tests {
             let result_no_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),
                 batch_request.clone(),
-                &Handle::current(),
+                &AdaptiveSearchHandle::current_for_tests(),
                 false,
                 query_context,
                 TEST_TIMEOUT,
@@ -936,7 +939,7 @@ mod tests {
             let result_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),
                 batch_request,
-                &Handle::current(),
+                &AdaptiveSearchHandle::current_for_tests(),
                 true,
                 query_context,
                 TEST_TIMEOUT,
@@ -971,7 +974,7 @@ mod tests {
             Duration::from_secs(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
         assert_eq!(records.len(), 3);
@@ -991,9 +994,9 @@ mod tests {
             Duration::from_secs(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         );
-        assert!(matches!(records, Err(OperationError::Timeout { .. })));
+        assert_matches!(records, Err(OperationError::Timeout { .. }));
     }
 
     #[test]

@@ -17,6 +17,7 @@ ignore-words-list = [
     "INDX",                # bitvec crate const
     "generall",            # The boss
     "hel",                 # Query token
+    "inout",               # Rust inline-asm operand keyword
     "mmapped",             # Memory mapped
     "ser",                 # Serde package
 ]

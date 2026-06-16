@@ -4,8 +4,9 @@ use std::fmt::Debug;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
-use common::fs::{atomic_save_bin, atomic_save_json, read_bin, read_json};
+use common::fs::{atomic_save_bin, atomic_save_json};
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalReadFs, read_bin_via, read_json_via};
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -51,12 +52,12 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         }
     }
 
-    pub fn load(path: &Path) -> OperationResult<Self> {
+    pub fn load_universal<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
         let config_path = path.join(CONFIG_PATH);
         let borders_path = path.join(BORDERS_PATH);
 
-        let histogram_config: HistogramConfig = read_json(&config_path)?;
-        let histogram_buckets: Vec<(Point<T>, Counts)> = read_bin(&borders_path)?;
+        let histogram_config: HistogramConfig = read_json_via(fs, &config_path)?;
+        let histogram_buckets: Vec<(Point<T>, Counts)> = read_bin_via(fs, &borders_path)?;
 
         Ok(Self {
             max_bucket_size: histogram_config.max_bucket_size,

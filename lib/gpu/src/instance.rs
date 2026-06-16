@@ -76,21 +76,6 @@ impl InstanceBuilder {
         self
     }
 
-    /// Set CPU allocation callbacks for the instance.
-    pub fn with_allocation_callbacks(
-        mut self,
-        allocation_callbacks: Box<dyn AllocationCallbacks>,
-    ) -> Self {
-        self.allocation_callbacks = Some(allocation_callbacks);
-        self
-    }
-
-    // Enable API dump layer.
-    pub fn with_dump_api(mut self, dump_api: bool) -> Self {
-        self.dump_api = dump_api;
-        self
-    }
-
     pub fn build(self) -> GpuResult<Arc<Instance>> {
         Instance::new(
             self.debug_messenger,

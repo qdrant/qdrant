@@ -1,6 +1,5 @@
-#![allow(dead_code)]
-
 use crate::turboquant::permutation::Permutation;
+use crate::turboquant::simd;
 
 const N_PERMUTATIONS: usize = 3;
 
@@ -17,78 +16,24 @@ pub struct HadamardRotation {
 
     /// Original dimension.
     dim: usize,
-
-    /// Sequence of power-of-2 chunk sizes that exactly cover `dim`.
-    /// Produced by greedily taking the largest power-of-2 that fits the remainder.
-    chunk_sizes: Vec<usize>,
-
-    /// Precomputed normalization factors: `1.0 / sqrt(chunk_size)` for each chunk.
-    chunk_norms: Vec<f64>,
 }
 
 impl HadamardRotation {
     pub fn new(dim: usize) -> Self {
-        let chunk_sizes = compute_chunk_sizes(dim);
-
-        let chunk_norms: Vec<f64> = chunk_sizes
-            .iter()
-            .map(|&s| 1.0 / (s as f64).sqrt())
-            .collect();
-
         let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|index| Permutation::new(PERMUTATION_SEEDS[index], dim));
+            std::array::from_fn(|index| Permutation::new_reversible(PERMUTATION_SEEDS[index], dim));
 
-        Self {
-            permutations,
-            dim,
-            chunk_sizes,
-            chunk_norms,
-        }
+        Self { permutations, dim }
     }
 
     pub fn apply(&self, x: &mut [f64]) {
         debug_assert_eq!(x.len(), self.dim);
-
-        // Apply WHT + normalize to each variable-size chunk.
-        self.wht_normalized_chunks(x);
-
-        // Permute then WHT+normalize for each permutation.
-        for permutation in &self.permutations {
-            permutation.permute(x);
-            self.wht_normalized_chunks(x);
-        }
+        apply_rotation_with_permutations(x, &self.permutations);
     }
 
     pub fn apply_inverse(&self, y: &mut [f64]) {
         debug_assert_eq!(y.len(), self.dim);
-
-        // WHT + normalize
-        self.wht_normalized_chunks(y);
-
-        // Apply inverse permutations backwards.
-        for permutation in self.permutations.iter().rev() {
-            permutation.unpermute(y);
-            self.wht_normalized_chunks(y);
-        }
-    }
-
-    /// Apply WHT + normalization to variable-size chunks.
-    fn wht_normalized_chunks(&self, buf: &mut [f64]) {
-        let mut offset = 0;
-        for (&size, &norm) in self.chunk_sizes.iter().zip(&self.chunk_norms) {
-            let chunk = &mut buf[offset..offset + size];
-            in_place_walsh_hadamard_transform(chunk);
-            for v in chunk.iter_mut() {
-                *v *= norm;
-            }
-            offset += size;
-        }
-        debug_assert_eq!(offset, buf.len());
-    }
-
-    /// Input/output dimension this rotation operates on.
-    pub(super) fn dim(&self) -> usize {
-        self.dim
+        apply_inverse_rotation_with_permutations(y, &self.permutations);
     }
 }
 
@@ -115,6 +60,31 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
     }
 }
 
+/// Randomly rotates `x` in place. Produces bit-identical output to
+/// [`HadamardRotation::apply`]; invert with [`HadamardRotation::apply_inverse`].
+pub fn random_vector_rotation(x: &mut [f64]) {
+    let dim = x.len();
+
+    // Building the permutations on every call is cheap: `new_one_way` skips the LCG warm-up.
+    let permutations: [_; N_PERMUTATIONS] =
+        std::array::from_fn(|index| Permutation::new_one_way(PERMUTATION_SEEDS[index], dim));
+
+    apply_rotation_with_permutations(x, &permutations);
+}
+
+/// Inverts the rotated `y` back. Produces bit-identical output to
+/// [`HadamardRotation::apply_inverse`].
+pub fn random_vector_rotation_inverse(y: &mut [f64]) {
+    let dim = y.len();
+
+    // `new_reversible` does an O(dim) LCG warm-up to record `end_state`, which
+    // `unpermute` needs. Cost is paid once per call; no heap allocation.
+    let permutations: [_; N_PERMUTATIONS] =
+        std::array::from_fn(|index| Permutation::new_reversible(PERMUTATION_SEEDS[index], dim));
+
+    apply_inverse_rotation_with_permutations(y, &permutations);
+}
+
 /// Decompose `dim` into a sequence of decreasing power-of-2 chunk sizes
 /// that sum to exactly `dim`. No padding is needed.
 ///
@@ -129,16 +99,65 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
 ///  1536 | [1024, 512]
 ///  4096 | [4096]
 /// ```
-fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
+fn compute_chunk_sizes(dim: usize) -> impl Iterator<Item = usize> {
     debug_assert!(dim > 0);
-    let mut sizes = Vec::with_capacity(dim.count_ones() as usize);
+
     let mut bits = dim;
-    while bits != 0 {
+    std::iter::from_fn(move || {
+        if bits == 0 {
+            return None;
+        }
+
         let highest = 1 << bits.ilog2();
-        sizes.push(highest);
         bits ^= highest;
+        Some(highest)
+    })
+}
+
+/// Apply a Hadamard rotation to `x` using the given `permutations`.
+fn apply_rotation_with_permutations(x: &mut [f64], permutations: &[Permutation; N_PERMUTATIONS]) {
+    // Apply WHT + normalize to each variable-size chunk.
+    wht_normalized_chunks(x);
+
+    // Permute then WHT+normalize for each permutation.
+    for permutation in permutations {
+        permutation.permute(x);
+        wht_normalized_chunks(x);
     }
-    sizes
+}
+
+/// Apply the inverse of a Hadamard rotation to `y` using the given `permutations`.
+fn apply_inverse_rotation_with_permutations(
+    y: &mut [f64],
+    permutations: &[Permutation; N_PERMUTATIONS],
+) {
+    // WHT + normalize
+    wht_normalized_chunks(y);
+
+    // Apply inverse permutations backwards.
+    for permutation in permutations.iter().rev() {
+        permutation.unpermute(y);
+        wht_normalized_chunks(y);
+    }
+}
+
+/// Apply WHT + normalization to variable-size chunks.
+fn wht_normalized_chunks(buf: &mut [f64]) {
+    let mut offset = 0;
+
+    for size in compute_chunk_sizes(buf.len()) {
+        let chunk = &mut buf[offset..offset + size];
+
+        simd::hadamard::wht_dispatch(chunk);
+
+        let norm = 1.0 / (size as f64).sqrt();
+        for v in chunk.iter_mut() {
+            *v *= norm;
+        }
+
+        offset += size;
+    }
+    debug_assert_eq!(offset, buf.len());
 }
 
 #[cfg(test)]
@@ -152,7 +171,7 @@ mod test {
     fn test_compute_chunk_sizes() {
         // All chunks must be powers of two.
         for dim in [5, 128, 129, 300, 700, 712, 1536, 4096] {
-            let sizes = compute_chunk_sizes(dim);
+            let sizes = compute_chunk_sizes(dim).collect::<Vec<_>>();
             assert!(
                 sizes.iter().all(|s| s.is_power_of_two()),
                 "dim={dim}: not all power-of-2: {sizes:?}"
@@ -170,20 +189,25 @@ mod test {
         }
 
         // Specific cases.
-        assert_eq!(compute_chunk_sizes(128), vec![128]);
-        assert_eq!(compute_chunk_sizes(700), vec![512, 128, 32, 16, 8, 4]);
-        assert_eq!(compute_chunk_sizes(1536), vec![1024, 512]);
-        assert_eq!(compute_chunk_sizes(4096), vec![4096]);
+        assert_eq!(compute_chunk_sizes(128).collect::<Vec<_>>(), vec![128]);
+        assert_eq!(
+            compute_chunk_sizes(700).collect::<Vec<_>>(),
+            vec![512, 128, 32, 16, 8, 4],
+        );
+        assert_eq!(
+            compute_chunk_sizes(1536).collect::<Vec<_>>(),
+            vec![1024, 512]
+        );
+        assert_eq!(compute_chunk_sizes(4096).collect::<Vec<_>>(), vec![4096]);
     }
 
     /// Test that Hadamard rotation spreads energy across dimensions,
     /// reducing distortion in vectors where energy is concentrated.
     #[test]
     fn hadamard_reduces_distortion() {
-        use crate::VectorParameters;
         use crate::vector_stats::VectorStats;
 
-        for dim in [100, 300, 384, 512, 1024, 1586] {
+        for dim in [100, 101, 300, 384, 512, 1024, 1025, 1586] {
             let n_vectors = 200;
             let rot = HadamardRotation::new(dim);
 
@@ -216,17 +240,8 @@ mod test {
                 .map(|v| v.into_iter().map(|i| i as f32).collect::<Vec<_>>())
                 .collect();
 
-            let mut params = VectorParameters {
-                dim,
-                distance_type: crate::DistanceType::Dot,
-                invert: false,
-                deprecated_count: None,
-            };
-
-            let stats_before = VectorStats::build(vectors.iter(), &params);
-
-            params.dim = rot.dim;
-            let stats_after = VectorStats::build(rotated.iter(), &params);
+            let stats_before = VectorStats::build(vectors.iter(), dim);
+            let stats_after = VectorStats::build(rotated.iter(), rot.dim);
 
             // Measure how uniform the per-dimension stddevs are by looking at
             // the ratio between max and min stddev across dimensions.
@@ -266,6 +281,43 @@ mod test {
                 "rotation didn't spread energy enough, stddev ratio {ratio_after} ({})",
                 ratio_after / ratio_before
             );
+        }
+    }
+
+    /// Verify the free-function API (`random_vector_rotation` /
+    /// `random_vector_rotation_inverse`) matches the struct API bit-for-bit
+    /// and is its own inverse. Without this, a wrong seed index, a forgotten
+    /// `.rev()`, or a swapped helper in either free function would slip past
+    /// `hadamard_roundtrip` (which only exercises the struct).
+    #[test]
+    fn static_rotation_matches_struct_and_roundtrips() {
+        for &dim in &[128, 300, 1024, 1536] {
+            let mut rng = StdRng::seed_from_u64(7);
+            let input: Vec<f64> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+
+            let rot = HadamardRotation::new(dim);
+
+            // Forward: free function must be bit-identical to struct.
+            let mut via_static = input.clone();
+            let mut via_struct = input.clone();
+            random_vector_rotation(&mut via_static);
+            rot.apply(&mut via_struct);
+            assert_eq!(via_static, via_struct, "dim={dim}: forward mismatch");
+
+            // Inverse: free function must be bit-identical to struct.
+            let mut inv_static = via_static.clone();
+            let mut inv_struct = via_struct.clone();
+            random_vector_rotation_inverse(&mut inv_static);
+            rot.apply_inverse(&mut inv_struct);
+            assert_eq!(inv_static, inv_struct, "dim={dim}: inverse mismatch");
+
+            // Forward-then-inverse via free functions recovers the input.
+            for (orig, recovered) in input.iter().zip(&inv_static) {
+                assert!(
+                    (orig - recovered).abs() < 1e-5,
+                    "dim={dim}: static roundtrip failed: {orig} vs {recovered}",
+                );
+            }
         }
     }
 

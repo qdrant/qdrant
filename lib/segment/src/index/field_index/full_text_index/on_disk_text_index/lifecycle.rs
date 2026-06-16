@@ -1,0 +1,215 @@
+use std::path::PathBuf;
+
+use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
+use common::universal_io::{MmapFs, Populate, UniversalRead};
+use fs_err as fs;
+use serde_json::Value;
+
+use super::super::FullTextIndex;
+use super::super::immutable_text_index::ImmutableFullTextIndex;
+use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+use super::super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
+use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
+use super::super::tokenizers::Tokenizer;
+use super::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
+use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
+
+impl<S: UniversalRead> OnDiskFullTextIndex<S> {
+    pub fn open(
+        fs: &S::Fs,
+        path: PathBuf,
+        config: TextIndexParams,
+        populate: Populate,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
+        let has_positions = config.phrase_matching == Some(true);
+        let tokenizer = Tokenizer::new_from_text_index_params(&config);
+
+        let inverted_index =
+            OnDiskInvertedIndex::<S>::open(fs, path, populate, has_positions, deleted_points)?;
+        Ok(inverted_index.map(|inverted_index| Self {
+            inverted_index,
+            tokenizer,
+        }))
+    }
+
+    pub fn wipe(self) -> OperationResult<()> {
+        let files = self.inverted_index.files();
+        let path = self.inverted_index.path.clone();
+        // drop mmap handles before deleting files
+        drop(self);
+        for file in files {
+            fs::remove_file(file)?;
+        }
+        let _ = fs::remove_dir(path);
+        Ok(())
+    }
+
+    pub fn remove_point(&mut self, id: PointOffsetType) {
+        self.inverted_index.remove(id);
+    }
+
+    pub fn flusher(&self) -> Flusher {
+        self.inverted_index.flusher()
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inverted_index.populate()?;
+        Ok(())
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inverted_index.clear_cache()?;
+        Ok(())
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.inverted_index.files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.inverted_index.immutable_files()
+    }
+}
+
+impl FullTextMmapIndexBuilder {
+    pub fn new(
+        path: PathBuf,
+        config: TextIndexParams,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> Self {
+        let with_positions = config.phrase_matching.unwrap_or_default();
+        let tokenizer = Tokenizer::new_from_text_index_params(&config);
+        Self {
+            path,
+            mutable_index: MutableInvertedIndex::new(with_positions),
+            config,
+            is_on_disk,
+            tokenizer,
+            deleted_points: deleted_points.to_owned(),
+        }
+    }
+}
+
+impl ValueIndexer for FullTextMmapIndexBuilder {
+    type ValueType = String;
+
+    fn get_value(value: &Value) -> Option<String> {
+        match value {
+            Value::String(s) => Some(s.clone()),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::Array(_)
+            | Value::Object(_) => None,
+        }
+    }
+
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        if values.is_empty() {
+            return Ok(());
+        }
+
+        let phrase_matching = self.mutable_index.point_to_doc.is_some();
+        let insert_boundaries = phrase_matching && values.len() > 1;
+
+        let mut str_tokens: Vec<std::borrow::Cow<str>> =
+            Vec::with_capacity((values.len() * 2).saturating_sub(1));
+        for (i, value) in values.iter().enumerate() {
+            if insert_boundaries && i > 0 {
+                str_tokens.push(std::borrow::Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+            }
+            self.tokenizer.tokenize_doc(value, |token| {
+                str_tokens.push(token);
+            });
+        }
+
+        let tokens = self.mutable_index.register_tokens(&str_tokens);
+
+        if phrase_matching {
+            let document = Document::new(tokens.clone());
+            self.mutable_index
+                .index_document(id, document, hw_counter)?;
+        }
+
+        let token_set = TokenSet::from_iter(tokens);
+        self.mutable_index.index_tokens(id, token_set, hw_counter)?;
+
+        Ok(())
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.mutable_index.remove(id);
+
+        Ok(())
+    }
+}
+
+impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
+    type FieldIndexType = FullTextIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        ValueIndexer::add_point(self, id, payload, hw_counter)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        let Self {
+            path,
+            mutable_index,
+            config,
+            is_on_disk,
+            tokenizer,
+            deleted_points,
+        } = self;
+
+        let immutable = ImmutableInvertedIndex::from(mutable_index);
+
+        fs::create_dir_all(path.as_path())?;
+
+        OnDiskInvertedIndex::create(path.clone(), &immutable)?;
+
+        let populate = Populate::from(!is_on_disk);
+        let has_positions = config.phrase_matching.unwrap_or_default();
+        let inverted_index =
+            OnDiskInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
+                .ok_or_else(|| {
+                    OperationError::service_error(
+                        "Failed to open OnDiskInvertedIndex that was just created",
+                    )
+                })?;
+
+        let on_disk_index = OnDiskFullTextIndex {
+            inverted_index,
+            tokenizer,
+        };
+
+        let text_index = if is_on_disk {
+            FullTextIndex::OnDisk(on_disk_index)
+        } else {
+            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+        };
+
+        Ok(text_index)
+    }
+}

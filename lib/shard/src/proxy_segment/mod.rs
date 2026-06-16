@@ -45,34 +45,106 @@ pub struct ProxySegment {
     version: SeqNumberType,
 }
 
-impl ProxySegment {
+/// A freshly built [`ProxySegment`] whose `deleted_mask` has not been synced yet.
+///
+/// `deleted_mask` is a snapshot of the wrapped segment's deleted bitvec. That snapshot is only
+/// valid once the wrapped segment is frozen under the segment-holder write lock: a proxy is built
+/// while only a read/upgradable-read lock is held, so an upsert or delete can still land on the
+/// not-yet-frozen wrapped segment afterwards. An upsert landing in that window extends the wrapped
+/// segment's point count past the snapshot; the scored search path then treats every offset beyond
+/// `deleted_mask` as deleted (`check_deleted_condition` defaults out-of-range to `true`), silently
+/// dropping a live point from filtered KNN even though scroll/count/retrieve still see it.
+///
+/// To make this impossible to get wrong, [`ProxySegment::new`] hands back this type rather than a
+/// usable `ProxySegment`. The only way to obtain a `ProxySegment` is [`Self::finalize`], which
+/// reads the mask exactly once — so it cannot be forgotten, nor done twice. Call `finalize` once
+/// the holder write lock is held (wrapped segment frozen) and before the proxy goes live.
+#[must_use = "an UnsyncedProxySegment must be turned into a ProxySegment via `.finalize()`"]
+#[derive(Debug)]
+pub struct UnsyncedProxySegment(ProxySegment);
+
+impl UnsyncedProxySegment {
+    /// Build a proxy wrapping `segment`.
+    ///
+    /// `deleted_mask` is deliberately left empty here: it snapshots the wrapped segment's deleted
+    /// bitvec, but that snapshot is only valid once the wrapped segment is frozen under the
+    /// segment-holder write lock (see the type-level docs). The mask is read exactly once, later,
+    /// by [`Self::finalize`] — which is also the only way to turn this into a usable
+    /// [`ProxySegment`], so the sync cannot be forgotten nor done twice.
     pub fn new(segment: LockedSegment) -> Self {
-        let deleted_mask = match &segment {
-            LockedSegment::Original(raw_segment) => {
-                let raw_segment_guard = raw_segment.read();
-                let already_deleted = raw_segment_guard.get_deleted_points_bitvec();
-                Some(already_deleted)
-            }
-            LockedSegment::Proxy(_) => {
-                log::debug!("Double proxy segment creation");
-                None
-            }
-        };
+        if matches!(segment, LockedSegment::Proxy(_)) {
+            log::debug!("Double proxy segment creation");
+        }
 
         let (wrapped_config, version) = {
             let read_segment = segment.get().read();
             (read_segment.config().clone(), read_segment.version())
         };
 
-        ProxySegment {
+        UnsyncedProxySegment(ProxySegment {
             wrapped_segment: segment,
-            deleted_mask,
+            // Synced only in `finalize`, once the wrapped segment is frozen.
+            deleted_mask: None,
             changed_indexes: ProxyIndexChanges::default(),
             changed_vector_names: ProxyVectorNameChanges::default(),
             deleted_points: AHashMap::new(),
             deleted_deferred_count: 0,
             wrapped_config,
             version,
+        })
+    }
+
+    /// Sync `deleted_mask` from the now-frozen wrapped segment and return the usable proxy.
+    ///
+    /// Must be called once the segment-holder write lock is held, so the wrapped segment can no
+    /// longer change and the mask covers its full, final point range. The fresh read also captures
+    /// any deletes that raced in, closing the ghost direction too.
+    pub fn finalize(mut self) -> ProxySegment {
+        self.0.sync_deleted_mask();
+        self.0
+    }
+
+    /// The wrapped (soon-to-be-frozen) segment. Exposed for invariant checks before finalizing.
+    pub fn wrapped_segment(&self) -> &LockedSegment {
+        &self.0.wrapped_segment
+    }
+
+    /// See [`ProxySegment::replicate_field_indexes`].
+    pub fn replicate_field_indexes(
+        &self,
+        op_num: SeqNumberType,
+        hw_counter: &HardwareCounterCell,
+        segment_to_update: &LockedSegment,
+    ) -> OperationResult<()> {
+        self.0
+            .replicate_field_indexes(op_num, hw_counter, segment_to_update)
+    }
+}
+
+impl ProxySegment {
+    /// Build a proxy wrapping `segment` and immediately sync its `deleted_mask`.
+    ///
+    /// Test-only convenience that collapses the two-phase [`UnsyncedProxySegment::new`] +
+    /// [`UnsyncedProxySegment::finalize`] construction into one call. Production code must use the
+    /// two-phase form so the mask is synced under the segment-holder write lock; see
+    /// [`UnsyncedProxySegment`].
+    #[cfg(feature = "testing")]
+    pub fn new(segment: LockedSegment) -> Self {
+        UnsyncedProxySegment::new(segment).finalize()
+    }
+
+    /// Read the wrapped segment's deleted bitvec into `deleted_mask`.
+    ///
+    /// Only called from [`UnsyncedProxySegment::finalize`]; see that type for why the timing
+    /// (after the wrapped segment is frozen) matters.
+    fn sync_deleted_mask(&mut self) {
+        match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                self.deleted_mask = Some(raw_segment.read().get_deleted_points_bitvec());
+            }
+            LockedSegment::Proxy(_) => {
+                // A double proxy has no own deleted bitvec to sync.
+            }
         }
     }
 
@@ -143,7 +215,6 @@ impl ProxySegment {
         filter: Option<Cow<'_, Filter>>,
         deleted_points: impl IntoIterator<Item = PointIdType>,
     ) -> Filter {
-        #[allow(clippy::from_iter_instead_of_collect)]
         let wrapper_condition = Condition::HasId(HasIdCondition::from_iter(deleted_points));
         match filter {
             None => Filter::new_must_not(wrapper_condition),

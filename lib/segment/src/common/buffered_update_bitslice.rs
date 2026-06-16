@@ -21,7 +21,7 @@ pub struct BufferedUpdateBitSlice<S> {
     is_alive_flush_lock: common::is_alive_lock::IsAliveLock,
 }
 
-impl<S: UniversalWrite<u64> + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
+impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
     pub fn new(bitslice: StoredBitSlice<S>) -> Self {
         let len = bitslice.bit_len() as usize;
         Self {

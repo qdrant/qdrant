@@ -2,13 +2,13 @@ import requests
 
 from .assertions import assert_http_ok
 from .fixtures import create_collection
-from .utils import every_test, start_cluster
+from .utils import *
 
 COLL_NAME = "test_collection"
 
 
 def test_order_by_from_remote_shard(tmp_path, every_test):
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, num_peers=2, port_seed=10000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, num_peers=2)
 
     uri = peer_api_uris[0]
 

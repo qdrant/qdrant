@@ -11,6 +11,7 @@ enum Datatype {
   Float32 = 1;
   Uint8 = 2;
   Float16 = 3;
+  Turbo4 = 4;
 }
 
 // ---------------------------------------------
@@ -307,10 +308,14 @@ message OptimizersConfigDiff {
   // If 0 - no optimization threads, optimizations will be disabled.
   optional MaxOptimizationThreads max_optimization_threads = 9;
 
-  // If this option is set, service will try to prevent creation of large unoptimized segments.
-  // When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
-  // Updates will be resumed when optimization is completed and segments are optimized below the threshold.
-  // Using this option may lead to increased delay between submitting an update and its application.
+  // If enabled, the service will try to prevent the creation of large unoptimized segments.
+  // When enabled, new points written to segments larger than the indexing threshold are stored
+  // as "deferred points": they are persisted in the WAL and segments, but excluded from
+  // read/search results until the corresponding segments are optimized (e.g. indexed,
+  // quantized, or moved to mmap storage).
+  // Update requests with wait=true will only return after the deferred points become visible,
+  // which may significantly increase the perceived latency between submitting an update and its
+  // completion. Update requests with wait=false are not affected.
   // Default is disabled.
   optional bool prevent_unoptimized = 10;
 }
@@ -364,9 +369,6 @@ message BinaryQuantization {
 message TurboQuantization{
   optional bool always_ram = 1;
   optional TurboQuantBitSize bits = 2;
-
-  // TODO(turbo): Remove before release
-  optional bool plus = 3;
 }
 
 enum TurboQuantBitSize{
@@ -448,6 +450,9 @@ message StrictModeConfig {
   // Reject memory-consuming update operations when process resident memory exceeds this percentage of total RAM (cgroup-aware, 1-100).
   // Delete-style operations are still allowed so memory can be freed.
   optional uint32 max_resident_memory_percent = 21;
+  // Reject disk-consuming update operations when the filesystem hosting Qdrant storage exceeds this percentage of total capacity (1-100).
+  // Free space is sampled with a small TTL cache so the gate may take a few seconds to react. Delete-style operations are still allowed so disk can be freed.
+  optional uint32 max_disk_usage_percent = 22;
 }
 
 message StrictModeSparseConfig {

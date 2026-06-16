@@ -131,8 +131,14 @@ impl EdgeShard {
     }
 }
 
+// Tests in this module exercise platform-agnostic optimizer logic but run
+// 5-25x slower on Windows due to filesystem IO. They are marked
+// `#[ignore]` on Windows; Linux and macOS jobs provide full coverage.
+// To execute them locally on Windows, run with `cargo test -- --ignored`.
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::HashMap;
     use std::path::Path;
 
@@ -152,6 +158,7 @@ mod tests {
 
     const VECTOR_NAME: &str = "edge-test-vector";
 
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn does_not_force_merge_all_segments_into_one() {
         let dir = tempfile::Builder::new()
@@ -177,6 +184,7 @@ mod tests {
         assert_points_retrievable_with_vectors(&reopened, &[1]);
     }
 
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn vacuum_optimizer_runs_in_blocking_mode_until_idle() {
         let dir = tempfile::Builder::new()
@@ -212,6 +220,7 @@ mod tests {
 
     /// A fresh shard with a single small segment and no deletions should not
     /// trigger any optimizer.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn no_op_on_single_segment_without_deletions() {
         let dir = tempfile::Builder::new()
@@ -235,6 +244,7 @@ mod tests {
     }
 
     /// An empty shard (no data at all) should be a no-op.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn no_op_on_empty_shard() {
         let dir = tempfile::Builder::new()
@@ -251,6 +261,7 @@ mod tests {
 
     /// Creating more segments than `default_segment_number` should trigger
     /// the merge optimizer to reduce the segment count.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn merge_reduces_excess_segments() {
         let target_count = default_segment_number() + 6;
@@ -296,6 +307,7 @@ mod tests {
     }
 
     /// After a merge optimization, a second run should be a no-op.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn optimization_is_idempotent_after_merge() {
         let target_count = default_segment_number() + 6;
@@ -331,6 +343,7 @@ mod tests {
 
     /// Deleting less than 20% of points (below the vacuum threshold)
     /// should NOT trigger the vacuum optimizer.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn vacuum_below_threshold_is_noop() {
         let dir = tempfile::Builder::new()
@@ -363,6 +376,7 @@ mod tests {
 
     /// Deleting below the minimum vector count (< 1000 total points)
     /// should NOT trigger the vacuum optimizer even with a high deletion ratio.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn vacuum_below_min_vector_count_is_noop() {
         let dir = tempfile::Builder::new()
@@ -396,6 +410,7 @@ mod tests {
 
     /// After vacuum optimization, all non-deleted points should still be
     /// retrievable and deleted points should be gone.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn vacuum_preserves_remaining_points() {
         let dir = tempfile::Builder::new()
@@ -452,6 +467,7 @@ mod tests {
     /// resulting segment has 0 points, `optimize_all_segments_blocking`
     /// reports `false` (zero points processed). The shard should still be
     /// valid and accept new data afterward.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn vacuum_after_all_points_deleted() {
         let dir = tempfile::Builder::new()
@@ -502,6 +518,7 @@ mod tests {
     /// Vacuum at exactly the threshold boundary (20% deleted, 1000 total).
     /// The threshold check is strictly greater-than, so exactly 20% should
     /// NOT trigger vacuum.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn vacuum_at_exact_threshold_boundary_is_noop() {
         let dir = tempfile::Builder::new()
@@ -532,6 +549,7 @@ mod tests {
     }
 
     /// Just above the vacuum threshold should trigger optimization.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn vacuum_just_above_threshold_triggers() {
         let dir = tempfile::Builder::new()
@@ -564,6 +582,7 @@ mod tests {
 
     /// When there are excess segments AND some have high deletion ratios,
     /// optimization should handle both (merge + vacuum).
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn merge_and_vacuum_cooperate() {
         let target_count = default_segment_number() + 6;
@@ -624,6 +643,7 @@ mod tests {
     }
 
     /// Optimized shard should survive a reload and still serve correct data.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn data_survives_optimize_and_reload() {
         let dir = tempfile::Builder::new()
@@ -721,6 +741,7 @@ mod tests {
             hnsw_config: Default::default(),
             quantization_config: None,
             optimizers: Default::default(),
+            wal_options: None,
         }
     }
 

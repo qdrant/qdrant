@@ -1,6 +1,6 @@
 use std::io::{Result, Write};
 
-static ZEROS: [u8; 8096] = [0u8; 8096];
+pub static ZEROS: [u8; 8096] = [0u8; 8096];
 
 pub trait WriteZerosExt {
     /// Write `len` zeros to the writer.

@@ -1,5 +1,4 @@
 import pathlib
-from time import sleep
 
 import requests
 
@@ -74,7 +73,7 @@ def test_create_vector_no_optimization(tmp_path: pathlib.Path):
     VECTOR_DIM2 = 99
     assert_project_root()
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     # Create collection with low indexing threshold to trigger indexing
     r = requests.put(
@@ -182,7 +181,7 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
-        tmp_path, N_PEERS, port_seed=11000, extra_env=env
+        tmp_path, N_PEERS, extra_env=env
     )
 
     # Create collection with a named dense vector VECTOR_NAME
@@ -224,14 +223,15 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
 
     # Kill the last peer
     killed_peer = processes.pop()
+    restart_port = killed_peer.p2p_port
     killed_peer.kill()
     print(f"Killed peer at port {killed_peer.http_port}")
 
-    # Perform some consensus operations to trigger WAL compaction + snapshot
-    # Delete vector v1 and create v2 with different dimensions
-    # Use wait=False because a peer is down — await_consensus_sync can't reach all peers
-    delete_vector_name(peer_api_uris[0], COLLECTION_NAME, VECTOR_NAME, wait=False)
-    sleep(1)  # Give consensus time to propagate to surviving peers
+    # Perform some consensus operations to trigger WAL compaction + snapshot.
+    # Delete vector v1 and create v2 with different dimensions.
+    # Use a short timeout because a peer is down — the server will still await
+    # consensus sync across all peers and hit the client timeout on the dead one.
+    delete_vector_name(peer_api_uris[0], COLLECTION_NAME, VECTOR_NAME, wait=False, timeout=2)
 
     # Verify v1 is gone on surviving peers
     for uri in peer_api_uris[:-1]:
@@ -244,8 +244,8 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
         COLLECTION_NAME,
         VECTOR_NAME,
         {"dense": {"size": VECTOR_DIM2, "distance": "Dot"}},
+        timeout=2,
     )
-    sleep(1)  # Give consensus time to propagate to surviving peers
 
     # Verify v2 exists on surviving peers
     for uri in peer_api_uris[:-1]:
@@ -258,8 +258,9 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
         create_vector_name(
             peer_api_uris[0], COLLECTION_NAME, "tmp_vec",
             {"dense": {"size": 2, "distance": "Cosine"}},
+            timeout=2,
         )
-        delete_vector_name(peer_api_uris[0], COLLECTION_NAME, "tmp_vec")
+        delete_vector_name(peer_api_uris[0], COLLECTION_NAME, "tmp_vec", timeout=2)
 
 
     # Upload 200 points with v1
@@ -283,7 +284,7 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
 
     # Restart the killed peer — it should recover via consensus snapshot
     new_url = start_peer(
-        peer_dirs[-1], "peer_restarted.log", bootstrap_uri, port=21000, extra_env=env
+        peer_dirs[-1], "peer_restarted.log", bootstrap_uri, port=restart_port, extra_env=env
     )
     peer_api_uris[-1] = new_url
 

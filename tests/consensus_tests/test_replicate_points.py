@@ -51,7 +51,7 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(
         peer_api_uris[0],
@@ -121,7 +121,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(
         peer_api_uris[0],
@@ -186,7 +186,10 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     src_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     dest_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True, filter=filter)
 
-    assert dest_filtered_count > original_filtered_count # more points than before due to upserts during transfer
+    # Concurrent upserts during the transfer may or may not add *new* matching
+    # points to the destination depending on timing, so we only require that the
+    # destination did not lose any points relative to the original snapshot.
+    assert dest_filtered_count >= original_filtered_count # at least as many points, plus any upserts caught during transfer
     assert dest_filtered_count == src_filtered_count # new shard should also have the same points
 
     if override_points is False:

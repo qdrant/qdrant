@@ -220,10 +220,12 @@ def test_shard_key_storage(tmp_path: pathlib.Path):
         assert shard['shard_key'] in ["cats", "dogs", 123, 456]
 
     # Kill the last peer
-    processes.pop().kill()
+    p = processes.pop()
+    restart_port = p.p2p_port
+    p.kill()
 
     # Restart the last peer
-    restarted_peer_url = start_peer(peer_dirs[-1], "peer_1_restarted.log", bootstrap_uri)
+    restarted_peer_url = start_peer(peer_dirs[-1], "peer_1_restarted.log", bootstrap_uri, port=restart_port)
     peer_api_uris[-1] = restarted_peer_url
 
     wait_for_peer_online(peer_api_uris[-1])

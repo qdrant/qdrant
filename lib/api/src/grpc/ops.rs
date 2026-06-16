@@ -78,13 +78,6 @@ impl Usage {
             inference: None,
         }
     }
-
-    pub fn from_inference_usage(inference: Option<InferenceUsage>) -> Self {
-        Usage {
-            hardware: None,
-            inference,
-        }
-    }
 }
 
 impl InferenceUsage {

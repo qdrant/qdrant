@@ -216,14 +216,6 @@ impl Persistent {
         self.save()
     }
 
-    pub fn set_peer_address_by_id(
-        &mut self,
-        peer_address_by_id: PeerAddressById,
-    ) -> Result<(), StorageError> {
-        *self.peer_address_by_id.write() = peer_address_by_id;
-        self.save()
-    }
-
     pub fn insert_peer(&mut self, peer_id: PeerId, address: Uri) -> Result<(), StorageError> {
         let address_display = address.to_string();
         match self

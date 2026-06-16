@@ -21,14 +21,31 @@ from qdrant_client.http.models import (
     VectorParams,
 )
 
+from .helpers.helpers import qdrant_host_headers
+from .helpers.settings import QDRANT_HOST
+
 
 def _build_client(prefer_grpc: bool) -> QdrantClient:
+    host_headers = qdrant_host_headers()
+    grpc_host = host_headers.get("host") or host_headers.get("Host") or "127.0.0.1"
+
+    # NOTE: The test setup is different compared to other pure HTTP or gRPC tests.
+    # It intentionally compares REST and gRPC through QdrantClient instead of request_with_validation.
+    # Both clients must still use the shared host-routing config for proxy-backed runs.
+    if prefer_grpc:
+        return QdrantClient(
+            host=grpc_host,
+            port=6333,
+            grpc_port=6334,
+            prefer_grpc=True,
+            timeout=30,
+        )
+
     return QdrantClient(
-        host="127.0.0.1",
-        port=6333,
-        grpc_port=6334,
-        prefer_grpc=prefer_grpc,
+        url=QDRANT_HOST,
+        prefer_grpc=False,
         timeout=30,
+        headers=host_headers,
     )
 
 
@@ -82,7 +99,10 @@ def _run(prefer_grpc: bool):
             ),
             wait=True,
         )
-        return {term: _scroll_ids(client, collection, term) for term in ("lazy", "The", "LAZY")}
+        return {
+            term: _scroll_ids(client, collection, term)
+            for term in ("lazy", "The", "LAZY")
+        }
     finally:
         if client.collection_exists(collection):
             client.delete_collection(collection)

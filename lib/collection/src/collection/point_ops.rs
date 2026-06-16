@@ -427,7 +427,7 @@ impl Collection {
                     timeout,
                     shard_selection.is_shard_id(),
                     hw_measurement_acc.clone(),
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
             })
             .collect();

@@ -74,6 +74,16 @@ impl Validate for grpc::vectors_config_diff::Config {
     }
 }
 
+impl Validate for grpc::create_vector_name_request::VectorConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use grpc::create_vector_name_request::VectorConfig;
+        match self {
+            VectorConfig::DenseConfig(dense) => dense.validate(),
+            VectorConfig::SparseConfig(sparse) => sparse.validate(),
+        }
+    }
+}
+
 impl Validate for grpc::quantization_config::Quantization {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use grpc::quantization_config::Quantization;
@@ -271,10 +281,49 @@ impl Validate for grpc::FieldCondition {
                 "match",
                 ValidationError::new("At least one field condition must be specified"),
             );
-            Err(errors)
-        } else {
-            Ok(())
+            return Err(errors);
         }
+
+        // Recurse into the geo polygon's own validator. Otherwise FieldCondition
+        // only checks that some field is set, so a malformed polygon (empty,
+        // fewer than 4 points, or an unclosed exterior/interior) is accepted here
+        // and later panics when the geo index processes it.
+        if let Some(geo_polygon) = geo_polygon {
+            geo_polygon.validate()?;
+            // Shape validation above does not check coordinate ranges.
+            if let Some(exterior) = &geo_polygon.exterior {
+                for point in &exterior.points {
+                    validate_geo_point(point)?;
+                }
+            }
+            for interior in &geo_polygon.interiors {
+                for point in &interior.points {
+                    validate_geo_point(point)?;
+                }
+            }
+        }
+
+        // Reject out-of-range coordinates in the bounding-box / radius
+        // sub-conditions. Latitude outside [-90, 90] or longitude outside
+        // [-180, 180] is accepted by prost decoding but panics once the geo
+        // index encodes it as a geohash. Mirrors
+        // `segment::types::GeoPoint::validate` (the api crate does not depend on
+        // segment).
+        if let Some(geo_bounding_box) = geo_bounding_box {
+            if let Some(top_left) = &geo_bounding_box.top_left {
+                validate_geo_point(top_left)?;
+            }
+            if let Some(bottom_right) = &geo_bounding_box.bottom_right {
+                validate_geo_point(bottom_right)?;
+            }
+        }
+        if let Some(geo_radius) = geo_radius
+            && let Some(center) = &geo_radius.center
+        {
+            validate_geo_point(center)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -477,6 +526,15 @@ pub fn validate_geo_polygon_interiors(
     Ok(())
 }
 
+/// Reject the `Turbo4` datatype on sparse vector configs.
+/// `validator` unwraps `Option<i32>` before calling, so we receive `&i32`.
+pub fn validate_sparse_datatype(datatype: &i32) -> Result<(), ValidationError> {
+    if *datatype == grpc::Datatype::Turbo4 as i32 {
+        return Err(common::validation::sparse_turbo4_unsupported_error());
+    }
+    Ok(())
+}
+
 /// Validate that the timestamp is within the range specified in the protobuf docs.
 /// <https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp>
 pub fn validate_timestamp(ts: &prost_wkt_types::Timestamp) -> Result<(), ValidationError> {
@@ -528,14 +586,109 @@ impl Validate for super::qdrant::points_selector::PointsSelectorOneOf {
     }
 }
 
+/// Reject geo coordinates outside the valid WGS84 ranges
+/// (latitude in `[-90, 90]`, longitude in `[-180, 180]`).
+///
+/// Out-of-range coordinates are accepted by prost decoding and are not covered
+/// by the geo polygon shape validation; they reach the geo index and panic
+/// during geohash encoding, which expects pre-validated input. This mirrors
+/// `segment::types::GeoPoint::validate`; the bounds are duplicated here because
+/// the `api` crate does not depend on `segment`.
+fn validate_geo_point(point: &grpc::GeoPoint) -> Result<(), ValidationErrors> {
+    const MIN_LON: f64 = -180.0;
+    const MAX_LON: f64 = 180.0;
+    const MIN_LAT: f64 = -90.0;
+    const MAX_LAT: f64 = 90.0;
+
+    if !(MIN_LON..=MAX_LON).contains(&point.lon) || !(MIN_LAT..=MAX_LAT).contains(&point.lat) {
+        let mut errors = ValidationErrors::new();
+        errors.add(
+            "geo",
+            ValidationError::new(
+                "Geo coordinate out of range: latitude must be within [-90, 90] and longitude within [-180, 180]",
+            ),
+        );
+        return Err(errors);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, GeoLineString, GeoPoint, GeoPolygon,
-        SearchPoints, StrDistFunc, StrDistParamsExpression, UpdateCollection,
+        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest,
+        DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
+        GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request,
     };
+
+    #[test]
+    fn test_geo_field_condition_rejects_out_of_range_coordinates() {
+        // Valid coordinates pass.
+        let valid = FieldCondition {
+            geo_radius: Some(GeoRadius {
+                center: Some(GeoPoint {
+                    lat: 52.5,
+                    lon: 13.4,
+                }),
+                radius: 1000.0,
+            }),
+            ..Default::default()
+        };
+        assert!(valid.validate().is_ok());
+
+        // Latitude out of range (> 90) is rejected instead of panicking in the
+        // geo index during geohash encoding.
+        let bad_radius = FieldCondition {
+            geo_radius: Some(GeoRadius {
+                center: Some(GeoPoint {
+                    lat: 200.0,
+                    lon: 13.4,
+                }),
+                radius: 1000.0,
+            }),
+            ..Default::default()
+        };
+        assert!(bad_radius.validate().is_err());
+
+        // Longitude out of range (< -180) in a bounding-box corner is rejected.
+        let bad_box = FieldCondition {
+            geo_bounding_box: Some(GeoBoundingBox {
+                top_left: Some(GeoPoint {
+                    lat: 50.0,
+                    lon: -190.0,
+                }),
+                bottom_right: Some(GeoPoint {
+                    lat: 40.0,
+                    lon: 13.4,
+                }),
+            }),
+            ..Default::default()
+        };
+        assert!(bad_box.validate().is_err());
+
+        // A well-formed polygon (>= 4 points, closed ring) whose coordinates are
+        // out of range is rejected; shape validation alone would accept it.
+        let bad_polygon = FieldCondition {
+            geo_polygon: Some(GeoPolygon {
+                exterior: Some(GeoLineString {
+                    points: vec![
+                        GeoPoint { lat: 0.0, lon: 0.0 },
+                        GeoPoint {
+                            lat: 100.0,
+                            lon: 0.0,
+                        },
+                        GeoPoint { lat: 1.0, lon: 1.0 },
+                        GeoPoint { lat: 0.0, lon: 0.0 },
+                    ],
+                }),
+                interiors: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(bad_polygon.validate().is_err());
+    }
 
     #[test]
     fn test_good_request() {
@@ -763,5 +916,83 @@ mod tests {
             good_request.validate().is_ok(),
             "non-empty str_dist query should not error on validation"
         );
+    fn test_field_condition_validates_geo_polygon() {
+        use crate::grpc::qdrant::FieldCondition;
+
+        // FieldCondition::validate only checks that at least one field is set; it
+        // must also reject a malformed geo polygon, otherwise the invalid shape
+        // reaches the geo index and panics. An empty exterior is invalid.
+        let bad = FieldCondition {
+            key: "location".into(),
+            geo_polygon: Some(GeoPolygon {
+                exterior: Some(GeoLineString { points: vec![] }),
+                interiors: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(
+            bad.validate().is_err(),
+            "field condition with an empty polygon exterior should error"
+        );
+
+        // A well-formed polygon still passes.
+        let good = FieldCondition {
+            key: "location".into(),
+            geo_polygon: Some(GeoPolygon {
+                exterior: Some(GeoLineString {
+                    points: vec![
+                        GeoPoint { lat: 1., lon: 1. },
+                        GeoPoint { lat: 2., lon: 2. },
+                        GeoPoint { lat: 3., lon: 3. },
+                        GeoPoint { lat: 1., lon: 1. },
+                    ],
+                }),
+                interiors: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(good.validate().is_ok());
+    }
+
+    #[test]
+    fn test_create_vector_name_request() {
+        let request_with_zero_size = CreateVectorNameRequest {
+            collection_name: "test".into(),
+            vector_name: "vec".into(),
+            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
+                DenseVectorCreationConfig {
+                    size: 0,
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        assert!(request_with_zero_size.validate().is_err());
+
+        let request_with_oversize = CreateVectorNameRequest {
+            collection_name: "test".into(),
+            vector_name: "vec".into(),
+            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
+                DenseVectorCreationConfig {
+                    size: 65537,
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        assert!(request_with_oversize.validate().is_err());
+
+        let good_request = CreateVectorNameRequest {
+            collection_name: "test".into(),
+            vector_name: "vec".into(),
+            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
+                DenseVectorCreationConfig {
+                    size: 768,
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        assert!(good_request.validate().is_ok());
     }
 }

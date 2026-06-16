@@ -43,6 +43,12 @@ pub struct RunningEnvironmentTelemetry {
     is_docker: bool,
     #[anonymize(false)]
     cores: Option<usize>,
+    /// Average number of CPU cores used by this process over roughly the last
+    /// two seconds. `None` on unsupported platforms, before two samples are
+    /// collected, or on transient failures reading process CPU time.
+    #[anonymize(false)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cpu_cores_used: Option<f32>,
     ram_size: Option<usize>,
     disk_size: Option<usize>,
     #[anonymize(false)]
@@ -223,6 +229,7 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         distribution_version,
         is_docker: cfg!(unix) && Path::new("/.dockerenv").exists(),
         cores: sys_info::cpu_num().ok().map(|x| x as usize),
+        cpu_cores_used: common::process_cpu_usage::process_cpu_usage_cores(),
         ram_size: sys_info::mem_info().ok().map(|x| x.total as usize),
         disk_size: sys_info::disk_info().ok().map(|x| x.total as usize),
         cpu_flags: cpu_flags.join(","),

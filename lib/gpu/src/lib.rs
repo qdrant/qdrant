@@ -76,7 +76,16 @@ impl From<gpu_allocator::AllocationError> for GpuError {
     fn from(error: gpu_allocator::AllocationError) -> GpuError {
         match error {
             gpu_allocator::AllocationError::OutOfMemory => GpuError::OutOfMemory,
-            _ => GpuError::Other(format!("GPU allocator error: {error:?}")),
+            gpu_allocator::AllocationError::FailedToMap(_)
+            | gpu_allocator::AllocationError::NoCompatibleMemoryTypeFound
+            | gpu_allocator::AllocationError::InvalidAllocationCreateDesc
+            | gpu_allocator::AllocationError::InvalidAllocatorCreateDesc(_)
+            | gpu_allocator::AllocationError::Internal(_)
+            | gpu_allocator::AllocationError::BarrierLayoutNeedsDevice10
+            | gpu_allocator::AllocationError::CastableFormatsRequiresEnhancedBarriers
+            | gpu_allocator::AllocationError::CastableFormatsRequiresAtLeastDevice12 => {
+                GpuError::Other(format!("GPU allocator error: {error:?}"))
+            }
         }
     }
 }

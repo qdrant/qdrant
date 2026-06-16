@@ -1,3 +1,4 @@
+pub mod operation_name;
 pub mod optimization;
 pub mod payload_ops;
 pub mod point_ops;
@@ -6,8 +7,10 @@ pub mod staging;
 pub mod vector_name_ops;
 pub mod vector_ops;
 
+use std::collections::HashSet;
+
 use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, PointIdType};
+use segment::types::{PayloadFieldSchema, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
@@ -92,6 +95,55 @@ impl CollectionUpdateOperations {
             Self::VectorNameOperation(_) => (),
             #[cfg(feature = "staging")]
             Self::StagingOperation(_) => (),
+        }
+    }
+
+    /// Drop named-vector references to vector names not in `valid`.
+    ///
+    /// Used during WAL replay: a historical operation may reference a vector name that was
+    /// since removed by `delete_named_vector`. Without this, such an operation fails segment
+    /// validation (`VectorNameNotExists`) and is dropped wholesale on reload, taking its
+    /// points with it. Stripping the dead names lets the rest of the operation apply, matching
+    /// the live outcome (the point survives, just without the deleted vector).
+    ///
+    /// This does not touch `VectorNameOperation` responsible for creating/deleting a named vector.
+    ///
+    /// Only affects the named-vector variants; the default (unnamed) vector is left untouched.
+    ///
+    /// Note: this is best-effort. Stripping a vector from an early operation silently changes the
+    /// behavior of a later operation that depended on it (e.g. a `has_vector` filter or
+    /// `UpdateVectors`), so the replayed timeline can still diverge from the live one. Tracked in
+    /// <https://github.com/qdrant/qdrant/issues/9386>.
+    pub fn retain_vector_names(&mut self, valid: &HashSet<VectorNameBuf>) {
+        match self {
+            Self::PointOperation(op) => op.retain_vector_names(valid),
+            Self::VectorOperation(op) => op.retain_vector_names(valid),
+            Self::PayloadOperation(_) => (),
+            Self::FieldIndexOperation(_) => (),
+            Self::VectorNameOperation(_) => (),
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => (),
+        }
+    }
+
+    /// If this operation creates a named vector, return the name it introduces.
+    ///
+    /// Used during WAL replay to grow the set of valid vector names: a historical
+    /// `CreateVectorName` must make its name valid for the operations that follow it in
+    /// the WAL, otherwise a later upsert referencing it would be wrongly stripped by
+    /// [`Self::retain_vector_names`].
+    pub fn created_vector_name(&self) -> Option<&VectorNameBuf> {
+        match self {
+            Self::VectorNameOperation(VectorNameOperations::CreateVectorName(op)) => {
+                Some(&op.vector_name)
+            }
+            Self::VectorNameOperation(VectorNameOperations::DeleteVectorName(_))
+            | Self::PointOperation(_)
+            | Self::VectorOperation(_)
+            | Self::PayloadOperation(_)
+            | Self::FieldIndexOperation(_) => None,
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => None,
         }
     }
 }
@@ -221,6 +273,8 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use proptest::prelude::*;
     use segment::types::*;
 

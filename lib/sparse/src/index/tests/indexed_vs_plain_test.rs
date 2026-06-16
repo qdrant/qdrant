@@ -2,36 +2,41 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 
+use crate::SearchScratch;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::search_context::SearchContext;
-use crate::index::tests::common::{build_index, get_pooled_scores, match_all};
+use crate::index::tests::common::{build_index, match_all};
 
 fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
     let is_stopped = AtomicBool::new(false);
     let accumulator = HwMeasurementAcc::new();
     let hardware_counter = accumulator.get_counter_cell();
     let top = 10;
+    let mut scratch = SearchScratch::new_for_test();
     let mut search_context = SearchContext::new(
         query.clone(),
         top,
         index,
-        get_pooled_scores(),
+        &mut scratch,
         &is_stopped,
         &hardware_counter,
-    );
+    )
+    .unwrap();
 
     let result = search_context.search(&match_all);
     let docs: Vec<_> = result.iter().map(|x| x.idx).collect();
+    drop(search_context);
 
     let mut search_context = SearchContext::new(
         query,
         top,
         index,
-        get_pooled_scores(),
+        &mut scratch,
         &is_stopped,
         &hardware_counter,
-    );
+    )
+    .unwrap();
     let plain_result = search_context.plain_search(&docs);
 
     assert_eq!(result, plain_result);

@@ -13,12 +13,12 @@ use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
-use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
@@ -35,24 +35,34 @@ use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::update_handler::{OperationData, UpdateSignal};
 use crate::update_workers::internal_update_result::InternalUpdateResult;
 
-#[async_trait]
-impl ShardOperation for LocalShard {
-    /// Imply interior mutability.
-    /// Performs update operation on this collection asynchronously.
-    /// Explicitly waits for result to be updated.
+/// Outcome of submitting an update to the worker queue.
+pub enum SubmitOutcome {
+    /// Operation was written to the WAL and dispatched to the update worker.
+    /// Awaiting the embedded receiver yields the operation's result.
+    Submitted {
+        operation_id: segment::types::SeqNumberType,
+        receiver: Option<oneshot::Receiver<CollectionResult<InternalUpdateResult>>>,
+        clock_tag: Option<crate::operations::ClockTag>,
+    },
+    /// Operation was rejected because of an outdated clock; nothing was queued.
+    ClockRejected {
+        clock_tag: Option<crate::operations::ClockTag>,
+    },
+}
+
+impl LocalShard {
+    /// Submit an update to the worker queue without waiting for completion.
     ///
-    /// # Cancel safety
-    ///
-    /// This method is cancel safe.
-    async fn update(
+    /// Holds locks only for the brief WAL write + channel send. The returned
+    /// [`SubmitOutcome::Submitted`] carries an owned `oneshot::Receiver` that
+    /// can be awaited via [`await_update_result`] after dropping any outer
+    /// read guards on the replica set.
+    pub async fn submit_update(
         &self,
         mut operation: OperationWithClockTag,
         wait: WaitUntil,
-        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<UpdateResult> {
-        // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
-        // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+    ) -> CollectionResult<SubmitOutcome> {
         let (callback_sender, callback_receiver) = if wait.needs_callback() {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -71,96 +81,144 @@ impl ShardOperation for LocalShard {
             ));
         }
 
-        let operation_id = {
-            let _update_lock = self.update_lock.read().await;
-            let pending_operations_count = self.update_queue_length();
+        let _update_lock = self.update_lock.read().await;
+        let pending_operations_count = self.update_queue_length();
 
-            let update_sender = self.update_sender.load();
-            let channel_permit = update_sender.reserve().await?;
+        let update_sender = self.update_sender.load();
+        let channel_permit = update_sender.reserve().await?;
 
-            // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
-            //
-            // TODO: Refactor `lock_and_write`, so this is less terrible? :/
-            let (operation_id, _wal_lock) = match self.wal.lock_and_write(&mut operation).await {
-                Ok(id_and_lock) => id_and_lock,
+        // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
+        //
+        // TODO: Refactor `lock_and_write`, so this is less terrible? :/
+        let (operation_id, _wal_lock) = match self.wal.lock_and_write(&mut operation).await {
+            Ok(id_and_lock) => id_and_lock,
 
-                Err(shard::wal::WalError::ClockRejected) => {
-                    // Propagate clock rejection to operation sender
-                    return Ok(UpdateResult {
-                        operation_id: None,
-                        status: UpdateStatus::ClockRejected,
-                        clock_tag: operation.clock_tag,
-                    });
-                }
+            Err(shard::wal::WalError::ClockRejected) => {
+                // Propagate clock rejection to operation sender
+                return Ok(SubmitOutcome::ClockRejected {
+                    clock_tag: operation.clock_tag,
+                });
+            }
 
-                Err(err) => return Err(err.into()),
-            };
-
-            // If there are too many pending operations, don't keep operation data in RAM.
-            // Instead, read operation data from the WAL when processing the operation.
-            let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
-            let operation = keep_operation_in_ram.then_some(Box::new(operation.operation));
-
-            channel_permit.send(UpdateSignal::Operation(OperationData {
-                op_num: operation_id,
-                operation,
-                sender: callback_sender,
-                wait_for_deferred: wait.wait_for_deferred(),
-                hw_measurements: hw_measurement_acc.clone(),
-            }));
-
-            operation_id
+            Err(err) => return Err(err.into()),
         };
 
-        match (callback_receiver, timeout) {
-            // Wait indefinitely
-            (Some(receiver), None) => {
-                let _ = receiver.await??;
+        // If there are too many pending operations, don't keep operation data in RAM.
+        // Instead, read operation data from the WAL when processing the operation.
+        let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
+        let clock_tag = operation.clock_tag;
+        let operation_in_ram = keep_operation_in_ram.then_some(Box::new(operation.operation));
+
+        channel_permit.send(UpdateSignal::Operation(OperationData {
+            op_num: operation_id,
+            operation: operation_in_ram,
+            sender: callback_sender,
+            wait_for_deferred: wait.wait_for_deferred(),
+            hw_measurements: hw_measurement_acc,
+        }));
+
+        Ok(SubmitOutcome::Submitted {
+            operation_id,
+            receiver: callback_receiver,
+            clock_tag,
+        })
+    }
+}
+
+/// Wait for an update previously dispatched via [`LocalShard::submit_update`].
+///
+/// The future is `'static` on its inputs (no borrow on the originating shard),
+/// so the caller can drop replica-set read guards before awaiting it.
+pub async fn await_update_result(
+    outcome: SubmitOutcome,
+    timeout: Option<Duration>,
+) -> CollectionResult<UpdateResult> {
+    let (operation_id, receiver, clock_tag) = match outcome {
+        SubmitOutcome::Submitted {
+            operation_id,
+            receiver,
+            clock_tag,
+        } => (operation_id, receiver, clock_tag),
+        SubmitOutcome::ClockRejected { clock_tag } => {
+            return Ok(UpdateResult {
+                operation_id: None,
+                status: UpdateStatus::ClockRejected,
+                clock_tag,
+            });
+        }
+    };
+
+    match (receiver, timeout) {
+        // Wait indefinitely
+        (Some(receiver), None) => {
+            let _ = receiver.await??;
+            Ok(UpdateResult {
+                operation_id: Some(operation_id),
+                status: UpdateStatus::Completed,
+                clock_tag,
+            })
+        }
+        // Wait for timeout
+        (Some(receiver), Some(timeout)) => match tokio::time::timeout(timeout, receiver).await {
+            Ok(res) => {
+                let InternalUpdateResult { op_num, status } = res??;
+                debug_assert_eq!(
+                    op_num, operation_id,
+                    "Operation ID from WAL should match the one received from update worker"
+                );
                 Ok(UpdateResult {
-                    operation_id: Some(operation_id),
-                    status: UpdateStatus::Completed,
-                    clock_tag: operation.clock_tag,
+                    operation_id: Some(op_num),
+                    status,
+                    clock_tag,
                 })
             }
-            // Wait for timeout
-            (Some(receiver), Some(timeout)) => {
-                match tokio::time::timeout(timeout, receiver).await {
-                    Ok(res) => {
-                        let InternalUpdateResult { op_num, status } = res??;
-                        debug_assert_eq!(
-                            op_num, operation_id,
-                            "Operation ID from WAL should match the one received from update worker"
-                        );
-                        Ok(UpdateResult {
-                            operation_id: Some(op_num),
-                            status,
-                            clock_tag: operation.clock_tag,
-                        })
-                    }
-                    Err(elapsed) => {
-                        let _elapsed: Elapsed = elapsed;
-                        Ok(UpdateResult {
-                            operation_id: Some(operation_id),
-                            status: UpdateStatus::WaitTimeout,
-                            clock_tag: operation.clock_tag,
-                        })
-                    }
-                }
+            Err(elapsed) => {
+                let _elapsed: Elapsed = elapsed;
+                Ok(UpdateResult {
+                    operation_id: Some(operation_id),
+                    status: UpdateStatus::WaitTimeout,
+                    clock_tag,
+                })
             }
-            // Don't wait at all
-            (None, _) => Ok(UpdateResult {
-                operation_id: Some(operation_id),
-                status: UpdateStatus::Acknowledged,
-                clock_tag: operation.clock_tag,
-            }),
-        }
+        },
+        // Don't wait at all
+        (None, _) => Ok(UpdateResult {
+            operation_id: Some(operation_id),
+            status: UpdateStatus::Acknowledged,
+            clock_tag,
+        }),
+    }
+}
+
+#[async_trait]
+impl ShardOperation for LocalShard {
+    /// Imply interior mutability.
+    /// Performs update operation on this collection asynchronously.
+    /// Explicitly waits for result to be updated.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn update(
+        &self,
+        operation: OperationWithClockTag,
+        wait: WaitUntil,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
+        // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+        let outcome = self
+            .submit_update(operation, wait, hw_measurement_acc)
+            .await?;
+        await_update_result(outcome, timeout).await
     }
 
     /// This call is rate limited by the read rate limiter.
     async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -205,9 +263,9 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
-                .await?
+                .await
             }
             Some(order_by) => {
                 self.internal_scroll_by_field(
@@ -219,9 +277,9 @@ impl ShardOperation for LocalShard {
                     &order_by,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
-                .await?
+                .await
             }
         };
 
@@ -233,7 +291,7 @@ impl ShardOperation for LocalShard {
             None
         };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
-        Ok(result)
+        result
     }
 
     async fn local_scroll_by_id(
@@ -243,7 +301,7 @@ impl ShardOperation for LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -272,7 +330,7 @@ impl ShardOperation for LocalShard {
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -289,7 +347,7 @@ impl ShardOperation for LocalShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -304,9 +362,9 @@ impl ShardOperation for LocalShard {
         })?;
         let start_time = Instant::now();
         let cpu_utilization = hw_measurement_acc.cpu_utilization();
-        let total_count = if request.exact {
+        let result: CollectionResult<usize> = if request.exact {
             let timeout = self.timeout_or_default_search_timeout(timeout);
-            let all_points = tokio::time::timeout(
+            match tokio::time::timeout(
                 timeout,
                 self.read_filtered(
                     request.filter.as_ref(),
@@ -317,12 +375,15 @@ impl ShardOperation for LocalShard {
                 ),
             )
             .await
-            .map_err(|_: Elapsed| CollectionError::timeout(timeout, "count"))??;
-            all_points.len()
+            {
+                Ok(Ok(all_points)) => Ok(all_points.len()),
+                Ok(Err(err)) => Err(err),
+                Err(_elapsed) => Err(CollectionError::timeout(timeout, "count")),
+            }
         } else {
             self.estimate_cardinality(request.filter.as_ref(), &hw_measurement_acc)
-                .await?
-                .exp
+                .await
+                .map(|cardinality| cardinality.exp)
         };
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
@@ -332,7 +393,7 @@ impl ShardOperation for LocalShard {
             None
         };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
-        Ok(CountResult { count: total_count })
+        result.map(|total_count| CountResult { count: total_count })
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -341,7 +402,7 @@ impl ShardOperation for LocalShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -352,7 +413,7 @@ impl ShardOperation for LocalShard {
 
         let start_time = Instant::now();
         let cpu_utilization = hw_measurement_acc.cpu_utilization();
-        let records_map = tokio::time::timeout(
+        let result = match tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
                 self.segments.clone(),
@@ -366,13 +427,19 @@ impl ShardOperation for LocalShard {
             ),
         )
         .await
-        .map_err(|_: Elapsed| CollectionError::timeout(timeout, "retrieve"))??;
+        {
+            Ok(Ok(records_map)) => {
+                let ordered_records = request
+                    .ids
+                    .iter()
+                    .filter_map(|point| records_map.get(point).cloned())
+                    .collect();
 
-        let ordered_records = request
-            .ids
-            .iter()
-            .filter_map(|point| records_map.get(point).cloned())
-            .collect();
+                Ok(ordered_records)
+            }
+            Ok(Err(err)) => Err(err),
+            Err(_elapsed) => Err(CollectionError::timeout(timeout, "retrieve")),
+        };
 
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
@@ -383,14 +450,14 @@ impl ShardOperation for LocalShard {
         };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
 
-        Ok(ordered_records)
+        result
     }
 
     /// This call is rate limited by the read rate limiter.
     async fn query_batch(
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -435,7 +502,7 @@ impl ShardOperation for LocalShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
@@ -451,14 +518,14 @@ impl ShardOperation for LocalShard {
         let start_time = Instant::now();
         let timeout = self.timeout_or_default_search_timeout(timeout);
         let cpu_utilization = hw_measurement_acc.cpu_utilization();
-        let hits = if request.exact {
+        let result = if request.exact {
             self.exact_facet(
                 request.clone(),
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
             )
-            .await?
+            .await
         } else {
             self.approx_facet(
                 request.clone(),
@@ -466,7 +533,7 @@ impl ShardOperation for LocalShard {
                 timeout,
                 hw_measurement_acc,
             )
-            .await?
+            .await
         };
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
@@ -476,7 +543,7 @@ impl ShardOperation for LocalShard {
             None
         };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
-        Ok(FacetResponse { hits })
+        result.map(|hits| FacetResponse { hits })
     }
 
     /// Finishes ongoing update tasks

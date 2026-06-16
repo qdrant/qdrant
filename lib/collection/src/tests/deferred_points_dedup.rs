@@ -6,6 +6,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use rand::rng;
 use segment::data_types::vectors::VectorStructInternal;
+use segment::entry::ReadSegmentEntry as _;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Distance, Filter, PointIdType};
 use tempfile::{Builder, TempDir};
@@ -13,6 +14,7 @@ use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
@@ -93,7 +95,8 @@ async fn build_shard() -> (LocalShard, TempDir) {
     let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
         Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
 
-    let current_runtime = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime = AdaptiveSearchHandle::current_for_tests();
 
     let shard = LocalShard::build(
         0,
@@ -102,7 +105,7 @@ async fn build_shard() -> (LocalShard, TempDir) {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema,
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         optimizer_config,
@@ -147,8 +150,13 @@ fn assert_no_duplicate_point_ids(shard: &LocalShard) {
     > = std::collections::HashMap::new();
 
     for (seg_id, segment) in holder.iter() {
-        let seg = segment.get();
-        let seg_read = seg.read();
+        let original = match segment {
+            shard::locked_segment::LockedSegment::Original(segment) => segment,
+            shard::locked_segment::LockedSegment::Proxy(_) => {
+                panic!("test does not expect proxy segments")
+            }
+        };
+        let seg_read = original.read();
         for pid in seg_read.iter_points() {
             let is_deferred = seg_read.point_is_deferred(pid);
             point_occurrences

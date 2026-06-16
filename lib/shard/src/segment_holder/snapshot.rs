@@ -13,7 +13,7 @@ use segment::types::SegmentConfig;
 
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
-use crate::proxy_segment::ProxySegment;
+use crate::proxy_segment::UnsyncedProxySegment;
 use crate::segment_holder::locked::UpdatesGuard;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 use crate::snapshots::snapshot_manifest::SnapshotManifest;
@@ -63,7 +63,7 @@ impl SegmentHolder {
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
         for segment_id in segment_ids {
             let segment = segments_lock.get(segment_id).unwrap();
-            let proxy = ProxySegment::new(segment.clone());
+            let proxy = UnsyncedProxySegment::new(segment.clone());
 
             // Write segment is fresh, so it has no operations
             // Operation with number 0 will be applied
@@ -86,6 +86,12 @@ impl SegmentHolder {
         let mut proxies = Vec::with_capacity(new_proxies.len());
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
         for (segment_id, proxy) in new_proxies {
+            // Some points might have been changed in the underlying segment before we upgraded the
+            // `write_segments` lock, so the wrapped segment is only frozen now. Finalizing here
+            // syncs `deleted_mask` from the now-immutable segment — the type-state guarantees this
+            // happens exactly once and cannot be skipped.
+            let proxy = proxy.finalize();
+
             // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock

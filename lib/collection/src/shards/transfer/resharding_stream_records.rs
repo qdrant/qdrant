@@ -90,7 +90,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                 }),
                 None,
                 hw_acc,
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )
             .await?
         else {

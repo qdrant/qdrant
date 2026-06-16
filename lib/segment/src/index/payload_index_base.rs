@@ -2,16 +2,22 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::generic_consts::AccessPattern;
+use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 use serde_json::Value;
 
-use super::field_index::FieldIndex;
+use super::field_index::numeric_index::NumericFieldIndexRead;
+use super::field_index::{FacetIndex, FieldIndex};
+use super::query_optimization::rescore_formula::FormulaScorer;
+use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::json_path::JsonPath;
-use crate::payload_storage::FilterContext;
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 pub enum BuildIndexResult {
@@ -24,10 +30,132 @@ pub enum BuildIndexResult {
     IncompatibleSchema,
 }
 
-pub trait PayloadIndex {
+/// Read-only trait for payload index.
+///
+/// Defines all read operations on the payload index. Search and retrieval logic
+/// only requires this trait, which makes it possible to implement read-only
+/// segments without duplicating index code.
+pub trait PayloadIndexRead {
     /// Get indexed fields
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
+    /// Estimate amount of points (min, max) which satisfies filtering condition.
+    ///
+    /// A best estimation of the number of available points should be given.
+    fn estimate_cardinality(
+        &self,
+        query: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<CardinalityEstimation>;
+
+    /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
+    fn estimate_nested_cardinality(
+        &self,
+        query: &Filter,
+        nested_path: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<CardinalityEstimation>;
+
+    /// Return list of all point ids, which satisfy filtering criteria
+    ///
+    /// A best estimation of the number of available points should be given.
+    ///
+    /// If `is_stopped` is set to true during execution, the function should return early with no results.
+    fn query_points(
+        &self,
+        filter: &Filter,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<PointOffsetType>>;
+
+    /// Return number of points, indexed by this field
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
+
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Box<dyn ConditionChecker + 'a>>;
+
+    /// Look up a numeric index for the given payload key, if one exists.
+    ///
+    /// Used by ordered reads to stream values from the index in sort order.
+    /// The concrete numeric-index type is opaque so each implementation can
+    /// expose its own internal representation.
+    fn numeric_index_for(&self, key: &PayloadKeyType) -> Option<impl NumericFieldIndexRead + '_>;
+
+    /// Look up a facet index for the given payload key, if one exists.
+    ///
+    /// Used by faceting to enumerate values and per-value point sets. The
+    /// concrete facet-index type is opaque per implementation.
+    fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_>;
+
+    /// Per-field-index telemetry data.
+    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry>;
+
+    /// Build a per-query formula scorer that evaluates the given parsed
+    /// formula against this index's payload, using the prefetch scores as
+    /// extra inputs.
+    fn formula_scorer<'q>(
+        &'q self,
+        parsed_formula: &'q ParsedFormula,
+        prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
+        hw_counter: &'q HardwareCounterCell,
+    ) -> OperationResult<FormulaScorer<'q>>;
+
+    /// Iterate point offsets that match the filter.
+    ///
+    /// The iterator return uses RPITIT so each impl keeps its own zero-cost
+    /// concrete chain. The id tracker is read from `&self`, so impls reach it
+    /// through their own field rather than receiving a separate parameter.
+    fn iter_filtered_points<'a>(
+        &'a self,
+        filter: &'a Filter,
+        query_cardinality: &'a CardinalityEstimation,
+        hw_counter: &'a HardwareCounterCell,
+        is_stopped: &'a AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
+
+    /// Iterate conditions for payload blocks with minimum size of `threshold`
+    /// Required for building HNSW index
+    fn for_each_payload_block(
+        &self,
+        field: PayloadKeyTypeRef,
+        threshold: usize,
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()>;
+
+    /// Get payload for point
+    fn get_payload(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    /// Get payload for point with potential optimization for sequential access.
+    fn get_payload_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    fn read_payloads<P: AccessPattern, U>(
+        &self,
+        point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Payload) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+}
+
+/// Trait for payload index with mutating operations.
+///
+/// `PayloadIndex` only covers writes. Callers that also need reads must
+/// bring [`PayloadIndexRead`] into scope explicitly (or bound on it
+/// explicitly in generic code) -- the two traits are siblings, not
+/// parent/child, so that implementations of `PayloadIndexRead` (e.g. a
+/// borrowed read-only view) do not need to also implement `PayloadIndex`.
+pub trait PayloadIndex {
     /// Build the index, if not built before, taking the caller by reference only
     fn build_index(
         &self,
@@ -62,53 +190,6 @@ pub trait PayloadIndex {
         new_payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool>;
 
-    /// Estimate amount of points (min, max) which satisfies filtering condition.
-    ///
-    /// A best estimation of the number of available points should be given.
-    fn estimate_cardinality(
-        &self,
-        query: &Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation>;
-
-    /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
-    fn estimate_nested_cardinality(
-        &self,
-        query: &Filter,
-        nested_path: &JsonPath,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation>;
-
-    /// Return list of all point ids, which satisfy filtering criteria
-    ///
-    /// A best estimation of the number of available points should be given.
-    ///
-    /// If `is_stopped` is set to true during execution, the function should return early with no results.
-    fn query_points(
-        &self,
-        filter: &Filter,
-        hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<Vec<PointOffsetType>>;
-
-    /// Return number of points, indexed by this field
-    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
-
-    fn filter_context<'a>(
-        &'a self,
-        filter: &'a Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Box<dyn FilterContext + 'a>>;
-
-    /// Iterate conditions for payload blocks with minimum size of `threshold`
-    /// Required for building HNSW index
-    fn payload_blocks(
-        &self,
-        field: PayloadKeyTypeRef,
-        threshold: usize,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_>;
-
     /// Overwrite payload for point_id. If payload already exists, replace it.
     fn overwrite_payload(
         &mut self,
@@ -125,20 +206,6 @@ pub trait PayloadIndex {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
-
-    /// Get payload for point
-    fn get_payload(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
-
-    /// Get payload for point with potential optimization for sequential access.
-    fn get_payload_sequential(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
 
     /// Delete payload by key
     fn delete_payload(

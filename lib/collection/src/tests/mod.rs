@@ -1,5 +1,6 @@
 mod deferred_points_dedup;
 mod deferred_points_tests;
+mod delete_vector_name_replay;
 mod fix_payload_indices;
 pub mod fixtures;
 mod hw_metrics;
@@ -13,6 +14,7 @@ mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
 
+use std::assert_matches;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -217,7 +219,7 @@ async fn test_cancel_optimization() {
         assert!(log.len() <= expected_optimization_count);
         for status in log {
             assert_eq!(status.name, "indexing");
-            assert!(matches!(status.status, TrackerStatus::Cancelled(_)));
+            assert_matches!(status.status, TrackerStatus::Cancelled(_));
         }
     }
 

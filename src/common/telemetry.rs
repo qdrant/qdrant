@@ -30,6 +30,7 @@ use crate::common::telemetry_ops::memory_telemetry::MemoryTelemetry;
 use crate::common::telemetry_ops::requests_telemetry::{
     ActixTelemetryCollector, RequestsTelemetry, TonicTelemetryCollector,
 };
+use crate::common::telemetry_ops::search_pool::SearchThreadPoolTelemetry;
 use crate::settings::Settings;
 
 // Keep in sync with openapi/openapi-service.ytt.yaml
@@ -60,6 +61,8 @@ pub struct TelemetryData {
     pub(crate) memory: Option<MemoryTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hardware: Option<HardwareTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) search_pool: Option<SearchThreadPoolTelemetry>,
 }
 
 impl TelemetryCollector {
@@ -145,6 +148,12 @@ impl TelemetryCollector {
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
                 .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
+            search_pool: (detail.level > DetailsLevel::Level0).then(|| {
+                SearchThreadPoolTelemetry::collect(
+                    self.dispatcher
+                        .toc(auth, &new_unchecked_verification_pass()),
+                )
+            }),
         })
     }
 }
@@ -185,6 +194,7 @@ impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
             requests: None,
             memory: None,
             hardware: None,
+            search_pool: None,
         })
     }
 }
@@ -201,6 +211,7 @@ impl TryFrom<TelemetryData> for grpc::PeerTelemetry {
             requests: _,
             memory: _,
             hardware: _,
+            search_pool: _,
         } = telemetry_data;
 
         let app = app.map(grpc::AppTelemetry::from);

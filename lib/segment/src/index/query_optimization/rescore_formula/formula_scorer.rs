@@ -2,20 +2,17 @@ use std::collections::HashMap;
 use std::ops::Neg;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
 use strsim::{jaro_winkler, normalized_levenshtein};
 
 use super::parsed_formula::{
-    DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
+    DatetimeExpression, DecayKind, ParsedExpression, PreciseScore, VariableId,
 };
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};
-use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::query_optimization::optimized_filter::{ConditionChecker, OptimizedCondition};
 use crate::json_path::JsonPath;
 use crate::types::{DateTimePayloadType, GeoPoint};
 
@@ -83,26 +80,21 @@ impl StructPayloadIndex {
             payload_vars,
             conditions,
             defaults,
+impl<'a> FormulaScorer<'a> {
+    pub(crate) fn new(
+        formula: ParsedExpression,
+        prefetches_scores: &'a [AHashMap<PointOffsetType, ScoreType>],
+        payload_retrievers: HashMap<JsonPath, VariableRetrieverFn<'a>>,
+        condition_checkers: Vec<OptimizedCondition<'a>>,
+        defaults: HashMap<VariableId, Value>,
+    ) -> Self {
+        FormulaScorer {
             formula,
-        } = parsed_formula;
-
-        let payload_retrievers = self.retrievers_map(payload_vars.clone(), hw_counter);
-
-        let payload_provider = PayloadProvider::new(self.payload.clone());
-        let total = self.available_point_count();
-        let condition_checkers = self
-            .convert_conditions(conditions, payload_provider, total, hw_counter)?
-            .into_iter()
-            .map(|(checker, _estimation)| checker)
-            .collect();
-
-        Ok(FormulaScorer {
-            formula: formula.clone(),
             prefetches_scores,
             payload_retrievers,
             condition_checkers,
-            defaults: defaults.clone(),
-        })
+            defaults,
+        }
     }
 }
 
@@ -148,7 +140,7 @@ impl FormulaScorer<'_> {
                     })
                 }
                 VariableId::Condition(id) => {
-                    let value = check_condition(&self.condition_checkers[*id], point_id);
+                    let value = self.condition_checkers[*id].check(point_id)?;
                     let score = if value { 1.0 } else { 0.0 };
                     Ok(score)
                 }
@@ -468,8 +460,8 @@ mod tests {
             );
 
             let condition_checkers = vec![
-                OptimizedCondition::Checker(Box::new(|_| true)),
-                OptimizedCondition::Checker(Box::new(|_| false)),
+                OptimizedCondition::Checker(Box::new(|_| Ok(true))),
+                OptimizedCondition::Checker(Box::new(|_| Ok(false))),
             ];
 
             FormulaScorer {

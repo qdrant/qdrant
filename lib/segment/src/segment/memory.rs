@@ -50,10 +50,10 @@ impl Segment {
             payload_index,
             payload_storage,
             appendable_flag: _,
+            append_only_mutations: _,
             segment_type: _,
             segment_config,
             error_status: _,
-            deferred_point_status: _,
         } = self;
 
         let sparse_names = &segment_config.sparse_vector_data;

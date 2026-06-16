@@ -41,6 +41,7 @@ anyhow = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
+blink-alloc = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 fs-err = { workspace = true }
@@ -64,15 +65,13 @@ atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
-geo = "0.33.0"
-geohash = "0.13.1"
+geo = "0.33.1"
+geohash = "0.13.2"
 num-traits = { workspace = true }
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
 rand = { workspace = true }
 bitvec = { workspace = true }
-seahash = "4.1.0"
-semver = { workspace = true }
 fs_extra = { workspace = true }
 tinyvec = { workspace = true }
 validator = { workspace = true }
@@ -113,7 +112,8 @@ tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
-roaring = { version = "0.11.3" }
+roaring = { workspace = true }
+duplicate = "2.0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.5"
@@ -122,6 +122,14 @@ io-uring = "0.7.12"
 
 [[bench]]
 name = "vector_search"
+harness = false
+
+[[bench]]
+name = "read_vectors"
+harness = false
+
+[[bench]]
+name = "read_payloads"
 harness = false
 
 [[bench]]
@@ -204,4 +212,8 @@ harness = false
 
 [[bench]]
 name = "hnsw_incremental_build"
+harness = false
+
+[[bench]]
+name = "facets"
 harness = false

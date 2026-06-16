@@ -34,20 +34,16 @@ class PeerProcess:
     def kill(self):
         self.proc.kill()
         self.proc.wait()
-
-        # remove allocated ports from the dictionary
-        # so they can be used afterwards
-        del busy_ports[self.http_port]
-        del busy_ports[self.grpc_port]
-        del busy_ports[self.p2p_port]
+        busy_ports.pop(self.http_port, None)
+        busy_ports.pop(self.grpc_port, None)
+        busy_ports.pop(self.p2p_port, None)
 
     def interrupt(self):
         self.proc.send_signal(signal.SIGINT)
         self.proc.wait()
-
-        del busy_ports[self.http_port]
-        del busy_ports[self.grpc_port]
-        del busy_ports[self.p2p_port]
+        busy_ports.pop(self.http_port, None)
+        busy_ports.pop(self.grpc_port, None)
+        busy_ports.pop(self.p2p_port, None)
 
 
 def _occupy_port(port):
@@ -61,16 +57,49 @@ def kill_all_processes():
     print()
     while len(processes) > 0:
         p = processes.pop(0)
-        if is_coverage_mode():
-            print(f"Interrupting {p.pid}")
-            p.interrupt()
-        else:
-            print(f"Killing {p.pid}")
-            p.kill()
+        try:
+            if is_coverage_mode():
+                print(f"Interrupting {p.pid}")
+                p.interrupt()
+            else:
+                print(f"Killing {p.pid}")
+                p.kill()
+        except Exception as e:
+            print(f"Cleanup error for {p.pid}: {e}")
+
+
+# Each pytest-xdist worker owns a disjoint slice of the port space, so concurrent
+# workers never compete for the same port range. Ports stay below the Linux
+# default ephemeral range (32768) so OS-assigned random sockets don't collide
+# either. Slice size of 300 = 100 peer triples, which comfortably covers any
+# single test even with dynamically added peers.
+_PORT_SLICE_BASE = 20000
+_PORT_SLICE_SIZE = 300
+
+
+def _xdist_worker_index() -> int:
+    name = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    if name.startswith("gw") and name[2:].isdigit():
+        return int(name[2:])
+    return 0
+
+
+_WORKER_SLICE_START = _PORT_SLICE_BASE + _xdist_worker_index() * _PORT_SLICE_SIZE
+_WORKER_SLICE_END = _WORKER_SLICE_START + _PORT_SLICE_SIZE
+_next_port_in_slice = _WORKER_SLICE_START
+
+
+def _reset_port_slice():
+    global _next_port_in_slice
+    _next_port_in_slice = _WORKER_SLICE_START
 
 
 @pytest.fixture(autouse=True)
 def every_test():
+    if processes:
+        print(f"WARN: {len(processes)} leaked peer processes from previous test, cleaning")
+        kill_all_processes()
+    _reset_port_slice()
     yield
     kill_all_processes()
 
@@ -82,9 +111,67 @@ def get_port() -> int:
             s.bind(('', 0))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             allocated_port = s.getsockname()[1]
-            if allocated_port in busy_ports:
+            # Reserve a ±2 buffer so a restart using `port=p.p2p_port` (which
+            # also occupies port+1, port+2) cannot collide with another live
+            # peer's randomly-allocated port.
+            if any((allocated_port + d) in busy_ports for d in range(-2, 3)):
                 continue
             return allocated_port
+
+
+def _try_bind_triple(base: int) -> bool:
+    sockets = []
+    try:
+        for offset in range(3):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.bind(('', base + offset))
+                sockets.append(s)
+            except OSError:
+                return False
+        return True
+    finally:
+        for s in sockets:
+            s.close()
+
+
+def get_port_triple() -> int:
+    # Allocate a contiguous triple (p2p, grpc, http) for a peer. Each xdist
+    # worker draws from its own slice, so the original cross-worker collision
+    # on `port+1` / `port+2` (which restart paths derive from p2p_port) cannot
+    # happen. Within the slice we still probe-bind() each candidate so
+    # unrelated processes occupying a slot are skipped, not deterministically
+    # crashed-into. Falls back to OS-assigned ports if the slice is exhausted.
+    global _next_port_in_slice
+    while _next_port_in_slice + 3 <= _WORKER_SLICE_END:
+        base = _next_port_in_slice
+        _next_port_in_slice += 3
+        if _try_bind_triple(base):
+            return base
+    return _get_port_triple_from_os()
+
+
+def _get_port_triple_from_os() -> int:
+    while True:
+        s0 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s0.bind(('', 0))
+            base = s0.getsockname()[1]
+            s1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s1.bind(('', base + 1))
+                s2.bind(('', base + 2))
+                return base
+            except OSError:
+                continue
+            finally:
+                s1.close()
+                s2.close()
+        except OSError:
+            continue
+        finally:
+            s0.close()
 
 def is_coverage_mode() -> bool:
     return os.getenv("COVERAGE") == "1"
@@ -122,10 +209,8 @@ def get_qdrant_exec() -> str:
     return str(qdrant_exec)
 
 def get_llvm_profile_file() -> str:
-    # %m: keep merging results from each test into the same file
-    # If you have multiple tests running in parallel, you can use -%p OR -%{thread_count}m to have different files
-    # Not using -%p since each test will generate a new file
-    llvm_profile_file = PROJECT_ROOT / "target" / "llvm-cov-target" / "qdrant-consensus-tests-%m.profraw"
+    # %p (per-PID) avoids %m's partial-merge corruption when peers are SIGKILLed under -n auto.
+    llvm_profile_file = PROJECT_ROOT / "target" / "llvm-cov-target" / "qdrant-consensus-tests-%p.profraw"
     return str(llvm_profile_file)
 
 
@@ -146,11 +231,12 @@ def init_pytest_log_folder() -> str:
 def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> str:
     if extra_env is None:
         extra_env = {}
-    p2p_port = get_port() if port is None else port + 0
+    base_port = get_port_triple() if port is None else port
+    p2p_port = base_port + 0
     _occupy_port(p2p_port)
-    grpc_port = get_port() if port is None else port + 1
+    grpc_port = base_port + 1
     _occupy_port(grpc_port)
-    http_port = get_port() if port is None else port + 2
+    http_port = base_port + 2
     _occupy_port(http_port)
 
     test_log_folder = init_pytest_log_folder()
@@ -187,11 +273,12 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     if extra_env is None:
         extra_env = {}
 
-    p2p_port = get_port() if port is None else port + 0
+    base_port = get_port_triple() if port is None else port
+    p2p_port = base_port + 0
     _occupy_port(p2p_port)
-    grpc_port = get_port() if port is None else port + 1
+    grpc_port = base_port + 1
     _occupy_port(grpc_port)
-    http_port = get_port() if port is None else port + 2
+    http_port = base_port + 2
     _occupy_port(http_port)
 
     test_log_folder = init_pytest_log_folder()
@@ -431,6 +518,16 @@ def all_nodes_respond(peer_api_uris: [str]) -> bool:
     return True
 
 
+def all_peers_are_voters(peer_api_uris: [str]) -> bool:
+    try:
+        for uri in peer_api_uris:
+            if not get_cluster_info(uri)["raft_info"]["is_voter"]:
+                return False
+        return True
+    except requests.exceptions.ConnectionError:
+        return False
+
+
 def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -> bool:
     for uri in peer_api_uris:
         r = requests.get(f"{uri}/collections")
@@ -544,9 +641,11 @@ def check_collection_shard_transfer_progress(peer_api_uri: str, collection_name:
     return False
 
 
-def check_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}) -> bool:
+def check_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}, min_local_replicas=0) -> bool:
     try:
         collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
+        if len(collection_cluster_info["local_shards"]) < min_local_replicas:
+            return False
         for shard in collection_cluster_info["local_shards"]:
             if shard['state'] != 'Active':
                 return False
@@ -565,7 +664,14 @@ def check_some_replicas_not_active(peer_api_uri: str, collection_name: str) -> b
 def check_collection_cluster(peer_url, collection_name):
     res = requests.get(f"{peer_url}/collections/{collection_name}/cluster", timeout=10)
     assert_http_ok(res)
-    return res.json()["result"]['local_shards'][0]
+    local_shards = res.json()["result"]['local_shards']
+    # During snapshot shard transfer recovery the existing local shard is
+    # temporarily taken before the snapshot is installed, so `local_shards` may
+    # be empty for a brief window. Report it as a non-Active state so callers
+    # poll again instead of crashing with IndexError.
+    if not local_shards:
+        return {'state': 'Absent', 'points_count': 0}
+    return local_shards[0]
 
 
 def check_strict_mode_enabled(peer_api_uri: str, collection_name: str) -> bool:
@@ -616,9 +722,9 @@ def wait_for_some_replicas_not_active(peer_api_uri: str, collection_name: str):
         raise e
 
 
-def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}):
+def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}, min_local_replicas=0):
     try:
-        wait_for(check_all_replicas_active, peer_api_uri, collection_name, headers=headers)
+        wait_for(check_all_replicas_active, peer_api_uri, collection_name, headers=headers, min_local_replicas=min_local_replicas)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e
@@ -751,9 +857,9 @@ def peer_is_online(peer_api_uri: str, path: str = "/readyz") -> bool:
         return False
 
 
-def wait_for_peer_online(peer_api_uri: str, path="/readyz"):
+def wait_for_peer_online(peer_api_uri: str, path="/readyz", wait_for_timeout=WAIT_TIME_SEC):
     try:
-        wait_for(peer_is_online, peer_api_uri, path=path)
+        wait_for(peer_is_online, peer_api_uri, path=path, wait_for_timeout=wait_for_timeout)
     except Exception as e:
         print_clusters_info([peer_api_uri])
         raise e

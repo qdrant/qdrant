@@ -1,11 +1,12 @@
+use std::assert_matches;
 use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
-use rand::rngs::ThreadRng;
-use rand::{Rng, rng};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng, rng};
 use segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
@@ -13,6 +14,7 @@ use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
@@ -26,12 +28,15 @@ use crate::tests::fixtures::create_collection_config_with_dim;
 async fn test_hw_metrics_cancellation() {
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let mut config = create_collection_config_with_dim(512);
+    const DIM: usize = 2048;
+
+    let mut config = create_collection_config_with_dim(DIM);
     config.optimizer_config.indexing_threshold = None;
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -45,7 +50,7 @@ async fn test_hw_metrics_cancellation() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -53,7 +58,7 @@ async fn test_hw_metrics_cancellation() {
     .await
     .unwrap();
 
-    let upsert_ops = make_random_points_upsert_op(10_000);
+    let upsert_ops = make_random_points_upsert_op(50_000, DIM);
     shard
         .update(
             upsert_ops.into(),
@@ -69,7 +74,7 @@ async fn test_hw_metrics_cancellation() {
         searches: vec![CoreSearchRequest {
             query: QueryEnum::Nearest(NamedQuery {
                 using: None,
-                query: VectorInternal::from(rand_vector(512, &mut rand)),
+                query: VectorInternal::from(rand_vector(DIM, &mut rand)),
             }),
             filter: None,
             params: None,
@@ -89,16 +94,18 @@ async fn test_hw_metrics_cancellation() {
             .do_search(
                 Arc::new(req),
                 &current_runtime,
-                Duration::from_millis(10), // Very short duration to hit timeout before the search finishes
+                // Short but not extremely short timeout to not conflict with os-thread spawning overhead.
+                // (For more information see https://github.com/qdrant/qdrant/pull/9233)
+                Duration::from_millis(350),
                 hw_counter,
             )
             .await;
 
         // Ensure we triggered a timeout and the search didn't exit too early.
-        assert!(matches!(
+        assert_matches!(
             search_res.unwrap_err(),
-            CollectionError::Timeout { description: _ }
-        ));
+            CollectionError::Timeout { description: _ },
+        );
     }
 
     // Cancellation and draining hardware counters is asynchronous on CI runners.
@@ -117,13 +124,15 @@ async fn test_hw_metrics_cancellation() {
     assert!(outer_hw.get_cpu() > 0);
 }
 
-fn make_random_points_upsert_op(len: usize) -> CollectionUpdateOperations {
+fn make_random_points_upsert_op(len: usize, dim: usize) -> CollectionUpdateOperations {
     let mut points = vec![];
 
-    let mut rand = rng();
+    // ThreadRng is too slow for creating 40k vectors @ 2048 dimensions each.
+    // SmallRng cuts total test duration in half (20s->10s).
+    let mut rand = SmallRng::seed_from_u64(0xC0FFEE);
 
     for i in 0..len as u64 {
-        let rand_vector = rand_vector(512, &mut rand);
+        let rand_vector = rand_vector(dim, &mut rand);
         points.push(PointStructPersisted {
             id: segment::types::ExtendedPointId::NumId(i),
             vector: VectorStructInternal::from(rand_vector).into(),
@@ -136,6 +145,6 @@ fn make_random_points_upsert_op(len: usize) -> CollectionUpdateOperations {
     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(op))
 }
 
-fn rand_vector(size: usize, rand: &mut ThreadRng) -> Vec<f32> {
+fn rand_vector(size: usize, rand: &mut impl Rng) -> Vec<f32> {
     (0..size).map(|_| rand.next_u32() as f32).collect()
 }

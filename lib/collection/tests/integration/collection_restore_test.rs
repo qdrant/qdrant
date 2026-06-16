@@ -1,3 +1,5 @@
+#![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,

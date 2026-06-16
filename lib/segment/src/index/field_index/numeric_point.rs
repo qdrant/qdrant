@@ -2,9 +2,11 @@ use std::fmt::Debug;
 
 use common::types::PointOffsetType;
 use num_traits::Num;
+use ordered_float::OrderedFloat;
 use serde::Serialize;
 
 pub use self::point::Point;
+use crate::types::{FloatPayloadType, Range};
 
 // bytemuck macros expand to code that triggers this clippy lint
 // The only reason this is its own module is so that we scope the lint suppression
@@ -73,7 +75,7 @@ const fn derive_point_padding<T: bytemuck::Pod>() -> usize {
 
 /// A trait that should represent common properties of integer and floating point types.
 /// In particular, i64 and f64.
-pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
+pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod + Send {
     /// This is to be able to derive [`bytemuck::Pod`] for [`Point<T>`], which is required for safe de/serialization.
     ///
     /// Since we need ['Point<T>`] to be repr(packed), this padding must be picked to be the next multiple of the largest
@@ -84,7 +86,8 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
         + PartialEq
         + PartialOrd
         + Serialize
-        + for<'de> serde::Deserialize<'de>;
+        + for<'de> serde::Deserialize<'de>
+        + Send;
 
     fn min_value() -> Self;
     fn max_value() -> Self;
@@ -99,6 +102,18 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
     }
     fn abs_diff(self, b: Self) -> Self {
         if self > b { self - b } else { b - self }
+    }
+
+    /// Convert a fractional `f64` range into an equivalent `Self`-typed range
+    /// that preserves the original predicate for every value of `Self`.
+    ///
+    /// The default impl uses [`Self::from_f64`] per bound and is correct
+    /// for floating-point `Self`. Integer types must override to round
+    /// each bound *away* from the matching set — ceil for `lt`/`gte`,
+    /// floor for `gt`/`lte` — so that fractional predicates like
+    /// `gte: 1.5` do not slip the integer `1` into the result set (#9049).
+    fn from_f64_range(range: Range<OrderedFloat<FloatPayloadType>>) -> Range<Self> {
+        range.map(|x| Self::from_f64(x.0))
     }
 }
 
@@ -122,6 +137,15 @@ impl Numericable for i64 {
     }
     fn abs_diff(self, b: Self) -> Self {
         i64::abs_diff(self, b) as i64
+    }
+
+    fn from_f64_range(range: Range<OrderedFloat<FloatPayloadType>>) -> Range<Self> {
+        Range {
+            lt: range.lt.map(|f| f.0.ceil() as Self),
+            gt: range.gt.map(|f| f.0.floor() as Self),
+            gte: range.gte.map(|f| f.0.ceil() as Self),
+            lte: range.lte.map(|f| f.0.floor() as Self),
+        }
     }
 }
 
@@ -170,5 +194,14 @@ impl Numericable for u128 {
 
     fn abs_diff(self, b: Self) -> Self {
         u128::abs_diff(self, b)
+    }
+
+    fn from_f64_range(range: Range<OrderedFloat<FloatPayloadType>>) -> Range<Self> {
+        Range {
+            lt: range.lt.map(|f| f.0.ceil() as Self),
+            gt: range.gt.map(|f| f.0.floor() as Self),
+            gte: range.gte.map(|f| f.0.ceil() as Self),
+            lte: range.lte.map(|f| f.0.floor() as Self),
+        }
     }
 }

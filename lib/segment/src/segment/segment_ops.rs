@@ -7,7 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::Random;
 use common::tar_unpack::tar_unpack_file;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
 
 use super::{
@@ -19,17 +19,16 @@ use crate::common::operation_error::{
 };
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorInternal;
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
-use crate::id_tracker::IdTracker;
-use crate::index::{PayloadIndex, VectorIndex};
+use crate::id_tracker::{IdTracker, IdTrackerRead};
+use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
     SnapshotFormat, VectorName,
 };
 use crate::utils;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorageRead;
 
 impl Segment {
     /// Replace vectors in-place
@@ -76,7 +75,6 @@ impl Segment {
     /// # Warning
     ///
     /// Available for appendable segments only.
-    #[allow(clippy::needless_pass_by_ref_mut)] // ensure single access to AtomicRefCell vector_index
     pub(super) fn update_vectors(
         &mut self,
         internal_id: PointOffsetType,
@@ -118,6 +116,165 @@ impl Segment {
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
+    }
+
+    /// Append-only update: snapshot the point at `old_id` into owned vectors
+    /// and payload, hand them to `mutate` for in-memory modification, then
+    /// write the result at a fresh internal id and repoint the id tracker.
+    ///
+    /// Step order:
+    ///
+    /// 1. Read all named vectors at `old_id` into an owned `NamedVectors`,
+    ///    and the full payload at `old_id` into an owned `Payload`.
+    /// 2. Call `mutate(&mut NamedVectors, &mut Payload)` to apply the
+    ///    op-specific change in memory; its return value is propagated to
+    ///    the caller alongside the new internal id.
+    /// 3. Allocate `new_id = total_point_count()`.
+    /// 4. Write the mutated vectors at `new_id`. Every configured named
+    ///    vector storage gets touched: present entries are written, absent
+    ///    ones are inserted as `None` (so the slot is grown and marked
+    ///    deleted, matching `insert_new_vectors`'s behavior).
+    /// 5. Write the mutated payload at `new_id` (skipped if empty).
+    /// 6. `set_link(point_id, new_id)` — auto-tombstones `old_id` in the id
+    ///    tracker so it becomes invisible to queries.
+    ///
+    /// `old_id`'s vector slots and payload row are intentionally left in
+    /// place. Appendable storages don't support physical removal; the
+    /// tombstoned slot is reclaimed later by segment optimization. Stale
+    /// field-index postings keyed by `old_id` likewise stay; readers filter
+    /// them via the id tracker's deleted bitslice.
+    ///
+    /// Returns the closure's return value together with the freshly
+    /// allocated internal id. The new id should be handed to
+    /// [`Segment::handle_point_version_and_failure`] so the point version is
+    /// recorded against the new slot.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only. Callers route into this
+    /// helper from the `SegmentEntry` mutation paths when
+    /// [`Segment::is_append_only`] is true.
+    pub(super) fn clone_and_mutate_point<F, R>(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        old_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        mutate: F,
+    ) -> OperationResult<(R, PointOffsetType)>
+    where
+        F: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<R>,
+    {
+        debug_assert!(self.is_appendable());
+
+        // 1. Snapshot vectors and payload at old_id into owned containers,
+        //    dropping all storage borrows before we start writing. Slots
+        //    that are marked deleted in the per-vector bitslice carry
+        //    leftover default-vector bytes from the original
+        //    `update_vector(_, None, _)` insert — including those would
+        //    promote phantom data into the fresh slot, so we skip them
+        //    and write `None` at new_id (re-tombstoning the slot).
+        let mut vectors: NamedVectors<'static> = NamedVectors::default();
+        for (vector_name, vector_data) in self.vector_data.iter() {
+            let storage = vector_data.vector_storage.borrow();
+            if storage.is_deleted_vector(old_id) {
+                continue;
+            }
+            if let Some(existing) = storage.get_vector_opt::<Random>(old_id) {
+                vectors.insert(vector_name.clone(), existing.to_owned());
+            }
+        }
+        let mut payload = self
+            .payload_index
+            .borrow()
+            .with_view(|view| view.get_payload(old_id, hw_counter))?;
+
+        // 2. Let the caller apply the op-specific change in memory.
+        let mutate_result = mutate(&mut vectors, &mut payload)?;
+
+        // 3. Allocate the fresh internal id.
+        let new_id = self.id_tracker.borrow().total_point_count() as PointOffsetType;
+
+        // 4. Write every configured named vector at new_id. Absent entries
+        //    are written as None so the storage slot grows in lockstep and
+        //    is marked deleted, matching insert_new_vectors's contract.
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let vector_opt = vectors.get(vector_name);
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector(new_id, vector_opt, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+
+        // 5. Write the payload at new_id — always, even when empty. Each
+        //    configured field index needs either an `add_point` (for
+        //    present values) or a `remove_point` (for absent ones) so
+        //    `total_point_count` bumps up to cover new_id; without that
+        //    bump the null index's `is_empty` / `is_null` checks never
+        //    see new_id and the point disappears from filter results.
+        self.payload_index
+            .borrow_mut()
+            .overwrite_payload(new_id, &payload, hw_counter)?;
+
+        // 6. Repoint the id tracker. `set_link` auto-tombstones old_id in
+        //    the deleted bitslice when external_id was previously mapped to
+        //    a different internal id.
+        self.id_tracker.borrow_mut().set_link(point_id, new_id)?;
+
+        Ok((mutate_result, new_id))
+    }
+
+    /// Mutating-op wrapper that picks the right path for the segment's
+    /// current mode.
+    ///
+    /// - On a normal segment (or when `existing_internal_id` would not
+    ///   benefit from being moved), runs `in_place(&mut Segment, old_id)`.
+    /// - On an [`Segment::is_append_only`] segment, routes through
+    ///   [`Segment::clone_and_mutate_point`] with `snapshot_mutate`, which
+    ///   sees an owned snapshot of the point's vectors and payload and
+    ///   modifies it in memory; the helper writes the result at a fresh
+    ///   internal id and tombstones the old one.
+    ///
+    /// Both closures return the op-specific result bool (e.g. "was anything
+    /// deleted"). The version-recording offset is chosen automatically:
+    /// the existing id for the in-place path, the freshly allocated id for
+    /// the append-only path.
+    ///
+    /// Callers must resolve `existing_internal_id` from the id tracker
+    /// themselves and handle the missing-pid case before calling this.
+    pub(super) fn handle_point_mutate<InPlace, SnapshotMutate>(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        existing_internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        in_place: InPlace,
+        snapshot_mutate: SnapshotMutate,
+    ) -> OperationResult<bool>
+    where
+        InPlace: FnOnce(&mut Segment, PointOffsetType) -> OperationResult<bool>,
+        SnapshotMutate: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<bool>,
+    {
+        let append_only = self.is_append_only();
+        self.handle_point_version_and_failure(
+            op_num,
+            point_id,
+            Some(existing_internal_id),
+            |segment| {
+                if append_only {
+                    let (op_result, new_id) = segment.clone_and_mutate_point(
+                        op_num,
+                        point_id,
+                        existing_internal_id,
+                        hw_counter,
+                        snapshot_mutate,
+                    )?;
+                    Ok((op_result, Some(new_id)))
+                } else {
+                    let op_result = in_place(segment, existing_internal_id)?;
+                    Ok((op_result, Some(existing_internal_id)))
+                }
+            },
+        )
     }
 
     /// Operation wrapped, which handles previous and new errors in the segment, automatically
@@ -178,6 +335,7 @@ impl Segment {
     /// # Arguments
     ///
     /// * `op_num` - sequential operation of the current operation
+    /// * `point_id` - external id of the point the operation targets; used for error correlation.
     /// * `op_point_offset` - If point offset is specified, handler will use point version for comparison.
     ///   Otherwise, it will be applied without version checks.
     /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside) and optionally new offset of the changed point.
@@ -188,6 +346,7 @@ impl Segment {
     pub(super) fn handle_point_version_and_failure<F>(
         &mut self,
         op_num: SeqNumberType,
+        point_id: PointIdType,
         op_point_offset: Option<PointOffsetType>,
         operation: F,
     ) -> OperationResult<bool>
@@ -216,16 +375,12 @@ impl Segment {
                 // Recover error state
                 match &self.error_status {
                     None => {} // all good
-                    Some(error) => {
-                        let point_id = op_point_offset.and_then(|point_offset| {
-                            self.id_tracker.borrow().external_id(point_offset)
-                        });
-                        if error.point_id == point_id {
-                            // Fixed
-                            log::info!("Recovered from error: {}", error.error);
-                            self.error_status = None;
-                        }
+                    Some(error) if error.point_id == Some(point_id) => {
+                        // Fixed
+                        log::info!("Recovered from error: {}", error.error);
+                        self.error_status = None;
                     }
+                    Some(_) => {}
                 }
             }
             Some(error) => {
@@ -234,11 +389,9 @@ impl Segment {
                     "Segment {:?} operation error: {error}",
                     self.segment_path.as_path(),
                 );
-                let point_id = op_point_offset
-                    .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
                 self.error_status = Some(SegmentFailedState {
                     version: op_num,
-                    point_id,
+                    point_id: Some(point_id),
                     error,
                 });
             }
@@ -316,20 +469,10 @@ impl Segment {
 
         let mut id_tracker = self.id_tracker.borrow_mut();
 
-        let is_point_already_deleted = id_tracker.is_deleted_point(internal_id);
-
+        // `drop_internal` updates the id tracker's deferred-deleted counter when
+        // the point sits at or above the deferred threshold, with double-delete
+        // protection inside `PointMappings::drop`.
         id_tracker.drop_internal(internal_id)?;
-
-        let deferred_point_status = self.deferred_point_status.as_mut();
-
-        // Increase counter for deleted points.
-        if let Some(deferred_point_status) = deferred_point_status
-            && internal_id >= deferred_point_status.deferred_internal_id
-            // Don't count the deletion of the same point twice
-            && !is_point_already_deleted
-        {
-            deferred_point_status.deferred_deleted_count += 1;
-        }
 
         // Before, we propagated point deletions to also delete its vectors. This turns
         // out to be problematic because this sometimes makes us lose vector data
@@ -346,29 +489,32 @@ impl Segment {
         Ok(())
     }
 
+    /// Append-only counterpart to [`Segment::delete_point_internal`]: only
+    /// touches the id tracker, leaving the payload row and field-index
+    /// postings at `internal_id` in place. Readers filter the tombstone
+    /// via the id tracker's deleted bitslice (see
+    /// `PointMappingsRefEnum::filter_deferred_and_deleted`).
+    pub fn delete_point_tombstone_only(
+        &mut self,
+        internal_id: PointOffsetType,
+    ) -> OperationResult<()> {
+        self.id_tracker.borrow_mut().drop_internal(internal_id)
+    }
+
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
         self.version.replace(max(op_num, self.version.unwrap_or(0)));
     }
 
     pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
-        self.id_tracker.borrow().internal_id(point_id)
+        // Proxy/transfer callers pair this with `point_is_deferred`; they need
+        // the latest head, so resolve with deferred preference.
+        self.id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred)
     }
 
     pub fn get_deleted_points_bitvec(&self) -> BitVec {
         BitVec::from(self.id_tracker.borrow().deleted_point_bitslice())
-    }
-
-    pub(super) fn lookup_internal_id(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<PointOffsetType> {
-        let internal_id_opt = self.id_tracker.borrow().internal_id(point_id);
-        match internal_id_opt {
-            Some(internal_id) => Ok(internal_id),
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
-        }
     }
 
     pub(super) fn get_state(&self) -> SegmentState {
@@ -393,84 +539,6 @@ impl Segment {
                 err
             ))
         })
-    }
-
-    /// Retrieve vector by internal ID
-    ///
-    /// Returns None if the vector does not exists or deleted
-    #[inline]
-    pub(super) fn vector_by_offset(
-        &self,
-        vector_name: &VectorName,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<VectorInternal>> {
-        let mut result = None;
-        self.vectors_by_offsets(
-            vector_name,
-            std::iter::once(point_offset),
-            hw_counter,
-            |_, vector_internal| {
-                result = Some(vector_internal);
-            },
-        )?;
-        Ok(result)
-    }
-
-    /// Retrieve multiple vectors by internal ID
-    pub(super) fn vectors_by_offsets(
-        &self,
-        vector_name: &VectorName,
-        point_offsets: impl IntoIterator<Item = PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
-        mut callback: impl FnMut(PointOffsetType, VectorInternal),
-    ) -> OperationResult<()> {
-        check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data = &self
-            .vector_data
-            .get(vector_name)
-            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_storage = vector_data.vector_storage.borrow();
-        let total_vectors = vector_storage.total_vector_count();
-
-        let id_tracker = self.id_tracker.borrow();
-        let non_deleted_offsets = point_offsets.into_iter().filter(|&point_offset| {
-            if total_vectors <= point_offset as usize {
-                debug_assert!(
-                    false,
-                    "Vector storage is inconsistent, total_vector_count: {total_vectors}, point_offset: {point_offset}, external_id: {:?}",
-                    id_tracker.external_id(point_offset),
-                );
-                return false;
-            }
-
-            let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
-            let is_point_deleted = id_tracker.is_deleted_point(point_offset);
-            !is_vector_deleted && !is_point_deleted
-        });
-
-        vector_storage.read_vectors::<Random>(non_deleted_offsets, |point_offset, cow_vector| {
-            if vector_storage.is_on_disk() {
-                hw_counter
-                    .vector_io_read()
-                    .incr_delta(cow_vector.estimate_size_in_bytes());
-            }
-            callback(point_offset, cow_vector.to_owned());
-        });
-
-        Ok(())
-    }
-
-    /// Retrieve payload by internal ID
-    #[inline]
-    pub(super) fn payload_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.payload_index
-            .borrow()
-            .get_payload(point_offset, hw_counter)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
@@ -538,7 +606,10 @@ impl Segment {
         &mut self,
         desired_schemas: &HashMap<PayloadKeyType, PayloadFieldSchema>,
     ) -> OperationResult<()> {
-        let schema_applied = self.payload_index.borrow().indexed_fields();
+        let schema_applied = self
+            .payload_index
+            .borrow()
+            .with_view(|v| v.indexed_fields());
         let schema_config = desired_schemas;
 
         // Create or update payload indices if they don't match configuration
@@ -597,7 +668,12 @@ impl Segment {
         // dangling external ids
         let mut has_dangling_external_ids = false;
         for external_id in id_tracker.point_mappings().iter_external() {
-            if id_tracker.internal_id(external_id).is_none() {
+            // Dangling check: a point is fine as long as *some* head resolves,
+            // so prefer the deferred head and fall back to active.
+            if id_tracker
+                .internal_id_with_behavior(external_id, DeferredBehavior::WithDeferred)
+                .is_none()
+            {
                 log::error!("External id {external_id} without internal id");
                 has_dangling_external_ids = true;
             }
@@ -671,35 +747,6 @@ impl Segment {
     /// Returns list of IDs without mappings which should be removed from segment
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
-    }
-
-    /// Calculates the amount of deleted deferred points by iterating over all points in the ID tracker. Therefore this operation
-    /// can be expensive and should only be run once at segment creation.
-    pub(crate) fn calculate_deleted_deferred_point_count(&self) -> usize {
-        let Some(deferred_from) = self.deferred_internal_id() else {
-            return 0;
-        };
-
-        let id_tracker = self.id_tracker.borrow();
-        let total_points = id_tracker.total_point_count();
-
-        if total_points < deferred_from as usize {
-            return 0;
-        }
-
-        id_tracker.deleted_point_bitslice()[deferred_from as usize..total_points].count_ones()
-    }
-
-    pub(crate) fn deferred_internal_id(&self) -> Option<PointOffsetType> {
-        self.deferred_point_status
-            .as_ref()
-            .map(|i| i.deferred_internal_id)
-    }
-
-    pub(crate) fn deferred_deleted_count(&self) -> Option<usize> {
-        self.deferred_point_status
-            .as_ref()
-            .map(|i| i.deferred_deleted_count)
     }
 }
 

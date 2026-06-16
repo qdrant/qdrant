@@ -2,9 +2,10 @@ use std::path::PathBuf;
 
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalRead, UniversalWrite};
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
-use super::dynamic_mmap_flags::DynamicMmapFlags;
+use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 
@@ -16,9 +17,9 @@ use crate::common::operation_error::OperationResult;
 ///
 /// [1]: super::roaring_flags::RoaringFlags
 #[derive(Debug)]
-pub struct BitvecFlags {
+pub struct BitvecFlags<S: UniversalRead> {
     /// Buffered persisted flags.
-    storage: BufferedDynamicFlags,
+    storage: BufferedDynamicFlags<S>,
 
     /// In-memory bitvec of true and false flags.
     bitvec: BitVec,
@@ -27,20 +28,24 @@ pub struct BitvecFlags {
     len: usize,
 }
 
-impl BitvecFlags {
-    pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
+impl<S> BitvecFlags<S>
+where
+    S: UniversalWrite + Send + 'static,
+    S::Fs: Send + Sync + 'static,
+{
+    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory
-        let bitvec = BitVec::from_bitslice(mmap_flags.get_bitslice());
+        let bitvec = BitVec::from_bitslice(&*dynamic_flags.get_bitslice()?);
 
-        if let Err(err) = mmap_flags.clear_cache() {
+        if let Err(err) = dynamic_flags.clear_cache() {
             log::warn!("Failed to clear bitslice cache: {err}");
         }
 
-        Self {
-            len: mmap_flags.len(),
-            storage: BufferedDynamicFlags::new(mmap_flags),
+        Ok(Self {
+            len: dynamic_flags.len(),
+            storage: BufferedDynamicFlags::new(fs, dynamic_flags),
             bitvec,
-        }
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -117,12 +122,21 @@ impl BitvecFlags {
     }
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
+#[duplicate::duplicate_item(
+    tests_mod       S               Fs              cfg_predicate;
+    [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];
+    [tests_uring]   [IoUringFile]   [IoUringFs]     [cfg(target_os = "linux")];
+)]
+#[cfg_predicate]
 #[cfg(test)]
-mod tests {
+mod tests_mod {
     use common::types::PointOffsetType;
+    #[cfg_predicate]
+    use common::universal_io::{Fs, S};
 
     use crate::common::flags::bitvec_flags::BitvecFlags;
-    use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+    use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 
     #[test]
     fn test_roaring_flags_consistency_after_persistence() {
@@ -133,8 +147,9 @@ mod tests {
 
         // Create and update flags
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            let mut bitvec_flags = BitvecFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+            let mut bitvec_flags = BitvecFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
             for i in 16..20 {
@@ -162,8 +177,9 @@ mod tests {
 
         // Verify bitmap consistency after reload
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let bitvec_flags = BitvecFlags::new(mmap_flags);
+            let mmap_flags =
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            let bitvec_flags = BitvecFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Verify iteration consistency after reload
             let iter_trues: Vec<_> = bitvec_flags.iter_trues().collect();

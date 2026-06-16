@@ -7,8 +7,10 @@
 id: self-crate
 language: rust
 rule:
-  kind: crate
-  not: { inside: { kind: visibility_modifier } } # Don't fix `crate` in `pub(crate)`.
+  all:
+    - kind: crate
+    - not: { inside: { kind: visibility_modifier } } # `pub(crate)`
+    - not: { inside: { kind: extern_crate_declaration } } # `extern crate blah;`
 fix: crate::%PACKAGE%
 ---
 id: self-crate-in-macro-rules
@@ -76,7 +78,7 @@ fix: ""
 # Inline package versions.
 # Why: these are significant for migration logic.
 # Before: `env!("CARGO_PKG_VERSION")`
-# After:  `"0.6.1"`
+# After:  `"0.7.1"`
 ---
 id: replace-pkg-version
 language: rust

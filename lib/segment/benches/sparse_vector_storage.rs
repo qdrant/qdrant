@@ -10,9 +10,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
-use segment::vector_storage::VectorStorage;
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use segment::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use segment::vector_storage::{VectorStorage, VectorStorageRead};
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use tempfile::Builder;
 

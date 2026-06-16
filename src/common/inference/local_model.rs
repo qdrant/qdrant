@@ -1,7 +1,7 @@
 use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
 
-use super::bm25::Bm25;
+use super::bm25_inference::Bm25;
 use super::service::{InferenceInput, InferenceType};
 use crate::common::inference::inference_input::InferenceDataType;
 
@@ -60,7 +60,7 @@ pub fn infer_local(
         let embedding = match model_name {
             LocalModelName::Bm25 => {
                 let bm25_config = InferenceInput::parse_bm25_config(options)?;
-                let bm25 = Bm25::new(bm25_config);
+                let bm25 = Bm25::new(bm25_config)?;
 
                 match inference_type {
                     InferenceType::Update => bm25.doc_embed(input_str),

@@ -9,12 +9,13 @@ use tempfile::Builder;
 
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
+use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![
@@ -139,13 +140,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
             }
         });
 
-        let mut iter = (0..points.len()).map(|i| {
-            let i = i as PointOffsetType;
-            let vec = storage2.get_vector::<Random>(i);
-            let deleted = storage2.is_deleted_vector(i);
-            (vec, deleted)
-        });
-        storage.update_from(&mut iter, &Default::default()).unwrap();
+        merge_from_single_source(storage, &storage2, points.len() as PointOffsetType).unwrap();
     }
 
     assert_eq!(

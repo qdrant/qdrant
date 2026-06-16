@@ -10,7 +10,7 @@ use common::types::TelemetryDetail;
 use futures::future::Either;
 use parking_lot::Mutex as ParkingMutex;
 use segment::index::field_index::CardinalityEstimation;
-use segment::types::{Filter, SeqNumberType, SizeStats, SnapshotFormat};
+use segment::types::{Filter, SeqNumberType, SizeStats, SnapshotFormat, StrictModeConfig};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::sync::oneshot;
 
@@ -74,6 +74,21 @@ impl Shard {
             Shard::ForwardProxy(proxy_shard) => proxy_shard,
             Shard::QueueProxy(proxy_shard) => proxy_shard,
             Shard::Dummy(dummy_shard) => dummy_shard,
+        }
+    }
+
+    /// Return the underlying [`LocalShard`] if this shard wraps one.
+    ///
+    /// Proxy variants forward writes to a wrapped local shard, so callers
+    /// that need the local-shard's state (e.g. rate limiters) can reach it
+    /// uniformly through this accessor. `Dummy` returns `None`.
+    pub fn local_shard(&self) -> Option<&LocalShard> {
+        match self {
+            Shard::Local(local_shard) => Some(local_shard),
+            Shard::Proxy(proxy_shard) => Some(&proxy_shard.wrapped_shard),
+            Shard::ForwardProxy(proxy_shard) => Some(&proxy_shard.wrapped_shard),
+            Shard::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard(),
+            Shard::Dummy(_) => None,
         }
     }
 
@@ -189,13 +204,17 @@ impl Shard {
         }
     }
 
-    pub async fn on_strict_mode_config_update(&mut self) {
+    pub fn on_strict_mode_config_update(&mut self, new_strict_mode: &StrictModeConfig) {
         match self {
-            Shard::Local(local_shard) => local_shard.on_strict_mode_config_update().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
-            Shard::QueueProxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
-            Shard::Dummy(dummy_shard) => dummy_shard.on_strict_mode_config_update(),
+            Shard::Local(local_shard) => local_shard.on_strict_mode_config_update(new_strict_mode),
+            Shard::Proxy(proxy_shard) => proxy_shard.on_strict_mode_config_update(new_strict_mode),
+            Shard::ForwardProxy(proxy_shard) => {
+                proxy_shard.on_strict_mode_config_update(new_strict_mode)
+            }
+            Shard::QueueProxy(proxy_shard) => {
+                proxy_shard.on_strict_mode_config_update(new_strict_mode)
+            }
+            Shard::Dummy(dummy_shard) => dummy_shard.on_strict_mode_config_update(new_strict_mode),
         }
     }
 

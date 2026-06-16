@@ -5,6 +5,8 @@ on:
   schedule:
     - cron: "0 0 * * *"  # every day at midnight
 
+permissions:
+  packages: write
 
 jobs:
   dev-clean-ghcr:

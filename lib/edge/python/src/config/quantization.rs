@@ -444,15 +444,10 @@ pub struct PyTurboQuantQuantizationConfig(TurboQuantQuantizationConfig);
 #[pymethods]
 impl PyTurboQuantQuantizationConfig {
     #[new]
-    #[pyo3(signature = (always_ram = None, plus = None, bits = None))]
-    pub fn new(
-        always_ram: Option<bool>,
-        plus: Option<bool>,
-        bits: Option<PyTurboQuantBitSize>,
-    ) -> Self {
+    #[pyo3(signature = (always_ram = None, bits = None))]
+    pub fn new(always_ram: Option<bool>, bits: Option<PyTurboQuantBitSize>) -> Self {
         Self(TurboQuantQuantizationConfig {
             always_ram,
-            plus,
             bits: bits.map(TurboQuantBitSize::from),
         })
     }
@@ -460,11 +455,6 @@ impl PyTurboQuantQuantizationConfig {
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         self.0.always_ram
-    }
-
-    #[getter]
-    pub fn plus(&self) -> Option<bool> {
-        self.0.plus
     }
 
     #[getter]
@@ -482,7 +472,6 @@ impl PyTurboQuantQuantizationConfig {
         // Every field should have a getter method
         let TurboQuantQuantizationConfig {
             always_ram: _,
-            plus: _,
             bits: _,
         } = self.0;
     }

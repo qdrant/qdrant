@@ -112,9 +112,12 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
         rustls_pemfile::read_all(rd).collect::<io::Result<Vec<_>>>()
     })?
     .into_iter()
-    .filter_map(|item| match item {
-        Item::X509Certificate(data) => Some(data),
-        _ => None,
+    .filter_map(|item| {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
+        match item {
+            Item::X509Certificate(data) => Some(data),
+            _ => None,
+        }
     })
     .collect();
     if certs.is_empty() {
@@ -124,6 +127,8 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
     // Load private key
     let private_key_item =
         with_buf_read(&tls_config.key, rustls_pemfile::read_one)?.ok_or(Error::NoPrivateKey)?;
+
+    #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
     let private_key = match private_key_item {
         Item::Pkcs1Key(pkey) => rustls_pki_types::PrivateKeyDer::from(pkey),
         Item::Pkcs8Key(pkey) => rustls_pki_types::PrivateKeyDer::from(pkey),

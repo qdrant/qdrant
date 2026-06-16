@@ -29,7 +29,6 @@ impl UpdateWorkers {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn flush_worker_internal(
         segments: LockedSegmentHolder,
         wal: LockedWal,
@@ -99,7 +98,6 @@ impl UpdateWorkers {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn flush_worker_fn(
         segments: LockedSegmentHolder,
         wal: LockedWal,

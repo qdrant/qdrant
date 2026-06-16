@@ -32,7 +32,7 @@ use crate::types::{
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait ReadSegmentEntry: SnapshotEntry {
+pub trait ReadSegmentEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
@@ -72,9 +72,34 @@ pub trait ReadSegmentEntry: SnapshotEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>>;
 
+    /// Like [`ReadSegmentEntry::vector`], but with explicit deferred semantics.
+    ///
+    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
+    /// the point, including a deferred head that is invisible to ordinary reads.
+    fn vector_with_behavior(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<VectorInternal>>;
+
     fn all_vectors(
         &self,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors<'_>>;
+
+    /// Like [`SegmentEntry::all_vectors`], but with explicit deferred semantics.
+    ///
+    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
+    /// the point, including a deferred head that is invisible to ordinary reads.
+    /// Used by the copy-on-write move path so deferred points are relocated with
+    /// their actual data instead of an empty/visible-only snapshot.
+    fn all_vectors_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>>;
 
@@ -101,8 +126,18 @@ pub trait ReadSegmentEntry: SnapshotEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
-    /// Iterator over all points in segment in ascending order.
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
+    /// Like [`SegmentEntry::payload`], but with explicit deferred semantics.
+    ///
+    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
+    /// the point, including a deferred head that is invisible to ordinary reads.
+    /// Used by the copy-on-write move path so deferred points are relocated with
+    /// their actual payload instead of failing with `PointIdError`.
+    fn payload_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
 
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     ///
@@ -165,8 +200,9 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 
     /// Check if there is point with `point_id` in this segment.
     ///
-    /// Soft deleted points are excluded.
-    fn has_point(&self, point_id: PointIdType) -> bool;
+    /// Soft deleted points are excluded. `deferred_behavior` selects whether a
+    /// deferred-only point counts as present.
+    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool;
 
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(
@@ -236,13 +272,10 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// Get indexed fields
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
-    /// Checks if segment errored during last operations
-    fn check_error(&self) -> Option<SegmentFailedState>;
-
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
 
-    fn fill_query_context(&self, query_context: &mut QueryContext);
+    fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()>;
 
     /// Check whether the point is marked as deferred in the segment
     fn point_is_deferred(&self, point_id: PointIdType) -> bool;
@@ -264,7 +297,10 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 }
 
 /// Segment with storage.
-pub trait StorageSegmentEntry: ReadSegmentEntry {
+pub trait StorageSegmentEntry: ReadSegmentEntry + SnapshotEntry {
+    /// Checks if segment errored during last operations
+    fn check_error(&self) -> Option<SegmentFailedState>;
+
     /// Get current persistent version of the segment
     fn persistent_version(&self) -> SeqNumberType;
 

@@ -17,12 +17,12 @@ use segment::types::{
 };
 use shard::common::stopping_guard::StoppingGuard;
 use shard::retrieve::record_internal::RecordInternal;
-use tokio::runtime::Handle;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{
     CollectionError, CollectionResult, QueryScrollRequestInternal, ScrollOrder,
 };
@@ -32,7 +32,7 @@ impl LocalShard {
     pub(super) async fn query_scroll_batch(
         &self,
         batch: Arc<Vec<QueryScrollRequestInternal>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -63,7 +63,7 @@ impl LocalShard {
     async fn query_scroll(
         &self,
         request: &QueryScrollRequestInternal,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -90,7 +90,7 @@ impl LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .await?
             }
@@ -104,7 +104,7 @@ impl LocalShard {
                     order_by,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .await?
             }
@@ -146,7 +146,7 @@ impl LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -238,7 +238,7 @@ impl LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         order_by: &OrderBy,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
@@ -354,7 +354,7 @@ impl LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -479,7 +479,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
-                DeferredBehavior::Exclude,
+                DeferredBehavior::VisibleOnly,
             ),
         )
         .await

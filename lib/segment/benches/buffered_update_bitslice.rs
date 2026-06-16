@@ -3,7 +3,7 @@ use std::iter;
 
 use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::MmapBitSlice;
-use common::universal_io::OpenOptions;
+use common::universal_io::{MmapFs, OpenOptions};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::*;
 use rand::rngs::StdRng;
@@ -26,7 +26,8 @@ fn buffered_update_bitslice(c: &mut Criterion) {
     )
     .unwrap();
 
-    let bitslice_storage = MmapBitSlice::open(&path, OpenOptions::default()).unwrap();
+    let bitslice_storage =
+        MmapBitSlice::open(&MmapFs, &path, OpenOptions::new_for_test(), ()).unwrap();
     let buffered_update_bitslice = BufferedUpdateBitSlice::new(bitslice_storage);
 
     // Set random flags and persist

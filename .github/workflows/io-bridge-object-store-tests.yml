@@ -1,0 +1,73 @@
+name: io_bridge_object_store integration
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - "lib/common/io_bridge_object_store/**"
+      - "lib/common/common/src/universal_io/**"
+      - ".github/workflows/io-bridge-object-store-tests.yml"
+  pull_request:
+    paths:
+      - "lib/common/io_bridge_object_store/**"
+      - "lib/common/common/src/universal_io/**"
+      - ".github/workflows/io-bridge-object-store-tests.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  integration:
+    name: rustfs-backed integration
+    runs-on: ubuntu-latest
+    services:
+      rustfs:
+        image: rustfs/rustfs:latest
+        ports:
+          - 9000:9000
+        env:
+          RUSTFS_ACCESS_KEY: ci-test-user
+          RUSTFS_SECRET_KEY: ci-test-secret-not-for-prod
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Wait for rustfs to be ready
+        run: |
+          for _ in $(seq 1 60); do
+            if docker run --rm --network host minio/mc \
+                 alias set local http://localhost:9000 ci-test-user ci-test-secret-not-for-prod \
+                 >/dev/null 2>&1; then
+              echo "rustfs is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "rustfs did not become ready in 60s" >&2
+          exit 1
+
+      - name: Create test bucket
+        run: |
+          docker run --rm --network host --entrypoint sh minio/mc -c \
+            "mc alias set local http://localhost:9000 ci-test-user ci-test-secret-not-for-prod \
+              && mc mb --ignore-existing local/test-bucket"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+
+      - name: Install Protoc
+        uses: ./.github/actions/setup-protoc
+
+      - name: Run integration tests
+        env:
+          S3_INTEGRATION_TEST: "1"
+          RUSTFS_ENDPOINT: "http://localhost:9000"
+          RUSTFS_ACCESS_KEY: "ci-test-user"
+          RUSTFS_SECRET_KEY: "ci-test-secret-not-for-prod"
+          RUSTFS_BUCKET: "test-bucket"
+        run: cargo test -p io_bridge_object_store -- --ignored

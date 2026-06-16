@@ -1893,7 +1893,7 @@
                       "example": "ok"
                     },
                     "result": {
-                      "type": "boolean"
+                      "$ref": "#/components/schemas/UpdateResult"
                     }
                   }
                 }
@@ -2007,7 +2007,7 @@
                       "example": "ok"
                     },
                     "result": {
-                      "type": "boolean"
+                      "$ref": "#/components/schemas/UpdateResult"
                     }
                   }
                 }
@@ -7515,7 +7515,7 @@
             "nullable": true
           },
           "datatype": {
-            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`.",
+            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Datatype"
@@ -7766,10 +7766,6 @@
             "type": "boolean",
             "nullable": true
           },
-          "plus": {
-            "type": "boolean",
-            "nullable": true
-          },
           "bits": {
             "anyOf": [
               {
@@ -7796,7 +7792,8 @@
         "enum": [
           "float32",
           "uint8",
-          "float16"
+          "float16",
+          "turbo4"
         ]
       },
       "MultiVectorConfig": {
@@ -8009,7 +8006,7 @@
             "nullable": true
           },
           "prevent_unoptimized": {
-            "description": "If this option is set, service will try to prevent creation of large unoptimized segments. When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold. Updates will be resumed when optimization is completed and segments are optimized below the threshold. Using this option may lead to increased delay between submitting an update and its application. Default is disabled.",
+            "description": "If enabled, the service will try to prevent the creation of large unoptimized segments. When enabled, new points written to segments larger than the indexing threshold are stored as \"deferred points\": they are persisted in the WAL and segments, but excluded from read/search results until the corresponding segments are optimized (e.g. indexed, quantized, or moved to mmap storage). Update requests with `wait=true` will only return after the deferred points become visible, which may significantly increase the perceived latency between submitting an update and its completion. Update requests with `wait=false` are not affected. Default is disabled.",
             "default": null,
             "type": "boolean",
             "nullable": true
@@ -8056,14 +8053,14 @@
             "description": "Max allowed `limit` parameter for all APIs that don't have their own max limit.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "max_timeout": {
             "description": "Max allowed `timeout` parameter.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "unindexed_filtering_retrieve": {
@@ -8188,6 +8185,13 @@
           },
           "max_resident_memory_percent": {
             "description": "Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming update operations when the storage filesystem exceeds this percentage of total capacity (1-100)",
             "type": "integer",
             "format": "uint8",
             "minimum": 0,
@@ -9891,7 +9895,7 @@
             "description": "Params relevant to HNSW index Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "exact": {
@@ -10677,7 +10681,7 @@
             ]
           },
           "prevent_unoptimized": {
-            "description": "If this option is set, service will try to prevent creation of large unoptimized segments. When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold. Updates will be resumed when optimization is completed and segments are optimized below the threshold. Using this option may lead to increased delay between submitting an update and its application. Default is disabled.",
+            "description": "If enabled, the service will try to prevent the creation of large unoptimized segments. When enabled, new points written to segments larger than the indexing threshold are stored as \"deferred points\": they are persisted in the WAL and segments, but excluded from read/search results until the corresponding segments are optimized (e.g. indexed, quantized, or moved to mmap storage). Update requests with `wait=true` will only return after the deferred points become visible, which may significantly increase the perceived latency between submitting an update and its completion. Update requests with `wait=false` are not affected. Default is disabled.",
             "default": null,
             "type": "boolean",
             "nullable": true
@@ -10846,6 +10850,14 @@
           },
           "max_resident_memory_percent": {
             "description": "Reject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free memory.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming update operations (e.g. upsert, set payload) when the filesystem hosting Qdrant storage is filled above this percentage of its total capacity. Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free disk space. Free space is sampled with a small TTL cache; the gate may take a few seconds to react.",
             "type": "integer",
             "format": "uint8",
             "maximum": 100,
@@ -12479,6 +12491,16 @@
                 "nullable": true
               }
             ]
+          },
+          "search_pool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchThreadPoolTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12623,6 +12645,11 @@
             "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.17.1+",
             "default": false,
             "type": "boolean"
+          },
+          "async_payload_storage": {
+            "description": "Use io_uring-based payload storage implementation.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
@@ -12687,6 +12714,12 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0,
+            "nullable": true
+          },
+          "cpu_cores_used": {
+            "description": "Average number of CPU cores used by this process over roughly the last two seconds. `None` on unsupported platforms, before two samples are collected, or on transient failures reading process CPU time.",
+            "type": "number",
+            "format": "float",
             "nullable": true
           },
           "ram_size": {
@@ -13457,7 +13490,8 @@
         "enum": [
           "float32",
           "float16",
-          "uint8"
+          "uint8",
+          "turbo4"
         ]
       },
       "SparseVectorDataConfig": {
@@ -14396,6 +14430,33 @@
           }
         }
       },
+      "SearchThreadPoolTelemetry": {
+        "description": "Live snapshot of the adaptive search routing.\n\n`mode` is the runtime currently selected by [`SearchMode`]; `high_cpu_threads` and `high_io_threads` are the blocking-thread budgets of the two underlying runtimes that the adaptive handle routes between.",
+        "type": "object",
+        "required": [
+          "high_cpu_threads",
+          "high_io_threads",
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "description": "Currently active mode (`high_cpu` or `high_io`).",
+            "type": "string"
+          },
+          "high_cpu_threads": {
+            "description": "Blocking-thread count of the high-CPU runtime.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "high_io_threads": {
+            "description": "Blocking-thread count of the high-IO runtime.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
       "ClusterOperations": {
         "anyOf": [
           {
@@ -14919,7 +14980,7 @@
           {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           },
           {
             "$ref": "#/components/schemas/ReadConsistencyType"
@@ -17766,7 +17827,8 @@
             "description": "Dimensionality of the vectors",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "maximum": 65536,
+            "minimum": 1
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
@@ -17783,7 +17845,7 @@
             ]
           },
           "datatype": {
-            "description": "Element storage type (Float32, Float16, Uint8)",
+            "description": "Element storage type (Float32, Float16, Uint8, Turbo4)",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorStorageDatatype"

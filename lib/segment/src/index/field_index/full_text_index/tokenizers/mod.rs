@@ -11,6 +11,7 @@ pub use stemmer::Stemmer;
 pub use tokens_processor::TokensProcessor;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
+use crate::index::field_index::full_text_index::inverted_index::ARRAY_BOUNDARY_SENTINEL;
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 
 struct WhiteSpaceTokenizer;
@@ -159,6 +160,11 @@ pub struct Tokenizer {
     tokens_processor: TokensProcessor,
 }
 
+pub enum TokenizerTextKind {
+    Query,
+    Document,
+}
+
 impl Tokenizer {
     pub fn new_from_text_index_params(params: &TextIndexParams) -> Self {
         let TextIndexParams {
@@ -198,34 +204,37 @@ impl Tokenizer {
         }
     }
 
-    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
-        match self.tokenizer_type {
-            TokenizerType::Whitespace => {
-                WhiteSpaceTokenizer::tokenize(text, &self.tokens_processor, callback)
-            }
-            TokenizerType::Word => WordTokenizer::tokenize(text, &self.tokens_processor, callback),
-            TokenizerType::Multilingual => {
-                MultilingualTokenizer::tokenize(text, &self.tokens_processor, callback)
-            }
-            TokenizerType::Prefix => {
-                PrefixTokenizer::tokenize(text, &self.tokens_processor, callback)
-            }
+    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        &self,
+        kind: TokenizerTextKind,
+        text: &'a str,
+        callback: C,
+    ) {
+        let Self {
+            tokenizer_type,
+            tokens_processor: tp,
+        } = self;
+        match tokenizer_type {
+            TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, tp, callback),
+            TokenizerType::Word => WordTokenizer::tokenize(text, tp, callback),
+            TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, tp, callback),
+            TokenizerType::Prefix => match kind {
+                TokenizerTextKind::Document => PrefixTokenizer::tokenize(text, tp, callback),
+                TokenizerTextKind::Query => PrefixTokenizer::tokenize_query(text, tp, callback),
+            },
         }
     }
 
-    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
-        match self.tokenizer_type {
-            TokenizerType::Whitespace => {
-                WhiteSpaceTokenizer::tokenize(text, &self.tokens_processor, callback)
+    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
+        self.tokenize(TokenizerTextKind::Document, text, callback);
+    }
+
+    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, mut callback: C) {
+        self.tokenize(TokenizerTextKind::Query, text, |token| {
+            if token != ARRAY_BOUNDARY_SENTINEL {
+                callback(token)
             }
-            TokenizerType::Word => WordTokenizer::tokenize(text, &self.tokens_processor, callback),
-            TokenizerType::Multilingual => {
-                MultilingualTokenizer::tokenize(text, &self.tokens_processor, callback)
-            }
-            TokenizerType::Prefix => {
-                PrefixTokenizer::tokenize_query(text, &self.tokens_processor, callback)
-            }
-        }
+        });
     }
 }
 

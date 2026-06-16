@@ -11,7 +11,7 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig, WithPayload,
     WithPayloadInterface, WithVector,
 };
 use semver::Version;
@@ -20,7 +20,6 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
@@ -28,6 +27,7 @@ use super::transfer::driver::MAX_RETRY_COUNT;
 use super::transfer::transfer_tasks_pool::TransferTaskProgress;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;
@@ -192,11 +192,10 @@ impl QueueProxyShard {
             .await
     }
 
-    pub async fn on_strict_mode_config_update(&mut self) {
+    pub fn on_strict_mode_config_update(&mut self, new_strict_mode: &StrictModeConfig) {
         self.inner_mut_unchecked()
             .wrapped_shard
-            .on_strict_mode_config_update()
-            .await
+            .on_strict_mode_config_update(new_strict_mode)
     }
 
     pub fn trigger_optimizers(&self) {
@@ -323,7 +322,7 @@ impl ShardOperation for QueueProxyShard {
     async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -340,7 +339,7 @@ impl ShardOperation for QueueProxyShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -367,7 +366,7 @@ impl ShardOperation for QueueProxyShard {
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -380,7 +379,7 @@ impl ShardOperation for QueueProxyShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -402,7 +401,7 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -424,7 +423,7 @@ impl ShardOperation for QueueProxyShard {
     async fn query_batch(
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -437,7 +436,7 @@ impl ShardOperation for QueueProxyShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
@@ -762,7 +761,7 @@ impl ShardOperation for Inner {
     async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -779,7 +778,7 @@ impl ShardOperation for Inner {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -810,7 +809,7 @@ impl ShardOperation for Inner {
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -824,7 +823,7 @@ impl ShardOperation for Inner {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -847,7 +846,7 @@ impl ShardOperation for Inner {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -870,7 +869,7 @@ impl ShardOperation for Inner {
     async fn query_batch(
         &self,
         request: Arc<Vec<ShardQueryRequest>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -883,7 +882,7 @@ impl ShardOperation for Inner {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
@@ -932,7 +931,7 @@ async fn transfer_operations_batch(
             batch_upd.push(operation);
         }
 
-        remote_shard
+        match remote_shard
             .forward_update_batch(
                 batch_upd,
                 wait,
@@ -940,12 +939,28 @@ async fn transfer_operations_batch(
                 WriteOrdering::Weak,
                 hw_measurement_acc.clone(),
             )
-            .await?;
-
-        return Ok(());
+            .await
+        {
+            Ok(_) => return Ok(()),
+            // A transient error is a delivery failure: let the caller retry the whole batch.
+            Err(err) if err.is_transient() => return Err(err),
+            // A non-transient error means some operation in the batch is permanently
+            // rejected by the remote (e.g. bad request, missing point). The batch is
+            // applied sequentially and aborts at the first such operation, so we cannot
+            // tell which one failed. Re-send the batch one-by-one to isolate and skip
+            // the offending operation(s); see the loop below.
+            Err(err) => {
+                log::warn!(
+                    "Non-transient error transferring batch of updates to peer {}, \
+                     retrying operations individually: {err}",
+                    remote_shard.peer_id,
+                );
+            }
+        }
     }
 
-    // Fallback to one-by-one transfer, in case the remote shard doesn't support batch updates
+    // One-by-one transfer. Used both when the remote does not support batch updates and
+    // as the isolation path after a non-transient batch failure.
     for (_idx, operation) in batch {
         let mut operation = operation.clone();
 
@@ -955,7 +970,7 @@ async fn transfer_operations_batch(
             clock_tag.force = true;
         }
 
-        remote_shard
+        match remote_shard
             .forward_update(
                 operation,
                 wait,
@@ -963,7 +978,24 @@ async fn transfer_operations_batch(
                 WriteOrdering::Weak,
                 hw_measurement_acc.clone(),
             )
-            .await?;
+            .await
+        {
+            Ok(_) => {}
+            // Transient errors are delivery failures: let the caller retry the batch.
+            Err(err) if err.is_transient() => return Err(err),
+            // A non-transient error means the operation is permanently rejected by the
+            // remote. This operation was replayed from the WAL, so it was already applied
+            // (and rejected the same way) on the sender - the sender's state therefore
+            // reflects it as a no-op. Skipping it here keeps both sides consistent and
+            // prevents a single bad operation from aborting the whole shard transfer.
+            Err(err) => {
+                log::warn!(
+                    "Skipping operation permanently rejected by peer {} during shard \
+                     transfer (non-transient): {err}",
+                    remote_shard.peer_id,
+                );
+            }
+        }
     }
     Ok(())
 }

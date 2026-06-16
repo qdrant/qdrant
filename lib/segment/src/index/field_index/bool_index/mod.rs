@@ -1,220 +1,222 @@
+pub mod immutable_bool_index;
+pub mod mutable_bool_index;
+pub mod read_only_bool_index;
+mod read_ops;
+
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use mutable_bool_index::MutableBoolIndex;
+use common::universal_io::MmapFile;
+pub use immutable_bool_index::ImmutableBoolIndex;
+pub use mutable_bool_index::MutableBoolIndex;
+pub use read_only_bool_index::ReadOnlyBoolIndex;
+pub use read_ops::BoolIndexRead;
+use serde_json::Value as JsonValue;
 
 use super::facet_index::FacetIndex;
-use super::map_index::IdIter;
-use super::{PayloadFieldIndex, ValueIndexer};
-use crate::common::operation_error::OperationResult;
+use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
+use crate::common::flags::roaring_flags::RoaringFlags;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
-use crate::index::payload_config::{IndexMutability, StorageType};
-use crate::telemetry::PayloadIndexTelemetry;
-
-pub mod mutable_bool_index;
+use crate::index::payload_config::IndexMutability;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
+use crate::types::FieldCondition;
 
 pub enum BoolIndex {
-    Mmap(MutableBoolIndex),
+    Mutable(MutableBoolIndex),
+    Immutable(ImmutableBoolIndex),
+}
+
+impl From<MutableBoolIndex> for BoolIndex {
+    #[inline]
+    fn from(index: MutableBoolIndex) -> Self {
+        BoolIndex::Mutable(index)
+    }
+}
+
+impl From<ImmutableBoolIndex> for BoolIndex {
+    #[inline]
+    fn from(index: ImmutableBoolIndex) -> Self {
+        BoolIndex::Immutable(index)
+    }
 }
 
 impl BoolIndex {
-    pub fn get_point_values(&self, point_id: PointOffsetType) -> Vec<bool> {
-        match self {
-            BoolIndex::Mmap(index) => index.get_point_values(point_id),
-        }
-    }
-
-    pub fn iter_values_map<'a>(
-        &'a self,
-        hw_acc: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = (bool, IdIter<'a>)> + 'a> {
-        match self {
-            BoolIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
-        }
-    }
-
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = bool> + '_> {
-        match self {
-            BoolIndex::Mmap(index) => Box::new(index.iter_values()),
-        }
-    }
-
-    pub fn iter_counts_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = (bool, usize)> + '_> {
-        match self {
-            BoolIndex::Mmap(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
-        }
-    }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        match self {
-            BoolIndex::Mmap(index) => index.get_telemetry_data(),
-        }
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        match self {
-            BoolIndex::Mmap(index) => index.values_count(point_id),
-        }
-    }
-
-    pub fn check_values_any(
-        &self,
-        point_id: PointOffsetType,
-        is_true: bool,
-        _hw_counter: &HardwareCounterCell,
-    ) -> bool {
-        match self {
-            BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true),
-        }
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        match self {
-            BoolIndex::Mmap(index) => index.values_is_empty(point_id),
-        }
-    }
-
-    pub fn ram_usage_bytes(&self) -> usize {
-        match self {
-            BoolIndex::Mmap(index) => index.ram_usage_bytes(),
-        }
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            BoolIndex::Mmap(index) => index.is_on_disk(),
-        }
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.populate()?,
-        }
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.clear_cache()?,
-        }
-        Ok(())
-    }
-
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
-            // Mmap bool index can be both mutable and immutable, so we pick mutable
-            BoolIndex::Mmap(_) => IndexMutability::Mutable,
+            BoolIndex::Mutable(_) => IndexMutability::Mutable,
+            BoolIndex::Immutable(_) => IndexMutability::Immutable,
         }
     }
 
-    pub fn get_storage_type(&self) -> StorageType {
+    /// Produce a closure that maps a point id to its indexed bool
+    /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
+    pub fn value_retriever<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        read_ops::value_retriever(self, hw_counter)
+    }
+}
+
+impl BoolIndexRead for BoolIndex {
+    type Flags = RoaringFlags<MmapFile>;
+
+    fn trues_flags(&self) -> &Self::Flags {
         match self {
-            BoolIndex::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
+            BoolIndex::Mutable(index) => index.trues_flags(),
+            BoolIndex::Immutable(index) => index.trues_flags(),
         }
+    }
+
+    fn falses_flags(&self) -> &Self::Flags {
+        match self {
+            BoolIndex::Mutable(index) => index.falses_flags(),
+            BoolIndex::Immutable(index) => index.falses_flags(),
+        }
+    }
+
+    fn indexed_count(&self) -> usize {
+        match self {
+            BoolIndex::Mutable(index) => index.indexed_count(),
+            BoolIndex::Immutable(index) => index.indexed_count(),
+        }
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        match self {
+            BoolIndex::Mutable(index) => index.telemetry_index_type(),
+            BoolIndex::Immutable(index) => index.telemetry_index_type(),
+        }
+    }
+
+    fn trues_count(&self) -> usize {
+        match self {
+            BoolIndex::Mutable(index) => index.trues_count(),
+            BoolIndex::Immutable(index) => index.trues_count(),
+        }
+    }
+
+    fn falses_count(&self) -> usize {
+        match self {
+            BoolIndex::Mutable(index) => index.falses_count(),
+            BoolIndex::Immutable(index) => index.falses_count(),
+        }
+    }
+}
+
+impl PayloadFieldIndexRead for BoolIndex {
+    fn count_indexed_points(&self) -> usize {
+        self.indexed_count()
+    }
+
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        Ok(read_ops::filter(self, condition, hw_counter))
+    }
+
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<super::CardinalityEstimation>> {
+        Ok(read_ops::estimate_cardinality(self, condition, hw_counter))
+    }
+
+    fn for_each_payload_block(
+        &self,
+        threshold: usize,
+        key: crate::types::PayloadKeyType,
+        f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        read_ops::for_each_payload_block(self, threshold, key, f)
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+        Ok(read_ops::condition_checker(self, condition, hw_acc))
     }
 }
 
 impl PayloadFieldIndex for BoolIndex {
-    fn count_indexed_points(&self) -> usize {
-        match self {
-            BoolIndex::Mmap(index) => index.count_indexed_points(),
-        }
-    }
-
     fn wipe(self) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => index.wipe(),
+            BoolIndex::Mutable(index) => index.wipe(),
+            BoolIndex::Immutable(index) => index.wipe(),
         }
     }
 
     fn flusher(&self) -> crate::common::Flusher {
         match self {
-            BoolIndex::Mmap(index) => index.flusher(),
+            BoolIndex::Mutable(index) => index.flusher(),
+            BoolIndex::Immutable(index) => index.flusher(),
         }
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            BoolIndex::Mmap(index) => index.files(),
-        }
+        BoolIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
         match self {
-            BoolIndex::Mmap(index) => index.immutable_files(),
-        }
-    }
-
-    fn filter<'a>(
-        &'a self,
-        condition: &'a crate::types::FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        match self {
-            BoolIndex::Mmap(index) => index.filter(condition, hw_counter),
-        }
-    }
-
-    fn estimate_cardinality(
-        &self,
-        condition: &crate::types::FieldCondition,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<super::CardinalityEstimation>> {
-        match self {
-            BoolIndex::Mmap(index) => index.estimate_cardinality(condition, hw_counter),
-        }
-    }
-
-    fn payload_blocks(
-        &self,
-        threshold: usize,
-        key: crate::types::PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<super::PayloadBlockCondition>> + '_> {
-        match self {
-            BoolIndex::Mmap(index) => index.payload_blocks(threshold, key),
+            BoolIndex::Mutable(index) => index.immutable_files(),
+            BoolIndex::Immutable(index) => index.immutable_files(),
         }
     }
 }
 
 impl FacetIndex for BoolIndex {
-    fn get_point_values(
+    fn for_points_values(
         &self,
-        point_id: PointOffsetType,
+        points: impl Iterator<Item = PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
-    ) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        self.get_point_values(point_id)
-            .into_iter()
-            .map(FacetValueRef::Bool)
+        mut f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
+    ) -> OperationResult<()> {
+        points.for_each(|point_id| {
+            let values = self.get_point_values(point_id);
+            f(point_id, &mut values.into_iter().map(FacetValueRef::Bool));
+        });
+        Ok(())
     }
 
-    fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        self.iter_values().map(FacetValueRef::Bool)
+    fn for_each_value(
+        &self,
+        mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        BoolIndexRead::iter_values(self).try_for_each(|v| f(FacetValueRef::Bool(v)))
     }
 
-    fn iter_values_map<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a {
-        self.iter_values_map(hw_counter)
-            .map(|(value, iter)| (FacetValueRef::Bool(value), iter))
+    fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(
+            FacetValueRef<'_>,
+            &mut dyn Iterator<Item = PointOffsetType>,
+        ) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
+            f(FacetValueRef::Bool(value), iter)
+        })
     }
 
-    fn iter_counts_per_value(
+    fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
-        self.iter_counts_per_value(deferred_internal_id)
-            .map(|(value, count)| FacetHit {
+        mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        BoolIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
+            f(FacetHit {
                 value: FacetValueRef::Bool(value),
                 count,
             })
+        })
     }
 }
 
@@ -228,20 +230,28 @@ impl ValueIndexer for BoolIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => index.add_many(id, values, hw_counter),
+            BoolIndex::Mutable(index) => index.add_many(id, values, hw_counter),
+            BoolIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable bool index",
+            )),
         }
     }
 
-    fn get_value(value: &serde_json::Value) -> Option<Self::ValueType> {
+    fn get_value(value: &JsonValue) -> Option<Self::ValueType> {
         match value {
-            serde_json::Value::Bool(value) => Some(*value),
-            _ => None,
+            JsonValue::Bool(value) => Some(*value),
+            JsonValue::Null
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_) => None,
         }
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => index.remove_point(id),
+            BoolIndex::Mutable(index) => index.remove_point(id),
+            BoolIndex::Immutable(index) => index.remove_point(id),
         }
     }
 }
@@ -257,24 +267,55 @@ mod tests {
     use serde_json::json;
     use tempfile::Builder;
 
-    use super::BoolIndex;
-    use super::mutable_bool_index::MutableBoolIndex;
-    use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
+    use super::immutable_bool_index::{ImmutableBoolIndex, ImmutableBoolIndexBuilder};
+    use super::mutable_bool_index::{MutableBoolIndex, MutableBoolIndexBuilder};
+    use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
     use crate::json_path::JsonPath;
 
     const FIELD_NAME: &str = "bool_field";
     const DB_NAME: &str = "test_db";
 
-    trait OpenIndex {
-        fn open_at(path: &Path) -> BoolIndex;
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    enum IndexType {
+        Mutable,
+        Immutable,
     }
 
-    impl OpenIndex for MutableBoolIndex {
-        fn open_at(path: &Path) -> BoolIndex {
+    trait BuildableIndex: PayloadFieldIndex {
+        type BuilderType: FieldIndexBuilderTrait<FieldIndexType = Self>;
+
+        fn builder(path: &Path) -> Self::BuilderType;
+        fn open_at(path: &Path) -> Self;
+    }
+
+    impl BuildableIndex for MutableBoolIndex {
+        type BuilderType = MutableBoolIndexBuilder;
+
+        fn builder(path: &Path) -> Self::BuilderType {
+            MutableBoolIndex::builder(path).unwrap()
+        }
+
+        fn open_at(path: &Path) -> Self {
             MutableBoolIndex::builder(path)
                 .unwrap()
                 .make_empty()
                 .unwrap()
+        }
+    }
+
+    impl BuildableIndex for ImmutableBoolIndex {
+        type BuilderType = ImmutableBoolIndexBuilder;
+
+        fn builder(path: &Path) -> Self::BuilderType {
+            ImmutableBoolIndex::builder(path).unwrap()
+        }
+
+        fn open_at(path: &Path) -> Self {
+            let mutable_index = MutableBoolIndex::builder(path)
+                .unwrap()
+                .make_empty()
+                .unwrap();
+            ImmutableBoolIndex::from_mutable(mutable_index).unwrap()
         }
     }
 
@@ -304,16 +345,17 @@ mod tests {
         ]
     }
 
-    fn filter<I: OpenIndex>(given: serde_json::Value, match_on: bool, expected_count: usize) {
+    fn filter<I: BuildableIndex>(given: serde_json::Value, match_on: bool, expected_count: usize) {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
-        let mut index = I::open_at(tmp_dir.path());
+        let mut builder = I::builder(tmp_dir.path());
 
         let hw_counter = HardwareCounterCell::new();
 
-        index.add_point(0, &[&given], &hw_counter).unwrap();
+        builder.add_point(0, &[&given], &hw_counter).unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
+        let index = builder.finalize().unwrap();
         let count = index
             .filter(&match_bool(match_on), &hw_counter)
             .unwrap()
@@ -332,8 +374,15 @@ mod tests {
     #[case(json!([false, true]), 1)]
     #[case(json!([false, false]), 0)]
     #[case(json!([true, true]), 1)]
-    fn test_filter_true(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        filter::<MutableBoolIndex>(given, true, expected_count);
+    fn test_filter_true(
+        #[case] given: serde_json::Value,
+        #[case] expected_count: usize,
+        #[values(IndexType::Mutable, IndexType::Immutable)] index_type: IndexType,
+    ) {
+        match index_type {
+            IndexType::Mutable => filter::<MutableBoolIndex>(given, true, expected_count),
+            IndexType::Immutable => filter::<ImmutableBoolIndex>(given, true, expected_count),
+        }
     }
 
     #[rstest]
@@ -345,18 +394,32 @@ mod tests {
     #[case(json!([false, true]), 1)]
     #[case(json!([false, false]), 1)]
     #[case(json!([true, true]), 0)]
-    fn test_filter_false(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        filter::<MutableBoolIndex>(given, false, expected_count);
+    fn test_filter_false(
+        #[case] given: serde_json::Value,
+        #[case] expected_count: usize,
+        #[values(IndexType::Mutable, IndexType::Immutable)] index_type: IndexType,
+    ) {
+        match index_type {
+            IndexType::Mutable => filter::<MutableBoolIndex>(given.clone(), false, expected_count),
+            IndexType::Immutable => {
+                filter::<ImmutableBoolIndex>(given.clone(), false, expected_count)
+            }
+        }
     }
 
-    #[test]
-    fn test_load_from_disk() {
-        load_from_disk::<MutableBoolIndex>();
+    #[rstest]
+    fn test_load_from_disk(
+        #[values(IndexType::Mutable, IndexType::Immutable)] index_type: IndexType,
+    ) {
+        match index_type {
+            IndexType::Mutable => load_from_disk::<MutableBoolIndex>(),
+            IndexType::Immutable => load_from_disk::<ImmutableBoolIndex>(),
+        }
     }
 
-    fn load_from_disk<I: OpenIndex>() {
+    fn load_from_disk<I: BuildableIndex>() {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
-        let mut index = I::open_at(tmp_dir.path());
+        let mut builder = I::builder(tmp_dir.path());
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -364,11 +427,11 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
+                builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
+        let index = builder.finalize().unwrap();
         index.flusher()().unwrap();
-
         drop(index);
 
         let new_index = I::open_at(tmp_dir.path());
@@ -400,7 +463,10 @@ mod tests {
     }
 
     /// Try to modify from falsy to only true
-    fn modify_value<I: OpenIndex>(before: serde_json::Value, after: serde_json::Value) {
+    fn modify_value<I: BuildableIndex + ValueIndexer>(
+        before: serde_json::Value,
+        after: serde_json::Value,
+    ) {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
@@ -435,14 +501,19 @@ mod tests {
         assert!(point_offsets.is_empty());
     }
 
-    #[test]
-    fn test_indexed_count() {
-        indexed_count::<MutableBoolIndex>();
+    #[rstest]
+    fn test_indexed_count(
+        #[values(IndexType::Mutable, IndexType::Immutable)] index_type: IndexType,
+    ) {
+        match index_type {
+            IndexType::Mutable => indexed_count::<MutableBoolIndex>(),
+            IndexType::Immutable => indexed_count::<ImmutableBoolIndex>(),
+        }
     }
 
-    fn indexed_count<I: OpenIndex>() {
+    fn indexed_count<I: BuildableIndex + PayloadFieldIndex>() {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
-        let mut index = I::open_at(tmp_dir.path());
+        let mut builder = I::builder(tmp_dir.path());
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -450,8 +521,10 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
+                builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
+
+        let index = builder.finalize().unwrap();
 
         assert_eq!(index.count_indexed_points(), 9);
     }
@@ -461,7 +534,7 @@ mod tests {
         payload_blocks::<MutableBoolIndex>();
     }
 
-    fn payload_blocks<I: OpenIndex>() {
+    fn payload_blocks<I: BuildableIndex + ValueIndexer>() {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
@@ -474,23 +547,31 @@ mod tests {
                 index.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
-        let blocks = index
-            .payload_blocks(0, JsonPath::new(FIELD_NAME))
-            .map(Result::unwrap)
-            .collect_vec();
+        let mut blocks = Vec::new();
+        index
+            .for_each_payload_block(0, JsonPath::new(FIELD_NAME), &mut |block| {
+                blocks.push(block);
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].cardinality, 6);
         assert_eq!(blocks[1].cardinality, 6);
     }
 
-    #[test]
-    fn test_estimate_cardinality() {
-        estimate_cardinality::<MutableBoolIndex>();
+    #[rstest]
+    fn test_estimate_cardinality(
+        #[values(IndexType::Mutable, IndexType::Immutable)] index_type: IndexType,
+    ) {
+        match index_type {
+            IndexType::Mutable => estimate_cardinality::<MutableBoolIndex>(),
+            IndexType::Immutable => estimate_cardinality::<ImmutableBoolIndex>(),
+        }
     }
 
-    fn estimate_cardinality<I: OpenIndex>() {
+    fn estimate_cardinality<I: BuildableIndex>() {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
-        let mut index = I::open_at(tmp_dir.path());
+        let mut builder = I::builder(tmp_dir.path());
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -498,11 +579,12 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
+                builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
         let hw_counter = HardwareCounterCell::new();
 
+        let index = builder.finalize().unwrap();
         let cardinality = index
             .estimate_cardinality(&match_bool(true), &hw_counter)
             .unwrap()

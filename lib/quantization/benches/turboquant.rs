@@ -3,8 +3,9 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quantization::DistanceType;
 use quantization::encoded_vectors::VectorParameters;
+use quantization::encoded_vectors_tq::{Metadata, new_turbo_quantizer_from_metadata};
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::turboquant::{Metadata, TQBits, TQMode};
+use quantization::turboquant::{TQBits, TQMode};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -20,8 +21,9 @@ fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
         },
         bits,
         mode: TQMode::Normal,
+        error_correction: None,
     };
-    TurboQuantizer::new_from_metadata(&metadata)
+    new_turbo_quantizer_from_metadata(&metadata).expect("metadata is hand-constructed")
 }
 
 fn random_vector(dim: usize, rng: &mut StdRng) -> Vec<f32> {
@@ -55,5 +57,74 @@ fn bench_quantize(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_quantize);
+fn bench_dot(c: &mut Criterion) {
+    let bit_widths: &[(TQBits, &str)] = &[
+        (TQBits::Bits1, "1bit"),
+        (TQBits::Bits2, "2bit"),
+        (TQBits::Bits4, "4bit"),
+    ];
+
+    for &(bits, bits_name) in bit_widths {
+        let mut group = c.benchmark_group(format!("turboquant_dot_{bits_name}"));
+
+        for &dim in DIMS {
+            let tq = make_tq(dim, bits);
+            let mut rng = StdRng::seed_from_u64(42);
+
+            // Pre-quantize a vector so the bench measures only the dot path.
+            let mut buf = vec![0.0f64; dim];
+            let vec = random_vector(dim, &mut rng);
+            let packed = tq.quantize(&vec, &mut buf);
+
+            group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
+                b.iter_batched(
+                    || random_vector(dim, &mut rng),
+                    |query| {
+                        tq.score_precomputed(
+                            black_box(&tq.precompute_query(&query)),
+                            black_box(&packed),
+                        )
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
+            });
+        }
+
+        group.finish();
+    }
+}
+
+fn bench_dot_precomputed(c: &mut Criterion) {
+    let bit_widths: &[(TQBits, &str)] = &[
+        (TQBits::Bits1, "1bit"),
+        (TQBits::Bits2, "2bit"),
+        (TQBits::Bits4, "4bit"),
+    ];
+
+    for &(bits, bits_name) in bit_widths {
+        let mut group = c.benchmark_group(format!("turboquant_dot_precomputed_{bits_name}"));
+
+        for &dim in DIMS {
+            let tq = make_tq(dim, bits);
+            let mut rng = StdRng::seed_from_u64(42);
+
+            // Pre-quantize a vector so the bench measures only the dot path.
+            let mut buf = vec![0.0f64; dim];
+            let vec = random_vector(dim, &mut rng);
+            let packed = tq.quantize(&vec, &mut buf);
+
+            group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
+                b.iter_batched(
+                    || tq.precompute_query(&random_vector(dim, &mut rng)),
+                    |query| tq.score_precomputed(black_box(&query), black_box(&packed)),
+                    criterion::BatchSize::SmallInput,
+                );
+            });
+        }
+
+        group.finish();
+    }
+}
+
+criterion_group!(benches, bench_quantize, bench_dot, bench_dot_precomputed);
 criterion_main!(benches);

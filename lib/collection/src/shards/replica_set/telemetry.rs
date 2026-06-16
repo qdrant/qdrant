@@ -24,7 +24,7 @@ impl ShardReplicaSet {
 
         Ok(ReplicaSetTelemetry {
             id: self.shard_id,
-            key: self.shard_key.clone(),
+            key: self.shard_key(),
             local: local_telemetry,
             remote: self
                 .remotes

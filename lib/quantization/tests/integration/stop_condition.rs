@@ -3,10 +3,10 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
-    use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
-    use quantization::{EncodedVectorsPQ, EncodingError};
+    use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
+    use quantization::{EncodedVectorsPQ, EncodingError, encoded_vectors_pq};
 
     #[test]
     fn stop_condition_u8() {
@@ -30,7 +30,7 @@ mod tests {
         let zero_vector = vec![0.0; vector_dim];
 
         let quantized_vector_size =
-            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         assert_eq!(
             EncodedVectorsU8::encode(
                 (0..vectors_count).map(|_| &zero_vector),
@@ -71,10 +71,7 @@ mod tests {
         let zero_vector = vec![0.0; vector_dim];
 
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                2,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 2);
         assert_eq!(
             EncodedVectorsPQ::encode(
                 (0..vectors_count).map(|_| &zero_vector),

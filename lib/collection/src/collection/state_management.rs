@@ -193,8 +193,11 @@ impl Collection {
 
         self.print_warnings().await;
 
+        // Recreate optimizers in the background: this path is reached from consensus (Raft snapshot
+        // application), and stopping the existing optimizers can take a long time, which would
+        // otherwise stall the consensus loop.
         if recreate_optimizers {
-            self.recreate_optimizers_blocking().await?;
+            self.recreate_optimizers_background();
         }
 
         Ok(())
@@ -219,7 +222,7 @@ impl Collection {
 
         for (shard_id, shard_info) in shards {
             let shard_key = shards_key_mapping.shard_key(shard_id);
-            match shards_holder.get_shard_mut(shard_id) {
+            match shards_holder.get_shard(shard_id) {
                 Some(replica_set) => {
                     replica_set
                         .apply_state(shard_info.replicas, shard_key)
@@ -228,7 +231,7 @@ impl Collection {
                 None => {
                     let mut shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
                     shard_replicas.sort_unstable();
-                    let mut replica_set = self
+                    let replica_set = self
                         .create_replica_set(shard_id, shard_key.clone(), &shard_replicas, None)
                         .await?;
                     replica_set

@@ -4,9 +4,9 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ScoredPoint;
 use shard::query::MmrInternal;
 use shard::query::mmr::mmr_from_points_with_vector as mmr_from_points_with_vector_impl;
-use tokio::runtime::Handle;
 use tokio_util::task::AbortOnDropHandle;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
 
@@ -15,7 +15,7 @@ pub async fn mmr_from_points_with_vector(
     points_with_vector: impl IntoIterator<Item = ScoredPoint> + Send + 'static,
     mmr: MmrInternal,
     limit: usize,
-    search_runtime_handle: &Handle,
+    search_runtime_handle: &AdaptiveSearchHandle,
     timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<ScoredPoint>> {

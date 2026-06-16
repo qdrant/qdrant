@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
-use tonic::body::BoxBody;
 use tower::Service;
 use tower_layer::Layer;
 
@@ -20,9 +19,6 @@ const DEFAULT_FAILURE_GRPC_STATUS_CODE: i32 = 2;
 
 const GRPC_STATUS_HEADER: &str = "grpc-status";
 
-type Request = tonic::codegen::http::Request<tonic::transport::Body>;
-type Response = tonic::codegen::http::Response<BoxBody>;
-
 #[derive(Clone)]
 pub struct TonicTelemetryService<T> {
     service: T,
@@ -34,10 +30,11 @@ pub struct TonicTelemetryLayer {
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
 }
 
-impl<S> Service<Request> for TonicTelemetryService<S>
+impl<S, ReqBody, RespBody> Service<http::Request<ReqBody>> for TonicTelemetryService<S>
 where
-    S: Service<Request, Response = Response>,
+    S: Service<http::Request<ReqBody>, Response = http::Response<RespBody>>,
     S::Future: Send + 'static,
+    ReqBody: Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -47,7 +44,7 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, request: Request) -> Self::Future {
+    fn call(&mut self, request: http::Request<ReqBody>) -> Self::Future {
         let method_name = request.uri().path().to_string();
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();

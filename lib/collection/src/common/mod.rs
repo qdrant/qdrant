@@ -1,3 +1,4 @@
+pub mod adaptive_handle;
 pub mod batching;
 pub mod collection_size_stats;
 pub mod eta_calculator;
@@ -11,4 +12,5 @@ pub mod snapshot_stream;
 pub mod snapshots_manager;
 pub mod stoppable_task;
 pub mod stoppable_task_async;
+pub mod timeout_writer;
 pub mod transpose_iterator;

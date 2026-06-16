@@ -1,7 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -9,15 +8,18 @@ use tempfile::Builder;
 
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
+use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage_full;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer};
+use crate::vector_storage::{
+    DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, VectorStorageRead, new_raw_scorer,
+};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points = [
@@ -45,7 +47,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         .enumerate()
         .filter(|(_, d)| *d)
         .for_each(|(i, _)| {
-            storage.delete_vector(i as PointOffsetType).unwrap();
+            let was_deleted = storage.delete_vector(i as PointOffsetType).unwrap();
+            assert!(was_deleted, "deleting a live vector must return true");
         });
     assert_eq!(
         storage.deleted_vector_count(),
@@ -73,8 +76,14 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(closest[2].idx, 4);
 
     // Delete 1, redelete 2
-    storage.delete_vector(1 as PointOffsetType).unwrap();
-    storage.delete_vector(2 as PointOffsetType).unwrap();
+    assert!(
+        storage.delete_vector(1 as PointOffsetType).unwrap(),
+        "deleting a live vector must return true"
+    );
+    assert!(
+        !storage.delete_vector(2 as PointOffsetType).unwrap(),
+        "redeleting a deleted vector must return false"
+    );
     assert_eq!(
         storage.deleted_vector_count(),
         3,
@@ -100,8 +109,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(closest[1].idx, 0);
 
     // Delete all
-    storage.delete_vector(0 as PointOffsetType).unwrap();
-    storage.delete_vector(4 as PointOffsetType).unwrap();
+    assert!(storage.delete_vector(0 as PointOffsetType).unwrap());
+    assert!(storage.delete_vector(4 as PointOffsetType).unwrap());
     assert_eq!(
         storage.deleted_vector_count(),
         5,
@@ -117,7 +126,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         5,
     );
     let closest = searcher
-        .peek_top_all(&DEFAULT_STOPPED, None)
+        .peek_top_all(&DEFAULT_STOPPED)
         .unwrap()
         .into_iter()
         .exactly_one()
@@ -150,13 +159,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
                 }
             });
         }
-        let mut iter = (0..points.len()).map(|i| {
-            let i = i as PointOffsetType;
-            let vec = storage2.get_vector::<Random>(i);
-            let deleted = storage2.is_deleted_vector(i);
-            (vec, deleted)
-        });
-        storage.update_from(&mut iter, &Default::default()).unwrap();
+        merge_from_single_source(storage, &storage2, points.len() as PointOffsetType).unwrap();
     }
 
     assert_eq!(
@@ -244,7 +247,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let mut raw_scorer = FilteredScorer::new(
         query.clone(),
         storage,
-        None,
+        None::<&QuantizedVectors>,
         None,
         id_tracker.deleted_point_bitslice(),
         HardwareCounterCell::new(),
@@ -254,7 +257,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new(
         &[&query],
         storage,
-        None,
+        None::<&QuantizedVectors>,
         None,
         2,
         id_tracker.deleted_point_bitslice(),

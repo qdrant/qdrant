@@ -235,6 +235,7 @@ fn read_entries_from_file(
     Ok(Vec::from(window))
 }
 
+#[derive(Debug)]
 enum MatchResult {
     Match,
     NoMatch,
@@ -321,6 +322,8 @@ fn event_field_matches(event: &AuditEvent, key: &str, expected: &str) -> Option<
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::*;
     use crate::audit::AuditResult;
     use crate::rbac::AuthType;
@@ -377,10 +380,7 @@ mod tests {
             HashMap::from([("method".to_string(), "upsert_points".to_string())]),
             None,
         );
-        assert!(matches!(
-            matches_query_result(&event, &query),
-            MatchResult::Match
-        ));
+        assert_matches!(matches_query_result(&event, &query), MatchResult::Match);
 
         let query2 = AuditLogQuery::new(
             None,
@@ -388,10 +388,7 @@ mod tests {
             HashMap::from([("method".to_string(), "delete_points".to_string())]),
             None,
         );
-        assert!(matches!(
-            matches_query_result(&event, &query2),
-            MatchResult::NoMatch
-        ));
+        assert_matches!(matches_query_result(&event, &query2), MatchResult::NoMatch);
     }
 
     #[test]
@@ -403,10 +400,7 @@ mod tests {
             HashMap::new(),
             None,
         );
-        assert!(matches!(
-            matches_query_result(&event, &query),
-            MatchResult::Match
-        ));
+        assert_matches!(matches_query_result(&event, &query), MatchResult::Match);
 
         let query_before = AuditLogQuery::new(
             Some("2024-06-16T00:00:00Z".parse().unwrap()),
@@ -414,10 +408,10 @@ mod tests {
             HashMap::new(),
             None,
         );
-        assert!(matches!(
+        assert_matches!(
             matches_query_result(&event, &query_before),
-            MatchResult::NoMatch
-        ));
+            MatchResult::NoMatch,
+        );
     }
 
     #[test]

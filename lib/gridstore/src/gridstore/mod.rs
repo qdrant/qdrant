@@ -8,27 +8,25 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::fs::atomic_save_json;
 use common::generic_consts::{AccessPattern, Random};
 use common::is_alive_lock::IsAliveLock;
-use common::mmap::create_and_ensure_length;
-use common::universal_io::MmapFile;
-use fs_err as fs;
+use common::universal_io::{MmapFile, UniversalReadFileOps, UniversalWrite};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use reader::CONFIG_FILENAME;
 pub use reader::GridstoreReader;
 pub use view::GridstoreView;
 
-use crate::bitmask::MmapBitmask;
+use crate::Result;
+use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::pages::{Pages, page_path};
-use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, ValuePointer};
-use crate::{Result, Tracker};
+use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 
 pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
 
@@ -37,23 +35,31 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 /// Uses `Arc<RwLock<...>>` for pages and tracker to support concurrent flushing.
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
-pub struct Gridstore<V> {
+pub struct Gridstore<V, S = MmapFile>
+where
+    S: UniversalWrite + 'static,
+{
+    pub(super) fs: S::Fs,
     pub(super) config: StorageConfig,
-    pub(super) tracker: Arc<RwLock<Tracker>>,
-    pub(super) pages: Arc<RwLock<Pages<MmapFile>>>,
+    pub(super) tracker: Arc<RwLock<Tracker<S>>>,
+    pub(super) pages: Arc<RwLock<Pages<S>>>,
     /// MmapBitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
-    pub(super) bitmask: Arc<RwLock<MmapBitmask>>,
+    pub(super) bitmask: Arc<RwLock<Bitmask<S>>>,
     pub(super) base_path: PathBuf,
     pub(super) _value_type: std::marker::PhantomData<V>,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
     is_alive_flush_lock: IsAliveLock,
 }
 
-impl<V: Blob> Gridstore<V> {
+impl<V, S> Gridstore<V, S>
+where
+    V: Blob,
+    S: UniversalWrite + 'static,
+{
     /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
-    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapFile>) -> R) -> R {
+    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, S>) -> R) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
         f(GridstoreView::new(&self.config, &tracker, &pages))
@@ -87,17 +93,17 @@ impl<V: Blob> Gridstore<V> {
     /// Depends on the existence of the config file at the `base_path`.
     ///
     /// In case of opening, it ignores the `create_options` parameter.
-    pub fn open_or_create(base_path: PathBuf, create_options: StorageOptions) -> Result<Self> {
+    pub fn open_or_create(
+        fs: S::Fs,
+        base_path: PathBuf,
+        create_options: StorageOptions,
+    ) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
         if config_path.exists() {
-            Self::open(base_path)
+            Self::open(fs, base_path)
         } else {
-            fs::create_dir_all(&base_path).map_err(|err| {
-                GridstoreError::service_error(format!(
-                    "Failed to create gridstore storage directory: {err}"
-                ))
-            })?;
-            Self::new(base_path, create_options)
+            fs.create_dir(&base_path)?;
+            Self::new(fs, base_path, create_options)
         }
     }
 
@@ -105,17 +111,18 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub fn new(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
+    pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let bitmask = MmapBitmask::create(&base_path, config.clone())?;
+        let bitmask = Bitmask::create(&fs, &base_path, config.clone())?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None)?)),
-            pages: Arc::new(RwLock::new(Pages::new(base_path.clone()))),
+            tracker: Arc::new(RwLock::new(Tracker::new(&fs, &base_path, None)?)),
+            pages: Arc::new(RwLock::new(Pages::new(base_path.clone(), true))),
             base_path,
             config,
+            fs,
             _value_type: std::marker::PhantomData,
             bitmask: Arc::new(RwLock::new(bitmask)),
             is_alive_flush_lock: IsAliveLock::new(),
@@ -123,11 +130,11 @@ impl<V: Blob> Gridstore<V> {
 
         let new_page_id = storage.next_page_id();
         let path = page_path(&storage.base_path, new_page_id);
-        create_and_ensure_length(&path, storage.config.page_size_bytes)?;
-        storage.pages.write().attach_page(&path)?;
+        storage.create_page_file(&path)?;
+        storage.pages.write().attach_page(&storage.fs, &path)?;
 
-        atomic_save_json(&config_path, &storage.config)
-            .map_err(|err| GridstoreError::service_error(err.to_string()))?;
+        let config_bytes = serde_json::to_vec(&storage.config)?;
+        storage.fs.atomic_save(&config_path, &config_bytes)?;
 
         Ok(storage)
     }
@@ -135,12 +142,13 @@ impl<V: Blob> Gridstore<V> {
     /// Open an existing storage at the given path.
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
-    pub fn open(base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = reader::read_config_and_tracker(&base_path)?;
-        let bitmask = MmapBitmask::open(&base_path, config.clone())?;
+    pub fn open(fs: S::Fs, base_path: PathBuf) -> Result<Self> {
+        // Writable store: open pages and tracker writable so it can append.
+        let (config, tracker) = reader::read_config_and_tracker(&fs, &base_path, true)?;
+        let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let pages = Pages::open(&base_path)?;
+        let pages = Pages::open(&fs, &base_path, true)?;
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {
@@ -150,6 +158,7 @@ impl<V: Blob> Gridstore<V> {
         }
 
         Ok(Self {
+            fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
             pages: Arc::new(RwLock::new(pages)),
@@ -165,12 +174,17 @@ impl<V: Blob> Gridstore<V> {
     fn create_new_page(&mut self) -> Result<u32> {
         let new_page_id = self.next_page_id();
         let path = page_path(&self.base_path, new_page_id);
-        create_and_ensure_length(&path, self.config.page_size_bytes)?;
-        self.pages.write().attach_page(&path)?;
+        self.create_page_file(&path)?;
+        self.pages.write().attach_page(&self.fs, &path)?;
 
         self.bitmask.write().cover_new_page()?;
 
         Ok(new_page_id)
+    }
+
+    fn create_page_file(&self, path: &std::path::Path) -> Result<()> {
+        self.fs.create(path, self.config.page_size_bytes)?;
+        Ok(())
     }
 
     fn find_or_create_available_blocks(
@@ -310,35 +324,29 @@ impl<V: Blob> Gridstore<V> {
             return Ok(None);
         };
 
-        let raw = self.with_view(|view| view.read_from_pages::<Random>(pointer))?;
-        let decompressed = self.with_view(|view| view.decompress(raw));
-        let value = V::from_bytes(&decompressed);
-
-        Ok(Some(value))
+        self.with_view(|view| {
+            let raw = view.read_from_pages::<Random>(pointer)?;
+            let decompressed = view.decompress(raw);
+            let value = V::from_bytes(&decompressed);
+            Ok(Some(value))
+        })
     }
 
     /// Clear the storage, going back to the initial state.
     ///
     /// Completely wipes the storage, and recreates it with a single empty page.
     pub fn clear(&mut self) -> Result<()> {
-        let create_options = StorageOptions::from(&self.config);
-        let base_path = self.base_path.clone();
-
         self.is_alive_flush_lock.blocking_mark_dead();
-
         self.pages.write().clear();
-        fs::remove_dir_all(&base_path).map_err(|err| {
-            GridstoreError::service_error(format!(
-                "Failed to remove gridstore storage directory: {err}"
-            ))
-        })?;
 
-        fs::create_dir_all(&base_path).map_err(|err| {
-            GridstoreError::service_error(format!(
-                "Failed to create gridstore storage directory: {err}"
-            ))
-        })?;
-        *self = Self::new(base_path, create_options)?;
+        self.fs.remove_dir(&self.base_path)?;
+        self.fs.create_dir(&self.base_path)?;
+
+        *self = Self::new(
+            self.fs.clone(),
+            self.base_path.clone(),
+            StorageOptions::from(&self.config),
+        )?;
 
         Ok(())
     }
@@ -348,17 +356,22 @@ impl<V: Blob> Gridstore<V> {
     /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
     /// not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the storage.
     pub fn wipe(self) -> Result<()> {
-        let base_path = self.base_path.clone();
+        let Self {
+            fs,
+            tracker,
+            pages,
+            bitmask,
+            base_path,
+            config: _,
+            _value_type,
+            is_alive_flush_lock,
+        } = self;
 
-        self.is_alive_flush_lock.blocking_mark_dead();
+        is_alive_flush_lock.blocking_mark_dead();
+        drop((tracker, pages, bitmask));
 
-        drop(self);
-
-        fs::remove_dir_all(base_path).map_err(|err| {
-            GridstoreError::service_error(format!(
-                "Failed to remove gridstore storage directory: {err}"
-            ))
-        })
+        fs.remove_dir(&base_path)?;
+        Ok(())
     }
 
     /// Return the storage size in bytes (precise, based on bitmask occupancy).
@@ -372,6 +385,19 @@ impl<V: Blob> Gridstore<V> {
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
+    }
+
+    pub fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        E: From<GridstoreError>,
+    {
+        self.with_view(|view| view.read_values::<P, _, _>(point_offsets, callback, hw_counter_cell))
     }
 
     #[cfg(test)]
@@ -413,7 +439,7 @@ impl<V: Blob> Gridstore<V> {
     }
 }
 
-impl<V> Gridstore<V> {
+impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn next_page_id(&self) -> PageId {
         self.pages.read().num_pages() as PageId
     }
@@ -467,7 +493,7 @@ impl<V> Gridstore<V> {
 
     /// Write pending updates to the tracker and flush it.
     fn flush_tracker(
-        tracker: &Arc<RwLock<Tracker>>,
+        tracker: &Arc<RwLock<Tracker<S>>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
@@ -482,7 +508,7 @@ impl<V> Gridstore<V> {
 
     /// Update all free blocks in the bitmask for old pointers and flush it.
     fn flush_free_blocks(
-        bitmask: &Arc<RwLock<MmapBitmask>>,
+        bitmask: &Arc<RwLock<Bitmask<S>>>,
         old_pointers: Vec<ValuePointer>,
         block_size_bytes: usize,
     ) -> crate::Result<()> {
@@ -516,6 +542,7 @@ impl<V> Gridstore<V> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> crate::Result<()> {
         let Self {
+            fs: _,
             config: _,
             tracker: _,
             pages,

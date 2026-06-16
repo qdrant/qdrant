@@ -10,6 +10,7 @@ use segment::types::{
 };
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::OptimizerThresholds;
+use wal::WalOptions;
 
 use super::optimizers::EdgeOptimizersConfig;
 use super::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
@@ -39,6 +40,11 @@ pub struct EdgeConfig {
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default)]
     pub optimizers: EdgeOptimizersConfig,
+    /// WAL options for the shard. `None` keeps the WAL crate's defaults
+    /// (32 MiB segment capacity). Override for embedded/mobile deployments
+    /// where the default segment size is too large.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wal_options: Option<WalOptions>,
 }
 
 fn default_on_disk_payload() -> bool {
@@ -54,11 +60,17 @@ impl Default for EdgeConfig {
             hnsw_config: HnswConfig::default(),
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
+            wal_options: None,
         }
     }
 }
 
 impl EdgeConfig {
+    /// Start building an [`EdgeConfig`] with a fluent API.
+    pub fn builder() -> crate::builders::EdgeConfigBuilder {
+        crate::builders::EdgeConfigBuilder::new()
+    }
+
     /// Build from existing segment config. Fills all parameters that can be inferred.
     pub fn from_segment_config(segment: &SegmentConfig) -> Self {
         let SegmentConfig {
@@ -110,6 +122,7 @@ impl EdgeConfig {
             hnsw_config,
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
+            wal_options: None,
         }
     }
 
@@ -253,9 +266,5 @@ impl EdgeConfig {
 
     pub fn set_optimizers_config(&mut self, optimizers: EdgeOptimizersConfig) {
         self.optimizers = optimizers;
-    }
-
-    pub fn optimizers_mut(&mut self) -> &mut EdgeOptimizersConfig {
-        &mut self.optimizers
     }
 }

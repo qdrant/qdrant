@@ -8,20 +8,22 @@ pub use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
-    use segment::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry as _};
-    use segment::id_tracker::IdTracker;
-    use segment::index::VectorIndex;
+    use segment::entry::NonAppendableSegmentEntry as _;
+    use segment::id_tracker::IdTrackerRead;
+    use segment::index::VectorIndexRead;
     use segment::payload_json;
     use segment::types::{
         Distance, HnswConfig, HnswGlobalConfig, PayloadContainer, PayloadSchemaType,
         QuantizationConfig, VectorName,
     };
-    use segment::vector_storage::VectorStorage;
+    use segment::vector_storage::{VectorStorage, VectorStorageRead};
     use serde_json::Value;
     use shard::locked_segment::LockedSegment;
     use shard::operations::optimization::OptimizerThresholds;
@@ -100,13 +102,13 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let original_segment_path = match segment {
-            LockedSegment::Original(s) => s.read().segment_path.clone(),
+        let original_segment = match segment {
+            LockedSegment::Original(s) => s,
             LockedSegment::Proxy(_) => panic!("Not expected"),
         };
+        let original_segment_path = original_segment.read().segment_path.clone();
 
-        let segment_points_to_delete = segment
-            .get()
+        let segment_points_to_delete = original_segment
             .read()
             .iter_points()
             .enumerate()
@@ -121,16 +123,14 @@ mod tests {
                 .unwrap();
         }
 
-        let segment_points_to_assign1 = segment
-            .get()
+        let segment_points_to_assign1 = original_segment
             .read()
             .iter_points()
             .enumerate()
             .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
 
-        let segment_points_to_assign2 = segment
-            .get()
+        let segment_points_to_assign2 = original_segment
             .read()
             .iter_points()
             .enumerate()
@@ -215,7 +215,9 @@ mod tests {
 
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
-            assert!(segment_guard.has_point(point_id));
+            assert!(
+                segment_guard.has_point(point_id, common::types::DeferredBehavior::WithDeferred)
+            );
             let payload = segment_guard.payload(point_id, &hw_counter).unwrap();
             let payload_color = payload
                 .get_value(&"color".parse().unwrap())
@@ -386,7 +388,13 @@ mod tests {
                     .filter_map(|(i, point_id)| (i % 4 == 0).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector1_vecs_to_delete {
-                    let id = id_tracker.borrow().internal_id(point_id).unwrap();
+                    let id = id_tracker
+                        .borrow()
+                        .internal_id_with_behavior(
+                            point_id,
+                            common::types::DeferredBehavior::VisibleOnly,
+                        )
+                        .unwrap();
                     vector1_storage.delete_vector(id).unwrap();
                 }
             }
@@ -405,7 +413,13 @@ mod tests {
                     .filter_map(|(i, point_id)| (i % 10 == 7).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector2_vecs_to_delete {
-                    let id = id_tracker.borrow().internal_id(point_id).unwrap();
+                    let id = id_tracker
+                        .borrow()
+                        .internal_id_with_behavior(
+                            point_id,
+                            common::types::DeferredBehavior::VisibleOnly,
+                        )
+                        .unwrap();
                     vector2_storage.delete_vector(id).unwrap();
                 }
             }

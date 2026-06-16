@@ -368,7 +368,20 @@ impl TransportChannelPool {
                             // Something is broken, but let's retry anyway, but only once.
                             RetryAction::RetryOnce(status)
                         }
-                        _ => {
+                        Code::Ok
+                        | Code::Unknown
+                        | Code::InvalidArgument
+                        | Code::DeadlineExceeded
+                        | Code::NotFound
+                        | Code::AlreadyExists
+                        | Code::PermissionDenied
+                        | Code::ResourceExhausted
+                        | Code::FailedPrecondition
+                        | Code::Aborted
+                        | Code::OutOfRange
+                        | Code::Unimplemented
+                        | Code::DataLoss
+                        | Code::Unauthenticated => {
                             // No special handling, just fail already.
                             RetryAction::Fail(status)
                         }

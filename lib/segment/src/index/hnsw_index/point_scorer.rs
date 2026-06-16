@@ -10,14 +10,16 @@ use smallvec::SmallVec;
 
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
-use crate::payload_storage::FilterContext;
+use crate::index::query_optimization::optimized_filter::ConditionChecker;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
-    RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
+    RawScorer, RawScorerBuilder, VectorStorageRead, check_deleted_condition,
 };
+#[cfg(feature = "testing")]
+use crate::vector_storage::{VectorStorageEnum, new_raw_scorer};
 
 /// Scorers composition:
 ///
@@ -29,7 +31,7 @@ use crate::vector_storage::{
 /// ┌─────────────────┐ ┌───────────────┐   ┌────────────────┐ ┌─┤ - Euclidean │
 /// │ RawScorer ◄─────┼─┤ QueryScorer ◄─┼───│ Metric ◄───────┼─┘ └─────────────┘
 /// │                 │ └───────────────┘   │                │    - Vector Distance
-/// │ FilterContext   │  - Access patterns  │ Query  ◄───────┼─┐
+/// │ ConditionChecker│  - Access patterns  │ Query  ◄───────┼─┐
 /// │                 │                     │                │ │  Query
 /// │ deleted_points  │                     │ TVectorStorage │ │ ┌──────────────────┐
 /// │ deleted_vectors │                     └────────────────┘ └─┤ - RecoQuery      │
@@ -47,7 +49,7 @@ use crate::vector_storage::{
 ///  ┌─────────────────┐  ┌───────────────┐
 ///  │ [RawScorer] ◄───┼──┤ QueryScorer ◄─┼── (ditto)
 ///  │                 │  └───────────────┘
-///  │ FilterContext   │
+///  │ ConditionChecker│
 ///  └─────────────────┘
 /// ```
 pub struct FilteredScorer<'a> {
@@ -58,7 +60,7 @@ pub struct FilteredScorer<'a> {
 }
 
 pub struct ScorerFilters<'a> {
-    filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+    filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
     /// If there are no flags for some points, they are considered deleted.
@@ -76,7 +78,7 @@ impl<'a> ScorerFilters<'a> {
             && self
                 .filter_context
                 .as_ref()
-                .is_none_or(|f| f.check(point_id))
+                .is_none_or(|f| f.check_infallible(point_id))
     }
 
     fn as_borrowed(&'a self) -> Self {
@@ -115,17 +117,21 @@ impl<'a> FilteredScorer<'a> {
     /// Create a new filtered scorer.
     ///
     /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
-    pub fn new(
+    pub fn new<V, Q>(
         query: QueryVector,
-        vectors: &'a VectorStorageEnum,
-        quantized_vectors: Option<&'a QuantizedVectors>,
-        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        vectors: &'a V,
+        quantized_vectors: Option<&'a Q>,
+        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Self>
+    where
+        V: VectorStorageRead + RawScorerBuilder,
+        Q: QuantizedVectorsRead,
+    {
         let raw_scorer = match quantized_vectors {
             Some(quantized_vectors) => quantized_vectors.raw_scorer(query, hardware_counter)?,
-            None => new_raw_scorer(query, vectors, hardware_counter)?,
+            None => vectors.build_raw_scorer(query, hardware_counter)?,
         };
         Ok(FilteredScorer {
             raw_scorer,
@@ -138,14 +144,18 @@ impl<'a> FilteredScorer<'a> {
         })
     }
 
-    pub fn new_internal(
+    pub fn new_internal<V, Q>(
         point_id: PointOffsetType,
-        vectors: &'a VectorStorageEnum,
-        quantized_vectors: Option<&'a QuantizedVectors>,
-        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        vectors: &'a V,
+        quantized_vectors: Option<&'a Q>,
+        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Self>
+    where
+        V: VectorStorageRead + RawScorerBuilder,
+        Q: QuantizedVectorsRead,
+    {
         // This is a fallback function, which is used if quantized vector storage
         // is not capable of reconstructing the query vector.
         let original_query_fn = || {
@@ -161,7 +171,7 @@ impl<'a> FilteredScorer<'a> {
                 })?,
             None => {
                 let query = original_query_fn();
-                new_raw_scorer(query, vectors, hardware_counter)?
+                vectors.build_raw_scorer(query, hardware_counter)?
             }
         };
         Ok(FilteredScorer {
@@ -275,15 +285,19 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// Create a new batch filtered searcher.
     ///
     /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
-    pub fn new(
+    pub fn new<V, Q>(
         queries: &[&QueryVector],
-        vectors: &'a VectorStorageEnum,
-        quantized_vectors: Option<&'a QuantizedVectors>,
-        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        vectors: &'a V,
+        quantized_vectors: Option<&'a Q>,
+        filter_context: Option<BoxCow<'a, dyn ConditionChecker + 'a>>,
         top: usize,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Self>
+    where
+        V: VectorStorageRead + RawScorerBuilder,
+        Q: QuantizedVectorsRead,
+    {
         let scorer_batch = queries
             .iter()
             .map(|&query| {
@@ -293,7 +307,7 @@ impl<'a> BatchFilteredSearcher<'a> {
                     Some(quantized_vectors) => {
                         quantized_vectors.raw_scorer(query, hardware_counter)
                     }
-                    None => new_raw_scorer(query, vectors, hardware_counter),
+                    None => vectors.build_raw_scorer(query, hardware_counter),
                 };
                 let pq = FixedLengthPriorityQueue::new(top);
                 raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, pq })
@@ -347,21 +361,34 @@ impl<'a> BatchFilteredSearcher<'a> {
         }
     }
 
-    pub fn peek_top_all(
-        self,
-        is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let iter = self
-            .filters
+    /// Iterator over every internal point ID that isn't soft-deleted in this
+    /// searcher's `point_deleted` bitslice.
+    ///
+    /// Does not apply deferred-point filtering — wrap with
+    /// `PointMappingsRefEnum::filter_deferred_and_deleted` (or compose otherwise) before
+    /// passing to [`Self::peek_top_iter`] when deferred awareness is needed.
+    ///
+    /// The returned iterator borrows the underlying bitslice (lifetime `'a`),
+    /// independent of `&self`, so it can be composed and then passed into
+    /// `peek_top_iter(self, ...)` which consumes the searcher.
+    pub fn iter_not_deleted(&self) -> impl Iterator<Item = PointOffsetType> + 'a {
+        self.filters
             .point_deleted
             .iter_zeros()
             .map(|p| p as PointOffsetType)
-            .take_while(|&point_id| {
-                // Early exit if we hit the max point ID (e.g. a deferred point).
-                point_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
-            });
+    }
 
+    /// Score every non-deleted point without deferred filtering.
+    ///
+    /// Production paths compose `iter_not_deleted` with
+    /// `PointMappingsRefEnum::filter_deferred_and_deleted` and call
+    /// [`Self::peek_top_iter`] directly.
+    #[cfg(feature = "testing")]
+    pub fn peek_top_all(
+        self,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let iter = self.iter_not_deleted();
         self.peek_top_iter(iter, is_stopped)
     }
 

@@ -25,7 +25,11 @@ use validator::{Validate, ValidationError as ValidatorError, ValidationErrors};
 #[serde(untagged)]
 pub enum ReadConsistency {
     // send N random request and return points, which present on all of them
-    Factor(#[serde(deserialize_with = "deserialize_factor")] usize),
+    Factor(
+        #[serde(deserialize_with = "deserialize_factor")]
+        #[schemars(range(min = 1))]
+        usize,
+    ),
     Type(ReadConsistencyType),
 }
 
@@ -90,6 +94,10 @@ impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
             ),
             read_consistency::Value::Type(consistency) => Self::Type(consistency.try_into()?),
         };
+
+        consistency
+            .validate()
+            .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?;
 
         Ok(consistency)
     }

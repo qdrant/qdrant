@@ -6,15 +6,15 @@ use atomic_refcell::AtomicRefCell;
 use super::Segment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vector_name_config::VectorNameConfig;
-use crate::id_tracker::IdTracker as _;
+use crate::id_tracker::IdTrackerRead as _;
 use crate::index::VectorIndexEnum;
 use crate::index::plain_vector_index::PlainVectorIndex;
 use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::segment::VectorData;
 use crate::segment_constructor::{
-    create_sparse_vector_index, create_sparse_vector_storage, get_vector_index_path,
-    get_vector_storage_path, open_vector_storage,
+    create_sparse_vector_storage, get_vector_index_path, get_vector_storage_path,
+    open_or_create_sparse_vector_index, open_vector_storage,
 };
 use crate::types::{
     SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorStorageType,
@@ -34,6 +34,22 @@ impl Segment {
         // Idempotent: if vector already exists, return false
         if self.vector_data.contains_key(vector_name) {
             return Ok(false);
+        }
+
+        // Start from a clean slate. A prior `delete_vector_name` removes the
+        // storage/index directories, but that removal is best-effort: it logs a
+        // warning and continues on failure (and a crash mid-delete leaves them
+        // too), so the directories can still be on disk. If we reopened those
+        // stale files here, the recreated vector would resurrect data from
+        // points that were never re-upserted (visible after a reload). Remove
+        // any leftovers first.
+        let storage_path = get_vector_storage_path(&self.segment_path, vector_name);
+        let index_path = get_vector_index_path(&self.segment_path, vector_name);
+        if storage_path.exists() {
+            fs_err::remove_dir_all(&storage_path)?;
+        }
+        if index_path.exists() {
+            fs_err::remove_dir_all(&index_path)?;
         }
 
         match config {
@@ -161,7 +177,7 @@ impl Segment {
         // Create sparse vector index
         let vector_index_path = get_vector_index_path(&self.segment_path, vector_name);
         let stopped = AtomicBool::new(false);
-        let vector_index = create_sparse_vector_index(SparseVectorIndexOpenArgs {
+        let vector_index = open_or_create_sparse_vector_index(SparseVectorIndexOpenArgs {
             config: effective_config.index,
             id_tracker: self.id_tracker.clone(),
             vector_storage: vector_storage.clone(),
@@ -169,7 +185,6 @@ impl Segment {
             path: &vector_index_path,
             stopped: &stopped,
             tick_progress: || (),
-            deferred_internal_id: None,
         })?;
 
         // Register the new storage with the payload index so `has_vector`

@@ -42,13 +42,6 @@ pub struct PayloadIndices {
 }
 
 impl PayloadIndices {
-    /// Check if any payload field has no explicit types configured
-    ///
-    /// Returns false if empty.
-    pub fn any_has_no_type(&self) -> bool {
-        self.fields.values().any(|index| index.types.is_empty())
-    }
-
     pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.fields
             .iter()
@@ -179,7 +172,6 @@ pub enum IndexMutability {
 #[serde(rename_all = "snake_case")]
 pub enum StorageType {
     Gridstore,
-    RocksDb,
     Mmap { is_on_disk: bool },
 }
 

@@ -6,10 +6,10 @@ use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::ReadSegmentEntry;
-use segment::index::VectorIndex;
+use segment::index::VectorIndexRead;
 use segment::segment::Segment;
 use segment::types::HnswGlobalConfig;
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::VectorStorageRead;
 
 use super::config::SegmentOptimizerConfig;
 use super::segment_optimizer::{OptimizationPlanner, SegmentOptimizer};
@@ -33,7 +33,6 @@ pub struct VacuumOptimizer {
 }
 
 impl VacuumOptimizer {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         deleted_threshold: f64,
         min_vectors_number: usize,

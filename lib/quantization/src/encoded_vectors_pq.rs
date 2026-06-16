@@ -15,11 +15,12 @@ use common::fs::atomic_save_json;
 use common::mmap::MmapFlusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
+use common::universal_io::{UniversalReadFs, read_json_via};
 use fs_err as fs;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
+use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
@@ -107,7 +108,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         let metadata = Metadata {
             centroids,
             vector_division,
-            vector_parameters: vector_parameters.clone(),
+            vector_parameters: *vector_parameters,
         };
         if let Some(meta_path) = meta_path {
             meta_path
@@ -140,22 +141,24 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
     }
 
-    pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
-        let contents = fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
+    pub fn load<Fs: UniversalReadFs>(
+        fs: &Fs,
+        encoded_vectors: TStorage,
+        meta_path: &Path,
+    ) -> common::universal_io::Result<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
         };
-        Ok(result)
-    }
 
-    pub fn get_quantized_vector_size(
-        vector_parameters: &VectorParameters,
-        chunk_size: usize,
-    ) -> usize {
-        (0..vector_parameters.dim).step_by(chunk_size).count()
+        // Validate the storage's vector size against the metadata once here, so the size
+        // invariant the scoring hot path relies on (it walks the query LUT one entry per stored
+        // byte) also holds in release builds without a per-score check.
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+
+        Ok(result)
     }
 
     fn get_vector_division(dim: usize, chunk_size: usize) -> Vec<Range<usize>> {
@@ -505,6 +508,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     type EncodedQuery = EncodedQueryPQ;
 
+    fn is_in_ram_or_mmap() -> bool {
+        TStorage::is_in_ram_or_mmap()
+    }
+
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()
     }
@@ -531,6 +538,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
             }
         }
         EncodedQueryPQ { lut }
+    }
+
+    fn iter_batch(
+        &self,
+        offsets: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
+        self.encoded_vectors.iter_batch(offsets)
+    }
+
+    fn score(
+        &self,
+        query: &Self::EncodedQuery,
+        encoded_vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        self.score_bytes(True, query, encoded_vector, hw_counter)
     }
 
     fn score_point(
@@ -681,4 +704,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
         self.score_point_simple(query, bytes)
     }
+}
+
+pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, chunk_size: usize) -> usize {
+    (0..vector_parameters.dim).step_by(chunk_size).count()
 }

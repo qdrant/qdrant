@@ -18,7 +18,7 @@ impl ShardReplicaSet {
     /// Execute read op. on replica set:
     /// 1 - Prefer local replica
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
-    /// 3 - Fallbacks to all remaining shards if the optimisations fails.
+    /// 3 - Falls back to all remaining shards if the optimization fails.
     /// It does not report failing peer_ids to the consensus.
     pub async fn execute_read_operation<Res, F>(
         &self,

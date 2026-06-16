@@ -1,12 +1,14 @@
 use std::hint::black_box;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use common::generic_consts::{Random, Sequential};
+use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
-use common::universal_io::IoUringFile;
-use common::universal_io::{MmapFile, OpenOptions, ReadRange, UniversalRead};
+use common::universal_io::IoUringFs;
+use common::universal_io::{
+    MmapFs, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+};
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use rand::rngs::StdRng;
@@ -49,11 +51,17 @@ fn benches(c: &mut Criterion) {
     }
 
     #[cfg(target_os = "linux")]
-    read_benches::<u64, IoUringFile>(c, "io_uring", "8bytes", &path);
-    read_benches::<u64, MmapFile>(c, "mmap", "8bytes", &path);
+    #[allow(clippy::default_constructed_unit_structs)]
+    let uring_context = IoUringFs::default();
+    #[allow(clippy::default_constructed_unit_structs)]
+    let mmap_context = MmapFs::default();
+
     #[cfg(target_os = "linux")]
-    read_benches::<[u64; 128], IoUringFile>(c, "io_uring", "1KiB", &path);
-    read_benches::<[u64; 128], MmapFile>(c, "mmap", "1KiB", &path);
+    read_benches::<u64, IoUringFs>(&uring_context, c, "io_uring", "8bytes", &path);
+    read_benches::<u64, MmapFs>(&mmap_context, c, "mmap", "8bytes", &path);
+    #[cfg(target_os = "linux")]
+    read_benches::<[u64; 128], IoUringFs>(&uring_context, c, "io_uring", "1KiB", &path);
+    read_benches::<[u64; 128], MmapFs>(&mmap_context, c, "mmap", "1KiB", &path);
 
     #[cfg(target_os = "linux")]
     if std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_none() {
@@ -61,24 +69,23 @@ fn benches(c: &mut Criterion) {
     }
 }
 
-fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
+fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
+    fs: &Fs,
     c: &mut Criterion,
-    impl_name: &str, // Corresponds to `C`
+    impl_name: &str, // Corresponds to `Fs`
     elem_size: &str, // Corresponds to `T`
     path: &Path,
 ) {
     let options = OpenOptions {
         writeable: false,
         need_sequential: true,
-        disk_parallel: None,
-        populate: Some(false),
-        advice: None,
-        prevent_caching: Some(false),
+        populate: Populate::No,
+        advice: AdviceSetting::Global,
     };
-    let storage = C::open(path, options).unwrap();
+    let storage = fs.open(path, options, Default::default()).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
     let mut rng = rand::rng();
-    assert_eq!(storage.len().unwrap(), len);
+    assert_eq!(storage.len::<T>().unwrap(), len);
 
     let low_mem = std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_some();
 
@@ -96,7 +103,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
             let mut sum = 0u64;
             let offset = rng.random_range(0..len) * size_of::<T>() as u64;
             let data = storage
-                .read::<Random>(ReadRange {
+                .read::<Random, T>(ReadRange {
                     byte_offset: offset,
                     length: 1,
                 })
@@ -119,7 +126,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Random, ()>(ranges, |(), chunk| {
+                .read_batch::<Random, T, ()>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -142,7 +149,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Sequential, ()>(ranges, |(), chunk| {
+                .read_batch::<Sequential, T, ()>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -153,32 +160,23 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
         })
     });
 
-    // `read_batch_full` - read the whole file
-    // Since it can be very slow, run only a single iteration first.
-    let read_batch_full = || {
-        let mut sum = 0u64;
-        storage
-            .read_batch::<Sequential, ()>(ranges_full_file::<T>(), |(), chunk| {
-                for &item in bytemuck::cast_slice::<T, u64>(chunk) {
-                    sum = sum.wrapping_add(item);
-                }
-                Ok(())
+    let is_very_slow = impl_name == "io_uring" && elem_size == "8bytes";
+    if !is_very_slow {
+        group.bench_function("read_batch_full", |b| {
+            b.iter(|| {
+                let mut sum = 0u64;
+                storage
+                    .read_batch::<Sequential, T, ()>(ranges_full_file::<T>(), |(), chunk| {
+                        for &item in bytemuck::cast_slice::<T, u64>(chunk) {
+                            sum = sum.wrapping_add(item);
+                        }
+                        Ok(())
+                    })
+                    .unwrap();
+                black_box(sum);
             })
-            .unwrap();
-        black_box(sum);
-    };
-    let duration = time_it(read_batch_full);
-    if duration.as_secs_f64() <= 1.0 {
-        group.bench_function("read_batch_full", |b| b.iter(read_batch_full));
-    } else {
-        eprintln!("{group_name}/read_batch_full: {duration:.2?} (single iteration)");
+        });
     }
-}
-
-fn time_it<F: FnOnce()>(f: F) -> Duration {
-    let start = Instant::now();
-    f();
-    start.elapsed()
 }
 
 fn ranges_full_file<T>() -> impl Iterator<Item = ((), ReadRange)> {

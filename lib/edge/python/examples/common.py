@@ -19,7 +19,7 @@ DATA_DIR = Path(__file__).parent.parent.parent / "data"
 TMP_DIR = DATA_DIR / "tmp"
 
 
-def load_new_shard():
+def load_new_shard() -> EdgeShard:
     """Create a new edge shard (clears DATA_DIRECTORY first)."""
     print("---- Load shard ----")
 

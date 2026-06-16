@@ -16,34 +16,40 @@ fn test_cacher() {
 
     create_test_file(&dir.path().join("cold.0"), "cold.0", 10);
 
-    let fd = CachedSlice::<u8>::open(&cacher, &dir.path().join("cold.0")).unwrap();
+    let fd = CachedSlice::open(&cacher, &dir.path().join("cold.0")).unwrap();
 
     eprintln!(
         "data0: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 3).unwrap())
+        fancy_decode(&fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 3).unwrap())
     );
 
     eprintln!(
         "data0a: {}",
         fancy_decode(
-            &fd.get_range(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14)
+            &fd.get_range::<u8>(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14)
                 .unwrap()
         )
     );
 
     eprintln!(
         "data1: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 - 1).unwrap())
+        fancy_decode(
+            &fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 4 - 1)
+                .unwrap()
+        )
     );
 
     eprintln!(
         "data2: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4).unwrap())
+        fancy_decode(&fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 4).unwrap())
     );
 
     eprintln!(
         "data3: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 + 1).unwrap())
+        fancy_decode(
+            &fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 4 + 1)
+                .unwrap()
+        )
     );
 }
 
@@ -117,14 +123,14 @@ fn test_cached_slice_vectors_sequential() {
     let cacher =
         CacheController::new(&dir.path().join("cache.bin"), BLOCK_SIZE as u64 * 128).unwrap();
 
-    let cached_slice = CachedSlice::<f32>::open(&cacher, &vectors_path).unwrap();
+    let cached_slice = CachedSlice::open(&cacher, &vectors_path).unwrap();
 
     // Verify total length matches.
-    assert_eq!(cached_slice.len(), TOTAL_FLOATS);
+    assert_eq!(cached_slice.len::<f32>(), TOTAL_FLOATS);
 
     // Sequential iteration: compare every element.
     for (idx, vector) in vectors.iter().enumerate().take(TOTAL_FLOATS) {
-        let cached_val = cached_slice.get(idx).unwrap();
+        let cached_val = cached_slice.get::<f32>(idx).unwrap();
         assert_eq!(
             cached_val.as_ref(),
             vector,
@@ -138,7 +144,7 @@ fn test_cached_slice_vectors_sequential() {
     for vec_idx in 0..NUM_VECTORS {
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end).unwrap();
+        let cached_vec = cached_slice.get_range::<f32>(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -162,14 +168,14 @@ fn test_cached_slice_vectors_random_access() {
     let cacher =
         CacheController::new(&dir.path().join("cache.bin"), BLOCK_SIZE as u64 * 64).unwrap();
 
-    let cached_slice = CachedSlice::<f32>::open(&cacher, &vectors_path).unwrap();
+    let cached_slice = CachedSlice::open(&cacher, &vectors_path).unwrap();
 
     let mut rng = StdRng::seed_from_u64(123);
 
     // Random single-element access.
     for _ in 0..5000 {
         let idx = rng.random_range(0..TOTAL_FLOATS);
-        let cached_val = cached_slice.get(idx).unwrap();
+        let cached_val = cached_slice.get::<f32>(idx).unwrap();
         assert_eq!(
             *cached_val, vectors[idx],
             "Random access mismatch at flat index {idx}",
@@ -181,7 +187,7 @@ fn test_cached_slice_vectors_random_access() {
         let vec_idx = rng.random_range(0..NUM_VECTORS);
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end).unwrap();
+        let cached_vec = cached_slice.get_range::<f32>(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -197,7 +203,7 @@ fn test_cached_slice_vectors_random_access() {
             continue;
         }
         let b = a + rng.random_range(1..=max_len);
-        let cached_range = cached_slice.get_range(a..b).unwrap();
+        let cached_range = cached_slice.get_range::<f32>(a..b).unwrap();
         assert_eq!(
             cached_range.as_ref(),
             &vectors[a..b],
@@ -232,7 +238,7 @@ fn test_no_more_blocks_concurrent_exhaustion() {
         .map(|i| {
             let path = dir.path().join(format!("cold.{i}"));
             create_test_file(&path, &format!("cold.{i}"), blocks_per_file);
-            Arc::new(CachedSlice::<u8>::open(&cacher, &path).unwrap())
+            Arc::new(CachedSlice::open(&cacher, &path).unwrap())
         })
         .collect();
 
@@ -246,7 +252,7 @@ fn test_no_more_blocks_concurrent_exhaustion() {
             std::thread::spawn(move || {
                 barrier.wait();
                 for block in 0..blocks_per_file {
-                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE)
+                    fd.get_range::<u8>(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE)
                         .unwrap();
                 }
             })

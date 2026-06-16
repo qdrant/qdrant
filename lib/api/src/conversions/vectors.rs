@@ -15,6 +15,12 @@ fn convert_to_plain_multi_vector(
     data: Vec<f32>,
     vectors_count: usize,
 ) -> Result<MultiDenseVector, OperationError> {
+    if vectors_count == 0 || data.is_empty() {
+        return Err(OperationError::validation_error(format!(
+            "Empty multi-vector data with vectors count: {vectors_count}"
+        )));
+    }
+
     let dim = data.len() / vectors_count;
     if dim * vectors_count != data.len() {
         return Err(OperationError::validation_error(format!(

@@ -1,0 +1,22 @@
+[package]
+name = "io_bridge_object_store"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+common = { path = "../common" }
+ahash = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+object_store = { workspace = true }
+slab = { workspace = true }
+tokio = { workspace = true }
+aligned-vec = "0.6.4"
+
+[dev-dependencies]
+common = { path = "../common", features = ["testing"] }
+tempfile = { workspace = true }

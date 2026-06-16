@@ -62,7 +62,7 @@ pub fn fill_query_context(
         let Some(segment_guard) = segment.try_read_for(timeout) else {
             return Err(OperationError::timeout(timeout, "fill query context"));
         };
-        segment_guard.fill_query_context(&mut query_context);
+        segment_guard.fill_query_context(&mut query_context)?;
     }
     Ok(Some(query_context))
 }

@@ -48,11 +48,6 @@ impl ResourceBudget {
         self.cpu_budget
     }
 
-    /// Returns the total IO budget.
-    pub fn available_io_budget(&self) -> usize {
-        self.io_budget
-    }
-
     /// For the given desired number of CPUs, return the minimum number of required CPUs.
     fn min_cpu_permits(&self, desired_cpus: usize) -> usize {
         desired_cpus.min(self.cpu_budget).div_ceil(2)

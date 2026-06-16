@@ -9,13 +9,14 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{ScoreType, ScoredPointOffset};
-use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
+use rand_distr::StandardNormal;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::{NonAppendableSegmentEntry, SegmentEntry};
-use segment::fixtures::payload_fixtures::{STR_KEY, random_vector};
+use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{VectorIndex, VectorIndexEnum};
+use segment::index::{VectorIndexEnum, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
@@ -24,9 +25,10 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
-    Indexes, ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
-    ScalarQuantizationConfig, SearchParams,
+    BinaryQuantizationConfig, BinaryQuantizationEncoding, CompressionRatio, Condition, Distance,
+    FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, ProductQuantizationConfig,
+    QuantizationConfig, QuantizationSearchParams, ScalarQuantizationConfig, SearchParams,
+    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
 };
 use segment::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -43,12 +45,39 @@ pub fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -
         .count()
 }
 
+/// Sample test vectors with a distribution suited to the distance metric.
+///
+/// * Cosine: uniform on the unit sphere (standard normal per coordinate
+///   then normalized). The result is symmetric around zero, matching what
+///   typical embedding pipelines (BERT, CLIP, ...) produce.
+/// * Dot, Euclid, Manhattan: standard normal per coordinate, *not*
+///   normalized. This gives vectors with non-trivial magnitudes, so a dot
+///   test actually exercises dot product and not an implicit cosine
+///   similarity (which would be the case for unit-norm input).
+///
+/// Avoids `segment::fixtures::random_vector` (which gives values in
+/// `[0, 1)` — a positive-orthant distribution that is unrepresentative
+/// for cosine-similarity benchmarking).
+fn random_test_vector(rng: &mut StdRng, dim: usize, distance: Distance) -> Vec<f32> {
+    let raw: Vec<f32> = (0..dim)
+        .map(|_| rng.sample::<f64, _>(StandardNormal) as f32)
+        .collect();
+    match distance {
+        Distance::Cosine => {
+            let l2 = raw.iter().map(|x| x * x).sum::<f32>().sqrt();
+            raw.into_iter().map(|x| x / l2).collect()
+        }
+        Distance::Dot | Distance::Euclid | Distance::Manhattan => raw,
+    }
+}
+
 fn hnsw_quantized_search_test(
     distance: Distance,
     num_vectors: u64,
     dim: usize,
     quantization_config: QuantizationConfig,
     test_rescoring: bool,
+    deterministic: bool,
 ) {
     let stopped = AtomicBool::new(false);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -72,7 +101,7 @@ fn hnsw_quantized_search_test(
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rng, dim);
+        let vector = random_test_vector(&mut rng, dim, distance);
         segment
             .upsert_point(op_num, idx, only_default_vector(&vector), &hw_counter)
             .unwrap();
@@ -120,7 +149,12 @@ fn hnsw_quantized_search_test(
         inline_storage: None,
     };
 
-    let permit_cpu_count = 2;
+    // Cells where the recall margin sits close to the 40% floor (e.g. TQ Bits2)
+    // pass `deterministic = true` to force single-threaded HNSW build, removing
+    // parallel-insertion jitter that would otherwise push the assertion over the
+    // edge. Higher-bit / higher-fidelity quantization has enough margin to absorb
+    // the jitter and runs with `deterministic = false` for build speed.
+    let permit_cpu_count = if deterministic { 1 } else { 2 };
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let hnsw_index = HNSWIndex::build(
@@ -150,7 +184,7 @@ fn hnsw_quantized_search_test(
     .unwrap();
 
     let query_vectors = (0..attempts)
-        .map(|_| random_vector(&mut rng, dim).into())
+        .map(|_| random_test_vector(&mut rng, dim, distance).into())
         .collect::<Vec<_>>();
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         JsonPath::new(STR_KEY),
@@ -261,7 +295,7 @@ fn check_oversampling(
         let oversampling_2_result = hnsw_index
             .search(
                 &[query],
-                None,
+                filter,
                 top,
                 Some(&SearchParams {
                     hnsw_ef: Some(ef_oversampling),
@@ -318,6 +352,7 @@ fn check_rescoring(
     }
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_quantized_search_cosine_test() {
     hnsw_quantized_search_test(
@@ -331,9 +366,11 @@ fn hnsw_quantized_search_cosine_test() {
         }
         .into(),
         true,
+        false,
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_quantized_search_euclid_test() {
     hnsw_quantized_search_test(
@@ -347,9 +384,11 @@ fn hnsw_quantized_search_euclid_test() {
         }
         .into(),
         true,
+        false,
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_quantized_search_manhattan_test() {
     hnsw_quantized_search_test(
@@ -363,9 +402,11 @@ fn hnsw_quantized_search_manhattan_test() {
         }
         .into(),
         true,
+        false,
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_product_quantization_cosine_test() {
     hnsw_quantized_search_test(
@@ -378,9 +419,11 @@ fn hnsw_product_quantization_cosine_test() {
         }
         .into(),
         false,
+        false,
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_product_quantization_euclid_test() {
     hnsw_quantized_search_test(
@@ -393,9 +436,11 @@ fn hnsw_product_quantization_euclid_test() {
         }
         .into(),
         false,
+        false,
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_product_quantization_manhattan_test() {
     hnsw_quantized_search_test(
@@ -408,9 +453,554 @@ fn hnsw_product_quantization_manhattan_test() {
         }
         .into(),
         false,
+        false,
     );
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_test() {
+    // Bits4 has enough headroom to use the standard helper (40% recall floor),
+    // matching the scalar/PQ tests' shape (filtered + unfiltered check_matches,
+    // check_oversampling, check_rescoring on zero-overwritten vectors).
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_dot_test() {
+    // See `hnsw_turbo_quantization_cosine_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Dot,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_larger_test() {
+    // See `hnsw_turbo_quantization_cosine_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        2003,
+        256,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_bits2_test() {
+    // Bits2 clears the 40% recall floor but with thin margin — `deterministic`
+    // forces single-threaded HNSW build so parallel-insertion jitter can't
+    // push the assertion over the edge.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+        true,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_dot_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Dot,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+        true,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        2003,
+        131,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+        true,
+    );
+}
+
+// L2 (Euclid) and L1 (Manhattan) coverage at Bits4 and Bits2.
+// Bits1 and Bits1_5 are intentionally omitted across all distances:
+// they don't reliably clear the standard helper's 40% recall floor
+// and would be flaky-to-failing under this shape.
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_euclid_test() {
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_manhattan_test() {
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_euclid_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+        true,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+        true,
+    );
+}
+
+/// Bits1/Bits1_5 are below the standard helper's recall floor; instead
+/// anchor on binary quantization at the same effective bit-width and
+/// assert the quantization-error gap (rescored top-K score sum vs. exact
+/// top-K) is at most BQ's and not dramatically smaller.
+fn hnsw_quantized_low_bit_compare_test(
+    distance: Distance,
+    num_vectors: u64,
+    dim: usize,
+    tq_bits: TurboQuantBitSize,
+    bq_encoding: BinaryQuantizationEncoding,
+) {
+    let stopped = AtomicBool::new(false);
+
+    let m = 16;
+    let ef = 64;
+    let ef_construct = 64;
+    let top = 20;
+    let attempts = 25;
+    let payloads_count: u64 = 50;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let vectors: Vec<Vec<f32>> = (0..num_vectors)
+        .map(|_| random_test_vector(&mut rng, dim, distance))
+        .collect();
+    let queries: Vec<QueryVector> = (0..attempts)
+        .map(|_| random_test_vector(&mut rng, dim, distance).into())
+        .collect();
+
+    let tq_config = QuantizationConfig::Turbo(TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: Some(true),
+            bits: Some(tq_bits),
+        },
+    });
+    let bq_config: QuantizationConfig = BinaryQuantizationConfig {
+        always_ram: Some(true),
+        encoding: Some(bq_encoding),
+        query_encoding: None,
+    }
+    .into();
+
+    let (tq_segment, tq_index, _tq_dirs) = build_quantized_hnsw_for_compare(
+        &vectors,
+        distance,
+        &tq_config,
+        m,
+        ef_construct,
+        payloads_count,
+        &mut rng,
+        &stopped,
+    );
+    let (_bq_segment, bq_index, _bq_dirs) = build_quantized_hnsw_for_compare(
+        &vectors,
+        distance,
+        &bq_config,
+        m,
+        ef_construct,
+        payloads_count,
+        &mut rng,
+        &stopped,
+    );
+
+    let rescored_params = SearchParams {
+        hnsw_ef: Some(ef),
+        quantization: Some(QuantizationSearchParams {
+            rescore: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let mut tq_total_loss: f64 = 0.0;
+    let mut bq_total_loss: f64 = 0.0;
+    for query in &queries {
+        let exact_result = tq_segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_index
+            .borrow()
+            .search(&[query], None, top, None, &Default::default())
+            .unwrap();
+        let exact_sum: f64 = exact_result[0].iter().map(|p| f64::from(p.score)).sum();
+
+        let tq_result = tq_index
+            .search(
+                &[query],
+                None,
+                top,
+                Some(&rescored_params),
+                &Default::default(),
+            )
+            .unwrap();
+        let tq_sum: f64 = tq_result[0].iter().map(|p| f64::from(p.score)).sum();
+
+        let bq_result = bq_index
+            .search(
+                &[query],
+                None,
+                top,
+                Some(&rescored_params),
+                &Default::default(),
+            )
+            .unwrap();
+        let bq_sum: f64 = bq_result[0].iter().map(|p| f64::from(p.score)).sum();
+
+        tq_total_loss += exact_sum - tq_sum;
+        bq_total_loss += exact_sum - bq_sum;
+    }
+
+    let tq_avg_loss = tq_total_loss / f64::from(attempts);
+    let bq_avg_loss = bq_total_loss / f64::from(attempts);
+    println!(
+        "low-bit compare: distance={distance:?}, dim={dim}, num={num_vectors}, \
+         tq_bits={tq_bits:?}, bq_encoding={bq_encoding:?}, \
+         tq_avg_loss={tq_avg_loss:.6}, bq_avg_loss={bq_avg_loss:.6}",
+    );
+
+    let eps = f64::from(ScoreType::EPSILON);
+    assert!(
+        tq_avg_loss >= -eps,
+        "tq_avg_loss should be non-negative, got {tq_avg_loss}",
+    );
+    assert!(
+        bq_avg_loss >= -eps,
+        "bq_avg_loss should be non-negative, got {bq_avg_loss}",
+    );
+
+    // Slack absorbs single-query noise around the TQ <= BQ inequality.
+    let upper_tolerance = bq_avg_loss.abs() * 0.10 + 1e-3;
+    assert!(
+        tq_avg_loss <= bq_avg_loss + upper_tolerance,
+        "Expected TurboQuant error <= Binary error \
+         (distance={distance:?}, tq_bits={tq_bits:?}, bq_encoding={bq_encoding:?}): \
+         tq_avg_loss={tq_avg_loss}, bq_avg_loss={bq_avg_loss}",
+    );
+
+    // Loose floor: catches a broken TQ (e.g. accidentally near-lossless)
+    // without rejecting TQ's genuine accuracy edge over BQ on this data.
+    let lower_tolerance = bq_avg_loss.abs() * 0.05 + 1e-3;
+    assert!(
+        tq_avg_loss + lower_tolerance >= bq_avg_loss * 0.10,
+        "Expected TurboQuant error to be in the same ballpark as Binary error \
+         (distance={distance:?}, tq_bits={tq_bits:?}, bq_encoding={bq_encoding:?}): \
+         tq_avg_loss={tq_avg_loss}, bq_avg_loss={bq_avg_loss}",
+    );
+}
+
+/// Caller must keep the returned tempdirs alive for as long as the segment
+/// and HNSW index are used.
+#[allow(clippy::too_many_arguments)]
+fn build_quantized_hnsw_for_compare(
+    vectors: &[Vec<f32>],
+    distance: Distance,
+    quantization_config: &QuantizationConfig,
+    m: usize,
+    ef_construct: usize,
+    payloads_count: u64,
+    rng: &mut StdRng,
+    stopped: &AtomicBool,
+) -> (
+    Segment,
+    HNSWIndex,
+    (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir),
+) {
+    let dim = vectors[0].len();
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let quantized_dir = Builder::new().prefix("quantized_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut segment = build_simple_segment(segment_dir.path(), dim, distance).unwrap();
+    let mut op_num: u64 = 0;
+    for (n, vector) in vectors.iter().enumerate() {
+        let idx = (n as u64).into();
+        segment
+            .upsert_point(op_num, idx, only_default_vector(vector), &hw_counter)
+            .unwrap();
+        op_num += 1;
+    }
+
+    segment
+        .create_field_index(
+            op_num,
+            &JsonPath::new(STR_KEY),
+            Some(&Keyword.into()),
+            &hw_counter,
+        )
+        .unwrap();
+    op_num += 1;
+    for n in 0..payloads_count {
+        let idx = n.into();
+        let payload = payload_json! {STR_KEY: STR_KEY};
+        segment
+            .set_full_payload(op_num, idx, &payload, &hw_counter)
+            .unwrap();
+        op_num += 1;
+    }
+
+    segment.vector_data.values_mut().for_each(|vector_storage| {
+        let quantized_vectors = QuantizedVectors::create(
+            &vector_storage.vector_storage.borrow(),
+            quantization_config,
+            QuantizedVectorsStorageType::Immutable,
+            quantized_dir.path(),
+            4,
+            stopped,
+        )
+        .unwrap();
+        vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
+    });
+
+    let hnsw_config = HnswConfig {
+        m,
+        ef_construct,
+        full_scan_threshold: 2 * payloads_count as usize,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+        inline_storage: None,
+    };
+
+    let permit = Arc::new(ResourcePermit::dummy(2));
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .quantized_vectors
+                .clone(),
+            payload_index: segment.payload_index.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            old_indices: &[],
+            gpu_device: None,
+            rng,
+            stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
+            feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
+        },
+    )
+    .unwrap();
+
+    (segment, hnsw_index, (segment_dir, hnsw_dir, quantized_dir))
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Cosine,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_dot_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Dot,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_euclid_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Euclid,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Manhattan,
+        503,
+        64,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_bits1_5_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Cosine,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_dot_bits1_5_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Dot,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_euclid_bits1_5_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Euclid,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits1_5_test() {
+    // See `hnsw_turbo_quantization_manhattan_bits1_test` for rationale.
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Manhattan,
+        503,
+        64,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn test_build_hnsw_using_quantization() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();

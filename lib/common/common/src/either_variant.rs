@@ -112,3 +112,33 @@ where
         for_all!(*self, ref mut inner => inner.position(predicate))
     }
 }
+
+impl<A, B, C, D> DoubleEndedIterator for EitherVariant<A, B, C, D>
+where
+    A: DoubleEndedIterator,
+    B: DoubleEndedIterator<Item = A::Item>,
+    C: DoubleEndedIterator<Item = A::Item>,
+    D: DoubleEndedIterator<Item = A::Item>,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        for_all!(*self, ref mut inner => inner.next_back())
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        for_all!(*self, ref mut inner => inner.nth_back(n))
+    }
+
+    fn rfold<Acc, G>(self, init: Acc, f: G) -> Acc
+    where
+        G: FnMut(Acc, Self::Item) -> Acc,
+    {
+        for_all!(self, inner => inner.rfold(init, f))
+    }
+
+    fn rfind<P>(&mut self, predicate: P) -> Option<Self::Item>
+    where
+        P: FnMut(&Self::Item) -> bool,
+    {
+        for_all!(*self, ref mut inner => inner.rfind(predicate))
+    }
+}

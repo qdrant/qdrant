@@ -3,9 +3,9 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
+    use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
     use rand::{RngExt, SeedableRng};
     use rstest::rstest;
 
@@ -33,7 +33,7 @@ mod tests {
             invert: false,
         };
         let quantized_vector_size =
-            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -77,7 +77,7 @@ mod tests {
             invert: false,
         };
         let quantized_vector_size =
-            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -125,7 +125,7 @@ mod tests {
             invert: false,
         };
         let quantized_vector_size =
-            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),

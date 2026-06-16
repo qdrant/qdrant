@@ -1,29 +1,33 @@
 use std::borrow::Cow;
-use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
 use criterion::measurement::Measurement;
 use criterion::{Criterion, criterion_group, criterion_main};
 use dataset::Dataset;
+use fs_err as fs;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use itertools::Itertools;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
-use sparse::common::scores_memory_pool::ScoresMemoryPool;
+use sha2::Digest;
+use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
-use sparse::common::types::QuantizedU8;
+use sparse::common::types::{QuantizedU8, Weight};
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::loaders::{self, Csr};
+use sparse::index::posting_list::PostingList;
+use sparse::index::posting_list_common::PostingElementEx;
 use sparse::index::search_context::SearchContext;
+use zerocopy::IntoBytes;
 mod prof;
 
 const NUM_QUERIES: usize = 2048;
@@ -35,15 +39,23 @@ pub fn bench_search(c: &mut Criterion) {
     bench_uniform_random(c, "random-500k", 500_000);
 
     {
-        let query_vectors =
-            loaders::load_csr_vecs(Dataset::NeurIps2023Queries.download().unwrap()).unwrap();
+        let query_vectors = Csr::open(Dataset::NeurIps2023Queries.download().unwrap())
+            .unwrap()
+            .iter()
+            .unwrap()
+            .collect::<Vec<_>>();
 
-        let index_1m = load_csr_index(Dataset::NeurIps2023_1M.download().unwrap(), 1.0).unwrap();
-        run_bench(c, "neurips2023-1M", index_1m, &query_vectors);
+        let name = "neurips2023-1M";
+        let index_1m = cached_ram_index(name, || {
+            load_csr_index(Dataset::NeurIps2023_1M.download().unwrap(), 1.0)
+        });
+        run_bench(c, name, index_1m, &query_vectors);
 
-        let index_full =
-            load_csr_index(Dataset::NeurIps2023Full.download().unwrap(), 0.25).unwrap();
-        run_bench(c, "neurips2023-full-25pct", index_full, &query_vectors);
+        let name = "neurips2023-full-25pct";
+        let index_full = cached_ram_index(name, || {
+            load_csr_index(Dataset::NeurIps2023Full.download().unwrap(), 0.25)
+        });
+        run_bench(c, name, index_full, &query_vectors);
     }
 
     bench_movies(c);
@@ -52,12 +64,13 @@ pub fn bench_search(c: &mut Criterion) {
 fn bench_uniform_random(c: &mut Criterion, name: &str, num_vectors: usize) {
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let index = InvertedIndexBuilder::build_from_iterator((0..num_vectors).map(|idx| {
-        (
-            idx as PointOffsetType,
-            random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into_remapped(),
-        )
-    }));
+    let index = cached_ram_index(name, || {
+        let mut rnd = rnd.fork();
+        InvertedIndexBuilder::build_from_iterator((0..num_vectors).map(|idx| {
+            let vec = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into_remapped();
+            (idx as PointOffsetType, vec)
+        }))
+    });
 
     let query_vectors = (0..NUM_QUERIES)
         .map(|_| random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM))
@@ -137,45 +150,21 @@ pub fn run_bench(
         &hottest_query_vectors,
     );
 
-    run_bench2(
-        c.benchmark_group(format!("search/mmap/{name}")),
-        &InvertedIndexMmap::from_ram_index(
-            Cow::Borrowed(&index),
-            tempfile::Builder::new()
-                .prefix("test_index_dir")
-                .tempdir()
-                .unwrap()
-                .path(),
-        )
-        .unwrap(),
-        query_vectors,
-        &hottest_query_vectors,
-    );
-
     macro_rules! run_bench2 {
         ($name:literal, $type:ty) => {
+            let index_path = cached_compressed_index::<$type>(&index, name);
+
             run_bench2(
                 c.benchmark_group(format!("search/ram_{}/{name}", $name)),
-                &InvertedIndexCompressedImmutableRam::<$type>::from_ram_index(
-                    Cow::Borrowed(&index),
-                    "nonexistent/path",
-                )
-                .unwrap(),
+                &InvertedIndexCompressedImmutableRam::<$type>::open(&MmapFs, &index_path).unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
 
             run_bench2(
                 c.benchmark_group(format!("search/mmap_{}/{name}", $name)),
-                &InvertedIndexCompressedMmap::<$type>::from_ram_index(
-                    Cow::Borrowed(&index),
-                    tempfile::Builder::new()
-                        .prefix("test_index_dir")
-                        .tempdir()
-                        .unwrap()
-                        .path(),
-                )
-                .unwrap(),
+                &InvertedIndexCompressedMmap::<$type, MmapFile>::open(&MmapFs, &index_path)
+                    .unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
@@ -194,7 +183,7 @@ fn run_bench2(
     query_vectors: &[SparseVector],
     hottest_query_vectors: &[RemappedSparseVector],
 ) {
-    let pool = ScoresMemoryPool::new();
+    let pool = SearchScratchPool::new();
     let stopped = AtomicBool::new(false);
 
     let mut it = query_vectors.iter().cycle();
@@ -205,7 +194,9 @@ fn run_bench2(
         b.iter_batched(
             || it.next().unwrap().clone().into_remapped(),
             |vec| {
-                SearchContext::new(vec, TOP, index, pool.get(), &stopped, &hardware_counter)
+                let mut scratch = pool.get();
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
+                    .unwrap()
                     .search(&|_| true)
             },
             criterion::BatchSize::SmallInput,
@@ -219,7 +210,9 @@ fn run_bench2(
         b.iter_batched(
             || it.next().unwrap().clone(),
             |vec| {
-                SearchContext::new(vec, TOP, index, pool.get(), &stopped, &hardware_counter)
+                let mut scratch = pool.get();
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
+                    .unwrap()
                     .search(&|_| true)
             },
             criterion::BatchSize::SmallInput,
@@ -227,22 +220,109 @@ fn run_bench2(
     });
 }
 
-fn load_csr_index(path: impl AsRef<Path>, ratio: f32) -> io::Result<InvertedIndexRam> {
-    let csr = Csr::open(path.as_ref())?;
+fn load_csr_index(path: impl AsRef<Path>, ratio: f32) -> InvertedIndexRam {
+    let csr = Csr::open(path.as_ref()).unwrap();
     let mut builder = InvertedIndexBuilder::new();
     assert!(ratio > 0.0 && ratio <= 1.0);
     let count = (csr.len() as f32 * ratio) as usize;
     let bar =
         ProgressBar::with_draw_target(Some(count as u64), ProgressDrawTarget::stderr_with_hz(12));
-    for (row, vec) in bar.wrap_iter(csr.iter().take(count).enumerate()) {
-        builder.add(
-            row as u32,
-            vec.map(|v| v.into_remapped())
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-        );
+    for (row, vec) in bar.wrap_iter(csr.iter().unwrap().take(count).enumerate()) {
+        builder.add(row as u32, vec.into_remapped());
     }
     bar.finish_and_clear();
-    Ok(builder.build())
+    builder.build()
+}
+
+fn cache_dir() -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(env!("CARGO_PKG_NAME"))
+        .join(env!("CARGO_CRATE_NAME"))
+}
+
+/// Load an [`InvertedIndexRam`] from the cache.
+/// If not exists, calls `build()` to create it.
+fn cached_ram_index(name: &str, build: impl FnOnce() -> InvertedIndexRam) -> InvertedIndexRam {
+    let path = cache_dir().join(name);
+    if !path.exists() {
+        eprintln!("Building cache: {path:?}");
+        let index = build();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        index.test_save(&path.with_extension("tmp")).unwrap();
+        fs::rename(path.with_extension("tmp"), &path).unwrap();
+    }
+    eprintln!("Using cache: {path:?}");
+    InvertedIndexRam::test_load(&path).unwrap()
+}
+
+/// Loads [`InvertedIndexCompressedMmap`] from the cache.
+/// If not exists, converts it from the given [`InvertedIndexRam`].
+fn cached_compressed_index<W: Weight>(index: &InvertedIndexRam, name: &str) -> PathBuf {
+    let path = cache_dir().join(format!(
+        "{name}-{}-{hash}",
+        W::NAME,
+        hash = inverted_index_partial_hash(index)
+    ));
+
+    if !path.exists() {
+        eprintln!("Building cache: {path:?}");
+        let tmp_path = path.with_extension("tmp");
+        if tmp_path.exists() {
+            fs::remove_dir_all(&tmp_path).unwrap();
+        }
+        fs::create_dir_all(&tmp_path).unwrap();
+        InvertedIndexCompressedMmap::<W, MmapFile>::from_ram_index(
+            &MmapFs,
+            Cow::Borrowed(index),
+            &tmp_path,
+        )
+        .unwrap();
+        fs::rename(tmp_path, &path).unwrap();
+    }
+    eprintln!("Using cache: {path:?}");
+    path
+}
+
+/// Compute hash of the given [`InvertedIndexRam`].
+/// For performance reasons, use only a subset of the data.
+fn inverted_index_partial_hash(index: &InvertedIndexRam) -> String {
+    let mut hasher = sha2::Sha256::new();
+    let InvertedIndexRam {
+        postings,
+        vector_count,
+        total_sparse_size,
+    } = index;
+    hasher.update(vector_count.as_bytes());
+    hasher.update(total_sparse_size.as_bytes());
+
+    let mut hash_posting = |posting: &PostingList| {
+        let PostingList { elements } = posting;
+        for element in elements.iter() {
+            let PostingElementEx {
+                record_id,
+                weight,
+                max_next_weight,
+            } = element;
+            hasher.update(record_id.as_bytes());
+            hasher.update(weight.as_bytes());
+            hasher.update(max_next_weight.as_bytes());
+        }
+    };
+
+    // For performance reasons, hash only first and last 100 postings.
+    let mut postings = postings.iter();
+    for posting in postings.by_ref().take(100) {
+        hash_posting(posting);
+    }
+    for posting in postings.rev().take(100) {
+        hash_posting(posting);
+    }
+
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[cfg(not(target_os = "windows"))]

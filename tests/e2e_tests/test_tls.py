@@ -7,9 +7,19 @@ from pathlib import Path
 
 from e2e_tests.utils import run_docker_compose
 
+GRPCURL_IMAGE = "fullstorydev/grpcurl"
+
 
 class TestTLS:
     """Test TLS functionality using docker-compose with mutual TLS authentication."""
+
+    @pytest.fixture(scope="class", autouse=True)
+    def grpcurl_image(self):
+        """Pre-pull the grpcurl Docker image so test timeouts only cover the actual RPC."""
+        subprocess.run(
+            ["docker", "pull", GRPCURL_IMAGE],
+            capture_output=True, timeout=120,
+        )
 
     @pytest.fixture(scope="class")
     def tls_certs(self, test_data_dir):
@@ -21,18 +31,23 @@ class TestTLS:
         }
 
     @pytest.fixture(scope="class")
-    def tls_cluster(self, docker_client, qdrant_image, test_data_dir):
+    def tls_cluster(self, docker_client, qdrant_image, test_data_dir, tls_certs):
         """
         Class-scoped fixture for TLS cluster using the extracted compose function.
         """
-        config = {"compose_file": "tls-compose.yaml", "wait_for_ready": False}
+        config = {
+            "compose_file": "tls-compose.yaml",
+            "readiness": {
+                "scheme": "https",
+                "verify": str(tls_certs["ca_cert"]),
+                "cert": (str(tls_certs["client_cert"]), str(tls_certs["client_key"])),
+                "include_grpc": True,
+            },
+        }
         cluster = run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
 
         # Should have 2 containers
         assert len(cluster) == 2
-
-        # Wait for cluster to stabilize
-        time.sleep(15)
 
         try:
             yield cluster
@@ -73,46 +88,50 @@ class TestTLS:
             assert ":6335" in uri, f"Peer {peer_id} URI missing port 6335: {uri}"
 
     @staticmethod
-    def _test_grpc_tls_connectivity(node_info, tls_certs, node_name):
+    def _test_grpc_tls_connectivity(node_info, tls_certs, node_name, retries=3):
         """Helper method to test gRPC TLS connectivity for a single node."""
-        try:
-            cert_hostname = f"{node_name}.qdrant"
-            compose_project = node_info.compose_project
-            network_name = f"{compose_project}_qdrant-network"
+        cert_hostname = f"{node_name}.qdrant"
+        compose_project = node_info.compose_project
+        network_name = f"{compose_project}_qdrant-network"
 
-            # Get absolute paths for certificates 
-            cert_dir = tls_certs["ca_cert"].parent
-            proto_dir = Path(__file__).parent.parent.parent / "lib" / "api" / "src" / "grpc" / "proto"
+        cert_dir = tls_certs["ca_cert"].parent
+        proto_dir = Path(__file__).parent.parent.parent / "lib" / "api" / "src" / "grpc" / "proto"
 
-            # Run grpcurl from within the Docker network
-            grpcurl_cmd = [
-                "docker", "run", "--rm",
-                f"--network={network_name}",
-                "-v", f"{cert_dir}:/tls_path:ro",
-                "-v", f"{proto_dir}:/proto:ro",
-                "fullstorydev/grpcurl",
-                "-cacert", "/tls_path/cacert.pem",
-                "-cert", "/tls_path/cert.pem",
-                "-key", "/tls_path/key.pem",
-                "-import-path", "/proto",
-                "-proto", "qdrant.proto",
-                "-d", "{}",
-                f"{cert_hostname}:6334",
-                "qdrant.Qdrant/HealthCheck"
-            ]
+        grpcurl_cmd = [
+            "docker", "run", "--rm",
+            f"--network={network_name}",
+            "-v", f"{cert_dir}:/tls_path:ro",
+            "-v", f"{proto_dir}:/proto:ro",
+            GRPCURL_IMAGE,
+            "-cacert", "/tls_path/cacert.pem",
+            "-cert", "/tls_path/cert.pem",
+            "-key", "/tls_path/key.pem",
+            "-import-path", "/proto",
+            "-proto", "qdrant.proto",
+            "-d", "{}",
+            f"{cert_hostname}:6334",
+            "qdrant.Qdrant/HealthCheck"
+        ]
 
-            result = subprocess.run(grpcurl_cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                print(f"{node_name} gRPC TLS connectivity verified")
-            else:
-                pytest.fail(f"gRPC TLS health check failed for {node_name}. "
-                          f"Return code: {result.returncode}, "
-                          f"stdout: {result.stdout}, stderr: {result.stderr}")
+        last_error = None
+        for attempt in range(1, retries + 1):
+            try:
+                result = subprocess.run(grpcurl_cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    print(f"{node_name} gRPC TLS connectivity verified (attempt {attempt})")
+                    return
+                last_error = (f"Return code: {result.returncode}, "
+                              f"stdout: {result.stdout}, stderr: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                last_error = "timed out after 30 seconds"
+            except Exception as e:
+                last_error = str(e)
 
-        except subprocess.TimeoutExpired:
-            pytest.fail(f"gRPC TLS health check timed out for {node_name}")
-        except Exception as e:
-            pytest.fail(f"gRPC TLS health check failed for {node_name}: {e}")
+            if attempt < retries:
+                print(f"{node_name} gRPC attempt {attempt} failed ({last_error}), retrying…")
+                time.sleep(2)
+
+        pytest.fail(f"gRPC TLS health check failed for {node_name} after {retries} attempts: {last_error}")
 
     @pytest.mark.parametrize("protocol", ["http", "grpc"])
     def test_tls_connectivity(self, tls_cluster, tls_certs, protocol):

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use serde::Serialize;
-use validator::{Validate, ValidationError, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 // Multivector should be small enough to fit the chunk of vector storage
 
@@ -11,15 +11,32 @@ pub const MAX_MULTIVECTOR_FLATTENED_LEN: usize = 32 * 1024;
 #[cfg(not(debug_assertions))]
 pub const MAX_MULTIVECTOR_FLATTENED_LEN: usize = 1024 * 1024;
 
-#[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
+/// Validate every item in an iterator and collect per-item errors under a
+/// placeholder `?` key. We can't use `ValidationErrors::merge` repeatedly with
+/// the same key — its internal `add_nested` panics on the second insert
+/// ("Attempt to replace non-empty ValidationErrors entry"). For N≥2 we use a
+/// `List` indexed by position; for N=1 we keep the historical `Struct` shape so
+/// existing renderings (`?.<field>`) are preserved.
 pub fn validate_iter<T: Validate>(iter: impl Iterator<Item = T>) -> Result<(), ValidationErrors> {
-    let errors = iter
-        .filter_map(|v| v.validate().err())
-        .fold(Err(ValidationErrors::new()), |bag, err| {
-            ValidationErrors::merge(bag, "?", Err(err))
-        })
-        .unwrap_err();
-    errors.errors().is_empty().then_some(()).ok_or(errors)
+    let mut child_errors: Vec<ValidationErrors> = iter.filter_map(|v| v.validate().err()).collect();
+    if child_errors.is_empty() {
+        return Ok(());
+    }
+
+    let kind = if child_errors.len() == 1 {
+        ValidationErrorsKind::Struct(Box::new(child_errors.pop().unwrap()))
+    } else {
+        ValidationErrorsKind::List(
+            child_errors
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| (i, Box::new(e)))
+                .collect(),
+        )
+    };
+    let mut bag = ValidationErrors::new();
+    bag.errors_mut().insert(Cow::Borrowed("?"), kind);
+    Err(bag)
 }
 
 /// Validate the value is in `[min, max]`
@@ -46,6 +63,16 @@ where
         err.add_param(Cow::from("max"), &max);
     }
     Err(err)
+}
+
+/// Build the `ValidationError` for a sparse vector configured with the
+/// `Turbo4` datatype. Shared between REST and gRPC validators.
+pub fn sparse_turbo4_unsupported_error() -> ValidationError {
+    let mut err = ValidationError::new("unsupported_sparse_datatype");
+    err.message = Some(Cow::Borrowed(
+        "sparse vectors do not support the `turbo4` datatype",
+    ));
+    err
 }
 
 /// Validate that `value` is a non-empty string.
@@ -116,7 +143,7 @@ pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
 ///
 /// This does not check the length of the name.
 pub fn validate_collection_name_legacy(value: &str) -> Result<(), ValidationError> {
-    // Disallowed characters on on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
+    // Disallowed characters on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
     const INVALID_CHARS: [char; 2] = ['/', '\0'];
 
     match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
@@ -275,6 +302,14 @@ pub fn validate_multi_vector_len(
         return Err(errors);
     }
 
+    if flatten_dense_vector.is_empty() {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("empty_multi_vector");
+        err.add_param(Cow::from("message"), &"multi vector must not be empty");
+        errors.add("data", err);
+        return Err(errors);
+    }
+
     let dense_vector_len = flatten_dense_vector.len();
     if dense_vector_len >= MAX_MULTIVECTOR_FLATTENED_LEN {
         let mut errors = ValidationErrors::default();
@@ -300,6 +335,17 @@ pub fn validate_multi_vector_len(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_multi_vector_len_rejects_empty_data() {
+        // Regression: empty flattened data with a positive vectors_count must be
+        // rejected. Previously this returned Ok (0.is_multiple_of(N) == true), and
+        // the value then reached convert_to_plain_multi_vector, which builds
+        // chunks(dim) with dim == 0 and panics on the gRPC upsert path.
+        assert!(validate_multi_vector_len(2, &[]).is_err());
+        // A non-empty, consistent multivector still validates.
+        assert!(validate_multi_vector_len(2, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+    }
 
     #[test]
     fn test_validate_range_generic() {
@@ -392,6 +438,41 @@ mod tests {
             validate_geo_polygon(&good_polygon).is_ok(),
             "good polygon should not error on validation",
         );
+    }
+
+    #[test]
+    fn test_validate_iter() {
+        #[derive(validator::Validate)]
+        struct Item {
+            #[validate(range(min = 1))]
+            idx: u32,
+        }
+
+        // Empty iter — Ok
+        assert!(validate_iter(std::iter::empty::<&Item>()).is_ok());
+
+        // All valid — Ok
+        let valid = [Item { idx: 1 }, Item { idx: 2 }];
+        assert!(validate_iter(valid.iter()).is_ok());
+
+        // Single failure — Struct under `?` (preserves historical `?.<field>`
+        // rendering for existing call sites).
+        let one_bad = [Item { idx: 0 }];
+        let err = validate_iter(one_bad.iter()).expect_err("should fail");
+        match err.errors().get("?") {
+            Some(ValidationErrorsKind::Struct(_)) => {}
+            other => panic!("expected Struct under `?`, got {other:?}"),
+        }
+
+        // Two+ failures — must NOT panic (regression: prior impl called
+        // `ValidationErrors::merge(_, "?", _)` repeatedly, and validator's
+        // internal `add_nested` panics on the second insert).
+        let many_bad = [Item { idx: 0 }, Item { idx: 0 }, Item { idx: 0 }];
+        let err = validate_iter(many_bad.iter()).expect_err("should fail");
+        match err.errors().get("?") {
+            Some(ValidationErrorsKind::List(list)) => assert_eq!(list.len(), 3),
+            other => panic!("expected List under `?`, got {other:?}"),
+        }
     }
 
     #[test]

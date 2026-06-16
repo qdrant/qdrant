@@ -16,6 +16,7 @@ use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
+use http::uri::InvalidUri;
 use issues::IssueRecord;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -43,7 +44,6 @@ use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
-use tonic::codegen::http::uri::InvalidUri;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
@@ -591,7 +591,7 @@ impl RecommendExample {
     pub fn as_point_id(&self) -> Option<PointIdType> {
         match self {
             RecommendExample::PointId(id) => Some(*id),
-            _ => None,
+            RecommendExample::Dense(_) | RecommendExample::Sparse(_) => None,
         }
     }
 }
@@ -916,8 +916,6 @@ pub enum CollectionError {
     BadRequest { description: String },
     #[error("Operation Cancelled: {description}")]
     Cancelled { description: String },
-    #[error("Bad shard selection: {description}")]
-    BadShardSelection { description: String },
     #[error(
         "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
     )]
@@ -988,10 +986,6 @@ impl CollectionError {
         }
     }
 
-    pub fn bad_shard_selection(description: String) -> Self {
-        Self::BadShardSelection { description }
-    }
-
     pub fn object_storage_error(what: impl Into<String>) -> Self {
         Self::ObjectStoreError { what: what.into() }
     }
@@ -1004,20 +998,10 @@ impl CollectionError {
     }
 
     pub fn remote_peer_id(&self) -> Option<PeerId> {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match self {
             Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
             _ => None,
-        }
-    }
-
-    pub fn shard_key_not_found(shard_key: &Option<ShardKey>) -> Self {
-        match shard_key {
-            Some(shard_key) => Self::NotFound {
-                what: format!("Shard key {shard_key} not found"),
-            },
-            None => Self::NotFound {
-                what: "Shard expected, but not provided".to_string(),
-            },
         }
     }
 
@@ -1084,7 +1068,6 @@ impl CollectionError {
             Self::NotFound { .. } => false,
             Self::PointNotFound { .. } => false,
             Self::BadRequest { .. } => false,
-            Self::BadShardSelection { .. } => false,
             Self::InconsistentShardFailure { .. } => false,
             Self::ForwardProxyError { .. } => false,
             Self::ObjectStoreError { .. } => false,
@@ -1099,6 +1082,7 @@ impl CollectionError {
     }
 
     pub fn is_missing_point(&self) -> bool {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match self {
             Self::NotFound { what } => what.contains("No point with id"),
             Self::PointNotFound { .. } => true,
@@ -1335,6 +1319,7 @@ pub enum Datatype {
     Float32,
     Uint8,
     Float16,
+    Turbo4,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1343,6 +1328,7 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
+            Datatype::Turbo4 => VectorStorageDatatype::Turbo4,
         }
     }
 }
@@ -1386,6 +1372,8 @@ pub struct VectorParams {
     ///   2 bytes.
     /// - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte.
     ///   It expects vector elements to be in range `[0, 255]`.
+    /// - For `turbo4` datatype - vectors are quantized to 4 bits per element using the
+    ///   TurboQuant algorithm.
     pub datatype: Option<Datatype>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1397,6 +1385,15 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
     value: &NonZeroU64,
 ) -> Result<(), ValidationError> {
     validate_range_generic(value.get(), Some(1), Some(65536))
+}
+
+/// Reject the `Turbo4` datatype on sparse vector configs.
+/// `validator` unwraps `Option<Datatype>` before calling, so we receive `&Datatype`.
+fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> {
+    if matches!(datatype, Datatype::Turbo4) {
+        return Err(common::validation::sparse_turbo4_unsupported_error());
+    }
+    Ok(())
 }
 
 /// Is considered empty if `None` or if diff has no field specified
@@ -1412,6 +1409,7 @@ fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
 pub struct SparseVectorParams {
     /// Custom params for index. If none - values from collection configuration are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
     pub index: Option<SparseIndexParams>,
 
     /// Configures addition value modifications for sparse vectors.
@@ -1428,7 +1426,18 @@ impl SparseVectorParams {
 
 /// Configuration for sparse inverted index.
 #[derive(
-    Debug, Hash, Deserialize, Serialize, JsonSchema, Anonymize, Copy, Clone, PartialEq, Eq, Default,
+    Debug,
+    Hash,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Anonymize,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
 )]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexParams {
@@ -1452,6 +1461,7 @@ pub struct SparseIndexParams {
     ///   Quantization to fit byte range `[0, 255]` happens during indexing automatically, so the
     ///   actual vector data does not need to conform to this range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_sparse_datatype"))]
     pub datatype: Option<Datatype>,
 }
 
@@ -1588,27 +1598,6 @@ impl VectorsConfig {
 
         Ok(())
     }
-}
-
-pub fn check_sparse_compatible_with_segment_config(
-    self_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
-    other: &HashMap<VectorNameBuf, segment::types::SparseVectorDataConfig>,
-    exact: bool,
-) -> CollectionResult<()> {
-    if exact && self_config.len() != other.len() {
-        return Err(incompatible_vectors_error(
-            self_config.keys().map(AsRef::as_ref),
-            other.keys().map(AsRef::as_ref),
-        ));
-    }
-
-    for (vector_name, _) in self_config.iter() {
-        if other.get(vector_name).is_none() {
-            return Err(missing_vector_error(vector_name));
-        };
-    }
-
-    Ok(())
 }
 
 fn incompatible_vectors_error<'a, 'b>(

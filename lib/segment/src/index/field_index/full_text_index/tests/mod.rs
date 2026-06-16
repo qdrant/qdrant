@@ -1,12 +1,16 @@
 mod test_congruence;
 
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-use crate::index::field_index::full_text_index::text_index::FullTextIndex;
-use crate::index::field_index::{FieldIndexBuilderTrait as _, ValueIndexer};
+use crate::index::field_index::full_text_index::FullTextIndex;
+use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
+use crate::index::field_index::{
+    FieldIndex, FieldIndexBuilderTrait as _, PayloadFieldIndexRead, ValueIndexer,
+};
 
 fn movie_titles() -> Vec<String> {
     vec![
@@ -185,7 +189,10 @@ fn test_prefix_search() {
 
     let res: Vec<_> = index.query("ROBO", &hw_counter).unwrap().collect();
 
-    let query = index.parse_text_query("ROBO", &hw_counter).unwrap();
+    let query = index
+        .parse_text_query("ROBO", &hw_counter)
+        .unwrap()
+        .unwrap();
 
     for idx in res.iter().copied() {
         assert!(index.check_match(&query, idx).unwrap());
@@ -196,7 +203,12 @@ fn test_prefix_search() {
     let res: Vec<_> = index.query("q231", &hw_counter).unwrap().collect();
     assert!(res.is_empty());
 
-    assert!(index.parse_text_query("q231", &hw_counter).is_none());
+    assert!(
+        index
+            .parse_text_query("q231", &hw_counter)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -224,8 +236,13 @@ fn test_phrase_matching() {
             .make_empty()
             .unwrap();
 
-    let mut mmap_builder =
-        FullTextIndex::builder_mmap(temp_dir.path().to_path_buf(), config.clone(), true);
+    let empty_deleted = BitVec::new();
+    let mut mmap_builder = FullTextIndex::builder_mmap(
+        temp_dir.path().to_path_buf(),
+        config.clone(),
+        true,
+        &empty_deleted,
+    );
     mmap_builder.init().unwrap();
 
     // Add some test documents with phrases
@@ -252,6 +269,7 @@ fn test_phrase_matching() {
         // Test regular text matching (should match documents containing all tokens regardless of order)
         let text_query = index
             .parse_text_query("quick brown fox", &hw_counter)
+            .unwrap()
             .unwrap();
         assert!(index.check_match(&text_query, 0).unwrap());
         assert!(index.check_match(&text_query, 1).unwrap());
@@ -271,6 +289,7 @@ fn test_phrase_matching() {
         // Test phrase matching (should only match documents with exact phrase in order)
         let phrase_query = index
             .parse_phrase_query("quick brown fox", &hw_counter)
+            .unwrap()
             .unwrap();
         assert!(index.check_match(&phrase_query, 0).unwrap());
         assert!(index.check_match(&phrase_query, 2).unwrap());
@@ -289,6 +308,7 @@ fn test_phrase_matching() {
         // Test phrase that doesn't exist
         let missing_query = index
             .parse_phrase_query("fox brown quick", &hw_counter)
+            .unwrap()
             .unwrap();
         let missing_results: Vec<_> = index
             .filter_query(missing_query, &hw_counter)
@@ -299,13 +319,16 @@ fn test_phrase_matching() {
         assert_eq!(missing_results.len(), 0);
 
         // Test valid phrase up to a token that doesn't exist
-        let query_with_unknown_token = index.parse_phrase_query("quick brown bird", &hw_counter);
+        let query_with_unknown_token = index
+            .parse_phrase_query("quick brown bird", &hw_counter)
+            .unwrap();
         // the phrase query is not valid because it contains an unknown token
         assert!(query_with_unknown_token.is_none());
 
         // Test repeated words
         let phrase_query = index
             .parse_phrase_query("brown brown fox", &hw_counter)
+            .unwrap()
             .unwrap();
         assert!(index.check_match(&phrase_query, 4).unwrap());
 
@@ -377,7 +400,10 @@ fn test_ascii_folding_in_full_text_index_word() {
     }
 
     // ASCII-only queries should match only when folding is enabled
-    let query_enabled = index_enabled.parse_text_query("acao", &hw_counter).unwrap();
+    let query_enabled = index_enabled
+        .parse_text_query("acao", &hw_counter)
+        .unwrap()
+        .unwrap();
     assert!(index_enabled.check_match(&query_enabled, 0).unwrap());
 
     let results_enabled: Vec<_> = index_enabled
@@ -386,7 +412,9 @@ fn test_ascii_folding_in_full_text_index_word() {
         .collect();
     assert!(results_enabled.contains(&0));
 
-    let query_disabled_opt = index_disabled.parse_text_query("acao", &hw_counter);
+    let query_disabled_opt = index_disabled
+        .parse_text_query("acao", &hw_counter)
+        .unwrap();
     // Query might still parse, but should not match anything
     if let Some(query_disabled) = query_disabled_opt {
         let results_disabled: Vec<_> = index_disabled
@@ -397,7 +425,10 @@ fn test_ascii_folding_in_full_text_index_word() {
     }
 
     // Non-folded query must work in both
-    let query_acento = index_enabled.parse_text_query("ação", &hw_counter).unwrap();
+    let query_acento = index_enabled
+        .parse_text_query("ação", &hw_counter)
+        .unwrap()
+        .unwrap();
     assert!(index_enabled.check_match(&query_acento, 0).unwrap());
     let results_acento: Vec<_> = index_enabled
         .filter_query(query_acento, &hw_counter)
@@ -407,10 +438,107 @@ fn test_ascii_folding_in_full_text_index_word() {
 
     let query_acento2 = index_disabled
         .parse_text_query("ação", &hw_counter)
+        .unwrap()
         .unwrap();
     let results_acento2: Vec<_> = index_disabled
         .filter_query(query_acento2, &hw_counter)
         .unwrap()
         .collect();
     assert!(results_acento2.contains(&0));
+}
+
+/// Regression test for <https://github.com/qdrant/qdrant/issues/8936>
+///
+/// `MatchTextAny` inside a nested condition must use the full-text index
+/// tokenizer for matching, not naive substring `contains`.  In the bug,
+/// `special_check_condition` did not handle `Match::TextAny`, so the
+/// nested-condition code path fell back to `ValueChecker::check_match`
+/// which uses `String::contains`, making "good" match "goodness".
+#[test]
+fn test_special_check_condition_match_text_any() {
+    use crate::json_path::JsonPath;
+    use crate::types::{FieldCondition, Match, MatchTextAny};
+
+    let hw_counter = HardwareCounterCell::new();
+
+    let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let config = TextIndexParams {
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::Word,
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: Some(true),
+        on_disk: None,
+        phrase_matching: None,
+        stopwords: None,
+        stemmer: None,
+        ascii_folding: None,
+        enable_hnsw: None,
+    };
+
+    let mut index = FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
+        .unwrap()
+        .unwrap();
+
+    // Point 0: "goodness only" — should NOT match text_any("good cheap")
+    // Point 1: "cheap hardware" — should match text_any("good cheap")
+    // Point 2: "neutral text" — should NOT match
+    index
+        .add_many(0, vec!["goodness only".to_string()], &hw_counter)
+        .unwrap();
+    index
+        .add_many(1, vec!["cheap hardware".to_string()], &hw_counter)
+        .unwrap();
+    index
+        .add_many(2, vec!["neutral text".to_string()], &hw_counter)
+        .unwrap();
+
+    let field_index = FieldIndex::FullTextIndex(index);
+
+    let condition = FieldCondition {
+        key: JsonPath::new("title"),
+        r#match: Some(Match::TextAny(MatchTextAny {
+            text_any: "good cheap".to_string(),
+        })),
+        range: None,
+        geo_bounding_box: None,
+        geo_radius: None,
+        geo_polygon: None,
+        values_count: None,
+        is_empty: None,
+        is_null: None,
+    };
+
+    // "goodness only" — "good" is a substring but NOT a token match
+    let goodness_value = serde_json::Value::String("goodness only".to_string());
+    let result = field_index
+        .special_check_condition(&condition, &goodness_value, &hw_counter)
+        .unwrap();
+    assert_eq!(
+        result,
+        Some(false),
+        "MatchTextAny must not match 'goodness' for query token 'good'"
+    );
+
+    // "cheap hardware" — "cheap" is an exact token match
+    let cheap_value = serde_json::Value::String("cheap hardware".to_string());
+    let result = field_index
+        .special_check_condition(&condition, &cheap_value, &hw_counter)
+        .unwrap();
+    assert_eq!(
+        result,
+        Some(true),
+        "MatchTextAny must match 'cheap hardware' for query token 'cheap'"
+    );
+
+    // "neutral text" — no tokens match
+    let neutral_value = serde_json::Value::String("neutral text".to_string());
+    let result = field_index
+        .special_check_condition(&condition, &neutral_value, &hw_counter)
+        .unwrap();
+    assert_eq!(
+        result,
+        Some(false),
+        "MatchTextAny must not match 'neutral text' for query 'good cheap'"
+    );
 }

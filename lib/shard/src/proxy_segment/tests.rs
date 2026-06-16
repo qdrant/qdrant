@@ -49,6 +49,118 @@ impl ProxySegment {
     }
 }
 
+/// Regression test for the proxy `deleted_mask` race that drops a live point from scored
+/// search (catalog: "exact dense search + payload filter drops a candidate", optimizer-on).
+///
+/// `deleted_mask` is a snapshot of the wrapped segment's deleted bitvec. If it is synced while
+/// the wrapped segment is still appendable, an upsert can still land afterwards at an internal
+/// offset past the snapshot; the scored search consults `deleted_mask` and treats every
+/// out-of-range offset as deleted (`check_deleted_condition` → `unwrap_or(true)`), silently
+/// excluding the live point even though scroll/retrieve still see it.
+///
+/// [`UnsyncedProxySegment::finalize`] is what reads the mask, so the fix is timing: finalize
+/// only once the wrapped segment is frozen, so the mask covers its full final point range. This
+/// test exercises both orderings on two parallel segments — finalize-before-race (buggy) vs
+/// finalize-after-race (fixed) — entirely at the proxy level, no model-testing harness involved.
+#[test]
+fn test_proxy_deleted_mask_resync_after_race_window_write() {
+    let hw_counter = HardwareCounterCell::new();
+    let query_vector: QueryVector = [1.0, 1.0, 1.0, 1.0].into();
+
+    // Build a wrapped segment with 2 points (internal offsets 0 and 1) and an unsynced proxy
+    // around it. Returns `(unsynced_proxy, wrapped_handle)` so the caller controls when the proxy
+    // is finalized (mask synced) relative to the race-window write.
+    let build_unsynced_proxy = |dir: &std::path::Path| -> (UnsyncedProxySegment, LockedSegment) {
+        let original_segment = LockedSegment::new(empty_segment(dir));
+        original_segment
+            .get()
+            .write()
+            .upsert_point(
+                1,
+                1.into(),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                &hw_counter,
+            )
+            .unwrap();
+        original_segment
+            .get()
+            .write()
+            .upsert_point(
+                2,
+                2.into(),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                &hw_counter,
+            )
+            .unwrap();
+
+        // Keep a handle so we can write to the wrapped segment around the proxy lifecycle.
+        let wrapped_handle = original_segment.clone();
+        let proxy = UnsyncedProxySegment::new(original_segment);
+        (proxy, wrapped_handle)
+    };
+
+    // Race-window write: a brand-new point lands at offset 2, past a length-2 `deleted_mask`.
+    let race_window_write = |wrapped: &LockedSegment| {
+        wrapped
+            .get()
+            .write()
+            .upsert_point(
+                11,
+                3.into(),
+                only_default_vector(&[1.0, 1.0, 1.0, 1.0]),
+                &hw_counter,
+            )
+            .unwrap();
+    };
+
+    let search_ids = |proxy: &ProxySegment| -> Vec<PointIdType> {
+        proxy
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                10,
+                None,
+            )
+            .unwrap()
+            .into_iter()
+            .map(|scored| scored.id)
+            .collect()
+    };
+
+    // --- Buggy ordering: finalize BEFORE the race write, so the mask snapshot stops at len 2 ---
+    let buggy_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (buggy_unsynced, buggy_wrapped) = build_unsynced_proxy(buggy_dir.path());
+    let mut buggy_proxy = buggy_unsynced.finalize();
+    race_window_write(&buggy_wrapped);
+    // A proxy-level delete makes `deleted_points` non-empty, which is what makes the search
+    // path consult `deleted_mask` instead of the wrapped segment's live deleted state.
+    buggy_proxy.delete_point(10, 1.into(), &hw_counter).unwrap();
+    let buggy_ids = search_ids(&buggy_proxy);
+    assert!(
+        !buggy_ids.contains(&3.into()),
+        "finalizing before the race the point should be (buggily) dropped, got {buggy_ids:?}",
+    );
+
+    // --- Fixed ordering: finalize AFTER the race write (segment frozen), so the mask covers it ---
+    let fixed_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (fixed_unsynced, fixed_wrapped) = build_unsynced_proxy(fixed_dir.path());
+    race_window_write(&fixed_wrapped);
+    let mut fixed_proxy = fixed_unsynced.finalize();
+    fixed_proxy.delete_point(10, 1.into(), &hw_counter).unwrap();
+    let fixed_ids = search_ids(&fixed_proxy);
+    assert!(
+        fixed_ids.contains(&3.into()),
+        "finalizing after the race the point must be searchable, got {fixed_ids:?}",
+    );
+    assert!(
+        !fixed_ids.contains(&1.into()),
+        "the proxy-deleted point must still be excluded after finalize, got {fixed_ids:?}",
+    );
+}
+
 #[test]
 fn test_search_batch_equivalence_single() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -236,7 +348,7 @@ fn test_read_filter() {
             None,
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
 
@@ -249,7 +361,7 @@ fn test_read_filter() {
             Some(&filter),
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
 
@@ -268,7 +380,7 @@ fn test_read_filter() {
             None,
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
     let proxy_res_filtered = proxy_segment
@@ -278,7 +390,7 @@ fn test_read_filter() {
             Some(&filter),
             &is_stopped,
             &hw_counter,
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap();
 

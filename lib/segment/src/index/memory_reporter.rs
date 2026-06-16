@@ -1,5 +1,5 @@
 use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent, MemoryReporter};
-use crate::index::vector_index_base::{VectorIndex as _, VectorIndexEnum};
+use crate::index::vector_index_base::{VectorIndex as _, VectorIndexEnum, VectorIndexRead as _};
 
 impl MemoryReporter for VectorIndexEnum {
     fn memory_usage(&self) -> ComponentMemoryUsage {
@@ -20,11 +20,6 @@ impl MemoryReporter for VectorIndexEnum {
             // Sparse RAM variants: inverted index is deserialized into heap.
             // Files are persistence only (OnDisk), actual RAM is extra_ram_bytes.
             VectorIndexEnum::SparseRam(index) => ComponentMemoryUsage::from_files_and_ram(
-                index.files(),
-                FileStorageIntent::OnDisk,
-                index.size_of_searchable_vectors_in_bytes() as u64,
-            ),
-            VectorIndexEnum::SparseImmutableRam(index) => ComponentMemoryUsage::from_files_and_ram(
                 index.files(),
                 FileStorageIntent::OnDisk,
                 index.size_of_searchable_vectors_in_bytes() as u64,
@@ -53,9 +48,6 @@ impl MemoryReporter for VectorIndexEnum {
 
             // Sparse mmap variants: inverted index is mmap'd but not populated
             // (loaded with populate=false), relies on OS demand-paging
-            VectorIndexEnum::SparseMmap(index) => {
-                ComponentMemoryUsage::from_files(index.files(), FileStorageIntent::OnDisk)
-            }
             VectorIndexEnum::SparseCompressedMmapF32(index) => {
                 ComponentMemoryUsage::from_files(index.files(), FileStorageIntent::OnDisk)
             }

@@ -17,12 +17,14 @@ testing = []
 
 [dependencies]
 ahash = { workspace = true }
+aligned-vec = "0.6.4"
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 fs-err = { workspace = true }
+fs4 = { workspace = true }
 fs_extra = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
@@ -33,13 +35,15 @@ num_cpus = "1.17"
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 ph = { workspace = true }
-quick_cache = "0.6.19"
+quick_cache = "0.6.22"
 rand = { workspace = true }
+roaring = { workspace = true }
 schemars = { workspace = true }
+self_cell = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-slab = "0.4.12"
+slab = { workspace = true }
 strum = { workspace = true }
 tap = { workspace = true }
 tar = { workspace = true }
@@ -53,13 +57,14 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
+duplicate = "2.0.1"
 fs-err = { workspace = true, features = ["debug"] }
 rstest = { workspace = true }
-self_cell = { workspace = true }
 tango-bench = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.7.12"
+procfs = { version = "0.18", default-features = false }
 thread-priority = "3.0.0"
 
 [[bench]]

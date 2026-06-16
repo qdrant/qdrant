@@ -99,34 +99,39 @@ impl From<usize> for DetailsLevel {
     }
 }
 
-/// Tweaks the filtering of deferred points.
-/// Can be used in places where we sometimes must access all points, including deferred ones.
+/// Selects which "version" of each external id a reader sees when an
+/// appendable segment carries deferred-points machinery.
 #[derive(Clone, Copy)]
 pub enum DeferredBehavior {
-    /// Deferred points are not affected nor visible.
-    Exclude,
+    /// Yield only the visible (active) version of each external id.
+    /// Deferred mutations and fresh-above-cutoff inserts are hidden.
+    /// Default for query paths.
+    VisibleOnly,
 
-    /// Deferred points are affected and visible.
-    IncludeAll,
+    /// Yield the deferred head when one exists, falling back to the
+    /// active head otherwise. Each external id is yielded once, with
+    /// its latest version. Used by the optimiser and transfer paths
+    /// that need to observe all in-flight mutations.
+    WithDeferred,
 }
 
 impl DeferredBehavior {
     /// Apply the behavior to a given `deferred_internal_id`.
     pub fn apply(&self, deferred_internal_id: Option<PointOffsetType>) -> Option<PointOffsetType> {
         match self {
-            // Excluding deferred points from the result, if `deferred_internal_id` is set.
-            DeferredBehavior::Exclude => deferred_internal_id,
+            // Keep the cutoff so callers drop ids at or above it.
+            DeferredBehavior::VisibleOnly => deferred_internal_id,
 
-            // Setting `deferred_internal_id` to `None` results in no points being left out
-            // at deferred-point filtering.
-            DeferredBehavior::IncludeAll => None,
+            // Drop the cutoff so deferred ids flow through; consumers
+            // dedup by external id via the shadow bit.
+            DeferredBehavior::WithDeferred => None,
         }
     }
 
-    /// Returns `true` if filtering deferred points should be disabled
-    /// and *all* points should be included in the result.
-    pub fn include_all_points(&self) -> bool {
-        matches!(self, DeferredBehavior::IncludeAll)
+    /// Returns `true` if deferred ids should flow through the filter
+    /// (consumer dedups by external id via the shadow bit).
+    pub fn with_deferred_points(&self) -> bool {
+        matches!(self, DeferredBehavior::WithDeferred)
     }
 }
 
@@ -136,11 +141,11 @@ mod test {
 
     #[test]
     fn test_deferred_overwrite() {
-        assert_eq!(DeferredBehavior::Exclude.apply(Some(32)), Some(32));
-        assert_eq!(DeferredBehavior::Exclude.apply(None), None);
+        assert_eq!(DeferredBehavior::VisibleOnly.apply(Some(32)), Some(32));
+        assert_eq!(DeferredBehavior::VisibleOnly.apply(None), None);
 
-        // `IncludeAll` always returns `None` because then the filtering of deferred points is disabled.
-        assert_eq!(DeferredBehavior::IncludeAll.apply(Some(32)), None);
-        assert_eq!(DeferredBehavior::IncludeAll.apply(None), None);
+        // `WithDeferred` always returns `None` because then the cutoff filter is disabled.
+        assert_eq!(DeferredBehavior::WithDeferred.apply(Some(32)), None);
+        assert_eq!(DeferredBehavior::WithDeferred.apply(None), None);
     }
 }

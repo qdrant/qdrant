@@ -422,7 +422,9 @@ class EdgeOptimizersConfig:
             default_segment_number: Target number of segments (0 = auto).
             max_segment_size: Max segment size in KB.
             indexing_threshold: Indexing threshold in KB.
-            prevent_unoptimized: Block updates when unoptimized segments exceed threshold.
+            prevent_unoptimized: If enabled, points written to segments larger than the indexing threshold
+                become deferred (excluded from read/search until those segments are optimized).
+                Updates with `wait=true` will only return after the deferred points become visible.
         """
         ...
 
@@ -864,6 +866,108 @@ class SparseVector:
     @property
     def values(self) -> List[float]:
         """Values at non-zero dimensions."""
+        ...
+
+# ============================================================================
+# BM25 Embedding
+# ============================================================================
+
+class Bm25Config:
+    """Configuration for an edge-side BM25 model.
+
+    JSON shape mirrors the Qdrant REST/gRPC `Bm25Config` so configs are
+    portable between cloud and edge. Defaults match standard BM25
+    (k=1.2, b=0.75, avg_len=256) and English-language tokenization.
+    """
+
+    def __init__(
+        self,
+        k: Optional[float] = None,
+        b: Optional[float] = None,
+        avg_len: Optional[float] = None,
+        tokenizer: Optional["TokenizerType"] = None,
+        language: Optional[str] = None,
+        lowercase: Optional[bool] = None,
+        ascii_folding: Optional[bool] = None,
+        stopwords: Optional["Stopwords"] = None,
+        stemmer: Optional["StemmingAlgorithm"] = None,
+        min_token_len: Optional[int] = None,
+        max_token_len: Optional[int] = None,
+    ) -> None:
+        """
+        Create a Bm25Config.
+
+        Args:
+            k: Term-frequency saturation. Higher = TF has more impact. Default 1.2.
+            b: Length normalization. 0=none, 1=full. Default 0.75.
+            avg_len: Expected average document length in tokens. Default 256.
+            tokenizer: Tokenizer type to use.
+            language: Language for default stopwords/stemmer (e.g., "english").
+            lowercase: Lowercase before tokenization. Default True.
+            ascii_folding: Fold accents to ASCII. Default False.
+            stopwords: Custom stopwords (language or set). Defaults to language.
+            stemmer: Stemming algorithm. Defaults to language-appropriate stemmer.
+            min_token_len: Drop tokens shorter than this.
+            max_token_len: Drop tokens longer than this.
+        """
+        ...
+
+    @property
+    def k(self) -> float: ...
+
+    @property
+    def b(self) -> float: ...
+
+    @property
+    def avg_len(self) -> float: ...
+
+    @property
+    def tokenizer(self) -> "TokenizerType": ...
+
+    @property
+    def language(self) -> Optional[str]: ...
+
+    @property
+    def lowercase(self) -> Optional[bool]: ...
+
+    @property
+    def ascii_folding(self) -> Optional[bool]: ...
+
+    @property
+    def stopwords(self) -> Optional["Stopwords"]: ...
+
+    @property
+    def stemmer(self) -> Optional["StemmingAlgorithm"]: ...
+
+    @property
+    def min_token_len(self) -> Optional[int]: ...
+
+    @property
+    def max_token_len(self) -> Optional[int]: ...
+
+class Bm25:
+    """BM25 sparse-vector embedding model. No qdrant server / inference service required."""
+
+    def __init__(self, config: Optional[Bm25Config] = None) -> None:
+        """
+        Create a Bm25 model with the given configuration (defaults if `None`).
+
+        Raises `ValueError` for invalid configuration: unsupported `language`,
+        non-positive `avg_len`, `b` outside `[0.0, 1.0]`, or negative `k`.
+        """
+        ...
+
+    def embed_query(self, text: str) -> SparseVector:
+        """
+        Embed `text` as a search query: each unique token gets weight 1.0.
+        """
+        ...
+
+    def embed_document(self, text: str) -> SparseVector:
+        """
+        Embed `text` as an indexed document: term-frequency weights with
+        `(k, b, avg_len)` from the model config.
+        """
         ...
 
 class ScoredPoint:
@@ -3189,3 +3293,5 @@ class UpdateOperation:
             vector_name: Name of the vector to delete.
         """
         ...
+
+

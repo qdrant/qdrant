@@ -4,10 +4,11 @@ use std::sync::atomic::Ordering::Relaxed;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use common::universal_io::Result;
 
 use super::posting_list_common::PostingListIter;
-use crate::common::scores_memory_pool::PooledScoresHandle;
+use crate::SearchScratch;
 use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
@@ -23,7 +24,7 @@ pub struct IndexedPostingListIterator<T: PostingListIter> {
 /// Making this larger makes the search faster but uses more (pooled) memory
 const ADVANCE_BATCH_SIZE: usize = 10_000;
 
-pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
+pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     postings_iterators: Vec<IndexedPostingListIterator<T>>,
     query: RemappedSparseVector,
     top: usize,
@@ -31,55 +32,47 @@ pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
     top_results: TopK,
     min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
-    pooled: PooledScoresHandle<'b>,         // handle to pooled scores
+    /// Scores buffer from [`SearchScratch`].
+    scores: &'a mut Vec<ScoreType>,
     use_pruning: bool,
     hardware_counter: &'a HardwareCounterCell,
 }
 
-impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
+impl<'a, T: PostingListIter> SearchContext<'a, T> {
     pub fn new(
         query: RemappedSparseVector,
         top: usize,
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
-        pooled: PooledScoresHandle<'b>,
+        scratch: &'a mut SearchScratch<'_>,
         is_stopped: &'a AtomicBool,
         hardware_counter: &'a HardwareCounterCell,
-    ) -> SearchContext<'a, 'b, T> {
+    ) -> Result<SearchContext<'a, T>> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
         let mut max_record_id = 0;
         let mut min_record_id = u32::MAX;
         // iterate over query indices
-        for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(mut it) = inverted_index.get(*id, hardware_counter)
-                && let (Some(first), Some(last_id)) = (it.peek(), it.last_id())
-            {
-                // check if new min
-                let min_record_id_posting = first.record_id;
-                min_record_id = min(min_record_id, min_record_id_posting);
-
-                // check if new max
-                let max_record_id_posting = last_id;
-                max_record_id = max(max_record_id, max_record_id_posting);
-
-                // capture query info
-                let query_index = *id;
-                let query_weight = query.values[query_weight_offset];
+        let ids = query.indices.iter().copied().enumerate();
+        inverted_index.get_batch(ids, &scratch.arena, hardware_counter, |offset, mut it| {
+            if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
+                min_record_id = min(min_record_id, first.record_id);
+                max_record_id = max(max_record_id, last_id);
 
                 postings_iterators.push(IndexedPostingListIterator {
                     posting_list_iterator: it,
-                    query_index,
-                    query_weight,
+                    query_index: query.indices[offset],
+                    query_weight: query.values[offset],
                 });
             }
-        }
+            Ok(())
+        })?;
         let top_results = TopK::new(top);
         // Query vectors with negative values can NOT use the pruning mechanism which relies on the pre-computed `max_next_weight`.
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = T::reliable_max_next_weight() && query.values.iter().all(|v| *v >= 0.0);
         let min_record_id = Some(min_record_id);
-        SearchContext {
+        Ok(SearchContext {
             postings_iterators,
             query,
             top,
@@ -87,10 +80,10 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             top_results,
             min_record_id,
             max_record_id,
-            pooled,
+            scores: &mut scratch.scores,
             use_pruning,
             hardware_counter,
-        }
+        })
     }
 
     const DEFAULT_SCORE: f32 = 0.0;
@@ -158,13 +151,13 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
     ) {
         // init batch scores
         let batch_len = batch_last_id - batch_start_id + 1;
-        self.pooled.scores.clear(); // keep underlying allocated memory
-        self.pooled.scores.resize(batch_len as usize, 0.0);
+        self.scores.clear(); // keep underlying allocated memory
+        self.scores.resize(batch_len as usize, 0.0);
 
         for posting in self.postings_iterators.iter_mut() {
             posting.posting_list_iterator.for_each_till_id(
                 batch_last_id,
-                self.pooled.scores.as_mut_slice(),
+                self.scores.as_mut_slice(),
                 #[inline(always)]
                 |scores, id, weight| {
                     let element_score = weight * posting.query_weight;
@@ -176,7 +169,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             );
         }
 
-        for (local_index, &score) in self.pooled.scores.iter().enumerate() {
+        for (local_index, &score) in self.scores.iter().enumerate() {
             // publish only the non-zero scores above the current min to beat
             if score != 0.0 && score > self.top_results.threshold() {
                 let real_id = batch_start_id + local_index as PointOffsetType;

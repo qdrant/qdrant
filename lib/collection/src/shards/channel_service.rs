@@ -263,7 +263,7 @@ impl ChannelService {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 impl Default for ChannelService {
     fn default() -> Self {
         Self {

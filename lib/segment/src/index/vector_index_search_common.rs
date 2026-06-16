@@ -9,11 +9,11 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{
     SearchParams, default_quantization_ignore_value, default_quantization_oversampling_value,
 };
-use crate::vector_storage::VectorStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
+use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-pub fn is_quantized_search(
-    quantized_storage: Option<&QuantizedVectors>,
+pub fn is_quantized_search<Q: QuantizedVectorsRead>(
+    quantized_storage: Option<&Q>,
     params: Option<&SearchParams>,
 ) -> bool {
     let ignore_quantization = params
@@ -24,8 +24,8 @@ pub fn is_quantized_search(
     quantized_storage.is_some() && !ignore_quantization && !exact
 }
 
-pub fn get_oversampled_top(
-    quantized_storage: Option<&QuantizedVectors>,
+pub fn get_oversampled_top<Q: QuantizedVectorsRead>(
+    quantized_storage: Option<&Q>,
     params: Option<&SearchParams>,
     top: usize,
 ) -> usize {
@@ -45,16 +45,20 @@ pub fn get_oversampled_top(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn postprocess_search_result(
+pub fn postprocess_search_result<V, Q>(
     mut search_result: Vec<ScoredPointOffset>,
     point_deleted: &BitSlice,
-    vector_storage: &VectorStorageEnum,
-    quantized_vectors: Option<&QuantizedVectors>,
+    vector_storage: &V,
+    quantized_vectors: Option<&Q>,
     vector: &QueryVector,
     params: Option<&SearchParams>,
     top: usize,
     hardware_counter: HardwareCounterCell,
-) -> OperationResult<Vec<ScoredPointOffset>> {
+) -> OperationResult<Vec<ScoredPointOffset>>
+where
+    V: VectorStorageRead + RawScorerBuilder,
+    Q: QuantizedVectorsRead,
+{
     let quantization_enabled = is_quantized_search(quantized_vectors, params);
 
     let default_rescoring = quantized_vectors
@@ -70,7 +74,7 @@ pub fn postprocess_search_result(
         let mut scorer = FilteredScorer::new(
             vector.to_owned(),
             vector_storage,
-            None,
+            None::<&Q>,
             None,
             point_deleted,
             hardware_counter,

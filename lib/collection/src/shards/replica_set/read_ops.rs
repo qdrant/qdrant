@@ -17,7 +17,6 @@ use crate::operations::types::*;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 
 impl ShardReplicaSet {
-    #[allow(clippy::too_many_arguments)]
     pub async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
@@ -186,7 +185,7 @@ impl ShardReplicaSet {
                             &search_runtime,
                             timeout,
                             hw_acc,
-                            DeferredBehavior::Exclude,
+                            DeferredBehavior::VisibleOnly,
                         )
                         .await
                 }

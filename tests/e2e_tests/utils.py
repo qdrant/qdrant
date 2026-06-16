@@ -2,6 +2,8 @@
 import gzip
 import os
 import shutil
+import socket
+import ssl
 import subprocess
 import tarfile
 import time
@@ -28,18 +30,48 @@ def remove_dir(path: Path) -> None:
         print(f"Removed directory: {path}")
 
 
-def wait_for_qdrant_ready(port: int = 6333, timeout: int = 30) -> bool:
-    """Wait for Qdrant service to be ready."""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+def wait_for_qdrant_ready(
+    port: int = 6333,
+    timeout: int = 30,
+    *,
+    host: str = "localhost",
+    scheme: str = "http",
+    verify: Union[bool, str] = True,
+    cert: Optional[Tuple[str, str]] = None,
+    grpc_port: Optional[int] = None,
+) -> bool:
+    """Poll /readyz; if grpc_port is set, also require a TCP/TLS handshake on it."""
+    url = f"{scheme}://{host}:{port}/readyz"
+
+    tls_ctx: Optional[ssl.SSLContext] = None
+    if grpc_port is not None and scheme == "https":
+        tls_ctx = ssl.create_default_context(cafile=verify if isinstance(verify, str) else None)
+        if cert is not None:
+            tls_ctx.load_cert_chain(certfile=cert[0], keyfile=cert[1])
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
         try:
-            response = requests.get(f"http://localhost:{port}/readyz")
-            if response.status_code == 200:
+            if (requests.get(url, timeout=5, verify=verify, cert=cert).status_code == 200
+                    and _grpc_port_ready(host, grpc_port, tls_ctx)):
                 return True
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.RequestException:
             pass
         time.sleep(0.2)
     return False
+
+
+def _grpc_port_ready(host: str, grpc_port: Optional[int], tls_ctx: Optional[ssl.SSLContext]) -> bool:
+    if grpc_port is None:
+        return True
+    try:
+        with socket.create_connection((host, grpc_port), timeout=5) as sock:
+            if tls_ctx is None:
+                return True
+            with tls_ctx.wrap_socket(sock, server_hostname=host):
+                return True
+    except (OSError, ssl.SSLError):
+        return False
 
 
 def get_docker_compose_command() -> List[str]:
@@ -348,12 +380,15 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
         docker_client: Docker client instance
         qdrant_image: Qdrant image to use
         test_data_dir: Path to test data directory
-        config: Configuration dict with compose_file, wait_for_ready, service_name
+        config: Configuration dict with compose_file, wait_for_ready, service_name,
+            and optional `readiness` block forwarded to wait_for_qdrant_ready
+            (keys: scheme, verify, cert, include_grpc).
 
     Returns:
         QdrantDockerCluster: Cluster object containing containers and cleanup function
     """
     wait_for_ready = config.get("wait_for_ready", True)
+    readiness = config.get("readiness") or {}
     compose_file = config.get("compose_file")
     if not compose_file:
         raise ValueError("compose_file parameter is required")
@@ -396,6 +431,12 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
     # Wait for ports to be assigned
     time.sleep(2)
 
+    def _readiness_kwargs(info: QdrantContainer) -> Dict[str, Any]:
+        kwargs = {k: v for k, v in readiness.items() if k != "include_grpc"}
+        if readiness.get("include_grpc") and info.grpc_port is not None:
+            kwargs["grpc_port"] = info.grpc_port
+        return {"port": info.http_port, "timeout": 60, **kwargs}
+
     if service_count == 1:
         # Single service compose file - always return single object
         project_containers = docker_client.containers.list(filters={"name": project_name})
@@ -407,7 +448,7 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
 
         # Wait for this specific container to be ready
         if wait_for_ready:
-            if not wait_for_qdrant_ready(port=container_info.http_port, timeout=60):
+            if not wait_for_qdrant_ready(**_readiness_kwargs(container_info)):
                 raise RuntimeError("Qdrant failed to start within 60 seconds")
 
     else:
@@ -424,7 +465,7 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
 
             # Wait for this specific container to be ready
             if wait_for_ready:
-                if not wait_for_qdrant_ready(port=container_info.http_port, timeout=60):
+                if not wait_for_qdrant_ready(**_readiness_kwargs(container_info)):
                     raise RuntimeError("Qdrant failed to start within 60 seconds")
 
         else:
@@ -448,7 +489,7 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
             # Wait for all containers to be ready
             if wait_for_ready:
                 for info in container_infos:
-                    if not wait_for_qdrant_ready(port=info.http_port, timeout=60):
+                    if not wait_for_qdrant_ready(**_readiness_kwargs(info)):
                         print(f"Warning: Container {info.name} failed to start within 60 seconds")
 
             container_info = container_infos  # Return the array

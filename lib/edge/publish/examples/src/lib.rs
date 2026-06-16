@@ -1,7 +1,6 @@
 // Common helper items for the examples.
 // See lib/edge/python/examples/common.py for the equivalent Python helpers.
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
@@ -24,26 +23,13 @@ pub fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
 
     fs_err::create_dir_all(TMP_DIR)?;
 
-    // Load Qdrant Edge shard
-    let config = EdgeConfig {
-        on_disk_payload: false,
-        vectors: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_string(),
-            EdgeVectorParams {
-                size: 4,
-                distance: Distance::Dot,
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-                on_disk: None,
-                hnsw_config: None,
-            },
-        )]),
-        sparse_vectors: HashMap::new(),
-        hnsw_config: Default::default(),
-        quantization_config: None,
-        optimizers: Default::default(),
-    };
+    let config = EdgeConfig::builder()
+        .on_disk_payload(false)
+        .vector(
+            DEFAULT_VECTOR_NAME,
+            EdgeVectorParams::builder(4, Distance::Dot).build(),
+        )
+        .build();
 
     Ok(EdgeShard::load(Path::new(TMP_DIR), Some(config))?)
 }

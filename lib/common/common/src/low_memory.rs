@@ -47,12 +47,6 @@ impl LowMemoryMode {
     }
 }
 
-/// Decide whether to prefault an mmap on load, for a structure
-/// whose `is_on_disk` flag has the given value.
-pub fn resolve_populate(is_on_disk: bool) -> bool {
-    !is_on_disk && !low_memory_mode().skip_populate()
-}
-
 /// Initializes the global low-memory mode. Must only be called once at
 /// startup; subsequent calls are ignored with a warning.
 pub fn init_low_memory_mode(mode: LowMemoryMode) {

@@ -2,6 +2,7 @@ pub mod anonymize;
 pub mod buffered_update_bitslice;
 pub mod error_logging;
 pub mod flags;
+pub mod live_reload;
 pub mod macros;
 pub mod memory_usage;
 pub mod operation_error;

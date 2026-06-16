@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 use crate::data_types::modifier::Modifier;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -33,18 +33,20 @@ pub enum VectorNameConfig {
 }
 
 /// Wrapper for dense vector creation config.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct DenseVectorNameConfig {
     /// Dense vector parameters
+    #[validate(nested)]
     pub dense: DenseVectorConfig,
 }
 
 /// Wrapper for sparse vector creation config.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorNameConfig {
     /// Sparse vector parameters
+    #[validate(nested)]
     pub sparse: SparseVectorConfig,
 }
 
@@ -52,17 +54,18 @@ pub struct SparseVectorNameConfig {
 ///
 /// Only includes properties that define the vector space and cannot be changed
 /// after creation. Storage type, index type, and quantization are inferred.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct DenseVectorConfig {
     /// Dimensionality of the vectors
+    #[validate(range(min = 1, max = 65536))]
     pub size: usize,
     /// Distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Configuration for multi-vector points (e.g., ColBERT)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multivector_config: Option<MultiVectorConfig>,
-    /// Element storage type (Float32, Float16, Uint8)
+    /// Element storage type (Float32, Float16, Uint8, Turbo4)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
 }
@@ -71,7 +74,7 @@ pub struct DenseVectorConfig {
 ///
 /// Only includes properties that define the vector space and cannot be changed
 /// after creation.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorConfig {
     /// Value modifier for sparse vectors (e.g., IDF)
@@ -79,12 +82,25 @@ pub struct SparseVectorConfig {
     pub modifier: Option<Modifier>,
     /// Datatype used to store weights in the index
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_sparse_datatype"))]
     pub datatype: Option<VectorStorageDatatype>,
+}
+
+/// Reject the `Turbo4` datatype on sparse vector configs.
+/// `validator` unwraps `Option<VectorStorageDatatype>` before calling, so we receive `&VectorStorageDatatype`.
+fn validate_sparse_datatype(datatype: &VectorStorageDatatype) -> Result<(), ValidationError> {
+    if matches!(datatype, VectorStorageDatatype::Turbo4) {
+        return Err(common::validation::sparse_turbo4_unsupported_error());
+    }
+    Ok(())
 }
 
 impl Validate for VectorNameConfig {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        Ok(())
+        match self {
+            VectorNameConfig::Dense(config) => config.validate(),
+            VectorNameConfig::Sparse(config) => config.validate(),
+        }
     }
 }
 

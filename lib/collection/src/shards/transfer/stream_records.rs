@@ -111,7 +111,7 @@ pub(super) async fn transfer_stream_records(
                 }),
                 None, // no timeout
                 hw_acc,
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::WithDeferred,
             )
             .await?
         else {

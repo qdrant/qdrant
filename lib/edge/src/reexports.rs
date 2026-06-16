@@ -41,6 +41,10 @@ mod reexports_from_qdrant_crates {
         PointInsertOperationsInternal as PointInsertOperations, PointOperations,
         PointSyncOperation, UpdateMode,
     };
+    pub use shard::operations::vector_name_ops::{
+        CreateVectorName, DeleteVectorName, DenseVectorConfig, SparseVectorConfig,
+        VectorNameConfig, VectorNameOperations,
+    };
     pub use shard::operations::vector_ops::{UpdateVectorsOp, VectorOperations};
     pub use shard::operations::{
         CollectionUpdateOperations as UpdateOperation, CreateIndex, FieldIndexOperations,
@@ -72,6 +76,14 @@ pub mod internal {
     pub use shard::files::{clear_data, move_data};
     pub use shard::snapshots::snapshot_manifest::SnapshotManifest;
 }
+
+/// Re-export WAL configuration for advanced/embedded use cases.
+///
+/// Set it on [`crate::EdgeConfig`] via
+/// [`crate::EdgeConfigBuilder::wal_options`] (or by assigning the
+/// `wal_options` field directly) when the default 32 MiB segment capacity
+/// is too large — e.g. embedded/mobile deployments.
+pub use ::wal::WalOptions;
 
 /// Re-export from external crates used by Qdrant.
 pub mod external {

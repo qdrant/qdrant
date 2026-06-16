@@ -54,20 +54,42 @@ pub struct Permutation {
     count: usize,
     /// LCG state after all forward-pass random draws, used as starting
     /// point for the reverse pass.
-    end_state: u64,
+    end_state: Option<u64>,
 }
 
 impl Permutation {
     /// Create a new permutation for `count` elements seeded by `seed`.
-    pub fn new(seed: u64, count: usize) -> Self {
-        let mut rng = ReversibleLcg::new(seed);
-        for _ in 1..count {
-            rng.next();
-        }
+    ///
+    /// Unlike [`Self::new_one_way`], the result supports [`Self::unpermute`].
+    /// Both constructors produce identical output from [`Self::permute`] for the same seed.
+    pub fn new_reversible(seed: u64, count: usize) -> Self {
         Self {
             seed,
             count,
-            end_state: rng.state,
+            end_state: Some(Self::calculate_end_state(seed, count)),
+        }
+    }
+
+    fn calculate_end_state(seed: u64, count: usize) -> u64 {
+        let mut rng = ReversibleLcg::new(seed);
+
+        for _ in 1..count {
+            rng.next();
+        }
+
+        rng.state
+    }
+
+    /// Create a forward-only permutation. Skips the O(`count`) LCG warm-up
+    /// that [`Self::new_reversible`] does to record `end_state`. Intended for
+    /// [`Self::permute`]; calling [`Self::unpermute`] still works but pays the
+    /// warm-up lazily (and trips a `debug_assert` to flag the mismatch).
+    #[inline]
+    pub fn new_one_way(seed: u64, count: usize) -> Self {
+        Self {
+            seed,
+            count,
+            end_state: None,
         }
     }
 
@@ -82,9 +104,26 @@ impl Permutation {
     }
 
     /// Apply the inverse permutation in-place (reversed Fisher-Yates).
+    ///
+    /// If this permutation was created with [`Self::new_one_way`], the missing
+    /// `end_state` is recomputed on demand at O(`count`) extra cost. A
+    /// `debug_assert` flags the unexpected path in debug builds.
     pub fn unpermute(&self, arr: &mut [f64]) {
         debug_assert_eq!(arr.len(), self.count);
-        let rng = ReversibleLcg::new(self.end_state);
+
+        let end_state = self
+            .end_state
+            // Lazily calculate the end state when the `Permutation` was created with `new_one_way`.
+            // This path shouldn't normally be hit — but recomputing is cheaper than panicking.
+            .unwrap_or_else(|| {
+                debug_assert!(
+                    false,
+                    "unpermute was called on a `Permutation` created without `new_reversible`"
+                );
+                Self::calculate_end_state(self.seed, self.count)
+            });
+
+        let rng = ReversibleLcg::new(end_state);
         for (i, rand) in (1..self.count).zip(rng.rev()) {
             let j = Self::bounded_rand(rand, i as u64 + 1) as usize;
             arr.swap(i, j);
@@ -120,7 +159,7 @@ mod tests {
     fn permute_unpermute_roundtrip() {
         for &count in &[2, 5, 64, 128, 300, 1000, 1024, 2048] {
             let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
-            let perm = Permutation::new(42, count);
+            let perm = Permutation::new_reversible(42, count);
 
             let mut arr = original.clone();
             perm.permute(&mut arr);
@@ -140,23 +179,27 @@ mod tests {
 
     #[test]
     fn different_seeds_produce_different_permutations() {
-        let count = 64;
-        let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
+        for &count in &[63, 64, 65] {
+            let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
 
-        let p1 = Permutation::new(1, count);
-        let p2 = Permutation::new(2, count);
+            let p1 = Permutation::new_reversible(1, count);
+            let p2 = Permutation::new_reversible(2, count);
 
-        let mut a = original.clone();
-        let mut b = original.clone();
-        p1.permute(&mut a);
-        p2.permute(&mut b);
+            let mut a = original.clone();
+            let mut b = original.clone();
+            p1.permute(&mut a);
+            p2.permute(&mut b);
 
-        assert_ne!(a, b, "different seeds should yield different permutations");
+            assert_ne!(
+                a, b,
+                "count={count}: different seeds should yield different permutations"
+            );
+        }
     }
 
     #[test]
     fn edge_case_count_zero() {
-        let perm = Permutation::new(0, 0);
+        let perm = Permutation::new_reversible(0, 0);
         let mut arr = vec![];
         perm.permute(&mut arr);
         assert!(arr.is_empty());
@@ -166,7 +209,7 @@ mod tests {
 
     #[test]
     fn edge_case_count_one() {
-        let perm = Permutation::new(0, 1);
+        let perm = Permutation::new_reversible(0, 1);
         let mut arr = vec![42.0];
         perm.permute(&mut arr);
         assert_eq!(arr, vec![42.0]);
@@ -177,7 +220,7 @@ mod tests {
     #[test]
     fn edge_case_count_two() {
         let original = vec![1.0, 2.0];
-        let perm = Permutation::new(99, 2);
+        let perm = Permutation::new_reversible(99, 2);
         let mut arr = original.clone();
         perm.permute(&mut arr);
         perm.unpermute(&mut arr);
@@ -186,17 +229,18 @@ mod tests {
 
     #[test]
     fn permute_is_a_valid_permutation() {
-        let count = 100;
-        let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
-        let perm = Permutation::new(42, count);
+        for &count in &[99, 100, 101] {
+            let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
+            let perm = Permutation::new_reversible(42, count);
 
-        let mut arr = original.clone();
-        perm.permute(&mut arr);
+            let mut arr = original.clone();
+            perm.permute(&mut arr);
 
-        // Every element should appear exactly once.
-        let mut sorted = arr.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        assert_eq!(sorted, original);
+            // Every element should appear exactly once.
+            let mut sorted = arr.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            assert_eq!(sorted, original, "count={count}");
+        }
     }
 
     /// Regression test: with bare `% bound` on raw LCG state, the lowest bit
@@ -213,7 +257,7 @@ mod tests {
         let mut seen = HashSet::new();
         for seed in 0..10_000u64 {
             let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
-            let perm = Permutation::new(seed, count);
+            let perm = Permutation::new_reversible(seed, count);
             let mut arr = original;
             perm.permute(&mut arr);
             seen.insert(arr.iter().map(|&v| v as u32).collect::<Vec<_>>());
@@ -228,17 +272,21 @@ mod tests {
 
     #[test]
     fn deterministic_with_same_seed() {
-        let count = 100;
-        let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
+        for &count in &[99, 100, 101] {
+            let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
 
-        let p1 = Permutation::new(42, count);
-        let p2 = Permutation::new(42, count);
+            let p1 = Permutation::new_reversible(42, count);
+            let p2 = Permutation::new_reversible(42, count);
 
-        let mut a = original.clone();
-        let mut b = original.clone();
-        p1.permute(&mut a);
-        p2.permute(&mut b);
+            let mut a = original.clone();
+            let mut b = original.clone();
+            p1.permute(&mut a);
+            p2.permute(&mut b);
 
-        assert_eq!(a, b, "same seed should produce identical permutations");
+            assert_eq!(
+                a, b,
+                "count={count}: same seed should produce identical permutations"
+            );
+        }
     }
 }

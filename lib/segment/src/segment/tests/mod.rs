@@ -1,12 +1,14 @@
+mod test_immutable_payload_index_files;
 mod test_vector_name_ops;
 
+use std::assert_matches;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
-use common::types::DeferredBehavior;
+use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
 use fs_err::File;
 use ordered_float::OrderedFloat;
@@ -31,7 +33,7 @@ use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
 };
 use crate::entry::{SnapshotEntry as _, StorageSegmentEntry as _};
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::JsonPath;
 use crate::segment_constructor::simple_segment_constructor::{
@@ -353,7 +355,9 @@ fn test_check_consistency() {
             .is_ok()
     );
 
-    let internal_id = segment.lookup_internal_id(6.into()).unwrap();
+    let internal_id = segment
+        .with_view(|v| v.lookup_internal_id(6.into(), DeferredBehavior::VisibleOnly))
+        .unwrap();
 
     // make id_tracker inconsistent
     segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
@@ -375,13 +379,14 @@ fn test_check_consistency() {
     assert_eq!(search_result[0].id, 4.into());
 
     // querying by external id is broken
-    assert!(
-        matches!(segment.vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter), Err(PointIdError {missed_point_id }) if missed_point_id == 6.into())
+    assert_matches!(
+        segment.vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter),
+        Err(PointIdError { missed_point_id }) if missed_point_id == 6.into(),
     );
 
     // but querying by internal id still works
     matches!(
-        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter),
+        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter)),
         Ok(Some(_))
     );
 
@@ -390,7 +395,7 @@ fn test_check_consistency() {
 
     // querying by internal id now consistent
     matches!(
-        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter),
+        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter)),
         Ok(None)
     );
 }
@@ -515,7 +520,9 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 5);
 
     // Replace vector 'a' for point 8, counts should remain the same
-    let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
+    let internal_8 = segment
+        .with_view(|v| v.lookup_internal_id(8.into(), DeferredBehavior::VisibleOnly))
+        .unwrap();
     segment
         .replace_all_vectors(
             internal_8,
@@ -568,7 +575,9 @@ fn test_vector_compatibility_checks() {
             &hw_counter,
         )
         .unwrap();
-    let internal_id = segment.lookup_internal_id(point_id).unwrap();
+    let internal_id = segment
+        .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+        .unwrap();
 
     // A set of broken vectors
     let wrong_vectors_single = [
@@ -689,7 +698,7 @@ fn test_vector_compatibility_checks() {
             .unwrap();
         segment.available_vector_count(wrong_name).err().unwrap();
         segment
-            .vector_by_offset(wrong_name, internal_id, &hw_counter)
+            .with_view(|v| v.vector_by_offset(wrong_name, internal_id, &hw_counter))
             .err()
             .unwrap();
     }
@@ -903,7 +912,10 @@ fn create_deferred_segment(
     // Now we should have deferred points
     assert_eq!(segment.has_deferred_points(), n_deferred > 0);
     if n_deferred > 0 {
-        assert_eq!(segment.deferred_internal_id(), Some(n_vectors as u32));
+        assert_eq!(
+            segment.id_tracker.borrow().deferred_internal_id(),
+            Some(n_vectors as u32)
+        );
     }
 
     // Points 1 to n_vectors should NOT be deferred
@@ -914,7 +926,7 @@ fn create_deferred_segment(
         );
         // Check the `is-deferred` payload is correct.
         let is_deferred_payload = segment
-            .payload_by_offset(i as u32 - 1, &hw_counter)
+            .with_view(|v| v.payload_by_offset(i as u32 - 1, &hw_counter))
             .unwrap()
             .get_value(&JsonPath::new("is-deferred"))[0]
             .as_bool()
@@ -931,7 +943,7 @@ fn create_deferred_segment(
 
         // Check the `is-deferred` payload is correct.
         let is_deferred_payload = segment
-            .payload_by_offset(i as u32 - 1, &hw_counter)
+            .with_view(|v| v.payload_by_offset(i as u32 - 1, &hw_counter))
             .unwrap()
             .get_value(&JsonPath::new("is-deferred"))[0]
             .as_bool()
@@ -1000,18 +1012,30 @@ fn test_dense_deferred_points() {
         "Segment should still have deferred points after reopening"
     );
     assert_eq!(
-        segment.deferred_internal_id(),
+        segment.id_tracker.borrow().deferred_internal_id(),
         Some(13),
         "Deferred internal ID should still be `DEFERRED_POINTS_ID` after reopening"
     );
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_dense_deferred_point_segment_combinations() {
     init_logger();
 
-    for dim in [2, 17, 50] {
-        for n_deferred in [0, 1, 5, 14] {
+    // Reduce test matrix on Windows where segment creation is extremely slow due to IO.
+    #[cfg(target_os = "windows")]
+    let dims = [2, 50];
+    #[cfg(not(target_os = "windows"))]
+    let dims = [2, 17, 50];
+
+    #[cfg(target_os = "windows")]
+    let deferred_counts = [0, 1, 14];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts = [0, 1, 5, 14];
+
+    for dim in dims {
+        for n_deferred in deferred_counts {
             for n_vectors in [1, 5, 14] {
                 let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
                 create_deferred_segment(&dir, dim, n_vectors, n_deferred);
@@ -1032,7 +1056,13 @@ fn test_deferred_point_estimation_with_filter() {
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
-    for n_deferred in [0, 3, 10, 20, 100] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10, 100];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 3, 10, 20, 100];
+
+    for &n_deferred in deferred_counts {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
@@ -1047,7 +1077,7 @@ fn test_deferred_point_estimation_with_filter() {
 
         // For consistency we also test that the same cardinality is estimated if no deferred points exist.
         if n_deferred == 0 {
-            assert_eq!(segment.deferred_internal_id(), None);
+            assert_eq!(segment.id_tracker.borrow().deferred_internal_id(), None);
             let estimation = segment
                 .estimate_point_count(Some(&filter), &hw_counter)
                 .unwrap();
@@ -1058,6 +1088,7 @@ fn test_deferred_point_estimation_with_filter() {
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_read_operations() {
     init_logger();
     let hw_counter = HardwareCounterCell::new();
@@ -1094,7 +1125,7 @@ fn test_deferred_point_read_operations() {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
         },
@@ -1118,7 +1149,7 @@ fn test_deferred_point_read_operations() {
                     },
                     &AtomicBool::new(false),
                     &hw_counter,
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
         },
@@ -1155,7 +1186,7 @@ fn test_deferred_point_read_operations() {
                     &WithVector::Bool(false),
                     &hw_counter,
                     &AtomicBool::new(false),
-                    DeferredBehavior::Exclude,
+                    DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
                 .into_iter()
@@ -1168,7 +1199,97 @@ fn test_deferred_point_read_operations() {
     );
 }
 
+/// A deferred point is invisible to ordinary (`VisibleOnly`) per-point reads,
+/// but the copy-on-write move path must still be able to read its data via the
+/// `*_with_behavior(WithDeferred)` accessors.
+///
+/// Regression test for a spurious "No point with id ... found" error: the CoW
+/// move path read the source point's payload with `VisibleOnly`, which raised
+/// `PointIdError` for a deferred source point (e.g. a point upserted under
+/// `prevent_unoptimized` whose internal id is beyond the deferred threshold).
 #[test]
+fn test_deferred_point_with_behavior_accessors() {
+    let hw_counter = HardwareCounterCell::new();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    // Threshold so any new point lands beyond the cutoff (deferred).
+    let mut segment = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+        Some(0),
+        true,
+    )
+    .unwrap();
+
+    let point_id = PointIdType::from(42u64);
+    let vector = vec![0.1, 0.2, 0.3, 0.4];
+    let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&vector));
+    let payload: Payload = serde_json::from_str(r#"{"number": 7}"#).unwrap();
+
+    segment
+        .upsert_point(0, point_id, vectors, &hw_counter)
+        .unwrap();
+    segment
+        .set_full_payload(0, point_id, &payload, &hw_counter)
+        .unwrap();
+
+    assert!(
+        segment.point_is_deferred(point_id),
+        "point must be deferred for this regression scenario",
+    );
+
+    // VisibleOnly hides the deferred point: both payload and vector reads
+    // fail to resolve it (this is exactly what made the CoW move path raise a
+    // spurious PointNotFound before the fix).
+    assert!(
+        matches!(
+            segment.payload(point_id, &hw_counter),
+            Err(PointIdError { missed_point_id }) if missed_point_id == point_id,
+        ),
+        "VisibleOnly payload read must not resolve a deferred point",
+    );
+    assert!(
+        matches!(
+            segment.all_vectors(point_id, &hw_counter),
+            Err(PointIdError { missed_point_id }) if missed_point_id == point_id,
+        ),
+        "VisibleOnly vector read must not resolve a deferred point",
+    );
+
+    // WithDeferred resolves the deferred point with its real data — this is
+    // what the CoW move path now uses, fixing the spurious PointNotFound.
+    let with_deferred_payload = segment
+        .payload_with_behavior(point_id, DeferredBehavior::WithDeferred, &hw_counter)
+        .expect("WithDeferred payload read must resolve a deferred point");
+    assert_eq!(with_deferred_payload, payload);
+
+    let with_deferred_vectors = segment
+        .all_vectors_with_behavior(point_id, DeferredBehavior::WithDeferred, &hw_counter)
+        .expect("WithDeferred vector read must resolve a deferred point");
+    assert!(
+        with_deferred_vectors.contains_key(DEFAULT_VECTOR_NAME),
+        "WithDeferred vector read must return the deferred point's vector",
+    );
+}
+
+#[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_sparse() {
     init_logger();
 
@@ -1250,6 +1371,7 @@ fn test_deferred_point_sparse() {
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_facets() {
     init_logger();
     let hw_counter = HardwareCounterCell::new();
@@ -1261,8 +1383,13 @@ fn test_deferred_point_facets() {
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
-    // Test different amount of deferred points.
-    for n_deferred in [0, 1, 10, 300] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 1, 10, 300];
+
+    for &n_deferred in deferred_counts {
         // Test both exact and estimated.
         for exact in [false, true] {
             for filter in [None, Some(&filter_field)] {
@@ -1272,7 +1399,7 @@ fn test_deferred_point_facets() {
                 );
 
                 let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-                let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+                let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
                 let request = FacetParams {
                     key: key.clone(),
@@ -1285,14 +1412,17 @@ fn test_deferred_point_facets() {
                     .facet(&request, &AtomicBool::new(false), &hw_counter)
                     .unwrap();
 
-                let old_status = segment.deferred_point_status.take();
-                if n_deferred > 0 {
-                    assert!(old_status.is_some());
-                }
-                let facet_res = segment
+                // Compare against the same point set without deferred mode by
+                // rebuilding the segment with `deferred_internal_id = None`.
+                let no_deferred_dir = Builder::new()
+                    .prefix("segment_dir_no_deferred")
+                    .tempdir()
+                    .unwrap();
+                let no_deferred_segment =
+                    create_deferred_segment(&no_deferred_dir, 5, N_POINTS + n_deferred, 0);
+                let facet_res = no_deferred_segment
                     .facet(&request, &AtomicBool::new(false), &hw_counter)
                     .unwrap();
-                segment.deferred_point_status = old_status;
 
                 let expected_deferred = if filter.is_some() {
                     n_deferred.div_ceil(3)
@@ -1405,14 +1535,19 @@ fn assert_deferred_points_excluded<F, R, T>(
         vec![&filter_case_1]
     };
 
-    // Test different amount of deferred points.
-    for n_deferred in [0, 1, 10, 300] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 1, 10, 300];
+
+    for &n_deferred in deferred_counts {
         // Test with different types of filters.
         for (filter_set_id, filter_set) in set_of_filters.iter().enumerate() {
             log::debug!("  => deferred points = {n_deferred}; filter-set ID = {filter_set_id}",);
 
             let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-            let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+            let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
             // Search with deferred mode
             let search_res_deferred = operation(&segment, filter_set.filter.as_ref());
@@ -1426,29 +1561,34 @@ fn assert_deferred_points_excluded<F, R, T>(
             }
 
             // Disable deferred points and search again.
-            if need_rebuilt_segment {
-                // Don't run this on windows because this test is already extremely slow (~100s).
-                // Recreating the segment here would double that time.
-                if cfg!(target_os = "windows") {
-                    drop(segment);
-                    dir.close().unwrap();
-                    continue;
-                }
-
-                let dir = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
-                segment = create_deferred_segment(&dir, 5, N_POINTS + n_deferred, 0);
-            } else {
-                segment.deferred_point_status = None;
+            // On Windows segment creation is extremely IO-heavy; skip the rebuild path
+            // for tests where it noticeably slows the suite down.
+            if need_rebuilt_segment && cfg!(target_os = "windows") {
+                drop(segment);
+                dir.close().unwrap();
+                continue;
             }
 
-            let search_res_normal = operation(&segment, filter_set.filter.as_ref());
+            // Deferred state is owned by the id tracker and only set at segment
+            // construction time, so we rebuild a fresh non-deferred segment with the
+            // same total point count to compare against.
+            let no_deferred_dir = Builder::new()
+                .prefix("segment_dir_no_deferred")
+                .tempdir()
+                .unwrap();
+            let no_deferred_segment =
+                create_deferred_segment(&no_deferred_dir, 5, N_POINTS + n_deferred, 0);
+
+            let search_res_normal = operation(&no_deferred_segment, filter_set.filter.as_ref());
             assert_eq!(
                 search_res_normal.len(),
                 filter_set.expected_visible + (filter_set.expected_deferred)(n_deferred)
             );
 
             drop(segment);
+            drop(no_deferred_segment);
             dir.close().unwrap();
+            no_deferred_dir.close().unwrap();
         }
     }
 }
@@ -1457,7 +1597,13 @@ fn assert_deferred_points_excluded<F, R, T>(
 fn test_deleted_deferred_point_count() {
     let hw_counter = HardwareCounterCell::new();
 
-    for n_deferred in [0, 1, 10, 300] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 1, 10, 300];
+
+    for &n_deferred in deferred_counts {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
@@ -1470,7 +1616,7 @@ fn test_deleted_deferred_point_count() {
         assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
 
         for d in 0..n_deferred {
-            let delete_id = segment.deferred_internal_id().unwrap() + d as u32;
+            let delete_id = segment.id_tracker.borrow().deferred_internal_id().unwrap() + d as u32;
             segment
                 .delete_point_internal(delete_id, &hw_counter)
                 .unwrap();
@@ -1481,7 +1627,7 @@ fn test_deleted_deferred_point_count() {
                 n_deferred.checked_sub(deleted_count).unwrap()
             );
             assert_eq!(
-                segment.calculate_deleted_deferred_point_count(),
+                segment.id_tracker.borrow().deferred_deleted_count(),
                 deleted_count,
             );
 
@@ -1496,7 +1642,7 @@ fn test_deleted_deferred_point_count() {
             );
 
             assert_eq!(
-                segment.calculate_deleted_deferred_point_count(),
+                segment.id_tracker.borrow().deferred_deleted_count(),
                 deleted_count
             );
 
@@ -1505,7 +1651,63 @@ fn test_deleted_deferred_point_count() {
 
         // We delete all deferred points in the segment.
         assert_eq!(segment.deferred_point_count(), 0);
-        assert_eq!(segment.calculate_deleted_deferred_point_count(), n_deferred);
+        assert_eq!(
+            segment.id_tracker.borrow().deferred_deleted_count(),
+            n_deferred
+        );
         assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
     }
+}
+
+/// A field index dropped between flusher capture and execution (a `DropIndex`
+/// racing the background flush) must not abort the rest of the flush sequence.
+///
+/// Aborting used to leave the field indexes flushed before the cancellation
+/// point durably ahead of payload storage and point versions; WAL replay then
+/// re-derived filter-based operations through that too-new index and silently
+/// skipped points whose payload still needed the operation re-applied.
+#[test]
+fn test_flush_survives_concurrent_field_index_drop() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    segment
+        .upsert_point(
+            1,
+            1.into(),
+            only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{"num": 20}"#).unwrap();
+    segment
+        .set_full_payload(2, 1.into(), &payload, &hw_counter)
+        .unwrap();
+    segment
+        .create_field_index(
+            3,
+            &JsonPath::new("num"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+            &hw_counter,
+        )
+        .unwrap();
+
+    // Capture the flushers (as the background flush thread does), then drop the
+    // index before executing them.
+    let flusher = segment
+        .flusher(true)
+        .expect("segment has unflushed changes");
+    segment
+        .delete_field_index(4, &JsonPath::new("num"))
+        .unwrap();
+
+    flusher().expect("flush must not fail");
+
+    // The flush must skip the dropped index storage and still complete the
+    // sequence: payload storage, point versions, and the segment state captured
+    // at version 3. A cancelled (aborted) flush would have left the persisted
+    // version at 0.
+    assert_eq!(segment.persistent_version(), 3);
 }

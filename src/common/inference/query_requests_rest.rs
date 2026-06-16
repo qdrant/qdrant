@@ -355,6 +355,8 @@ fn context_pair_from_rest_with_inferred(
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::HashMap;
 
     use api::rest::schema::{Document, Image, InferenceObject, NearestQuery};

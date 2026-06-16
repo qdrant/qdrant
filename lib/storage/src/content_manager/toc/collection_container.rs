@@ -201,7 +201,7 @@ impl TableOfContent {
                             self.consensus_proposal_sender.clone(),
                             id.clone(),
                         ),
-                        Some(self.search_runtime.handle().clone()),
+                        Some(self.adaptive_search_handle.clone()),
                         Some(self.update_runtime.handle().clone()),
                         self.optimizer_resource_budget.clone(),
                         self.storage_config.optimizers_overwrite.clone(),
@@ -291,12 +291,6 @@ impl TableOfContent {
             collection.remove_shards_at_peer(peer_id).await?;
         }
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.general_runtime
-            .block_on(self.remove_shards_at_peer(peer_id))
     }
 
     fn on_transfer_failure_callback(

@@ -19,7 +19,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
@@ -257,11 +257,6 @@ impl SegmentHolder {
             .cloned()
     }
 
-    /// Iterates appendable segments only.
-    pub fn iter_appendable(&self) -> impl Iterator<Item = LockedSegment> {
-        self.appendable_segments.values().cloned()
-    }
-
     /// Get two separate lists for non-appendable and appendable locked segments
     pub fn split_segments(&self) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
         (
@@ -347,10 +342,14 @@ impl SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(ids: &[PointIdType], segment: &dyn ReadSegmentEntry) -> Vec<PointIdType> {
+    fn segment_points(
+        ids: &[PointIdType],
+        segment: &dyn ReadSegmentEntry,
+        deferred_behavior: DeferredBehavior,
+    ) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
-            .filter(|id| segment.has_point(*id))
+            .filter(|id| segment.has_point(*id, deferred_behavior))
             .collect()
     }
 
@@ -389,7 +388,8 @@ impl SegmentHolder {
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
-            let segment_points = Self::segment_points(ids, segment_lock.deref());
+            let segment_points =
+                Self::segment_points(ids, segment_lock.deref(), DeferredBehavior::WithDeferred);
             for segment_point in segment_points {
                 let Some(point_version) = segment_lock.point_version(segment_point) else {
                     continue;
@@ -455,18 +455,6 @@ impl SegmentHolder {
         );
 
         (to_update, to_delete)
-    }
-
-    pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
-    where
-        F: FnMut(&RwLockReadGuard<dyn ReadSegmentEntry + 'static>) -> OperationResult<bool>,
-    {
-        let mut processed_segments = 0;
-        for (_id, segment) in self.iter() {
-            let is_applied = f(&segment.get_read().read())?;
-            processed_segments += usize::from(is_applied);
-        }
-        Ok(processed_segments)
     }
 
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
@@ -699,8 +687,23 @@ impl SegmentHolder {
                             .lock()
                             .add_dependency(idx, appendable_idx, op_num);
 
-                        let mut all_vectors = write_segment.all_vectors(point_id, hw_counter)?;
-                        let mut payload = write_segment.payload(point_id, hw_counter)?;
+                        // Read the latest head of the point, including a
+                        // deferred head that is invisible to ordinary
+                        // (`VisibleOnly`) reads. A deferred source point would
+                        // otherwise yield empty vectors and make `payload`
+                        // fail with `PointIdError`, surfacing as a spurious
+                        // "No point with id ... found" on a plain upsert that
+                        // races a `prevent_unoptimized` optimization.
+                        let mut all_vectors = write_segment.all_vectors_with_behavior(
+                            point_id,
+                            DeferredBehavior::WithDeferred,
+                            hw_counter,
+                        )?;
+                        let mut payload = write_segment.payload_with_behavior(
+                            point_id,
+                            DeferredBehavior::WithDeferred,
+                            hw_counter,
+                        )?;
 
                         point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
@@ -748,7 +751,7 @@ impl SegmentHolder {
 
             // Partition remaining IDs: found ones go to existing_points, rest stay in remaining
             remaining_ids.retain(|&id| {
-                if segment_guard.has_point(id) {
+                if segment_guard.has_point(id, DeferredBehavior::WithDeferred) {
                     existing_points.insert(id);
                     false // Remove from remaining
                 } else {
@@ -933,13 +936,24 @@ impl SegmentHolder {
             is_deferred: bool,
         }
 
+        // Dedup needs to enumerate all points in every segment, which is only
+        // available on a concrete `Segment`. Proxy segments cannot be enumerated
+        // this way (their internals span a wrapped read segment plus an
+        // in-memory write segment), so we panic if one shows up here — matching
+        // the pre-existing behavior when `iter_points` was a trait method that
+        // `unimplemented!()`'d for proxies.
         let segments = self
             .iter()
-            .map(|(segment_id, locked_segment)| (segment_id, locked_segment.get()))
+            .map(|(segment_id, locked_segment)| match locked_segment {
+                LockedSegment::Original(segment) => (segment_id, segment.as_ref()),
+                LockedSegment::Proxy(_) => panic!(
+                    "deduplicate_points cannot enumerate points of proxy segment {segment_id}",
+                ),
+            })
             .collect::<Vec<_>>();
         let locked_segments = segments
             .iter()
-            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
+            .map(|(segment_id, segment)| (*segment_id, segment.read()))
             .collect::<BTreeMap<_, _>>();
 
         // Iterator produces groups of points by point ID

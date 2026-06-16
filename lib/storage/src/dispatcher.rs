@@ -141,7 +141,20 @@ impl Dispatcher {
                     CollectionMetaOperations::CreateShardKey(op)
                 }
 
-                op => op,
+                CollectionMetaOperations::UpdateCollection(_)
+                | CollectionMetaOperations::DeleteCollection(_)
+                | CollectionMetaOperations::ChangeAliases(_)
+                | CollectionMetaOperations::Resharding(_, _)
+                | CollectionMetaOperations::TransferShard(_, _)
+                | CollectionMetaOperations::SetShardReplicaState(_)
+                | CollectionMetaOperations::DropShardKey(_)
+                | CollectionMetaOperations::CreatePayloadIndex(_)
+                | CollectionMetaOperations::DropPayloadIndex(_)
+                | CollectionMetaOperations::CreateNamedVector(_)
+                | CollectionMetaOperations::DeleteNamedVector(_)
+                | CollectionMetaOperations::Nop { .. } => operation,
+                #[cfg(feature = "staging")]
+                CollectionMetaOperations::TestSlowDown(_) => operation,
             };
 
             let operation_awaiter =
@@ -155,9 +168,14 @@ impl Dispatcher {
                 };
 
             let do_sync_nodes = match &op {
-                // Sync nodes after collection or shard key creation
+                // Sync nodes after collection or shard key creation, or after
+                // adding/removing a named vector — in all of these cases callers
+                // expect the updated collection config to be visible on every
+                // peer on return.
                 CollectionMetaOperations::CreateCollection(_)
-                | CollectionMetaOperations::CreateShardKey(_) => true,
+                | CollectionMetaOperations::CreateShardKey(_)
+                | CollectionMetaOperations::CreateNamedVector(_)
+                | CollectionMetaOperations::DeleteNamedVector(_) => true,
 
                 // Sync nodes when creating or renaming collection aliases
                 CollectionMetaOperations::ChangeAliases(changes) => {
@@ -178,8 +196,6 @@ impl Dispatcher {
                 | CollectionMetaOperations::DropShardKey(_)
                 | CollectionMetaOperations::CreatePayloadIndex(_)
                 | CollectionMetaOperations::DropPayloadIndex(_)
-                | CollectionMetaOperations::CreateNamedVector(_)
-                | CollectionMetaOperations::DeleteNamedVector(_)
                 | CollectionMetaOperations::Nop { .. } => false,
 
                 #[cfg(feature = "staging")]
@@ -198,6 +214,7 @@ impl Dispatcher {
             //    ( At this stage we are sure, that all consensus operations are created, but might not be applied everywhere )
             // 3. Wait for all remote peers to have at least the same state as the current peer.
             //    ( So we are sure, that all remote peers have also switched to `Active` state )
+            #[expect(clippy::wildcard_enum_match_arm, reason = "too many enum variants")]
             let create_shard_key = match &op {
                 CollectionMetaOperations::CreateShardKey(op) => {
                     let collection_name: CollectionName = op.collection_name.clone();
@@ -311,7 +328,7 @@ impl Dispatcher {
                 .await;
 
             for replica_set in shard_holder.all_shards() {
-                if replica_set.shard_key() != Some(&shard_key) {
+                if replica_set.shard_key().as_ref() != Some(&shard_key) {
                     continue;
                 }
 

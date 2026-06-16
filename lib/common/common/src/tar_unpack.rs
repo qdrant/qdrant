@@ -44,6 +44,7 @@ pub fn tar_unpack_reader<R: io::Read>(reader: R, dst: &Path) -> Result<R, io::Er
             )
         })?;
 
+        #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
         match entry.header().entry_type() {
             EntryType::Directory | EntryType::Regular | EntryType::GNUSparse => (),
             entry_type => {

@@ -22,10 +22,12 @@ use collection::operations::types::{
 };
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set;
-use collection::shards::replica_set::replica_set_state;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
+use collection::shards::transfer::{
+    ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
+};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
@@ -57,6 +59,7 @@ pub async fn do_collection_exists(
     let Err(error) = toc.get_collection(&collection_pass).await else {
         return Ok(CollectionExists { exists: true });
     };
+    #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
     match error {
         StorageError::NotFound { .. } => Ok(CollectionExists { exists: false }),
         e => Err(e),
@@ -310,6 +313,13 @@ pub async fn do_update_collection_cluster(
             validate_peer_exists(move_shard.to_peer_id)?;
             validate_peer_exists(move_shard.from_peer_id)?;
 
+            // Resolve the transfer method on this peer so the whole cluster
+            // applies the same one — the consensus entry carries it explicitly.
+            let method = match move_shard.method {
+                Some(method) => method,
+                None => collection.default_shard_transfer_method(),
+            };
+
             // submit operation to consensus
             dispatcher
                 .submit_collection_meta_op(
@@ -321,7 +331,7 @@ pub async fn do_update_collection_cluster(
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
-                            method: move_shard.method,
+                            method: Some(method),
                             filter: None,
                         }),
                     ),
@@ -345,6 +355,13 @@ pub async fn do_update_collection_cluster(
             // validate source peer exists
             validate_peer_exists(replicate_shard.from_peer_id)?;
 
+            // Resolve the transfer method on this peer so the whole cluster
+            // applies the same one — the consensus entry carries it explicitly.
+            let method = match replicate_shard.method {
+                Some(method) => method,
+                None => collection.default_shard_transfer_method(),
+            };
+
             // submit operation to consensus
             dispatcher
                 .submit_collection_meta_op(
@@ -356,7 +373,7 @@ pub async fn do_update_collection_cluster(
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
-                            method: replicate_shard.method,
+                            method: Some(method),
                             filter: None,
                         }),
                     ),
@@ -402,13 +419,12 @@ pub async fn do_update_collection_cluster(
             validate_peer_exists(to_peer_id)?;
             validate_peer_exists(from_peer_id)?;
 
-            // Decide on a transfer-method and check its validity in combination with filters.
-            let method = collection.default_shard_transfer_method().await;
-            if !method.is_streaming() && filter.is_some() {
-                return Err(StorageError::bad_request(format!(
-                    "Can't do shard transfer using method {method:?} in combination with a filter",
-                )));
-            }
+            // Require stream records based transfer if a filter is given
+            let method = if filter.is_none() {
+                collection.default_shard_transfer_method()
+            } else {
+                ShardTransferMethod::StreamRecords
+            };
 
             // submit operation to consensus
             dispatcher
@@ -526,9 +542,16 @@ pub async fn do_update_collection_cluster(
 
             if let Some(initial_state) = create_sharding_key.initial_state {
                 match initial_state {
-                    replica_set_state::ReplicaState::Active
-                    | replica_set_state::ReplicaState::Partial => {}
-                    _ => {
+                    ReplicaState::Active | ReplicaState::Partial => {}
+                    ReplicaState::Dead
+                    | ReplicaState::Initializing
+                    | ReplicaState::Listener
+                    | ReplicaState::PartialSnapshot
+                    | ReplicaState::Recovery
+                    | ReplicaState::Resharding
+                    | ReplicaState::ReshardingScaleDown
+                    | ReplicaState::ActiveRead
+                    | ReplicaState::ManualRecovery => {
                         return Err(StorageError::bad_request(format!(
                             "Initial state cannot be {initial_state:?}, only Active or Partial are allowed",
                         )));
@@ -854,8 +877,8 @@ pub async fn do_update_collection_cluster(
             };
 
             let from_state = match state.direction {
-                ReshardingDirection::Up => replica_set_state::ReplicaState::Resharding,
-                ReshardingDirection::Down => replica_set_state::ReplicaState::ReshardingScaleDown,
+                ReshardingDirection::Up => ReplicaState::Resharding,
+                ReshardingDirection::Down => ReplicaState::ReshardingScaleDown,
             };
 
             dispatcher
@@ -864,7 +887,7 @@ pub async fn do_update_collection_cluster(
                         collection_name: collection_name.clone(),
                         shard_id,
                         peer_id,
-                        state: replica_set_state::ReplicaState::Active,
+                        state: ReplicaState::Active,
                         from_state: Some(from_state),
                     }),
                     auth,

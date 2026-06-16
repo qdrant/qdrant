@@ -164,8 +164,13 @@ def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
 
     payload = {"country": "Germany", "city": "Berlin"}
 
-    for _ in range(32):
-        point = {"id": 1, "payload": payload, "vector": random_dense_vector()}
+    # Use unique point IDs across all phases. The mmap (gridstore) payload
+    # storage size estimate is bitmask-based: overwriting the same id keeps
+    # old blocks allocated until a periodic flush reclaims them, which makes
+    # a same-id test race the flush worker. Unique ids keep every block live,
+    # so the post-flush size still reflects all inserted points.
+    for i in range(32):
+        point = {"id": i, "payload": payload, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
 
     set_strict_mode(peer_urls[0], COLLECTION_NAME, {
@@ -175,12 +180,12 @@ def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
 
     wait_for_strict_mode_enabled(peer_urls[1], COLLECTION_NAME)
 
-    for _ in range(32):
-        point = {"id": 2, "payload": payload, "vector": random_dense_vector()}
+    for i in range(32, 64):
+        point = {"id": i, "payload": payload, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
 
-    for _ in range(32):
-        point = {"id": 3, "payload": payload, "vector": random_dense_vector()}
+    for i in range(64, 96):
+        point = {"id": i, "payload": payload, "vector": random_dense_vector()}
         res = upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader")
         if not res.ok:
             assert "Max payload storage size" in res.json()['status']['error']

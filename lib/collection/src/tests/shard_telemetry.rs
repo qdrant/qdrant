@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,6 +10,7 @@ use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::CollectionError;
 use crate::shards::local_shard::LocalShard;
 use crate::tests::fixtures::*;
@@ -22,7 +24,8 @@ async fn test_shard_telemetry() {
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -36,7 +39,7 @@ async fn test_shard_telemetry() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -60,7 +63,7 @@ async fn test_shard_telemetry() {
         let telemetry = shard
             .get_telemetry_data(details, Duration::from_millis(10))
             .await;
-        assert!(matches!(telemetry, Err(CollectionError::Timeout { .. })));
+        assert_matches!(telemetry, Err(CollectionError::Timeout { .. }));
 
         drop(write_segment_holder_guard);
         let telemetry = shard

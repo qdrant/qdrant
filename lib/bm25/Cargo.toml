@@ -1,0 +1,16 @@
+[package]
+name = "bm25"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+basic-tokenizer = []
+serde = ["dep:serde"]
+
+[dependencies]
+murmur3_32 = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[lints]
+workspace = true

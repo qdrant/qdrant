@@ -1,11 +1,10 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
 
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
 use rand::{RngExt, SeedableRng};
 use tempfile::TempDir;
 
-use crate::common::scores_memory_pool::{PooledScoresHandle, ScoresMemoryPool};
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimOffset, Weight};
 use crate::index::inverted_index::InvertedIndex;
@@ -13,27 +12,25 @@ use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexC
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
-static TEST_SCORES_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
-
-pub fn get_pooled_scores() -> PooledScoresHandle<'static> {
-    TEST_SCORES_POOL
-        .get_or_init(ScoresMemoryPool::default)
-        .get()
-}
-
 pub struct TestIndex<I: InvertedIndex> {
     pub index: I,
     _temp_dir: TempDir,
 }
 
-impl<I: InvertedIndex> TestIndex<I> {
+// These helpers are only ever instantiated with the on-disk mmap index.
+impl<W: Weight> TestIndex<InvertedIndexCompressedMmap<W, MmapFile>> {
     fn from_ram(ram_index: InvertedIndexRam) -> Self {
         let temp_dir = tempfile::Builder::new()
             .prefix("test_index_dir")
             .tempdir()
             .unwrap();
         TestIndex {
-            index: I::from_ram_index(Cow::Owned(ram_index), &temp_dir).unwrap(),
+            index: InvertedIndexCompressedMmap::from_ram_index(
+                &MmapFs,
+                Cow::Owned(ram_index),
+                &temp_dir,
+            )
+            .unwrap(),
             _temp_dir: temp_dir,
         }
     }
@@ -78,7 +75,7 @@ pub fn generate_sparse_index<W, R>(
     density: usize,
     vocab1: usize,
     vocab2: usize,
-) -> TestIndex<InvertedIndexCompressedMmap<W>>
+) -> TestIndex<InvertedIndexCompressedMmap<W, MmapFile>>
 where
     W: Weight + 'static,
     R: rand::Rng,
@@ -98,7 +95,7 @@ pub fn build_index<W>(
     density: usize,
     vocab1: usize,
     vocab2: usize,
-) -> TestIndex<InvertedIndexCompressedMmap<W>>
+) -> TestIndex<InvertedIndexCompressedMmap<W, MmapFile>>
 where
     W: Weight + 'static,
 {

@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Generator
 
@@ -20,6 +21,21 @@ def pytest_runtest_makereport(item, call):
     outcome = yield
     rep = outcome.get_result()
     setattr(item, "rep_" + rep.when, rep)
+
+
+def _dump_container_logs_on_failure(request, docker_containers):
+    """On test failure, write full docker logs to tests/e2e_tests/logs/<test>/<container>.log."""
+    rep = getattr(request.node, "rep_call", None)
+    if rep is None or not rep.failed:
+        return
+    log_dir = Path(__file__).parent / "logs" / f"{request.node.name}_{int(time.time())}"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    for c in docker_containers:
+        try:
+            c.reload()
+            (log_dir / f"{c.name}.log").write_bytes(c.logs())
+        except Exception as e:
+            print(f"Failed to capture logs for {c.name}: {e}")
 
 
 @pytest.fixture(scope="session")
@@ -169,30 +185,10 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
         containers.append(container_info.container)
         return container_info
 
-    def _log_containers_on_failure():
-        """Output container logs if the test failed"""
-        if request.node.rep_call.failed if hasattr(request.node, 'rep_call') else False:
-            print("\n" + "="*50)
-            print("TEST FAILED - DUMPING CONTAINER LOGS")
-            print("="*50)
-            for docker_container in containers:
-                try:
-                    docker_container.reload()
-                    logs = docker_container.logs(tail=50).decode('utf-8', errors='ignore')
-                    print(f"\nLogs for container {docker_container.name}:")
-                    print("-" * 30)
-                    print(logs)
-                    print("-" * 30)
-                except Exception as e:
-                    print(f"Failed to get logs for container {docker_container.name}: {e}")
-            print("="*50)
-
     def _cleanup_containers():
         """Clean up containers after potentially logging them"""
-        # First log containers if test failed (before cleanup)
-        _log_containers_on_failure()
+        _dump_container_logs_on_failure(request, containers)
 
-        # Then cleanup all containers
         for container in containers:
             cleanup_container(container)
 
@@ -349,4 +345,5 @@ def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
     try:
         yield cluster
     finally:
+        _dump_container_logs_on_failure(request, [c.container for c in cluster.containers])
         cluster.cleanup()

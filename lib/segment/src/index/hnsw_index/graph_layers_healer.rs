@@ -13,7 +13,7 @@ use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedL
 use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
 use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
+use crate::vector_storage::{RawScorer, VectorStorageEnum, VectorStorageRead, new_raw_scorer};
 
 pub struct GraphLayersHealer<'a> {
     links_layers: Vec<LockedLayersContainer>,

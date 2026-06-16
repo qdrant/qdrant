@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -18,7 +19,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_payload};
 use segment::fixtures::query_fixtures::QueryVariant;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{PayloadIndex, VectorIndex};
+use segment::index::{PayloadIndex, VectorIndexRead};
 use segment::segment_constructor::build_segment;
 use segment::types::{
     BinaryQuantizationConfig, CompressionRatio, Condition, Distance, FieldCondition, Filter,
@@ -50,6 +51,7 @@ where
             vector
         }
         VectorStorageDatatype::Uint8 => random_dense_byte_vector(rnd_gen, dim),
+        VectorStorageDatatype::Turbo4 => unreachable!(),
     }
 }
 
@@ -72,6 +74,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
         .count()
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
 #[case::nearest_binary_dot(
     QueryVariant::Nearest,
@@ -244,11 +247,11 @@ fn test_byte_storage_binary_quantization_hnsw(
             .vector_storage
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
-        assert!(matches!(
+        assert_matches!(
             raw_storage,
             &VectorStorageEnum::DenseAppendableMemmapByte(_)
                 | &VectorStorageEnum::DenseAppendableMemmapHalf(_),
-        ));
+        );
     }
 
     let hw_counter = HardwareCounterCell::new();

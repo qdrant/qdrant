@@ -1,26 +1,14 @@
-pub(crate) mod encoding;
+use serde::{Deserialize, Serialize};
+
+use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
+
+pub mod encoding;
 pub mod lloyd_max;
+pub mod math;
 mod permutation;
 pub mod quantization;
 pub mod rotation;
-
-use std::alloc::Layout;
-use std::borrow::Cow;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::atomic_save_json;
-use common::mmap::MmapFlusher;
-use common::typelevel::True;
-use common::types::PointOffsetType;
-use fs_err as fs;
-use serde::{Deserialize, Serialize};
-
-use crate::EncodingError;
-use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
-use crate::turboquant::quantization::TurboQuantizer;
+pub mod simd;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -37,11 +25,45 @@ impl TQBits {
         match self {
             TQBits::Bits4 => 4,
             TQBits::Bits2 => 2,
-            TQBits::Bits1_5 => {
-                // TODO(turbo): Implement
-                unimplemented!()
-            }
+            // 1.5 bits is implemented as 1 bit with x1.5 dimension padding
+            TQBits::Bits1_5 => 1,
             TQBits::Bits1 => 1,
+        }
+    }
+
+    /// Number of input vectors the TQ+ pre-pass uniformly samples and
+    /// streams into the per-coord P-square estimators, scaled to the
+    /// extremity of the target probability for this codebook.
+    ///
+    /// The TQ+ anchor probability is `p_outer = Φ(c_outer)` where
+    /// `c_outer` is the outermost centroid magnitude. The variance of an
+    /// order-statistic estimator at quantile `p` over a sample of size
+    /// `R` is `p(1-p) / (R · f(F⁻¹(p))²)` where `f` is the source PDF.
+    /// For N(0, 1)-like post-rotation data this gives:
+    ///
+    /// | Bits | p_outer | f(F⁻¹) | R    | σ     | rel. error |
+    /// |------|---------|--------|------|-------|------------|
+    /// | 1    | 0.787   | 0.290  | 2048 | 0.031 | 3.9%       |
+    /// | 1.5  | 0.787   | 0.290  | 2048 | 0.031 | 3.9%       |
+    /// | 2    | 0.934   | 0.128  | 4096 | 0.030 | 2.0%       |
+    /// | 4    | 0.997   | 0.010  | 8192 | 0.063 | 2.3%       |
+    ///
+    /// We pick `R` per codebook so the absolute σ stays roughly flat
+    /// (~0.03–0.06 in N(0, 1) units) instead of forcing the highest-bit
+    /// budget on every codebook. Bits1/Bits1_5 sit at a moderate quantile
+    /// where `R = 2048` is plenty; Bits4 needs `R = 8192` because its
+    /// anchor sits in the deep tail.
+    ///
+    /// Memory: the pre-pass holds two P-square estimators per coord plus
+    /// a `BATCH_SIZE × padded_dim` rotation scratch — total ≈ 400 KB at
+    /// `padded_dim = 1536`, **independent of `R`**. Wall-time scales
+    /// roughly linearly in `R`.
+    #[inline]
+    pub(crate) fn sample_size(&self) -> usize {
+        match self {
+            TQBits::Bits1 | TQBits::Bits1_5 => 2_048,
+            TQBits::Bits2 => 4_096,
+            TQBits::Bits4 => 8_192,
         }
     }
 }
@@ -53,261 +75,62 @@ pub enum TQMode {
     Plus,
 }
 
-pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
-    encoded_vectors: TStorage,
-    metadata: Metadata,
-    metadata_path: Option<PathBuf>,
-    quantizer: TurboQuantizer,
+/// Which coordinates the Hadamard rotation spans.
+///
+/// WARNING: the choice is baked into the encoding of every quantized vector —
+/// changing it for an existing storage silently corrupts all stored vectors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TQRotation {
+    /// Rotate the whole zero-padded buffer (`padded_dim` coordinates). The
+    /// rotation spreads the input energy across the padding, so a dequantized
+    /// vector truncated back to `dim` loses the tail's share of energy.
+    /// Required for [`TQBits::Bits1_5`], whose extra precision comes exactly
+    /// from rotating into the x1.5 padding.
+    Padded,
+    /// Rotate only the original `dim` coordinates; the zero padding stays
+    /// exactly zero through both the rotation and its inverse. Used by the
+    /// TQ-as-datatype storages, where vectors are reconstructed from the codes
+    /// alone: the padding tail never mixes into the real coordinates, so
+    /// truncating it on read-back is lossless.
+    Unpadded,
 }
 
 /// Encoded query type for Turbo Quant.
-pub struct EncodedQueryTQ {}
+pub struct EncodedQueryTQ {
+    /// SIMD-encoded query for the asymmetric scoring path. For TQ+, the
+    /// rotated query is pre-multiplied by `D' = 1/scale` per coord so the
+    /// SIMD raw_dot computes `⟨Q · D', X+⟩` directly — the asymmetric score
+    /// formulas then just add `ec_correction` and apply renorm's
+    /// `scaling_factor`, identical to the Normal-mode path.
+    data: EncodedQueryTQData,
 
-#[derive(Serialize, Deserialize)]
-pub struct Metadata {
-    pub vector_parameters: VectorParameters,
-    pub bits: TQBits,
-    pub mode: TQMode,
+    // Store the original query's l2 norm for Dot and L2 distances, where we can compute it once and reuse for all distance computations.
+    l2_norm: Option<f32>,
+
+    // Store the original query in pre-rotated form for L1 distance, where we need to dequantize vectors and apply inverse rotation to them.
+    query: Option<Vec<f32>>,
+
+    /// TQ+ asymmetric-scoring scalar correction `qm = ⟨Q, M⟩ = -⟨rotated_q, shift⟩`.
+    /// `0.0` when EC is not configured. Added to the SIMD raw_dot so the
+    /// existing score formulas stay unchanged.
+    ec_correction: f32,
 }
 
-impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
-    pub fn storage(&self) -> &TStorage {
-        &self.encoded_vectors
-    }
-
-    /// Encode vector data
-    ///
-    /// # Arguments
-    /// * `data` - iterator over original vector data
-    /// * `storage_builder` - encoding result storage builder
-    /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
-    /// * `count` - number of vectors in `data` iterator
-    /// * `bits` - bits for quantization
-    /// * `mode` - quantization mode
-    /// * `meta_path` - optional path to save metadata, if `None`, metadata will not be saved
-    /// * `stopped` - Atomic bool that indicates if encoding should be stopped
-    #[allow(clippy::too_many_arguments)]
-    pub fn encode<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
-        vector_parameters: &VectorParameters,
-        _count: usize,
-        bits: TQBits,
-        mode: TQMode,
-        meta_path: Option<&Path>,
-        stopped: &AtomicBool,
-    ) -> Result<Self, EncodingError> {
-        debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
-
-        let metadata = Metadata {
-            vector_parameters: vector_parameters.clone(),
-            bits,
-            mode,
-        };
-
-        let quantizer = TurboQuantizer::new_from_metadata(&metadata);
-
-        let mut buf = vec![0.0f64; vector_parameters.dim];
-
-        for vector in data {
-            if stopped.load(Ordering::Relaxed) {
-                return Err(EncodingError::Stopped);
-            }
-
-            let encoded_vector: Vec<u8> =
-                Self::encode_vector(vector.as_ref(), &quantizer, &mut buf);
-
-            storage_builder
-                .push_vector_data(&encoded_vector)
-                .map_err(|e| {
-                    EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
-                })?;
-        }
-
-        let encoded_vectors = storage_builder
-            .build()
-            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
-
-        if let Some(meta_path) = meta_path {
-            meta_path
-                .parent()
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Path must have a parent directory",
-                    )
-                })
-                .and_then(fs::create_dir_all)
-                .map_err(|e| {
-                    EncodingError::EncodingError(format!(
-                        "Failed to create metadata directory: {e}",
-                    ))
-                })?;
-            atomic_save_json(meta_path, &metadata).map_err(|e| {
-                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
-            })?;
-        }
-
-        Ok(Self {
-            encoded_vectors,
-            metadata,
-            metadata_path: meta_path.map(PathBuf::from),
-            quantizer,
-        })
-    }
-
-    pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
-        let contents = fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
-
-        let quantizer = TurboQuantizer::new_from_metadata(&metadata);
-
-        let result = Self {
-            encoded_vectors,
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-            quantizer,
-        };
-
-        Ok(result)
-    }
-
-    // Get quantized vector size in bytes
-    pub fn get_quantized_vector_size(
-        vector_parameters: &VectorParameters,
-        bits: TQBits,
-        mode: TQMode,
-    ) -> usize {
-        TurboQuantizer::quantized_size_for(
-            vector_parameters.dim,
-            bits,
-            vector_parameters.distance_type,
-            mode,
-        )
-    }
-
-    fn encode_vector(
-        vector_data: &[f32],
-        turbo_quantizer: &TurboQuantizer,
-        buf: &mut [f64],
-    ) -> Vec<u8> {
-        turbo_quantizer.quantize(vector_data, buf)
-    }
-
-    pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
-        self.encoded_vectors.get_vector_data(i)
-    }
-
-    pub fn layout(&self) -> Layout {
-        Layout::from_size_align(self.quantized_vector_size(), align_of::<f32>()).unwrap()
-    }
-
-    pub fn get_metadata(&self) -> &Metadata {
-        &self.metadata
-    }
-}
-
-impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
-    type EncodedQuery = EncodedQueryTQ;
-
-    fn is_on_disk(&self) -> bool {
-        self.encoded_vectors.is_on_disk()
-    }
-
-    fn encode_query(&self, _query: &[f32]) -> EncodedQueryTQ {
-        EncodedQueryTQ {}
-    }
-
-    fn score_point(
-        &self,
-        query: &EncodedQueryTQ,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        let encoded_vector = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, &encoded_vector, hw_counter)
-    }
-
-    /// Score two points inside endoded data by their indexes
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        let v1 = self.encoded_vectors.get_vector_data(i);
-        let v2 = self.encoded_vectors.get_vector_data(j);
-
-        hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
-
-        todo!()
-    }
-
-    fn quantized_vector_size(&self) -> usize {
-        Self::get_quantized_vector_size(
-            &self.metadata.vector_parameters,
-            self.metadata.bits,
-            self.metadata.mode,
-        )
-    }
-
-    fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
-        // Turbo quant is asymmetric, so we cannot encode internal vectors, only queries.
-        // This method is used for symmetric quantization,
-        // where we can encode internal vectors without access to original vector data,
-        // which may require disk access.
-        None
-    }
-
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        let mut buf = vec![0.0f64; vector.len()];
-        let encoded_vector = Self::encode_vector(vector, &self.quantizer, &mut buf);
-        self.encoded_vectors.upsert_vector(
-            id,
-            bytemuck::cast_slice(encoded_vector.as_slice()),
-            hw_counter,
-        )
-    }
-
-    fn vectors_count(&self) -> usize {
-        self.encoded_vectors.vectors_count()
-    }
-
-    fn flusher(&self) -> MmapFlusher {
-        self.encoded_vectors.flusher()
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        let mut files = self.encoded_vectors.files();
-        if let Some(meta_path) = &self.metadata_path {
-            files.push(meta_path.clone());
-        }
-        files
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        let mut files = self.encoded_vectors.immutable_files();
-        if let Some(meta_path) = &self.metadata_path {
-            files.push(meta_path.clone());
-        }
-        files
-    }
-
-    type SupportsBytes = True;
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        _query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter.cpu_counter().incr_delta(bytes.len());
-
-        todo!()
-    }
+/// SIMD-ready encoded query, one variant per supported bit-width.  Each
+/// variant wraps the bit-width's [`simd::Query{N}bitSimd`] precomputation
+/// (rotation-applied query, quantized to the SIMD-friendly integer form);
+/// on architectures without a matching SIMD instruction set the scalar
+/// reference kernel inside each type takes over automatically.
+///
+/// `Bits1Wide` is the same kernel as `Bits1` but with 16-bit query
+/// quantization instead of the default 8-bit (the kernel's max). Used in
+/// TQ+ for 1-bit storage: the per-coord `D'` pre-scaling pushes some query
+/// coords into the bottom of the 8-bit integer range, where rounding noise
+/// is large relative to the signal — 16 bits gives the most headroom the
+/// existing kernel supports.
+pub enum EncodedQueryTQData {
+    Bits1(Query1bitSimd),
+    Bits1Wide(Query1bitSimd<16>),
+    Bits2(Query2bitSimd),
+    Bits4(Query4bitSimd),
 }

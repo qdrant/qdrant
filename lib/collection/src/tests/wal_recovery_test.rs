@@ -14,6 +14,7 @@ use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::PointRequestInternal;
 use crate::shards::local_shard::LocalShard;
@@ -31,7 +32,8 @@ async fn test_delete_from_indexed_payload() {
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -45,7 +47,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -107,7 +109,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         payload_index_schema.clone(),
         true,
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
     )
@@ -139,7 +141,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
     )
@@ -169,7 +171,8 @@ async fn test_partial_flush_recovery() {
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -183,7 +186,7 @@ async fn test_partial_flush_recovery() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -245,7 +248,7 @@ async fn test_partial_flush_recovery() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
     )
@@ -276,7 +279,8 @@ async fn test_truncate_unapplied_wal() {
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -290,7 +294,7 @@ async fn test_truncate_unapplied_wal() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -361,7 +365,7 @@ async fn test_truncate_unapplied_wal() {
             &current_runtime,
             None,
             hw_acc.clone(),
-            DeferredBehavior::Exclude,
+            DeferredBehavior::VisibleOnly,
         )
         .await
         .unwrap();
@@ -432,7 +436,8 @@ async fn test_wal_replay_loads_pending_to_queue() {
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -454,7 +459,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
         Arc::new(RwLock::new(config.clone())),
         shared_storage_config.clone(),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -528,7 +533,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
         shared_storage_config,
         payload_index_schema,
         false,
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
     )
@@ -587,7 +592,8 @@ async fn test_wal_replay_with_smaller_queue_size() {
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -609,7 +615,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(shared_storage_config.clone()),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -686,7 +692,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
         Arc::new(shared_storage_config),
         payload_index_schema,
         false,
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
     )

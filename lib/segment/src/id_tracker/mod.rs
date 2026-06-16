@@ -26,11 +26,22 @@ pub struct MergedPointId {
     pub internal_id: PointOffsetType,
     /// The version of the point within the [`IdTracker`] that contains it.
     pub version: u64,
+    /// Whether the point is marked deleted in the source tracker. Used by
+    /// [`for_each_unique_point`] to skip yielding a point whose
+    /// highest-versioned copy is a tombstone — without this filter,
+    /// `segment_builder` would resurrect deletes that were applied to a source
+    /// segment between when it was first picked for optimization and when the
+    /// merge actually reads from it (e.g. via snapshot teardown's
+    /// `propagate_to_wrapped`).
+    pub is_deleted: bool,
 }
 
 /// Calls a closure for each unique point from multiple ID trackers.
 ///
-/// Discard points that have no version.
+/// Discards points that have no version (their flush was interrupted) and
+/// points whose highest-versioned copy across the input trackers is marked
+/// deleted (so deletes applied to a source between optimization start and
+/// merge are not silently dropped).
 pub fn for_each_unique_point<'a>(
     id_trackers: impl Iterator<Item = &'a (impl IdTracker + ?Sized + 'a)>,
     mut f: impl FnMut(MergedPointId),
@@ -41,12 +52,14 @@ pub fn for_each_unique_point<'a>(
             id_tracker.point_mappings().iter_from(None).filter_map(
                 move |(external_id, internal_id)| {
                     let version = id_tracker.internal_version(internal_id);
+                    let is_deleted = id_tracker.is_deleted_point(internal_id);
                     // a point without a version had an interrupted flush sequence and should be discarded
                     version.map(|version| MergedPointId {
                         external_id,
                         tracker_index: segment_index,
                         internal_id,
                         version,
+                        is_deleted,
                     })
                 },
             )
@@ -63,11 +76,15 @@ pub fn for_each_unique_point<'a>(
                 best_item = item;
             }
         } else {
-            f(best_item);
+            if !best_item.is_deleted {
+                f(best_item);
+            }
             best_item = item;
         }
     }
-    f(best_item);
+    if !best_item.is_deleted {
+        f(best_item);
+    }
 }
 
 impl From<&ExtendedPointId> for PointIdType {
@@ -87,8 +104,52 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use rstest::rstest;
+    use tempfile::Builder;
 
     use super::*;
+    use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
+
+    /// Review finding #1 (optimizer merge consequence): `for_each_unique_point`
+    /// is the merge primitive `segment_builder::update_from` uses to pick the
+    /// winning copy per external id when rolling segments together. It walks
+    /// `iter_from(None)` and keeps the highest version. For a shadowed point
+    /// (active head below the cutoff + deferred head above it, the result of an
+    /// in-place mutation), `iter_from` resolves the collision to the *active*
+    /// (older) slot and never yields the deferred head — so the merge keeps the
+    /// pre-mutation copy and the mutation is silently dropped on optimization.
+    ///
+    /// On `dev` this worked: a deferred write tombstoned the active, so the
+    /// single map pointed at the deferred head and the merge pulled the latest.
+    #[test]
+    fn for_each_unique_point_keeps_deferred_head_for_shadowed_point() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        // Appendable tracker with deferred cutoff = 5.
+        let mut tracker = MutableIdTracker::open(dir.path(), Some(5)).unwrap();
+        let p7 = PointIdType::NumId(7);
+
+        // ext 7: active@2 is the pre-mutation copy (version 5); deferred@9 is
+        // the latest in-place mutation (version 8). The active is shadowed.
+        tracker.set_link(p7, 2).unwrap();
+        tracker.set_internal_version(2, 5).unwrap();
+        tracker.set_link(p7, 9).unwrap();
+        tracker.set_internal_version(9, 8).unwrap();
+
+        let trackers = [tracker];
+        let mut merged = Vec::new();
+        for_each_unique_point(trackers.iter(), |m| {
+            merged.push((m.external_id, m.internal_id, m.version));
+        });
+
+        // The merge must carry the latest (deferred) copy so the mutation
+        // survives optimization. It instead yields the stale active copy
+        // (internal 2, version 5), silently dropping the version-8 mutation.
+        assert_eq!(
+            merged,
+            vec![(p7, 9, 8)],
+            "for_each_unique_point dropped the deferred (latest) copy of a \
+             shadowed point, keeping the pre-mutation active version",
+        );
+    }
 
     #[rstest]
     fn test_for_each_unique_point(#[values(0, 1, 5)] tracker_count: usize) {
@@ -105,11 +166,13 @@ mod tests {
         for (tracker_index, id_tracker) in id_trackers.iter().enumerate() {
             for (external_id, internal_id) in id_tracker.point_mappings().iter_from(None) {
                 let version = id_tracker.internal_version(internal_id).unwrap();
+                let is_deleted = id_tracker.is_deleted_point(internal_id);
                 let merged_point_id = MergedPointId {
                     external_id,
                     tracker_index,
                     internal_id,
                     version,
+                    is_deleted,
                 };
                 match expected.entry(external_id) {
                     hash_map::Entry::Occupied(mut entry) => {
@@ -137,11 +200,16 @@ mod tests {
             assert!(expected.is_empty());
         }
 
+        // `for_each_unique_point` skips winners whose source has them marked
+        // deleted, so drop those from the expected set before comparing.
+        expected.retain(|_, v| !v.is_deleted);
+
         for_each_unique_point(id_trackers.iter(), |merged_point_id| {
             let v = expected.remove(&merged_point_id.external_id).unwrap();
             assert_eq!(merged_point_id.tracker_index, v.tracker_index);
             assert_eq!(merged_point_id.internal_id, v.internal_id);
             assert_eq!(merged_point_id.version, v.version);
+            assert!(!merged_point_id.is_deleted);
         });
 
         assert!(expected.is_empty());

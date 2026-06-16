@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -12,8 +11,11 @@ use api::grpc::qdrant::{
     ReadWholeRequest, ReadWholeResponse,
 };
 use common::generic_consts::Random;
-use common::universal_io::mmap::MmapFile;
-use common::universal_io::{FileIndex, OpenOptions, ReadRange, UniversalIoError, UniversalRead};
+use common::mmap::{Advice, AdviceSetting};
+use common::universal_io::{
+    FileIndex, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
+};
 use futures::Stream;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status, async_trait};
@@ -29,13 +31,16 @@ mod tests;
 /// Chunk size for streaming reads (~1 MB).
 const STREAM_CHUNK_SIZE: u64 = 1024 * 1024;
 
-pub struct StorageReadService<S: UniversalRead<u8> + Send + Sync + 'static = MmapFile> {
-    dispatcher: Arc<Dispatcher>,
-    _marker: PhantomData<S>,
+pub struct StorageReadService<S: UniversalRead + Send + Sync + 'static = MmapFile> {
+    pub(super) dispatcher: Arc<Dispatcher>,
+    pub(super) fs: Arc<S::Fs>,
 }
 
 #[async_trait]
-impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadService<S> {
+impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadService<S>
+where
+    S::Fs: Send + Sync + 'static,
+{
     // Check if a file exists via UniversalRead::open(), catch NotFound → false.
     async fn file_exists(
         &self,
@@ -45,14 +50,16 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let FileExistsRequest {
             collection_name,
+            shard_id,
             path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "file_exists")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "file_exists")
             .await?;
-        let path = Self::resolve_path(&base, &path)?;
+        let path = Self::resolve_path(&base, &collections_root, &path)?;
 
-        let exists = tokio::task::spawn_blocking(move || match S::exists(&path) {
+        let fs = Arc::clone(&self.fs);
+        let exists = tokio::task::spawn_blocking(move || match fs.exists(&path) {
             Ok(exists) => Ok(exists),
             Err(UniversalIoError::NotFound { .. }) => Ok(false),
             Err(UniversalIoError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -65,7 +72,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     }
 
     // List files via UniversalReadFileOps::list_files(prefix_path).
-    // Return paths relative to the collection directory.
+    // Return paths relative to the shard directory.
     async fn list_files(
         &self,
         mut request: Request<ListFilesRequest>,
@@ -74,14 +81,16 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let ListFilesRequest {
             collection_name,
+            shard_id,
             prefix_path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "list_files")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "list_files")
             .await?;
-        let prefix_path = Self::resolve_path(&base, &prefix_path)?;
+        let prefix_path = Self::resolve_path(&base, &collections_root, &prefix_path)?;
 
-        let paths = tokio::task::spawn_blocking(move || S::list_files(&prefix_path))
+        let fs = Arc::clone(&self.fs);
+        let paths = tokio::task::spawn_blocking(move || fs.list_files(&prefix_path))
             .await
             .map_err(|e| Status::internal(format!("Task join error: {e}")))?
             .map_err(io_error_to_status)?;
@@ -114,17 +123,26 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let FileLengthRequest {
             collection_name,
+            shard_id,
             path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "file_length")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "file_length")
             .await?;
-        let path = Self::resolve_path(&base, &path)?;
+        let path = Self::resolve_path(&base, &collections_root, &path)?;
 
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
+        };
+        let fs = Arc::clone(&self.fs);
         let length = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
-            storage.len().map_err(io_error_to_status)
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
+            storage.len::<u8>().map_err(io_error_to_status)
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
@@ -141,24 +159,30 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let ReadBytesRequest {
             collection_name,
+            shard_id,
             path,
             byte_offset,
             length,
         } = request.into_inner();
 
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_bytes")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes")
             .await?;
-        let path = Self::resolve_path(&base, &path)?;
-        let open_options = OpenOptions::default();
+        let path = Self::resolve_path(&base, &collections_root, &path)?;
+        let open_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
+        };
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
             let cow = storage
-                .read::<Random>(ReadRange {
-                    byte_offset,
-                    length,
-                })
+                .read::<Random, u8>(ReadRange::new(byte_offset, length))
                 .map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
@@ -181,23 +205,29 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let ReadBytesStreamRequest {
             collection_name,
+            shard_id,
             path,
             byte_offset,
             length,
         } = request.into_inner();
 
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_bytes_stream")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes_stream")
             .await?;
-        let path = Self::resolve_path(&base, &path)?;
-        let open_options = OpenOptions::default();
-        let range = ReadRange {
-            byte_offset,
-            length,
+        let path = Self::resolve_path(&base, &collections_root, &path)?;
+        let open_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Sequential),
         };
+        let range = ReadRange::new(byte_offset, length);
+        let fs = Arc::clone(&self.fs);
         let (storage, range) = tokio::task::spawn_blocking(move || {
-            let s = S::open(&path, open_options).map_err(io_error_to_status)?;
-            let file_len = s.len().map_err(io_error_to_status)?;
+            let s = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
+            let file_len = s.len::<u8>().map_err(io_error_to_status)?;
             validate_range(range, file_len).map_err(io_error_to_status)?;
             Ok::<_, Status>((s, range))
         })
@@ -218,10 +248,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
                 let data = tokio::task::spawn_blocking(move || {
                     storage_for_read
-                        .read::<Random>(ReadRange {
-                            byte_offset: current_offset,
-                            length: chunk_size,
-                        })
+                        .read::<Random, u8>(ReadRange::new(current_offset, chunk_size))
                         .map(|cow| cow.into_owned())
                         .map_err(io_error_to_status)
                 })
@@ -247,17 +274,26 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let ReadWholeRequest {
             collection_name,
+            shard_id,
             path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_whole")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_whole")
             .await?;
-        let path = Self::resolve_path(&base, &path)?;
-        let open_options = OpenOptions::default();
+        let path = Self::resolve_path(&base, &collections_root, &path)?;
+        let open_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Sequential),
+        };
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
-            let cow = storage.read_whole().map_err(io_error_to_status)?;
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
+            let cow = storage.read_whole::<u8>().map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
         .await
@@ -275,28 +311,34 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let ReadBatchRequest {
             collection_name,
+            shard_id,
             path,
             ranges,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_batch")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_batch")
             .await?;
-        let path = Self::resolve_path(&base, &path)?;
+        let path = Self::resolve_path(&base, &collections_root, &path)?;
 
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
+        };
         let ranges = ranges
             .iter()
-            .map(|r| ReadRange {
-                byte_offset: r.byte_offset,
-                length: r.length,
-            })
+            .map(|r| ReadRange::new(r.byte_offset, r.length))
             .collect::<Vec<_>>();
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let storage = fs
+                .open(&path, open_options, Default::default())
+                .map_err(io_error_to_status)?;
             let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             storage
-                .read_batch::<Random, _>(ranges.into_iter().enumerate(), |idx, chunk| {
+                .read_batch::<Random, u8, _>(ranges.into_iter().enumerate(), |idx, chunk| {
                     results[idx].extend_from_slice(chunk);
                     Ok(())
                 })
@@ -320,12 +362,18 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let auth = extract_auth(&mut request);
         let ReadMultiRequest {
             collection_name,
+            shard_id,
             reads,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_multi")
+        let (base, collections_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_multi")
             .await?;
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
+        };
 
         // Resolve all paths and deduplicate into a file index.
         let mut path_to_index = HashMap::<PathBuf, FileIndex>::new();
@@ -333,25 +381,20 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let mut reads_ = Vec::<(FileIndex, _)>::with_capacity(reads.len());
 
         for entry in &reads {
-            let resolved = Self::resolve_path(&base, &entry.path)?;
+            let resolved = Self::resolve_path(&base, &collections_root, &entry.path)?;
             let file_index = *path_to_index.entry(resolved.clone()).or_insert_with(|| {
                 let idx = unique_paths.len();
                 unique_paths.push(resolved);
                 idx
             });
-            reads_.push((
-                file_index,
-                ReadRange {
-                    byte_offset: entry.byte_offset,
-                    length: entry.length,
-                },
-            ));
+            reads_.push((file_index, ReadRange::new(entry.byte_offset, entry.length)));
         }
 
+        let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
             let files = unique_paths
                 .iter()
-                .map(|p| S::open(p, open_options))
+                .map(|p| fs.open(p, open_options, Default::default()))
                 .collect::<common::universal_io::Result<Vec<_>>>()
                 .map_err(io_error_to_status)?;
 
@@ -362,7 +405,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 .enumerate()
                 .map(|(op_idx, (file_idx, range))| (op_idx, &files[file_idx], range));
 
-            S::read_multi::<Random, _>(reads, |op_idx, chunk| {
+            S::read_multi::<Random, u8, _>(reads, |op_idx, chunk| {
                 results[op_idx].extend_from_slice(chunk);
                 Ok(())
             })

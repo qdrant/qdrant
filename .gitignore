@@ -3,6 +3,7 @@
 .vscode
 /.devcontainer
 /storage
+/storage-model
 /snapshots
 /consensus_test_logs
 /tests/consensus_test_logs
@@ -20,3 +21,5 @@ venv
 .venv
 .env
 .python-version
+.claude/
+/docs/plans/

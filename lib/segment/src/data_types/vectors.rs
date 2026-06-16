@@ -725,19 +725,6 @@ impl Named for NamedVectorStruct {
 }
 
 impl NamedVectorStruct {
-    pub fn new_from_vector(vector: VectorInternal, name: impl Into<VectorNameBuf>) -> Self {
-        let name = name.into();
-        match vector {
-            VectorInternal::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
-            VectorInternal::Sparse(vector) => {
-                NamedVectorStruct::Sparse(NamedSparseVector { name, vector })
-            }
-            VectorInternal::MultiDense(vector) => {
-                NamedVectorStruct::MultiDense(NamedMultiDenseVector { name, vector })
-            }
-        }
-    }
-
     pub fn get_vector(&self) -> VectorRef<'_> {
         match self {
             NamedVectorStruct::Default(v) => v.as_slice().into(),

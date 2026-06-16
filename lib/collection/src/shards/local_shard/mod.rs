@@ -20,7 +20,7 @@ pub mod indexed_only;
 pub mod testing;
 mod wal_ops;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -49,7 +49,7 @@ use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
-    SeqNumberType,
+    SeqNumberType, StrictModeConfig,
 };
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
@@ -71,6 +71,7 @@ use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentH
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::file_utils::{move_dir, move_file};
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::config::CollectionConfigInternal;
@@ -90,6 +91,9 @@ use crate::wal_delta::RecoverableWal;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
+
+/// Log a warning if applying a single WAL operation during recovery takes longer than this.
+const WAL_SLOW_OP_REPORT_THRESHOLD: Duration = Duration::from_secs(30);
 
 /// LocalShard
 ///
@@ -112,9 +116,10 @@ pub struct LocalShard {
     pub(super) optimizers: ArcSwap<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     pub(super) total_optimized_points: Arc<AtomicUsize>,
-    pub(super) search_runtime: Handle,
+    pub(super) search_runtime: AdaptiveSearchHandle,
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
+    write_rate_limiter: Option<ParkingMutex<RateLimiter>>,
 
     is_gracefully_stopped: bool,
 
@@ -241,7 +246,7 @@ impl LocalShard {
         shard_path: &Path,
         clocks: LocalShardClocks,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
     ) -> Self {
         let segment_holder = LockedSegmentHolder::new(segment_holder);
         let config = collection_config.read().await;
@@ -300,6 +305,12 @@ impl LocalShard {
                 .map(RateLimiter::new_per_minute)
                 .map(ParkingMutex::new)
         });
+        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
+            strict_mode
+                .write_rate_limit
+                .map(RateLimiter::new_per_minute)
+                .map(ParkingMutex::new)
+        });
 
         drop(config); // release `shared_config` from borrow checker
 
@@ -321,6 +332,7 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
+            write_rate_limiter,
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
@@ -344,7 +356,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         rebuild_payload_index: bool,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
     ) -> CollectionResult<LocalShard> {
         let total_started = Instant::now();
@@ -542,7 +554,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
@@ -575,7 +587,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
@@ -768,8 +780,30 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
+        // Vector names that currently exist in the collection. Historical WAL operations may
+        // reference a vector name that was since removed by `delete_named_vector`; replaying
+        // such an operation against the post-deletion segment config fails validation and the
+        // whole operation (with its points) is dropped. We strip the dead names before applying.
+        //
+        // Seeded from the current config and grown as the replay re-applies `CreateVectorName`
+        // operations, so a name that is created and used within the replay window stays valid.
+        let mut valid_vector_names: HashSet<_> = {
+            let params = &self.collection_config.read().await.params;
+            params
+                .vectors
+                .params_iter()
+                .map(|(name, _)| name.to_owned())
+                .chain(
+                    params
+                        .sparse_vectors
+                        .iter()
+                        .flat_map(|sparse| sparse.keys().cloned()),
+                )
+                .collect()
+        };
+
         for entry in wal.read_range(from..to) {
-            let (op_num, update) = entry.map_err(|e| {
+            let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
                     "Failed to read WAL during recovery of {}: {e}",
                     self.path.display(),
@@ -778,6 +812,19 @@ impl LocalShard {
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
             }
+
+            // A historical `CreateVectorName` makes its name valid for every operation that
+            // follows it in the WAL; track it before stripping so those references survive.
+            if let Some(name) = update.operation.created_vector_name() {
+                valid_vector_names.insert(name.clone());
+            }
+
+            update.operation.retain_vector_names(&valid_vector_names);
+
+            // Capture the operation type before `update.operation` is moved, so we can
+            // report it if applying this operation turns out to be slow.
+            let op_name = update.operation.operation_name();
+            let op_started = Instant::now();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
@@ -811,6 +858,15 @@ impl LocalShard {
                 Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
+            }
+
+            let op_elapsed = op_started.elapsed();
+            if op_elapsed >= WAL_SLOW_OP_REPORT_THRESHOLD {
+                log::warn!(
+                    "Slow WAL operation during recovery: {op_name} took {op_elapsed:.2?}, \
+                     collection: {collection_id}, \
+                     op_num: {op_num}"
+                );
             }
 
             // Update progress bar or show text progress every WAL_LOAD_REPORT_EVERY
@@ -901,23 +957,25 @@ impl LocalShard {
     }
 
     /// Apply shard's strict mode configuration update
-    /// - Update read rate limiter
-    pub async fn on_strict_mode_config_update(&mut self) {
-        let config = self.collection_config.read().await;
+    /// - Update read and write rate limiters
+    ///
+    /// The new strict-mode config is passed in explicitly rather than read from
+    /// `self.collection_config` so the caller can apply rate-limiter changes
+    /// before publishing the new config to readers of `self.collection_config`.
+    /// That order ensures `info()` never reports the new strict-mode state
+    /// while the rate limiters are still on the old one.
+    pub fn on_strict_mode_config_update(&mut self, new_strict_mode: &StrictModeConfig) {
+        let strict_mode = Some(new_strict_mode).filter(|cfg| cfg.enabled == Some(true));
 
-        if let Some(strict_mode_config) = &config.strict_mode_config
-            && strict_mode_config.enabled == Some(true)
-        {
-            // update read rate limiter
-            if let Some(read_rate_limit_per_min) = strict_mode_config.read_rate_limit {
-                let new_read_rate_limiter = RateLimiter::new_per_minute(read_rate_limit_per_min);
-                self.read_rate_limiter
-                    .replace(parking_lot::Mutex::new(new_read_rate_limiter));
-                return;
-            }
-        }
-        // remove read rate limiter for all other situations
-        self.read_rate_limiter.take();
+        let read_rate_limit_per_min = strict_mode.and_then(|cfg| cfg.read_rate_limit);
+        let write_rate_limit_per_min = strict_mode.and_then(|cfg| cfg.write_rate_limit);
+
+        self.read_rate_limiter = read_rate_limit_per_min
+            .map(RateLimiter::new_per_minute)
+            .map(ParkingMutex::new);
+        self.write_rate_limiter = write_rate_limit_per_min
+            .map(RateLimiter::new_per_minute)
+            .map(ParkingMutex::new);
     }
 
     pub async fn estimate_cardinality<'a>(
@@ -954,7 +1012,7 @@ impl LocalShard {
     pub async fn read_filtered<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
         hw_counter: HwMeasurementAcc,
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
@@ -1309,6 +1367,33 @@ impl LocalShard {
                     log::debug!("Read rate limit error on {context} with {err:?}");
                     CollectionError::rate_limit_error(err, cost, false)
                 })?;
+        }
+        Ok(())
+    }
+
+    /// Check if the write rate limiter allows the operation to proceed.
+    ///
+    /// Mirrors `check_read_rate_limiter` but for writes; the cost is computed
+    /// lazily via `cost_fn` (which may be async, e.g. cardinality estimates).
+    /// Returns an error if the rate limit is exceeded.
+    pub(crate) async fn check_write_rate_limiter<F>(
+        &self,
+        hw_measurement_acc: &HwMeasurementAcc,
+        cost_fn: F,
+    ) -> CollectionResult<()>
+    where
+        F: AsyncFnOnce() -> usize,
+    {
+        // Do not rate limit internal operation tagged with disposable measurement
+        if hw_measurement_acc.is_disposable() {
+            return Ok(());
+        }
+        if let Some(rate_limiter) = &self.write_rate_limiter {
+            let cost = cost_fn().await;
+            rate_limiter
+                .lock()
+                .try_consume(cost as f64)
+                .map_err(|err| CollectionError::rate_limit_error(err, cost, true))?;
         }
         Ok(())
     }

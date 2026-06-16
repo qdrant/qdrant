@@ -330,6 +330,13 @@ service:
   # Prefix for the names of metrics in the /metrics API.
   # metrics_prefix: qdrant_
 
+  # Allow snapshot recovery from remote HTTP/HTTPS URLs.
+  # If disabled, snapshot recovery will only work with local files and uploads.
+  # Disabling this can mitigate SSRF risks in environments where the Qdrant node
+  # has access to internal resources that should not be reachable by users.
+  # Default: true
+  # enable_snapshot_url_recovery: true
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false

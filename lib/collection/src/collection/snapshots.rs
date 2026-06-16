@@ -25,6 +25,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
+use crate::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{SHARD_KEY_MAPPING_FILE, ShardHolder, shard_not_found_error};
 use crate::shards::shard_path;
@@ -327,6 +328,7 @@ impl Collection {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
+        recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + 'static> {
         // `ShardHolder::validate_shard_snapshot` is cancel safe, so we explicitly cancel it
@@ -351,6 +353,7 @@ impl Collection {
                     this_peer_id,
                     is_distributed,
                     &temp_dir,
+                    recovery_progress,
                     cancel,
                 )
                 .await?;
@@ -372,6 +375,23 @@ impl Collection {
             .read()
             .await
             .assert_shard_exists(shard_id)
+    }
+
+    /// Drop the local shard and clear its on-disk data, before a shard snapshot
+    /// transfer downloads a replacement snapshot. See
+    /// [`ShardReplicaSet::clear_local_for_snapshot_recovery`] for details and safety
+    /// constraints.
+    pub async fn clear_local_shard_for_snapshot_recovery(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        self.shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?
+            .clear_local_for_snapshot_recovery(&self.path)
+            .await
     }
 
     pub async fn try_take_partial_snapshot_recovery_lock(

@@ -1,18 +1,20 @@
+use std::debug_assert_matches;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 
+use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{MmapFile, read_json_via};
+use common::universal_io::{UniversalRead, UniversalReadFs, read_json_via};
 
 use super::view::GridstoreView;
+use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PageId, PointOffset};
-use crate::{Result, Tracker};
+use crate::tracker::{PageId, PointOffset, Tracker};
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 
@@ -21,17 +23,17 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 /// Holds pages and tracker directly (no locks) since it provides only read access.
 /// For read-write access, use [`super::Gridstore`].
 #[derive(Debug)]
-pub struct GridstoreReader<V> {
+pub struct GridstoreReader<V, S: UniversalRead> {
     pub(super) config: StorageConfig,
-    pub(super) tracker: Tracker,
-    pub(super) pages: Pages<MmapFile>,
+    pub(super) tracker: Tracker<S>,
+    pub(super) pages: Pages<S>,
     pub(super) base_path: PathBuf,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
-impl<V: Blob> GridstoreReader<V> {
+impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Create a [`GridstoreView`] borrowing this reader's data.
-    pub fn view(&self) -> GridstoreView<'_, V, MmapFile> {
+    pub fn view(&self) -> GridstoreView<'_, V, S> {
         GridstoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
@@ -58,10 +60,13 @@ impl<V: Blob> GridstoreReader<V> {
     /// Open an existing read-only storage at the given path.
     ///
     /// Infers page count by scanning for page files on disk.
-    pub fn open(base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = read_config_and_tracker(&base_path)?;
+    pub fn open(fs: &S::Fs, base_path: PathBuf) -> Result<Self> {
+        // A reader only reads, so open pages and tracker non-writable. This
+        // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
+        // writable `Gridstore` opens these same files writable instead.
+        let (config, tracker) = read_config_and_tracker(fs, &base_path, false)?;
 
-        let pages = Pages::<MmapFile>::open(&base_path)?;
+        let pages = Pages::<S>::open(fs, &base_path, false)?;
 
         Ok(Self {
             tracker,
@@ -99,9 +104,23 @@ impl<V: Blob> GridstoreReader<V> {
             .iter(0, max_id, usize::MAX, callback, hw_counter)?;
 
         // we set usize::MAX as the max iteration, so we should always iterate the entire thing.
-        debug_assert!(matches!(control_flow, ControlFlow::Break(())));
+        debug_assert_matches!(control_flow, ControlFlow::Break(()));
 
         Ok(())
+    }
+
+    pub fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        E: From<GridstoreError>,
+    {
+        self.view()
+            .read_values::<P, _, _>(point_offsets, callback, hw_counter_cell)
     }
 
     /// Return the storage size in bytes (approximate: total page capacity).
@@ -119,20 +138,20 @@ impl<V: Blob> GridstoreReader<V> {
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     ///
-    pub fn live_reload(&mut self) -> Result<()> {
+    pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         let has_new_data = self.tracker.live_reload()?;
 
         if !has_new_data {
             return Ok(());
         }
 
-        self.pages.live_reload()?;
+        self.pages.live_reload(fs)?;
 
         Ok(())
     }
 }
 
-impl<V> GridstoreReader<V> {
+impl<V, S: UniversalRead> GridstoreReader<V, S> {
     /// Populate all pages and the tracker in the mmap.
     pub fn populate(&self) -> Result<()> {
         self.pages.populate()?;
@@ -157,18 +176,20 @@ impl<V> GridstoreReader<V> {
 /// Read config and open tracker from the base path.
 ///
 /// Shared helper used by both [`GridstoreReader::open`] and [`super::Gridstore::open`].
-pub(super) fn read_config_and_tracker(
+pub(super) fn read_config_and_tracker<Fs, S>(
+    fs: &Fs,
     base_path: &std::path::Path,
-) -> Result<(StorageConfig, Tracker)> {
+    writeable: bool,
+) -> Result<(StorageConfig, Tracker<S>)>
+where
+    Fs: UniversalReadFs<File = S>,
+    S: UniversalRead<Fs = Fs>,
+{
     let config_path = base_path.join(CONFIG_FILENAME);
     let config: StorageConfig =
-        read_json_via::<MmapFile, StorageConfig>(&config_path).map_err(|err| {
-            GridstoreError::service_error(format!(
-                "Failed to read config from '{config_path:?}': {err}"
-            ))
-        })?;
+        read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
 
-    let tracker = Tracker::open(base_path)?;
+    let tracker = Tracker::<S>::open(fs, base_path, writeable)?;
 
     Ok((config, tracker))
 }

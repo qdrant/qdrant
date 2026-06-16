@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use itertools::Either;
 
 use super::posting_list::PostingList;
@@ -230,13 +231,15 @@ impl InvertedIndex for MutableInvertedIndex {
         Ok(self.postings.get(token_id as usize).map(|x| x.len()))
     }
 
-    fn vocab_with_postings_len_iter(
+    fn for_each_vocab_with_postings_len(
         &self,
-    ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_ {
-        self.vocab.iter().filter_map(|(token, &posting_idx)| {
-            self.postings
-                .get(posting_idx as usize)
-                .map(|postings| Ok((token.as_str(), postings.len())))
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.vocab.iter().try_for_each(|(token, &posting_idx)| {
+            if let Some(postings) = self.postings.get(posting_idx as usize) {
+                f(token.as_str(), postings.len())?;
+            }
+            Ok(())
         })
     }
 
@@ -287,8 +290,14 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count
     }
 
-    fn get_token_id(&self, token: &str, _hw_counter: &HardwareCounterCell) -> Option<TokenId> {
-        self.vocab.get(token).copied()
+    fn for_each_token_id<'a, U: UserData>(
+        &self,
+        tokens: impl Iterator<Item = (U, &'a str)>,
+        _: &HardwareCounterCell,
+        mut f: impl FnMut(U, Option<TokenId>),
+    ) -> OperationResult<()> {
+        tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));
+        Ok(())
     }
 }
 

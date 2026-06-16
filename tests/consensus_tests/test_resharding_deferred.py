@@ -315,6 +315,17 @@ def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: 
     assert_http_ok(resp)
 
     if direction == "up":
+        # Wait for the CommitRead consensus entry to propagate to every peer
+        # before issuing cleanup. The HTTP response above only guarantees the
+        # leader has applied the entry; on followers, applying CommitRead
+        # invalidates any ongoing shard clean tasks (see
+        # Collection::commit_read_hashring -> invalidate_clean_local_shards),
+        # so if the cleanup request below races a follower that is still
+        # about to apply CommitRead, the task gets cancelled mid-flight and
+        # the endpoint returns 500 "Failed to clean shard points due to
+        # cancellation, please try again".
+        wait_for_same_commit(peer_api_uris)
+
         # Clean up source shards between read and write hash ring commits:
         # delete points that were migrated to the new shard and no longer
         # belong on the source under the new hash ring.

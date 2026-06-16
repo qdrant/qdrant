@@ -6,6 +6,7 @@ use std::time::Duration;
 use common::defaults;
 use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
+use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::Collection;
@@ -42,7 +43,8 @@ impl Collection {
             .unwrap_or(false)
     }
 
-    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+    /// Legacy default shard transfer method for Qdrant <1.18.0
+    pub async fn legacy_default_shard_transfer_method(&self) -> ShardTransferMethod {
         if self.is_prevent_unoptimized().await {
             // With prevent_unoptimized, use snapshot as the default method.
             // For automatic transfers, mod.rs prefers WalDelta when all peers
@@ -54,6 +56,13 @@ impl Collection {
                 .default_shard_transfer_method
                 .unwrap_or(ShardTransferMethod::StreamRecords)
         }
+    }
+
+    /// Default shard transfer method for Qdrant 1.18.0+
+    pub fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+        self.shared_storage_config
+            .default_shard_transfer_method
+            .unwrap_or(ShardTransferMethod::Snapshot)
     }
 
     pub async fn start_shard_transfer<T, F>(
@@ -68,11 +77,32 @@ impl Collection {
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
-        // Select transfer method
-        let default_method = self.default_shard_transfer_method().await;
+        // The coordinating peer must pick the transfer method before submitting
+        // to consensus, so that every peer applies the same method for a given
+        // transfer.
+        //
+        // Once every peer is at 1.18.0+, all submission sites guarantee the
+        // method is set, so a missing method indicates a bug — refuse it.
+        // For mixed clusters (some peers <1.18.0), an older submission site
+        // may still send `None`; fall back to this peer's local default to
+        // preserve compatibility.
         if shard_transfer.method.is_none() {
-            log::warn!("No shard transfer method selected, defaulting to {default_method:?}");
-            shard_transfer.method.replace(default_method);
+            let all_peers_enforce = self
+                .channel_service
+                .all_peers_at_version(&Version::new(1, 18, 0));
+            if all_peers_enforce {
+                return Err(CollectionError::service_error(format!(
+                    "Shard transfer {}:{} -> {} has no method set; the coordinating peer must \
+                     pick a transfer method before submitting to consensus",
+                    shard_transfer.shard_id, shard_transfer.from, shard_transfer.to,
+                )));
+            }
+            let default_method = self.legacy_default_shard_transfer_method().await;
+            log::warn!(
+                "No shard transfer method selected, defaulting to {default_method:?} \
+                 (cluster contains peers older than 1.18.0)",
+            );
+            shard_transfer.method = Some(default_method);
         }
 
         let do_transfer = {
@@ -99,7 +129,9 @@ impl Collection {
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
 
-            let transfer_method = shard_transfer.method.unwrap_or(default_method);
+            // Checked at the top of the function — the method is always set by the
+            // peer that submitted this transfer to consensus.
+            let transfer_method = shard_transfer.method.expect("transfer method must be set");
             let initial_state = match transfer_method {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
@@ -193,10 +225,20 @@ impl Collection {
         // With prevent_unoptimized, fall back to snapshot which preserves deferred
         // point state exactly (raw segment copy). stream_records sends deferred
         // points but they won't be deferred on the target.
+        // Otherwise use the configured cluster default transfer method, except
+        // never fall back to wal_delta: it's the method most likely to be
+        // failing (the only currently-fallible automatic transfer), and a same-
+        // method fallback would just be refused in the driver. Use snapshot as
+        // a safe fallback in that case, which is also the 1.18.0+ default.
         let fallback_method = if self.is_prevent_unoptimized().await {
             ShardTransferMethod::Snapshot
         } else {
-            ShardTransferMethod::StreamRecords
+            match self.default_shard_transfer_method() {
+                ShardTransferMethod::WalDelta => ShardTransferMethod::Snapshot,
+                method @ (ShardTransferMethod::StreamRecords
+                | ShardTransferMethod::Snapshot
+                | ShardTransferMethod::ReshardingStreamRecords) => method,
+            }
         };
         let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
@@ -404,34 +446,35 @@ impl Collection {
     pub async fn abort_shard_transfer_and_resharding(
         &self,
         transfer_key: ShardTransferKey,
-        shard_holder: Option<&ShardHolder>,
     ) -> CollectionResult<()> {
-        let mut shard_holder_guard = None;
+        // Look up transfer and any resharding state we need to abort
+        let resharding_state = {
+            let shard_holder = self.shards_holder.read().await;
 
-        let shard_holder = match shard_holder {
-            Some(shard_holder) => shard_holder,
-            None => shard_holder_guard.insert(self.shards_holder.read().await),
+            let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
+                return Ok(());
+            };
+
+            if transfer.is_resharding() {
+                shard_holder.resharding_state.read().clone()
+            } else {
+                None
+            }
         };
+
+        // Abort resharding before the transfer to be idempotent
+        if let Some(state) = resharding_state {
+            self.abort_resharding(state.key(), false).await?;
+        }
+
+        // Resharding may already have aborted the transfer so we check it again
+        let shard_holder = self.shards_holder.read().await;
 
         let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
             return Ok(());
         };
 
-        let is_resharding_transfer = transfer.is_resharding();
-        self.abort_shard_transfer(transfer, shard_holder).await?;
-
-        if is_resharding_transfer {
-            let resharding_state = shard_holder.resharding_state.read().clone();
-
-            // `abort_resharding` locks `shard_holder`!
-            drop(shard_holder_guard);
-
-            if let Some(state) = resharding_state {
-                self.abort_resharding(state.key(), false).await?;
-            }
-        }
-
-        Ok(())
+        self.abort_shard_transfer(transfer, &shard_holder).await
     }
 
     /// Initiate local partial shard

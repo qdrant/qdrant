@@ -173,6 +173,21 @@ impl ReadSegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
+        self.vector_with_behavior(
+            vector_name,
+            point_id,
+            DeferredBehavior::VisibleOnly,
+            hw_counter,
+        )
+    }
+
+    fn vector_with_behavior(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<VectorInternal>> {
         // The proxy queues a delete or schema-superseding create for this
         // vector — the wrapped's stored data is no longer authoritative.
         // Treat the lookup as if the point had no value for this vector.
@@ -185,16 +200,27 @@ impl ReadSegmentEntry for ProxySegment {
         if self.deleted_points.contains_key(&point_id) {
             Ok(None)
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .vector(vector_name, point_id, hw_counter)
+            self.wrapped_segment.get().read().vector_with_behavior(
+                vector_name,
+                point_id,
+                deferred_behavior,
+                hw_counter,
+            )
         }
     }
 
     fn all_vectors(
         &self,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors<'_>> {
+        self.all_vectors_with_behavior(point_id, DeferredBehavior::VisibleOnly, hw_counter)
+    }
+
+    fn all_vectors_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>> {
         let mut result = NamedVectors::default();
@@ -214,7 +240,9 @@ impl ReadSegmentEntry for ProxySegment {
         drop(wrapped_guard);
 
         for vector_name in vector_names {
-            if let Some(vector) = self.vector(&vector_name, point_id, hw_counter)? {
+            if let Some(vector) =
+                self.vector_with_behavior(&vector_name, point_id, deferred_behavior, hw_counter)?
+            {
                 result.insert(vector_name, vector);
             }
         }
@@ -226,13 +254,23 @@ impl ReadSegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
+        self.payload_with_behavior(point_id, DeferredBehavior::VisibleOnly, hw_counter)
+    }
+
+    fn payload_with_behavior(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
         if self.deleted_points.contains_key(&point_id) {
             Ok(Payload::default())
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .payload(point_id, hw_counter)
+            self.wrapped_segment.get().read().payload_with_behavior(
+                point_id,
+                deferred_behavior,
+                hw_counter,
+            )
         }
     }
 
@@ -265,13 +303,6 @@ impl ReadSegmentEntry for ProxySegment {
             is_stopped,
             deferred_behavior,
         )
-    }
-
-    /// Not implemented for proxy
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        // get_points is not available for Proxy implementation
-        // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
-        unimplemented!("call to get_points is not implemented for Proxy segment")
     }
 
     fn read_filtered<'a>(
@@ -456,9 +487,13 @@ impl ReadSegmentEntry for ProxySegment {
         Ok(hits)
     }
 
-    fn has_point(&self, point_id: PointIdType) -> bool {
+    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
         !self.deleted_points.contains_key(&point_id)
-            && self.wrapped_segment.get().read().has_point(point_id)
+            && self
+                .wrapped_segment
+                .get()
+                .read()
+                .has_point(point_id, deferred_behavior)
     }
 
     fn is_empty(&self) -> bool {
@@ -679,10 +714,6 @@ impl ReadSegmentEntry for ProxySegment {
         indexed_fields
     }
 
-    fn check_error(&self) -> Option<SegmentFailedState> {
-        self.wrapped_segment.get().read().check_error()
-    }
-
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.wrapped_segment.get().read().vector_names()
     }
@@ -691,7 +722,7 @@ impl ReadSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().get_telemetry_data(detail)
     }
 
-    fn fill_query_context(&self, query_context: &mut QueryContext) {
+    fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         // Information from temporary segment is not too important for query context
         self.wrapped_segment
             .get()
@@ -730,6 +761,10 @@ impl ReadSegmentEntry for ProxySegment {
 }
 
 impl StorageSegmentEntry for ProxySegment {
+    fn check_error(&self) -> Option<SegmentFailedState> {
+        self.wrapped_segment.get().read().check_error()
+    }
+
     fn persistent_version(&self) -> SeqNumberType {
         self.wrapped_segment.get().read().persistent_version()
     }
@@ -880,7 +915,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 let (has_point, is_deferred) = {
                     let read_proxy = proxy.read();
                     (
-                        read_proxy.has_point(point_id),
+                        read_proxy.has_point(point_id, DeferredBehavior::WithDeferred),
                         read_proxy.point_is_deferred(point_id),
                     )
                 };

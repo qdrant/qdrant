@@ -1,12 +1,19 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use permutation_iterator::Permutor;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::EncodingError;
 use crate::p_square::P2Quantile;
 
 pub const SAMPLE_SIZE: usize = 5_000;
+/// P-square marker count. Original Jain & Chlamtac (1985) algorithm uses
+/// 5; we run with the extended variant at 7 because Bits4 anchors on
+/// `p = Φ(2.733) ≈ 0.997` and 5 markers don't track that tail accurately
+/// enough on small samples (`n ≤ ~10³` failed `recall_skewed_data` on
+/// Bits4 at N=5). The cost of the extra two markers is paid only on each
+/// `push`, and on Bits4's deep-tail target the higher marker count is
+/// what keeps the estimator stable at the chosen `sample_size`.
 pub const P2_MARKERS: usize = 7;
 
 pub(crate) fn find_min_max_from_iter<'a>(
@@ -72,103 +79,207 @@ pub(crate) fn find_quantile_interval<'a>(
     )))
 }
 
-pub fn find_interval_per_coordinate<'a>(
-    vector_data: impl Iterator<Item = impl AsRef<[f32]> + Send + Sync + 'a> + Clone,
-    dim: usize,
+/// Quantile estimation via vector-level uniform random sampling, with
+/// a fused per-vector preprocess.
+///
+/// Picks `sample_size` random indices in `[0, count)` (uniform without
+/// replacement, sorted ascending), then drives the input iterator
+/// forward with `iter.nth(skip)` to land exactly on each chosen index.
+/// For mmap-backed `Range::map(get_dense)` style iterators — the common
+/// case in segment storage — `nth(k)` advances the underlying `Range`
+/// counter in O(1) and **does not invoke the closure for skipped
+/// indices**. So we pay one `get_dense` (and one Hadamard rotation, and
+/// one P-square push per coord) only for the `R = sample_size` vectors
+/// we actually sampled, not for all `count` of them.
+///
+/// **Why sampling is sound here.** The variance of the per-coord
+/// quantile estimator at probability `p` over `R` independent samples
+/// is `p(1-p) / (R · f(F⁻¹(p))²)`. It depends on `R` only — reading
+/// every one of `count` vectors gives no extra accuracy beyond an
+/// `R`-sized i.i.d. sample, just at much higher I/O and compute cost.
+///
+/// **Pipeline shape.** Streaming, batched into `BATCH_SIZE` vectors at
+/// a time:
+///
+/// ```text
+///   1. Sort R random indices.
+///   2. For each batch of up to BATCH_SIZE indices:
+///        a. Sequential read+preprocess: iter.nth(skip) → preprocess
+///           writes padded_dim f64s into row b of `batch_scratch`.
+///        b. Parallel coord-chunk push: each rayon work item handles a
+///           contiguous slice of coords and pushes all batch values for
+///           those coords into both per-coord P-square estimators.
+///   3. Finalize: pair up the per-coord estimators and read out
+///      `(p_lo, p_hi)`.
+/// ```
+///
+/// No reservoir, no intermediate `Vec<Vec<f32>>`. The only working
+/// buffer is `BATCH_SIZE × padded_dim × f64` (~192 KB at
+/// padded_dim=1536) plus `2 × padded_dim × P2Quantile` (~200 KB) — both
+/// independent of `R`.
+///
+/// `preprocess(raw, scratch)` must write exactly `padded_dim` finite
+/// values into `scratch`. It runs on the main thread, so it does not
+/// need `Send`/`Sync`.
+///
+/// `sample_size` controls how many random vectors are actually read
+/// and processed. The caller picks this based on how extreme the
+/// target quantile is — see `TQBits::sample_size` for the per-bits
+/// table used in TQ+.
+#[allow(clippy::too_many_arguments)]
+pub fn find_quantile_interval_per_coordinate_with_preprocess<'a, F>(
+    data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
+    raw_dim: usize,
+    padded_dim: usize,
     count: usize,
     quantile: f32,
     num_threads: usize,
+    sample_size: usize,
+    preprocess: F,
     stopped: &AtomicBool,
-) -> Result<Vec<(f32, f32)>, EncodingError> {
-    debug_assert!(quantile > 0.5 && quantile <= 1.0);
+) -> Result<Vec<(f32, f32)>, EncodingError>
+where
+    F: Fn(&[f32], &mut [f64]) + Send + Sync + 'a,
+{
+    debug_assert!(quantile > 0.5 && quantile < 1.0);
+    debug_assert!(raw_dim > 0 && padded_dim > 0);
+    debug_assert!(sample_size > 0);
 
-    // In case of max quantile, return min-max per dimension
-    if quantile >= 1.0 {
-        return find_min_max_interval_per_coordinate(vector_data, dim, count, stopped);
+    // Empty-input fast path: no quantile to estimate. Match the legacy
+    // contract of returning a `padded_dim`-wide vector of zero pairs so
+    // downstream `shift = 0`, `scale = 1` and EC is identity.
+    if count == 0 {
+        return Ok(vec![(0.0, 0.0); padded_dim]);
     }
 
-    // Otherwise, use P Square algorithm to estimate quantile intervals
-    find_interval_per_coordinate_p2(vector_data, dim, count, quantile, num_threads, stopped)
-}
+    let min_quantile = (1.0 - f64::from(quantile)) / 2.0;
+    let max_quantile = 1.0 - min_quantile;
 
-fn find_min_max_interval_per_coordinate<'a>(
-    vector_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-    dim: usize,
-    count: usize,
-    stopped: &AtomicBool,
-) -> Result<Vec<(f32, f32)>, EncodingError> {
-    let mut result = vec![(f32::MAX, f32::MIN); dim];
+    // Random sample of `R` indices in `[0, count)`, sorted ascending so
+    // the iterator can step through them with monotonic `nth(skip)`
+    // calls. `Permutor` produces a deterministic permutation per
+    // `count` — same input collection produces the same sample, which
+    // is what we want for reproducible recall across runs.
+    let actual_sample = sample_size.min(count);
+    let mut indices: Vec<usize> = Permutor::new(count as u64)
+        .map(|i| i as usize)
+        .take(actual_sample)
+        .collect();
+    indices.sort_unstable();
 
-    let selected_vectors = take_random_vectors(vector_data, count, SAMPLE_SIZE, stopped)?;
-
-    for vector in selected_vectors {
-        if stopped.load(Ordering::Relaxed) {
-            return Err(EncodingError::Stopped);
-        }
-
-        for ((min, max), &value) in result.iter_mut().zip(vector.as_ref().iter()) {
-            *min = min.min(value);
-            *max = max.max(value);
-        }
-    }
-
-    for min_max in result.iter_mut() {
-        if min_max.0 == f32::MAX || min_max.1 == f32::MIN {
-            *min_max = (0.0, 0.0);
-        }
-    }
-
-    Ok(result)
-}
-
-fn find_interval_per_coordinate_p2<'a>(
-    vector_data: impl Iterator<Item = impl AsRef<[f32]> + Send + Sync + 'a> + Clone,
-    dim: usize,
-    count: usize,
-    quantile: f32,
-    num_threads: usize,
-    stopped: &AtomicBool,
-) -> Result<Vec<(f32, f32)>, EncodingError> {
-    let selected_vectors = take_random_vectors(vector_data, count, SAMPLE_SIZE, stopped)?;
+    // One pair of P-square estimators per coord. The interleaved
+    // `(min, max)` layout lets us iterate them as a single contiguous
+    // slice during the per-vector parallel push.
+    //
+    // Memory: `padded_dim × 2 × sizeof(P2Quantile)`, ~200 KB at
+    // padded_dim=1536 — independent of `sample_size`. The previous
+    // implementation kept an intermediate `Vec<f32>` of
+    // `sample_size × max(raw_dim, padded_dim)` (≈12 MB at 2k samples,
+    // up to ≈50 MB at 8k); streaming push removes that buffer entirely.
+    let mut estimators: Vec<(P2Quantile<P2_MARKERS>, P2Quantile<P2_MARKERS>)> = (0..padded_dim)
+        .map(|_| {
+            Ok::<_, EncodingError>((
+                P2Quantile::<P2_MARKERS>::new(min_quantile)?,
+                P2Quantile::<P2_MARKERS>::new(max_quantile)?,
+            ))
+        })
+        .collect::<Result<_, _>>()?;
 
     let pool = rayon::ThreadPoolBuilder::new()
-        .thread_name(|idx| format!("p-square-{idx}"))
+        .thread_name(|idx| format!("tq-prepass-{idx}"))
         .num_threads(num_threads.max(1))
         .build()
         .map_err(|e| {
             EncodingError::EncodingError(format!(
-                "Failed P Square estimation while thread pool init: {e}"
+                "Failed quantile pre-pass while thread pool init: {e}"
             ))
         })?;
 
-    // Process each dimension in parallel
-    pool.install(|| {
-        (0..dim)
-            .into_par_iter()
-            .map(|d| -> Result<(f32, f32), EncodingError> {
-                // Because quantile parameter (like 95%) is defined for both tails,
-                // we need to divide by 2.0 to get the correct min and max quantiles.
-                let min_quantile = (1.0 - f64::from(quantile)) / 2.0;
-                let mut min = P2Quantile::<P2_MARKERS>::new(min_quantile)?;
+    // Streaming pass with small batches. Per batch:
+    //   1. Read + preprocess `BATCH_SIZE` vectors sequentially into
+    //      `batch_scratch[BATCH_SIZE * padded_dim]` (row-major: row `b`
+    //      holds the rotated coords of the `b`-th vector in this batch).
+    //   2. Parallel coord-chunk push: each rayon work item handles a
+    //      contiguous slice of coords and pushes all `BATCH_SIZE` values
+    //      for those coords across both estimators.
+    //
+    // Why batching: the previous "push one vector at a time" form spent
+    // most time on rayon dispatch — `par_iter_mut().for_each(...)` invoked
+    // once per vector ran 24 work-units × 2k vectors = 50k dispatch events
+    // on Bits1, ~200k on Bits4. Batching at B=16 amortizes that cost over
+    // the batch (3.1k dispatches on Bits1, 12.5k on Bits4), with minimal
+    // memory impact: `batch_scratch` is `BATCH_SIZE × padded_dim × f64`
+    // ≈ 192 KB at padded_dim=1536, fits comfortably in L2.
+    //
+    // The strided column read inside the push closure
+    // (`batch_scratch[b * padded_dim + d]` across `b`) is non-contiguous,
+    // but each coord's column footprint is `BATCH_SIZE × 8 B` = 128 B, so
+    // the worker keeps the relevant cache lines hot for the full chunk.
+    const BATCH_SIZE: usize = 16;
+    const PUSH_MIN_CHUNK: usize = 64;
+    let mut batch_scratch = vec![0.0f64; BATCH_SIZE * padded_dim];
 
-                let max_quantile = 1.0 - min_quantile;
-                let mut max = P2Quantile::<P2_MARKERS>::new(max_quantile)?;
+    let mut data = data;
+    let mut cursor = 0usize;
+    let mut idx_iter = indices.iter().copied();
+    loop {
+        // Fill batch sequentially.
+        let mut filled = 0usize;
+        while filled < BATCH_SIZE {
+            let Some(idx) = idx_iter.next() else { break };
+            if stopped.load(Ordering::Relaxed) {
+                return Err(EncodingError::Stopped);
+            }
+            debug_assert!(idx >= cursor);
+            let skip = idx - cursor;
+            let v = data.nth(skip).ok_or_else(|| {
+                EncodingError::EncodingError(format!(
+                    "input iterator exhausted at sampled index {idx} (count={count})",
+                ))
+            })?;
+            let v_ref = v.as_ref();
+            // A short vector would leave part of `row` untouched when
+            // `preprocess` only writes to the first `v_ref.len()` slots,
+            // and the leftover f64s from the previous batch would land
+            // in the P-square estimators. Bail out with a real error.
+            if v_ref.len() != raw_dim {
+                return Err(EncodingError::EncodingError(format!(
+                    "input vector dim mismatch at sampled index {idx}: expected {raw_dim}, got {}",
+                    v_ref.len(),
+                )));
+            }
+            let row = &mut batch_scratch[filled * padded_dim..(filled + 1) * padded_dim];
+            preprocess(v_ref, row);
+            cursor = idx + 1;
+            filled += 1;
+        }
+        if filled == 0 {
+            break;
+        }
 
-                for vector in &selected_vectors {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(EncodingError::Stopped);
+        // Parallel coord-chunk push for the just-filled batch.
+        let batch_view = &batch_scratch[..filled * padded_dim];
+        pool.install(|| {
+            estimators
+                .par_iter_mut()
+                .enumerate()
+                .with_min_len(PUSH_MIN_CHUNK)
+                .for_each(|(d, (min_q, max_q))| {
+                    for b in 0..filled {
+                        let v = batch_view[b * padded_dim + d];
+                        min_q.push(v);
+                        max_q.push(v);
                     }
+                });
+        });
+    }
 
-                    let vector = vector.as_ref();
-                    let value = f64::from(vector[d]);
-                    min.push(value);
-                    max.push(value);
-                }
+    let intervals: Vec<(f32, f32)> = estimators
+        .into_iter()
+        .map(|(min_q, max_q)| (min_q.estimate() as f32, max_q.estimate() as f32))
+        .collect();
 
-                Ok((min.estimate() as f32, max.estimate() as f32))
-            })
-            .collect()
-    })
+    Ok(intervals)
 }
 
 // Take random vectors from the input iterator using `Permutor`.
@@ -210,12 +321,19 @@ mod tests {
 
     use super::*;
 
+    /// Per-coord quantile recovery on uniform `[0, 1)` data.
+    ///
+    /// The empirical quantile of `Uniform(0, 1)` at probability `p` is
+    /// `p`, so the symmetric interval at `q` is `((1-q)/2, 1-(1-q)/2)`.
+    /// Identity preprocess (f32 → f64 widening) lets us drive the same
+    /// pipeline TQ+ uses, without rotation.
     #[rstest]
-    #[case(1.0)]
-    #[case(0.95)]
-    fn test_vectors_quantile_interval(#[case] quantile: f32) {
+    #[case(0.95, 2)]
+    #[case(0.95, 4)]
+    fn test_quantile_interval_per_coord(#[case] quantile: f32, #[case] num_threads: usize) {
         const COUNT: usize = 5_000;
         const DIM: usize = 4;
+        const SAMPLE: usize = 2_048;
 
         let mut rng = StdRng::seed_from_u64(42);
         let mut data = Vec::with_capacity(COUNT);
@@ -227,27 +345,34 @@ mod tests {
             data.push(vector);
         }
 
-        let per_coordinate = find_interval_per_coordinate(
+        let per_coordinate = find_quantile_interval_per_coordinate_with_preprocess(
             data.iter(),
+            DIM,
             DIM,
             COUNT,
             quantile,
-            2,
+            num_threads,
+            SAMPLE,
+            |raw, scratch| {
+                for (s, &v) in scratch.iter_mut().zip(raw.iter()) {
+                    *s = f64::from(v);
+                }
+            },
             &AtomicBool::new(false),
         )
         .unwrap();
 
         let acc = 0.05;
-        let min_result = (1.0 - quantile).abs() / 2.0;
+        let min_result = (1.0 - quantile) / 2.0;
         let max_result = 1.0 - min_result;
         for (min, max) in per_coordinate {
             assert!(
-                ((min - min_result).abs() < acc),
-                "Min value is out of expected range"
+                (min - min_result).abs() < acc,
+                "Min value is out of expected range: got {min}, expected ~{min_result}"
             );
             assert!(
-                ((max - max_result).abs() < acc),
-                "Max value is out of expected range"
+                (max - max_result).abs() < acc,
+                "Max value is out of expected range: got {max}, expected ~{max_result}"
             );
         }
     }

@@ -11,8 +11,8 @@ use segment::fixtures::payload_context_fixture::{
     create_struct_payload_index,
 };
 use segment::fixtures::payload_fixtures::BOOL_KEY;
-use segment::index::PayloadIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::types::{Condition, FieldCondition, Filter, Match, PayloadSchemaType, ValueVariants};
 use tempfile::Builder;
 
@@ -47,7 +47,7 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += plain_index
-                .query_points(&filter, &hw_counter, &is_stopped, None)
+                .query_points(&filter, &hw_counter, &is_stopped)
                 .unwrap()
                 .len();
             query_count += 1;
@@ -77,7 +77,7 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += struct_index
-                .query_points(&filter, &hw_counter, &is_stopped, None)
+                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                 .unwrap()
                 .len();
             query_count += 1;
@@ -131,7 +131,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += index
-                .query_points(&filter, &hw_counter, &is_stopped, None)
+                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                 .unwrap()
                 .len();
             query_count += 1;

@@ -224,6 +224,7 @@ impl SnapshotStorageLocalFS {
             tokio_fs::remove_file(checksum_path),
         );
 
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         delete_snapshot.map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => {
                 CollectionError::not_found(format!("Snapshot {snapshot_path:?}"))
@@ -470,6 +471,7 @@ impl SnapshotStorageCloud {
         snapshot_path: &Path,
     ) -> CollectionResult<SnapshotStream> {
         let snapshot_path = snapshot_storage_ops::trim_dot_slash(snapshot_path)?;
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         let download = self.client.get(&snapshot_path).await.map_err(|e| match e {
             object_store::Error::NotFound { path, source } => {
                 CollectionError::not_found(format!("Snapshot {path} does not exist: {source}"))

@@ -8,7 +8,9 @@ pub mod quantized;
 pub mod query;
 pub mod query_scorer;
 pub mod raw_scorer;
+pub mod read_only;
 pub mod sparse;
+pub mod turbo;
 mod vector_storage_base;
 pub mod volatile_chunked_vectors;
 

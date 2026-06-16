@@ -7,7 +7,7 @@ use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forwar
 use actix_web::{Error, FromRequest, HttpMessage, HttpResponse, ResponseError};
 use futures_util::future::LocalBoxFuture;
 use storage::audit::{audit_trust_forwarded_headers, extract_tracing_id};
-use storage::rbac::Access;
+use storage::rbac::{Access, AccessRequirements, CollectionMultipass};
 
 use super::forwarded;
 use super::helpers::HttpError;
@@ -95,8 +95,14 @@ pub struct AuthMiddleware<S> {
 }
 
 impl<S> AuthMiddleware<S> {
-    pub fn is_path_whitelisted(&self, path: &str) -> bool {
-        self.whitelist.iter().any(|item| item.matches(path))
+    pub fn is_path_whitelisted(&self, req: &ServiceRequest) -> bool {
+        // Resolve request path and find route pattern
+        // If none, we don't know this path
+        let Some(pattern) = req.match_pattern() else {
+            return false;
+        };
+
+        self.whitelist.iter().any(|item| item.matches(&pattern))
     }
 }
 
@@ -113,8 +119,8 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        let path = req.path();
-        if self.is_path_whitelisted(path) {
+        let is_whitelisted = self.is_path_whitelisted(&req);
+        if is_whitelisted {
             return Box::pin(self.service.call(req));
         }
 
@@ -165,6 +171,32 @@ where
     }
 }
 
+/// Retrieve the per-request [`Auth`] from request extensions, falling back to
+/// a default full-access [`Auth`] when no auth middleware is configured.
+fn take_request_auth(req: &actix_web::HttpRequest) -> Auth {
+    req.extensions_mut().remove::<Auth>().unwrap_or_else(|| {
+        let remote = if audit_trust_forwarded_headers() {
+            forwarded::forwarded_for_http(req)
+        } else {
+            None
+        }
+        .or_else(|| req.peer_addr().map(|a| a.ip().to_string()));
+        let tracing_id = extract_tracing_id(|h| {
+            req.headers()
+                .get(h)
+                .and_then(|val| val.to_str().ok())
+                .map(str::to_string)
+        });
+        Auth::new(
+            Access::full("All requests have full by default access when API key is not configured"),
+            None,
+            remote,
+            AuthType::None,
+            tracing_id,
+        )
+    })
+}
+
 /// Actix extractor that retrieves the per-request [`Auth`] context from
 /// request extensions.  When no authentication middleware is configured,
 /// a default [`Auth`] with full access is created.
@@ -178,29 +210,47 @@ impl FromRequest for ActixAuth {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        let auth = req.extensions_mut().remove::<Auth>().unwrap_or_else(|| {
-            let remote = if audit_trust_forwarded_headers() {
-                forwarded::forwarded_for_http(req)
-            } else {
-                None
-            }
-            .or_else(|| req.peer_addr().map(|a| a.ip().to_string()));
-            let tracing_id = extract_tracing_id(|h| {
-                req.headers()
-                    .get(h)
-                    .and_then(|val| val.to_str().ok())
-                    .map(str::to_string)
-            });
-            Auth::new(
-                Access::full(
-                    "All requests have full by default access when API key is not configured",
-                ),
-                None,
-                remote,
-                AuthType::None,
-                tracing_id,
-            )
-        });
-        ready(Ok(ActixAuth(auth)))
+        ready(Ok(ActixAuth(take_request_auth(req))))
+    }
+}
+
+/// Actix extractor that enforces global `manage` access *before* any other
+/// extractors run.
+///
+/// Place this as the **first** parameter in a handler signature, ahead of
+/// body-consuming extractors such as `MultipartForm`. Actix-web polls tuple
+/// extractors in declaration order and short-circuits on the first
+/// `Ready(Err)` (see actix-web `extract.rs` `tuple_from_req!`). Because
+/// [`Self::from_request`] returns a synchronously-ready result, an
+/// unauthorized request is rejected with `403 Forbidden` before any
+/// subsequent extractor's future is polled — meaning the request body is
+/// never read from the socket and no temp file is created.
+///
+/// This is the fix for the read-only-key snapshot-upload disk-exhaustion
+/// issue described in GHSA-3v92-w72v-j994.
+pub struct ActixAccessManage {
+    pub auth: Auth,
+    pub multipass: CollectionMultipass,
+}
+
+impl FromRequest for ActixAccessManage {
+    type Error = HttpError;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest,
+        _payload: &mut actix_web::dev::Payload,
+    ) -> Self::Future {
+        let auth = take_request_auth(req);
+        // Use the matched route pattern (e.g.
+        // `/collections/{collection_name}/snapshots/upload`) as the audit
+        // action name, falling back to the raw path for unmatched requests.
+        let action = req
+            .match_pattern()
+            .unwrap_or_else(|| req.path().to_string());
+        match auth.check_global_access(AccessRequirements::new().manage(), &action) {
+            Ok(multipass) => ready(Ok(Self { auth, multipass })),
+            Err(err) => ready(Err(HttpError::from(err))),
+        }
     }
 }

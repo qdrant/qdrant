@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use common::types::PointOffsetType;
+use common::universal_io::Populate;
 use fs_err as fs;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
@@ -54,7 +55,7 @@ where
         let updated_ago = updated_ago(&graph_layers_path).unwrap_or_else(|_| "???".to_string());
         eprintln!("Loading cached links (built {updated_ago} ago) from {graph_layers_path:?}.");
         eprintln!("Delete the directory above if code related to HNSW graph building is changed");
-        GraphLayers::load(&path, false, false).unwrap()
+        GraphLayers::load(&path, Populate::Blocking, false).unwrap()
     } else {
         let mut graph_layers_builder =
             GraphLayersBuilder::new(num_vectors, HnswM::new2(m), ef_construct, 10, use_heuristic);

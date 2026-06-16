@@ -50,7 +50,7 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         prevent_unoptimized: bool,
-        mut optimization_finished_receiver: watch::Receiver<()>,
+        optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
     ) -> Receiver<UpdateSignal> {
@@ -158,29 +158,49 @@ impl UpdateWorkers {
                         log::error!("Can't update last applied_seq {err}")
                     }
 
-                    let status = if wait_for_deferred && prevent_unoptimized {
-                        let wait_result = Self::wait_for_deferred_points_ready(
-                            &segments,
-                            &optimize_sender,
-                            &mut optimization_finished_receiver,
-                            &cancel,
-                            sender.as_ref(),
-                        )
-                        .await;
-                        // Waiting for deferred points should never error out as it would mark the shard as dead
-                        if let Err(wait_result) = wait_result {
-                            log::warn!("Failed to await for deferred points: {wait_result}");
-                            UpdateStatus::WaitTimeout // ToDo: Consider special status
-                        } else {
-                            UpdateStatus::Completed
+                    if wait_for_deferred && prevent_unoptimized {
+                        if let Some(mut feedback) = sender {
+                            // Detach the deferred-points wait so only the originating
+                            // client waits — the update queue keeps draining.
+                            let segments = segments.clone();
+                            let optimize_sender = optimize_sender.clone();
+                            let mut optimization_finished_receiver =
+                                optimization_finished_receiver.clone();
+                            let cancel = cancel.clone();
+                            tokio::spawn(async move {
+                                let status = match Self::wait_for_deferred_points_ready(
+                                    &segments,
+                                    &optimize_sender,
+                                    &mut optimization_finished_receiver,
+                                    &cancel,
+                                    &mut feedback,
+                                )
+                                .await
+                                {
+                                    Ok(()) => UpdateStatus::Completed,
+                                    Err(err) => {
+                                        log::warn!("Failed to await for deferred points: {err}");
+                                        UpdateStatus::WaitTimeout
+                                    }
+                                };
+                                send_feedback(
+                                    Some(feedback),
+                                    Ok(InternalUpdateResult { op_num, status }),
+                                    op_num,
+                                );
+                            });
                         }
+                        // No sender: nobody is waiting, skip the deferred wait entirely.
                     } else {
-                        UpdateStatus::Completed
-                    };
-
-                    let internal_update_result = InternalUpdateResult { op_num, status };
-
-                    send_feedback(sender, Ok(internal_update_result), op_num);
+                        send_feedback(
+                            sender,
+                            Ok(InternalUpdateResult {
+                                op_num,
+                                status: UpdateStatus::Completed,
+                            }),
+                            op_num,
+                        );
+                    }
                 }
                 UpdateSignal::Nop => optimize_sender
                     .send(OptimizerSignal::Nop)
@@ -223,18 +243,9 @@ impl UpdateWorkers {
         optimize_sender: &Sender<OptimizerSignal>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
         cancel: &CancellationToken,
-        feedback_sender: Option<&oneshot::Sender<CollectionResult<InternalUpdateResult>>>,
+        feedback_sender: &mut oneshot::Sender<CollectionResult<InternalUpdateResult>>,
     ) -> CollectionResult<()> {
         loop {
-            // If the caller dropped their receiver (e.g. client timeout),
-            // stop waiting to avoid blocking the update worker pipeline.
-            if feedback_sender.is_some_and(|s| s.is_closed()) {
-                log::debug!("wait_for_deferred_points_ready: caller no longer waiting");
-                return Err(CollectionError::cancelled(
-                    "Deferred points wait interrupted: caller timed out",
-                ));
-            }
-
             let locked_segments = segments.clone();
             let has_deferred_points =
                 AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
@@ -258,8 +269,11 @@ impl UpdateWorkers {
             let _ = optimize_sender.try_send(OptimizerSignal::Nop);
 
             // Wait for the optimizer to check conditions or complete an optimization.
-            // Also check cancellation so we don't block forever if the update handler
-            // is restarted (e.g. config change via consensus).
+            // Also wake up if the update handler is restarted (e.g. config change via
+            // consensus) or the caller's receiver is dropped (e.g. update_local's
+            // outer timeout fired). Without the `closed()` branch, this select would
+            // park forever under max_optimization_threads=0 (the optimizer skips
+            // without notifying), leaking the detached task.
             log::debug!("waiting for optimization to allow updates");
             tokio::select! {
                 biased;
@@ -267,6 +281,12 @@ impl UpdateWorkers {
                     log::debug!("wait_for_deferred_points_ready: update worker cancelled");
                     return Err(CollectionError::cancelled(
                         "Deferred points wait interrupted: update worker restarted"
+                    ));
+                }
+                _ = feedback_sender.closed() => {
+                    log::debug!("wait_for_deferred_points_ready: caller no longer waiting");
+                    return Err(CollectionError::cancelled(
+                        "Deferred points wait interrupted: caller timed out",
                     ));
                 }
                 result = optimization_finished_receiver.changed() => {
