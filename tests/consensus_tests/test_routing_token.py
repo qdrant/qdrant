@@ -38,6 +38,19 @@ def retrieve_marker(peer_uri, headers={}):
     return points[0]["payload"]["marker"] if points else None
 
 
+def retrieve_marker_on_all_peers(peer_api_uris, headers={}):
+    """Retrieve the marker through *every* peer and assert they all agree.
+
+    Routing is deterministic: a token is ordered by `hash(token, peer_id)`, which is
+    identical on every node, so every peer must resolve the token to the same replica
+    no matter which peer received the request. Returns that single agreed-upon marker.
+    """
+    by_peer = {uri: retrieve_marker(uri, headers=headers) for uri in peer_api_uris}
+    distinct = set(by_peer.values())
+    assert len(distinct) == 1, f"peers disagreed on the routed replica: {by_peer}"
+    return distinct.pop()
+
+
 def create_snapshot(peer_uri):
     r = requests.post(
         f"{peer_uri}/collections/{COLLECTION_NAME}/snapshots?wait=true",
@@ -73,19 +86,31 @@ def split_by_local_replica(peer_api_uris):
     return hosts, non_hosts
 
 
+def replicas_diverged(peer_a, peer_b):
+    """True once peer_a serves the recovered "A" and peer_b still serves "B".
+
+    Read locally on each replica host (no token, so the local replica is preferred),
+    confirming the two replicas hold the divergent state the test relies on.
+    """
+    return retrieve_marker(peer_a) == "A" and retrieve_marker(peer_b) == "B"
+
+
 def test_routing_token_sticky_reads(tmp_path: pathlib.Path):
     """
-    A routing token pins a read to a deterministic replica.
+    A routing token pins a read to a deterministic replica, and the same token lands
+    on the same replica regardless of which peer received the request.
 
     We build two replicas of one shard with *divergent* data: snapshot state "A",
     move both replicas to state "B", then recover the "A" snapshot onto a single
-    replica with `no_sync` (so the two replicas stay Active but divergent). Reads go
-    through a third peer that holds no local replica, so it must route to one of the
-    two remote replicas. We then validate:
+    replica with `no_sync` (so the two replicas stay Active but divergent). We then
+    validate, issuing reads through *every* peer (not just the coordinator):
 
-      1. without a routing token, repeated reads vary between the replicas;
-      2. with a routing token, repeated reads are stable;
-      3. different routing tokens can land on different replicas.
+      1. without a routing token, a peer holding no local replica routes reads
+         randomly, so repeated reads vary between the replicas (the baseline);
+      2. with a routing token, every peer resolves it to the same replica, so reads
+         are stable and identical across all peers;
+      3. different routing tokens can land on different replicas, yet each individual
+         token resolves to the same replica on every peer.
     """
     assert_project_root()
 
@@ -126,36 +151,48 @@ def test_routing_token_sticky_reads(tmp_path: pathlib.Path):
     #   peer_a -> "A", peer_b -> "B"  (both Active, divergent)
     snapshot_url = f"{peer_a}/collections/{COLLECTION_NAME}/snapshots/{snapshot_name}"
     recover_snapshot_no_sync(peer_a, snapshot_url)
-    wait_for_all_replicas_active(peer_a, COLLECTION_NAME)
-    wait_for_all_replicas_active(coordinator, COLLECTION_NAME)
+    # Reads are routed through every peer below, so every peer must see both replicas
+    # as Active before we start (otherwise a not-yet-readable replica would be skipped
+    # and break the deterministic routing we are asserting).
+    for uri in peer_api_uris:
+        wait_for_all_replicas_active(uri, COLLECTION_NAME)
 
-    # Precondition: the replicas are genuinely divergent (local reads differ).
-    assert retrieve_marker(peer_a) == "A", "snapshot recovery did not diverge peer_a"
-    assert retrieve_marker(peer_b) == "B", "peer_b unexpectedly changed state"
+    # Precondition: the replicas are genuinely divergent (local reads differ). Poll
+    # rather than asserting immediately — `wait_for_all_replicas_active` only confirms
+    # the replica *metadata* is Active, but there is a brief window afterwards where
+    # peer_a still serves its pre-recovery "B" before the recovered "A" becomes
+    # readable on the read path.
+    wait_for(replicas_diverged, peer_a, peer_b)
 
     n_reads = 40
 
-    # 1. No routing token: reads are randomly routed, so both replicas are observed.
+    # 1. No routing token: the coordinator routes each read to a random replica, so
+    #    both are observed. (The non-determinism is only visible on the coordinator;
+    #    the two replica-holding peers always answer such reads from their local copy.)
     without_token = {retrieve_marker(coordinator) for _ in range(n_reads)}
     assert without_token == {"A", "B"}, (
         f"expected varying results without a routing token, observed {without_token}"
     )
 
-    # 2. With a routing token: reads are pinned to one replica, so the result is stable.
+    # 2. With a routing token: the read is pinned to one replica, and *every* peer
+    #    resolves the token to the same replica (`retrieve_marker_on_all_peers` asserts
+    #    the peers agree). Repeated rounds must therefore yield a single stable marker.
     sticky_headers = {ROUTING_HEADER: "user-sticky"}
     with_token = {
-        retrieve_marker(coordinator, headers=sticky_headers) for _ in range(n_reads)
+        retrieve_marker_on_all_peers(peer_api_uris, headers=sticky_headers)
+        for _ in range(n_reads)
     }
     assert len(with_token) == 1, (
-        f"expected a stable result with a routing token, observed {with_token}"
+        f"expected a stable result across all peers with a routing token, observed {with_token}"
     )
 
-    # 3. Different routing tokens can land on different replicas. Each token maps
-    #    deterministically to a replica via `hash(token, peer_id)`; since peer ids are
-    #    random per cluster, use enough tokens to make an all-same-replica split
-    #    vanishingly unlikely (~2 * 0.5**32).
+    # 3. Different routing tokens can land on different replicas, yet each individual
+    #    token resolves to the same replica on every peer (asserted per token inside
+    #    `retrieve_marker_on_all_peers`). Each token maps deterministically to a replica
+    #    via `hash(token, peer_id)`; since peer ids are random per cluster, use enough
+    #    tokens to make an all-same-replica split vanishingly unlikely (~2 * 0.5**32).
     per_token = {
-        retrieve_marker(coordinator, headers={ROUTING_HEADER: f"user-{i}"})
+        retrieve_marker_on_all_peers(peer_api_uris, headers={ROUTING_HEADER: f"user-{i}"})
         for i in range(32)
     }
     assert per_token == {"A", "B"}, (
