@@ -42,7 +42,7 @@ pub struct InvertedIndexRam {
 
 impl<S: UniversalWrite> InvertedIndexReadWrite<S> for InvertedIndexRam {
     fn open_rw_impl(_fs: &<S as UniversalRead>::Fs, _path: &Path) -> Result<Self> {
-        panic!("InvertedIndexRam is not supposed to be loaded");
+        panic!("InvertedIndexRam is never persisted, so can't to be loaded");
     }
 
     fn from_ram_index_impl<P: AsRef<Path>>(

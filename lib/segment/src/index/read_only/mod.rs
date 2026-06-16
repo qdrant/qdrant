@@ -111,7 +111,6 @@ impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
     /// Open the read-only sparse vector index from its persisted [`SparseIndexConfig`],
     /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
     /// `MutableRam` has no read-only representation.
-    #[allow(dead_code)] // pending: read-only segment constructor
     pub fn open_sparse(args: ReadOnlyVectorIndexOpenArgs<'_, S>) -> OperationResult<Self> {
         let ReadOnlyVectorIndexOpenArgs {
             fs,
