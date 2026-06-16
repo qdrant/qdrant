@@ -17,7 +17,7 @@ use super::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::IndexMutability;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::FieldCondition;
 
 pub enum NullIndex {
@@ -134,7 +134,7 @@ impl PayloadFieldIndexRead for NullIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
         Ok(read_ops::condition_checker(self, condition, hw_acc))
     }
 }

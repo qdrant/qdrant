@@ -9,7 +9,7 @@ use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
@@ -33,7 +33,7 @@ where
         payload_provider: PayloadProvider<S>,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Box<dyn ConditionChecker + 'b>> {
+    ) -> OperationResult<DynConditionChecker<'b>> {
         let id_tracker = self.id_tracker;
         let field_indexes = self.field_indexes;
         Ok(match condition {
@@ -178,7 +178,7 @@ fn field_condition_checker<'a>(
     field_condition: &FieldCondition,
     payload_provider: PayloadProvider<impl PayloadStorageRead + 'a>,
     check: impl Fn(OwnedPayloadRef, &HardwareCounterCell) -> OperationResult<bool> + 'a,
-) -> OperationResult<Box<dyn ConditionChecker + 'a>> {
+) -> OperationResult<DynConditionChecker<'a>> {
     // 1. Find first index that can check condition.
     if let Some(indexes) = field_indexes.get(key) {
         for index in indexes {

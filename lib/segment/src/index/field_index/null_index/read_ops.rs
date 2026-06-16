@@ -25,7 +25,7 @@ use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::FieldCondition;
 
@@ -225,7 +225,7 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &FieldCondition,
     _hw_acc: HwMeasurementAcc,
-) -> Option<Box<dyn ConditionChecker + 'a>> {
+) -> Option<DynConditionChecker<'a>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {

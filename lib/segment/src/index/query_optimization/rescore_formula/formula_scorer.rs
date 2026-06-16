@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Neg;
 
 use ahash::AHashMap;
+use common::condition_checker::ConditionChecker;
 use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
@@ -11,7 +12,7 @@ use super::parsed_formula::{
 };
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::query_optimization::optimized_filter::{ConditionChecker, OptimizedCondition};
+use crate::index::query_optimization::optimized_filter::OptimizedCondition;
 use crate::json_path::JsonPath;
 use crate::types::{DateTimePayloadType, GeoPoint};
 

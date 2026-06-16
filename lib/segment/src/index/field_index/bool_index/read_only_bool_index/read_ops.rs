@@ -12,7 +12,7 @@ use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -89,7 +89,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyBoolIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
         Ok(read_ops::condition_checker(self, condition, hw_acc))
     }
 }

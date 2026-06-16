@@ -17,7 +17,7 @@ use crate::index::field_index::numeric_index::{
 use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -112,7 +112,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
         match self {
             ReadOnlyFieldIndex::IntIndex(idx) => idx.condition_checker(condition, hw_acc),
             ReadOnlyFieldIndex::DatetimeIndex(idx) => idx.condition_checker(condition, hw_acc),
