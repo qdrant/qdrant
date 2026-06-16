@@ -29,9 +29,12 @@ use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
 use crate::vector_storage::query_scorer::sparse_metric_query_scorer::SparseMetricQueryScorer;
 use crate::vector_storage::query_scorer::turbo_custom_query_scorer::TurboCustomQueryScorer;
+use crate::vector_storage::query_scorer::turbo_multi_custom_query_scorer::TurboMultiCustomQueryScorer;
+use crate::vector_storage::query_scorer::turbo_multi_query_scorer::TurboMultiQueryScorer;
 use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
 use crate::vector_storage::turbo::TurboVectorStorage;
+use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
 
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
@@ -97,6 +100,7 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
+        VectorStorageEnum::MultiDenseTurbo(vs) => raw_turbo_multi_scorer_impl(query, vs, hc),
         VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),
         VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs, hc),
     }
@@ -373,6 +377,67 @@ pub fn raw_turbo_scorer_impl<'a>(
             let feedback_query: NaiveFeedbackQuery<DenseVector> =
                 feedback_query.transform_into()?;
             let query_scorer = TurboCustomQueryScorer::new(
+                feedback_query.into_query(),
+                vector_storage,
+                hardware_counter,
+            );
+            raw_scorer_from_query_scorer(query_scorer)
+        }
+    }
+}
+
+/// Build a [`RawScorer`] for a [`TurboMultiVectorStorage`].
+///
+/// Mirror of [`raw_turbo_scorer_impl`] for multivectors: `Nearest` uses the
+/// MaxSim [`TurboMultiQueryScorer`]; the multi-vector queries use
+/// [`TurboMultiCustomQueryScorer`].
+pub fn raw_turbo_multi_scorer_impl<'a>(
+    query: QueryVector,
+    vector_storage: &'a TurboMultiVectorStorage,
+    hardware_counter: HardwareCounterCell,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    match query {
+        QueryVector::Nearest(vector) => {
+            let query_scorer =
+                TurboMultiQueryScorer::new(&vector.try_into()?, vector_storage, hardware_counter);
+            raw_scorer_from_query_scorer(query_scorer)
+        }
+        QueryVector::RecommendBestScore(reco_query) => {
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
+            let query_scorer = TurboMultiCustomQueryScorer::new(
+                RecoBestScoreQuery::from(reco_query),
+                vector_storage,
+                hardware_counter,
+            );
+            raw_scorer_from_query_scorer(query_scorer)
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
+            let query_scorer = TurboMultiCustomQueryScorer::new(
+                RecoSumScoresQuery::from(reco_query),
+                vector_storage,
+                hardware_counter,
+            );
+            raw_scorer_from_query_scorer(query_scorer)
+        }
+        QueryVector::Discover(discover_query) => {
+            let discover_query: DiscoverQuery<MultiDenseVectorInternal> =
+                discover_query.transform_into()?;
+            let query_scorer =
+                TurboMultiCustomQueryScorer::new(discover_query, vector_storage, hardware_counter);
+            raw_scorer_from_query_scorer(query_scorer)
+        }
+        QueryVector::Context(context_query) => {
+            let context_query: ContextQuery<MultiDenseVectorInternal> =
+                context_query.transform_into()?;
+            let query_scorer =
+                TurboMultiCustomQueryScorer::new(context_query, vector_storage, hardware_counter);
+            raw_scorer_from_query_scorer(query_scorer)
+        }
+        QueryVector::FeedbackNaive(feedback_query) => {
+            let feedback_query: NaiveFeedbackQuery<MultiDenseVectorInternal> =
+                feedback_query.transform_into()?;
+            let query_scorer = TurboMultiCustomQueryScorer::new(
                 feedback_query.into_query(),
                 vector_storage,
                 hardware_counter,
