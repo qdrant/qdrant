@@ -6,11 +6,15 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::types::{Distance, MultiVectorConfig, PayloadFieldSchema, PayloadSchemaType};
+use segment::types::{
+    Distance, MultiVectorConfig, PayloadFieldSchema, PayloadSchemaType, QuantizationConfig,
+    ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+};
 
-use super::{COLLECTION_NAME, INITIAL_ACTIVE, PEER_ID, VectorKind, kind_of};
+use super::{COLLECTION_NAME, INITIAL_ACTIVE, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind, kind_of};
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+use crate::operations::config_diff::HnswConfigDiff;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{SparseVectorParams, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
@@ -61,6 +65,23 @@ pub(super) async fn fixture(
                 // e.g. the config-mismatch optimizer only acts on `Some`).
                 if on_disk {
                     builder = builder.with_on_disk(true);
+                }
+                // The inline-storage vector exercises the HNSW `inline_storage` layout, which
+                // stores original + quantized vectors inside the index file and therefore
+                // requires quantization. Pair it with scalar quantization.
+                if *name == INLINE_STORAGE_VECTOR {
+                    builder = builder
+                        .with_quantization_config(QuantizationConfig::Scalar(ScalarQuantization {
+                            scalar: ScalarQuantizationConfig {
+                                r#type: ScalarType::Int8,
+                                quantile: None,
+                                always_ram: None,
+                            },
+                        }))
+                        .with_hnsw_config(HnswConfigDiff {
+                            inline_storage: Some(true),
+                            ..Default::default()
+                        });
                 }
                 dense_vectors.insert(name.to_string(), builder.build());
             }
