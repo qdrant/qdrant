@@ -9,6 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use gridstore::Blob;
+use itertools::Itertools;
 use serde_json::Value;
 
 use super::MapIndex;
@@ -83,7 +84,7 @@ where
             flatten_values.extend(payload_values);
         }
         let flatten_values: Vec<<N as MapIndexKey>::Owned> =
-            flatten_values.into_iter().map(Into::into).collect();
+            flatten_values.into_iter().map_into().unique().collect();
 
         if self.point_to_values.len() <= id as usize {
             self.point_to_values.resize_with(id as usize + 1, Vec::new);
