@@ -19,13 +19,14 @@ pub struct DiskCacheConfig {
 }
 
 impl DiskCacheConfig {
+    /// Initialize the config for [`DiskCacheConfig`]
+    ///
+    /// The `remote_dir` may be a network store, but `local_dir` must be a local path.
     pub fn new(remote_dir: PathBuf, local_dir: PathBuf) -> Result<Self> {
-        // Require the local cache dir; the remote may be a network store, so
-        // resolve it best-effort.
         let local_dir = fs::canonicalize(&local_dir)
             .map_err(|err| UniversalIoError::extract_not_found(err, &local_dir))?;
         Ok(Self {
-            remote_dir: canonicalize_or_keep(&remote_dir),
+            remote_dir: canonicalize_remote(&remote_dir),
             local_dir,
         })
     }
@@ -37,7 +38,7 @@ impl DiskCacheConfig {
     /// Maps a remote path to its local mirror (`<local_dir>/<rel>` + `.partial`);
     /// `NotFound` if `remote_path` isn't under `remote_dir`.
     pub fn local_path_for(&self, remote_path: &Path) -> Result<PathBuf> {
-        let resolved = canonicalize_or_keep(remote_path);
+        let resolved = canonicalize_remote(remote_path);
         let rel =
             resolved
                 .strip_prefix(&self.remote_dir)
@@ -53,7 +54,7 @@ impl DiskCacheConfig {
 
 /// Canonicalise `path` if it's a real local path; otherwise keep it verbatim
 /// (network/remote keys don't exist locally).
-fn canonicalize_or_keep(path: &Path) -> PathBuf {
+fn canonicalize_remote(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
