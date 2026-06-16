@@ -39,11 +39,3 @@ impl<E> ConditionChecker for ConstantConditionChecker<E> {
         Ok(self.0)
     }
 }
-
-impl<E, F: Fn(PointOffsetType) -> Result<bool, E>> ConditionChecker for F {
-    type Error = E;
-
-    fn check(&self, point_id: PointOffsetType) -> Result<bool, E> {
-        self(point_id)
-    }
-}
