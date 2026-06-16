@@ -18,7 +18,7 @@ mod lifecycle;
 
 type ReadOnlyIndexesMap<S> = HashMap<PayloadKeyType, Vec<ReadOnlyFieldIndex<S>>>;
 
-#[allow(dead_code)] // `path`/`storage_type` are read once live-reload lands
+#[expect(dead_code)] // `path`/`storage_type` are read once live-reload lands
 pub struct ReadOnlyStructPayloadIndex<S: UniversalRead> {
     /// Payload storage
     pub(super) payload: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
