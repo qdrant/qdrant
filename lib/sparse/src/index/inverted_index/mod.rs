@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
@@ -5,11 +6,14 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Result, UniversalIoError, UserData};
+use common::universal_io::{
+    Result, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+};
 
 use super::posting_list_common::PostingListIter;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::DimOffset;
+use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 pub mod inverted_index_compressed_immutable_ram;
 pub mod inverted_index_compressed_mmap;
@@ -22,6 +26,23 @@ pub mod inverted_index_ram_builder;
 // `inverted_index.data` to `inverted_index.dat`.
 pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
+pub trait InvertedIndexReadOnly<S: UniversalRead>: InvertedIndex {
+    /// See [`InvertedIndex::open_ro`].
+    fn open_ro_impl(fs: &S::Fs, path: &Path) -> Result<Self>;
+}
+
+pub trait InvertedIndexReadWrite<S: UniversalWrite>: InvertedIndex {
+    /// See [`InvertedIndex::open_rw`].
+    fn open_rw_impl(fs: &S::Fs, path: &Path) -> Result<Self>;
+
+    /// See [`InvertedIndex::from_ram_index`].
+    fn from_ram_index_impl<P: AsRef<Path>>(
+        fs: &S::Fs,
+        ram_index: Cow<InvertedIndexRam>,
+        path: P,
+    ) -> Result<Self>;
+}
+
 pub trait InvertedIndex: Sized + Debug + 'static {
     type Iter<'a>: PostingListIter + Clone
     where
@@ -30,6 +51,29 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     type Version: StorageVersion;
 
     fn is_on_disk(&self) -> bool;
+
+    /// Open existing index based on path.
+    fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> Result<Self>
+    where
+        Self: InvertedIndexReadOnly<Fs::File>,
+    {
+        Self::open_ro_impl(fs, path)
+    }
+
+    /// Open existing index based on path.
+    ///
+    /// Unlike [`Self::open_ro`], it might perform migration-related writes.
+    ///
+    /// TODO(uio): probably, this can be refactored into a single `open` with
+    /// boolean parameter, if we add something like
+    /// `UniversalReadFs::try_write(&self) -> Option<&impl UniversalWriteFs>`.
+    fn open_rw<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> Result<Self>
+    where
+        Self: InvertedIndexReadWrite<Fs::File>,
+        Fs::File: UniversalWrite<Fs = Fs>,
+    {
+        Self::open_rw_impl(fs, path)
+    }
 
     /// Save index
     fn save(&self, path: &Path) -> Result<()>;
@@ -73,6 +117,19 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         vector: RemappedSparseVector,
         old_vector: Option<RemappedSparseVector>,
     );
+
+    /// Create inverted index from ram index
+    fn from_ram_index<P: AsRef<Path>, Fs: UniversalReadFs>(
+        fs: &Fs,
+        ram_index: Cow<InvertedIndexRam>,
+        path: P,
+    ) -> Result<Self>
+    where
+        Self: InvertedIndexReadWrite<Fs::File>,
+        Fs::File: UniversalWrite<Fs = Fs>,
+    {
+        Self::from_ram_index_impl(fs, ram_index, path)
+    }
 
     /// Number of indexed vectors
     fn vector_count(&self) -> usize;

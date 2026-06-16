@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
+use common::universal_io::MmapFs;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -173,6 +174,7 @@ fn sparse_index_discover_test() {
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
+        fs: &MmapFs,
         config: SparseIndexConfig {
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
@@ -290,6 +292,7 @@ fn sparse_index_hardware_measurement_test() {
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
+        fs: &MmapFs,
         config: SparseIndexConfig {
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,

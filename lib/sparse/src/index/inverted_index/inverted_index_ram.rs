@@ -7,7 +7,7 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, Result, UserData};
+use common::universal_io::{Result, UniversalRead, UniversalWrite, UserData};
 #[cfg(feature = "testing")]
 use fs_err as fs;
 #[cfg(feature = "testing")]
@@ -15,7 +15,7 @@ use zerocopy::{FromBytes, IntoBytes};
 
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset};
-use crate::index::inverted_index::{InvertedIndex, out_of_bounds};
+use crate::index::inverted_index::{InvertedIndex, InvertedIndexReadWrite, out_of_bounds};
 use crate::index::posting_list::{PostingList, PostingListIterator};
 use crate::index::posting_list_common::PostingElementEx;
 
@@ -38,6 +38,20 @@ pub struct InvertedIndexRam {
     pub vector_count: usize,
     /// Total size of all searchable sparse vectors in bytes
     pub total_sparse_size: usize,
+}
+
+impl<S: UniversalWrite> InvertedIndexReadWrite<S> for InvertedIndexRam {
+    fn open_rw_impl(_fs: &<S as UniversalRead>::Fs, _path: &Path) -> Result<Self> {
+        panic!("InvertedIndexRam is never persisted, so can't to be loaded");
+    }
+
+    fn from_ram_index_impl<P: AsRef<Path>>(
+        _fs: &<S as UniversalRead>::Fs,
+        ram_index: Cow<InvertedIndexRam>,
+        _path: P,
+    ) -> Result<Self> {
+        Ok(ram_index.into_owned())
+    }
 }
 
 impl InvertedIndex for InvertedIndexRam {
@@ -131,20 +145,6 @@ impl InvertedIndex for InvertedIndexRam {
 }
 
 impl InvertedIndexRam {
-    /// A RAM index is never persisted, so it cannot be opened from a path.
-    pub fn open(_fs: &MmapFs, _path: &Path) -> Result<Self> {
-        panic!("InvertedIndexRam is not supposed to be loaded");
-    }
-
-    /// Build a RAM index from a RAM index (takes ownership of the source).
-    pub fn from_ram_index<P: AsRef<Path>>(
-        _fs: &MmapFs,
-        ram_index: Cow<InvertedIndexRam>,
-        _path: P,
-    ) -> Result<Self> {
-        Ok(ram_index.into_owned())
-    }
-
     /// New empty inverted index
     pub fn empty() -> InvertedIndexRam {
         InvertedIndexRam {
