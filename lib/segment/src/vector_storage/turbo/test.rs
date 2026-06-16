@@ -361,7 +361,14 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
     assert_congruent(&dense_dst, &multi_dst, "dst after reload");
 }
 
+// These congruence model tests are significantly slower on Windows CI runners
+// (>60s, marked SLOW by nextest). Reduce the number of randomized scenarios there
+// to keep the run within the slow-timeout while preserving full coverage on
+// Linux/macOS.
+#[cfg(not(windows))]
 const SEEDS_PER_CELL: u64 = 8;
+#[cfg(windows)]
+const SEEDS_PER_CELL: u64 = 2;
 const OPS: usize = 60;
 
 #[test]
