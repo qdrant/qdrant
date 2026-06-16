@@ -16,10 +16,12 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::EncodedStorage;
+use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use smallvec::{SmallVec, smallvec};
 
 use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_PATH};
 use crate::common::Flusher;
@@ -28,8 +30,11 @@ use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::vectors::{
-    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
+    MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType,
+    VectorRef,
 };
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
@@ -267,6 +272,130 @@ impl TurboMultiVectorStorage {
         self.offsets.clear_cache()?;
         self.deleted.clear_cache()?;
         Ok(())
+    }
+
+    /// Whether scores must be negated to follow qdrant's "higher = better"
+    /// convention: TurboQuant returns a distance (lower = better) for the
+    /// Euclid/Manhattan metrics, mirroring `VectorParameters::invert`.
+    fn invert_score(&self) -> bool {
+        matches!(self.distance, Distance::Euclid | Distance::Manhattan)
+    }
+
+    /// Apply the metric sign convention to a raw TurboQuant score.
+    fn signed(&self, score: f32) -> ScoreType {
+        if self.invert_score() { -score } else { score }
+    }
+
+    /// Preprocess (per distance) and precompute every inner vector of a
+    /// multivector query, ready for asymmetric MaxSim scoring. The rotation runs
+    /// once here, not per scored point.
+    pub fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
+        query
+            .multi_vectors()
+            .map(|inner| {
+                let preprocessed = match self.distance {
+                    Distance::Cosine => {
+                        <CosineMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
+                    }
+                    Distance::Euclid => {
+                        <EuclidMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
+                    }
+                    Distance::Dot => {
+                        <DotProductMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
+                    }
+                    Distance::Manhattan => {
+                        <ManhattanMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
+                    }
+                };
+                self.quantizer.precompute_query(&preprocessed)
+            })
+            .collect()
+    }
+
+    /// Asymmetric MaxSim score of a precomputed multi-query against stored point
+    /// `key`: each inner query vector takes its best similarity to any of the
+    /// point's inner records, summed.
+    pub fn score_point_max_similarity(
+        &self,
+        query: &[EncodedQueryTQ],
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        let Some(offset) = self.get_offset::<Random>(key) else {
+            log::error!("Multivector not found");
+            return ScoreType::NEG_INFINITY;
+        };
+
+        let records = self
+            .storage
+            .get_many::<Random>(offset.offset, offset.count as usize)
+            .expect("Multivector not found");
+
+        hw_counter
+            .cpu_counter()
+            .incr_delta(records.len() * query.len());
+
+        hw_counter.vector_io_read().incr_delta(records.len());
+
+        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
+
+        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
+            for (qi, inner_query) in query.iter().enumerate() {
+                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
+                if max_sim[qi] < sim {
+                    max_sim[qi] = sim;
+                }
+            }
+        }
+        max_sim.into_iter().sum()
+    }
+
+    /// Symmetric MaxSim score between two stored points. Reads both points'
+    /// records, so it accounts its own IO and CPU.
+    pub fn score_internal_max_similarity(
+        &self,
+        point_a: PointOffsetType,
+        point_b: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        let (Some(offset_a), Some(offset_b)) = (
+            self.get_offset::<Random>(point_a),
+            self.get_offset::<Random>(point_b),
+        ) else {
+            log::error!("Multivector not found");
+            return ScoreType::NEG_INFINITY;
+        };
+
+        let records_a = self
+            .storage
+            .get_many::<Random>(offset_a.offset, offset_a.count as usize)
+            .expect("Multivector not found");
+
+        let records_b = self
+            .storage
+            .get_many::<Random>(offset_b.offset, offset_b.count as usize)
+            .expect("Multivector not found");
+
+        hw_counter
+            .cpu_counter()
+            .incr_delta(records_a.len() * offset_b.count as usize);
+        hw_counter
+            .vector_io_read()
+            .incr_delta(records_a.len() + records_b.len());
+
+        let quantized_size = self.quantizer.quantized_size();
+        let mut sum = 0.0;
+        for bytes_a in records_a.chunks_exact(quantized_size) {
+            let mut max_sim = ScoreType::NEG_INFINITY;
+            for bytes_b in records_b.chunks_exact(quantized_size) {
+                let sim = self.signed(self.quantizer.score_symmetric(bytes_a, bytes_b));
+                if sim > max_sim {
+                    max_sim = sim;
+                }
+            }
+            sum += max_sim;
+        }
+        sum
     }
 }
 
@@ -1567,5 +1696,130 @@ mod tests {
         immutable.sort();
         expected_immutable.sort();
         assert_eq!(immutable, expected_immutable);
+    }
+
+    /// End-to-end MaxSim check of [`TurboMultiQueryScorer`] across every
+    /// distance: a stored point used as the query must score best against
+    /// itself, exercising per-inner preprocessing, the asymmetric scoring and
+    /// the sign convention.
+    #[test]
+    fn multi_nearest_scorer_ranks_self_first() {
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::turbo_multi_query_scorer::TurboMultiQueryScorer;
+
+        const COUNT: usize = 8;
+
+        for distance in [
+            Distance::Dot,
+            Distance::Cosine,
+            Distance::Euclid,
+            Distance::Manhattan,
+        ] {
+            for dim in [32, 128] {
+                for seed in SEEDS {
+                    let dir = Builder::new()
+                        .prefix("turbo_multi_score")
+                        .tempdir()
+                        .unwrap();
+                    let hw_counter = HardwareCounterCell::new();
+                    let mut storage = open_appendable_turbo_multi_vector_storage(
+                        dir.path(),
+                        dim,
+                        distance,
+                        MultiVectorConfig::default(),
+                        true,
+                    )
+                    .unwrap();
+                    let inputs = make_multi_vectors(dim, COUNT, seed);
+                    insert_all(&mut storage, &inputs, &hw_counter);
+
+                    for (q, query) in inputs.iter().enumerate() {
+                        let scorer =
+                            TurboMultiQueryScorer::new(query, &storage, HardwareCounterCell::new());
+
+                        let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
+                            .map(|k| scorer.score_stored(k))
+                            .collect();
+                        let best = (0..COUNT)
+                            .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
+                            .unwrap();
+                        assert_eq!(
+                            best, q,
+                            "point {q} not ranked first \
+                             (dim {dim}, {distance:?}, seed {seed:#x}): scores {scores:?}",
+                        );
+
+                        // Symmetric MaxSim peaks on the diagonal too.
+                        let best_internal = (0..COUNT as PointOffsetType)
+                            .max_by(|&a, &b| {
+                                let sa = scorer.score_internal(q as PointOffsetType, a);
+                                let sb = scorer.score_internal(q as PointOffsetType, b);
+                                sa.partial_cmp(&sb).unwrap()
+                            })
+                            .unwrap();
+                        assert_eq!(
+                            best_internal, q as PointOffsetType,
+                            "internal: point {q} not closest to itself \
+                             (dim {dim}, {distance:?}, seed {seed:#x})",
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// [`TurboMultiCustomQueryScorer`] reco path: a single positive equal to a
+    /// stored point must rank that point first, exercising the query transform
+    /// and `score_by` folding on top of MaxSim scoring.
+    #[test]
+    fn multi_custom_reco_scorer_ranks_positive_first() {
+        use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::turbo_multi_custom_query_scorer::TurboMultiCustomQueryScorer;
+
+        const COUNT: usize = 8;
+
+        for distance in [Distance::Dot, Distance::Cosine] {
+            for dim in [32, 128] {
+                for seed in SEEDS {
+                    let dir = Builder::new().prefix("turbo_multi_reco").tempdir().unwrap();
+                    let hw_counter = HardwareCounterCell::new();
+                    let mut storage = open_appendable_turbo_multi_vector_storage(
+                        dir.path(),
+                        dim,
+                        distance,
+                        MultiVectorConfig::default(),
+                        true,
+                    )
+                    .unwrap();
+                    let inputs = make_multi_vectors(dim, COUNT, seed);
+                    insert_all(&mut storage, &inputs, &hw_counter);
+
+                    for (q, query) in inputs.iter().enumerate() {
+                        let reco = RecoBestScoreQuery::from(RecoQuery::new(
+                            vec![query.clone()],
+                            Vec::<MultiDenseVectorInternal>::new(),
+                        ));
+                        let scorer = TurboMultiCustomQueryScorer::new(
+                            reco,
+                            &storage,
+                            HardwareCounterCell::new(),
+                        );
+
+                        let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
+                            .map(|k| scorer.score_stored(k))
+                            .collect();
+                        let best = (0..COUNT)
+                            .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
+                            .unwrap();
+                        assert_eq!(
+                            best, q,
+                            "reco positive {q} not ranked first \
+                             (dim {dim}, {distance:?}, seed {seed:#x})",
+                        );
+                    }
+                }
+            }
+        }
     }
 }

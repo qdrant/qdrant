@@ -69,6 +69,9 @@ impl MemoryReporter for VectorStorageEnum {
             }
 
             VectorStorageEnum::DenseTurbo(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+            VectorStorageEnum::MultiDenseTurbo(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
 
             // Volatile sparse: in-memory
             VectorStorageEnum::SparseVolatile(v) => {

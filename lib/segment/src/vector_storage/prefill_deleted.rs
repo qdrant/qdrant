@@ -5,8 +5,8 @@ use sparse::common::sparse_vector::SparseVector;
 
 use super::vector_storage_base::VectorStorageEnum;
 use super::{
-    DenseTQVectorStorage, DenseVectorStorage, MultiVectorStorage, SparseVectorStorage,
-    VectorStorageRead as _,
+    DenseTQVectorStorage, DenseVectorStorage, MultiTQVectorStorage, MultiVectorStorage,
+    SparseVectorStorage, VectorStorageRead as _,
 };
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
@@ -34,6 +34,20 @@ pub(super) fn fill_turbo(
     count: usize,
     stopped: &AtomicBool,
 ) -> OperationResult<()> {
+    let size = storage.quantized_vector_size();
+    let placeholder: Cow<[u8]> = Cow::Owned(vec![0u8; size]);
+    let mut iter = std::iter::repeat_n((placeholder, true), count);
+    storage.update_from(&mut iter, stopped)?;
+    Ok(())
+}
+
+pub(super) fn fill_turbo_multi(
+    storage: &mut impl MultiTQVectorStorage,
+    count: usize,
+    stopped: &AtomicBool,
+) -> OperationResult<()> {
+    // One zero inner record per placeholder point; the deleted flag is carried
+    // separately, so the content is irrelevant.
     let size = storage.quantized_vector_size();
     let placeholder: Cow<[u8]> = Cow::Owned(vec![0u8; size]);
     let mut iter = std::iter::repeat_n((placeholder, true), count);
@@ -115,6 +129,7 @@ impl VectorStorageEnum {
             }
 
             VectorStorageEnum::DenseTurbo(v) => fill_turbo(&mut **v, count, &stopped),
+            VectorStorageEnum::MultiDenseTurbo(v) => fill_turbo_multi(&mut **v, count, &stopped),
 
             VectorStorageEnum::MultiDenseVolatile(v) => fill_multi(v, count, &stopped),
             #[cfg(test)]

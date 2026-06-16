@@ -15,6 +15,8 @@ pub mod multi_metric_query_scorer;
 pub mod sparse_custom_query_scorer;
 pub mod sparse_metric_query_scorer;
 pub mod turbo_custom_query_scorer;
+pub mod turbo_multi_custom_query_scorer;
+pub mod turbo_multi_query_scorer;
 pub mod turbo_query_scorer;
 
 pub trait QueryScorer {
