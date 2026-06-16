@@ -282,7 +282,7 @@ fn read_only_segment_over_s3() {
             }
             let rel = entry.path().strip_prefix(&local_path).unwrap();
             let key = format!("{key_prefix}/{}", rel.to_string_lossy());
-            let bytes = std::fs::read(entry.path()).unwrap();
+            let bytes = fs_err::read(entry.path()).unwrap();
             store
                 .put(&ObjectPath::from(key.as_str()), Bytes::from(bytes).into())
                 .await
