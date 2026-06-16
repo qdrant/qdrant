@@ -64,7 +64,7 @@ where
             fs,
             &deleted_path,
             OpenOptions {
-                writeable: true,
+                writeable: false,
                 need_sequential: false,
                 populate,
                 advice: AdviceSetting::Global,
