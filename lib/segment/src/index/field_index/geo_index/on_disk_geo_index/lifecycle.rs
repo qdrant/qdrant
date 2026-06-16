@@ -199,7 +199,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             fs,
             &deleted_path,
             OpenOptions {
-                writeable: true,
+                writeable: false,
                 need_sequential: false,
                 populate,
                 advice: AdviceSetting::Global,
