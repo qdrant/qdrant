@@ -37,6 +37,7 @@ pub struct EncodedVectorsU8<TStorage: EncodedStorage> {
 pub struct EncodedQueryU8 {
     offset: f32,
     encoded_query: Vec<u8>,
+    score_multiplier: f32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -344,6 +345,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
                 self.metadata
                     .postprocess_score(score as f32, query.offset, vector_offset)
+                    * query.score_multiplier
             }
         }
     }
@@ -382,6 +384,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 };
                 self.metadata
                     .postprocess_score(score, query.offset, vector_offset)
+                    * query.score_multiplier
             }
         }
     }
@@ -424,6 +427,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 };
                 self.metadata
                     .postprocess_score(score, query.offset, vector_offset)
+                    * query.score_multiplier
             }
         }
     }
@@ -466,6 +470,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 };
                 self.metadata
                     .postprocess_score(score, query.offset, vector_offset)
+                    * query.score_multiplier
             }
         }
     }
@@ -547,9 +552,27 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
     }
 
-    fn encode_int8_query(metadata: &MetadataInt8, query: &[f32]) -> EncodedQueryU8 {
+    fn encode_int8_query(
+        metadata: &MetadataInt8,
+        query: &[f32],
+        scale_invariant: bool,
+    ) -> EncodedQueryU8 {
         let dim = query.len();
-        let mut query: Vec<_> = query.iter().map(|&v| metadata.encode_value(v)).collect();
+        let score_multiplier = match (scale_invariant, metadata.vector_parameters.distance_type) {
+            (true, DistanceType::Dot | DistanceType::Cosine) => {
+                let max_abs = query.iter().map(|v| v.abs()).fold(0.0, f32::max);
+                if max_abs > 0.0 {
+                    max_abs
+                } else {
+                    1.0
+                }
+            }
+            _ => 1.0,
+        };
+        let mut query: Vec<_> = query
+            .iter()
+            .map(|&v| metadata.encode_value(v / score_multiplier))
+            .collect();
         if !dim.is_multiple_of(ALIGNMENT) {
             for _ in 0..(ALIGNMENT - dim % ALIGNMENT) {
                 let placeholder = match metadata.vector_parameters.distance_type {
@@ -582,6 +605,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         EncodedQueryU8 {
             offset,
             encoded_query: query,
+            score_multiplier,
         }
     }
 }
@@ -608,7 +632,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryU8 {
         match &self.metadata {
-            Metadata::Int8(meta) => Self::encode_int8_query(meta, query),
+            Metadata::Int8(meta) => Self::encode_int8_query(meta, query, false),
+        }
+    }
+
+    fn encode_query_scaled(&self, query: &[f32]) -> EncodedQueryU8 {
+        match &self.metadata {
+            Metadata::Int8(meta) => Self::encode_int8_query(meta, query, true),
         }
     }
 
@@ -689,6 +719,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
                     encoded_query: unsafe {
                         std::slice::from_raw_parts(q_ptr, metadata.actual_dim).to_vec()
                     },
+                    score_multiplier: 1.0,
                 })
             }
         }

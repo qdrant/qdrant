@@ -43,7 +43,7 @@ where
             TMetric::distance(),
             original_query,
         );
-        let query = quantized_data.encode_query(&original_query_prequantized);
+        let query = quantized_data.encode_query_scaled(&original_query_prequantized);
 
         hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_data.is_on_disk()));
 
