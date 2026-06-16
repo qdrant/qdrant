@@ -164,73 +164,67 @@ impl Collection {
         shard_keys_selection: Option<ShardKey>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        let shard_holder = self.shards_holder.clone().read_owned().await;
+        let updates = FuturesUnordered::new();
+
+        {
+            let shard_holder = self.shards_holder.clone().read_owned().await;
+            let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
+
+            for (shard, operation) in operations {
+                let operation = shard_holder.split_by_mode(shard.shard_id, operation);
+
+                let shard = shard.clone();
+                let hw_acc = hw_measurement_acc.clone();
+
+                updates.push(async move {
+                    let mut result = UpdateResult {
+                        operation_id: None,
+                        status: UpdateStatus::Acknowledged,
+                        clock_tag: None,
+                    };
+
+                    for operation in operation.update_all {
+                        result = shard
+                            .update_with_consistency(
+                                operation,
+                                wait,
+                                timeout,
+                                ordering,
+                                false,
+                                hw_acc.clone(),
+                            )
+                            .await?;
+                    }
+
+                    for operation in operation.update_only_existing {
+                        let res = shard
+                            .update_with_consistency(
+                                operation,
+                                wait,
+                                timeout,
+                                ordering,
+                                true,
+                                hw_acc.clone(),
+                            )
+                            .await;
+
+                        if let Err(err) = &res
+                            && err.is_missing_point()
+                        {
+                            continue;
+                        }
+
+                        result = res?;
+                    }
+
+                    CollectionResult::Ok(result)
+                });
+            }
+        }
+
         let start_time = std::time::Instant::now();
 
-        let results = self
-            .update_runtime
-            .spawn(async move {
-                let updates = FuturesUnordered::new();
-                let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
-
-                for (shard, operation) in operations {
-                    let operation = shard_holder.split_by_mode(shard.shard_id, operation);
-
-                    let shard = shard.clone();
-                    let hw_acc = hw_measurement_acc.clone();
-
-                    updates.push(async move {
-                        let mut result = UpdateResult {
-                            operation_id: None,
-                            status: UpdateStatus::Acknowledged,
-                            clock_tag: None,
-                        };
-
-                        for operation in operation.update_all {
-                            result = shard
-                                .update_with_consistency(
-                                    operation,
-                                    wait,
-                                    timeout,
-                                    ordering,
-                                    false,
-                                    hw_acc.clone(),
-                                )
-                                .await?;
-                        }
-
-                        for operation in operation.update_only_existing {
-                            let res = shard
-                                .update_with_consistency(
-                                    operation,
-                                    wait,
-                                    timeout,
-                                    ordering,
-                                    true,
-                                    hw_acc.clone(),
-                                )
-                                .await;
-
-                            if let Err(err) = &res
-                                && err.is_missing_point()
-                            {
-                                continue;
-                            }
-
-                            result = res?;
-                        }
-
-                        CollectionResult::Ok(result)
-                    });
-                }
-
-                // Do not hold `shard_holder` read-lock during update
-                drop(shard_holder);
-
-                let results: Vec<_> = updates.collect().await;
-                CollectionResult::Ok(results)
-            })
-            .await??;
+        let results: Vec<_> = self.update_runtime.spawn(updates.collect()).await?;
 
         if results.is_empty() {
             return Err(CollectionError::bad_request(
