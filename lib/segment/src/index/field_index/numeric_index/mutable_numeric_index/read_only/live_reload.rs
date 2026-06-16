@@ -41,7 +41,7 @@ where
                 |_, point_offset, maybe_values: Option<Vec<T>>| {
                     let values = maybe_values.unwrap_or_default();
                     in_memory_index.add_many_to_list(point_offset, values);
-                    Ok(())
+                    Ok(true)
                 },
                 hw_counter.payload_index_io_read_counter(),
             )?;

@@ -1,11 +1,9 @@
 use std::borrow::Cow;
-use std::ops::ControlFlow;
 
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::UniversalRead;
+use common::generic_consts::AccessPattern;
+use common::universal_io::{UniversalRead, UserData};
 use lz4_flex::compress_prepend_size;
 
 use crate::Result;
@@ -13,7 +11,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PointOffset, Tracker, ValuePointer, ValuePointersBatch};
+use crate::tracker::{PointOffset, PointerItem, Tracker, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -112,25 +110,36 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
     pub fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
-        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
-    ) -> Result<(), E>
+    ) -> Result<bool, E>
     where
         P: AccessPattern,
+        U: UserData,
         E: From<GridstoreError>,
     {
         let point_offsets = point_offsets
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
-        let ValuePointersBatch {
-            valid,
-            empty,
-            out_of_range,
-        } = self.tracker.get_batch(point_offsets)?;
+        let mut pointers = Vec::new();
+
+        for result in self.tracker.iter(point_offsets)? {
+            let ((user_data, point_offset), pointer) = result?;
+
+            let PointerItem::Valid(pointer) = pointer else {
+                if !callback(user_data, point_offset, None)? {
+                    return Ok(false);
+                }
+
+                continue;
+            };
+
+            pointers.push(((user_data, point_offset), pointer));
+        }
 
         self.pages.read_batch_from_pages::<P, _, _>(
             self.config,
-            valid.into_iter(),
+            pointers.into_iter(),
             |(user_data, point_offset), bytes| {
                 hw_counter_cell.incr_delta(bytes.len());
 
@@ -138,66 +147,6 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
                 let value = V::from_bytes(&decompressed);
                 callback(user_data, point_offset, Some(value))
             },
-        )?;
-
-        for (user_data, point_offset) in empty.into_iter().chain(out_of_range) {
-            callback(user_data, point_offset, None)?;
-        }
-
-        Ok(())
-    }
-
-    /// Iterate over all the values in the storage.
-    ///
-    /// Stops when any of these conditions is true:
-    /// - the callback returns `Ok(false)`,
-    /// - it has iterated `max_iters` times
-    /// - there are no more results.
-    ///
-    /// ## Control Flow
-    /// Returns `Ok(Continue(next_offset))` if iteration can be continued starting from `next_offset`
-    ///  (i.e. `max_iters` was reached, but there are more results).
-    ///
-    /// Returns `Ok(Break())` when any of:
-    /// - `callback` returned false
-    /// - there are no more results.
-    ///
-    /// Returns `Err(e)` if reading from the tracker fails (no silent skip).
-    pub fn iter<F, E>(
-        &self,
-        from_id: PointOffset,
-        max_id: PointOffset,
-        max_iters: usize,
-        mut callback: F,
-        hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<ControlFlow<(), PointOffset>, E>
-    where
-        F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
-        E: From<GridstoreError>,
-    {
-        let mut nth = 0;
-        for (point_offset, res) in self.tracker.iter_pointers(from_id, max_id) {
-            let pointer = match res {
-                Ok(Some(p)) => p,
-                Ok(None) => continue,
-                Err(e) => return Err(e.into()),
-            };
-
-            if nth == max_iters {
-                return Ok(ControlFlow::Continue(point_offset));
-            }
-            nth += 1;
-
-            let raw = self.read_from_pages::<Sequential>(pointer)?;
-
-            hw_counter.incr_delta(raw.len());
-
-            let decompressed = self.decompress(raw);
-            let value = V::from_bytes(&decompressed);
-            if !callback(point_offset, value)? {
-                return Ok(ControlFlow::Break(()));
-            }
-        }
-        Ok(ControlFlow::Break(()))
+        )
     }
 }
