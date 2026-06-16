@@ -9,7 +9,7 @@ from .utils import *
 N_PEERS = 3
 COLLECTION_NAME = "test_collection"
 # Keep in sync with `api::HTTP_HEADER_ROUTING_TOKEN`.
-ROUTING_HEADER = "X-Qdrant-Routing-Token"
+ROUTING_HEADER = "X-Qdrant-Route-Affinity"
 POINT_ID = 1
 VECTOR = [0.1, 0.2, 0.3, 0.4]
 
