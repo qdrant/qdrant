@@ -11,9 +11,9 @@ use common::types::{ScoredPointOffset, TelemetryDetail};
 use common::universal_io::UniversalRead;
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
-use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
+use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
@@ -22,7 +22,9 @@ use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::hnsw_index::hnsw::read_only::ReadOnlyHNSWIndex;
 use crate::index::plain_vector_index::read_only::ReadOnlyPlainVectorIndex;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use crate::index::sparse_index::sparse_vector_index::read_only::ReadOnlySparseVectorIndex;
+use crate::index::sparse_index::sparse_vector_index::read_only::{
+    ReadOnlySparseVectorIndex, ReadOnlySparseVectorIndexOpenArgs,
+};
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::index::vector_index_base::VectorIndexRead;
 use crate::telemetry::VectorIndexSearchesTelemetry;
@@ -109,7 +111,6 @@ impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
     /// Open the read-only sparse vector index from its persisted [`SparseIndexConfig`],
     /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
     /// `MutableRam` has no read-only representation.
-    #[allow(dead_code)] // pending: read-only segment constructor
     pub fn open_sparse(args: ReadOnlyVectorIndexOpenArgs<'_, S>) -> OperationResult<Self> {
         let ReadOnlyVectorIndexOpenArgs {
             fs,
@@ -133,6 +134,21 @@ impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
             SparseIndexType::Mmap => SparseIndexType::Mmap,
         };
 
+        let args = ReadOnlySparseVectorIndexOpenArgs {
+            fs,
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path,
+        };
+
+        fn open<S: UniversalRead + 'static, TInvertedIndex: InvertedIndexReadOnly<S>>(
+            args: ReadOnlySparseVectorIndexOpenArgs<'_, S>,
+        ) -> OperationResult<Box<ReadOnlySparseVectorIndex<S, TInvertedIndex>>> {
+            Ok(Box::new(ReadOnlySparseVectorIndex::open(args)?))
+        }
+
         let index = match (effective_index_type, config.datatype.unwrap_or_default()) {
             (SparseIndexType::MutableRam, _) => {
                 return Err(OperationError::service_error(
@@ -140,70 +156,22 @@ impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
                 ));
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
-                Self::SparseCompressedImmutableRamF32(Box::new(ReadOnlySparseVectorIndex::open(
-                    fs,
-                    config,
-                    id_tracker,
-                    vector_storage,
-                    payload_index,
-                    path,
-                    InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path)?,
-                )?))
+                Self::SparseCompressedImmutableRamF32(open(args)?)
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
-                Self::SparseCompressedStoredF32(Box::new(ReadOnlySparseVectorIndex::open(
-                    fs,
-                    config,
-                    id_tracker,
-                    vector_storage,
-                    payload_index,
-                    path,
-                    InvertedIndexCompressedMmap::load_universal(fs, path)?,
-                )?))
+                Self::SparseCompressedStoredF32(open(args)?)
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
-                Self::SparseCompressedImmutableRamF16(Box::new(ReadOnlySparseVectorIndex::open(
-                    fs,
-                    config,
-                    id_tracker,
-                    vector_storage,
-                    payload_index,
-                    path,
-                    InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path)?,
-                )?))
+                Self::SparseCompressedImmutableRamF16(open(args)?)
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
-                Self::SparseCompressedStoredF16(Box::new(ReadOnlySparseVectorIndex::open(
-                    fs,
-                    config,
-                    id_tracker,
-                    vector_storage,
-                    payload_index,
-                    path,
-                    InvertedIndexCompressedMmap::load_universal(fs, path)?,
-                )?))
+                Self::SparseCompressedStoredF16(open(args)?)
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
-                Self::SparseCompressedImmutableRamU8(Box::new(ReadOnlySparseVectorIndex::open(
-                    fs,
-                    config,
-                    id_tracker,
-                    vector_storage,
-                    payload_index,
-                    path,
-                    InvertedIndexCompressedImmutableRam::load_universal::<S>(fs, path)?,
-                )?))
+                Self::SparseCompressedImmutableRamU8(open(args)?)
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
-                Self::SparseCompressedStoredU8(Box::new(ReadOnlySparseVectorIndex::open(
-                    fs,
-                    config,
-                    id_tracker,
-                    vector_storage,
-                    payload_index,
-                    path,
-                    InvertedIndexCompressedMmap::load_universal(fs, path)?,
-                )?))
+                Self::SparseCompressedStoredU8(open(args)?)
             }
             (
                 SparseIndexType::ImmutableRam | SparseIndexType::Mmap,

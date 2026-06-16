@@ -7498,6 +7498,7 @@ dependencies = [
  "common",
  "criterion",
  "dataset",
+ "duplicate",
  "fs-err",
  "generic-tests",
  "gridstore",

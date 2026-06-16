@@ -15,7 +15,6 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use segment::fixtures::sparse_fixtures::{open_sparse_index, ram_from_ram, ram_open};
 use segment::index::VectorIndex;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
@@ -85,8 +84,9 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
         b.iter(|| {
-            let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = open_sparse_index(
-                SparseVectorIndexOpenArgs {
+            let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+                SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+                    fs: &MmapFs,
                     config: index_config,
                     id_tracker: id_tracker.clone(),
                     vector_storage: vector_storage.clone(),
@@ -94,18 +94,16 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
                     path: index_dir.path(),
                     stopped: &stopped,
                     tick_progress: || (),
-                },
-                ram_open,
-                ram_from_ram,
-            )
-            .unwrap();
+                })
+                .unwrap();
             assert_eq!(sparse_vector_index.indexed_vector_count(), NUM_VECTORS);
         })
     });
 
     // build once to reuse in mmap conversion benchmark
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = open_sparse_index(
-        SparseVectorIndexOpenArgs {
+    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
             config: index_config,
             id_tracker,
             vector_storage,
@@ -113,11 +111,8 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
             path: index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
-        },
-        ram_open,
-        ram_from_ram,
-    )
-    .unwrap();
+        })
+        .unwrap();
 
     // intent: measure mmap conversion time
     group.bench_function("convert-mmap-index-f32", |b| {

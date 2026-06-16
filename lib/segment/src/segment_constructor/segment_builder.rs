@@ -699,6 +699,7 @@ impl SegmentBuilder {
                 let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
 
                 let index = open_or_create_sparse_vector_index(SparseVectorIndexOpenArgs {
+                    fs: &MmapFs,
                     config: sparse_vector_config.index,
                     id_tracker: id_tracker_arc.clone(),
                     vector_storage: vector_storage_arc.clone(),

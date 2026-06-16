@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::universal_io::MmapFs;
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
@@ -178,6 +179,7 @@ impl Segment {
         let vector_index_path = get_vector_index_path(&self.segment_path, vector_name);
         let stopped = AtomicBool::new(false);
         let vector_index = open_or_create_sparse_vector_index(SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
             config: effective_config.index,
             id_tracker: self.id_tracker.clone(),
             vector_storage: vector_storage.clone(),

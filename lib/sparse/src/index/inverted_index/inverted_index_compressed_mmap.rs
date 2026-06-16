@@ -16,8 +16,8 @@ use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs, UserData,
-    read_json_via,
+    MmapFs, OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs,
+    UniversalWrite, UserData, read_json_via,
 };
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -29,8 +29,8 @@ use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
     CHUNK_SIZE, CompressedPostingChunk, CompressedPostingListIterator, CompressedPostingListView,
 };
-use crate::index::inverted_index::InvertedIndex;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use crate::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly, InvertedIndexReadWrite};
 use crate::index::posting_list_common::GenericPostingElement;
 
 const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";
@@ -40,6 +40,94 @@ pub struct Version;
 impl StorageVersion for Version {
     fn current_raw() -> &'static str {
         "0.2.0"
+    }
+}
+
+impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
+    for InvertedIndexCompressedMmap<W, S>
+{
+    fn open_ro_impl(fs: &S::Fs, path: &Path) -> Result<Self> {
+        let file_header: InvertedIndexFileHeader =
+            read_json_via(fs, Self::index_config_file_path(path))?;
+
+        let storage = fs.open(
+            Self::index_file_path(path),
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                populate: Populate::No,
+                advice: AdviceSetting::Advice(Advice::Normal),
+            },
+            Default::default(),
+        )?;
+
+        let mut index = Self {
+            path: path.to_owned(),
+            storage,
+            file_header,
+            _phantom: PhantomData,
+        };
+
+        if index.file_header.total_sparse_size.is_none() {
+            // legacy header: compute in memory, never write back
+            let hw_counter = HardwareCounterCell::disposable();
+            index.file_header.total_sparse_size =
+                Some(index.calculate_total_sparse_size(&hw_counter)?);
+        }
+
+        Ok(index)
+    }
+}
+
+impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
+    for InvertedIndexCompressedMmap<W, S>
+{
+    fn open_rw_impl(fs: &S::Fs, path: &Path) -> Result<Self> {
+        // read index config file
+        let config_file_path = Self::index_config_file_path(path);
+        // if the file header does not exist, the index is malformed
+        let file_header: InvertedIndexFileHeader = read_json_via(fs, &config_file_path)?;
+        // open index data via universal IO
+        let file_path = Self::index_file_path(path);
+        let storage = fs.open(
+            &file_path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                populate: Populate::No,
+                advice: AdviceSetting::Advice(Advice::Normal),
+            },
+            Default::default(),
+        )?;
+
+        let mut index = Self {
+            path: path.to_owned(),
+            storage,
+            file_header,
+            _phantom: PhantomData,
+        };
+
+        let hw_counter = HardwareCounterCell::disposable();
+
+        if index.file_header.total_sparse_size.is_none() {
+            index.file_header.total_sparse_size =
+                Some(index.calculate_total_sparse_size(&hw_counter)?);
+            atomic_save_json(&config_file_path, &index.file_header)?;
+        }
+
+        Ok(index)
+    }
+
+    fn from_ram_index_impl<P: AsRef<Path>>(
+        fs: &<S as UniversalRead>::Fs,
+        ram_index: Cow<InvertedIndexRam>,
+        path: P,
+    ) -> Result<Self> {
+        // The intermediate RAM index is built in memory; its no-op `MmapFs` is
+        // irrelevant. The conversion writes through the real `fs`.
+        let index =
+            InvertedIndexCompressedImmutableRam::<W>::from_ram_index(&MmapFs, ram_index, &path)?;
+        Self::convert_and_save(fs, &index, path)
     }
 }
 
@@ -193,23 +281,6 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompr
 
 impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<W, S> {
     const HEADER_SIZE: usize = size_of::<PostingListFileHeader<W>>();
-
-    /// Open an existing on-disk index through `fs`. Equivalent to [`Self::load`].
-    pub fn open(fs: &S::Fs, path: &Path) -> Result<Self> {
-        Self::load(fs, path)
-    }
-
-    /// Build an on-disk index from a RAM index, writing it through `fs`.
-    pub fn from_ram_index<P: AsRef<Path>>(
-        fs: &S::Fs,
-        ram_index: Cow<InvertedIndexRam>,
-        path: P,
-    ) -> Result<Self> {
-        // The intermediate RAM index is built in memory; its no-op `MmapFs` is
-        // irrelevant. The conversion writes through the real `fs`.
-        let index = InvertedIndexCompressedImmutableRam::from_ram_index(&MmapFs, ram_index, &path)?;
-        Self::convert_and_save(fs, &index, path)
-    }
 
     pub fn index_file_path(path: &Path) -> PathBuf {
         path.join(INDEX_FILE_NAME)
@@ -446,76 +517,6 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         })
     }
 
-    pub fn load<P: AsRef<Path>>(fs: &S::Fs, path: P) -> Result<Self> {
-        // read index config file
-        let config_file_path = Self::index_config_file_path(path.as_ref());
-        // if the file header does not exist, the index is malformed
-        let file_header: InvertedIndexFileHeader = read_json_via(fs, &config_file_path)?;
-        // open index data via universal IO
-        let file_path = Self::index_file_path(path.as_ref());
-        let storage = fs.open(
-            &file_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::No,
-                advice: AdviceSetting::Advice(Advice::Normal),
-            },
-            Default::default(),
-        )?;
-
-        let mut index = Self {
-            path: path.as_ref().to_owned(),
-            storage,
-            file_header,
-            _phantom: PhantomData,
-        };
-
-        let hw_counter = HardwareCounterCell::disposable();
-
-        if index.file_header.total_sparse_size.is_none() {
-            index.file_header.total_sparse_size =
-                Some(index.calculate_total_sparse_size(&hw_counter)?);
-            atomic_save_json(&config_file_path, &index.file_header)?;
-        }
-
-        Ok(index)
-    }
-
-    /// Load purely through universal IO, without the legacy-header upgrade
-    /// write path of [`Self::load`]. Used by the read-only index.
-    pub fn load_universal(fs: &S::Fs, path: &Path) -> Result<Self> {
-        let file_header: InvertedIndexFileHeader =
-            read_json_via(fs, Self::index_config_file_path(path))?;
-
-        let storage = fs.open(
-            Self::index_file_path(path),
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::No,
-                advice: AdviceSetting::Advice(Advice::Normal),
-            },
-            Default::default(),
-        )?;
-
-        let mut index = Self {
-            path: path.to_owned(),
-            storage,
-            file_header,
-            _phantom: PhantomData,
-        };
-
-        if index.file_header.total_sparse_size.is_none() {
-            // legacy header: compute in memory, never write back
-            let hw_counter = HardwareCounterCell::disposable();
-            index.file_header.total_sparse_size =
-                Some(index.calculate_total_sparse_size(&hw_counter)?);
-        }
-
-        Ok(index)
-    }
-
     fn calculate_total_sparse_size(&self, hw_counter: &HardwareCounterCell) -> Result<usize> {
         let mut total = 0;
         self.for_each_view(hw_counter, |_id, view| {
@@ -622,8 +623,7 @@ mod tests {
             compare_indexes(&inverted_index_ram, &inverted_index_mmap);
         }
         let index =
-            InvertedIndexCompressedMmap::<W, MmapFile>::load(&Default::default(), &tmp_dir_path)
-                .unwrap();
+            InvertedIndexCompressedMmap::<W, _>::open_ro(&MmapFs, tmp_dir_path.path()).unwrap();
         // posting_count: 0th entry is always empty + 1st + 2nd + 3rd + 4th empty + 5th
         assert_eq!(index.file_header.posting_count, 6);
         assert_eq!(index.file_header.vector_count, 9);

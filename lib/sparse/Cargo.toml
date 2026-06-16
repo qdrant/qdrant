@@ -38,6 +38,7 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
+duplicate = "2.0.1"
 fs-err = { workspace = true, features = ["debug"] }
 generic-tests = { workspace = true }
 indicatif = { workspace = true }
