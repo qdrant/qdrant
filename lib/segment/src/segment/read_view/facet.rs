@@ -22,43 +22,26 @@ use crate::types::{Condition, FieldCondition, Filter, IntPayloadType, Match, Val
 /// Filter selectivity below which [`SegmentReadView::visit_filter_iter`] beats
 /// [`SegmentReadView::visit_facet_iter`] on the full (non-sampling) path.
 ///
-/// The filter-iter cost grows linearly with selectivity, while the posting
+/// The `visit_filter_iter` cost grows linearly with selectivity, while the posting
 /// walk with a precomputed probe is nearly flat.
 ///
-/// If we make the filter-iter cheaper, we can increase this value.
+/// If we make the `visit_filter_iter` cheaper, we can increase this value.
 const ITER_FILTER_INDEX_SELECTIVITY: f64 = 0.1;
 
 /// Multiplier from the user-facing `limit` to the per-segment sampling budget.
 ///
 /// Together with [`MIN_SAMPLE_TARGET`] this determines how many distinct
-/// candidate values the sampling phase tries to collect before falling back
-/// to the exact-count post-pass. Calibrated from a Monte-Carlo sweep --
-///  a sample target of `max(request.limit * 10, 1000)` gives
-/// ≥90% recall on top-K for Zipf-distributed fields with cardinality up to
-/// `10^5`
+/// candidate values the sampling phase tries to collect.
 const OVERSAMPLE_FACTOR: usize = 10;
 
 /// Lower bound on the per-segment sampling budget.
-///
-/// For very small `limit` (e.g. 10) the oversample factor alone leaves too
-/// little headroom against per-segment rank variance, so we enforce a floor.
 const MIN_SAMPLE_TARGET: usize = 1000;
 
 /// Maximum number of consecutive points that may be drawn without introducing
-/// any new candidate value before we give up. Bounds the rejection cost when
-/// the long tail of unique values is too thin to make progress (e.g. heavily
-/// skewed distributions where the top ~K values dominate the total mass).
+/// any new candidate value before we give up.
 const MAX_NO_NEW_POINTS: usize = 4096;
 
 /// Build a `field MATCH ANY [candidates]` filter.
-///
-/// Lets the sampling post-pass visit the filtered points once (over the union
-/// of candidate postings) instead of once per candidate. A facet field holds a
-/// single value type, so the candidates collapse to one [`AnyVariants`] arm;
-/// `Bool` fields never reach here (only two values, far below the sampling
-/// threshold), so an all-empty result is unreachable in practice.
-///
-/// [`AnyVariants`]: crate::types::AnyVariants
 fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> Filter {
     let mut strings: Vec<String> = Vec::new();
     let mut integers: Vec<IntPayloadType> = Vec::new();
@@ -66,7 +49,12 @@ fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> F
         match ValueVariants::from(value.clone()) {
             ValueVariants::String(string) => strings.push(string),
             ValueVariants::Integer(integer) => integers.push(integer),
-            ValueVariants::Bool(_) => {}
+            ValueVariants::Bool(_) => {
+                unreachable!(
+                    "this filter is only constructed for value sampling,
+                    and bool index can only have 2 possible values"
+                )
+            }
         }
     }
 
@@ -82,18 +70,10 @@ fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> F
     )))
 }
 
-/// How the user filter is applied to individual points.
+/// How the user filter is use to check individual points.
 ///
-/// A lazy check costs a full condition evaluation per call; a materialized
-/// bitmap makes each check nearly free, but costs one filter evaluation pass
-/// up front.
-///
-/// The full-scan path checks every posting element at least once, so it
-/// materializes ([`FilterProbe::Precomputed`]). The sampling path touches only
-/// the candidate postings and rarely checks the same point twice (the random
-/// draw is without replacement; a point recurs only when it holds several
-/// candidate values), so materialization doesn't pay off there
-/// ([`FilterProbe::Lazy`]).
+/// It can be "lazy" and check against the index directly,
+/// or precomputed and only check against a bitmap.
 pub enum FilterProbe<'a> {
     /// Evaluate the filter lazily on each check.
     Lazy {
@@ -119,9 +99,8 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
-    /// Top-level approximate-facet entry point. Picks between the full-scan
-    /// and the sampling strategy based on how many distinct values the index
-    /// contains relative to the requested `limit`.
+    /// Top-level approximate-facet entry point. Picks the appropriate
+    /// method for calculating facets
     pub fn approximate_facet(
         &self,
         request: &FacetParams,
@@ -197,8 +176,8 @@ where
             // Iterate the filter, then hash each value to get counts
             self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped, hw_counter)
         } else {
-            // Every posting element will be checked, so materializing the filter
-            // once is cheaper than that many per-point evaluations.
+            // Every posting element will be checked, so materializing the entire filter
+            // is cheaper than that many per-point evaluations.
             let bitmap = self
                 .payload_index
                 .iter_filtered_points(
@@ -433,46 +412,34 @@ where
         let mut seen: HashSet<FacetValue> = HashSet::with_capacity(sample_target);
 
         // Build a stream of random internal point IDs to draw from.
-        let id_stream = self.random_internal_id_stream(probe);
+        let id_stream = self
+            .id_tracker
+            .point_mappings()
+            .iter_random_visible()
+            .map(|(_external_id, internal_id)| internal_id)
+            .filter(move |&internal_id| probe.is_none_or(|probe| probe.check(internal_id)));
 
-        let mut empty_streak: usize = 0;
+        let mut seen_streak: usize = 0;
         let is_finished = AtomicBool::new(false);
         facet_index.for_points_values(
             id_stream.stop_if(is_stopped).stop_if(&is_finished),
             hw_counter,
             |_point_id, vals_iter: &mut dyn Iterator<Item = FacetValueRef<'_>>| {
                 for v in vals_iter {
-                    if empty_streak >= MAX_NO_NEW_POINTS || seen.len() >= sample_target {
+                    if seen_streak >= MAX_NO_NEW_POINTS || seen.len() >= sample_target {
                         is_finished.store(true, Ordering::Relaxed);
                         break;
                     }
                     if seen.insert(v.to_owned()) {
-                        empty_streak = 0;
+                        seen_streak = 0;
                     } else {
-                        empty_streak += 1;
+                        seen_streak += 1;
                     }
                 }
             },
         )?;
 
         Ok(seen)
-    }
-
-    /// Stream of internal point IDs to sample from. Yields IDs in random
-    /// order, filtering out soft-deleted and deferred points (and, if a probe
-    /// is given, points that don't match the filter it carries).
-    ///
-    /// The `is_stopped` check is handled by the consumer
-    /// (`collect_candidate_values`) on each drawn point.
-    fn random_internal_id_stream<'a>(
-        &'a self,
-        probe: Option<&'a FilterProbe<'_>>,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        self.id_tracker
-            .point_mappings()
-            .iter_random_visible()
-            .map(|(_external_id, internal_id)| internal_id)
-            .filter(move |&internal_id| probe.is_none_or(|probe| probe.check(internal_id)))
     }
 
     /// Resolve the facet index for `request`, erroring if the field is not a
