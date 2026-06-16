@@ -38,7 +38,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
                         .map(GeoPoint::from)
                         .collect::<Vec<_>>();
                     in_memory_index.add_many_geo_points(point_offset, geo_points, hw_counter)?;
-                    Ok(())
+                    Ok(true)
                 },
                 hw_counter.payload_index_io_read_counter(),
             )?;

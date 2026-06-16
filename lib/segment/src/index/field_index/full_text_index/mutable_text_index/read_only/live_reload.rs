@@ -38,7 +38,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
                 |_, point_offset, maybe_value: Option<Vec<u8>>| {
                     let Some(value) = maybe_value else {
                         debug_assert!(false, "This should be unreachable");
-                        return Ok(());
+                        return Ok(true);
                     };
                     // The stored document is already tokenized, so we replay the
                     // post-tokenization half of `MutableFullTextIndex::add_many`:
@@ -58,7 +58,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
                         TokenSet::from_iter(tokens),
                         hw_counter,
                     )?;
-                    Ok(())
+                    Ok(true)
                 },
                 hw_counter.payload_index_io_read_counter(),
             )?;
