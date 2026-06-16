@@ -368,7 +368,7 @@ fn read_only_segment_over_s3_disk_cache() {
             }
             let rel = entry.path().strip_prefix(&local_path).unwrap();
             let key = format!("{key_prefix}/{}", rel.to_string_lossy());
-            let bytes = std::fs::read(entry.path()).unwrap();
+            let bytes = fs_err::read(entry.path()).unwrap();
             store
                 .put(&ObjectPath::from(key.as_str()), Bytes::from(bytes).into())
                 .await
@@ -446,4 +446,150 @@ fn read_only_segment_over_s3_disk_cache() {
          search(cold)={search_cold:?} search(warm)={search_warm:?} cached={} KiB",
         cached_bytes / 1024,
     );
+}
+
+/// Open + query a segment from real Google Cloud Storage through a local disk
+/// cache. Stages a segment in the bucket, reads it back over
+/// `DiskCacheFs<BlobFile<GoogleCloudStorage>>`, compares to the local reference,
+/// then deletes the staged objects.
+///
+/// Ignored by default; run with credentials:
+/// `GCS_INTEGRATION_TEST=1 GCS_BUCKET=read-segment GCS_SA_KEY=/path/key.json \
+///   cargo test -p segment read_only_segment_over_gcs_disk_cache -- --ignored --nocapture`
+#[test]
+#[ignore = "requires GCS access (GCS_INTEGRATION_TEST=1, optional GCS_SA_KEY / GCS_BUCKET)"]
+fn read_only_segment_over_gcs_disk_cache() {
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    use bytes::Bytes;
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+    };
+    use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
+    use io_bridge_object_store::{BlobBackend, BlobFile};
+    use object_store::ObjectStoreExt;
+    use object_store::gcp::GoogleCloudStorage;
+    use object_store::path::Path as ObjectPath;
+
+    if std::env::var("GCS_INTEGRATION_TEST").as_deref() != Ok("1") {
+        eprintln!("skipping read_only_segment_over_gcs_disk_cache: set GCS_INTEGRATION_TEST=1");
+        return;
+    }
+
+    let gcs_config = GcsConfig {
+        bucket: std::env::var("GCS_BUCKET").unwrap_or_else(|_| "read-segment".into()),
+        credentials: match std::env::var("GCS_SA_KEY") {
+            Ok(path) => GcsCredentials::ServiceAccountPath(path),
+            Err(_) => GcsCredentials::Default,
+        },
+    };
+
+    // Build an immutable segment locally as the reference.
+    let segments_dir = Builder::new().prefix("ro_gcs_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_gcs_builder").tempdir().unwrap();
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_uuid = mutable.uuid;
+    let local_path = mutable.data_path();
+    let key_prefix = format!("seg/{segment_uuid}");
+
+    // Stage the segment in the bucket.
+    let store = GoogleCloudStorage::build_store(&gcs_config).expect("build GCS store");
+    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let uploaded_keys: Vec<String> = runtime.block_on(async {
+        let mut keys = Vec::new();
+        for entry in walkdir::WalkDir::new(&local_path) {
+            let entry = entry.unwrap();
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let rel = entry.path().strip_prefix(&local_path).unwrap();
+            let key = format!("{key_prefix}/{}", rel.to_string_lossy());
+            let bytes = fs_err::read(entry.path()).unwrap();
+            store
+                .put(&ObjectPath::from(key.as_str()), Bytes::from(bytes).into())
+                .await
+                .expect("upload segment file");
+            keys.push(key);
+        }
+        keys
+    });
+
+    // GCS remote behind a fresh (cold) local disk cache.
+    type GcsFile = BlobFile<Arc<GoogleCloudStorage>>;
+    let cache_dir = Builder::new().prefix("ro_gcs_cache").tempdir().unwrap();
+    let fs = DiskCacheFs::<GcsFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(
+            DiskCacheConfig::new(
+                std::path::PathBuf::from("seg"),
+                cache_dir.path().to_path_buf(),
+            )
+            .unwrap(),
+        ),
+        remote: gcs_config,
+    })
+    .expect("disk-cache fs");
+
+    let t = Instant::now();
+    let read_only = ReadOnlySegment::<DiskCache<GcsFile>>::open(
+        &fs,
+        Path::new(&key_prefix),
+        segment_uuid,
+        None,
+    )
+    .expect("read-only open over GCS + disk cache");
+    let open_cold = t.elapsed();
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+
+    let query = QueryVector::Nearest(VectorInternal::Dense(
+        (0..DIM).map(|j| (j % 5) as f32 + 0.25).collect(),
+    ));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let run_search = || {
+        read_only
+            .search_batch(
+                DEFAULT_VECTOR_NAME,
+                &[&query],
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .unwrap()
+    };
+
+    let t = Instant::now();
+    let cold_hits = run_search();
+    let search_cold = t.elapsed();
+    let t = Instant::now();
+    let warm_hits = run_search();
+    let search_warm = t.elapsed();
+
+    assert!(!cold_hits[0].is_empty());
+    assert_eq!(cold_hits, warm_hits);
+    assert_query_equivalence(&mutable, &read_only);
+
+    let cached_bytes: u64 = walkdir::WalkDir::new(cache_dir.path())
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum();
+
+    eprintln!(
+        "[gcs+disk-cache] points={NUM_POINTS} open(cold)={open_cold:?} \
+         search(cold)={search_cold:?} search(warm)={search_warm:?} cached={} KiB",
+        cached_bytes / 1024,
+    );
+
+    // Clean up the staged objects (best-effort).
+    runtime.block_on(async {
+        for key in &uploaded_keys {
+            let _ = store.delete(&ObjectPath::from(key.as_str())).await;
+        }
+    });
 }
