@@ -36,6 +36,13 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "c",
         kind: VectorKind::Dense(5),
     },
+    // Dense vector configured with HNSW `inline_storage` (original + quantized vectors stored
+    // inside the HNSW index file) backed by scalar quantization. From the model's perspective
+    // this behaves like any other dense vector; only the on-disk index layout differs.
+    VectorCandidate {
+        name: "i",
+        kind: VectorKind::Dense(4),
+    },
     VectorCandidate {
         name: "s",
         kind: VectorKind::Sparse,
@@ -52,7 +59,10 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
 
 /// Names present in the collection schema at fixture time.
 // "m" (multivector) is temporarily disabled while its reload divergence is unresolved.
-pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "s"];
+pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s"];
+
+/// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
+pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
 
 pub(super) struct VectorCandidate {
     pub(super) name: &'static str,
