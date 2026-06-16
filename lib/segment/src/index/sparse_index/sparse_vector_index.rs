@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -7,13 +8,13 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::StorageVersion as _;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFile, MmapFs, UniversalReadFs};
 use fs_err as fs;
 use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::SparseVector;
-use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
+use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadWrite};
 
 use self::read_view::{SparseVectorIndexReadView, SparseVectorIndexReadViewEnum};
 use super::indices_tracker::IndicesTracker;
@@ -66,7 +67,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 }
 
-pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
+pub struct SparseVectorIndexOpenArgs<'a, Fs: UniversalReadFs, F: FnMut()> {
+    pub fs: &'a Fs,
     pub config: SparseIndexConfig,
     pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
@@ -98,6 +100,74 @@ pub enum SparseOpenPlan {
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
+    /// Open a sparse vector index at a given path
+    pub fn open<F: FnMut()>(args: SparseVectorIndexOpenArgs<'_, MmapFs, F>) -> OperationResult<Self>
+    where
+        TInvertedIndex: InvertedIndexReadWrite<MmapFile>,
+    {
+        let SparseVectorIndexOpenArgs {
+            fs,
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path,
+            stopped,
+            tick_progress,
+        } = args;
+
+        let plan = Self::plan(
+            config,
+            &id_tracker,
+            &vector_storage,
+            path,
+            stopped,
+            tick_progress,
+        )?;
+        let (inverted_index, config, indices_tracker, persist) = match plan {
+            SparseOpenPlan::Load {
+                config,
+                indices_tracker,
+            } => (
+                TInvertedIndex::open_rw(fs, path)?,
+                config,
+                indices_tracker,
+                false,
+            ),
+            SparseOpenPlan::Build {
+                config,
+                ram_index,
+                indices_tracker,
+                persist,
+            } => (
+                TInvertedIndex::from_ram_index(fs, Cow::Owned(ram_index), path)?,
+                config,
+                indices_tracker,
+                persist,
+            ),
+        };
+
+        if persist {
+            config.save(&SparseIndexConfig::get_config_path(path))?;
+            inverted_index.save(path)?;
+            indices_tracker.save(path)?;
+            // Save the version last to mark a successful (re)build.
+            TInvertedIndex::Version::save(path)?;
+        }
+
+        Ok(Self {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path: path.to_path_buf(),
+            inverted_index,
+            searches_telemetry: SparseSearchesTelemetry::new(),
+            indices_tracker,
+            search_scratch_pool: SearchScratchPool::new(),
+        })
+    }
+
     /// Decide whether the on-disk index can be loaded or must be (re)built.
     ///
     /// A rebuild assembles the RAM index here (it is type-agnostic); the caller
@@ -155,41 +225,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             ram_index,
             indices_tracker,
             persist: true,
-        })
-    }
-
-    /// Assemble the index from the caller-constructed inverted index and the
-    /// finalization fields resolved from a [`SparseOpenPlan`]. Freshly (re)built
-    /// indexes are persisted (`persist`); loaded ones are not.
-    #[allow(clippy::too_many_arguments)]
-    pub fn finish(
-        config: SparseIndexConfig,
-        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-        path: &Path,
-        inverted_index: TInvertedIndex,
-        indices_tracker: IndicesTracker,
-        persist: bool,
-    ) -> OperationResult<Self> {
-        if persist {
-            config.save(&SparseIndexConfig::get_config_path(path))?;
-            inverted_index.save(path)?;
-            indices_tracker.save(path)?;
-            // Save the version last to mark a successful (re)build.
-            TInvertedIndex::Version::save(path)?;
-        }
-
-        Ok(Self {
-            config,
-            id_tracker,
-            vector_storage,
-            payload_index,
-            path: path.to_path_buf(),
-            inverted_index,
-            searches_telemetry: SparseSearchesTelemetry::new(),
-            indices_tracker,
-            search_scratch_pool: SearchScratchPool::new(),
         })
     }
 

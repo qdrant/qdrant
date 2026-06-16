@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::defaults::log_load_timing;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFs;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -248,6 +249,7 @@ fn open_sparse_vector_data(
     let started = Instant::now();
     let vector_index = sp(open_or_create_sparse_vector_index(
         SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
             config: sparse_vector_config.index,
             id_tracker: id_tracker.clone(),
             vector_storage: vector_storage.clone(),

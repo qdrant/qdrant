@@ -7,7 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion as _;
 use common::universal_io::UniversalRead;
 use sparse::SearchScratchPool;
-use sparse::index::inverted_index::InvertedIndex;
+use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
@@ -54,26 +54,32 @@ type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
     TInvertedIndex,
 >;
 
+pub struct ReadOnlySparseVectorIndexOpenArgs<'a, S: UniversalRead> {
+    pub fs: &'a S::Fs,
+    pub config: SparseIndexConfig,
+    pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+    pub payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    pub path: &'a Path,
+}
+
 impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<S, TInvertedIndex> {
-    /// Universal-IO mirror of `SparseVectorIndex::finish`: version gate and
-    /// indices tracker load via `fs`, then assemble from the caller-loaded
-    /// `config` and already-constructed `inverted_index`.
-    ///
-    /// The caller (the [`VectorIndexReadEnum`] dispatcher) loads `config` to pick
-    /// the concrete inverted-index type, constructs it, and hands both here — so
-    /// this stays free of inverted-index construction callbacks, just as
-    /// `SparseVectorIndex` does.
-    ///
-    /// [`VectorIndexReadEnum`]: crate::index::read_only::VectorIndexReadEnum
-    pub fn open(
-        fs: &S::Fs,
-        config: SparseIndexConfig,
-        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
-        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
-        path: &Path,
-        inverted_index: TInvertedIndex,
-    ) -> OperationResult<Self> {
+    /// Similar to [`super::SparseVectorIndex::open`].
+    pub fn open(args: ReadOnlySparseVectorIndexOpenArgs<S>) -> OperationResult<Self>
+    where
+        TInvertedIndex: InvertedIndexReadOnly<S>,
+    {
+        let ReadOnlySparseVectorIndexOpenArgs {
+            fs,
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path,
+        } = args;
+
+        let inverted_index = TInvertedIndex::open_ro(fs, path)?;
+
         let stored_version = TInvertedIndex::Version::load_universal(fs, path)?;
         if stored_version != Some(TInvertedIndex::Version::current()) {
             return Err(OperationError::service_error_light(format!(
