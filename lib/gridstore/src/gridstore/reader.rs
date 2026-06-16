@@ -88,6 +88,11 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         self.view().get_value::<P>(point_offset, hw_counter)
     }
 
+    /// Iterate over all values with point offsets below `max_id` and execute callback for each one.
+    /// Missing values are skipped.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    //
     // TODO: Unify with `read_values`?
     pub fn iter<F, E>(
         &self,

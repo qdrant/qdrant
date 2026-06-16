@@ -60,6 +60,12 @@ where
             if let Some(pending) = self.pending_updates.get(&point_offset) {
                 debug_assert!(!pending.is_empty(), "pending updates must not be empty");
 
+                // Apply pending updates before reading from storage.
+                //
+                // A pending `None` is a pending *unset*, so falling back to disk
+                // would revive a stale pointer.
+                //
+                // See `get`, which returns `pending.current` directly.
                 let item = match pending.current {
                     Some(pointer) => PointerItem::Valid(pointer),
                     None => PointerItem::Empty,

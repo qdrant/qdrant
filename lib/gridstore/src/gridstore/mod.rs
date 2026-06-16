@@ -388,6 +388,9 @@ where
         self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
     }
 
+    /// Iterate over all given values and execute callback for each one.
+    ///
+    /// Return `false` from the callback to stop iteration early.
     pub fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
@@ -421,6 +424,9 @@ where
         self.tracker.read().pointer_count()
     }
 
+    /// Iterate over all values and execute callback for each one. Missing values are skipped.
+    ///
+    /// Return `false` from the callback to stop iteration early.
     pub fn iter<F, E>(&self, mut callback: F, hw_counter: HwMetricRefCounter) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
@@ -432,6 +438,11 @@ where
         let mut should_continue = true;
 
         while current_offset < max_offset && should_continue {
+            // Iterate in batches to allow releasing read locks
+            //
+            // See:
+            // - https://github.com/qdrant/qdrant/pull/7983
+            // - https://github.com/qdrant/qdrant/pull/8248
             self.with_view(|view| -> Result<_, E> {
                 max_offset = view.max_point_offset();
 
