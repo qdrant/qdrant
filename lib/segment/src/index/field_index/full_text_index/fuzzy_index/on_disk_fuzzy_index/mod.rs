@@ -19,12 +19,12 @@ use crate::types::FuzzyParams;
 
 const FUZZY_INDEX_FILE: &str = "fst.dat";
 
-pub struct MmapFuzzyIndex {
+pub struct OnDiskFuzzyIndex {
     path: PathBuf,
     index: MmapFst,
 }
 
-impl MmapFuzzyIndex {
+impl OnDiskFuzzyIndex {
     pub fn create(path: PathBuf, fuzzy_index: &ImmutableFuzzyIndex) -> OperationResult<()> {
         let fuzzy_index_path = path.join(FUZZY_INDEX_FILE);
         MmapFst::create(fuzzy_index_path, fuzzy_index)?;
@@ -76,7 +76,7 @@ impl MmapFuzzyIndex {
     }
 }
 
-impl FuzzyIndex for MmapFuzzyIndex {
+impl FuzzyIndex for OnDiskFuzzyIndex {
     fn search_levenshtein(&self, query: &str, params: &FuzzyParams) -> Vec<FuzzyCandidate> {
         let max = params.max_expansions as usize;
         let max_edits = u32::from(params.max_edits);

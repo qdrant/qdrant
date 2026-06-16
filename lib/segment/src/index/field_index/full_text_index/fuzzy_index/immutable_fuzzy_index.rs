@@ -4,7 +4,7 @@ use strsim::levenshtein;
 use super::{FuzzyIndex, prefix_chars};
 use crate::index::field_index::full_text_index::fuzzy_index::automaton::PrefixLevenshtein;
 use crate::index::field_index::full_text_index::fuzzy_index::{
-    FuzzyCandidate, MmapFuzzyIndex, MutableFuzzyIndex,
+    FuzzyCandidate, MutableFuzzyIndex, OnDiskFuzzyIndex,
 };
 use crate::types::FuzzyParams;
 
@@ -106,10 +106,10 @@ impl TryFrom<MutableFuzzyIndex> for ImmutableFuzzyIndex {
     }
 }
 
-impl TryFrom<&MmapFuzzyIndex> for ImmutableFuzzyIndex {
+impl TryFrom<&OnDiskFuzzyIndex> for ImmutableFuzzyIndex {
     type Error = crate::common::operation_error::OperationError;
 
-    fn try_from(value: &MmapFuzzyIndex) -> Result<Self, Self::Error> {
+    fn try_from(value: &OnDiskFuzzyIndex) -> Result<Self, Self::Error> {
         let bytes = value.fst_bytes().to_vec();
         let index = Set::new(bytes).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(

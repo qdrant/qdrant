@@ -181,32 +181,28 @@ pub fn check_compressed_postings_phrase(
 pub fn check_compressed_postings_fuzzy_phrase<'a>(
     phrase: &FuzzyDocument,
     point_id: PointOffsetType,
-    token_to_posting: impl Fn(&TokenId) -> Option<PostingListView<'a, Positions>>,
+    postings: Vec<(TokenId, PostingListView<'a, Positions>)>,
 ) -> bool {
-    let mut group_iters: Vec<Vec<(TokenId, PostingIterator<'a, Positions>)>> = phrase
-        .iter()
-        .map(|group| {
-            group
-                .tokens()
-                .iter()
-                .filter_map(|&token_id| {
-                    token_to_posting(&token_id).map(|pl| (token_id, pl.into_iter()))
-                })
-                .collect::<Vec<_>>()
-        })
+    // Build a lookup from token_id to its posting iterator.
+    let mut posting_map: Vec<(TokenId, PostingIterator<'a, Positions>)> = postings
+        .into_iter()
+        .map(|(tid, pl)| (tid, pl.into_iter()))
         .collect();
 
     let mut tokens_positions: Vec<TokenPosition> = Vec::new();
 
-    for group_iter in group_iters.iter_mut() {
+    for group in phrase.iter() {
         let before = tokens_positions.len();
 
-        for (token_id, iter) in group_iter.iter_mut() {
-            let Some(elem) = iter.advance_until_greater_or_equal(point_id) else {
-                continue;
-            };
-            if elem.id == point_id {
-                tokens_positions.extend(elem.value.to_token_positions(*token_id));
+        for &token_id in group.tokens() {
+            // Find the posting iterator for this token_id.
+            if let Some((_, iter)) = posting_map.iter_mut().find(|(tid, _)| *tid == token_id) {
+                let Some(elem) = iter.advance_until_greater_or_equal(point_id) else {
+                    continue;
+                };
+                if elem.id == point_id {
+                    tokens_positions.extend(elem.value.to_token_positions(token_id));
+                }
             }
         }
 
@@ -220,7 +216,6 @@ pub fn check_compressed_postings_fuzzy_phrase<'a>(
 
     PartialDocument::new(tokens_positions).has_fuzzy_phrase(phrase)
 }
-
 /// Returns an iterator over points whose documents satisfy the fuzzy phrase query.
 ///
 /// Uses stateful peekable iterators (via [`PostingIterator::advance_until_greater_or_equal`])
@@ -229,23 +224,31 @@ pub fn check_compressed_postings_fuzzy_phrase<'a>(
 /// the monotonically increasing candidate stream.
 pub fn intersect_compressed_postings_fuzzy_phrase_iterator<'a>(
     phrase: FuzzyDocument,
-    token_to_posting: impl Fn(&TokenId) -> Option<PostingListView<'a, Positions>> + 'a,
+    postings: Vec<(TokenId, PostingListView<'a, Positions>)>,
     is_active: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> impl Iterator<Item = PointOffsetType> + 'a {
     if phrase.is_empty() {
         return Either::Left(std::iter::empty());
     }
 
-    let group_postings: Vec<Vec<(TokenId, PostingListView<'a, Positions>)>> = phrase
-        .iter()
-        .map(|group| {
-            group
-                .tokens()
-                .iter()
-                .filter_map(|&tid| token_to_posting(&tid).map(|pl| (tid, pl)))
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    // Partition the flat postings Vec into per-group posting views.
+    let mut group_postings: Vec<Vec<(TokenId, PostingListView<'a, Positions>)>> =
+        Vec::with_capacity(phrase.len());
+    // Build a lookup set for quick membership tests.
+    let posting_map: Vec<(TokenId, PostingListView<'a, Positions>)> = postings;
+    for group in phrase.iter() {
+        let views: Vec<_> = group
+            .tokens()
+            .iter()
+            .filter_map(|&tid| {
+                posting_map
+                    .iter()
+                    .find(|(t, _)| *t == tid)
+                    .map(|(t, pl)| (*t, pl.clone()))
+            })
+            .collect();
+        group_postings.push(views);
+    }
 
     if group_postings.iter().any(|views| views.is_empty()) {
         return Either::Left(std::iter::empty());
@@ -312,24 +315,28 @@ pub fn intersect_compressed_postings_fuzzy_phrase_iterator<'a>(
 /// fuzzy document has at least one matching token.
 ///
 /// Strategy: per-group union → cross-group intersect.
-/// 1. For each group collect posting views; bail out early if any group has no postings.
+/// 1. For each group collect posting views from the provided `postings` Vec;
+///    bail out early if any group has no postings.
 /// 2. Pick the group with the smallest union size as the candidate driver.
 /// 3. For every candidate, verify it appears in every other group's union using
 ///    stateful peekable iterators (seek+peek via `advance_until_greater_or_equal`).
-///
-/// `get_posting(token_id)` must return `None` for tokens not present in the index.
 pub fn merge_fuzzy_all_tokens_iterator<'a, V: PostingValue + 'a>(
     fuzzy_doc: FuzzyDocument,
-    get_posting: impl Fn(TokenId) -> Option<PostingListView<'a, V>> + 'a,
+    postings: Vec<(TokenId, PostingListView<'a, V>)>,
     is_active: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-    // Collect per-group posting views; bail out if any group has no postings.
+    // Partition the flat postings Vec into per-group posting views.
     let mut group_views: Vec<Vec<PostingListView<'a, V>>> = Vec::with_capacity(fuzzy_doc.len());
     for group in fuzzy_doc.iter() {
-        let views: Vec<_> = group
+        let views: Vec<PostingListView<'a, V>> = group
             .tokens()
             .iter()
-            .filter_map(|&tid| get_posting(tid))
+            .filter_map(|&tid| {
+                postings
+                    .iter()
+                    .find(|(t, _)| *t == tid)
+                    .map(|(_, pl)| pl.clone())
+            })
             .collect();
         if views.is_empty() {
             return Box::new(std::iter::empty());

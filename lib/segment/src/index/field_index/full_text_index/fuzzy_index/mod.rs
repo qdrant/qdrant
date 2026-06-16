@@ -1,11 +1,11 @@
 pub mod automaton;
 mod immutable_fuzzy_index;
-mod mmap_fuzzy_index;
 mod mutable_fuzzy_index;
+mod on_disk_fuzzy_index;
 
 pub(super) use immutable_fuzzy_index::ImmutableFuzzyIndex;
-pub(super) use mmap_fuzzy_index::MmapFuzzyIndex;
 pub(super) use mutable_fuzzy_index::MutableFuzzyIndex;
+pub(super) use on_disk_fuzzy_index::OnDiskFuzzyIndex;
 
 use crate::types::FuzzyParams;
 
