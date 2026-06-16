@@ -19,13 +19,14 @@ pub struct DiskCacheConfig {
 }
 
 impl DiskCacheConfig {
+    /// Initialize the config for [`DiskCacheConfig`]
+    ///
+    /// The `remote_dir` may be a network store, but `local_dir` must be a local path.
     pub fn new(remote_dir: PathBuf, local_dir: PathBuf) -> Result<Self> {
-        let remote_dir = fs::canonicalize(&remote_dir)
-            .map_err(|err| UniversalIoError::extract_not_found(err, &remote_dir))?;
         let local_dir = fs::canonicalize(&local_dir)
             .map_err(|err| UniversalIoError::extract_not_found(err, &local_dir))?;
         Ok(Self {
-            remote_dir,
+            remote_dir: canonicalize_remote(&remote_dir),
             local_dir,
         })
     }
@@ -34,13 +35,12 @@ impl DiskCacheConfig {
         &self.local_dir
     }
 
-    /// Canonicalises `remote_path` (does filesystem I/O); returns
-    /// [`UniversalIoError::NotFound`] if the result isn't under `remote_dir`.
+    /// Maps a remote path to its local mirror (`<local_dir>/<rel>` + `.partial`);
+    /// `NotFound` if `remote_path` isn't under `remote_dir`.
     pub fn local_path_for(&self, remote_path: &Path) -> Result<PathBuf> {
-        let canonical = fs::canonicalize(remote_path)
-            .map_err(|err| UniversalIoError::extract_not_found(err, remote_path))?;
+        let resolved = canonicalize_remote(remote_path);
         let rel =
-            canonical
+            resolved
                 .strip_prefix(&self.remote_dir)
                 .map_err(|_| UniversalIoError::NotFound {
                     path: remote_path.to_path_buf(),
@@ -50,6 +50,12 @@ impl DiskCacheConfig {
         local.as_mut_os_string().push(LOCAL_FILE_SUFFIX);
         Ok(local)
     }
+}
+
+/// Canonicalise `path` if it's a real local path; otherwise keep it verbatim
+/// (network/remote keys don't exist locally).
+fn canonicalize_remote(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(test)]
@@ -102,5 +108,23 @@ mod tests {
         let err = cfg.local_path_for(&outside).unwrap_err();
 
         assert_matches!(err, crate::universal_io::UniversalIoError::NotFound { .. });
+    }
+
+    #[test]
+    fn maps_logical_remote_key_without_local_canonicalize() {
+        let tmp = tempfile::Builder::new()
+            .prefix("simplediskcache-tests")
+            .tempdir()
+            .unwrap();
+        let local_dir = tmp.path().join("local");
+        fs::create_dir_all(&local_dir).unwrap();
+
+        let cfg =
+            DiskCacheConfig::new(std::path::PathBuf::from("bucket/segments"), local_dir).unwrap();
+        let local = cfg
+            .local_path_for(std::path::Path::new("bucket/segments/seg/abc/page_0.dat"))
+            .unwrap();
+
+        assert_eq!(local, cfg.local_dir().join("seg/abc/page_0.dat.partial"));
     }
 }

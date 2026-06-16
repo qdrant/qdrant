@@ -16,6 +16,7 @@ use crate::runtime::BridgeRuntime;
 /// backend's async operations through a [`BridgeRuntime`]:
 ///   * single reads / metadata lookups via `block_on`,
 ///   * batched/pipelined reads via the runtime's worker thread (MPSC channel).
+#[derive(Clone)]
 pub struct BlobFile<A: AsyncRead> {
     pub(crate) inner: A,
     pub(crate) runtime: BridgeRuntime,
