@@ -1,31 +1,13 @@
+use common::condition_checker::ConditionChecker;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
-/// A check that tests whether points satisfy a condition.
-pub trait ConditionChecker {
-    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool>;
-
-    /// Same as [`Self::check`] but without [`OperationResult`].
-    fn check_infallible(&self, point_id: PointOffsetType) -> bool {
-        // This method is a workaround to keep the performance on-par.
-        // It's faster to do `.unwrap_or(false)` *inside* the trait method
-        // because the compiler can't inline `&dyn Trait` methods.
-        //
-        // TODO(uio): remove this method and handle errors properly.
-        self.check(point_id).unwrap_or(false)
-    }
-}
-
-impl<F: Fn(PointOffsetType) -> OperationResult<bool>> ConditionChecker for F {
-    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        self(point_id)
-    }
-}
+pub type DynConditionChecker<'a> = Box<dyn ConditionChecker<Error = OperationError> + 'a>;
 
 pub enum OptimizedCondition<'a> {
-    Checker(Box<dyn ConditionChecker + 'a>),
+    Checker(DynConditionChecker<'a>),
     /// Nested filter
     Filter(OptimizedFilter<'a>),
 }
@@ -47,6 +29,8 @@ pub struct OptimizedFilter<'a> {
 }
 
 impl ConditionChecker for OptimizedFilter<'_> {
+    type Error = OperationError;
+
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         let OptimizedFilter {
             should,
@@ -108,6 +92,8 @@ impl ConditionChecker for OptimizedFilter<'_> {
 }
 
 impl ConditionChecker for OptimizedCondition<'_> {
+    type Error = OperationError;
+
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         match self {
             OptimizedCondition::Filter(filter) => filter.check(point_id),

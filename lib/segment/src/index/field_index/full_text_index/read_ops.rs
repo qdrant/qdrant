@@ -13,7 +13,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{
     FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
     PayloadKeyType,
@@ -180,7 +180,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
         condition_checker(self, condition, hw_acc)
     }
 
@@ -280,7 +280,7 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+) -> OperationResult<Option<DynConditionChecker<'a>>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {

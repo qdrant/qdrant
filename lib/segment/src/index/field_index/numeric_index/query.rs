@@ -27,7 +27,7 @@ use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::utils::check_boundaries;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, Range, RangeInterface, ValueVariants,
 };
@@ -304,7 +304,7 @@ pub(super) fn condition_checker<'a, T, I>(
     index: &'a I,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> Option<Box<dyn ConditionChecker + 'a>>
+) -> Option<DynConditionChecker<'a>>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
     I: NumericIndexRead<T>,

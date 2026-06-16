@@ -1,7 +1,7 @@
+use common::condition_checker::ConditionChecker;
 use common::types::PointOffsetType;
 
-use crate::common::operation_error::OperationResult;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::visited_pool::VisitedListHandle;
 
 pub struct BuildConditionChecker<'a> {
@@ -10,6 +10,8 @@ pub struct BuildConditionChecker<'a> {
 }
 
 impl ConditionChecker for BuildConditionChecker<'_> {
+    type Error = OperationError;
+
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         if point_id == self.current_point {
             return Ok(false); // Do not match current point while inserting it (second time)

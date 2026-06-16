@@ -19,7 +19,7 @@ use crate::index::field_index::{
     PrimaryCondition,
 };
 use crate::index::query_estimator::combine_should_estimations;
-use crate::index::query_optimization::optimized_filter::ConditionChecker;
+use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
@@ -78,7 +78,7 @@ impl PayloadFieldIndexRead for MapIndex<str> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
         Ok(condition_checker_impl(self, condition, hw_acc))
     }
 }
@@ -120,7 +120,7 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<Box<dyn ConditionChecker + 'a>>> {
+    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
         Ok(condition_checker_impl(self, condition, hw_acc))
     }
 }
@@ -247,7 +247,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<str> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> Option<Box<dyn ConditionChecker + 'a>> {
+) -> Option<DynConditionChecker<'a>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
