@@ -8,7 +8,9 @@ use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, OrderV
 use segment::data_types::vectors::{
     MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
-use segment::types::{PointIdType, SearchParams, VectorNameBuf, WithPayloadInterface, WithVector};
+use segment::types::{
+    PointIdType, SearchParams, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
+};
 use shard::query::query_enum::QueryEnum;
 use shard::scroll::ScrollRequestInternal;
 
@@ -151,6 +153,130 @@ pub(super) async fn apply_retrieve(
             "{ctx} payload mismatch for id {:?}",
             record.id,
         );
+    }
+}
+
+/// Retrieve with `with_payload`/`with_vector` *selectors* and assert the engine returns exactly
+/// the selected subset of payload + vectors for each (existing) id.
+pub(super) async fn apply_retrieve_selective(
+    collection: &Collection,
+    model: &Model,
+    ids: &[PointIdType],
+    with_payload: &WithPayloadInterface,
+    with_vector: &WithVector,
+) {
+    let records = collection
+        .retrieve(
+            PointRequestInternal {
+                ids: ids.to_vec(),
+                with_payload: Some(with_payload.clone()),
+                with_vector: with_vector.clone(),
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("RetrieveSelective failed");
+
+    let returned: AHashSet<PointIdType> = records.iter().map(|r| r.id).collect();
+    for id in ids {
+        let in_model = model.contains_key(id);
+        let in_returned = returned.contains(id);
+        assert!(
+            in_model == in_returned,
+            "RetrieveSelective membership mismatch for id {id:?}: model={in_model}, returned={in_returned}",
+        );
+    }
+
+    let payload_enabled = with_payload.is_required();
+    // Reuse the engine's own selector processing so the expected payload matches exactly,
+    // regardless of include/exclude pattern semantics.
+    let payload_proc = WithPayload::from(with_payload.clone());
+
+    for record in &records {
+        let entry = model
+            .get(&record.id)
+            .unwrap_or_else(|| panic!("RetrieveSelective returned unknown id {:?}", record.id));
+
+        // ── payload ──
+        if payload_enabled {
+            let mut expected = entry.payload.clone();
+            if let Some(selector) = &payload_proc.payload_selector {
+                expected = selector.process(expected);
+            }
+            let actual = record.payload.clone().unwrap_or_default();
+            assert_eq!(
+                actual, expected,
+                "RetrieveSelective payload mismatch for id {:?} (with_payload={with_payload:?})",
+                record.id,
+            );
+        } else {
+            assert!(
+                record.payload.is_none(),
+                "RetrieveSelective returned payload for id {:?} despite with_payload={with_payload:?}",
+                record.id,
+            );
+        }
+
+        // ── vectors ──
+        match with_vector {
+            WithVector::Bool(false) => {
+                assert!(
+                    record.vector.is_none(),
+                    "RetrieveSelective returned vectors for id {:?} despite with_vector=false",
+                    record.id,
+                );
+            }
+            WithVector::Bool(true) => {
+                let named = expect_named(record, "RetrieveSelective");
+                assert_named_vectors_match(named, &entry.vectors, record.id, "RetrieveSelective");
+            }
+            WithVector::Selector(names) => {
+                // Expected = the requested names that the point actually has populated.
+                let expected: NamedVectors = entry
+                    .vectors
+                    .iter()
+                    .filter(|(name, _)| names.contains(*name))
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect();
+                if expected.is_empty() {
+                    // Engine returns no vector struct (or an empty one) when none of the
+                    // requested names are present on the point.
+                    if let Some(VectorStructInternal::Named(m)) = record.vector.as_ref() {
+                        assert!(
+                            m.is_empty(),
+                            "RetrieveSelective(selector) returned {:?} for id {:?} but model expected none",
+                            m.keys().collect::<Vec<_>>(),
+                            record.id,
+                        );
+                    }
+                } else {
+                    let named = expect_named(record, "RetrieveSelective");
+                    assert_named_vectors_match(
+                        named,
+                        &expected,
+                        record.id,
+                        "RetrieveSelective(selector)",
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Extract the `Named` vector struct from a record, panicking on the unexpected single/multi forms.
+fn expect_named<'a>(
+    record: &'a shard::retrieve::record_internal::RecordInternal,
+    ctx: &str,
+) -> &'a HashMap<VectorNameBuf, VectorInternal> {
+    match record.vector.as_ref().expect("retrieve vector missing") {
+        VectorStructInternal::Named(m) => m,
+        other @ (VectorStructInternal::Single(_) | VectorStructInternal::MultiDense(_)) => {
+            panic!("{ctx}: expected Named vector struct, got {other:?}")
+        }
     }
 }
 

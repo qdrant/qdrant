@@ -276,6 +276,15 @@ fn op_payload(op: &Op) -> Value {
             "ids": ids,
             "key": key.to_string(),
         }),
+        Op::RetrieveSelective {
+            ids,
+            with_payload,
+            with_vector,
+        } => json!({
+            "ids": ids,
+            "with_payload": format!("{with_payload:?}"),
+            "with_vector": format!("{with_vector:?}"),
+        }),
     }
 }
 
