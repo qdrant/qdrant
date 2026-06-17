@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::path::PathBuf;
 
 use ahash::AHashSet;
@@ -96,19 +97,17 @@ impl InMemoryGeoIndex {
                 continue;
             }
 
-            let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
+            if let Entry::Occupied(mut entry) = self.points_map.entry(removed_geo_hash) {
+                let hash_ids = entry.get_mut();
                 hash_ids.remove(&idx);
-                hash_ids.is_empty()
+                if hash_ids.is_empty() {
+                    entry.remove();
+                }
             } else {
                 debug_assert!(
                     false,
                     "Geo index error: no points for hash {removed_geo_hash} was found",
                 );
-                false
-            };
-
-            if is_last {
-                self.points_map.remove(&removed_geo_hash);
             }
         }
 
@@ -195,18 +194,16 @@ impl InMemoryGeoIndex {
     fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
-            match self.values_per_hash.get_mut(&sub_geo_hash) {
-                None => {
+            match self.values_per_hash.entry(sub_geo_hash) {
+                Entry::Occupied(mut entry) => *entry.get_mut() -= 1,
+                Entry::Vacant(entry) => {
                     debug_assert!(
                         false,
                         "Hash value count is not found for hash: {sub_geo_hash}",
                     );
-                    self.values_per_hash.insert(sub_geo_hash, 0);
+                    entry.insert(0);
                 }
-                Some(count) => {
-                    *count -= 1;
-                }
-            };
+            }
         }
     }
 
@@ -215,22 +212,18 @@ impl InMemoryGeoIndex {
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
                 let sub_geo_hash = geo_hash.truncate(i);
-                if seen_hashes.contains(&sub_geo_hash) {
-                    continue;
+                if seen_hashes.insert(sub_geo_hash) {
+                    match self.points_per_hash.entry(sub_geo_hash) {
+                        Entry::Occupied(mut entry) => *entry.get_mut() -= 1,
+                        Entry::Vacant(entry) => {
+                            debug_assert!(
+                                false,
+                                "Hash point count is not found for hash: {sub_geo_hash}",
+                            );
+                            entry.insert(0);
+                        }
+                    }
                 }
-                seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(&sub_geo_hash) {
-                    None => {
-                        debug_assert!(
-                            false,
-                            "Hash point count is not found for hash: {sub_geo_hash}",
-                        );
-                        self.points_per_hash.insert(sub_geo_hash, 0);
-                    }
-                    Some(count) => {
-                        *count -= 1;
-                    }
-                };
             }
         }
     }
