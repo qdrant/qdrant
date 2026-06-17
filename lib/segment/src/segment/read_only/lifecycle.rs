@@ -50,9 +50,10 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
             config,
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
 
-        let appendable = config.is_appendable();
-        let deferred_internal_id = deferred_internal_id.filter(|_| appendable);
+        let is_appendable = config.is_appendable();
+        let deferred_internal_id = deferred_internal_id.filter(|_| is_appendable);
 
+        // TODO(uio): use `Populate::PreferBackground` here and drill it into gridstore
         let payload_populate = matches!(config.payload_storage_type, PayloadStorageType::InRamMmap);
         let payload_storage = Arc::new(AtomicRefCell::new(ReadOnlyPayloadStorage::open(
             fs,
@@ -61,12 +62,12 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
         )?));
 
         // Appendable (mutable-format) segments have no immutable mappings file.
-        let mutable_id_tracker =
-            appendable || !fs.exists(&immutable_id_tracker::mappings_path(segment_path))?;
+        let use_appendable_id_tracker =
+            is_appendable || !fs.exists(&immutable_id_tracker::mappings_path(segment_path))?;
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::open(
             fs,
             segment_path,
-            mutable_id_tracker,
+            use_appendable_id_tracker,
             deferred_internal_id,
         )?));
 
@@ -80,7 +81,7 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
             let storage =
                 VectorStorageReadEnum::open(fs, vector_config, &path)?.ok_or_else(|| {
                     OperationError::service_error(format!(
-                        "read-only dense vector storage '{vector_name}' has no on-disk data",
+                        "Read-only dense vector storage '{vector_name}' was not found, or is corrupted.",
                     ))
                 })?;
             vector_storages.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
