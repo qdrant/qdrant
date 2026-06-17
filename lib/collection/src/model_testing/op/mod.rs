@@ -7,9 +7,9 @@ use api::rest::RecommendStrategy;
 use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
     random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
-    random_point, random_query_for_name, random_recommend_strategy, random_tag, random_update_mode,
-    random_vector_name, random_vector_name_subset, random_with_payload, random_with_vector,
-    upsert_fallback,
+    random_point, random_query_for_name, random_recommend_strategy, random_scroll_filter,
+    random_tag, random_update_mode, random_vector_name, random_vector_name_subset,
+    random_with_payload, random_with_vector, upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
@@ -167,6 +167,23 @@ pub(super) enum Op {
         payload: Payload,
         key: JsonPath,
     },
+    /// Verification op: scroll the (optionally filtered) collection in pages of `limit`, following
+    /// `next_page_offset` until exhausted. Exercises the `offset` cursor and a real (non-`usize::MAX`)
+    /// `limit` — the other scroll ops always read everything in one page. Asserts: each page holds
+    /// at most `limit` points, no id repeats across pages, and the union of all pages equals the
+    /// model's expected id set for the chosen filter.
+    ScrollPaged {
+        limit: usize,
+        filter: ScrollFilter,
+    },
+}
+
+/// Filter selector for `ScrollPaged` — mirrors the filters the other scroll verifiers support.
+#[derive(Debug, Clone)]
+pub(super) enum ScrollFilter {
+    None,
+    Num(i64),
+    Tag(String),
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -185,7 +202,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 32;
+    const N: usize = 33;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -221,6 +238,7 @@ impl Swarm {
         "Facet",
         "SetPayloadByKey",
         "RetrieveSelective",
+        "ScrollPaged",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -270,6 +288,7 @@ impl Swarm {
         4,  // Facet
         4,  // SetPayloadByKey
         4,  // RetrieveSelective
+        4,  // ScrollPaged
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -539,6 +558,11 @@ impl Op {
                     with_vector: random_with_vector(rng, active),
                 }
             }
+            32 => Op::ScrollPaged {
+                // Small page size relative to id_pool so multi-page pagination actually happens.
+                limit: rng.random_range(1..=20),
+                filter: random_scroll_filter(rng),
+            },
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -579,6 +603,7 @@ impl Op {
             Op::Facet { .. } => "Facet",
             Op::SetPayloadByKey { .. } => "SetPayloadByKey",
             Op::RetrieveSelective { .. } => "RetrieveSelective",
+            Op::ScrollPaged { .. } => "ScrollPaged",
         }
     }
 }

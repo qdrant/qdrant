@@ -285,6 +285,10 @@ fn op_payload(op: &Op) -> Value {
             "with_payload": format!("{with_payload:?}"),
             "with_vector": format!("{with_vector:?}"),
         }),
+        Op::ScrollPaged { limit, filter } => json!({
+            "limit": limit,
+            "filter": format!("{filter:?}"),
+        }),
     }
 }
 
