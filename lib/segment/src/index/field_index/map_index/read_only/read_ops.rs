@@ -10,6 +10,7 @@ use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::facets::FacetValue;
 use crate::index::payload_config::StorageType;
 
 /// Dispatcher impl: forwards every [`MapIndexRead`] method to the active
@@ -133,6 +134,20 @@ where
             ReadOnlyMapIndex::Appendable(index) => index.for_each_value_map(hw_counter, f),
             ReadOnlyMapIndex::Immutable(index) => index.for_each_value_map(hw_counter, f),
             ReadOnlyMapIndex::OnDisk(index) => index.for_each_value_map(hw_counter, f),
+        }
+    }
+
+    // Dispatch instead of using default impl, for on-disk impl to use batched reads
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyMapIndex::Appendable(index) => index.for_values_map(values, hw_counter, f),
+            ReadOnlyMapIndex::Immutable(index) => index.for_values_map(values, hw_counter, f),
+            ReadOnlyMapIndex::OnDisk(index) => index.for_values_map(values, hw_counter, f),
         }
     }
 

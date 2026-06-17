@@ -379,6 +379,20 @@ where
         }
     }
 
+    // Dispatch instead of using default impl, for on-disk impl to use batched reads
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.for_values_map(values, hw_counter, f),
+            MapIndex::Immutable(index) => index.for_values_map(values, hw_counter, f),
+            MapIndex::OnDisk(index) => index.for_values_map(values, hw_counter, f),
+        }
+    }
+
     fn storage_type(&self) -> StorageType {
         match self {
             MapIndex::Mutable(index) => index.storage_type(),
