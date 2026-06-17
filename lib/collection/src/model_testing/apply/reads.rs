@@ -724,7 +724,7 @@ pub(super) async fn apply_scroll_paged(
     // Precompute the `has_id` set once so the per-point predicate is O(1).
     let has_id_set: AHashSet<PointIdType> = match filter {
         ScrollFilter::HasId(ids) => ids.iter().copied().collect(),
-        _ => AHashSet::new(),
+        ScrollFilter::None | ScrollFilter::Num(_) | ScrollFilter::Tag(_) => AHashSet::new(),
     };
     let expected: AHashSet<PointIdType> = model
         .iter()

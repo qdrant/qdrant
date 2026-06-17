@@ -629,9 +629,9 @@ pub(super) fn match_tag_filter(tag: &str) -> Filter {
 }
 
 pub(super) fn match_has_id_filter(ids: &[PointIdType]) -> Filter {
-    Filter::new_must(Condition::HasId(HasIdCondition::from_iter(
-        ids.iter().copied(),
-    )))
+    Filter::new_must(Condition::HasId(
+        ids.iter().copied().collect::<HasIdCondition>(),
+    ))
 }
 
 pub(super) fn num_matches(payload: &Payload, target: i64) -> bool {
