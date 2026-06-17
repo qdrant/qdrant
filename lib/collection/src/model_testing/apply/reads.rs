@@ -15,8 +15,8 @@ use shard::query::query_enum::QueryEnum;
 use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
-    NamedVectors, canonical_sparse, has_num, match_num_filter, match_tag_filter, num_matches,
-    tag_matches,
+    NamedVectors, ScrollFilter, canonical_sparse, has_num, match_num_filter, match_tag_filter,
+    num_matches, tag_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -707,6 +707,86 @@ pub(super) async fn apply_scroll_filtered_by_tag(
         .map(|(id, _)| *id)
         .collect();
     assert_id_sets_eq(&returned, &expected, &format!("scroll(tag=={tag:?})"));
+}
+
+pub(super) async fn apply_scroll_paged(
+    collection: &Collection,
+    model: &Model,
+    limit: usize,
+    filter: &ScrollFilter,
+) {
+    let engine_filter = match filter {
+        ScrollFilter::None => None,
+        ScrollFilter::Num(num) => Some(match_num_filter(*num)),
+        ScrollFilter::Tag(tag) => Some(match_tag_filter(tag)),
+    };
+    let expected: AHashSet<PointIdType> = model
+        .iter()
+        .filter(|(_, entry)| match filter {
+            ScrollFilter::None => true,
+            ScrollFilter::Num(num) => num_matches(&entry.payload, *num),
+            ScrollFilter::Tag(tag) => tag_matches(&entry.payload, tag),
+        })
+        .map(|(id, _)| *id)
+        .collect();
+
+    // Walk pages following `next_page_offset`, accumulating ids and asserting no id repeats.
+    let mut seen: AHashSet<PointIdType> = AHashSet::new();
+    let mut offset: Option<PointIdType> = None;
+    // Upper bound on iterations: at least one point consumed per page, plus slack for the final
+    // empty page. Guards against an infinite loop if the cursor ever fails to advance.
+    let max_pages = expected.len() + 2;
+    let mut pages = 0;
+    loop {
+        let scroll = collection
+            .scroll_by(
+                ScrollRequestInternal {
+                    offset,
+                    limit: Some(limit),
+                    filter: engine_filter.clone(),
+                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                    with_vector: WithVector::Bool(false),
+                    order_by: None,
+                },
+                None,
+                None,
+                &ShardSelectorInternal::All,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .expect("scroll(paged) failed");
+
+        assert!(
+            scroll.points.len() <= limit,
+            "scroll(paged, limit={limit}) returned a page of {} points (> limit)",
+            scroll.points.len(),
+        );
+        for record in &scroll.points {
+            assert!(
+                seen.insert(record.id),
+                "scroll(paged) returned duplicate id {:?} across pages",
+                record.id,
+            );
+        }
+
+        pages += 1;
+        assert!(
+            pages <= max_pages + 1,
+            "scroll(paged, limit={limit}) did not terminate after {pages} pages (cursor stuck?)",
+        );
+
+        match scroll.next_page_offset {
+            Some(next) => offset = Some(next),
+            None => break,
+        }
+    }
+
+    assert_id_sets_eq(
+        &seen,
+        &expected,
+        &format!("scroll(paged, filter={filter:?})"),
+    );
 }
 
 pub(super) async fn apply_scroll_ordered(

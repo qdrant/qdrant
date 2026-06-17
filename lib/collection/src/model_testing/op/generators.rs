@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::super::{Model, VectorKind, VectorValue, kind_of};
-use super::{NamedVectors, Op, canonical_sparse};
+use super::{NamedVectors, Op, ScrollFilter, canonical_sparse};
 use crate::operations::point_ops::UpdateMode;
 
 // ───── payload value pools ────────────────────────────────────────────────
@@ -164,6 +164,17 @@ pub(super) fn random_with_vector(
         0 => WithVector::Bool(true),
         1 => WithVector::Bool(false),
         2 => WithVector::Selector(random_vector_name_subset(rng, active)),
+        _ => unreachable!(),
+    }
+}
+
+/// A filter selector for paginated scroll: no filter, `num == X`, or `tag == X` — the same
+/// shapes the other scroll verifiers support.
+pub(super) fn random_scroll_filter(rng: &mut impl Rng) -> ScrollFilter {
+    match rng.random_range(0..3) {
+        0 => ScrollFilter::None,
+        1 => ScrollFilter::Num(random_num(rng)),
+        2 => ScrollFilter::Tag(random_tag(rng).to_string()),
         _ => unreachable!(),
     }
 }

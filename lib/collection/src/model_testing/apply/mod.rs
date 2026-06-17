@@ -140,6 +140,9 @@ pub(super) async fn apply(
         } => {
             reads::apply_retrieve_selective(collection, model, ids, with_payload, with_vector).await
         }
+        Op::ScrollPaged { limit, filter } => {
+            reads::apply_scroll_paged(collection, model, *limit, filter).await
+        }
     }
 }
 
