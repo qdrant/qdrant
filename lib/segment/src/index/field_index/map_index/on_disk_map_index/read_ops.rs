@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::iter;
 
 use common::bitvec::BitSliceExt;
@@ -9,12 +9,12 @@ use common::persisted_hashmap::{Key, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use itertools::Itertools;
+use roaring::RoaringBitmap;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::OnDiskMapIndex;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::FacetValue;
 use crate::index::field_index::on_disk_point_to_values::ValuesIter;
 use crate::index::payload_config::StorageType;
 
@@ -157,27 +157,26 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
     }
 
     /// Batched override of [`MapIndexRead::for_values_map`].
-    fn for_values_map(
+    ///
+    /// `f` may be called in any order, since batched reads can complete out of
+    /// order.
+    fn for_values_map<V: Borrow<N>>(
         &self,
-        values: impl Iterator<Item = FacetValue>,
+        values: impl Iterator<Item = V>,
         hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+        mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
-        // Materialize the values into a stable buffer so the keys we borrow from
-        // them stay valid for the whole batched read, which may reorder requests.
-        let values: Vec<FacetValue> = values.collect();
-
-        // Build `(value index, key)` requests, skipping values whose variant
-        // doesn't match this index's key type (mirrors the default impl).
-        let requests = values.iter().enumerate().filter_map(|(value_idx, value)| {
-            N::from_facet_value(value).map(|key| (value_idx, key))
+        let values: Vec<V> = values.collect();
+        let requests = values.iter().map(|value| {
+            let key: &N = value.borrow();
+            (key, key)
         });
 
         self.storage
             .value_to_points
-            .for_each_entry_in_iter(requests, |value_idx, point_ids| {
+            .for_each_entry_in_iter(requests, |key, point_ids| {
                 // Mirror `get_iterator`'s IO accounting.
                 let io_read = match point_ids {
                     Some(ids) => size_of_val(ids) + READ_ENTRY_OVERHEAD,
@@ -195,8 +194,25 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
                         .unwrap_or(false)
                 });
 
-                f(values[value_idx].clone(), &mut ids)
+                f(key, &mut ids)
             })
+    }
+
+    /// Batched override of [`MapIndexRead::iter_for_values`].
+    ///
+    /// Resolves every value's posting in a single batched read and collects the
+    /// union into a [`RoaringBitmap`]
+    fn iter_for_values<V: Borrow<N> + 'a>(
+        &'a self,
+        values: impl Iterator<Item = V> + 'a,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<IdIter<'a>> {
+        let mut ids = RoaringBitmap::new();
+        self.for_values_map(values, hw_counter, |_value, posting| {
+            ids.extend(&mut *posting);
+            Ok(())
+        })?;
+        Ok(Box::new(ids.into_iter()))
     }
 
     fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {

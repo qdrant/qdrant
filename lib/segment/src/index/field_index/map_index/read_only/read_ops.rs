@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
@@ -10,7 +10,6 @@ use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::FacetValue;
 use crate::index::payload_config::StorageType;
 
 /// Dispatcher impl: forwards every [`MapIndexRead`] method to the active
@@ -138,16 +137,29 @@ where
     }
 
     // Dispatch instead of using default impl, for on-disk impl to use batched reads
-    fn for_values_map(
+    fn for_values_map<V: Borrow<N>>(
         &self,
-        values: impl Iterator<Item = FacetValue>,
+        values: impl Iterator<Item = V>,
         hw_counter: &HardwareCounterCell,
-        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+        f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyMapIndex::Appendable(index) => index.for_values_map(values, hw_counter, f),
             ReadOnlyMapIndex::Immutable(index) => index.for_values_map(values, hw_counter, f),
             ReadOnlyMapIndex::OnDisk(index) => index.for_values_map(values, hw_counter, f),
+        }
+    }
+
+    // Dispatch instead of using default impl, for on-disk impl to use batched reads
+    fn iter_for_values<V: Borrow<N> + 'a>(
+        &'a self,
+        values: impl Iterator<Item = V> + 'a,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<IdIter<'a>> {
+        match self {
+            ReadOnlyMapIndex::Appendable(index) => index.iter_for_values(values, hw_counter),
+            ReadOnlyMapIndex::Immutable(index) => index.iter_for_values(values, hw_counter),
+            ReadOnlyMapIndex::OnDisk(index) => index.iter_for_values(values, hw_counter),
         }
     }
 
