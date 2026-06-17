@@ -21,7 +21,7 @@ use segment::data_types::vector_name_config::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, Match, MultiVectorConfig, Payload,
+    Condition, Distance, FieldCondition, Filter, HasIdCondition, Match, MultiVectorConfig, Payload,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, VectorNameBuf, WithPayloadInterface,
     WithVector,
 };
@@ -178,12 +178,16 @@ pub(super) enum Op {
     },
 }
 
-/// Filter selector for `ScrollPaged` — mirrors the filters the other scroll verifiers support.
+/// Filter selector for `ScrollPaged`. Beyond the payload filters the other scroll verifiers
+/// support, this also covers a `has_id` matcher (restrict to an explicit point-id set).
 #[derive(Debug, Clone)]
 pub(super) enum ScrollFilter {
     None,
     Num(i64),
     Tag(String),
+    /// `has_id` matcher: only points whose id is in this set. The set mixes ids that exist in the
+    /// model with ids drawn from the id pool that may not, so the matcher meaningfully restricts.
+    HasId(Vec<PointIdType>),
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -561,7 +565,7 @@ impl Op {
             32 => Op::ScrollPaged {
                 // Small page size relative to id_pool so multi-page pagination actually happens.
                 limit: rng.random_range(1..=20),
-                filter: random_scroll_filter(rng),
+                filter: random_scroll_filter(rng, id_pool),
             },
             n => panic!("unexpected op index {n}"),
         }
@@ -621,6 +625,12 @@ pub(super) fn match_tag_filter(tag: &str) -> Filter {
     Filter::new_must(Condition::Field(FieldCondition::new_match(
         "tag".parse().unwrap(),
         Match::from(tag.to_string()),
+    )))
+}
+
+pub(super) fn match_has_id_filter(ids: &[PointIdType]) -> Filter {
+    Filter::new_must(Condition::HasId(HasIdCondition::from_iter(
+        ids.iter().copied(),
     )))
 }
 
