@@ -272,6 +272,10 @@ fn op_payload(op: &Op) -> Value {
         }),
         Op::ClearPayloadByFilter(num) => json!({ "num": num }),
         Op::Facet { key, filter_num } => json!({ "key": key, "filter_num": filter_num }),
+        Op::SetPayloadByKey { ids, key, .. } => json!({
+            "ids": ids,
+            "key": key.to_string(),
+        }),
     }
 }
 

@@ -115,6 +115,15 @@ pub(super) fn random_payload_keys(rng: &mut impl Rng) -> Vec<JsonPath> {
     keys
 }
 
+/// A single top-level payload field path to scope a keyed `SetPayload` under (`SetPayloadOp.key`).
+/// Restricted to one of the fixed schema's top-level fields so the engine's `merge_by_key`
+/// (which assigns the source payload as the value at this path) maps to a simple field overwrite
+/// the model can mirror via `Payload::merge_by_key`.
+pub(super) fn random_payload_key(rng: &mut impl Rng) -> JsonPath {
+    let all_keys = ["num", "tag", "f", "b", "d", "g", "t"];
+    all_keys.choose(rng).unwrap().parse().unwrap()
+}
+
 // ───── vector generators ────────────────────────────────────────────────────
 
 fn random_dense_vec(rng: &mut impl Rng, dim: u64) -> Vec<f32> {
