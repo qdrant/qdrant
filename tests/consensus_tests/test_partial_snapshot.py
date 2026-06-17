@@ -134,6 +134,11 @@ def test_partial_snapshot_empty(tmp_path: pathlib.Path):
 
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1000, recover_read= True, wait_for_green = True)
 
+    # Wait for the read peer to settle too: an async optimization reshaping its
+    # segments after recovery would make its manifest diverge from the write
+    # peer's files, turning the expected empty (304) partial snapshot into a 200.
+    wait_collection_green(read_peer, COLLECTION)
+
     # Collection snapshot doesn't affect partial snapshot recovery timestamp
     recovery_ts = get_telemetry_collections(read_peer)[0]['shards'][0]['partial_snapshot']['recovery_timestamp']
     assert recovery_ts == 0
