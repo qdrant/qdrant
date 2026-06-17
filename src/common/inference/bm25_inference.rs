@@ -74,19 +74,24 @@ fn build_tokens_processor(value: TextPreprocessingConfig) -> TokensProcessor {
     let ascii_folding = ascii_folding.unwrap_or(false);
     let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
 
-    // Warn once if the language is unrecognized. Historically `language: "none"`
+    // Warn if the language is unrecognized. Historically `language: "none"`
     // (and any other unsupported value) silently disabled both stemming and
     // stopwords. That hack is deprecated: use `stemmer: {"type": "none"}` plus an
     // empty stopword set instead. We still tolerate it for now to avoid breaking
     // existing configs on upgrade, but emit a warning so users can migrate.
+    // `build_tokens_processor` runs once per inference item, so the warning is
+    // gated behind a `Once` to avoid flooding the log on every request.
     if stopwords.is_none() && stemmer.is_none() && Language::from_str(&language).is_err() {
-        log::warn!(
-            "BM25 text preprocessing: language {language:?} is not recognized; \
-             stemming and stopwords are disabled as a side effect. This behavior \
-             (notably `language: \"none\"`) is deprecated and may be rejected in a \
-             future release. To disable language-specific processing explicitly, \
-             set `stemmer` to {{\"type\": \"none\"}} and configure an empty stopword set.",
-        );
+        static DEPRECATION_WARNING: std::sync::Once = std::sync::Once::new();
+        DEPRECATION_WARNING.call_once(|| {
+            log::warn!(
+                "BM25 text preprocessing: language {language:?} is not recognized; \
+                 stemming and stopwords are disabled as a side effect. This behavior \
+                 (notably `language: \"none\"`) is deprecated and may be rejected in a \
+                 future release. To disable language-specific processing explicitly, \
+                 set `stemmer` to {{\"type\": \"none\"}} and configure an empty stopword set.",
+            );
+        });
     }
 
     let stemmer = match stemmer {
