@@ -98,6 +98,30 @@ pub(super) async fn apply_set_payload(
     }
 }
 
+pub(super) async fn apply_set_payload_by_key(
+    collection: &Collection,
+    model: &mut Model,
+    ids: &[PointIdType],
+    payload: &Payload,
+    key: &JsonPath,
+) {
+    let op = CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+        payload: payload.clone(),
+        points: Some(ids.to_vec()),
+        filter: None,
+        key: Some(key.clone()),
+    }));
+    apply_update(collection, op, "set payload by key").await;
+    // Mirror the engine's keyed assignment exactly: `merge_by_key` lowers to the same
+    // `JsonPath::value_set` the engine's `set_by_key` uses, so the model stays in lockstep
+    // regardless of the key path's nesting semantics.
+    for id in ids {
+        if let Some(entry) = model.get_mut(id) {
+            entry.payload.merge_by_key(payload, key);
+        }
+    }
+}
+
 pub(super) async fn apply_overwrite_payload(
     collection: &Collection,
     model: &mut Model,
