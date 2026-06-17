@@ -726,3 +726,156 @@ fn read_only_segment_over_gcs_disk_cache() {
         });
     }
 }
+
+/// Open a read-only segment from S3 (rustfs/minio) behind a local disk cache and
+/// dump its query outputs as a human-readable listing: vector search top-k,
+/// filtered reads per keyword, and a payload sample. Lists rather than asserts;
+/// run small (`RO_BENCH_POINTS=25`) so the output stays readable.
+///
+/// Ignored by default; run with a server up:
+/// `S3_INTEGRATION_TEST=1 RO_BENCH_POINTS=25 cargo test -p segment read_only_segment_query_dump -- --ignored --nocapture`
+#[test]
+#[ignore = "requires a running S3-compatible server (set S3_INTEGRATION_TEST=1)"]
+fn read_only_segment_query_dump() {
+    use std::sync::Arc;
+
+    use bytes::Bytes;
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+    };
+    use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
+    use io_bridge_object_store::{BlobBackend, BlobFile};
+    use object_store::ObjectStoreExt;
+    use object_store::aws::AmazonS3;
+    use object_store::path::Path as ObjectPath;
+
+    if std::env::var("S3_INTEGRATION_TEST").as_deref() != Ok("1") {
+        eprintln!("skipping read_only_segment_query_dump: set S3_INTEGRATION_TEST=1");
+        return;
+    }
+
+    let aws_config = AwsConfig {
+        bucket: std::env::var("RUSTFS_BUCKET").unwrap_or_else(|_| "test-bucket".into()),
+        region: Some("us-east-1".into()),
+        endpoint: Some(
+            std::env::var("RUSTFS_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".into()),
+        ),
+        credentials: AwsCredentials::Static {
+            access_key_id: std::env::var("RUSTFS_ACCESS_KEY")
+                .unwrap_or_else(|_| "rustfsadmin".into()),
+            secret_access_key: std::env::var("RUSTFS_SECRET_KEY")
+                .unwrap_or_else(|_| "rustfsadmin".into()),
+            session_token: None,
+        },
+    };
+
+    // Build the immutable segment locally, then mirror it into the bucket.
+    let n = num_points();
+    let segments_dir = Builder::new().prefix("ro_dump_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_dump_builder").tempdir().unwrap();
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_uuid = mutable.uuid;
+    let local_path = mutable.data_path();
+    let key_prefix = format!("seg/{segment_uuid}");
+
+    let store = AmazonS3::build_store(&aws_config).expect("build S3 store");
+    let upload_runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+    upload_runtime.block_on(async {
+        for entry in walkdir::WalkDir::new(&local_path) {
+            let entry = entry.unwrap();
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let rel = entry.path().strip_prefix(&local_path).unwrap();
+            let key = format!("{key_prefix}/{}", rel.to_string_lossy());
+            let bytes = fs_err::read(entry.path()).unwrap();
+            store
+                .put(&ObjectPath::from(key.as_str()), Bytes::from(bytes).into())
+                .await
+                .expect("upload segment file");
+        }
+    });
+
+    // S3 remote behind a fresh local disk cache (temp dir, deleted on exit).
+    type S3File = BlobFile<Arc<AmazonS3>>;
+    let cache_dir = Builder::new().prefix("ro_dump_cache").tempdir().unwrap();
+    let fs = DiskCacheFs::<S3File>::from_context(DiskCacheFsContext {
+        config: Arc::new(
+            DiskCacheConfig::new(
+                std::path::PathBuf::from("seg"),
+                cache_dir.path().to_path_buf(),
+            )
+            .unwrap(),
+        ),
+        remote: aws_config,
+    })
+    .expect("disk-cache fs");
+
+    let read_only =
+        ReadOnlySegment::<DiskCache<S3File>>::open(&fs, Path::new(&key_prefix), segment_uuid, None)
+            .expect("read-only open over S3 + disk cache");
+    assert_eq!(read_only.available_point_count(), n);
+
+    let hw = HardwareCounterCell::new();
+
+    eprintln!();
+    eprintln!("=== read-only segment query dump ===");
+    eprintln!("source     = s3://{key_prefix} (rustfs, disk-cached)");
+    eprintln!("points     = {n}, dim = {DIM}, distance = Cosine, index = HNSW");
+
+    // Vector search top-10.
+    let query_vec: Vec<f32> = (0..DIM).map(|j| (j % 5) as f32 + 0.25).collect();
+    let query = QueryVector::Nearest(VectorInternal::Dense(query_vec.clone()));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let hits = read_only
+        .search_batch(
+            DEFAULT_VECTOR_NAME,
+            &[&query],
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            BENCH_TOPK,
+            None,
+            &sqc,
+        )
+        .unwrap();
+
+    eprintln!();
+    eprintln!("=== vector search top-{BENCH_TOPK} ===");
+    eprintln!("query vector = {query_vec:?}");
+    for (rank, point) in hits[0].iter().enumerate() {
+        let payload = read_only.payload(point.id, &hw).unwrap();
+        eprintln!(
+            "#{:<2} id={} score={:.6} payload={}",
+            rank + 1,
+            point.id,
+            point.score,
+            serde_json::to_string(&payload).unwrap(),
+        );
+    }
+    assert!(!hits[0].is_empty());
+
+    // Filtered reads per keyword.
+    eprintln!();
+    eprintln!("=== filtered reads (kw) ===");
+    for kw in ["red", "green", "blue"] {
+        let filter = keyword_filter(kw);
+        let ids = sorted_filtered(&read_only, &filter);
+        eprintln!("kw={kw:<6} -> {} ids: {ids:?}", ids.len());
+    }
+
+    // Payload dump for the first points.
+    let dump_n = n.min(5);
+    eprintln!();
+    eprintln!("=== payload dump (first {dump_n}) ===");
+    for i in 0..dump_n {
+        let point_id: PointIdType = (i as u64 + 1).into();
+        let payload = read_only.payload(point_id, &hw).unwrap();
+        eprintln!(
+            "id={point_id} payload={}",
+            serde_json::to_string(&payload).unwrap(),
+        );
+    }
+    eprintln!();
+}
