@@ -175,14 +175,7 @@ impl InMemoryGeoIndex {
     pub(super) fn increment_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
-            match self.values_per_hash.get_mut(&sub_geo_hash) {
-                None => {
-                    self.values_per_hash.insert(sub_geo_hash, 1);
-                }
-                Some(count) => {
-                    *count += 1;
-                }
-            };
+            *self.values_per_hash.entry(sub_geo_hash).or_insert(0) += 1;
         }
     }
 
@@ -192,18 +185,9 @@ impl InMemoryGeoIndex {
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
                 let sub_geo_hash = geo_hash.truncate(i);
-                if seen_hashes.contains(&sub_geo_hash) {
-                    continue;
+                if seen_hashes.insert(sub_geo_hash) {
+                    *self.points_per_hash.entry(sub_geo_hash).or_insert(0) += 1;
                 }
-                seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(&sub_geo_hash) {
-                    None => {
-                        self.points_per_hash.insert(sub_geo_hash, 1);
-                    }
-                    Some(count) => {
-                        *count += 1;
-                    }
-                };
             }
         }
     }

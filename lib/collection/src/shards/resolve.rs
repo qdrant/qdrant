@@ -89,10 +89,10 @@ impl Resolve for FacetResponse {
                     if let Some(counts) = map.get_mut(&hit.value) {
                         counts.push(CountResult { count: hit.count });
                     } else {
-                        map.entry(hit.value.clone())
-                            .or_insert(Vec::with_capacity(num_replicas))
-                            .push(CountResult { count: hit.count });
-                    };
+                        let mut counts = Vec::with_capacity(num_replicas);
+                        counts.push(CountResult { count: hit.count });
+                        map.insert(hit.value.clone(), counts);
+                    }
                     map
                 },
             )
