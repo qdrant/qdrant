@@ -6,7 +6,10 @@ use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::{Rng, RngExt};
 use segment::data_types::order_by::Direction;
 use segment::json_path::JsonPath;
-use segment::types::{ExtendedPointId, Payload, PointIdType, VectorNameBuf};
+use segment::types::{
+    ExtendedPointId, Payload, PayloadSelector, PayloadSelectorExclude, PayloadSelectorInclude,
+    PointIdType, VectorNameBuf, WithPayloadInterface, WithVector,
+};
 use serde_json::{Map, Value};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -122,6 +125,47 @@ pub(super) fn random_payload_keys(rng: &mut impl Rng) -> Vec<JsonPath> {
 pub(super) fn random_payload_key(rng: &mut impl Rng) -> JsonPath {
     let all_keys = ["num", "tag", "f", "b", "d", "g", "t"];
     all_keys.choose(rng).unwrap().parse().unwrap()
+}
+
+/// A `with_payload` selector exercising every `WithPayloadInterface` form (`Bool`, `Fields`,
+/// `Selector::Include`, `Selector::Exclude`). Keys are drawn from the fixed top-level payload
+/// schema so the model can mirror the engine's `PayloadSelector::process` exactly.
+pub(super) fn random_with_payload(rng: &mut impl Rng) -> WithPayloadInterface {
+    // 1-3 distinct top-level keys for the field/selector variants.
+    let n = rng.random_range(1..=3);
+    let keys: Vec<JsonPath> = ["num", "tag", "f", "b", "d", "g", "t"]
+        .iter()
+        .copied()
+        .sample(rng, n)
+        .into_iter()
+        .map(|k| k.parse().unwrap())
+        .collect();
+    match rng.random_range(0..5) {
+        0 => WithPayloadInterface::Bool(true),
+        1 => WithPayloadInterface::Bool(false),
+        2 => WithPayloadInterface::Fields(keys),
+        3 => WithPayloadInterface::Selector(PayloadSelector::Include(PayloadSelectorInclude::new(
+            keys,
+        ))),
+        4 => WithPayloadInterface::Selector(PayloadSelector::Exclude(PayloadSelectorExclude::new(
+            keys,
+        ))),
+        _ => unreachable!(),
+    }
+}
+
+/// A `with_vector` selector exercising both `WithVector::Bool` forms and
+/// `WithVector::Selector(names)` over a subset of currently-active vector names.
+pub(super) fn random_with_vector(
+    rng: &mut impl Rng,
+    active: &BTreeSet<VectorNameBuf>,
+) -> WithVector {
+    match rng.random_range(0..3) {
+        0 => WithVector::Bool(true),
+        1 => WithVector::Bool(false),
+        2 => WithVector::Selector(random_vector_name_subset(rng, active)),
+        _ => unreachable!(),
+    }
 }
 
 // ───── vector generators ────────────────────────────────────────────────────

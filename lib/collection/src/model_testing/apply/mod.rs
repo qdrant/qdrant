@@ -133,6 +133,13 @@ pub(super) async fn apply(
         Op::SetPayloadByKey { ids, payload, key } => {
             writes::apply_set_payload_by_key(collection, model, ids, payload, key).await
         }
+        Op::RetrieveSelective {
+            ids,
+            with_payload,
+            with_vector,
+        } => {
+            reads::apply_retrieve_selective(collection, model, ids, with_payload, with_vector).await
+        }
     }
 }
 

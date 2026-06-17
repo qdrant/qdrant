@@ -8,7 +8,8 @@ use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
     random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
     random_point, random_query_for_name, random_recommend_strategy, random_tag, random_update_mode,
-    random_vector_name, random_vector_name_subset, upsert_fallback,
+    random_vector_name, random_vector_name_subset, random_with_payload, random_with_vector,
+    upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
@@ -21,7 +22,8 @@ use segment::data_types::vector_name_config::{
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, Match, MultiVectorConfig, Payload,
-    PayloadFieldSchema, PayloadSchemaType, PointIdType, VectorNameBuf,
+    PayloadFieldSchema, PayloadSchemaType, PointIdType, VectorNameBuf, WithPayloadInterface,
+    WithVector,
 };
 use sparse::common::sparse_vector::SparseVector;
 
@@ -48,6 +50,15 @@ pub(super) enum Op {
     /// Retrieve verification: IDs sampled from the model so every requested ID exercises
     /// the full per-id vectors+payload equality check.
     RetrieveExisting(Vec<PointIdType>),
+    /// Retrieve verification exercising the `with_payload`/`with_vector` *selectors* (rather than
+    /// the plain `Bool` forms the other retrieve ops use). IDs are sampled from the model; the
+    /// engine's returned payload/vectors must equal the model entry filtered by the same selector
+    /// (payload via `PayloadSelector::process`, vectors via the requested name subset).
+    RetrieveSelective {
+        ids: Vec<PointIdType>,
+        with_payload: WithPayloadInterface,
+        with_vector: WithVector,
+    },
     CountByNum(i64),
     /// Verification op: nearest-neighbor search. `exact=true` does a brute-force scan;
     /// `exact=false` goes through the HNSW (dense) or sparse-index path.
@@ -174,7 +185,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 31;
+    const N: usize = 32;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -209,6 +220,7 @@ impl Swarm {
         "ClearPayloadByFilter",
         "Facet",
         "SetPayloadByKey",
+        "RetrieveSelective",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -257,6 +269,7 @@ impl Swarm {
         3,  // ClearPayloadByFilter
         4,  // Facet
         4,  // SetPayloadByKey
+        4,  // RetrieveSelective
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -516,6 +529,16 @@ impl Op {
                     key: random_payload_key(rng),
                 }
             }
+            31 => {
+                let Some(ids) = random_existing_ids(rng, model, 10) else {
+                    return upsert_fallback(rng, active, id_pool);
+                };
+                Op::RetrieveSelective {
+                    ids,
+                    with_payload: random_with_payload(rng),
+                    with_vector: random_with_vector(rng, active),
+                }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -555,6 +578,7 @@ impl Op {
             Op::ClearPayloadByFilter(_) => "ClearPayloadByFilter",
             Op::Facet { .. } => "Facet",
             Op::SetPayloadByKey { .. } => "SetPayloadByKey",
+            Op::RetrieveSelective { .. } => "RetrieveSelective",
         }
     }
 }
