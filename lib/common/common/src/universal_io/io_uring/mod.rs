@@ -228,10 +228,10 @@ impl UniversalWrite for IoUringFile {
         &mut self,
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
-        let mut rt = IoUringRuntime::new()?;
+        let mut rt = IoUringWriteRuntime::new()?;
         let mut items = items.into_iter().peekable();
 
-        while items.peek().is_some() || rt.in_progress > 0 {
+        while items.peek().is_some() || rt.in_progress() > 0 {
             rt.enqueue_while(|state| {
                 let Some((byte_offset, items)) = items.next() else {
                     return Ok(None);
@@ -244,8 +244,7 @@ impl UniversalWrite for IoUringFile {
             rt.submit_and_wait(1)?;
 
             for result in rt.completed() {
-                let (_, resp) = result?;
-                resp.expect_write();
+                result?;
             }
         }
 
@@ -256,10 +255,10 @@ impl UniversalWrite for IoUringFile {
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {
-        let mut rt = IoUringRuntime::new()?;
+        let mut rt = IoUringWriteRuntime::new()?;
         let mut writes = writes.into_iter().peekable();
 
-        while writes.peek().is_some() || rt.in_progress > 0 {
+        while writes.peek().is_some() || rt.in_progress() > 0 {
             rt.enqueue_while(|state| {
                 let Some((file_index, byte_offset, items)) = writes.next() else {
                     return Ok(None);
@@ -279,8 +278,7 @@ impl UniversalWrite for IoUringFile {
             rt.submit_and_wait(1)?;
 
             for result in rt.completed() {
-                let (_, resp) = result?;
-                resp.expect_write();
+                result?;
             }
         }
 

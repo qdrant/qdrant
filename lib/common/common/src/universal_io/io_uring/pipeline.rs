@@ -1,10 +1,10 @@
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Range;
 
 use ::io_uring::types::Fd;
 
-use super::pool::IO_URING_QUEUE_LENGTH;
-use super::{IoUringFile, IoUringRuntime};
+use super::{IoUringFile, IoUringReadRuntime};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{
@@ -140,7 +140,8 @@ struct IoUringPipelineInner<'file, U>
 where
     U: UserData,
 {
-    runtime: IoUringRuntime<'file, U>,
+    runtime: IoUringReadRuntime<U>,
+    _phantom: PhantomData<&'file ()>,
 }
 
 impl<'file, U> IoUringPipelineInner<'file, U>
@@ -149,13 +150,13 @@ where
 {
     fn new() -> Result<Self> {
         Ok(Self {
-            runtime: IoUringRuntime::new()?,
+            runtime: IoUringReadRuntime::new()?,
+            _phantom: PhantomData,
         })
     }
 
     fn can_schedule(&mut self) -> bool {
-        let squeue = self.runtime.io_uring.submission();
-        self.runtime.in_progress + squeue.len() < IO_URING_QUEUE_LENGTH as _
+        self.runtime.can_schedule()
     }
 
     /// # Safety
@@ -169,20 +170,16 @@ where
         range: Range<u64>,
         align: usize,
     ) -> Result<()> {
-        let mut squeue = self.runtime.io_uring.submission();
-
-        if self.runtime.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
+        if !self.can_schedule() {
             return Err(UniversalIoError::QueueIsFull);
         }
 
         let entry = self
             .runtime
-            .state
-            .read(user_data, fd, range, align, direct_io);
+            .state()
+            .read(user_data, fd, direct_io, range, align);
 
-        unsafe {
-            squeue.push(&entry).expect("submission queue is not full");
-        }
+        self.runtime.enqueue(entry)?;
 
         Ok(())
     }
@@ -194,7 +191,7 @@ where
 
         if next.is_some() && enqueued > 0 {
             self.runtime.submit_and_wait(0)?;
-        } else if next.is_none() && enqueued + self.runtime.in_progress > 0 {
+        } else if next.is_none() && enqueued + self.runtime.in_progress() > 0 {
             self.runtime.submit_and_wait(1)?;
         }
 
@@ -202,7 +199,7 @@ where
             return Ok(None);
         };
 
-        let (user_data, resp) = result?;
-        Ok(Some((user_data, ACow::Owned(resp.expect_read()))))
+        let (user_data, buffer) = result?;
+        Ok(Some((user_data, ACow::Owned(buffer))))
     }
 }
