@@ -745,19 +745,13 @@ impl ShardReplicaSet {
 
             // Deactivate replica in consensus if it matches the state we expect.
             // We filter out transient transfer states (Partial, Recovery, etc.)
-            // because those can change rapidly between proposal and apply, and
-            // we want the deactivation to go through even if the state has
-            // moved on. Resharding/ReshardingScaleDown are stable through the
-            // resharding lifecycle (only flipped by finish_migrating_points
-            // → Active or by this same deactivation flow → Dead), so we keep
-            // them populated. Carrying the captured pre-state in the consensus
-            // log entry is what lets the local `abort_resharding` side-effect
-            // in `Collection::set_shard_replica_state` re-fire correctly on
-            // replay — without it, replay reads `current_state` as Dead from
-            // disk and silently skips the side-effect, leaving
-            // resharding_state stale.
-            let from_state = Some(peer_state)
-                .filter(|state| !state.is_partial_or_recovery() || state.is_resharding());
+            // because those can change rapidly between proposal and apply.
+            //
+            // Note, we explicitly *don't* want to use `from_state` for `ReshardingScaleDown`,
+            // because it interacts poorly with how abort resharding currently works. 😔
+            //
+            // See https://github.com/qdrant/qdrant/pull/7849#issuecomment-4720894619
+            let from_state = Some(peer_state).filter(|state| !state.is_partial_or_recovery());
 
             self.add_locally_disabled(Some(state), *peer_id, from_state);
         }
