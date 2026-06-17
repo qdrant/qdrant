@@ -6,9 +6,9 @@ use ordered_float::OrderedFloat;
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
-    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny,
-    MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
+    AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
+    GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
+    MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.

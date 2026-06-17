@@ -11,7 +11,8 @@ use super::ReadOnlyAppendableMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + ?Sized, S: UniversalRead> MapIndexRead<N> for ReadOnlyAppendableMapIndex<N, S>
+impl<'a, N: MapIndexKey + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, N>
+    for ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -25,14 +26,11 @@ where
             .check_values_any(idx, hw_counter, check_fn)
     }
 
-    fn get_values<'a>(
+    fn get_values(
         &'a self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         self.in_memory_index.get_values(idx, hw_counter)
     }
 

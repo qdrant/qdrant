@@ -179,7 +179,7 @@ where
 // Shared per-K bodies, parameterized over `T: MapIndexRead<N>` so a single
 // implementation serves both `MapIndex<N>` and `ReadOnlyMapIndex<N, S>`.
 
-fn value_retriever_str<'a, T: MapIndexRead<str> + 'a>(
+fn value_retriever_str<'a, T: MapIndexRead<'a, str> + 'a>(
     index: &'a T,
     hw_counter: &'a HardwareCounterCell,
 ) -> VariableRetrieverFn<'a> {
@@ -193,7 +193,7 @@ fn value_retriever_str<'a, T: MapIndexRead<str> + 'a>(
     })
 }
 
-fn value_retriever_int<'a, T: MapIndexRead<IntPayloadType> + 'a>(
+fn value_retriever_int<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
     index: &'a T,
     hw_counter: &'a HardwareCounterCell,
 ) -> VariableRetrieverFn<'a> {
@@ -207,7 +207,7 @@ fn value_retriever_int<'a, T: MapIndexRead<IntPayloadType> + 'a>(
     })
 }
 
-fn value_retriever_uuid<'a, T: MapIndexRead<UuidIntType> + 'a>(
+fn value_retriever_uuid<'a, T: MapIndexRead<'a, UuidIntType> + 'a>(
     index: &'a T,
     hw_counter: &'a HardwareCounterCell,
 ) -> VariableRetrieverFn<'a> {

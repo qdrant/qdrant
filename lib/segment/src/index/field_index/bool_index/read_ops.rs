@@ -18,6 +18,7 @@
 
 use std::path::PathBuf;
 
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -25,7 +26,7 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
@@ -287,12 +288,10 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     match cond_match {
         Match::Value(MatchValue {
             value: ValueVariants::Bool(is_true),
-        }) => {
-            let is_true = *is_true;
-            Some(Box::new(move |point_id: PointOffsetType| {
-                Ok(idx.check_values_any(point_id, is_true))
-            }))
-        }
+        }) => Some(Box::new(BoolConditionChecker {
+            idx,
+            is_true: *is_true,
+        })),
         Match::Value(MatchValue {
             value: ValueVariants::String(_) | ValueVariants::Integer(_),
         })
@@ -305,6 +304,19 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
         | Match::Text(_)
         | Match::TextAny(_)
         | Match::Phrase(_) => None,
+    }
+}
+
+struct BoolConditionChecker<'a, N> {
+    idx: &'a N,
+    is_true: bool,
+}
+
+impl<N: BoolIndexRead> ConditionChecker for BoolConditionChecker<'_, N> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.idx.check_values_any(point_id, self.is_true))
     }
 }
 

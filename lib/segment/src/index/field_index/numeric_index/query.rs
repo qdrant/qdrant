@@ -12,6 +12,7 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::str::FromStr;
 
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -21,7 +22,7 @@ use uuid::Uuid;
 
 use super::Encodable;
 use super::numeric_index_read::NumericIndexRead;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -298,8 +299,8 @@ where
     collect_blocks()?.into_iter().try_for_each(f)
 }
 
-/// Build a per-point checker closure for a `range` field condition, if the
-/// index can serve it.
+/// Build a per-point checker for a `range` field condition, if the index can
+/// serve it.
 pub(super) fn condition_checker<'a, T, I>(
     index: &'a I,
     condition: &FieldCondition,
@@ -337,14 +338,33 @@ where
         }
     };
 
-    let hw_counter = hw_acc.get_counter_cell();
-    Some(Box::new(move |point_id: PointOffsetType| {
-        Ok(index.check_values_any(
-            point_id,
-            |value| typed_range.check_range(*value),
-            &hw_counter,
-        ))
+    Some(Box::new(RangeConditionChecker {
+        index,
+        typed_range,
+        hw_counter: hw_acc.get_counter_cell(),
     }))
+}
+
+struct RangeConditionChecker<'a, T, I> {
+    index: &'a I,
+    typed_range: Range<T>,
+    hw_counter: HardwareCounterCell,
+}
+
+impl<T, I> ConditionChecker for RangeConditionChecker<'_, T, I>
+where
+    T: Encodable + Numericable + StoredValue + Send + Sync + Default,
+    I: NumericIndexRead<T>,
+{
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.index.check_values_any(
+            point_id,
+            |value| self.typed_range.check_range(*value),
+            &self.hw_counter,
+        ))
+    }
 }
 
 /// Stream `(value, point)` pairs of the given range in ascending order.

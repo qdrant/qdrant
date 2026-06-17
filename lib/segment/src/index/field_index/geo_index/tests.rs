@@ -27,7 +27,7 @@ use crate::index::field_index::{
 use crate::json_path::JsonPath;
 use crate::types::test_utils::build_polygon;
 use crate::types::{
-    FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint, GeoPolygon, GeoRadius,
+    CheckGeoPoint, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint, GeoPolygon, GeoRadius,
 };
 
 /// Generous default size for the deleted-points bitslice used in tests.

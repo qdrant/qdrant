@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::types::PointOffsetType;
 
 /// A check that tests whether points satisfy a condition.
@@ -17,10 +19,23 @@ pub trait ConditionChecker {
     }
 }
 
-impl<E, F: Fn(PointOffsetType) -> Result<bool, E>> ConditionChecker for F {
+/// A checker that ignores the point and always returns the same value.
+pub struct ConstantConditionChecker<E>(bool, PhantomData<E>);
+
+impl<E> ConstantConditionChecker<E> {
+    pub const MATCH_NONE: Self = Self(false, PhantomData);
+
+    pub const MATCH_ALL: Self = Self(true, PhantomData);
+
+    pub const fn new(value: bool) -> Self {
+        ConstantConditionChecker(value, PhantomData)
+    }
+}
+
+impl<E> ConditionChecker for ConstantConditionChecker<E> {
     type Error = E;
 
-    fn check(&self, point_id: PointOffsetType) -> Result<bool, E> {
-        self(point_id)
+    fn check(&self, _point_id: PointOffsetType) -> Result<bool, E> {
+        Ok(self.0)
     }
 }

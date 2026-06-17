@@ -2921,6 +2921,10 @@ impl From<std::ops::Range<usize>> for ValuesCount {
     }
 }
 
+pub trait CheckGeoPoint {
+    fn check_point(&self, point: &GeoPoint) -> bool;
+}
+
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
@@ -2933,8 +2937,8 @@ pub struct GeoBoundingBox {
     pub bottom_right: GeoPoint,
 }
 
-impl GeoBoundingBox {
-    pub fn check_point(&self, point: &GeoPoint) -> bool {
+impl CheckGeoPoint for GeoBoundingBox {
+    fn check_point(&self, point: &GeoPoint) -> bool {
         let longitude_check = if self.top_left.lon > self.bottom_right.lon {
             // Handle antimeridian crossing
             point.lon > self.top_left.lon || point.lon < self.bottom_right.lon
@@ -2969,8 +2973,8 @@ impl Hash for GeoRadius {
     }
 }
 
-impl GeoRadius {
-    pub fn check_point(&self, point: &GeoPoint) -> bool {
+impl CheckGeoPoint for GeoRadius {
+    fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::from(self.center);
         Haversine.distance(query_center, Point::from(*point)) < self.radius.0
     }
@@ -2986,8 +2990,8 @@ pub struct PolygonWrapper {
     pub polygon: Polygon,
 }
 
-impl PolygonWrapper {
-    pub fn check_point(&self, point: &GeoPoint) -> bool {
+impl CheckGeoPoint for PolygonWrapper {
+    fn check_point(&self, point: &GeoPoint) -> bool {
         let point_new = Point::new(point.lon.0, point.lat.0);
         self.polygon.contains(&point_new)
     }
