@@ -3,6 +3,7 @@ use std::time::Duration;
 use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
+use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
@@ -21,6 +22,7 @@ use tokio::time::Instant;
 
 use super::CollectionPath;
 use super::read_params::ReadParams;
+use super::routing_token::ActixRoutingToken;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::settings::ServiceConfig;
@@ -33,6 +35,7 @@ async fn recommend_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let RecommendRequest {
         recommend_request,
@@ -72,6 +75,7 @@ async fn recommend_points(
             &collection.collection_name,
             recommend_request,
             params.consistency,
+            routing_token,
             shard_selection,
             auth,
             params.timeout(),
@@ -88,11 +92,13 @@ async fn recommend_points(
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn do_recommend_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: RecommendRequestBatch,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
@@ -114,6 +120,7 @@ async fn do_recommend_batch_points(
         collection_name,
         requests,
         read_consistency,
+        routing_token,
         auth,
         timeout,
         hw_measurement_acc,
@@ -129,6 +136,7 @@ async fn recommend_batch_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let pass = match check_strict_mode_batch(
         request.searches.iter().map(|i| &i.recommend_request),
@@ -157,6 +165,7 @@ async fn recommend_batch_points(
         &collection.collection_name,
         request.into_inner(),
         params.consistency,
+        routing_token,
         auth,
         params.timeout(),
         request_hw_counter.get_counter(),
@@ -185,6 +194,7 @@ async fn recommend_point_groups(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let RecommendGroupsRequest {
         recommend_group_request,
@@ -222,6 +232,7 @@ async fn recommend_point_groups(
         &collection.collection_name,
         recommend_group_request,
         params.consistency,
+        routing_token,
         shard_selection,
         auth,
         params.timeout(),

@@ -6,6 +6,7 @@ use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
+use super::routing_token::ActixRoutingToken;
 use crate::actix::api::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAuth;
@@ -22,6 +23,7 @@ async fn facet(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -64,6 +66,7 @@ async fn facet(
             facet_params,
             shard_selection,
             params.consistency,
+            routing_token,
             auth,
             params.timeout(),
             request_hw_counter.get_counter(),

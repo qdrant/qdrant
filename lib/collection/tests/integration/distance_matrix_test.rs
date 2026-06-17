@@ -31,7 +31,14 @@ async fn distance_matrix_empty() {
         using: DEFAULT_VECTOR_NAME.to_owned(),
     };
     let matrix = collection
-        .search_points_matrix(request, ShardSelectorInternal::All, None, None, hw_acc)
+        .search_points_matrix(
+            request,
+            ShardSelectorInternal::All,
+            None,
+            None,
+            None,
+            hw_acc,
+        )
         .await
         .unwrap();
 
@@ -88,7 +95,14 @@ async fn distance_matrix_anonymous_vector() {
         using: DEFAULT_VECTOR_NAME.to_owned(),
     };
     let matrix = collection
-        .search_points_matrix(request, ShardSelectorInternal::All, None, None, hw_acc)
+        .search_points_matrix(
+            request,
+            ShardSelectorInternal::All,
+            None,
+            None,
+            None,
+            hw_acc,
+        )
         .await
         .unwrap();
 

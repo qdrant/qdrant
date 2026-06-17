@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 pub use api::HTTP_HEADER_API_KEY;
 use chrono::Utc;
+use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
@@ -184,7 +185,17 @@ impl AuthKeys {
             } = claims;
 
             if let Some(value_exists) = value_exists {
-                self.validate_value_exists(&value_exists).await?;
+                // Route the stateful existence check with the caller's routing token
+                // (the same header used for their reads) so it lands on the same replica
+                // and stays consistent with what those reads see. Seeding from the claim
+                // instead would be useless when claims are shared across tokens — it would
+                // pin every validation to a single replica.
+                let routing_token = get_header(api::HTTP_HEADER_ROUTING_TOKEN)
+                    .filter(|token| !token.is_empty())
+                    .map(|token| RoutingToken::from_bytes(token.as_bytes()));
+
+                self.validate_value_exists(&value_exists, routing_token)
+                    .await?;
             }
 
             return Ok((access, InferenceToken(sub), AuthType::Jwt, subject));
@@ -201,7 +212,11 @@ impl AuthKeys {
         ))
     }
 
-    async fn validate_value_exists(&self, value_exists: &ValueExists) -> Result<(), AuthError> {
+    async fn validate_value_exists(
+        &self,
+        value_exists: &ValueExists,
+        routing_token: Option<RoutingToken>,
+    ) -> Result<(), AuthError> {
         let scroll_req = ScrollRequestInternal {
             offset: None,
             limit: Some(1),
@@ -217,6 +232,7 @@ impl AuthKeys {
                 value_exists.get_collection(),
                 scroll_req,
                 None,
+                routing_token,
                 None, // no timeout
                 ShardSelectorInternal::All,
                 Auth::new_internal(Access::full("JWT stateful validation")),

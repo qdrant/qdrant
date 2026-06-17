@@ -16,6 +16,7 @@ use shard::scroll::ScrollRequestInternal;
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
@@ -310,6 +311,7 @@ impl Collection {
         &self,
         mut request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -347,6 +349,7 @@ impl Collection {
                     .scroll_by(
                         request.clone(),
                         read_consistency,
+                        routing_token,
                         local_only,
                         timeout,
                         hw_measurement_acc.clone(),
@@ -408,6 +411,7 @@ impl Collection {
         &self,
         request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -424,6 +428,7 @@ impl Collection {
                 shard.count(
                     Arc::clone(&request),
                     read_consistency,
+                    routing_token,
                     timeout,
                     shard_selection.is_shard_id(),
                     hw_measurement_acc.clone(),
@@ -444,6 +449,7 @@ impl Collection {
         &self,
         request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -478,6 +484,7 @@ impl Collection {
                             with_payload,
                             &request.with_vector,
                             read_consistency,
+                            routing_token,
                             timeout,
                             shard_selection.is_shard_id(),
                             hw_acc,

@@ -67,6 +67,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         .search(
             full_search_request.into(),
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
             hw_acc,
@@ -94,6 +95,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let page_1_result = collection
         .search(
             page_1_request.into(),
+            None,
             None,
             &ShardSelectorInternal::All,
             None,
@@ -123,6 +125,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let page_9_result = collection
         .search(
             page_9_request.into(),
+            None,
             None,
             &ShardSelectorInternal::All,
             None,

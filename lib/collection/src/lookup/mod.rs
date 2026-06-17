@@ -14,6 +14,7 @@ use types::PseudoId;
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult, PointRequestInternal};
 
@@ -29,11 +30,13 @@ pub struct WithLookup {
     pub with_vectors: Option<WithVector>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn lookup_ids<F, Fut>(
     request: WithLookup,
     values: Vec<PseudoId>,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: &ShardSelectorInternal,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
@@ -67,6 +70,7 @@ where
         .retrieve(
             point_request,
             read_consistency,
+            routing_token,
             shard_selection,
             timeout,
             hw_measurement_acc,

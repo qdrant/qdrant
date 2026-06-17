@@ -21,6 +21,7 @@ use crate::common::fetch_vectors;
 use crate::common::fetch_vectors::build_vector_resolver_query;
 use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionResult, PointGroup, RecommendGroupsRequestInternal, RecommendRequestInternal,
@@ -79,11 +80,13 @@ impl GroupRequest {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn into_query_group_request<F, Fut>(
         self,
         collection: &Collection,
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -100,6 +103,7 @@ impl GroupRequest {
                     collection,
                     collection_by_name,
                     read_consistency,
+                    routing_token,
                     timeout,
                     hw_measurement_acc.clone(),
                 )
@@ -118,6 +122,7 @@ impl GroupRequest {
                     collection,
                     collection_by_name,
                     read_consistency,
+                    routing_token,
                     timeout,
                     hw_measurement_acc.clone(),
                 )
@@ -145,6 +150,7 @@ impl QueryGroupRequest {
         &self,
         collection: &Collection,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -170,6 +176,7 @@ impl QueryGroupRequest {
             .query(
                 request,
                 read_consistency,
+                routing_token,
                 shard_selection,
                 timeout,
                 hw_measurement_acc,
@@ -311,6 +318,7 @@ pub async fn group_by(
     request: QueryGroupRequest,
     collection: &Collection,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
@@ -373,6 +381,7 @@ pub async fn group_by(
             .r#do(
                 collection,
                 read_consistency,
+                routing_token,
                 shard_selection.clone(),
                 timeout,
                 hw_measurement_acc.clone(),
@@ -436,6 +445,7 @@ pub async fn group_by(
                 .r#do(
                     collection,
                     read_consistency,
+                    routing_token,
                     shard_selection.clone(),
                     timeout,
                     hw_measurement_acc.clone(),
@@ -474,6 +484,7 @@ pub async fn group_by(
             Some(request.source.with_payload),
             request.source.with_vector,
             read_consistency,
+            routing_token,
             &shard_selection,
             timeout,
             hw_measurement_acc.clone(),
