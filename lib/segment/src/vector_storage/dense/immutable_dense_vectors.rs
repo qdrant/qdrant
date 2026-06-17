@@ -50,9 +50,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         dim: usize,
         populate: bool,
     ) -> OperationResult<Self> {
-        let file_len = fs_err::metadata(vectors_path)?.len() as usize;
-        let num_vectors = file_len.saturating_sub(HEADER_SIZE) / dim / size_of::<T>();
-
         let options = UniversalOpenOptions {
             writeable: false,
             need_sequential: true,
@@ -66,6 +63,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
                     vectors_path.display()
                 ))
             })?;
+        // Vector count from the length read through `fs` — the backing store may
+        // be remote, so never stat the path locally.
+        let file_len = read_only.len::<u8>().map_err(|e| {
+            crate::common::operation_error::OperationError::service_error(format!(
+                "Failed to read length of vector file {}: {e}",
+                vectors_path.display()
+            ))
+        })? as usize;
+        let num_vectors = file_len.saturating_sub(HEADER_SIZE) / dim / size_of::<T>();
+
         let storage = TypedStorage::<ReadOnly<S>, T>::wrap(read_only);
 
         Ok(Self {

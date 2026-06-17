@@ -15,7 +15,6 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
     /// creates and writes nothing. `next_point_offset` is reconstructed like the
     /// writable storage on reopen: the highest deleted id or the Gridstore
     /// pointer count, whichever is larger.
-    #[allow(dead_code)] // pending: read-only vector storage enum will use this
     pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
         let storage =
             GridstoreReader::<StoredSparseVector, S>::open(fs, path.join(STORAGE_DIRNAME))
