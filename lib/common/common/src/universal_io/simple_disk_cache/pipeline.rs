@@ -1,4 +1,5 @@
 use std::cell::OnceCell;
+use std::fmt;
 use std::ops::Range;
 
 use crate::ext::aligned_vec::ACow;
@@ -7,10 +8,7 @@ use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{
     BLOCK_SIZE, DiskCache, DiskCacheRemote, to_block_range,
 };
-use crate::universal_io::traits::BorrowedReadPipeline;
-use crate::universal_io::{
-    self, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UserData,
-};
+use crate::universal_io::{self, ReadPipeline, Result, UniversalIoError, UniversalRead, UserData};
 
 #[cfg(target_os = "linux")]
 /// Required alignment when using io_uring with `O_DIRECT` on Linux
@@ -26,11 +24,8 @@ struct RemoteMeta<File, U> {
     user_data: U,
 }
 
-// Manual `Debug` impl: `RemoteMeta` is used as user data for the remote
-// pipeline, so it must be `Debug` (via `UserData`). `file` can be a
-// `&DiskCache<R>`, which is not `Debug`, so it is omitted from the output.
-impl<File, U: std::fmt::Debug> std::fmt::Debug for RemoteMeta<File, U> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<File, U: fmt::Debug> fmt::Debug for RemoteMeta<File, U> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RemoteMeta")
             .field("scheduled_read", &self.scheduled_read)
             .field("user_data", &self.user_data)
@@ -39,14 +34,9 @@ impl<File, U: std::fmt::Debug> std::fmt::Debug for RemoteMeta<File, U> {
 }
 
 #[derive(Debug)]
-enum ScheduledRead {
-    Range {
-        blocks_range: Range<u32>,
-        read_range: Range<u64>,
-    },
-    Whole {
-        from: u64,
-    },
+struct ScheduledRead {
+    blocks_range: Range<u32>,
+    read_range: Range<u64>,
 }
 
 /// Outcome of [`plan_schedule`]: either the requested range is already available
@@ -146,49 +136,37 @@ unsafe fn commit_and_read<'a, R>(
 where
     R: DiskCacheRemote,
 {
-    let mut known_len = None;
-    let (blocks_range, byte_range) = match scheduled_read {
-        ScheduledRead::Range {
-            blocks_range,
-            read_range,
-        } => (blocks_range, read_range),
-        ScheduledRead::Whole { from } => {
-            // derive whole ranges from the actual bytes returned.
-            let byte_len = bytes.len() as u64;
-            let eof = from + byte_len;
-            let byte_range = from..eof;
-            known_len = Some(eof);
-            let blocks_range = to_block_range(byte_range.clone());
-            (blocks_range, byte_range)
-        }
-    };
+    let ScheduledRead {
+        blocks_range,
+        read_range,
+    } = scheduled_read;
 
     let state = if let Some(state) = file.state.get() {
         state
     } else {
         let mut init_guard = file.init_lock.lock();
         if file.state.get().is_none() {
-            file.init_state(&mut init_guard, true, known_len)?;
+            file.init_state(&mut init_guard, true)?;
         }
         file.state.get().expect("just initialized")
     };
 
     unsafe {
         state.local.write_mmap_bytes(bytes, blocks_range);
-        state.local.read_mmap_bytes::<Random>(byte_range)
+        state.local.read_mmap_bytes::<Random>(read_range)
     }
 }
 
-type BorrowedRemotePipeline<'file, R, U> =
-    <R as UniversalRead>::BorrowedReadPipeline<'file, RemoteMeta<&'file DiskCache<R>, U>>;
+type RemotePipeline<'file, R, U> =
+    <R as UniversalRead>::ReadPipeline<'file, RemoteMeta<&'file DiskCache<R>, U>>;
 
 pub struct DiskCachePipeline<'file, R, U>
 where
-    R: UniversalRead,
+    R: UniversalRead + 'static,
     U: UserData,
 {
     /// Pipeline for queuing remote reads.
-    remote_pipeline: OnceCell<BorrowedRemotePipeline<'file, R, U>>,
+    remote_pipeline: OnceCell<RemotePipeline<'file, R, U>>,
     /// A result of (user_data, bytes)
     result: Option<(U, &'file [u8])>,
 }
@@ -200,9 +178,9 @@ where
 {
     fn get_or_init_remote_pipeline(
         &mut self,
-    ) -> universal_io::Result<&mut BorrowedRemotePipeline<'file, R, U>> {
+    ) -> universal_io::Result<&mut RemotePipeline<'file, R, U>> {
         if self.remote_pipeline.get().is_none() {
-            let remote = R::BorrowedReadPipeline::new()?;
+            let remote = R::ReadPipeline::new()?;
             // We just observed the cell as empty and hold `&mut self`, so set cannot fail.
             let _ = self.remote_pipeline.set(remote);
         }
@@ -210,7 +188,7 @@ where
     }
 }
 
-impl<'file, R, U> BorrowedReadPipeline<'file, U> for DiskCachePipeline<'file, R, U>
+impl<'file, R, U> ReadPipeline<'file, U> for DiskCachePipeline<'file, R, U>
 where
     R: DiskCacheRemote + 'file,
     U: UserData,
@@ -255,7 +233,7 @@ where
             } => {
                 let remote_meta = RemoteMeta {
                     file,
-                    scheduled_read: ScheduledRead::Range {
+                    scheduled_read: ScheduledRead {
                         blocks_range,
                         read_range: range,
                     },
@@ -271,6 +249,20 @@ where
             }
         }
         Ok(())
+    }
+
+    fn schedule_whole(&mut self, user_data: U, file: &'file DiskCache<R>, from: u64) -> Result<()>
+    where
+        Self::File: UniversalRead,
+    {
+        let state = file.state()?;
+        let eof = state.local.mmap().len::<u8>()?;
+
+        if from >= eof {
+            return Ok(());
+        }
+
+        self.schedule::<Sequential>(user_data, file, from..eof, 1)
     }
 
     fn wait(&mut self) -> universal_io::Result<Option<(U, ACow<'file>)>> {
@@ -294,149 +286,5 @@ where
         // SAFETY: `blocks_range` and `read_range` match what was scheduled.
         let items = unsafe { commit_and_read::<R>(file, &bytes, scheduled_read)? };
         Ok(Some((user_data, ACow::Borrowed(items))))
-    }
-}
-
-pub struct OwnedDiskCachePipeline<R, U>
-where
-    R: UniversalRead,
-    U: UserData,
-{
-    /// The file being cached.
-    file: DiskCache<R>,
-    /// Pipeline for queuing remote reads.
-    remote_pipeline: Option<R::OwnedReadPipeline<RemoteMeta<(), U>>>,
-    /// A result ready to be read, contains (user_data, byte_range).
-    ready: Option<(U, Range<u64>, bool)>,
-}
-
-impl<R, U> OwnedDiskCachePipeline<R, U>
-where
-    R: DiskCacheRemote,
-    U: UserData,
-{
-    fn get_or_init_remote_pipeline(
-        &mut self,
-    ) -> universal_io::Result<&mut R::OwnedReadPipeline<RemoteMeta<(), U>>> {
-        if self.remote_pipeline.is_none() {
-            let remote = if let Some(state) = self.file.state.get() {
-                state.remote.clone()
-            } else {
-                self.file.open_remote()?
-            };
-            let pipeline = R::OwnedReadPipeline::new(remote)?;
-            self.remote_pipeline = Some(pipeline);
-        }
-        Ok(self.remote_pipeline.as_mut().expect("just initialized"))
-    }
-}
-
-impl<R, U> OwnedReadPipeline<U> for OwnedDiskCachePipeline<R, U>
-where
-    R: DiskCacheRemote,
-    U: UserData,
-{
-    type File = DiskCache<R>;
-
-    fn new(file: Self::File) -> universal_io::Result<Self> {
-        Ok(Self {
-            file,
-            remote_pipeline: None,
-            ready: None,
-        })
-    }
-
-    fn can_schedule(&mut self) -> bool {
-        self.ready.is_none()
-            && self
-                .remote_pipeline
-                .as_mut()
-                .is_none_or(|pipeline| pipeline.can_schedule())
-    }
-
-    fn schedule<P: AccessPattern>(
-        &mut self,
-        user_data: U,
-        range: Range<u64>,
-        _align: usize,
-    ) -> universal_io::Result<()> {
-        match pick_source::<P>(&self.file.state()?.local, range.clone())? {
-            Source::Local {
-                range,
-                is_sequential,
-            } => {
-                self.ready = Some((user_data, range, is_sequential));
-            }
-            Source::Remote {
-                blocks_range,
-                blocks_byte_range,
-            } => {
-                let remote_meta = RemoteMeta {
-                    file: (),
-                    scheduled_read: ScheduledRead::Range {
-                        blocks_range,
-                        read_range: range,
-                    },
-                    user_data,
-                };
-                let remote_pipeline = self.get_or_init_remote_pipeline()?;
-                remote_pipeline.schedule::<P>(
-                    remote_meta,
-                    blocks_byte_range,
-                    REMOTE_READ_ALIGNMENT,
-                )?;
-            }
-        }
-        Ok(())
-    }
-
-    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
-        // If local has already been initialized, use the mmap length
-        if let Some(state) = &self.file.state.get() {
-            let eof = state.local.mmap().len::<u8>()?;
-            if from >= eof {
-                return Ok(());
-            }
-            return self.schedule::<Sequential>(user_data, from..eof, 1);
-        }
-
-        // Use schedule_whole on the remote pipeline directly
-        let remote_meta = RemoteMeta {
-            file: (),
-            scheduled_read: ScheduledRead::Whole { from },
-            user_data,
-        };
-        let remote_pipeline = self.get_or_init_remote_pipeline()?;
-        remote_pipeline.schedule_whole(remote_meta, from)
-    }
-
-    fn wait(&mut self) -> universal_io::Result<Option<(U, ACow<'_>)>> {
-        if let Some((user_data, range, is_sequential)) = self.ready.take() {
-            // SAFETY: being in `pending` confirms the range is local (or empty).
-            let bytes = unsafe { read_local::<R>(&self.file, range, is_sequential)? };
-            return Ok(Some((user_data, ACow::Borrowed(bytes))));
-        }
-
-        let Some(remote_pipeline) = self.remote_pipeline.as_mut() else {
-            return Ok(None);
-        };
-        let Some((remote_meta, bytes)) = remote_pipeline.wait()? else {
-            return Ok(None);
-        };
-
-        let RemoteMeta {
-            file: _,
-            scheduled_read,
-            user_data,
-        } = remote_meta;
-
-        let items =
-            // TODO: if schedule_whole is used other than during `open`, `commit_and_read` will call `remote.len()` regardless.
-            unsafe { commit_and_read::<R>(&self.file, &bytes, scheduled_read)? };
-        Ok(Some((user_data, ACow::Borrowed(items))))
-    }
-
-    fn into_inner(self) -> DiskCache<R> {
-        self.file
     }
 }

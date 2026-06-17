@@ -107,6 +107,6 @@ mod tests;
 pub use backend::BlobBackend;
 pub use file::BlobFile;
 pub use fs::BlobFs;
-pub use pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
+pub use pipeline::BlobReadPipeline;
 pub use read::AsyncRead;
 pub use runtime::BridgeRuntime;

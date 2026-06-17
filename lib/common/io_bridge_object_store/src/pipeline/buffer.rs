@@ -19,7 +19,7 @@ use crate::read::AsyncRead;
 /// between the pipeline thread and the worker task, so no raw-pointer unsafe is
 /// needed to cross threads. The buffer arrives back at the pipeline as a
 /// normal move through the reply channel.
-pub(crate) fn read_into_byte_buffer<A: AsyncRead>(
+pub fn read_into_byte_buffer<A: AsyncRead>(
     file: &BlobFile<A>,
     range: Range<u64>,
     align: usize,
@@ -35,7 +35,7 @@ pub(crate) fn read_into_byte_buffer<A: AsyncRead>(
 
 /// Like [`read_into_byte_buffer`], but fetches the whole object in one GET,
 /// sizing the buffer from the response length (no separate `len`/HEAD).
-pub(crate) fn read_whole_into_byte_buffer<A: AsyncRead + Clone>(
+pub fn read_whole_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     align: usize,
 ) -> impl Future<Output = Result<AVec<u8, RuntimeAlign>>> + Send + 'static {
@@ -51,7 +51,7 @@ pub(crate) fn read_whole_into_byte_buffer<A: AsyncRead + Clone>(
 /// an unsatisfiable-range error rather than an empty body, so the error path
 /// confirms with a single `len`: if `from >= eof` the tail is genuinely empty
 /// and we yield a zero-length buffer; otherwise the original read error stands.
-pub(crate) fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
+pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     from: u64,
     align: usize,

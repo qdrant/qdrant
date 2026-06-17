@@ -9,13 +9,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
 use common::generic_consts::Sequential;
 use common::universal_io::{
-    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, OpenOptions, OwnedReadPipeline, Populate,
+    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, OpenOptions, OwnedPipeline, Populate,
     ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps,
     UniversalReadFs,
 };
 use futures::stream::{BoxStream, StreamExt};
 
-use crate::pipeline::OwnedBlobPipeline;
 use crate::read::AsyncRead;
 use crate::{BlobFile, BridgeRuntime};
 
@@ -180,8 +179,7 @@ fn owned_pipeline_tail_read_uses_single_get_without_head() {
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
 
-    let mut pipeline =
-        <OwnedBlobPipeline<CountingSource, ()> as OwnedReadPipeline<()>>::new(file).unwrap();
+    let mut pipeline = OwnedPipeline::new(file).unwrap();
     let from = 10u64;
     pipeline.schedule_whole((), from).unwrap();
     let (_, bytes) = pipeline.wait().unwrap().expect("exactly one read");
@@ -207,8 +205,7 @@ fn owned_pipeline_empty_tail_resolves_to_empty_read() {
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
 
-    let mut pipeline =
-        <OwnedBlobPipeline<CountingSource, ()> as OwnedReadPipeline<()>>::new(file).unwrap();
+    let mut pipeline = OwnedPipeline::new(file).unwrap();
     // Offset exactly at EOF: there is no tail to read.
     pipeline.schedule_whole((), DATA.len() as u64).unwrap();
     let (_, bytes) = pipeline

@@ -7,9 +7,7 @@ use super::{BucketOffset, Key, MaybeIncompleteEntry, MaybeIncompleteEntryKind, U
 use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Random;
 use crate::persisted_hashmap::uio::parse_bucket_offset;
-use crate::universal_io::{
-    BorrowedReadPipeline, Result, UniversalIoError, UniversalRead, UserData,
-};
+use crate::universal_io::{ReadPipeline, Result, UniversalIoError, UniversalRead, UserData};
 
 pub(super) enum Request<'a, K: Key + ?Sized> {
     /// Request an entry by the given offset with unknown key.
@@ -92,7 +90,7 @@ where
         E: From<UniversalIoError>,
     {
         let mut sparse = PipelineDriver::new(self, entry_kind)?;
-        let mut pipeline = S::BorrowedReadPipeline::new()?;
+        let mut pipeline = S::ReadPipeline::new()?;
         let mut requests = requests.into_iter();
         loop {
             while pipeline.can_schedule() {

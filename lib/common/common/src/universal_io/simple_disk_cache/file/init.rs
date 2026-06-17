@@ -10,7 +10,7 @@
 use super::{DiskCache, State};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
-use crate::universal_io::{OwnedReadPipeline, Result, UniversalRead};
+use crate::universal_io::{OwnedPipeline, Result, UniversalRead};
 
 /// Where a [`DiskCache`]'s [`State`] comes from the first time it is needed.
 ///
@@ -22,18 +22,21 @@ use crate::universal_io::{OwnedReadPipeline, Result, UniversalRead};
 /// Populate::No | Auto    →  FromScratch          →  remote.len(); empty mmap; blocks faulted in on read
 /// Populate::Blocking|Pref →  Prefiller(pipeline) →  pipeline.wait(); mmap sized to bytes; all written
 /// ```
-pub(in crate::universal_io::simple_disk_cache) enum InitSource<R: UniversalRead> {
+pub(crate) enum InitSource<R>
+where
+    R: UniversalRead + 'static,
+{
     /// Lazy: build an empty local mmap (sized from the remote length) and let
     /// reads fill blocks on demand. Chosen for `Populate::No` / `Populate::Auto`.
     FromScratch,
     /// Eager: an in-flight whole-object read scheduled at open time; init waits
     /// on it and writes the whole mirror. For `Populate::Blocking` / `PreferBackground`.
-    Prefiller(R::OwnedReadPipeline<()>),
+    Prefiller(OwnedPipeline<R, ()>),
     /// The reopen-time counterpart of [`Prefiller`](Self::Prefiller): an in-flight
     /// read of just the appended tail (block-aligned old length → new EOF). Init
     /// resizes the mirror and writes only that suffix. See [`super::reopen`].
     PartialPrefiller {
-        prefiller: R::OwnedReadPipeline<u64>,
+        prefiller: OwnedPipeline<R, u64>,
         local_state: LocalState,
     },
 }
@@ -56,7 +59,7 @@ where
     R: DiskCacheRemote,
 {
     /// Return the cached [`State`], initializing it on first call.
-    pub(in crate::universal_io::simple_disk_cache) fn state(&self) -> Result<&State<R>> {
+    pub(crate) fn state(&self) -> Result<&State<R>> {
         if let Some(state) = self.state.get() {
             return Ok(state);
         }
@@ -65,7 +68,7 @@ where
 
         // Try again now that we have the lock, in case another thread initialized it first.
         if self.state.get().is_none() {
-            self.init_state(&mut init_guard, true, None)?;
+            self.init_state(&mut init_guard, true)?;
         }
 
         Ok(self.state.get().expect("just initialized"))
@@ -75,18 +78,17 @@ where
     ///
     /// If `allow_from_scratch` is false, this method will avoid initializing if `InitSource::FromScratch` is set.
     /// This is helpful for [`Self::reopen`] scenario where we can avoid work if no reads have taken place.
-    pub(in crate::universal_io::simple_disk_cache) fn init_state(
+    pub(crate) fn init_state(
         &self,
         init_guard: &mut InitSource<R>,
         allow_from_scratch: bool,
-        known_length: Option<u64>,
     ) -> Result<()> {
         let state = match std::mem::replace(init_guard, InitSource::FromScratch) {
             InitSource::FromScratch => {
                 if !allow_from_scratch {
                     return Ok(());
                 }
-                self.new_state_from_scratch(self.open_remote()?, known_length)?
+                self.new_state_from_scratch(self.open_remote()?)?
             }
             InitSource::Prefiller(mut prefiller) => {
                 match prefiller.wait()? {
@@ -113,7 +115,7 @@ where
                             return Ok(());
                         }
                         // init from scratch
-                        self.new_state_from_scratch(prefiller.into_inner(), known_length)?
+                        self.new_state_from_scratch(prefiller.into_inner())?
                     }
                 }
             }
@@ -155,11 +157,8 @@ where
         Ok(())
     }
 
-    fn new_state_from_scratch(&self, remote: R, known_length: Option<u64>) -> Result<State<R>> {
-        let len = match known_length {
-            Some(len) => len,
-            None => remote.len::<u8>()?,
-        };
+    fn new_state_from_scratch(&self, remote: R) -> Result<State<R>> {
+        let len = remote.len::<u8>()?;
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
         Ok(State { remote, local })
     }
@@ -186,7 +185,7 @@ where
             InitSource::PartialPrefiller { .. } => false,
         };
         if !from_scratch {
-            return self.init_state(&mut init_guard, true, None);
+            return self.init_state(&mut init_guard, true);
         }
 
         let remote = self.open_remote()?;
