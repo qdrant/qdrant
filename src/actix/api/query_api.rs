@@ -13,6 +13,7 @@ use tokio::time::Instant;
 
 use super::CollectionPath;
 use super::read_params::ReadParams;
+use super::routing_token::ActixRoutingToken;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter};
 use crate::common::inference::api_keys::InferenceApiKeys;
@@ -28,6 +29,7 @@ use crate::settings::ServiceConfig;
 pub const THIS_FILE: &str = file!();
 
 #[post("/collections/{collection_name}/points/query")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -35,6 +37,7 @@ async fn query_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryRequest {
@@ -80,6 +83,7 @@ async fn query_points(
                 &collection.collection_name,
                 vec![(request, shard_selection)],
                 params.consistency,
+                routing_token,
                 auth,
                 params.timeout(),
                 hw_measurement_acc,
@@ -106,6 +110,7 @@ async fn query_points(
 }
 
 #[post("/collections/{collection_name}/points/query/batch")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points_batch(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -113,6 +118,7 @@ async fn query_points_batch(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
@@ -168,6 +174,7 @@ async fn query_points_batch(
                 &collection.collection_name,
                 batch,
                 params.consistency,
+                routing_token,
                 auth,
                 params.timeout(),
                 hw_measurement_acc,
@@ -194,6 +201,7 @@ async fn query_points_batch(
 }
 
 #[post("/collections/{collection_name}/points/query/groups")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points_groups(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -201,6 +209,7 @@ async fn query_points_groups(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryGroupsRequest {
@@ -244,6 +253,7 @@ async fn query_points_groups(
             &collection.collection_name,
             request,
             params.consistency,
+            routing_token,
             shard_selection,
             auth,
             params.timeout(),

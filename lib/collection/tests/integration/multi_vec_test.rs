@@ -146,6 +146,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         .search(
             full_search_request.into(),
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
             hw_acc,
@@ -182,6 +183,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         .search(
             failed_search_request.into(),
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
             hw_acc,
@@ -210,6 +212,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         .search(
             full_search_request.into(),
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
             hw_acc,
@@ -235,6 +238,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Selector(vec![VECTOR1_NAME.to_owned()]),
             },
+            None,
             None,
             &ShardSelectorInternal::All,
             None,
@@ -265,6 +269,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
         None,
+        None,
         ShardSelectorInternal::All,
         None,
         hw_acc,
@@ -292,6 +297,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
+        None,
         None,
         ShardSelectorInternal::All,
         None,

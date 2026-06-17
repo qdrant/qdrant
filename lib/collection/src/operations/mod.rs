@@ -7,6 +7,7 @@ pub mod loggable;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;
+pub mod routing;
 pub mod shard_selector_internal;
 pub mod shared_storage_config;
 pub mod snapshot_ops;

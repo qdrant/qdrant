@@ -17,6 +17,7 @@ pub mod query_api;
 pub mod read_params;
 pub mod recommend_api;
 pub mod retrieve_api;
+pub mod routing_token;
 pub mod search_api;
 pub mod service_api;
 pub mod shards_api;

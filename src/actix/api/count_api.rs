@@ -7,6 +7,7 @@ use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use super::CollectionPath;
+use super::routing_token::ActixRoutingToken;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
@@ -21,6 +22,7 @@ async fn count_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let CountRequest {
         count_request,
@@ -59,6 +61,7 @@ async fn count_points(
         &collection.collection_name,
         count_request,
         params.consistency,
+        routing_token,
         params.timeout(),
         shard_selector,
         auth,

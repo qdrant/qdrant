@@ -14,6 +14,7 @@ use segment::types::{
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
 use crate::operations::universal_query::collection_query::{
@@ -142,6 +143,7 @@ impl Collection {
         request: CollectionSearchMatrixRequest,
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
@@ -191,6 +193,7 @@ impl Collection {
             .query(
                 sampling_query,
                 read_consistency,
+                routing_token,
                 shard_selection.clone(),
                 timeout,
                 hw_measurement_acc.clone(),
@@ -259,6 +262,7 @@ impl Collection {
                 queries,
                 collection_by_name,
                 read_consistency,
+                routing_token,
                 timeout,
                 hw_measurement_acc,
             )

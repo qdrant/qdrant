@@ -15,6 +15,7 @@ use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecommendExample,
@@ -23,11 +24,13 @@ use crate::operations::universal_query::collection_query::{
     CollectionQueryRequest, CollectionQueryResolveRequest, Query, VectorInputInternal,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub async fn retrieve_points(
     collection: &Collection,
     ids: Vec<PointIdType>,
     vector_names: Vec<VectorNameBuf>,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
@@ -40,6 +43,7 @@ pub async fn retrieve_points(
                 with_vector: WithVector::Selector(vector_names),
             },
             read_consistency,
+            routing_token,
             shard_selector,
             timeout,
             hw_measurement_acc,
@@ -52,11 +56,13 @@ pub enum CollectionRefHolder<'a> {
     Arc(Arc<Collection>),
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn retrieve_points_with_locked_collection(
     collection_holder: CollectionRefHolder<'_>,
     ids: Vec<PointIdType>,
     vector_names: Vec<VectorNameBuf>,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
@@ -68,6 +74,7 @@ pub async fn retrieve_points_with_locked_collection(
                 ids,
                 vector_names,
                 read_consistency,
+                routing_token,
                 shard_selector,
                 timeout,
                 hw_measurement_acc,
@@ -80,6 +87,7 @@ pub async fn retrieve_points_with_locked_collection(
                 ids,
                 vector_names,
                 read_consistency,
+                routing_token,
                 shard_selector,
                 timeout,
                 hw_measurement_acc,
@@ -206,10 +214,12 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn fetch_vectors<F, Fut>(
         mut self,
         collection: &Collection,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         collection_by_name: &F,
         shard_selector: ShardSelectorInternal,
         timeout: Option<Duration>,
@@ -242,6 +252,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                     points,
                     vector_names,
                     read_consistency,
+                    routing_token,
                     &shard_selector,
                     timeout,
                     hw_measurement_acc.clone(),
@@ -255,6 +266,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                                 points,
                                 vector_names,
                                 read_consistency,
+                                routing_token,
                                 &shard_selector,
                                 timeout,
                                 hw_measurement_acc.clone(),
@@ -326,6 +338,7 @@ pub async fn resolve_referenced_vectors_batch<F, Fut, Req: RetrieveRequest>(
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<ReferencedVectors>
@@ -364,6 +377,7 @@ where
             let fetch = referenced_points.fetch_vectors(
                 collection,
                 read_consistency,
+                routing_token,
                 &collection_by_name,
                 shard_selector,
                 timeout,

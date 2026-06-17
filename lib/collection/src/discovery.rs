@@ -17,6 +17,7 @@ use crate::common::fetch_vectors::{
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, DiscoverRequestInternal,
@@ -124,11 +125,13 @@ fn discover_into_core_search(
     Ok(core_search)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn discover<F, Fut>(
     request: DiscoverRequestInternal,
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
@@ -148,6 +151,7 @@ where
         collection,
         collection_by_name,
         read_consistency,
+        routing_token,
         timeout,
         hw_measurement_acc,
     )
@@ -160,6 +164,7 @@ pub async fn discover_batch<F, Fut>(
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
@@ -197,6 +202,7 @@ where
         collection,
         collection_by_name,
         read_consistency,
+        routing_token,
         timeout,
         hw_measurement_acc.clone(),
     )
@@ -232,6 +238,7 @@ where
             requests.push(collection.core_search_batch(
                 core_search_batch_request,
                 read_consistency,
+                routing_token,
                 shard_selector,
                 timeout,
                 hw_measurement_acc.clone(),

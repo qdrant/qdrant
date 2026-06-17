@@ -162,6 +162,7 @@ async fn test_continuous_snapshot() {
                         .retrieve(
                             retrieve_point,
                             None,
+                            None,
                             &ShardSelectorInternal::All,
                             None,
                             hw_counter,
@@ -207,6 +208,7 @@ async fn test_continuous_snapshot() {
                     let retrieve_result = collection
                         .retrieve(
                             retrieve_point,
+                            None,
                             None,
                             &ShardSelectorInternal::All,
                             None,
