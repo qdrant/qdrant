@@ -170,11 +170,20 @@ pub(super) fn random_with_vector(
 
 /// A filter selector for paginated scroll: no filter, `num == X`, or `tag == X` — the same
 /// shapes the other scroll verifiers support.
-pub(super) fn random_scroll_filter(rng: &mut impl Rng) -> ScrollFilter {
-    match rng.random_range(0..3) {
+pub(super) fn random_scroll_filter(rng: &mut impl Rng, id_pool: u64) -> ScrollFilter {
+    match rng.random_range(0..4) {
         0 => ScrollFilter::None,
         1 => ScrollFilter::Num(random_num(rng)),
         2 => ScrollFilter::Tag(random_tag(rng).to_string()),
+        // `has_id` over 1-15 ids drawn from the pool — some present, some not — so the matcher
+        // restricts to a known, model-checkable set. Clamp the count to `id_pool` so
+        // `random_distinct_ids` can't spin forever trying to draw more distinct ids than exist
+        // (relevant only for tiny `--id-pool` values; the default pool is far above 15).
+        3 => ScrollFilter::HasId(random_distinct_ids(
+            rng,
+            1..=(id_pool as usize).min(15),
+            id_pool,
+        )),
         _ => unreachable!(),
     }
 }
