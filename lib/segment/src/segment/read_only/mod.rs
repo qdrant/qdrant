@@ -20,6 +20,7 @@ use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVector
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 mod lifecycle;
+mod live_reload;
 mod read_entry;
 #[cfg(test)]
 mod tests;

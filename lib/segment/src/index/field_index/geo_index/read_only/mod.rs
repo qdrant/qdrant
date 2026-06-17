@@ -12,6 +12,7 @@ use crate::index::payload_config::IndexMutability;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart of [`GeoIndex`][1].
