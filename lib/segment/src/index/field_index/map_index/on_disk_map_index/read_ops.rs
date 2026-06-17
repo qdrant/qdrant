@@ -225,21 +225,19 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for OnDisk
 impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> OnDiskMapIndex<N, S> {
     pub fn for_points_values(
         &self,
-        mut points: impl Iterator<Item = PointOffsetType>,
+        points: impl Iterator<Item = PointOffsetType>,
         hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
+        f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
     ) -> OperationResult<()> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
-        points.try_for_each(|idx| {
-            if self.storage.deleted.get_bit(idx as usize) != Some(false) {
-                return Ok(());
-            }
-            if let Some(iter) = self.storage.point_to_values.values_iter(idx, hw_counter)? {
-                f(idx, iter);
-            }
-            Ok(())
-        })
+        // Skip deleted points
+        let points =
+            points.filter(|&idx| self.storage.deleted.get_bit(idx as usize) == Some(false));
+
+        self.storage
+            .point_to_values
+            .values_iter_batch(points, hw_counter, f)
     }
 
     pub fn is_on_disk(&self) -> bool {
