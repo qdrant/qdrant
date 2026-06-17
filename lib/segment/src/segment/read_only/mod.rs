@@ -21,6 +21,8 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 mod lifecycle;
 mod read_entry;
+#[cfg(test)]
+mod tests;
 
 pub struct ReadOnlySegment<S: UniversalRead + 'static> {
     pub uuid: Uuid,

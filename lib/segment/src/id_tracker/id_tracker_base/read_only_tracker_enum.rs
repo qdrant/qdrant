@@ -22,10 +22,10 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn open(
         fs: &S::Fs,
         segment_path: &Path,
-        mutable_id_tracker: bool,
+        use_appendable: bool,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
-        if mutable_id_tracker {
+        if use_appendable {
             Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open(
                 fs,
                 segment_path,
