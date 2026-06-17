@@ -6,12 +6,11 @@ use atomic_refcell::AtomicRefCell;
 use common::universal_io::UniversalRead;
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerRead;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::payload_config::PayloadConfig;
-use crate::index::struct_payload_index::StorageType;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::VectorNameBuf;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
@@ -26,8 +25,13 @@ impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageReadEnum<S>>>>,
         path: &Path,
     ) -> OperationResult<Self> {
-        let config = PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(path))?
-            .unwrap_or_default();
+        let config_path = PayloadConfig::get_config_path(path);
+        let config = PayloadConfig::load_universal(fs, &config_path)?.ok_or_else(|| {
+            OperationError::service_error(format!(
+                "Read-only payload index missing config at {}",
+                config_path.display()
+            ))
+        })?;
 
         let field_indexes = {
             let id_tracker = id_tracker.borrow();
@@ -50,7 +54,9 @@ impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {
                         indexes.push(index);
                     }
                 }
-                field_indexes.insert(field.clone(), indexes);
+                if !indexes.is_empty() {
+                    field_indexes.insert(field.clone(), indexes);
+                }
             }
             field_indexes
         };
@@ -63,7 +69,6 @@ impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {
             config,
             path: path.to_owned(),
             visited_pool: Default::default(),
-            storage_type: StorageType::NonAppendable,
         })
     }
 }
