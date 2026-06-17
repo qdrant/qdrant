@@ -1,12 +1,15 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use ahash::AHashSet;
+use atomic_refcell::AtomicRefCell;
+use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::DeferredBehavior;
+use common::types::{DeferredBehavior, PointOffsetType};
 use serde_json::Value;
 
 use super::StructPayloadIndexReadView;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
@@ -85,17 +88,15 @@ where
                         id_tracker.internal_id_with_behavior(*external_id, deferred_behavior)
                     })
                     .collect();
-                Box::new(move |point_id| Ok(segment_ids.contains(&point_id)))
+                Box::new(IdsConditionChecker(segment_ids))
             }
             Condition::HasVector(has_vector) => {
                 if let Some(vector_storage) =
                     self.vector_storages.get(&has_vector.has_vector).cloned()
                 {
-                    Box::new(move |point_id| {
-                        Ok(!vector_storage.borrow().is_deleted_vector(point_id))
-                    })
+                    Box::new(HasVectorConditionChecker(vector_storage))
                 } else {
-                    Box::new(|_point_id| Ok(false))
+                    Box::new(ConstantConditionChecker::MATCH_NONE)
                 }
             }
             Condition::Nested(nested) => {
@@ -121,37 +122,34 @@ where
 
                 let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
 
-                let hw = hw_counter.fork();
-                Box::new(move |point_id| {
-                    payload_provider.with_payload(
-                        point_id,
-                        |payload| {
-                            let field_values = payload.get_value(&nested_path);
+                Box::new(PayloadConditionChecker {
+                    payload_provider,
+                    hw_counter: hw_counter.fork(),
+                    check: move |payload, point_id, hw| {
+                        let field_values = payload.get_value(&nested_path);
 
-                            for value in field_values {
-                                if let Value::Object(object) = value {
-                                    let get_payload = || OwnedPayloadRef::from(object);
-                                    if check_payload(
-                                        Box::new(get_payload),
-                                        // None because has_id in nested is not supported. So retrieving
-                                        // IDs through the tracker would always return None.
-                                        None,
-                                        // Same as above, nested conditions don't support has_vector.
-                                        &HashMap::new(),
-                                        &nested.nested.filter,
-                                        point_id,
-                                        &nested_indexes,
-                                        &hw,
-                                    ) {
-                                        // If at least one nested object matches, return true
-                                        return Ok(true);
-                                    }
+                        for value in field_values {
+                            if let Value::Object(object) = value {
+                                let get_payload = || OwnedPayloadRef::from(object);
+                                if check_payload(
+                                    Box::new(get_payload),
+                                    // None because has_id in nested is not supported. So retrieving
+                                    // IDs through the tracker would always return None.
+                                    None,
+                                    // Same as above, nested conditions don't support has_vector.
+                                    &HashMap::new(),
+                                    &nested.nested.filter,
+                                    point_id,
+                                    &nested_indexes,
+                                    hw,
+                                ) {
+                                    // If at least one nested object matches, return true
+                                    return Ok(true);
                                 }
                             }
-                            Ok(false)
-                        },
-                        &hw,
-                    )
+                        }
+                        Ok(false)
+                    },
                 })
             }
             Condition::CustomIdChecker(cond) => {
@@ -164,13 +162,14 @@ where
                     })
                     .collect();
 
-                Box::new(move |internal_id| Ok(segment_ids.contains(&internal_id)))
+                Box::new(IdsConditionChecker(segment_ids))
             }
             Condition::Filter(_) => unreachable!(),
         })
     }
 }
 
+/// For [`Condition::Field`], [`Condition::IsEmpty`] and [`Condition::IsNull`].
 fn field_condition_checker<'a>(
     field_indexes: &'a HashMap<JsonPath, Vec<impl FieldIndexRead>>,
     key: &JsonPath,
@@ -190,8 +189,58 @@ fn field_condition_checker<'a>(
     }
 
     // 2. None found => fallback to payload check.
-    let hw_counter = hw_counter.fork();
-    Ok(Box::new(move |point_id| {
-        payload_provider.with_payload(point_id, |payload| check(payload, &hw_counter), &hw_counter)
+    Ok(Box::new(PayloadConditionChecker {
+        payload_provider,
+        hw_counter: hw_counter.fork(),
+        check: move |payload, _, hw| check(payload, hw),
     }))
+}
+
+/// For [`field_condition_checker`] and [`Condition::Nested`].
+struct PayloadConditionChecker<S, F>
+where
+    S: PayloadStorageRead,
+    F: Fn(OwnedPayloadRef, PointOffsetType, &HardwareCounterCell) -> OperationResult<bool>,
+{
+    payload_provider: PayloadProvider<S>,
+    hw_counter: HardwareCounterCell,
+    check: F,
+}
+
+impl<S, F> ConditionChecker for PayloadConditionChecker<S, F>
+where
+    S: PayloadStorageRead,
+    F: Fn(OwnedPayloadRef, PointOffsetType, &HardwareCounterCell) -> OperationResult<bool>,
+{
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        self.payload_provider.with_payload(
+            point_id,
+            |payload| (self.check)(payload, point_id, &self.hw_counter),
+            &self.hw_counter,
+        )
+    }
+}
+
+/// For [`Condition::HasId`] and [`Condition::CustomIdChecker`].
+struct IdsConditionChecker(AHashSet<PointOffsetType>);
+
+impl ConditionChecker for IdsConditionChecker {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.0.contains(&point_id))
+    }
+}
+
+/// For [`Condition::HasVector`].
+struct HasVectorConditionChecker<V: VectorStorageRead>(Arc<AtomicRefCell<V>>);
+
+impl<V: VectorStorageRead> ConditionChecker for HasVectorConditionChecker<V> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(!self.0.borrow().is_deleted_vector(point_id))
+    }
 }

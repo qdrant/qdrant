@@ -17,7 +17,9 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::on_disk_point_to_values::ValuesIter;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for OnDiskMapIndex<N, S> {
+impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, N>
+    for OnDiskMapIndex<N, S>
+{
     fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -46,14 +48,11 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for OnDisk
             .check_values_any(idx, |v| check_fn(v), &hw_counter)
     }
 
-    fn get_values<'a>(
+    fn get_values(
         &'a self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
         // We can account cost of reading `bool`, but it will likely be more expensive, than

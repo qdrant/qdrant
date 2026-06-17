@@ -23,7 +23,6 @@ use crate::index::field_index::{
 };
 use crate::index::query_estimator::combine_should_estimations;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
-use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
     UuidIntType, ValueVariants,
@@ -131,7 +130,7 @@ where
 // Shared bodies for `MapIndex<UuidIntType>` and
 // `ReadOnlyMapIndex<UuidIntType, S>`.
 
-fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
+fn filter_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
     index: &'a T,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
@@ -200,8 +199,8 @@ fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
     Ok(result)
 }
 
-fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
-    index: &T,
+fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
+    index: &'a T,
     condition: &FieldCondition,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>> {
@@ -275,8 +274,8 @@ fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
     })
 }
 
-fn for_each_payload_block_impl<T: MapIndexRead<UuidIntType>>(
-    index: &T,
+fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
+    index: &'a T,
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
@@ -299,7 +298,7 @@ fn for_each_payload_block_impl<T: MapIndexRead<UuidIntType>>(
     })
 }
 
-fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
+fn condition_checker_impl<'a, T: MapIndexRead<'a, UuidIntType> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
@@ -325,9 +324,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
             value: ValueVariants::String(keyword),
         }) => {
             let uuid = Uuid::parse_str(keyword).map(|u| u.as_u128()).ok()?;
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, &hw_counter, |value| value == &uuid)
-            }))
+            Some(index.match_value_checker(hw_counter, uuid))
         }
         Match::Any(MatchAny {
             any: AnyVariants::Strings(list),
@@ -336,17 +333,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
                 .iter()
                 .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
                 .collect::<Option<IndexSet<_>>>()?;
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| list.contains(value))
-                }))
-            }
+            Some(index.match_any_checker(hw_counter, list, false))
         }
         Match::Except(MatchExcept {
             except: AnyVariants::Strings(list),
@@ -355,17 +342,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
                 .iter()
                 .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
                 .collect::<Option<IndexSet<_>>>()?;
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
+            Some(index.match_any_checker(hw_counter, list, true))
         }
         // Conditions this index can't serve.
         Match::Value(MatchValue {

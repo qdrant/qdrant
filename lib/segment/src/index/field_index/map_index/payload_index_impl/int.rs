@@ -19,7 +19,6 @@ use crate::index::field_index::{
 };
 use crate::index::query_estimator::combine_should_estimations;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
-use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
     PayloadKeyType, ValueVariants,
@@ -127,7 +126,7 @@ where
 // Shared bodies for `MapIndex<IntPayloadType>` and
 // `ReadOnlyMapIndex<IntPayloadType, S>`.
 
-fn filter_impl<'a, T: MapIndexRead<IntPayloadType>>(
+fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     index: &'a T,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
@@ -165,8 +164,8 @@ fn filter_impl<'a, T: MapIndexRead<IntPayloadType>>(
     Ok(result)
 }
 
-fn estimate_cardinality_impl<T: MapIndexRead<IntPayloadType>>(
-    index: &T,
+fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
+    index: &'a T,
     condition: &FieldCondition,
     hw_counter: &HardwareCounterCell,
 ) -> Option<CardinalityEstimation> {
@@ -219,8 +218,8 @@ fn estimate_cardinality_impl<T: MapIndexRead<IntPayloadType>>(
     }
 }
 
-fn for_each_payload_block_impl<T: MapIndexRead<IntPayloadType>>(
-    index: &T,
+fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
+    index: &'a T,
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
@@ -240,7 +239,7 @@ fn for_each_payload_block_impl<T: MapIndexRead<IntPayloadType>>(
     })
 }
 
-fn condition_checker_impl<'a, T: MapIndexRead<IntPayloadType> + 'a>(
+fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
@@ -264,44 +263,13 @@ fn condition_checker_impl<'a, T: MapIndexRead<IntPayloadType> + 'a>(
     match cond_match {
         Match::Value(MatchValue {
             value: ValueVariants::Integer(value),
-        }) => {
-            let value = *value;
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, &hw_counter, |i| *i == value)
-            }))
-        }
+        }) => Some(index.match_value_checker(hw_counter, *value)),
         Match::Any(MatchAny {
             any: AnyVariants::Integers(list),
-        }) => {
-            let list = list.clone();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| list.contains(value))
-                }))
-            }
-        }
+        }) => Some(index.match_any_checker(hw_counter, list.clone(), false)),
         Match::Except(MatchExcept {
             except: AnyVariants::Integers(list),
-        }) => {
-            let list = list.clone();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
-        }
+        }) => Some(index.match_any_checker(hw_counter, list.clone(), true)),
         // Conditions this index can't serve.
         Match::Value(MatchValue {
             value: ValueVariants::String(_) | ValueVariants::Bool(_),

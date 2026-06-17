@@ -1,3 +1,4 @@
+use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -8,7 +9,7 @@ use super::FullTextIndex;
 use super::full_text_index_read::{FullTextIndexRead, PayloadMatchQueryType};
 use super::inverted_index::{ParsedQuery, TokenId};
 use super::tokenizers::Tokenizer;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
@@ -319,12 +320,26 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     }?;
 
     let Some(parsed_query) = query_opt else {
-        return Ok(Some(Box::new(|_| Ok(false))));
+        return Ok(Some(Box::new(ConstantConditionChecker::MATCH_NONE)));
     };
 
-    Ok(Some(Box::new(move |point_id| {
-        index.check_match(&parsed_query, point_id)
+    Ok(Some(Box::new(FullTextConditionChecker {
+        index,
+        parsed_query,
     })))
+}
+
+struct FullTextConditionChecker<'a, T> {
+    index: &'a T,
+    parsed_query: ParsedQuery,
+}
+
+impl<T: FullTextIndexRead> ConditionChecker for FullTextConditionChecker<'_, T> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        self.index.check_match(&self.parsed_query, point_id)
+    }
 }
 
 /// Body for [`PayloadFieldIndexRead::special_check_condition`]. Shared.

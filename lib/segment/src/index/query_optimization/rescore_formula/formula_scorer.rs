@@ -347,6 +347,7 @@ fn linear_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> 
 mod tests {
     use std::collections::HashMap;
 
+    use common::condition_checker::ConstantConditionChecker;
     use rstest::rstest;
     use serde_json::json;
     use smallvec::smallvec;
@@ -400,8 +401,8 @@ mod tests {
             );
 
             let condition_checkers = vec![
-                OptimizedCondition::Checker(Box::new(|_| Ok(true))),
-                OptimizedCondition::Checker(Box::new(|_| Ok(false))),
+                OptimizedCondition::Checker(Box::new(ConstantConditionChecker::MATCH_ALL)),
+                OptimizedCondition::Checker(Box::new(ConstantConditionChecker::MATCH_NONE)),
             ];
 
             FormulaScorer {

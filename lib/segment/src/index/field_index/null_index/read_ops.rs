@@ -18,11 +18,12 @@
 
 use std::path::PathBuf;
 
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
@@ -241,14 +242,42 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
     } = condition;
 
     if let Some(is_empty) = *is_empty {
-        return Some(Box::new(move |point_id: PointOffsetType| {
-            Ok(null_index.values_is_empty(point_id) == is_empty)
+        return Some(Box::new(IsEmptyConditionChecker {
+            null_index,
+            is_empty,
         }));
     }
     if let Some(is_null) = *is_null {
-        return Some(Box::new(move |point_id: PointOffsetType| {
-            Ok(null_index.values_is_null(point_id) == is_null)
+        return Some(Box::new(IsNullConditionChecker {
+            null_index,
+            is_null,
         }));
     }
     None
+}
+
+struct IsEmptyConditionChecker<'a, N> {
+    null_index: &'a N,
+    is_empty: bool,
+}
+
+impl<N: NullIndexRead> ConditionChecker for IsEmptyConditionChecker<'_, N> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.null_index.values_is_empty(point_id) == self.is_empty)
+    }
+}
+
+struct IsNullConditionChecker<'a, N> {
+    null_index: &'a N,
+    is_null: bool,
+}
+
+impl<N: NullIndexRead> ConditionChecker for IsNullConditionChecker<'_, N> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.null_index.values_is_null(point_id) == self.is_null)
+    }
 }

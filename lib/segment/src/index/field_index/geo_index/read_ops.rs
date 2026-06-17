@@ -18,12 +18,13 @@
 use std::cmp::{max, min};
 use std::path::PathBuf;
 
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::GEO_QUERY_MAX_REGION;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     GeoHash, circle_hashes, common_hash_prefix, geo_hash_to_box, polygon_hashes,
     polygon_hashes_estimation, rectangle_hashes,
@@ -33,7 +34,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, Pr
 use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
+use crate::types::{CheckGeoPoint, FieldCondition, GeoPoint, PayloadKeyType};
 
 /// Shared read-only surface over the geo index variants.
 ///
@@ -346,26 +347,46 @@ pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
     let hw_counter = hw_acc.get_counter_cell();
 
     if let Some(geo_radius) = *geo_radius {
-        return Some(Box::new(move |point_id: PointOffsetType| {
-            geo.check_values_any(point_id, &hw_counter, &|value| {
-                geo_radius.check_point(value)
-            })
-        }));
+        return Some(make_checker(geo, hw_counter, geo_radius));
     }
     if let Some(geo_bounding_box) = *geo_bounding_box {
-        return Some(Box::new(move |point_id: PointOffsetType| {
-            geo.check_values_any(point_id, &hw_counter, &|value| {
-                geo_bounding_box.check_point(value)
-            })
-        }));
+        return Some(make_checker(geo, hw_counter, geo_bounding_box));
     }
     if let Some(geo_polygon) = geo_polygon.as_ref() {
-        let polygon_wrapper = geo_polygon.convert();
-        return Some(Box::new(move |point_id: PointOffsetType| {
-            geo.check_values_any(point_id, &hw_counter, &|value| {
-                polygon_wrapper.check_point(value)
-            })
-        }));
+        return Some(make_checker(geo, hw_counter, geo_polygon.convert()));
     }
     None
+}
+
+struct GeoConditionChecker<'a, G: ?Sized, F> {
+    geo: &'a G,
+    hw_counter: HardwareCounterCell,
+    filter: F,
+}
+
+fn make_checker<'a>(
+    geo: &'a (impl GeoIndexRead + ?Sized),
+    hw_counter: HardwareCounterCell,
+    filter: impl CheckGeoPoint + 'a,
+) -> DynConditionChecker<'a> {
+    Box::new(GeoConditionChecker {
+        geo,
+        hw_counter,
+        filter,
+    })
+}
+
+impl<G, P> ConditionChecker for GeoConditionChecker<'_, G, P>
+where
+    G: GeoIndexRead + ?Sized,
+    P: CheckGeoPoint,
+{
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        self.geo
+            .check_values_any(point_id, &self.hw_counter, &|value| {
+                self.filter.check_point(value)
+            })
+    }
 }

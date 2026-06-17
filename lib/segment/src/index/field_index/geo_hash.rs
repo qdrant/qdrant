@@ -625,6 +625,7 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use super::*;
+    use crate::types::CheckGeoPoint;
     use crate::types::test_utils::{build_polygon, build_polygon_with_interiors};
 
     const BERLIN: GeoPoint = GeoPoint {
