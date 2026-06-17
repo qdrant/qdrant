@@ -8,15 +8,17 @@ use common::universal_io::UniversalRead;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::payload_config::PayloadConfig;
-use crate::index::struct_payload_index::{StorageType, StructPayloadIndexReadView};
+use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::visited_pool::VisitedPool;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::{PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
+mod lifecycle;
+
 type ReadOnlyIndexesMap<S> = HashMap<PayloadKeyType, Vec<ReadOnlyFieldIndex<S>>>;
 
-#[allow(dead_code)] // ToDo: remove when open and live-reload implemented
+#[expect(dead_code)] // `path` is read once live-reload lands
 pub struct ReadOnlyStructPayloadIndex<S: UniversalRead> {
     /// Payload storage
     pub(super) payload: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
@@ -32,8 +34,6 @@ pub struct ReadOnlyStructPayloadIndex<S: UniversalRead> {
     path: PathBuf,
     /// Used to select unique point ids
     pub(super) visited_pool: VisitedPool,
-    /// Desired storage type for payload indices, used in builder to pick correct type
-    storage_type: StorageType,
 }
 
 impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {

@@ -55,7 +55,6 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
     /// and null leaves ignore it (a single `open` serves both modes).
     ///
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
-    #[allow(dead_code)] // no caller in the lib yet
     pub fn open(
         fs: &S::Fs,
         dir: &Path,
