@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rand::rngs::SmallRng;
@@ -108,8 +109,12 @@ pub(super) enum VectorValue {
     MultiDense(Vec<Vec<f32>>),
 }
 
-/// Soak entrypoint — drives `op_num` randomized operations against a fresh collection,
-/// continuously verifying it against an in-memory model. Reproducible for a given `seed`.
+/// Soak entrypoint — drives randomized operations against a fresh collection, continuously
+/// verifying it against an in-memory model. Reproducible for a given `seed`.
+///
+/// The run stops at whichever bound applies: by default after `op_num` ops, or — when
+/// `duration` is `Some` — after that much wall-clock time elapses (`op_num` is then ignored
+/// as the stop condition). Either way an early Ctrl-C still ends it cleanly.
 ///
 /// Storage is rooted at `storage_path`. Any pre-existing `collection/` and `snapshots/`
 /// subdirectories are wiped at the start of each run; copy them out beforehand if you
@@ -134,6 +139,7 @@ pub async fn run(
     on_disk: bool,
     pre_restart_check: bool,
     enable_force_off: bool,
+    duration: Option<Duration>,
     shutdown: Arc<AtomicBool>,
 ) {
     let (collection_dir, snapshots_dir, mut collection) = fixture::fixture(
@@ -165,6 +171,7 @@ pub async fn run(
         restart_probability,
         swarm_interval,
         enable_force_off,
+        duration,
     );
 
     let mut model: Model = Model::new();
@@ -183,24 +190,64 @@ pub async fn run(
     trace.swarm(0, &initial_enabled);
     println!("model_testing: op:0 swarm -> {initial_enabled:?}");
 
-    let bar = ProgressBar::new(op_num as u64);
-    bar.set_style(
-        ProgressStyle::default_bar()
-            // Single line with a fixed-width bar: a multi-line (`{msg}\n…`) template plus a
-            // full-width `{wide_bar}` can't be repainted in place — the bar line hits the
-            // terminal-width auto-wrap boundary and occupies one more physical row than indicatif
-            // clears, so stale `{msg}` lines stick and smear together. A fixed-width `{bar}` never
-            // reaches that boundary; `{msg:24}` is width-padded so a changing op kind (longest is
-            // "OverwritePayloadByFilter", 24 chars) doesn't shift the bar left/right each frame.
-            .template("{msg:24} [{elapsed_precise}] {bar:40} {pos}/{len} ({per_sec}, eta:{eta})")
-            .expect("Failed to create progress style"),
-    );
+    // Two stop modes. By default the run is bounded by `op_num` and the bar fills toward that
+    // op count. With `--duration` the op count is unbounded, so the bar instead fills toward the
+    // wall-clock deadline (length = total seconds, position = elapsed seconds): `{pos}/{len}` and
+    // `eta` read in seconds and the bar still visibly advances to completion.
+    let loop_start = Instant::now();
+    let deadline = duration.map(|d| loop_start + d);
+    let bar = match duration {
+        // `max(1)` avoids a zero-length bar (which indicatif renders as already-complete) for a
+        // sub-second `--duration`.
+        Some(d) => {
+            let b = ProgressBar::new(d.as_secs().max(1));
+            b.set_style(
+                ProgressStyle::default_bar()
+                    .template("{msg:24} [{elapsed_precise}] {bar:40} {pos}s/{len}s (eta:{eta})")
+                    .expect("Failed to create progress style"),
+            );
+            b
+        }
+        None => {
+            let b = ProgressBar::new(op_num as u64);
+            b.set_style(
+                ProgressStyle::default_bar()
+                    // Single line with a fixed-width bar: a multi-line (`{msg}\n…`) template plus a
+                    // full-width `{wide_bar}` can't be repainted in place — the bar line hits the
+                    // terminal-width auto-wrap boundary and occupies one more physical row than
+                    // indicatif clears, so stale `{msg}` lines stick and smear together. A
+                    // fixed-width `{bar}` never reaches that boundary; `{msg:24}` is width-padded so
+                    // a changing op kind (longest is "OverwritePayloadByFilter", 24 chars) doesn't
+                    // shift the bar left/right each frame.
+                    .template(
+                        "{msg:24} [{elapsed_precise}] {bar:40} {pos}/{len} ({per_sec}, eta:{eta})",
+                    )
+                    .expect("Failed to create progress style"),
+            );
+            b
+        }
+    };
 
     let mut applied = 0usize;
-    for i in 0..op_num {
+    let mut i = 0usize;
+    loop {
         if shutdown.load(Ordering::Relaxed) {
             log::info!("shutdown received at op:{i}, exiting loop");
             break;
+        }
+        // Stop condition: deadline reached in duration mode, op count reached otherwise.
+        match deadline {
+            Some(dl) => {
+                if Instant::now() >= dl {
+                    log::info!("duration elapsed at op:{i}, exiting loop");
+                    break;
+                }
+            }
+            None => {
+                if i >= op_num {
+                    break;
+                }
+            }
         }
         // Recompute the swarm config at each interval boundary (op 0 was drawn before the loop).
         if i > 0 && i % swarm_interval == 0 {
@@ -285,8 +332,18 @@ pub async fn run(
             trace.op(i, &op);
             apply::apply(&collection, &mut model, &mut active_names, &op).await;
         }
-        bar.inc(1);
+        i += 1;
         applied += 1;
+        // In duration mode the bar tracks elapsed wall-clock seconds (capped at the total so a
+        // final op finishing just past the deadline doesn't overshoot the bar); otherwise it
+        // tracks the op count.
+        match deadline {
+            Some(_) => {
+                let total = duration.map_or(0, |d| d.as_secs().max(1));
+                bar.set_position(loop_start.elapsed().as_secs().min(total));
+            }
+            None => bar.inc(1),
+        }
     }
     bar.finish();
 
@@ -382,6 +439,7 @@ mod tests {
             false, // on_disk
             false, // pre_restart_check
             false, // enable_force_off
+            None,  // duration: bounded by op_num
             Arc::new(AtomicBool::new(false)),
         )
         .await;
@@ -413,6 +471,7 @@ mod tests {
             false, // on_disk
             false, // pre_restart_check
             false, // enable_force_off
+            None,  // duration: bounded by op_num
             Arc::new(AtomicBool::new(false)),
         )
         .await;
