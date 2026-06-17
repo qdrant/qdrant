@@ -137,9 +137,9 @@ jobs:
           context: tools/schema2openapi
           tags: schema2openapi
           cache-from: |
-            type=gha,scope=${{ github.ref }}-schema2openapi
-            type=gha,scope=${{ github.base_ref }}-schema2openapi
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
+            type=gha,scope=${{ github.base_ref || github.ref_name }}-schema2openapi
+            type=gha,scope=dev-schema2openapi
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-schema2openapi', github.ref_name) || '' }}
           load: true
           build-args: |
             PROFILE=ci
