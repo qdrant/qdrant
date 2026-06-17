@@ -6,8 +6,8 @@ use ahash::AHashSet;
 use api::rest::RecommendStrategy;
 use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
-    random_partial_named_vectors, random_payload, random_payload_keys, random_point,
-    random_query_for_name, random_recommend_strategy, random_tag, random_update_mode,
+    random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
+    random_point, random_query_for_name, random_recommend_strategy, random_tag, random_update_mode,
     random_vector_name, random_vector_name_subset, upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
@@ -146,6 +146,16 @@ pub(super) enum Op {
         key: &'static str,
         filter_num: Option<i64>,
     },
+    /// Set-payload scoped to a nested key path (`SetPayloadOp.key`): the engine inserts
+    /// `payload` *under* `key` for each listed point (`merge_by_key` / `JsonPath::value_set`),
+    /// rather than merging it at the payload root like plain `SetPayload`. Ids are sampled from
+    /// the model so every target exists. `key` is a single top-level field name drawn from the
+    /// fixed payload schema (e.g. `g`), so the assignment overwrites that field with `payload`.
+    SetPayloadByKey {
+        ids: Vec<PointIdType>,
+        payload: Payload,
+        key: JsonPath,
+    },
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -164,7 +174,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 30;
+    const N: usize = 31;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -198,6 +208,7 @@ impl Swarm {
         "DeletePayloadByFilter",
         "ClearPayloadByFilter",
         "Facet",
+        "SetPayloadByKey",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -245,6 +256,7 @@ impl Swarm {
         3,  // DeletePayloadByFilter
         3,  // ClearPayloadByFilter
         4,  // Facet
+        4,  // SetPayloadByKey
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -494,6 +506,16 @@ impl Op {
                 key: ["num", "b"].choose(rng).copied().unwrap(),
                 filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
             },
+            30 => {
+                let Some(ids) = random_existing_ids(rng, model, 3) else {
+                    return upsert_fallback(rng, active, id_pool);
+                };
+                Op::SetPayloadByKey {
+                    ids,
+                    payload: random_payload(rng),
+                    key: random_payload_key(rng),
+                }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -532,6 +554,7 @@ impl Op {
             Op::DeletePayloadByFilter { .. } => "DeletePayloadByFilter",
             Op::ClearPayloadByFilter(_) => "ClearPayloadByFilter",
             Op::Facet { .. } => "Facet",
+            Op::SetPayloadByKey { .. } => "SetPayloadByKey",
         }
     }
 }

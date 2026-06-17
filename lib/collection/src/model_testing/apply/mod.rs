@@ -130,6 +130,9 @@ pub(super) async fn apply(
         Op::Facet { key, filter_num } => {
             reads::apply_facet(collection, model, key, *filter_num).await
         }
+        Op::SetPayloadByKey { ids, payload, key } => {
+            writes::apply_set_payload_by_key(collection, model, ids, payload, key).await
+        }
     }
 }
 
