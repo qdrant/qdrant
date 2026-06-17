@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
 use common::fs::{atomic_save_json, read_json};
+use common::universal_io::{OkNotFound, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
@@ -25,6 +26,15 @@ impl PayloadConfig {
 
     pub fn load(path: &Path) -> OperationResult<Self> {
         Ok(read_json(path)?)
+    }
+
+    /// Read-only mirror of [`load`](Self::load) over the universal filesystem
+    /// `fs`. Returns `Ok(None)` when the config file is absent.
+    pub fn load_universal<Fs: UniversalReadFs>(
+        fs: &Fs,
+        path: &Path,
+    ) -> OperationResult<Option<Self>> {
+        Ok(read_json_via(fs, path).ok_not_found()?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
