@@ -79,7 +79,8 @@ pub enum TQMode {
 ///
 /// WARNING: the choice is baked into the encoding of every quantized vector —
 /// changing it for an existing storage silently corrupts all stored vectors.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
 pub enum TQRotation {
     /// Rotate the whole zero-padded buffer (`padded_dim` coordinates). The
     /// rotation spreads the input energy across the padding, so a dequantized

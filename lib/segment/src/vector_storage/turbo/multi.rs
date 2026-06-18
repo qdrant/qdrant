@@ -30,8 +30,8 @@ use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::vectors::{
-    MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType,
-    VectorRef,
+    DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
+    VectorElementType, VectorRef,
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -179,6 +179,34 @@ impl TurboMultiVectorStorage {
                 .iter()
                 .map(|&x| x as VectorElementType),
         );
+    }
+
+    pub fn point_inner_vectors_count(&self, key: PointOffsetType) -> usize {
+        self.get_offset::<Random>(key)
+            .map_or(0, |offset| offset.count as usize)
+    }
+
+    pub fn get_inner_dense_for_requantization(
+        &self,
+        key: PointOffsetType,
+        keep_rotated: bool,
+    ) -> Vec<DenseVector> {
+        let Some(offset) = self.get_offset::<Random>(key) else {
+            return Vec::new();
+        };
+        (offset.offset..offset.offset + offset.count)
+            .map(|inner_id| {
+                let encoded = self.storage.get_vector_data(inner_id);
+                let mut dequantized = self.quantizer.dequantize::<f64>(&encoded);
+                if !keep_rotated {
+                    self.quantizer.apply_inverse_rotation(&mut dequantized);
+                }
+                dequantized[..self.dim]
+                    .iter()
+                    .map(|&x| x as VectorElementType)
+                    .collect()
+            })
+            .collect()
     }
 
     /// Decode the full multivector behind an offset record.

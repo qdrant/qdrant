@@ -309,6 +309,21 @@ impl QuantizedVectorsRead for QuantizedVectors {
     }
 }
 
+/// Whether to keep a TurboQuant-datatype source in its rotated space when
+/// re-quantizing (vectors stay rotated, the secondary TurboQuant reuses the same
+/// rotation to rotate queries) rather than rotating the vectors back. True only
+/// for a Turbo4 source re-quantized with TurboQuant; Manhattan rotates back — the
+/// Hadamard rotation breaks L1.
+pub fn should_keep_source_rotated(
+    source_datatype: VectorStorageDatatype,
+    quantization_config: &QuantizationConfig,
+    distance: Distance,
+) -> bool {
+    source_datatype == VectorStorageDatatype::Turbo4
+        && matches!(quantization_config, QuantizationConfig::Turbo(_))
+        && distance != Distance::Manhattan
+}
+
 impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
     fn memory_usage(&self) -> crate::common::memory_usage::ComponentMemoryUsage {
         use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};

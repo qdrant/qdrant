@@ -5,7 +5,7 @@ use quantization::DistanceType;
 use quantization::encoded_vectors::VectorParameters;
 use quantization::encoded_vectors_tq::{Metadata, new_turbo_quantizer_from_metadata};
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::turboquant::{TQBits, TQMode};
+use quantization::turboquant::{TQBits, TQMode, TQRotation};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -22,6 +22,7 @@ fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
         bits,
         mode: TQMode::Normal,
         error_correction: None,
+        rotation: TQRotation::Padded,
     };
     new_turbo_quantizer_from_metadata(&metadata).expect("metadata is hand-constructed")
 }
