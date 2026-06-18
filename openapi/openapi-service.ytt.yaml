@@ -106,7 +106,11 @@ paths:
   /healthz:
     get:
       summary: Kubernetes healthz endpoint
-      description: An endpoint for health checking used in Kubernetes.
+      description: >-
+        Liveness-style health check. Returns 200 as soon as the HTTP API is
+        serving requests. It does not inspect collections, shards or consensus
+        state, and is identical to `/livez`. Use it only to detect whether the
+        process is up and responsive.
       operationId: healthz
       tags:
         - Service
@@ -124,7 +128,11 @@ paths:
   /livez:
     get:
       summary: Kubernetes livez endpoint
-      description: An endpoint for health checking used in Kubernetes.
+      description: >-
+        Kubernetes liveness probe. Returns 200 as soon as the HTTP API is
+        serving requests. It does not inspect collections, shards or consensus
+        state, and is identical to `/healthz`. A failure indicates the process
+        is unresponsive and should be restarted.
       operationId: livez
       tags:
         - Service
@@ -142,18 +150,32 @@ paths:
   /readyz:
     get:
       summary: Kubernetes readyz endpoint
-      description: An endpoint for health checking used in Kubernetes.
+      description: >-
+        Kubernetes readiness probe. Checks the instance and waits out pending
+        data operations to see when it can start accepting traffic. In a
+        distributed deployment it returns 200 only once the node has caught up
+        with the cluster consensus commit and its local shards are healthy;
+        otherwise it returns 503. In a single-node deployment it always returns
+        200 once the API is up. Use it to decide when to route traffic to the
+        instance.
       operationId: readyz
       tags:
         - Service
       responses:
         "200":
-          description: Healthz response
+          description: The instance is ready to accept traffic
           content:
             text/plain:
               schema:
                 type: string
-                example: healthz check passed
+                example: all shards are ready
+        "503":
+          description: The instance is not ready to accept traffic yet
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: some shards are not ready
         "4XX":
           description: error
 
