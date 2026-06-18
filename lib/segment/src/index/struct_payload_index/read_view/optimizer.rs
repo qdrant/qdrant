@@ -76,7 +76,10 @@ where
                 conditions,
                 min_count,
             }) = filter.min_should.as_ref()
-                && !conditions.is_empty()
+                // An empty condition list is only a no-op for `min_count == 0`.
+                // With `min_count > 0` no point can satisfy the clause, so it
+                // must be kept to evaluate to false instead of match-all.
+                && !(conditions.is_empty() && *min_count == 0)
             {
                 let (optimized_conditions, estimation) = self.optimize_min_should(
                     conditions,
