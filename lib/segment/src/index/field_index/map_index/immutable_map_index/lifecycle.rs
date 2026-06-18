@@ -141,14 +141,7 @@ where
         }
         false
     }
-}
 
-impl<N, S> ImmutableMapIndex<N, S>
-where
-    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
-    N: MapIndexKey + ?Sized,
-    S: UniversalWrite,
-{
     /// Removes `idx` from values-to-points-container.
     /// It is implemented by shrinking the range of values-to-points by one and moving the removed element
     /// out of the range.
@@ -208,6 +201,7 @@ where
         }
     }
 
+    /// Read-safe in-memory deletion; callable from the read-only live_reload path.
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
             let mut removed_values_count = 0;
@@ -233,7 +227,14 @@ where
         self.point_to_values.remove_point(idx);
         Ok(())
     }
+}
 
+impl<N, S> ImmutableMapIndex<N, S>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    N: MapIndexKey + ?Sized,
+    S: UniversalWrite,
+{
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
         self.storage.wipe()
