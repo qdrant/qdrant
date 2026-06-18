@@ -63,6 +63,24 @@ pub(super) async fn apply(
             )
             .await
         }
+        Op::Query {
+            vector_name,
+            query,
+            limit,
+            exact,
+            filter_num,
+        } => {
+            reads::apply_query(
+                collection,
+                model,
+                vector_name,
+                query,
+                *limit,
+                *exact,
+                *filter_num,
+            )
+            .await
+        }
         Op::CountByNum(num) => reads::apply_count_by_num(collection, model, *num).await,
         Op::UpsertConditional {
             points,

@@ -12,6 +12,7 @@ use segment::types::{
     PointIdType, SearchParams, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
+use shard::query::{ScoringQuery, ShardQueryRequest};
 use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
@@ -529,6 +530,99 @@ pub(super) async fn apply_search(
             assert!(
                 num_matches(&entry.payload, n),
                 "search(filter num=={n}) returned id {:?} that does not match",
+                record.id,
+            );
+        }
+    }
+}
+
+/// Basic coverage of the Query API. Issues a plain Nearest query (no prefetch/fusion) via
+/// `collection.query`, mirroring the candidate/strict reasoning of [`apply_search`]: exact dense /
+/// multi-dense scans return exactly the top-k, everything else is an upper bound. We don't compare
+/// scores (float-flaky) — only result-size bounds and id membership in the model.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn apply_query(
+    collection: &Collection,
+    model: &Model,
+    vector_name: &str,
+    query: &VectorValue,
+    limit: usize,
+    exact: bool,
+    filter_num: Option<i64>,
+) {
+    let internal_query = match query {
+        VectorValue::Dense(v) => VectorInternal::Dense(v.clone()),
+        VectorValue::Sparse(s) => VectorInternal::Sparse(s.clone()),
+        VectorValue::MultiDense(matrix) => VectorInternal::MultiDense(
+            MultiDenseVectorInternal::try_from_matrix(matrix.clone()).expect("non-empty matrix"),
+        ),
+    };
+    let named_query = NamedQuery::new(internal_query, vector_name);
+    let results = collection
+        .query(
+            ShardQueryRequest {
+                prefetches: vec![],
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(named_query))),
+                filter: filter_num.map(match_num_filter),
+                score_threshold: None,
+                limit,
+                offset: 0,
+                params: Some(SearchParams {
+                    exact,
+                    ..Default::default()
+                }),
+                with_vector: WithVector::Bool(false),
+                with_payload: WithPayloadInterface::Bool(false),
+            },
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("query failed");
+
+    // Candidates = points that have the queried vector populated and pass the optional filter.
+    let candidates: AHashSet<PointIdType> = model
+        .iter()
+        .filter(|(_, entry)| entry.vectors.contains_key(vector_name))
+        .filter(|(_, entry)| filter_num.is_none_or(|n| num_matches(&entry.payload, n)))
+        .map(|(id, _)| *id)
+        .collect();
+    let expected_len = limit.min(candidates.len());
+
+    // Dense/multi-dense exact = full scan → exactly top-k. Sparse and approximate paths are an
+    // upper bound (data-dependent overlap / recall < 1.0).
+    let strict = exact && matches!(query, VectorValue::Dense(_) | VectorValue::MultiDense(_));
+    if strict {
+        assert_eq!(
+            results.len(),
+            expected_len,
+            "query(exact, name={vector_name}, filter={filter_num:?}, limit={limit}) returned {} points, expected {expected_len} (candidates: {})",
+            results.len(),
+            candidates.len(),
+        );
+    } else {
+        assert!(
+            results.len() <= expected_len,
+            "query(approx, name={vector_name}, filter={filter_num:?}) returned {} points, expected at most {expected_len}",
+            results.len(),
+        );
+    }
+    for record in &results {
+        let entry = model
+            .get(&record.id)
+            .unwrap_or_else(|| panic!("query returned unknown id {:?}", record.id));
+        assert!(
+            entry.vectors.contains_key(vector_name),
+            "query returned id {:?} that doesn't have vector `{vector_name}`",
+            record.id,
+        );
+        if let Some(n) = filter_num {
+            assert!(
+                num_matches(&entry.payload, n),
+                "query(filter num=={n}) returned id {:?} that does not match",
                 record.id,
             );
         }
