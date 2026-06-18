@@ -168,10 +168,14 @@ pub(super) fn random_with_vector(
     }
 }
 
-/// A filter selector for paginated scroll: no filter, `num == X`, or `tag == X` — the same
-/// shapes the other scroll verifiers support.
-pub(super) fn random_scroll_filter(rng: &mut impl Rng, id_pool: u64) -> ScrollFilter {
-    match rng.random_range(0..4) {
+/// A filter selector for paginated scroll: no filter, `num == X`, `tag == X`, a `has_id`
+/// matcher, or a `has_vector` matcher over a currently-active vector name.
+pub(super) fn random_scroll_filter(
+    rng: &mut impl Rng,
+    active: &BTreeSet<VectorNameBuf>,
+    id_pool: u64,
+) -> ScrollFilter {
+    match rng.random_range(0..5) {
         0 => ScrollFilter::None,
         1 => ScrollFilter::Num(random_num(rng)),
         2 => ScrollFilter::Tag(random_tag(rng).to_string()),
@@ -184,6 +188,10 @@ pub(super) fn random_scroll_filter(rng: &mut impl Rng, id_pool: u64) -> ScrollFi
             1..=(id_pool as usize).min(15),
             id_pool,
         )),
+        // `has_vector` over an active name: points keep all active vectors on upsert but
+        // `DeleteVectors`/`UpdateVectors`/`CreateVectorName` make the populated set vary per point,
+        // so this meaningfully restricts.
+        4 => ScrollFilter::HasVector(random_vector_name(rng, active)),
         _ => unreachable!(),
     }
 }
