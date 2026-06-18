@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -106,10 +107,10 @@ impl PayloadStorage for InMemoryPayloadStorage {
         payload: &Payload,
         _hw_counter: &HardwareCounterCell, // No measurement needed for in memory payload
     ) -> OperationResult<()> {
-        match self.payload.get_mut(&point_id) {
-            Some(point_payload) => point_payload.merge(payload),
-            None => {
-                self.payload.insert(point_id, payload.to_owned());
+        match self.payload.entry(point_id) {
+            Entry::Occupied(mut e) => e.get_mut().merge(payload),
+            Entry::Vacant(e) => {
+                e.insert(payload.to_owned());
             }
         }
         Ok(())
@@ -122,12 +123,12 @@ impl PayloadStorage for InMemoryPayloadStorage {
         key: &JsonPath,
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
     ) -> OperationResult<()> {
-        match self.payload.get_mut(&point_id) {
-            Some(point_payload) => point_payload.merge_by_key(payload, key),
-            None => {
+        match self.payload.entry(point_id) {
+            Entry::Occupied(mut e) => e.get_mut().merge_by_key(payload, key),
+            Entry::Vacant(e) => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
-                self.payload.insert(point_id, dest_payload);
+                e.insert(dest_payload);
             }
         }
         Ok(())

@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::Display;
@@ -733,14 +734,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             let (sender, mut receiver) = broadcast::channel(1);
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
             // check that the exact same operation is not already in-flight
-            match on_apply_lock.get(&operation) {
-                Some(existing_sender) => {
+            match on_apply_lock.entry(operation) {
+                Entry::Occupied(e) => {
                     // subscribe to existing sender for faster feedback
-                    receiver = existing_sender.subscribe()
+                    receiver = e.get().subscribe()
                 }
-                None => {
+                Entry::Vacant(e) => {
                     // insert new sender
-                    on_apply_lock.insert(operation, sender);
+                    e.insert(sender);
                 }
             };
             receivers.push(receiver);
