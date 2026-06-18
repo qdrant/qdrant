@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use collection::profiling::interface::init_requests_profile_collector;
@@ -30,9 +30,19 @@ struct Args {
     #[clap(long, default_value_t = 0)]
     seed: u64,
 
-    /// Number of randomized operations to apply.
+    /// Number of randomized operations to apply. Ignored as the stop condition when
+    /// `--duration` is set (the run is then bounded by wall-clock time instead).
     #[clap(long, default_value_t = 10_000, value_parser = clap::value_parser!(u64).range(1..))]
     op_num: u64,
+
+    /// Run continuously for this many wall-clock seconds instead of stopping after `--op-num` ops.
+    /// When set, `--op-num` is ignored as the stop condition and the run ends at the deadline (or
+    /// on Ctrl-C, whichever comes first). The post-run live verification + final close/reopen
+    /// reload check run as usual on whatever ops were applied. Use this for time-boxed soak runs
+    /// (e.g. an overnight or per-CI-slot budget) where the interesting variable is "how long"
+    /// rather than "how many ops".
+    #[clap(long, value_parser = clap::value_parser!(u64).range(1..))]
+    duration_sec: Option<u64>,
 
     /// Number of shards in the test collection.
     #[clap(long, default_value_t = 3, value_parser = clap::value_parser!(u32).range(1..))]
@@ -157,13 +167,17 @@ async fn main() {
     // Process-global flag, read when each on-disk dense vector storage is opened — set it before
     // the fixture builds any segments.
     segment::vector_storage::common::set_async_scorer(args.async_scorer);
+    // Show the active stop condition: the duration when time-bounded, else the op count.
+    let stop = match args.duration_sec {
+        Some(s) => format!("duration_sec={s}"),
+        None => format!("op_num={}", args.op_num),
+    };
     println!(
-        "model_testing: seed={} op_num={} shard_count={} id_pool={} storage_path={} \
+        "model_testing: seed={} {stop} shard_count={} id_pool={} storage_path={} \
          disable_optimizer={} max_segment_size_kb={} indexing_threshold_kb={} \
          flush_interval_sec={} restart_probability={} swarm_interval={} on_disk={} \
          async_scorer={} pre_restart_check={} enable_force_off={}",
         args.seed,
-        args.op_num,
         args.shard_count,
         args.id_pool,
         args.storage_path.display(),
@@ -194,6 +208,7 @@ async fn main() {
         args.on_disk,
         args.pre_restart_check,
         args.enable_force_off,
+        args.duration_sec.map(Duration::from_secs),
         shutdown,
     )
     .await;
