@@ -38,9 +38,8 @@ impl IndicesTracker {
 
     pub fn register_indices(&mut self, vector: &SparseVector) {
         for index in &vector.indices {
-            if !self.map.contains_key(index) {
-                self.map.insert(*index, self.map.len() as DimId);
-            }
+            let next = self.map.len() as DimId;
+            self.map.entry(*index).or_insert(next);
         }
     }
 
