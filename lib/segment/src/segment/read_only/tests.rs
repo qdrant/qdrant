@@ -242,7 +242,7 @@ fn read_only_segment_live_reload_deletes() {
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
 
     let deleted_ids: [PointIdType; 3] = [1u64.into(), 50u64.into(), 100u64.into()];
-    for (op_num, point_id) in (NUM_POINTS as u64 + 10..).zip(deleted_ids.into_iter()) {
+    for (op_num, point_id) in (NUM_POINTS as u64 + 10..).zip(deleted_ids) {
         assert!(
             mutable.delete_point(op_num, point_id, &hw).unwrap(),
             "point {point_id} should have existed",
