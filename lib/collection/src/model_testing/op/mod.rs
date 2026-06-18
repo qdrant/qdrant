@@ -21,9 +21,9 @@ use segment::data_types::vector_name_config::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HasIdCondition, Match, MultiVectorConfig, Payload,
-    PayloadFieldSchema, PayloadSchemaType, PointIdType, VectorNameBuf, WithPayloadInterface,
-    WithVector,
+    Condition, Distance, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
+    MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaType, PointIdType, VectorNameBuf,
+    WithPayloadInterface, WithVector,
 };
 use sparse::common::sparse_vector::SparseVector;
 
@@ -188,6 +188,10 @@ pub(super) enum ScrollFilter {
     /// `has_id` matcher: only points whose id is in this set. The set mixes ids that exist in the
     /// model with ids drawn from the id pool that may not, so the matcher meaningfully restricts.
     HasId(Vec<PointIdType>),
+    /// `has_vector` matcher: only points that have a value for the given named vector. The
+    /// populated vector set varies per point (DeleteVectors / partial UpdateVectors), so this
+    /// restricts to a model-checkable subset.
+    HasVector(VectorNameBuf),
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -562,7 +566,7 @@ impl Op {
             32 => Op::ScrollPaged {
                 // Small page size relative to id_pool so multi-page pagination actually happens.
                 limit: rng.random_range(1..=20),
-                filter: random_scroll_filter(rng, id_pool),
+                filter: random_scroll_filter(rng, active, id_pool),
             },
             n => panic!("unexpected op index {n}"),
         }
@@ -629,6 +633,12 @@ pub(super) fn match_has_id_filter(ids: &[PointIdType]) -> Filter {
     Filter::new_must(Condition::HasId(
         ids.iter().copied().collect::<HasIdCondition>(),
     ))
+}
+
+pub(super) fn match_has_vector_filter(name: &str) -> Filter {
+    Filter::new_must(Condition::HasVector(HasVectorCondition::from(
+        name.to_string(),
+    )))
 }
 
 pub(super) fn num_matches(payload: &Payload, target: i64) -> bool {
