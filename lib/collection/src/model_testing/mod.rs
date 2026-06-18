@@ -250,7 +250,7 @@ pub async fn run(
             }
         }
         // Recompute the swarm config at each interval boundary (op 0 was drawn before the loop).
-        if i > 0 && i % swarm_interval == 0 {
+        if i > 0 && i.is_multiple_of(swarm_interval) {
             let prev = swarm.enabled_ops();
             swarm = op::Swarm::random(rng, enable_force_off);
             let next = swarm.enabled_ops();
