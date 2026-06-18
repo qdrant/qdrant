@@ -58,8 +58,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
 ];
 
 /// Names present in the collection schema at fixture time.
-// "m" (multivector) is temporarily disabled while its reload divergence is unresolved.
-pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s"];
+pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s", "m"];
 
 /// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
 pub(super) const INLINE_STORAGE_VECTOR: &str = "i";

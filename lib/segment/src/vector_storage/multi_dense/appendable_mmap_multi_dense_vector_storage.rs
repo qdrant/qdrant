@@ -11,6 +11,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, UniversalRead};
 use fs_err as fs;
 
+use super::buffered_offsets::BufferedOffsets;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
@@ -96,7 +97,7 @@ where
 #[derive(Debug)]
 pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors: ChunkedVectors<T, MmapFile>,
-    offsets: ChunkedVectors<MultivectorMmapOffset, MmapFile>,
+    offsets: BufferedOffsets,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -151,7 +152,6 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         let mut offset = self
             .offsets
             .get::<Random>(key as VectorOffsetType)
-            .map(|x| x.first().copied().unwrap_or_default())
             .unwrap_or_default();
 
         if multi_vector.vectors_count() > offset.capacity as usize {
@@ -178,8 +178,7 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
             multi_vector.vectors_count(),
             hw_counter,
         )?;
-        self.offsets
-            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
+        self.offsets.set(key as VectorOffsetType, offset);
         self.set_deleted(key, false);
 
         Ok(())
@@ -229,20 +228,28 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
         &self,
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>> {
-        read_multi_vector::<T, P, _>(&self.offsets, &self.vectors, key)
+        // Resolve the offset through the buffer (pending overlay then durable),
+        // then fetch the row slice from `vectors`.
+        let offset = self.offsets.get::<P>(key as VectorOffsetType)?;
+        let flattened = self
+            .vectors
+            .get_many::<P>(offset.offset as _, offset.count as _)?;
+        Some(flattened_to_multi_vector(flattened, self.vectors.dim()))
     }
 
     fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
-        let point_offsets = keys.iter().copied().enumerate();
+        // Resolve offsets through the buffer first (so unflushed writes are seen),
+        // then reuse the row-side prefetch iterator over `vectors`.
+        let row_offsets = self
+            .offsets
+            .resolve_rows::<Sequential, _, _>(keys.iter().copied().enumerate());
 
-        let vectors = super::read_only::iter_vectors::<Sequential, _, _, _>(
-            &self.offsets,
-            &self.vectors,
-            point_offsets,
-        );
+        let vectors = self
+            .vectors
+            .iter_vectors::<Sequential, _>(row_offsets.into_iter());
 
         for (index, flattened) in vectors {
             let vector = TypedMultiDenseVectorRef::new(&flattened, self.vector_dim());
@@ -257,9 +264,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
             let mmap_offset = self
                 .offsets
                 .get::<Sequential>(key as VectorOffsetType)
-                .unwrap()
-                .first()
-                .copied()
                 .unwrap();
             (0..mmap_offset.count).map(move |i| {
                 self.vectors
@@ -329,15 +333,14 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) {
-        let point_offsets = keys
-            .into_iter()
-            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
-
-        let vectors = super::read_only::iter_vectors::<P, _, _, _>(
-            &self.offsets,
-            &self.vectors,
-            point_offsets,
+        // Resolve offsets through the buffer first (so unflushed writes are seen),
+        // then reuse the row-side prefetch iterator over `vectors`.
+        let row_offsets = self.offsets.resolve_rows::<P, _, _>(
+            keys.into_iter()
+                .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset)),
         );
+
+        let vectors = self.vectors.iter_vectors::<P, _>(row_offsets.into_iter());
 
         for ((user_data, point_offset), flattened) in vectors {
             let vector = CowVector::MultiDense(T::into_float_multivector(
@@ -575,6 +578,9 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
 
     let vectors = ChunkedVectors::open(MmapFs, &vectors_path, dim, madvise, Some(populate))?;
     let offsets = ChunkedVectors::open(MmapFs, &offsets_path, 1, madvise, Some(populate))?;
+    // The offsets store is buffered so its durable state can never race ahead of
+    // the durable `vectors` length, which would corrupt points on reload.
+    let offsets = BufferedOffsets::new(offsets);
 
     let deleted = BitvecFlags::new(
         MmapFs,
@@ -673,6 +679,86 @@ mod tests {
         assert_eq!(
             storage_files, found_files,
             "find_storage_files must find same files that storage reports",
+        );
+    }
+
+    fn multivec(rows: usize, fill: VectorElementType, dim: usize) -> MultiDenseVectorInternal {
+        MultiDenseVectorInternal::try_from(vec![vec![fill; dim]; rows]).unwrap()
+    }
+
+    /// A re-upsert that relocates a point's rows *after* a flush has already been
+    /// started must be deferred to the next flush, not become durable ahead of the
+    /// `vectors` length. Reopening then sees a consistent pre-relocation state —
+    /// never the head-clobbered corruption the unbuffered skew produced.
+    ///
+    /// This is the buffered-store alternative to the reload-time repair: the skew
+    /// is prevented rather than patched.
+    #[test]
+    fn relocation_after_flush_start_is_deferred_not_corrupt() {
+        const DIM: usize = 4;
+
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::disposable();
+
+        let open = || {
+            open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                MultiVectorConfig::default(),
+                AdviceSetting::Global,
+                false,
+            )
+            .unwrap()
+        };
+
+        // Baseline: point 0 (2 rows) then point 1 (2 rows), durably flushed.
+        let p0_small = multivec(2, 1.0, DIM);
+        let p1 = multivec(2, 7.0, DIM);
+        {
+            let mut storage = open();
+            storage
+                .insert_vector(0, VectorRef::from(&p0_small), &hw_counter)
+                .unwrap();
+            storage
+                .insert_vector(1, VectorRef::from(&p1), &hw_counter)
+                .unwrap();
+            storage.flusher()().unwrap();
+
+            // Start a flush: it snapshots vectors.len and the (now empty) offsets
+            // pending set at this instant.
+            let flush = storage.flusher();
+
+            // Grow point 0 past its capacity -> append path relocates its rows to
+            // the end. This is the dangerous in-window write.
+            let p0_grown = multivec(4, 2.0, DIM);
+            storage
+                .insert_vector(0, VectorRef::from(&p0_grown), &hw_counter)
+                .unwrap();
+
+            // Execute the in-window flush. The relocation must NOT be persisted.
+            flush().unwrap();
+        }
+
+        // Reopen and verify a consistent, uncorrupted state.
+        let storage = open();
+
+        let read0 = storage
+            .get_multi_opt::<Random>(0)
+            .expect("point 0 readable after reload");
+        assert_eq!(
+            read0.as_vec_ref().flattened_vectors,
+            p0_small.flattened_vectors.as_slice(),
+            "point 0 must read its durable pre-relocation value, not a rejected/garbled one",
+        );
+
+        let read1 = storage
+            .get_multi_opt::<Random>(1)
+            .expect("point 1 readable after reload");
+        assert_eq!(
+            read1.as_vec_ref().flattened_vectors,
+            p1.flattened_vectors.as_slice(),
+            "point 1 must be intact — the unbuffered skew would clobber its head rows",
         );
     }
 }
