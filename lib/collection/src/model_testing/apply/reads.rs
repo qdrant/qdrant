@@ -15,8 +15,8 @@ use shard::query::query_enum::QueryEnum;
 use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
-    NamedVectors, ScrollFilter, canonical_sparse, has_num, match_has_id_filter, match_num_filter,
-    match_tag_filter, num_matches, tag_matches,
+    NamedVectors, ScrollFilter, canonical_sparse, has_num, match_has_id_filter,
+    match_has_vector_filter, match_num_filter, match_tag_filter, num_matches, tag_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -720,11 +720,15 @@ pub(super) async fn apply_scroll_paged(
         ScrollFilter::Num(num) => Some(match_num_filter(*num)),
         ScrollFilter::Tag(tag) => Some(match_tag_filter(tag)),
         ScrollFilter::HasId(ids) => Some(match_has_id_filter(ids)),
+        ScrollFilter::HasVector(name) => Some(match_has_vector_filter(name)),
     };
     // Precompute the `has_id` set once so the per-point predicate is O(1).
     let has_id_set: AHashSet<PointIdType> = match filter {
         ScrollFilter::HasId(ids) => ids.iter().copied().collect(),
-        ScrollFilter::None | ScrollFilter::Num(_) | ScrollFilter::Tag(_) => AHashSet::new(),
+        ScrollFilter::None
+        | ScrollFilter::Num(_)
+        | ScrollFilter::Tag(_)
+        | ScrollFilter::HasVector(_) => AHashSet::new(),
     };
     let expected: AHashSet<PointIdType> = model
         .iter()
@@ -733,6 +737,7 @@ pub(super) async fn apply_scroll_paged(
             ScrollFilter::Num(num) => num_matches(&entry.payload, *num),
             ScrollFilter::Tag(tag) => tag_matches(&entry.payload, tag),
             ScrollFilter::HasId(_) => has_id_set.contains(*id),
+            ScrollFilter::HasVector(name) => entry.vectors.contains_key(name),
         })
         .map(|(id, _)| *id)
         .collect();
