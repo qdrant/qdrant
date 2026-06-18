@@ -70,6 +70,17 @@ pub(super) enum Op {
         exact: bool,
         filter_num: Option<i64>,
     },
+    /// Verification op: nearest-neighbor search via the Query API (`ScoringQuery::Vector(Nearest)`),
+    /// the unified entrypoint that also backs prefetch/fusion. We exercise only the plain Nearest
+    /// shape here for basic coverage. Like `Search`, scores are float-flaky so we check only result
+    /// size bounds and id membership in the model.
+    Query {
+        vector_name: VectorNameBuf,
+        query: VectorValue,
+        limit: usize,
+        exact: bool,
+        filter_num: Option<i64>,
+    },
     /// Upsert that only applies to a point if the existing payload matches the filter
     /// (semantics depend on `mode`).
     UpsertConditional {
@@ -210,7 +221,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 33;
+    const N: usize = 34;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -247,6 +258,7 @@ impl Swarm {
         "SetPayloadByKey",
         "RetrieveSelective",
         "ScrollPaged",
+        "Query",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -297,6 +309,7 @@ impl Swarm {
         4,  // SetPayloadByKey
         4,  // RetrieveSelective
         4,  // ScrollPaged
+        6,  // Query
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -568,6 +581,17 @@ impl Op {
                 limit: rng.random_range(1..=20),
                 filter: random_scroll_filter(rng, active, id_pool),
             },
+            33 => {
+                let vector_name = random_vector_name(rng, active);
+                let query = random_query_for_name(rng, &vector_name);
+                Op::Query {
+                    vector_name,
+                    query,
+                    limit: rng.random_range(1..=10),
+                    exact: rng.random_bool(0.5),
+                    filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -590,6 +614,7 @@ impl Op {
             Op::RetrieveExisting(_) => "RetrieveExisting",
             Op::CountByNum(_) => "CountByNum",
             Op::Search { .. } => "Search",
+            Op::Query { .. } => "Query",
             Op::UpsertConditional { .. } => "UpsertConditional",
             Op::UpdateVectors { .. } => "UpdateVectors",
             Op::DeleteVectors { .. } => "DeleteVectors",

@@ -225,6 +225,18 @@ fn op_payload(op: &Op) -> Value {
             "exact": exact,
             "filter_num": filter_num,
         }),
+        Op::Query {
+            vector_name,
+            limit,
+            exact,
+            filter_num,
+            ..
+        } => json!({
+            "vector_name": vector_name,
+            "limit": limit,
+            "exact": exact,
+            "filter_num": filter_num,
+        }),
         Op::UpsertConditional {
             points,
             condition_num,
