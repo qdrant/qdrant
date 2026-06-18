@@ -324,33 +324,11 @@ test = false
 bench = false
 required-features = ["service_debug"]
 
-[[bin]]
-name = "wal_inspector"
-path = "src/wal_inspector.rs"
-test = false
-bench = false
-required-features = ["service_debug"]
-
-[[bin]]
-name = "wal_pop"
-path = "src/wal_pop.rs"
-test = false
-bench = false
-required-features = ["service_debug"]
-
-[[bin]]
-name = "segment_inspector"
-path = "src/segment_inspector.rs"
-test = false
-bench = false
-required-features = ["service_debug"]
-
-[[bin]]
-name = "model_testing"
-path = "src/model_testing.rs"
-test = false
-bench = false
-required-features = ["service_debug"]
+# Other standalone debug/testing binaries (wal_inspector, wal_pop, segment_inspector,
+# model_testing, snapshot_stream_check) live in the `tools` crate at lib/tools — they only
+# depend on workspace libs, so keeping them out of this package avoids dragging the full
+# qdrant dependency graph into their builds. `schema_generator` stays here because it reaches
+# into this binary's internal `common::telemetry`/`common::update` modules.
 
 
 [workspace]
@@ -368,6 +346,7 @@ members = [
     "lib/shard",
     "lib/sparse",
     "lib/storage",
+    "lib/tools",
     "lib/trififo",
     "lib/wal",
 ]

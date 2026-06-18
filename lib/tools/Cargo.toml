@@ -1,0 +1,38 @@
+[package]
+name = "tools"
+version = "0.1.0"
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+fs-err = { workspace = true }
+reqwest = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+ctrlc = "3.5.2"
+
+api = { path = "../api" }
+common = { path = "../common/common" }
+collection = { path = "../collection", features = ["testing"] }
+segment = { path = "../segment", default-features = false }
+shard = { path = "../shard", default-features = false }
+storage = { path = "../storage" }
+wal = { path = "../wal" }
+
+# Match the main binary's allocator so `model_testing` reproduces production allocation behavior.
+[target.'cfg(all(not(target_env = "msvc"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
+tikv-jemallocator = { version = "0.6.1", features = [
+    "stats",
+    "unprefixed_malloc_on_supported_platforms",
+    "background_threads",
+    "profiling",
+] }
