@@ -245,14 +245,16 @@ pub trait SegmentOptimizer: Sync {
                         if common::flags::feature_flags().single_file_mmap_vector_storage {
                             config.storage_type = VectorStorageType::InRamMmap;
                         }
-                    } // on_disk=false wins, do nothing
+                        // on_disk=false wins, do nothing
+                    }
                     None => {
                         if threshold_is_on_disk {
+                            // Mmap threshold wins
                             config.storage_type = VectorStorageType::Mmap
                         } else if common::flags::feature_flags().single_file_mmap_vector_storage {
                             config.storage_type = VectorStorageType::InRamMmap;
                         }
-                    } // Mmap threshold wins
+                    }
                 }
 
                 // If we explicitly configure on_disk, but the segment storage type uses something

@@ -30,21 +30,25 @@ from e2e_tests.models import QdrantContainerConfig
 
 # 200 MB tmpfs: needs to comfortably fit Qdrant's default WAL buffer
 # (which is multiple tens of MB) plus the segment data we'll write, while
-# being small enough that ~50% trips after a moderate amount of data.
+# being small enough that the threshold trips after a moderate amount of data.
 TMPFS_BYTES = 200 * 1024 * 1024
 
 # Shrink WAL so it doesn't dominate the small tmpfs (Qdrant's default WAL
 # buffer alone would fill a sub-100 MB tmpfs at collection-creation time).
 WAL_CAPACITY_MB = 1
 
-DISK_PERCENT_THRESHOLD = 50
+# InRamMmap is compact and optimization keeps reclaiming disk, so the tmpfs only
+# fills to ~30-45%; 20% trips reliably and still recovers below after a drop.
+DISK_PERCENT_THRESHOLD = 20
 
 VECTOR_DIM = 128
 BATCH_SIZE = 200
 COLLECTION_NAME = "strict_mode_disk_test"
 RECOVERY_COLLECTION_NAME = "strict_mode_disk_recovery"
 
-MAX_INSERT_BATCHES = 400
+# Generous ceiling; the gate usually trips by ~300. The loop breaks on trip, so
+# the headroom is free and just absorbs variance in the check's 5s cache lag.
+MAX_INSERT_BATCHES = 600
 
 RECOVERY_TIMEOUT_SECS = 60
 
