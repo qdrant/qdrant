@@ -11,6 +11,7 @@ use super::on_disk_map_index::OnDiskMapIndex;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 pub struct ImmutableMapIndex<N, S = MmapFile>

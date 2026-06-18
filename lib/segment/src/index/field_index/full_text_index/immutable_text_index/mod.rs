@@ -4,6 +4,7 @@ use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::on_disk_text_index::OnDiskFullTextIndex;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 pub struct ImmutableFullTextIndex<S: UniversalRead = MmapFile> {
