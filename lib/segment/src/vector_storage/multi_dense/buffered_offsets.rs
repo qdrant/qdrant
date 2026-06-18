@@ -194,8 +194,6 @@ impl BufferedOffsets {
             // a failed offsets sync stranded while `vectors` recovered, reopening the
             // very skew this buffer closes.
             let store_flusher = {
-                let mut inner = inner.write();
-
                 // Apply in ascending key order so the backing store grows its
                 // chunks/length monotonically (appends sit at the current end).
                 // Dense key allocation (`new_id = len`) guarantees no gaps: any
@@ -204,6 +202,8 @@ impl BufferedOffsets {
                 let mut items: Vec<(VectorOffsetType, MultivectorMmapOffset)> =
                     snapshot.iter().map(|(key, entry)| (*key, *entry)).collect();
                 items.sort_unstable_by_key(|(key, _)| *key);
+
+                let mut inner = inner.write();
 
                 let hw_counter = HardwareCounterCell::disposable();
                 for (key, entry) in &items {
@@ -216,8 +216,8 @@ impl BufferedOffsets {
                     snapshot.get(key).is_none_or(|persisted| persisted != value)
                 });
 
-                // Built here so its `status.len` snapshot covers the entries just
-                // applied; executed below, outside the lock.
+                // Create the flusher here so its `status.len` snapshot covers the
+                // entries just applied; the inner guard drops before we sync below.
                 inner.store.flusher()
             };
 
