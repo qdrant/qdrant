@@ -24,6 +24,8 @@ use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::{
     new_volatile_multi_dense_vector_storage_half,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
+use crate::vector_storage::turbo::multi::open_appendable_turbo_multi_vector_storage;
+use crate::vector_storage::turbo::open_appendable_turbo_vector_storage;
 use crate::vector_storage::{DEFAULT_STOPPED, RawScorer, VectorStorage, new_raw_scorer_for_test};
 
 #[derive(Debug, Clone, Copy)]
@@ -597,6 +599,174 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
     );
 }
 
+/// A primary `VectorStorageEnum::DenseTurbo` storage built on GPU dequantizes
+/// each encoded vector back to float and uploads it as a regular dense storage.
+/// This pins that path by comparing GPU scores of the TurboQuant storage against
+/// GPU scores of a plain `f32` storage holding the *same* dequantized vectors —
+/// the two must be numerically identical.
+#[rstest]
+#[case::cosine(Distance::Cosine, 273, 1037)]
+#[case::dot(Distance::Dot, 256, 512)]
+#[case::euclid(Distance::Euclid, 273, 1037)]
+#[case::manhattan(Distance::Manhattan, 17, 1037)]
+fn test_gpu_vector_storage_turbo_dense(
+    #[case] distance: Distance,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
+) {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Trace)
+        .try_init();
+
+    let dir = tempfile::Builder::new().prefix("tq_dir").tempdir().unwrap();
+    let mut turbo = open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+
+    let mut rnd = StdRng::seed_from_u64(42);
+    for i in 0..num_vectors {
+        let vec = distance.preprocess_vector::<VectorElementType>(random_vector(&mut rnd, dim));
+        turbo
+            .insert_vector(
+                i as PointOffsetType,
+                VectorRef::from(&vec),
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+    }
+
+    // Reference plain-`f32` storage with the dequantized vectors the GPU uploads.
+    let mut reference = new_volatile_dense_vector_storage(dim, distance);
+    for i in 0..num_vectors {
+        let dequantized = turbo.get_dense_for_requantization(i as PointOffsetType, false);
+        reference
+            .insert_vector(
+                i as PointOffsetType,
+                VectorRef::from(&dequantized),
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+    }
+
+    let turbo_storage = VectorStorageEnum::DenseTurbo(Box::new(turbo));
+
+    let instance = gpu::GPU_TEST_INSTANCE.clone();
+    let device =
+        gpu::Device::new_with_params(instance.clone(), &instance.physical_devices()[0], 0, false)
+            .unwrap();
+
+    // `force_half_precision = false` keeps both storages on `f32` so the only
+    // difference under test is the dequantize-and-upload path, not f16 rounding.
+    let gpu_turbo = GpuVectorStorage::new(
+        device.clone(),
+        &turbo_storage,
+        None,
+        false,
+        &DEFAULT_STOPPED,
+    )
+    .unwrap();
+    let gpu_reference =
+        GpuVectorStorage::new(device.clone(), &reference, None, false, &DEFAULT_STOPPED).unwrap();
+
+    assert_eq!(gpu_turbo.element_type, VectorStorageDatatype::Float32);
+    assert_eq!(gpu_turbo.num_vectors(), num_vectors);
+
+    let turbo_scores = run_gpu_scoring(device.clone(), &gpu_turbo, num_vectors);
+    let reference_scores = run_gpu_scoring(device.clone(), &gpu_reference, num_vectors);
+
+    for (turbo_score, reference_score) in turbo_scores.iter().zip(reference_scores.iter()) {
+        assert!(
+            (turbo_score - reference_score).abs() < 1e-4,
+            "turbo GPU score {turbo_score} != reference GPU score {reference_score}",
+        );
+    }
+}
+
+/// Multivector counterpart of [`test_gpu_vector_storage_turbo_dense`].
+#[rstest]
+#[case::cosine(Distance::Cosine, 67, 1037)]
+#[case::dot(Distance::Dot, 67, 512)]
+fn test_gpu_vector_storage_turbo_multi(
+    #[case] distance: Distance,
+    #[case] dim: usize,
+    #[case] num_points: usize,
+) {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Trace)
+        .try_init();
+
+    let multi_config = Default::default();
+    let dir = tempfile::Builder::new().prefix("tq_dir").tempdir().unwrap();
+    let mut turbo =
+        open_appendable_turbo_multi_vector_storage(dir.path(), dim, distance, multi_config, true)
+            .unwrap();
+
+    let mut rnd = StdRng::seed_from_u64(42);
+    for i in 0..num_points {
+        let inner_count = 1 + rnd.random::<u8>() % 3;
+        let mut flattened = vec![];
+        for _ in 0..inner_count {
+            flattened.extend(
+                distance.preprocess_vector::<VectorElementType>(random_vector(&mut rnd, dim)),
+            );
+        }
+        let multivector = MultiDenseVectorInternal::new(flattened, dim);
+        turbo
+            .insert_vector(
+                i as PointOffsetType,
+                VectorRef::from(&multivector),
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+    }
+
+    // Reference multivector storage with the dequantized inner vectors.
+    let mut reference = new_volatile_multi_dense_vector_storage(dim, distance, multi_config);
+    for i in 0..num_points {
+        let inner = turbo.get_inner_dense_for_requantization(i as PointOffsetType, false);
+        let flattened: Vec<VectorElementType> = inner.into_iter().flatten().collect();
+        let multivector = MultiDenseVectorInternal::new(flattened, dim);
+        reference
+            .insert_vector(
+                i as PointOffsetType,
+                VectorRef::from(&multivector),
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+    }
+
+    let turbo_storage = VectorStorageEnum::MultiDenseTurbo(Box::new(turbo));
+
+    let instance = gpu::GPU_TEST_INSTANCE.clone();
+    let device =
+        gpu::Device::new_with_params(instance.clone(), &instance.physical_devices()[0], 0, false)
+            .unwrap();
+
+    let gpu_turbo = GpuVectorStorage::new(
+        device.clone(),
+        &turbo_storage,
+        None,
+        false,
+        &DEFAULT_STOPPED,
+    )
+    .unwrap();
+    let gpu_reference =
+        GpuVectorStorage::new(device.clone(), &reference, None, false, &DEFAULT_STOPPED).unwrap();
+
+    assert_eq!(gpu_turbo.element_type, VectorStorageDatatype::Float32);
+    assert_eq!(gpu_turbo.num_vectors(), num_points);
+
+    let turbo_scores = run_gpu_scoring(device.clone(), &gpu_turbo, num_points);
+    let reference_scores = run_gpu_scoring(device.clone(), &gpu_reference, num_points);
+
+    for (turbo_score, reference_score) in turbo_scores.iter().zip(reference_scores.iter()) {
+        assert!(
+            (turbo_score - reference_score).abs() < 1e-4,
+            "turbo GPU score {turbo_score} != reference GPU score {reference_score}",
+        );
+    }
+}
+
 fn get_precision(storage_type: TestStorageType, dim: usize, distance: Distance) -> f32 {
     let distance_persision = match distance {
         Distance::Cosine => 0.01,
@@ -844,6 +1014,35 @@ fn test_gpu_vector_storage_impl(
         }
     );
 
+    let gpu_scores = run_gpu_scoring(device.clone(), &gpu_vector_storage, num_vectors);
+
+    let query = QueryVector::Nearest(storage.get_vector::<Random>(test_point_id).to_owned());
+
+    let hardware_counter = HardwareCounterCell::new();
+    let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {
+        quantized_vectors
+            .raw_scorer(query, hardware_counter)
+            .unwrap()
+    } else {
+        new_raw_scorer_for_test(query, &storage).unwrap()
+    };
+
+    for (point_id, gpu_score) in gpu_scores.iter().enumerate() {
+        let score = scorer.score_internal(
+            test_point_id as PointOffsetType,
+            point_id as PointOffsetType,
+        );
+        assert!((score - gpu_score).abs() < precision);
+    }
+}
+
+/// Dispatch the `test_vector_storage.comp` shader, scoring every vector against
+/// target `0`, and download the resulting per-vector scores.
+fn run_gpu_scoring(
+    device: Arc<gpu::Device>,
+    gpu_vector_storage: &GpuVectorStorage,
+    num_vectors: usize,
+) -> Vec<f32> {
     let scores_buffer = gpu::Buffer::new(
         device.clone(),
         "Scores buffer",
@@ -864,7 +1063,7 @@ fn test_gpu_vector_storage_impl(
 
     let shader = ShaderBuilder::new(device.clone())
         .with_shader_code(include_str!("../shaders/tests/test_vector_storage.comp"))
-        .with_parameters(&gpu_vector_storage)
+        .with_parameters(gpu_vector_storage)
         .build("tests/test_vector_storage.comp")
         .unwrap();
 
@@ -908,24 +1107,5 @@ fn test_gpu_vector_storage_impl(
     context.run().unwrap();
     context.wait_finish(GPU_TIMEOUT).unwrap();
 
-    let gpu_scores = staging_buffer.download_vec(0, num_vectors).unwrap();
-
-    let query = QueryVector::Nearest(storage.get_vector::<Random>(test_point_id).to_owned());
-
-    let hardware_counter = HardwareCounterCell::new();
-    let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {
-        quantized_vectors
-            .raw_scorer(query, hardware_counter)
-            .unwrap()
-    } else {
-        new_raw_scorer_for_test(query, &storage).unwrap()
-    };
-
-    for (point_id, gpu_score) in gpu_scores.iter().enumerate() {
-        let score = scorer.score_internal(
-            test_point_id as PointOffsetType,
-            point_id as PointOffsetType,
-        );
-        assert!((score - gpu_score).abs() < precision);
-    }
+    staging_buffer.download_vec(0, num_vectors).unwrap()
 }
