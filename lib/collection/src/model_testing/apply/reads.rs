@@ -12,6 +12,7 @@ use segment::types::{
     PointIdType, SearchParams, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
+use shard::query::{ScoringQuery, ShardQueryRequest};
 use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
@@ -280,6 +281,233 @@ fn expect_named<'a>(
     }
 }
 
+/// The model-side candidate set + size expectation shared by `Search` and `Query`: a point is a
+/// candidate iff it has the queried vector populated *and* passes the optional `num` filter; the
+/// engine should return at most `limit` of them.
+fn nearest_candidates(
+    model: &Model,
+    vector_name: &str,
+    filter_num: Option<i64>,
+    limit: usize,
+) -> (AHashSet<PointIdType>, usize) {
+    let candidates: AHashSet<PointIdType> = model
+        .iter()
+        .filter(|(_, entry)| entry.vectors.contains_key(vector_name))
+        .filter(|(_, entry)| filter_num.is_none_or(|n| num_matches(&entry.payload, n)))
+        .map(|(id, _)| *id)
+        .collect();
+    let expected_len = limit.min(candidates.len());
+    (candidates, expected_len)
+}
+
+/// Whether a nearest query should match the candidate set *exactly* (top-k) rather than being a
+/// mere upper bound. Only an exact scan over dense / multi-dense vectors qualifies:
+/// - dense `exact=true`: exact scan → exactly top-k;
+/// - dense `exact=false` (HNSW): recall < 1.0 or a restrictive filter may return fewer;
+/// - sparse: the effective candidate set is "points with non-zero overlap", data-dependent and
+///   smaller, so it's only ever an upper bound;
+/// - multi-dense (MaxSim) over an exact scan returns every candidate, so it joins the strict path.
+fn nearest_is_strict(exact: bool, query: &VectorValue) -> bool {
+    exact && matches!(query, VectorValue::Dense(_) | VectorValue::MultiDense(_))
+}
+
+/// Per-result membership invariants shared by `Search` and `Query`: every returned id must exist
+/// in the model, have the queried vector populated, and (when filtering) match the `num` filter.
+/// `label` is the originating op name, prefixed into failure messages.
+fn assert_nearest_results_valid(
+    results_ids: impl IntoIterator<Item = PointIdType>,
+    model: &Model,
+    vector_name: &str,
+    filter_num: Option<i64>,
+    label: &str,
+) {
+    for id in results_ids {
+        let entry = model
+            .get(&id)
+            .unwrap_or_else(|| panic!("{label} returned unknown id {id:?}"));
+        assert!(
+            entry.vectors.contains_key(vector_name),
+            "{label} returned id {id:?} that doesn't have vector `{vector_name}`",
+        );
+        if let Some(n) = filter_num {
+            assert!(
+                num_matches(&entry.payload, n),
+                "{label}(filter num=={n}) returned id {id:?} that does not match",
+            );
+        }
+    }
+}
+
+/// The full strict/upper-bound size check shared by `Search` and `Query`, including the rich
+/// diagnostic probes (retrieve / count / scroll / retry) emitted on a strict-mode mismatch.
+///
+/// `label` distinguishes the originating API in messages. `retry_ids` is the id set from a second
+/// run of the *same* API the caller just issued (so the API-specific request stays at the call
+/// site); it's used only to report whether a mismatch is deterministic or flapping.
+#[allow(clippy::too_many_arguments)]
+async fn assert_nearest_size_invariant(
+    collection: &Collection,
+    label: &str,
+    returned_ids: &AHashSet<PointIdType>,
+    retry_ids: &AHashSet<PointIdType>,
+    candidates: &AHashSet<PointIdType>,
+    expected_len: usize,
+    strict: bool,
+    vector_name: &str,
+    filter_num: Option<i64>,
+    limit: usize,
+) {
+    if !strict {
+        assert!(
+            returned_ids.len() <= expected_len,
+            "{label}(approx, name={vector_name}, filter={filter_num:?}) returned {} points, expected at most {expected_len}",
+            returned_ids.len(),
+        );
+        return;
+    }
+    if returned_ids.len() == expected_len {
+        return;
+    }
+
+    let mut missing: Vec<_> = candidates.difference(returned_ids).copied().collect();
+    let mut extra: Vec<_> = returned_ids.difference(candidates).copied().collect();
+    missing.sort();
+    extra.sort();
+
+    // Follow-up probes before panicking — classify the bug.
+    //   1. Does Retrieve see the missing point(s)?
+    //   2. Does CountByFilter see the right count?
+    //   3. Does scroll(filter) agree with the model's candidate set?
+    //   4. Did the retry give the same wrong answer (consistent vs flapping)?
+    let probe_retrieve = collection
+        .retrieve(
+            PointRequestInternal {
+                ids: missing.clone(),
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: WithVector::Bool(true),
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await;
+    let retrieved_summary = match probe_retrieve {
+        Ok(records) => records
+            .iter()
+            .map(|r| {
+                let has_vec =
+                    r.vector
+                        .as_ref()
+                        .and_then(|v| match v {
+                            VectorStructInternal::Named(m) => Some(m.contains_key(vector_name)),
+                            VectorStructInternal::Single(_)
+                            | VectorStructInternal::MultiDense(_) => None,
+                        })
+                        .unwrap_or(false);
+                let has_num = r
+                    .payload
+                    .as_ref()
+                    .and_then(|p| p.0.get("num").and_then(|v| v.as_i64()))
+                    == filter_num;
+                format!("{:?}{{vec:{has_vec}, num_match:{has_num}}}", r.id)
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+        Err(e) => format!("retrieve failed: {e:?}"),
+    };
+
+    let probe_count = collection
+        .count(
+            CountRequestInternal {
+                filter: filter_num.map(match_num_filter),
+                exact: true,
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await;
+    let count_summary = match probe_count {
+        Ok(c) => format!("{}", c.count),
+        Err(e) => format!("err: {e:?}"),
+    };
+
+    // Scroll by the same filter — gives us the exact id list the engine thinks matches.
+    // If this set differs from the model's `candidates`, the payload index is out of sync.
+    let probe_scroll = collection
+        .scroll_by(
+            ScrollRequestInternal {
+                offset: None,
+                limit: Some(usize::MAX),
+                filter: filter_num.map(match_num_filter),
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: WithVector::Bool(false),
+                order_by: None,
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await;
+    let scroll_summary = match probe_scroll {
+        Ok(s) => {
+            let mut engine_ids: Vec<PointIdType> = s.points.iter().map(|r| r.id).collect();
+            engine_ids.sort();
+            let engine_set: AHashSet<_> = engine_ids.iter().copied().collect();
+            let mut ghost: Vec<_> = engine_set.difference(candidates).copied().collect();
+            let mut missing_from_engine: Vec<_> =
+                candidates.difference(&engine_set).copied().collect();
+            ghost.sort();
+            missing_from_engine.sort();
+            format!(
+                "engine has {} ids matching filter; ghost (engine but not model): {ghost:?}; \
+                 missing from engine (in model but not engine scroll): {missing_from_engine:?}",
+                engine_ids.len(),
+            )
+        }
+        Err(e) => format!("err: {e:?}"),
+    };
+
+    let still_missing: Vec<_> = missing
+        .iter()
+        .filter(|id| !retry_ids.contains(id))
+        .copied()
+        .collect();
+    let retry_summary = format!(
+        "retry returned {} points, still missing: {still_missing:?}",
+        retry_ids.len(),
+    );
+
+    panic!(
+        "{label}(exact, name={vector_name}, filter={filter_num:?}, limit={limit}) returned \
+         {} points, expected {expected_len} (candidates: {}); \
+         missing from result: {missing:?}; extra in result: {extra:?}\n\
+         PROBE: retrieve(missing) = [{retrieved_summary}]\n\
+         PROBE: count(filter) = {count_summary} (model says {})\n\
+         PROBE: scroll(filter) — {scroll_summary}\n\
+         PROBE: {retry_summary}",
+        returned_ids.len(),
+        candidates.len(),
+        candidates.len(),
+    );
+}
+
+fn nearest_internal_query(query: &VectorValue) -> VectorInternal {
+    match query {
+        VectorValue::Dense(v) => VectorInternal::Dense(v.clone()),
+        VectorValue::Sparse(s) => VectorInternal::Sparse(s.clone()),
+        VectorValue::MultiDense(matrix) => VectorInternal::MultiDense(
+            MultiDenseVectorInternal::try_from_matrix(matrix.clone()).expect("non-empty matrix"),
+        ),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn apply_search(
     collection: &Collection,
@@ -290,249 +518,131 @@ pub(super) async fn apply_search(
     exact: bool,
     filter_num: Option<i64>,
 ) {
-    let internal_query = match query {
-        VectorValue::Dense(v) => VectorInternal::Dense(v.clone()),
-        VectorValue::Sparse(s) => VectorInternal::Sparse(s.clone()),
-        VectorValue::MultiDense(matrix) => VectorInternal::MultiDense(
-            MultiDenseVectorInternal::try_from_matrix(matrix.clone()).expect("non-empty matrix"),
-        ),
+    let run = async || {
+        let named_query = NamedQuery::new(nearest_internal_query(query), vector_name);
+        collection
+            .search(
+                CoreSearchRequest {
+                    query: QueryEnum::Nearest(named_query),
+                    filter: filter_num.map(match_num_filter),
+                    params: Some(SearchParams {
+                        exact,
+                        ..Default::default()
+                    }),
+                    limit,
+                    offset: 0,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                },
+                None,
+                None,
+                &ShardSelectorInternal::All,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .expect("search failed")
+            .iter()
+            .map(|r| r.id)
+            .collect::<AHashSet<PointIdType>>()
     };
-    let named_query = NamedQuery::new(internal_query, vector_name);
-    let results = collection
-        .search(
-            CoreSearchRequest {
-                query: QueryEnum::Nearest(named_query),
-                filter: filter_num.map(match_num_filter),
-                params: Some(SearchParams {
-                    exact,
-                    ..Default::default()
-                }),
-                limit,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-            },
-            None,
-            None,
-            &ShardSelectorInternal::All,
-            None,
-            HwMeasurementAcc::new(),
-        )
-        .await
-        .expect("search failed");
-    // Candidates = points that (a) have the queried vector populated and (b) pass the optional
-    // filter. Points missing the vector aren't searchable.
-    let candidates: AHashSet<PointIdType> = model
-        .iter()
-        .filter(|(_, entry)| entry.vectors.contains_key(vector_name))
-        .filter(|(_, entry)| filter_num.is_none_or(|n| num_matches(&entry.payload, n)))
-        .map(|(id, _)| *id)
-        .collect();
-    let expected_len = limit.min(candidates.len());
-    // For dense exact=true we have an exact scan so the result is exactly the top-k.
-    // For dense exact=false (HNSW), the engine may legally return fewer than expected when the
-    // filter is restrictive or recall is below 1.0.
-    // For sparse search, the effective candidate set is "points with non-zero overlap with the
-    // query" rather than "all points with the vector populated", which is data-dependent and
-    // smaller than `candidate_count`. So sparse search is always an upper bound.
-    // Multi-dense (MaxSim) over an exact scan should also return every candidate, so it
-    // can use the strict equality path alongside plain dense exact.
-    let strict = exact && matches!(query, VectorValue::Dense(_) | VectorValue::MultiDense(_));
-    if strict {
-        if results.len() != expected_len {
-            let returned_ids: AHashSet<PointIdType> = results.iter().map(|r| r.id).collect();
-            let mut missing: Vec<_> = candidates.difference(&returned_ids).copied().collect();
-            let mut extra: Vec<_> = returned_ids.difference(&candidates).copied().collect();
-            missing.sort();
-            extra.sort();
 
-            // Follow-up probes before panicking — classify the bug.
-            //   1. Does Retrieve see the missing point(s)?
-            //   2. Does CountByFilter see the right count?
-            //   3. Does re-running the same search give the same wrong answer (consistent
-            //      vs flapping)?
-            let probe_retrieve = collection
-                .retrieve(
-                    PointRequestInternal {
-                        ids: missing.clone(),
-                        with_payload: Some(WithPayloadInterface::Bool(true)),
-                        with_vector: WithVector::Bool(true),
-                    },
-                    None,
-                    None,
-                    &ShardSelectorInternal::All,
-                    None,
-                    HwMeasurementAcc::new(),
-                )
-                .await;
-            let retrieved_summary = match probe_retrieve {
-                Ok(records) => records
-                    .iter()
-                    .map(|r| {
-                        let has_vec = r
-                            .vector
-                            .as_ref()
-                            .and_then(|v| match v {
-                                VectorStructInternal::Named(m) => Some(m.contains_key(vector_name)),
-                                VectorStructInternal::Single(_)
-                                | VectorStructInternal::MultiDense(_) => None,
-                            })
-                            .unwrap_or(false);
-                        let has_num = r
-                            .payload
-                            .as_ref()
-                            .and_then(|p| p.0.get("num").and_then(|v| v.as_i64()))
-                            == filter_num;
-                        format!("{:?}{{vec:{has_vec}, num_match:{has_num}}}", r.id)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                Err(e) => format!("retrieve failed: {e:?}"),
-            };
+    let returned_ids = run().await;
+    let (candidates, expected_len) = nearest_candidates(model, vector_name, filter_num, limit);
+    let strict = nearest_is_strict(exact, query);
 
-            let probe_count = collection
-                .count(
-                    CountRequestInternal {
-                        filter: filter_num.map(match_num_filter),
-                        exact: true,
-                    },
-                    None,
-                    None,
-                    &ShardSelectorInternal::All,
-                    None,
-                    HwMeasurementAcc::new(),
-                )
-                .await;
-            let count_summary = match probe_count {
-                Ok(c) => format!("{}", c.count),
-                Err(e) => format!("err: {e:?}"),
-            };
-
-            // Scroll by the same filter — gives us the exact id list the engine thinks matches.
-            // If this set differs from the model's `candidates`, the payload index is out of sync.
-            let probe_scroll = collection
-                .scroll_by(
-                    ScrollRequestInternal {
-                        offset: None,
-                        limit: Some(usize::MAX),
-                        filter: filter_num.map(match_num_filter),
-                        with_payload: Some(WithPayloadInterface::Bool(false)),
-                        with_vector: WithVector::Bool(false),
-                        order_by: None,
-                    },
-                    None,
-                    None,
-                    &ShardSelectorInternal::All,
-                    None,
-                    HwMeasurementAcc::new(),
-                )
-                .await;
-            let scroll_summary = match probe_scroll {
-                Ok(s) => {
-                    let mut engine_ids: Vec<PointIdType> = s.points.iter().map(|r| r.id).collect();
-                    engine_ids.sort();
-                    let engine_set: AHashSet<_> = engine_ids.iter().copied().collect();
-                    let mut ghost: Vec<_> = engine_set.difference(&candidates).copied().collect();
-                    let mut missing_from_engine: Vec<_> =
-                        candidates.difference(&engine_set).copied().collect();
-                    ghost.sort();
-                    missing_from_engine.sort();
-                    format!(
-                        "engine has {} ids matching filter; ghost (engine but not model): {ghost:?}; \
-                         missing from engine (in model but not engine scroll): {missing_from_engine:?}",
-                        engine_ids.len(),
-                    )
-                }
-                Err(e) => format!("err: {e:?}"),
-            };
-
-            // Re-run the same search to see if it's deterministic or flapping.
-            let retry_internal_query = match query {
-                VectorValue::Dense(v) => VectorInternal::Dense(v.clone()),
-                VectorValue::Sparse(s) => VectorInternal::Sparse(s.clone()),
-                VectorValue::MultiDense(matrix) => VectorInternal::MultiDense(
-                    MultiDenseVectorInternal::try_from_matrix(matrix.clone())
-                        .expect("non-empty matrix"),
-                ),
-            };
-            let retry_named = NamedQuery::new(retry_internal_query, vector_name);
-            let retry_results = collection
-                .search(
-                    CoreSearchRequest {
-                        query: QueryEnum::Nearest(retry_named),
-                        filter: filter_num.map(match_num_filter),
-                        params: Some(SearchParams {
-                            exact,
-                            ..Default::default()
-                        }),
-                        limit,
-                        offset: 0,
-                        with_payload: None,
-                        with_vector: None,
-                        score_threshold: None,
-                    },
-                    None,
-                    None,
-                    &ShardSelectorInternal::All,
-                    None,
-                    HwMeasurementAcc::new(),
-                )
-                .await;
-            let retry_summary = match retry_results {
-                Ok(r) => {
-                    let retry_ids: AHashSet<PointIdType> = r.iter().map(|x| x.id).collect();
-                    let still_missing: Vec<_> = missing
-                        .iter()
-                        .filter(|id| !retry_ids.contains(id))
-                        .copied()
-                        .collect();
-                    format!(
-                        "retry returned {} points, still missing: {still_missing:?}",
-                        r.len(),
-                    )
-                }
-                Err(e) => format!("retry err: {e:?}"),
-            };
-
-            panic!(
-                "search(exact, name={vector_name}, filter={filter_num:?}, limit={limit}) returned \
-                 {} points, expected {expected_len} (candidates: {}); \
-                 missing from result: {missing:?}; extra in result: {extra:?}\n\
-                 PROBE: retrieve(missing) = [{retrieved_summary}]\n\
-                 PROBE: count(filter) = {count_summary} (model says {})\n\
-                 PROBE: scroll(filter) — {scroll_summary}\n\
-                 PROBE: {retry_summary}",
-                results.len(),
-                candidates.len(),
-                candidates.len(),
-            );
-        }
+    // Only re-run for the diagnostic comparison when we're about to fail the strict check.
+    let retry_ids = if strict && returned_ids.len() != expected_len {
+        run().await
     } else {
-        assert!(
-            results.len() <= expected_len,
-            "search(approx, name={vector_name}, filter={filter_num:?}) returned {} points, expected at most {}",
-            results.len(),
-            expected_len,
-        );
-    }
-    for record in &results {
-        let entry = model
-            .get(&record.id)
-            .unwrap_or_else(|| panic!("search returned unknown id {:?}", record.id));
-        assert!(
-            entry.vectors.contains_key(vector_name),
-            "search returned id {:?} that doesn't have vector `{vector_name}`",
-            record.id,
-        );
-        if let Some(n) = filter_num {
-            assert!(
-                num_matches(&entry.payload, n),
-                "search(filter num=={n}) returned id {:?} that does not match",
-                record.id,
-            );
-        }
-    }
+        AHashSet::new()
+    };
+    assert_nearest_size_invariant(
+        collection,
+        "search",
+        &returned_ids,
+        &retry_ids,
+        &candidates,
+        expected_len,
+        strict,
+        vector_name,
+        filter_num,
+        limit,
+    )
+    .await;
+    assert_nearest_results_valid(returned_ids, model, vector_name, filter_num, "search");
+}
+
+/// Basic coverage of the Query API. Issues a plain Nearest query (no prefetch/fusion) via
+/// `collection.query`. Shares the exact same invariant checks as [`apply_search`] (candidate set,
+/// strict top-k vs. upper bound, per-result membership, and the diagnostic probes on failure) — the
+/// only difference is the request goes through the unified query entrypoint. Scores are float-flaky
+/// so we never compare them.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn apply_query(
+    collection: &Collection,
+    model: &Model,
+    vector_name: &str,
+    query: &VectorValue,
+    limit: usize,
+    exact: bool,
+    filter_num: Option<i64>,
+) {
+    let run = async || {
+        let named_query = NamedQuery::new(nearest_internal_query(query), vector_name);
+        collection
+            .query(
+                ShardQueryRequest {
+                    prefetches: vec![],
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(named_query))),
+                    filter: filter_num.map(match_num_filter),
+                    score_threshold: None,
+                    limit,
+                    offset: 0,
+                    params: Some(SearchParams {
+                        exact,
+                        ..Default::default()
+                    }),
+                    with_vector: WithVector::Bool(false),
+                    with_payload: WithPayloadInterface::Bool(false),
+                },
+                None,
+                None,
+                ShardSelectorInternal::All,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .expect("query failed")
+            .iter()
+            .map(|r| r.id)
+            .collect::<AHashSet<PointIdType>>()
+    };
+
+    let returned_ids = run().await;
+    let (candidates, expected_len) = nearest_candidates(model, vector_name, filter_num, limit);
+    let strict = nearest_is_strict(exact, query);
+
+    let retry_ids = if strict && returned_ids.len() != expected_len {
+        run().await
+    } else {
+        AHashSet::new()
+    };
+    assert_nearest_size_invariant(
+        collection,
+        "query",
+        &returned_ids,
+        &retry_ids,
+        &candidates,
+        expected_len,
+        strict,
+        vector_name,
+        filter_num,
+        limit,
+    )
+    .await;
+    assert_nearest_results_valid(returned_ids, model, vector_name, filter_num, "query");
 }
 
 pub(super) async fn apply_count_by_num(collection: &Collection, model: &Model, num: i64) {
