@@ -30,8 +30,6 @@ jobs:
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      with:
-        key: clippy
     - name: Update apt
       run: sudo apt-get update
     - name: Install dependencies
