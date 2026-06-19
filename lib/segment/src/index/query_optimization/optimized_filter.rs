@@ -12,20 +12,16 @@ pub enum OptimizedCondition<'a> {
     Filter(OptimizedFilter<'a>),
 }
 
-pub struct OptimizedMinShould<'a> {
-    pub conditions: Vec<OptimizedCondition<'a>>,
-    pub min_count: usize,
-}
-
 pub struct OptimizedFilter<'a> {
-    /// At least one of those conditions should match
-    pub should: Option<Vec<OptimizedCondition<'a>>>,
+    /// At least one of those conditions should match, if not empty.
+    pub should: Vec<OptimizedCondition<'a>>,
     /// At least minimum amount of given conditions should match
-    pub min_should: Option<OptimizedMinShould<'a>>,
+    pub min_should: Vec<OptimizedCondition<'a>>,
+    pub min_should_count: usize,
     /// All conditions must match
-    pub must: Option<Vec<OptimizedCondition<'a>>>,
+    pub must: Vec<OptimizedCondition<'a>>,
     /// All conditions must NOT match
-    pub must_not: Option<Vec<OptimizedCondition<'a>>>,
+    pub must_not: Vec<OptimizedCondition<'a>>,
 }
 
 impl ConditionChecker for OptimizedFilter<'_> {
@@ -35,13 +31,14 @@ impl ConditionChecker for OptimizedFilter<'_> {
         let OptimizedFilter {
             should,
             min_should,
+            min_should_count,
             must,
             must_not,
         } = self;
 
-        // `should`: at least one matches.
-        if let Some(conditions) = should
-            && !conditions
+        // `should`: at least one matches, if not empty.
+        if !should.is_empty()
+            && !should
                 .iter()
                 .try_any(|condition| condition.check(point_id))?
         {
@@ -49,41 +46,29 @@ impl ConditionChecker for OptimizedFilter<'_> {
         }
 
         // `min_should`: at least `min_count` match.
-        if let Some(min_should) = min_should {
-            let OptimizedMinShould {
-                conditions,
-                min_count,
-            } = min_should;
-            let mut matched = 0;
-
-            for condition in conditions {
-                if condition.check(point_id)? {
-                    matched += 1;
-                    if matched == *min_count {
-                        break;
-                    }
-                }
-            }
-            if matched < *min_count {
+        let mut remaining = *min_should_count;
+        let mut min_should_iter = min_should.iter();
+        while remaining > 0 {
+            let Some(condition) = min_should_iter.next() else {
+                // Not enough conditions to match `min_count`
                 return Ok(false);
+            };
+            if condition.check(point_id)? {
+                remaining -= 1;
             }
         }
 
         // `must`: all match.
-        if let Some(conditions) = must {
-            for condition in conditions {
-                if !condition.check(point_id)? {
-                    return Ok(false);
-                }
+        for condition in must {
+            if !condition.check(point_id)? {
+                return Ok(false);
             }
         }
 
         // `must_not`: none match.
-        if let Some(conditions) = must_not {
-            for condition in conditions {
-                if condition.check(point_id)? {
-                    return Ok(false);
-                }
+        for condition in must_not {
+            if condition.check(point_id)? {
+                return Ok(false);
             }
         }
 
