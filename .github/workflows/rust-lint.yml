@@ -30,6 +30,9 @@ jobs:
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      with:
+        # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
+        save-if: ${{ github.ref == 'refs/heads/dev' }}
     - name: Update apt
       run: sudo apt-get update
     - name: Install dependencies
