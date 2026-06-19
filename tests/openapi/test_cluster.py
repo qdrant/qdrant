@@ -1,4 +1,4 @@
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import request_with_validation, skip_if_distributed_mode
 
 
 def test_cluster_recover_standalone_returns_405():
@@ -8,6 +8,8 @@ def test_cluster_recover_standalone_returns_405():
 
     See https://github.com/qdrant/qdrant/issues/9421
     """
+    skip_if_distributed_mode()
+
     response = request_with_validation(
         api="/cluster/recover",
         method="POST",
@@ -21,6 +23,8 @@ def test_remove_peer_standalone_returns_405():
     DELETE /cluster/peer/{peer_id} on a standalone node must return
     405 Method Not Allowed, consistent with the other cluster endpoints.
     """
+    skip_if_distributed_mode()
+
     response = request_with_validation(
         api="/cluster/peer/{peer_id}",
         method="DELETE",
