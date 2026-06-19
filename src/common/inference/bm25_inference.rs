@@ -74,9 +74,30 @@ fn build_tokens_processor(value: TextPreprocessingConfig) -> TokensProcessor {
     let ascii_folding = ascii_folding.unwrap_or(false);
     let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
 
+    // Warn if the language is unrecognized. Historically `language: "none"`
+    // (and any other unsupported value) silently disabled both stemming and
+    // stopwords. That hack is deprecated: use `stemmer: {"type": "none"}` plus an
+    // empty stopword set instead. We still tolerate it for now to avoid breaking
+    // existing configs on upgrade, but emit a warning so users can migrate.
+    // `build_tokens_processor` runs once per inference item, so the warning is
+    // gated behind a `Once` to avoid flooding the log on every request.
+    if stopwords.is_none() && stemmer.is_none() && Language::from_str(&language).is_err() {
+        static DEPRECATION_WARNING: std::sync::Once = std::sync::Once::new();
+        DEPRECATION_WARNING.call_once(|| {
+            log::warn!(
+                "BM25 text preprocessing: language {language:?} is not recognized; \
+                 stemming and stopwords are disabled as a side effect. This behavior \
+                 (notably `language: \"none\"`) is deprecated and may be rejected in a \
+                 future release. To disable language-specific processing explicitly, \
+                 set `stemmer` to {{\"type\": \"none\"}} and configure an empty stopword set.",
+            );
+        });
+    }
+
     let stemmer = match stemmer {
         None => Stemmer::try_default_from_language(&language),
-        Some(algorithm) => Some(Stemmer::from_algorithm(&algorithm)),
+        // `Disabled` resolves to `None` here, giving an explicit opt-out of stemming.
+        Some(algorithm) => Stemmer::from_algorithm(&algorithm),
     };
 
     let stopwords_config = match stopwords {
@@ -204,6 +225,51 @@ mod tests {
     /// Prefix: queries match the legacy flow exactly; documents intentionally
     /// differ because the pre-refactor code passed query-side tokens to the
     /// document embed path (the bug CodeRabbit flagged).
+    /// `stemmer: {"type": "none"}` must produce a processor with no stemmer,
+    /// i.e. the language default stemmer is suppressed even for a known language.
+    #[test]
+    fn disabled_stemmer_suppresses_language_default() {
+        use segment::data_types::index::{
+            DisabledStemmerParams, NoStemmer, StemmingAlgorithm, StopwordsInterface,
+        };
+
+        let mut cfg = make_config(TokenizerType::Word);
+        cfg.text_preprocessing_config.stemmer =
+            Some(StemmingAlgorithm::Disabled(DisabledStemmerParams {
+                r#type: NoStemmer::None,
+            }));
+        // Empty stopword set => the recommended language-neutral setup.
+        cfg.text_preprocessing_config.stopwords = Some(StopwordsInterface::Set(Default::default()));
+
+        let disabled = Bm25::new(cfg).unwrap();
+
+        fn sparse_len(v: &VectorPersisted) -> usize {
+            match v {
+                VectorPersisted::Sparse(s) => s.indices.len(),
+                VectorPersisted::Dense(_) | VectorPersisted::MultiDense(_) => {
+                    panic!("expected sparse vector, got {v:?}")
+                }
+            }
+        }
+
+        // With English defaults, "running" stems to "run" and collides with "run".
+        let default_model = Bm25::new(make_config(TokenizerType::Word)).unwrap();
+        let default_vec = default_model.doc_embed("running run");
+        assert_eq!(
+            sparse_len(&default_vec),
+            1,
+            "default English stemmer should collapse running/run"
+        );
+
+        // With stemming disabled they stay distinct.
+        let disabled_vec = disabled.doc_embed("running run");
+        assert_eq!(
+            sparse_len(&disabled_vec),
+            2,
+            "disabled stemmer should keep running/run distinct"
+        );
+    }
+
     #[test]
     fn prefix_tokenizer_query_parity_doc_diverges() {
         let bm25 = Bm25::new(make_config(TokenizerType::Prefix)).unwrap();

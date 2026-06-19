@@ -189,7 +189,7 @@ impl Tokenizer {
             lowercase,
             ascii_folding,
             stopwords_filter,
-            stemmer.as_ref().map(Stemmer::from_algorithm),
+            stemmer.as_ref().and_then(Stemmer::from_algorithm),
             *min_token_len,
             *max_token_len,
         );
@@ -255,6 +255,7 @@ mod tests {
             r#type: Snowball::Snowball,
             language,
         }))
+        .expect("snowball algorithm always yields a stemmer")
     }
 
     #[test]

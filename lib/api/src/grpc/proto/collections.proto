@@ -705,6 +705,8 @@ message StemmingAlgorithm {
   oneof stemming_params {
     // Parameters for snowball stemming
     SnowballParams snowball = 1;
+    // Explicitly disable stemming (overrides the language default)
+    DisabledStemmer disabled = 2;
   }
 }
 
@@ -712,6 +714,9 @@ message SnowballParams {
   // Which language the algorithm should stem.
   string language = 1;
 }
+
+// Marker selecting the "no stemming" algorithm.
+message DisabledStemmer {}
 
 message BoolIndexParams {
   // If true - store index on disk.
