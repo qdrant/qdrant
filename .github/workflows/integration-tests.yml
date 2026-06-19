@@ -171,10 +171,10 @@ jobs:
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: integration-tests
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: Install dependencies
