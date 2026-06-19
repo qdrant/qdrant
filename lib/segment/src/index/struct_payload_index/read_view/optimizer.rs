@@ -72,11 +72,14 @@ where
             } else {
                 None
             },
+            // Keep an empty `min_should` when `min_count > 0`: it's
+            // unsatisfiable (match-none), and dropping it would match all
+            // (issue #9369). Only the no-op (empty, `min_count == 0`) is dropped.
             min_should: if let Some(MinShould {
                 conditions,
                 min_count,
             }) = filter.min_should.as_ref()
-                && !conditions.is_empty()
+                && (!conditions.is_empty() || *min_count > 0)
             {
                 let (optimized_conditions, estimation) = self.optimize_min_should(
                     conditions,
