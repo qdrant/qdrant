@@ -22,7 +22,7 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, Populate};
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
@@ -243,6 +243,7 @@ fn open_turbo_vector_storage_impl(
 
     let storage = open_storage(&path.join(VECTORS_PATH), quantizer.quantized_size())?;
 
+    let populate = Populate::from(populate);
     let deleted = BitvecFlags::new(
         MmapFs,
         DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), populate)?,

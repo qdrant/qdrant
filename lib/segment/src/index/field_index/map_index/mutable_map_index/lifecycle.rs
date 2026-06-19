@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use gridstore::config::StorageOptions;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
@@ -36,13 +36,13 @@ where
     pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             let options = default_gridstore_options(N::gridstore_block_size());
-            Gridstore::open_or_create(MmapFs, path, options).map_err(|err| {
+            Gridstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(MmapFs, path).map_err(|err| {
+            Gridstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"
                 ))

@@ -101,6 +101,10 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(())
     }
 
+    fn populate_auto() -> bool {
+        false
+    }
+
     fn clear_ram_cache(&self) -> Result<()> {
         Ok(())
     }

@@ -52,7 +52,7 @@ impl<S: UniversalRead> Pages<S> {
         }
     }
 
-    pub fn open(fs: &S::Fs, dir: &Path, writeable: bool) -> Result<Self> {
+    pub fn open(fs: &S::Fs, dir: &Path, writeable: bool, populate: Populate) -> Result<Self> {
         let mut pages = Self::new(dir.to_path_buf(), writeable);
 
         let page_files: HashSet<_> = fs.list_files(&dir.join("page_"))?.into_iter().collect();
@@ -62,17 +62,17 @@ impl<S: UniversalRead> Pages<S> {
             if !page_files.contains(&page_path) {
                 break;
             }
-            pages.attach_page(fs, &page_path)?;
+            pages.attach_page(fs, &page_path, populate)?;
         }
 
         Ok(pages)
     }
 
-    pub fn attach_page(&mut self, fs: &S::Fs, path: &Path) -> Result<()> {
+    pub fn attach_page(&mut self, fs: &S::Fs, path: &Path, populate: Populate) -> Result<()> {
         let options = OpenOptions {
             writeable: self.writeable,
             need_sequential: true,
-            populate: Populate::No,
+            populate,
             advice: AdviceSetting::Advice(Advice::Random),
         };
 
@@ -384,7 +384,7 @@ impl<S: UniversalRead> Pages<S> {
     /// - Should only be called on read-only instances of the Pages.
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
-    pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
+    pub fn live_reload(&mut self, fs: &S::Fs, populate: Populate) -> Result<()> {
         let num_pages = self.pages.len();
         let next_page_id = num_pages as PageId;
 
@@ -392,7 +392,7 @@ impl<S: UniversalRead> Pages<S> {
             // Re-attach the last page, which should have the latest data.
             self.pages.pop();
             let page_path = self.page_path((num_pages - 1) as PageId);
-            self.attach_page(fs, &page_path)?;
+            self.attach_page(fs, &page_path, populate)?;
         }
 
         for page_id in next_page_id.. {
@@ -400,7 +400,7 @@ impl<S: UniversalRead> Pages<S> {
             if !fs.exists(&page_path)? {
                 break;
             }
-            self.attach_page(fs, &page_path)?;
+            self.attach_page(fs, &page_path, populate)?;
         }
 
         Ok(())

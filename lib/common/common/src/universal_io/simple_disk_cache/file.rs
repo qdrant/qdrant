@@ -319,6 +319,10 @@ where
         self.populate_from(0)
     }
 
+    fn populate_auto() -> bool {
+        false
+    }
+
     fn clear_ram_cache(&self) -> Result<()> {
         if let Some(state) = self.local.get() {
             state.mmap().clear_ram_cache()?;

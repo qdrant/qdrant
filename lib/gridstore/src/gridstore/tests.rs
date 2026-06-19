@@ -543,7 +543,8 @@ fn test_behave_like_hashmap(
     drop(storage);
 
     // reopen storage
-    let storage = Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf()).unwrap();
+    let storage =
+        Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     // assert same size
     assert_eq!(storage.get_storage_size_bytes().unwrap(), before_size);
     // assert same length
@@ -658,7 +659,7 @@ fn test_storage_persistence_basic() {
     }
 
     // reopen storage
-    let storage = Gridstore::<Payload>::open(MmapFs, path).unwrap();
+    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -751,7 +752,7 @@ fn test_with_real_hm_data() {
     storage.flusher()().unwrap();
     drop(storage);
 
-    let mut storage = Gridstore::open(MmapFs, dir.path().to_path_buf()).unwrap();
+    let mut storage = Gridstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
     assert_eq!(storage.pages.read().num_pages(), 4);
     assert_eq!(
@@ -908,7 +909,7 @@ fn test_deferred_flush() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, we expect to read the data at the time the flusher was created
@@ -990,7 +991,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let flusher = storage.flusher();
@@ -1009,7 +1010,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, delete was flushed this time, expect point to be missing
@@ -1034,7 +1035,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
+    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, value 4 was flushed, expect to read it
@@ -1060,28 +1061,28 @@ fn test_deferred_flush_with_delete() {
 
     // Not flushed, still expect to read value 4
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 4");
     }
 
     // First flusher flushed, expect to read value 5 if we load from disk
     flusher_1_value_5().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 5");
     }
 
     // Second flusher flushed, expect point to be missing if we load from disk
     flusher_2_delete().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
         assert!(get_payload(&tmp_storage).is_none());
     }
 
     // Third flusher flushed, expect to read value 6 if we load from disk
     flusher_3_value_6().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path).unwrap();
+        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 6");
     }
 
@@ -1130,7 +1131,8 @@ fn test_live_reload() {
     storage.flusher()().unwrap();
 
     // Step 2: Open a reader
-    let mut reader = GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone()).unwrap();
+    let mut reader =
+        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(reader.max_point_offset(), 2);
 
     // Step 3: Verify reader sees initial data
@@ -1206,7 +1208,8 @@ fn test_live_reload_across_pages() {
     let initial_pages = storage.pages.read().num_pages();
 
     // Open reader
-    let mut reader = GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone()).unwrap();
+    let mut reader =
+        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(reader.max_point_offset(), first_batch);
 
     // Verify reader can read all initial data
@@ -1310,7 +1313,7 @@ fn test_skip_deferred_flush_after_clear() {
 
     // If we reopen the storage it must still be empty
     drop(storage);
-    let storage = Gridstore::<Payload>::open(MmapFs, path.clone()).unwrap();
+    let storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
     assert!(storage.get_pointer(0).is_none(), "point must not exist");
     assert_eq!(storage.max_point_offset(), 0, "must have zero points");
@@ -1506,9 +1509,12 @@ fn read_only_reader_over_write_enforced_backend() {
     // Reopen read-only over the write-enforced backend.
     type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
     let fs = RoFs::from_context(Default::default()).unwrap();
-    let reader =
-        GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(&fs, dir.path().to_path_buf())
-            .unwrap();
+    let reader = GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(
+        &fs,
+        dir.path().to_path_buf(),
+        Populate::No,
+    )
+    .unwrap();
 
     let stored = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(stored, Some(payload));
