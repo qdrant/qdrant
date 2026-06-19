@@ -319,6 +319,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Condition.condition_one_of", ""),
             ("Filter.min_should", ""),
             ("MinShould.conditions", ""),
+            ("MinShould.min_count", "range(min = 1, message = \"min_count must be greater than 0\")"),
             ("PointStruct.vectors", ""),
             ("Vectors.vectors_options", ""),
             ("NamedVectors.vectors", ""),

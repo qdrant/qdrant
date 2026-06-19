@@ -3845,6 +3845,10 @@ pub struct WithPayload {
 pub struct MinShould {
     #[validate(nested)]
     pub conditions: Vec<Condition>,
+    // Require `min_count > 0`. An empty condition list with `min_count == 0`
+    // matches every point, which is a footgun; reject it at the API boundary.
+    // See <https://github.com/qdrant/qdrant/pull/9401>.
+    #[validate(range(min = 1, message = "min_count must be greater than 0"))]
     pub min_count: usize,
 }
 
@@ -4941,6 +4945,25 @@ mod tests {
             }
             _ => panic!("Condition expected"),
         }
+    }
+
+    #[test]
+    fn test_min_should_min_count_validation() {
+        // `min_count == 0` is rejected: it is meaningless and a footgun, as an
+        // empty condition list with `min_count == 0` matches every point.
+        // See <https://github.com/qdrant/qdrant/pull/9401>.
+        let invalid = Filter::new_min_should(MinShould {
+            conditions: vec![],
+            min_count: 0,
+        });
+        assert!(invalid.validate().is_err());
+
+        // `min_count >= 1` is accepted.
+        let valid = Filter::new_min_should(MinShould {
+            conditions: vec![],
+            min_count: 1,
+        });
+        assert!(valid.validate().is_ok());
     }
 
     #[test]

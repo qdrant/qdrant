@@ -44,8 +44,9 @@ use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
     GeoPoint, GeoPolygon, GeoRadius, HnswConfig, HnswGlobalConfig, Indexes, IsEmptyCondition,
-    Match, Payload, PayloadField, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    Range, SegmentConfig, ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
+    Match, MinShould, Payload, PayloadField, PayloadFieldSchema, PayloadSchemaParams,
+    PayloadSchemaType, Range, SegmentConfig, ValueVariants, VectorDataConfig, VectorStorageType,
+    WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tempfile::{Builder, TempDir};
@@ -585,6 +586,7 @@ fn test_read_operations() -> Result<()> {
 
     for test_fn in [
         test_is_empty_conditions,
+        test_empty_min_should,
         test_integer_index_types,
         test_cardinality_estimation,
         test_struct_payload_index,
@@ -670,6 +672,71 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         (estimation_struct.exp as f64 - real_number as f64).abs()
             <= (estimation_plain.exp as f64 - real_number as f64).abs()
     );
+
+    Ok(())
+}
+
+/// Regression test for <https://github.com/qdrant/qdrant/issues/9369>.
+///
+/// `min_should` matches points satisfying at least `min_count` of the given
+/// conditions. With an empty condition list this means:
+///
+/// * `min_count == 0` is trivially satisfied -> match all points.
+/// * `min_count > 0` is impossible to satisfy -> match no points.
+///
+/// The optimized (indexed) filter path used to drop an empty `min_should`
+/// clause entirely, turning the unsatisfiable case into a match-all. Verify the
+/// optimized (`struct`/`mmap`) paths agree with the non-optimized (`plain`) one.
+fn test_empty_min_should(test_segments: &TestSegments) -> Result<()> {
+    let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
+
+    let query = |segment: &Segment, filter: &Filter| {
+        segment
+            .payload_index
+            .borrow()
+            .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))
+            .unwrap()
+    };
+
+    let segments = [
+        ("plain", &test_segments.plain_segment),
+        ("struct", &test_segments.struct_segment),
+        ("mmap", &test_segments.mmap_segment),
+    ];
+
+    // Empty conditions with `min_count > 0` is unsatisfiable: match nothing.
+    let unsatisfiable = Filter::new_min_should(MinShould {
+        conditions: vec![],
+        min_count: 1,
+    });
+    for (name, segment) in segments {
+        let result = query(segment, &unsatisfiable);
+        ensure!(
+            result.is_empty(),
+            "{name} segment matched {} points for unsatisfiable min_should",
+            result.len(),
+        );
+    }
+
+    // Empty conditions with `min_count == 0` is trivially satisfied: match all,
+    // exactly like an empty filter would.
+    let match_all = Filter::new_min_should(MinShould {
+        conditions: vec![],
+        min_count: 0,
+    });
+    for (name, segment) in segments {
+        let result = query(segment, &match_all);
+        let unfiltered = query(segment, &Filter::default());
+        ensure!(
+            !unfiltered.is_empty(),
+            "{name} segment has no points to match",
+        );
+        ensure!(
+            result == unfiltered,
+            "{name} segment match-all min_should disagrees with empty filter",
+        );
+    }
 
     Ok(())
 }
