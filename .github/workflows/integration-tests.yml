@@ -106,10 +106,8 @@ jobs:
         with:
           context: .
           tags: qdrant_consensus
-          cache-from: |
-            type=gha,scope=${{ github.base_ref || github.ref_name }}-consensus
-            type=gha,scope=dev-consensus
-          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-consensus', github.ref_name) || '' }}
+          cache-from: type=gha,scope=docker-integration-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-integration-tests' || '' }}
           load: true
           build-args: |
             PROFILE=ci
@@ -135,14 +133,7 @@ jobs:
         with:
           context: tools/schema2openapi
           tags: schema2openapi
-          cache-from: |
-            type=gha,scope=${{ github.ref }}-schema2openapi
-            type=gha,scope=${{ github.base_ref }}-schema2openapi
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
           load: true
-          build-args: |
-            PROFILE=ci
-            FEATURES=staging
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: gRPC file consistency check
@@ -246,10 +237,8 @@ jobs:
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
-          cache-from: |
-            type=gha,scope=${{ github.base_ref || github.ref_name }}-e2e
-            type=gha,scope=dev-e2e
-          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-e2e', github.ref_name) || '' }}
+          cache-from: type=gha,scope=docker-e2e-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-e2e-tests' || '' }}
           load: true
           build-args: |
             PROFILE=ci
