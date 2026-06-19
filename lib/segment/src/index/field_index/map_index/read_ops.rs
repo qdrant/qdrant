@@ -11,6 +11,7 @@ use indexmap::IndexSet;
 use super::key::MapIndexKey;
 use super::{IdIter, MapIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::facets::FacetValue;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::payload_config::{IndexMutability, StorageType};
@@ -102,6 +103,26 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
 
     fn values_is_empty(&self, idx: PointOffsetType) -> bool {
         self.values_count(idx).unwrap_or(0) == 0
+    }
+
+    /// Backs [`FacetIndex::for_values_map`]: yield each value's posting,
+    /// skipping values whose variant doesn't match this index's key type.
+    ///
+    /// [`FacetIndex::for_values_map`]: crate::index::field_index::FacetIndex::for_values_map
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        for value in values {
+            let Some(key) = N::from_facet_value(&value) else {
+                continue;
+            };
+            let mut ids = self.get_iterator(key, hw_counter);
+            f(value, &mut ids)?;
+        }
+        Ok(())
     }
 
     fn match_cardinality(

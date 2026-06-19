@@ -56,9 +56,13 @@ where
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
 
         for value in values {
-            let entry = self.map.entry(value);
-            self.point_to_values[idx as usize].push(entry.key().clone());
-            entry.or_default().insert(idx);
+            let entry = self.map.entry(value.clone());
+            let inserted = entry.or_default().insert(idx);
+
+            // only insert into forward index if it is not a duplicate
+            if inserted {
+                self.point_to_values[idx as usize].push(value);
+            }
         }
 
         self.indexed_points += 1;
