@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use fs_err as fs;
 
 use super::super::read_ops::BoolIndexRead;
@@ -48,12 +48,12 @@ impl MutableBoolIndex {
 
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicStoredFlags::open(&MmapFs, &trues_path, false)?;
+        let trues_slice = DynamicStoredFlags::open(&MmapFs, &trues_path, Populate::No)?;
         let trues_flags = RoaringFlags::new(MmapFs, trues_slice)?;
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicStoredFlags::open(&MmapFs, &falses_path, false)?;
+        let falses_slice = DynamicStoredFlags::open(&MmapFs, &falses_path, Populate::No)?;
         let falses_flags = RoaringFlags::new(MmapFs, falses_slice)?;
 
         let trues_count = trues_flags.count_trues();

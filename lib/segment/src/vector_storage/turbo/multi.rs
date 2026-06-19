@@ -17,7 +17,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, Populate};
 use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -93,6 +93,8 @@ pub fn open_appendable_turbo_multi_vector_storage(
 ) -> OperationResult<TurboMultiVectorStorage> {
     fs_err::create_dir_all(path)?;
 
+    let populate = Populate::from(in_ram);
+
     let quantizer = TurboQuantizer::new(
         dim,
         TQDT_BITS,
@@ -119,7 +121,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
 
     let deleted = BitvecFlags::new(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), in_ram)?,
+        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), populate)?,
     )?;
     let deleted_count = deleted.count_trues();
 

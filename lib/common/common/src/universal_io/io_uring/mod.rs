@@ -204,6 +204,10 @@ impl UniversalRead for IoUringFile {
         Ok(())
     }
 
+    fn populate_auto() -> bool {
+        false
+    }
+
     fn clear_ram_cache(&self) -> Result<()> {
         crate::fs::clear_disk_cache(self.file.path())?;
         Ok(())

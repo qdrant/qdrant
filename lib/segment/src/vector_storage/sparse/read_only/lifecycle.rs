@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 use gridstore::GridstoreReader;
 
 use super::ReadOnlySparseVectorStorage;
@@ -16,13 +16,18 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
     /// writable storage on reopen: the highest deleted id or the Gridstore
     /// pointer count, whichever is larger.
     pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
-        let storage =
-            GridstoreReader::<StoredSparseVector, S>::open(fs, path.join(STORAGE_DIRNAME))
-                .map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to open read-only sparse vector storage: {err}"
-                    ))
-                })?;
+        // Sparse vector storage is not used during search
+        let populate = Populate::No;
+        let storage = GridstoreReader::<StoredSparseVector, S>::open(
+            fs,
+            path.join(STORAGE_DIRNAME),
+            populate,
+        )
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to open read-only sparse vector storage: {err}"
+            ))
+        })?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIRNAME))?;
 

@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, Populate};
 use fs_err as fs;
 use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
@@ -55,17 +55,17 @@ impl MmapSparseVectorStorage {
     }
 
     fn open(path: &Path) -> OperationResult<Self> {
+        // Sparse vector storage does not need to be populated
+        // as it is not required in the index search step
+        let populate = Populate::No;
+
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Gridstore::open(MmapFs, storage_dir).map_err(|err| {
+        let storage = Gridstore::open(MmapFs, storage_dir, populate).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
             ))
         })?;
-
-        // Payload storage does not need to be populated
-        // as it is not required in the index search step
-        let populate = false;
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
@@ -115,7 +115,7 @@ impl MmapSparseVectorStorage {
         let deleted_path = path.join(DELETED_DIRNAME);
         let deleted = BitvecFlags::new(
             MmapFs,
-            DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+            DynamicStoredFlags::open(&MmapFs, &deleted_path, Populate::from(populate))?,
         )?;
 
         Ok(Self {

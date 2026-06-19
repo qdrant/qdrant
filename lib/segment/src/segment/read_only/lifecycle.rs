@@ -5,7 +5,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalReadFileOps, read_json_via};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFileOps, read_json_via};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -54,7 +54,12 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
         let deferred_internal_id = deferred_internal_id.filter(|_| is_appendable);
 
         // TODO(uio): use `Populate::PreferBackground` here and drill it into gridstore
-        let payload_populate = matches!(config.payload_storage_type, PayloadStorageType::InRamMmap);
+        let payload_populate =
+            if matches!(config.payload_storage_type, PayloadStorageType::InRamMmap) {
+                Populate::PreferBackground
+            } else {
+                Populate::No
+            };
         let payload_storage = Arc::new(AtomicRefCell::new(ReadOnlyPayloadStorage::open(
             fs,
             segment_path.to_path_buf(),

@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use super::UniversalIoError;
 use super::traits::UniversalReadFs;
 use crate::mmap::{Advice, AdviceSetting};
-use crate::universal_io::UserData;
+use crate::universal_io::{UniversalRead, UserData};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UniversalKind {
@@ -55,6 +55,16 @@ impl From<bool> for Populate {
             Populate::Blocking
         } else {
             Populate::No
+        }
+    }
+}
+
+impl Populate {
+    pub fn to_bool<S: UniversalRead>(self) -> bool {
+        match self {
+            Populate::Auto => S::populate_auto(),
+            Populate::No => false,
+            Populate::Blocking | Populate::PreferBackground => true,
         }
     }
 }

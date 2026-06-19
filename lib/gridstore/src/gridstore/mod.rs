@@ -14,7 +14,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{MmapFile, UniversalReadFileOps, UniversalWrite};
+use common::universal_io::{MmapFile, Populate, UniversalReadFileOps, UniversalWrite};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use reader::CONFIG_FILENAME;
@@ -98,10 +98,11 @@ where
         fs: S::Fs,
         base_path: PathBuf,
         create_options: StorageOptions,
+        populate: Populate,
     ) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
         if config_path.exists() {
-            Self::open(fs, base_path)
+            Self::open(fs, base_path, populate)
         } else {
             fs.create_dir(&base_path)?;
             Self::new(fs, base_path, create_options)
@@ -132,7 +133,10 @@ where
         let new_page_id = storage.next_page_id();
         let path = page_path(&storage.base_path, new_page_id);
         storage.create_page_file(&path)?;
-        storage.pages.write().attach_page(&storage.fs, &path)?;
+        storage
+            .pages
+            .write()
+            .attach_page(&storage.fs, &path, Populate::No)?;
 
         let config_bytes = serde_json::to_vec(&storage.config)?;
         storage.fs.atomic_save(&config_path, &config_bytes)?;
@@ -143,13 +147,13 @@ where
     /// Open an existing storage at the given path.
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
-    pub fn open(fs: S::Fs, base_path: PathBuf) -> Result<Self> {
+    pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
         let (config, tracker) = reader::read_config_and_tracker(&fs, &base_path, true)?;
         let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let pages = Pages::open(&fs, &base_path, true)?;
+        let pages = Pages::open(&fs, &base_path, true, populate)?;
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {
@@ -176,7 +180,9 @@ where
         let new_page_id = self.next_page_id();
         let path = page_path(&self.base_path, new_page_id);
         self.create_page_file(&path)?;
-        self.pages.write().attach_page(&self.fs, &path)?;
+        self.pages
+            .write()
+            .attach_page(&self.fs, &path, Populate::No)?;
 
         self.bitmask.write().cover_new_page()?;
 

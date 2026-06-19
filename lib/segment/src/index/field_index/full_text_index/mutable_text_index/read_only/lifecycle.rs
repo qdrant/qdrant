@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{OkNotFound, UniversalRead};
+use common::universal_io::{OkNotFound, Populate, UniversalRead};
 use gridstore::GridstoreReader;
 
 use super::super::inner::MutableFullTextIndexInner;
@@ -34,7 +34,9 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         path: PathBuf,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
-        let Some(storage) = GridstoreReader::<Vec<u8>, S>::open(fs, path).ok_not_found()? else {
+        let Some(storage) =
+            GridstoreReader::<Vec<u8>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
+        else {
             // Files don't exist, cannot load
             return Ok(None);
         };

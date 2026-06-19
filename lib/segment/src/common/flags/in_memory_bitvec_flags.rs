@@ -126,7 +126,7 @@ mod tests_mod {
 
     /// Persist `flags` via the writable storage so the read-only path can open it.
     fn persist(fs: &Fs, dir: &Path, flags: &[bool]) {
-        let mut dynamic_flags = DynamicStoredFlags::<S>::open(fs, dir, false).unwrap();
+        let mut dynamic_flags = DynamicStoredFlags::<S>::open(fs, dir, Populate::No).unwrap();
         dynamic_flags.set_len(fs, flags.len()).unwrap();
         flags
             .iter()

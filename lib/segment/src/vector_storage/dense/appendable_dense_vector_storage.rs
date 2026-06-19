@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, Populate};
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -279,7 +279,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let deleted = BitvecFlags::new(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+        DynamicStoredFlags::open(&MmapFs, &deleted_path, Populate::from(populate))?,
     )?;
     let deleted_count = deleted.count_trues();
 

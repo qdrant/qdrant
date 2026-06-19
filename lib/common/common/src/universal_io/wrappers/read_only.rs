@@ -210,6 +210,11 @@ where
     }
 
     #[inline]
+    fn populate_auto() -> bool {
+        S::populate_auto()
+    }
+
+    #[inline]
     fn clear_ram_cache(&self) -> Result<()> {
         self.0.clear_ram_cache()
     }

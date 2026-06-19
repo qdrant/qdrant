@@ -107,7 +107,8 @@ impl MmapFile {
         } = options;
 
         let populate = match populate {
-            Populate::Auto | Populate::No => false, // don't populate by default
+            Populate::Auto => Self::populate_auto(),
+            Populate::No => false,
             Populate::PreferBackground | // mmap does not yet implement background populate
             Populate::Blocking => true,
         };
@@ -277,6 +278,10 @@ impl UniversalRead for MmapFile {
     fn populate(&self) -> Result<()> {
         self.mmap.lock().populate();
         Ok(())
+    }
+
+    fn populate_auto() -> bool {
+        false
     }
 
     fn clear_ram_cache(&self) -> Result<()> {

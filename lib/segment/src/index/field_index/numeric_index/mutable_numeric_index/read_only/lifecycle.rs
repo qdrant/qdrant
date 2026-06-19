@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{OkNotFound, UniversalRead};
+use common::universal_io::{OkNotFound, Populate, UniversalRead};
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::InMemoryNumericIndex;
@@ -31,7 +31,9 @@ where
     ///
     /// [1]: super::super::MutableNumericIndex::open_gridstore
     pub fn open(fs: &S::Fs, path: PathBuf) -> OperationResult<Option<Self>> {
-        let Some(storage) = GridstoreReader::<Vec<T>, S>::open(fs, path).ok_not_found()? else {
+        let Some(storage) =
+            GridstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
+        else {
             // Files don't exist, cannot load
             return Ok(None);
         };

@@ -107,7 +107,7 @@ where
         Ok(status_file)
     }
 
-    pub fn open(fs: &S::Fs, directory: &Path, populate: bool) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, directory: &Path, populate: Populate) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_path = Self::ensure_status_file(fs, directory)?;
 
@@ -146,7 +146,7 @@ where
         fs: &S::Fs,
         num_flags: usize,
         directory: &Path,
-        populate: bool,
+        populate: Populate,
     ) -> OperationResult<StoredBitSlice<S>> {
         let capacity_bytes = file_size_for(num_flags);
         let path = directory.join(FLAGS_FILE);
@@ -163,7 +163,7 @@ where
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Global,
         };
         let flags = StoredBitSlice::open(fs, &path, options, Default::default())?;
@@ -197,8 +197,8 @@ where
             self.flags.flusher()()?;
 
             // Don't read the whole file on resize
-            let populate = false;
-            // TODO: consider using UniversalRead::reopen
+            let populate = Populate::No;
+            // TODO(uio): consider using UniversalRead::reopen
             let flags = Self::open_storage(fs, new_len, &self.directory, populate)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
@@ -335,7 +335,7 @@ mod tests_mod {
 
         {
             let mut dynamic_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
             dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
             random_flags
                 .iter()
@@ -357,7 +357,8 @@ mod tests_mod {
 
         {
             let dynamic_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
+                    .unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i).unwrap(), *flag);
@@ -374,7 +375,7 @@ mod tests_mod {
 
         // Create randomized dynamic mmap flags to test counting
         let mut dynamic_flags =
-            DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking).unwrap();
         dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags

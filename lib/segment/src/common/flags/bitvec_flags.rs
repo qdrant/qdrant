@@ -132,6 +132,7 @@ where
 #[cfg(test)]
 mod tests_mod {
     use common::types::PointOffsetType;
+    use common::universal_io::Populate;
     #[cfg_predicate]
     use common::universal_io::{Fs, S};
 
@@ -148,7 +149,7 @@ mod tests_mod {
         // Create and update flags
         {
             let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
             let mut bitvec_flags = BitvecFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
@@ -178,7 +179,8 @@ mod tests_mod {
         // Verify bitmap consistency after reload
         {
             let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
+                    .unwrap();
             let bitvec_flags = BitvecFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Verify iteration consistency after reload

@@ -17,13 +17,12 @@ use crate::types::Payload;
 /// mutation surface.
 pub struct ReadOnlyPayloadStorage<S: UniversalRead> {
     storage: GridstoreReader<Payload, S>,
-    populate: bool,
 }
 
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFileOps};
     use rstest::rstest;
     use tempfile::TempDir;
 
@@ -36,7 +35,9 @@ mod tests {
     /// files read-only through the write-enforced `ReadOnly<MmapFile>` backend
     /// and assert the reader returns what was written.
     #[rstest]
-    fn read_only_payload_storage_round_trip(#[values(false, true)] populate: bool) {
+    fn read_only_payload_storage_round_trip(
+        #[values(Populate::No, Populate::PreferBackground)] populate: Populate,
+    ) {
         let dir = TempDir::with_prefix("read_only_payload").unwrap();
         let hw_counter = HardwareCounterCell::new();
 
@@ -63,7 +64,7 @@ mod tests {
         let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
             ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate).unwrap();
 
-        assert_eq!(storage.is_on_disk(), !populate);
+        assert_eq!(storage.is_on_disk(), !populate.to_bool::<MmapFile>());
         for i in 0..5 {
             assert_eq!(storage.get(i, &hw_counter).unwrap(), payload);
         }
