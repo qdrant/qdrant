@@ -8,16 +8,16 @@ use common::fs::atomic_save_json;
 use common::mmap::MmapFlusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, read_json_via};
+use common::universal_io::{read_json_via, UniversalReadFs};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use crate::EncodingError;
-use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
+use crate::encoded_storage::{validate_storage_vector_size, EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
-    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
+    validate_vector_parameters, DistanceType, EncodedVectors, VectorParameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::EncodingError;
 
 pub const ALIGNMENT: usize = 16;
 // Each encoded vector stores an additional f32 at the beginning. Define it's size here.
@@ -117,12 +117,14 @@ impl MetadataInt8 {
         // Dotprod after shifting produces a number which is not related to vector and query
         // (x - a)(y - a) = xy - ax - ay + a^2
         // this a^2 is returned here
-        // L2 is handled the same way as Dot here
         let shift = match self.vector_parameters.distance_type {
-            DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => {
+            DistanceType::Dot | DistanceType::Cosine => {
                 self.actual_dim as f32 * self.offset * self.offset
             }
-            DistanceType::L1 => 0.0,
+            // L2 is computed from squared code differences. The common quantizer offset cancels
+            // before squaring, so adding an absolute offset^2 shift would make scores depend on
+            // translating all vectors and the query by the same constant.
+            DistanceType::L1 | DistanceType::L2 => 0.0,
         };
         if self.vector_parameters.invert {
             -shift

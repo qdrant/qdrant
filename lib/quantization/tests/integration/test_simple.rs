@@ -236,6 +236,142 @@ mod tests {
         }
     }
 
+    fn scalar_quantized_scores_for(
+        distance_type: DistanceType,
+        invert: bool,
+        vector_data: &[Vec<f32>],
+        query: &[f32],
+    ) -> Vec<f32> {
+        let stopped = AtomicBool::new(false);
+        let vectors_count = vector_data.len();
+        let vector_dim = query.len();
+
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type,
+            invert,
+        };
+        let quantized_vector_size =
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
+
+        let encoded = EncodedVectorsU8::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            vectors_count,
+            Some(0.99),
+            ScalarQuantizationMethod::Int8,
+            None,
+            &stopped,
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        (0..vectors_count)
+            .map(|index| {
+                let quantized_vector = encoded.get_quantized_vector(index as u32);
+                encoded.score_point_simple(&query_u8, &quantized_vector)
+            })
+            .collect()
+    }
+
+    fn deterministic_affine_vectors() -> (Vec<Vec<f32>>, Vec<f32>) {
+        let vectors_count = 129;
+        let vector_dim = 8;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1008);
+        let vector_data = (0..vectors_count)
+            .map(|_| {
+                (0..vector_dim)
+                    .map(|_| rng.random_range(-100.0..=100.0))
+                    .collect()
+            })
+            .collect();
+        let query = (0..vector_dim)
+            .map(|_| rng.random_range(-100.0..=100.0))
+            .collect();
+
+        (vector_data, query)
+    }
+
+    fn map_affine(
+        vector_data: &[Vec<f32>],
+        query: &[f32],
+        scale: f32,
+        offset: f32,
+    ) -> (Vec<Vec<f32>>, Vec<f32>) {
+        let mapped_vectors = vector_data
+            .iter()
+            .map(|vector| vector.iter().map(|value| value * scale + offset).collect())
+            .collect();
+        let mapped_query = query.iter().map(|value| value * scale + offset).collect();
+
+        (mapped_vectors, mapped_query)
+    }
+
+    fn assert_scores_match_transform(
+        base_scores: &[f32],
+        transformed_scores: &[f32],
+        expected_scale: f32,
+        tolerance: f32,
+    ) {
+        for (index, (&score, &transformed_score)) in
+            base_scores.iter().zip(transformed_scores).enumerate()
+        {
+            let expected = score * expected_scale;
+            assert!(
+                (expected - transformed_score).abs() < tolerance,
+                "score transform drifted at index {index}: expected {expected}, got {transformed_score}"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(DistanceType::L1, false)]
+    #[case(DistanceType::L1, true)]
+    #[case(DistanceType::L2, false)]
+    #[case(DistanceType::L2, true)]
+    fn test_scalar_quantized_distance_scores_are_translation_invariant(
+        #[case] distance_type: DistanceType,
+        #[case] invert: bool,
+    ) {
+        let (vector_data, query) = deterministic_affine_vectors();
+        let (shifted_vector_data, shifted_query) = map_affine(&vector_data, &query, 1.0, 1000.0);
+
+        let base_scores = scalar_quantized_scores_for(distance_type, invert, &vector_data, &query);
+        let shifted_scores = scalar_quantized_scores_for(
+            distance_type,
+            invert,
+            &shifted_vector_data,
+            &shifted_query,
+        );
+
+        assert_scores_match_transform(&base_scores, &shifted_scores, 1.0, 0.25);
+    }
+
+    #[rstest]
+    #[case(DistanceType::Dot, false, 6.25)]
+    #[case(DistanceType::Dot, true, 6.25)]
+    #[case(DistanceType::L1, false, 2.5)]
+    #[case(DistanceType::L1, true, 2.5)]
+    #[case(DistanceType::L2, false, 6.25)]
+    #[case(DistanceType::L2, true, 6.25)]
+    fn test_scalar_quantized_scores_follow_positive_scaling(
+        #[case] distance_type: DistanceType,
+        #[case] invert: bool,
+        #[case] expected_scale: f32,
+    ) {
+        let scale = 2.5;
+        let (vector_data, query) = deterministic_affine_vectors();
+        let (scaled_vector_data, scaled_query) = map_affine(&vector_data, &query, scale, 0.0);
+
+        let base_scores = scalar_quantized_scores_for(distance_type, invert, &vector_data, &query);
+        let scaled_scores =
+            scalar_quantized_scores_for(distance_type, invert, &scaled_vector_data, &scaled_query);
+
+        assert_scores_match_transform(&base_scores, &scaled_scores, expected_scale, 1.0);
+    }
+
     #[rstest]
     #[case(ScalarQuantizationMethod::Int8)]
     fn test_l1_inverted_simple(#[case] method: ScalarQuantizationMethod) {
