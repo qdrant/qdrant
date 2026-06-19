@@ -55,6 +55,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: integration-tests
+          # integration-tests is the broadest build in this group and owns saving the cache
+          save-if: "false"
       - name: Install dependencies
         run: sudo apt-get install clang
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -172,6 +174,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: integration-tests
+          # integration-tests is the broadest build in this group and owns saving the cache
+          save-if: "false"
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: Install dependencies
