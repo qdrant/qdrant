@@ -9894,7 +9894,7 @@
           "min_count": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           }
         }
       },

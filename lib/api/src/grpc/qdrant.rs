@@ -151,6 +151,7 @@ pub struct MinShould {
     #[validate(nested)]
     pub conditions: ::prost::alloc::vec::Vec<Condition>,
     #[prost(uint64, tag = "2")]
+    #[validate(range(min = 1, message = "min_count must be greater than 0"))]
     pub min_count: u64,
 }
 #[derive(validator::Validate)]
