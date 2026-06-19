@@ -118,6 +118,31 @@ pub trait BoolIndexRead {
         Ok(())
     }
 
+    /// Like [`Self::for_each_value_map`] but visits only the requested `values`.
+    /// Trivial here (≤2 values); exists only to back `FacetIndex::for_values_map`.
+    fn for_values_map<F>(
+        &self,
+        values: impl Iterator<Item = bool>,
+        hw_counter: &HardwareCounterCell,
+        mut f: F,
+    ) -> OperationResult<()>
+    where
+        F: FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    {
+        for is_true in values {
+            let mut ids = if is_true {
+                self.trues_flags().iter_trues()
+            } else {
+                self.falses_flags().iter_trues()
+            };
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(u8::BITS as usize);
+            f(is_true, &mut ids)?;
+        }
+        Ok(())
+    }
+
     fn for_each_count_per_value<F>(
         &self,
         deferred_internal_id: Option<PointOffsetType>,

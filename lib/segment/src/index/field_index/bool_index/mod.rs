@@ -17,7 +17,7 @@ use super::facet_index::FacetIndex;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::facets::{FacetHit, FacetValueRef};
+use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::payload_config::IndexMutability;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
@@ -173,6 +173,14 @@ impl PayloadFieldIndex for BoolIndex {
 }
 
 impl FacetIndex for BoolIndex {
+    fn unique_values_count(&self) -> usize {
+        // A boolean field has at most two distinct values (true/false).
+        // We could compute the actual number cheaply, but this upper bound is
+        // enough for the facet-strategy decision (which only checks whether
+        // the cardinality vastly exceeds the user limit).
+        2
+    }
+
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
@@ -203,6 +211,21 @@ impl FacetIndex for BoolIndex {
     ) -> OperationResult<()> {
         BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
             f(FacetValueRef::Bool(value), iter)
+        })
+    }
+
+    fn for_values_map(
+        &self,
+        values: impl Iterator<Item = FacetValue>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        let bools = values.filter_map(|value| match value {
+            FacetValue::Bool(b) => Some(b),
+            FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Uuid(_) => None,
+        });
+        BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
+            f(FacetValue::Bool(b), iter)
         })
     }
 
