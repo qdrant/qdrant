@@ -56,17 +56,6 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
 
     fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()>;
 
-    /// Iterate `(value, count)` pairs.
-    ///
-    /// `deferred_internal_id` (mutable / mmap only) restricts the count to
-    /// point IDs strictly less than the given value. The immutable variant
-    /// does not support deferred filtering and asserts the argument is `None`.
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()>;
-
     fn for_each_value_map(
         &self,
         hw_counter: &HardwareCounterCell,
@@ -346,24 +335,6 @@ where
             MapIndex::Mutable(index) => index.for_each_value(f),
             MapIndex::Immutable(index) => index.for_each_value(f),
             MapIndex::OnDisk(index) => index.for_each_value(f),
-        }
-    }
-
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        // The immutable variant does not support deferred filtering — it
-        // asserts the argument is `None`. Two reasons we don't implement it:
-        //  - We don't have both deferred points and an immutable index.
-        //  - It is not trivial (nor performant) to implement correct filtering
-        //    for this index variant as it doesn't work well in combination
-        //    with the way it handles deletions.
-        match self {
-            MapIndex::Mutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            MapIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            MapIndex::OnDisk(index) => index.for_each_count_per_value(deferred_internal_id, f),
         }
     }
 

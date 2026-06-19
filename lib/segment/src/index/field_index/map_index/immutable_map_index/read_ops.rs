@@ -75,20 +75,6 @@ where
         self.value_to_points.keys().try_for_each(|v| f(v.borrow()))
     }
 
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        // Immutable indexes don't support deferred filtering; callers must
-        // pass `None`. See `MapIndex::for_each_count_per_value` for context.
-        debug_assert!(deferred_internal_id.is_none());
-        let _ = deferred_internal_id;
-        self.value_to_points
-            .iter()
-            .try_for_each(|(k, entry)| f(k.borrow(), entry.count as usize))
-    }
-
     fn for_each_value_map(
         &self,
         _hw_counter: &HardwareCounterCell,

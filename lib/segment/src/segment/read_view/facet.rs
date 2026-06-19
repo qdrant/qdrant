@@ -158,7 +158,7 @@ where
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let Some(filter) = &request.filter else {
             // No filter: count how many visible points each value has.
-            return self.get_facet_counts(facet_index, None, hw_counter);
+            return self.get_facet_counts(facet_index, None, is_stopped, hw_counter);
         };
 
         let cardinality = self
@@ -216,7 +216,7 @@ where
                 hw_counter,
             )?;
 
-            return self.get_facet_counts(facet_index, Some(candidates), hw_counter);
+            return self.get_facet_counts(facet_index, Some(candidates), is_stopped, hw_counter);
         };
 
         let probe = FilterProbe::Lazy {
@@ -305,6 +305,38 @@ where
         Ok(hits)
     }
 
+    /// Count a value's posting points that are visible, and that pass `probe`
+    /// when set.
+    ///
+    /// Visibility (deferred + soft-deleted points) is resolved through the id
+    /// tracker's [`filter_deferred_and_deleted`], the single source of truth for
+    /// point-offset visibility — the facet index itself stays unaware of how
+    /// offsets map to deferred/deleted state. Postings are sorted ascending, so
+    /// adjacent dedup collapses repeats.
+    ///
+    /// [`filter_deferred_and_deleted`]: crate::id_tracker::point_mappings::PointMappingsRefEnum::filter_deferred_and_deleted
+    fn count_visible_posting(
+        &self,
+        iter: &mut dyn Iterator<Item = PointOffsetType>,
+        probe: Option<&FilterProbe<'_>>,
+    ) -> usize {
+        #[cfg(debug_assertions)]
+        let iter = {
+            let mut prev_id = None;
+            iter.inspect(move |&id| {
+                let previous = prev_id.get_or_insert(id);
+                debug_assert!(*previous <= id, "Sorted iter assertion broken");
+                *previous = id;
+            })
+        };
+
+        self.id_tracker
+            .point_mappings()
+            .filter_deferred_and_deleted(iter.dedup(), DeferredBehavior::VisibleOnly)
+            .filter(|&point_id| probe.is_none_or(|probe| probe.check(point_id)))
+            .count()
+    }
+
     /// Iterate every value's posting and count the points passing `probe`.
     fn visit_facet_iter<F: FacetIndex>(
         &self,
@@ -316,32 +348,12 @@ where
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let mut hits = HashMap::new();
 
-        let max_id = self.deferred_internal_id().unwrap_or(PointOffsetType::MAX);
-
-        // Count a value's posting points that are visible and pass the probe.
-        let count_matching = |iter: &mut dyn Iterator<Item = PointOffsetType>| -> usize {
-            #[cfg(debug_assertions)]
-            let iter = {
-                let mut prev_id = None;
-                iter.inspect(move |&id| {
-                    let previous = prev_id.get_or_insert(id);
-                    debug_assert!(*previous <= id, "Sorted iter assertion broken");
-                    *previous = id;
-                })
-            };
-
-            iter.dedup()
-                .take_while(|&point_id| point_id < max_id)
-                .filter(|&point_id| probe.check(point_id))
-                .count()
-        };
-
         match candidates {
             // Sampling: visit only the candidate values' postings.
             Some(candidates) => {
                 facet_index.for_values_map(candidates.into_iter(), hw_counter, |value, iter| {
                     check_process_stopped(is_stopped)?;
-                    let count = count_matching(iter);
+                    let count = self.count_visible_posting(iter, Some(probe));
                     if count > 0 {
                         hits.insert(value, count);
                     }
@@ -352,7 +364,7 @@ where
             None => {
                 facet_index.for_each_value_map(hw_counter, |value, iter| {
                     check_process_stopped(is_stopped)?;
-                    let count = count_matching(iter);
+                    let count = self.count_visible_posting(iter, Some(probe));
                     if count > 0 {
                         hits.insert(value.to_owned(), count);
                     }
@@ -364,34 +376,36 @@ where
         Ok(hits)
     }
 
+    /// Count each value's visible points directly from the index postings,
+    /// without a filter. Visibility (deferred + soft-deleted) is resolved by the
+    /// id tracker via [`Self::count_visible_posting`].
     fn get_facet_counts(
         &self,
         facet_index: &impl FacetIndex,
         candidates: Option<HashSet<FacetValue>>,
+        is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Result<HashMap<FacetValue, usize>, OperationError> {
         let mut hits = HashMap::new();
-        let deferred_internal_id = self.deferred_internal_id();
         match candidates {
-            // Sampling: count only the candidate values, looking each up directly.
+            // Sampling: count only the candidate values, walking each posting.
             Some(candidates) => {
-                facet_index.for_counts_per_value(
-                    candidates.into_iter(),
-                    deferred_internal_id,
-                    hw_counter,
-                    |hit| {
-                        if hit.count > 0 {
-                            hits.insert(hit.value, hit.count);
-                        }
-                        Ok(())
-                    },
-                )?;
+                facet_index.for_values_map(candidates.into_iter(), hw_counter, |value, iter| {
+                    check_process_stopped(is_stopped)?;
+                    let count = self.count_visible_posting(iter, None);
+                    if count > 0 {
+                        hits.insert(value, count);
+                    }
+                    Ok(())
+                })?;
             }
-            // No sampling: count every value in the index.
+            // Full scan: count every value in the index.
             None => {
-                facet_index.for_each_count_per_value(deferred_internal_id, |hit| {
-                    if hit.count > 0 {
-                        hits.insert(hit.value.to_owned(), hit.count);
+                facet_index.for_each_value_map(hw_counter, |value, iter| {
+                    check_process_stopped(is_stopped)?;
+                    let count = self.count_visible_posting(iter, None);
+                    if count > 0 {
+                        hits.insert(value.to_owned(), count);
                     }
                     Ok(())
                 })?;
@@ -481,15 +495,22 @@ where
                 values.extend(iter.map(|v| v.to_owned()));
             })?;
         } else {
-            facet_index.for_each_visible_value(
-                hw_counter,
-                self.deferred_internal_id(),
-                |value_ref| {
-                    check_process_stopped(is_stopped)?;
+            // No filter: keep a value if any of its points is visible. Visibility
+            // resolution is delegated to the id tracker rather than re-derived
+            // from the deferred threshold inside the facet index.
+            facet_index.for_each_value_map(hw_counter, |value_ref, iter| {
+                check_process_stopped(is_stopped)?;
+                let has_visible_point = self
+                    .id_tracker
+                    .point_mappings()
+                    .filter_deferred_and_deleted(iter, DeferredBehavior::VisibleOnly)
+                    .next()
+                    .is_some();
+                if has_visible_point {
                     values.insert(value_ref.to_owned());
-                    Ok(())
-                },
-            )?;
+                }
+                Ok(())
+            })?;
         };
 
         Ok(values)

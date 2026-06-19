@@ -143,32 +143,6 @@ pub trait BoolIndexRead {
         Ok(())
     }
 
-    fn for_each_count_per_value<F>(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: F,
-    ) -> OperationResult<()>
-    where
-        F: FnMut(bool, usize) -> OperationResult<()>,
-    {
-        let (false_count, true_count) = match deferred_internal_id {
-            Some(deferred_internal_id) => {
-                let false_count =
-                    self.falses_flags()
-                        .get_bitmap()
-                        .range_cardinality(..deferred_internal_id) as usize;
-                let true_count =
-                    self.trues_flags()
-                        .get_bitmap()
-                        .range_cardinality(..deferred_internal_id) as usize;
-                (false_count, true_count)
-            }
-            None => (self.falses_count(), self.trues_count()),
-        };
-        f(false, false_count)?;
-        f(true, true_count)
-    }
-
     fn ram_usage_bytes(&self) -> usize {
         self.trues_flags().get_bitmap().serialized_size()
             + self.falses_flags().get_bitmap().serialized_size()

@@ -8,7 +8,6 @@ use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::persisted_hashmap::{Key, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
-use itertools::Itertools;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
@@ -157,27 +156,6 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
 
     fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
         self.storage.value_to_points.for_each_key(f)
-    }
-
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.storage.value_to_points.for_each_entry(|k, v| {
-            let count = v
-                .iter()
-                .filter(|&&idx| {
-                    !self.storage.deleted.get_bit(idx as usize).unwrap_or(true)
-
-                    // TODO(deferred): Maybe we can improve this filter and use take_while instead. For this we
-                    // need to make sure that `v` is always sorted which we _can_ enforce when finalizing the index.
-                    && deferred_internal_id.is_none_or(|deferred| idx < deferred)
-                })
-                .unique()
-                .count();
-            f(k, count)
-        })
     }
 
     fn for_each_value_map(

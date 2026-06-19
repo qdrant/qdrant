@@ -7,7 +7,7 @@ use super::super::read_ops::{self, BoolIndexRead};
 use super::ReadOnlyBoolIndex;
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
+use crate::data_types::facets::{FacetValue, FacetValueRef};
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
@@ -148,19 +148,6 @@ impl<S: UniversalRead> FacetIndex for ReadOnlyBoolIndex<S> {
         });
         BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
             f(FacetValue::Bool(b), iter)
-        })
-    }
-
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        BoolIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
-            f(FacetHit {
-                value: FacetValueRef::Bool(value),
-                count,
-            })
         })
     }
 }

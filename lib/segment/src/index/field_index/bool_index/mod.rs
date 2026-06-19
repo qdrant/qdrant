@@ -17,7 +17,7 @@ use super::facet_index::FacetIndex;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
+use crate::data_types::facets::{FacetValue, FacetValueRef};
 use crate::index::payload_config::IndexMutability;
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
@@ -226,19 +226,6 @@ impl FacetIndex for BoolIndex {
         });
         BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
             f(FacetValue::Bool(b), iter)
-        })
-    }
-
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        BoolIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
-            f(FacetHit {
-                value: FacetValueRef::Bool(value),
-                count,
-            })
         })
     }
 }

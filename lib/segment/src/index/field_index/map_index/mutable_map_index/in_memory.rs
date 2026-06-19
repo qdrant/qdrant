@@ -168,20 +168,6 @@ where
         self.map.keys().try_for_each(|v| f(v.borrow()))
     }
 
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.map.iter().try_for_each(|(k, v)| {
-            let count = match deferred_internal_id {
-                Some(deferred_internal_id) => v.range_cardinality(..deferred_internal_id) as usize,
-                None => v.len() as usize,
-            };
-            f(k.borrow(), count)
-        })
-    }
-
     fn for_each_value_map(
         &self,
         _hw_counter: &HardwareCounterCell,

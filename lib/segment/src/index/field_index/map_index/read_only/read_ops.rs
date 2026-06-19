@@ -106,24 +106,6 @@ where
         }
     }
 
-    fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        match self {
-            ReadOnlyMapIndex::Appendable(index) => {
-                index.for_each_count_per_value(deferred_internal_id, f)
-            }
-            ReadOnlyMapIndex::Immutable(index) => {
-                index.for_each_count_per_value(deferred_internal_id, f)
-            }
-            ReadOnlyMapIndex::OnDisk(index) => {
-                index.for_each_count_per_value(deferred_internal_id, f)
-            }
-        }
-    }
-
     fn for_each_value_map(
         &self,
         hw_counter: &HardwareCounterCell,
