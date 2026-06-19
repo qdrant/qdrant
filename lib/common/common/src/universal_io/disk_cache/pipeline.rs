@@ -89,9 +89,9 @@ where
         Ok(())
     }
 
-    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        let length = self.file.len::<u8>() as u64;
-        self.schedule::<Sequential>(user_data, 0..length, 1)
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
+        let eof = self.file.len::<u8>() as u64;
+        self.schedule::<Sequential>(user_data, from..eof, 1)
     }
 
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {

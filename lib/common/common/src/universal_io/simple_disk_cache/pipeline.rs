@@ -23,7 +23,9 @@ enum ScheduledRead {
         blocks_range: Range<u32>,
         read_range: Range<u64>,
     },
-    Whole,
+    Whole {
+        from: u64,
+    },
 }
 
 /// Outcome of [`plan_schedule`]: either the requested range is already available
@@ -124,17 +126,19 @@ where
     R: DiskCacheRemote,
 {
     let mut known_len = None;
-    let (blocks_range, read_range) = match scheduled_read {
+    let (blocks_range, byte_range) = match scheduled_read {
         ScheduledRead::Range {
             blocks_range,
             read_range,
         } => (blocks_range, read_range),
-        ScheduledRead::Whole => {
+        ScheduledRead::Whole { from } => {
             // derive whole ranges from the actual bytes returned.
             let byte_len = bytes.len() as u64;
-            known_len = Some(byte_len);
-            let blocks_range = to_block_range(0..byte_len);
-            (blocks_range, 0..byte_len)
+            let eof = from + byte_len;
+            let byte_range = from..eof;
+            known_len = Some(eof);
+            let blocks_range = to_block_range(byte_range.clone());
+            (blocks_range, byte_range)
         }
     };
 
@@ -150,7 +154,7 @@ where
 
     unsafe {
         local.write_mmap_bytes(bytes, blocks_range);
-        local.read_mmap_bytes::<Random>(read_range)
+        local.read_mmap_bytes::<Random>(byte_range)
     }
 }
 
@@ -354,21 +358,24 @@ where
         Ok(())
     }
 
-    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
         // If local has already been initialized, use the mmap length
         if let Some(local) = self.file.local.get() {
-            let length = local.mmap().len::<u8>()?;
-            return self.schedule::<Sequential>(user_data, 0..length, 1);
+            let eof = local.mmap().len::<u8>()?;
+            if from >= eof {
+                return Ok(());
+            }
+            return self.schedule::<Sequential>(user_data, from..eof, 1);
         }
 
         // Use schedule_whole on the remote pipeline directly
         let remote_meta = RemoteMeta {
             file: (),
-            scheduled_read: ScheduledRead::Whole,
+            scheduled_read: ScheduledRead::Whole { from },
             user_data,
         };
         let remote_pipeline = self.get_or_init_remote_pipeline()?;
-        remote_pipeline.schedule_whole(remote_meta)
+        remote_pipeline.schedule_whole(remote_meta, from)
     }
 
     fn wait(&mut self) -> universal_io::Result<Option<(U, ACow<'_>)>> {

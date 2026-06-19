@@ -49,9 +49,13 @@ where
         self.inner.schedule(&self.file.runtime, user_data, future)
     }
 
-    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        let length = self.file.len::<u8>()?;
-        self.schedule::<Sequential>(user_data, 0..length, 1)
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
+        // TODO(uio): implement schedule_whole in `AsyncRead`
+        let eof = self.file.len::<u8>()?;
+        if from >= eof {
+            return Ok(());
+        }
+        self.schedule::<Sequential>(user_data, from..eof, 1)
     }
 
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {

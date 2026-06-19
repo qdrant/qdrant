@@ -84,7 +84,7 @@ where
 
     /// Like `Self::schedule`, but doesn't need to know file length upfront.
     /// Reads the entire file, byte-aligned (align = 1).
-    fn schedule_whole(&mut self, user_data: U) -> Result<()>;
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()>;
 
     /// See [`BorrowedReadPipeline::wait()`].
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>>;

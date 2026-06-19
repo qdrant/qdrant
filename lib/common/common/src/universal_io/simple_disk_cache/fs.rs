@@ -153,7 +153,7 @@ where
                 let mut pipeline = R::OwnedReadPipeline::new(remote)?;
 
                 // FIXME: check `can_schedule` in a loop first
-                pipeline.schedule_whole(())?;
+                pipeline.schedule_whole((), 0)?;
 
                 InitSource::FromPrefiller(pipeline)
             }
