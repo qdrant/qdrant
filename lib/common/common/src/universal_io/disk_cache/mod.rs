@@ -176,6 +176,10 @@ impl UniversalRead for CachedSlice {
         Ok(self.populate()?)
     }
 
+    fn populate_auto() -> bool {
+        false
+    }
+
     fn clear_ram_cache(&self) -> Result<()> {
         // TODO: issue fadvise DONTNEED on the cache file's backing mmap region.
         Ok(())

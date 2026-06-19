@@ -152,6 +152,9 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// For example in MMAP-based files we do `madvise` with `MADV_POPULATE_READ`.
     fn populate(&self) -> Result<()>;
 
+    /// Whether the backend chooses to populate when using `Populate::Auto`
+    fn populate_auto() -> bool;
+
     /// Ask to evict related data from RAM cache, if applicable for this implementation.
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.

@@ -78,6 +78,6 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     }
 
     fn is_on_disk(&self) -> bool {
-        !self.populate
+        self.storage.is_on_disk()
     }
 }

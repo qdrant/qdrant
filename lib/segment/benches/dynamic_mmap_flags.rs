@@ -2,7 +2,7 @@ use std::hint::black_box;
 use std::iter;
 use std::sync::atomic::AtomicBool;
 
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, Populate};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -21,8 +21,9 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
     let stopped = AtomicBool::new(false);
 
     // Build dynamic mmap flags with random deletions
+    let populate = Populate::No;
     let mut dynamic_flags =
-        DynamicStoredFlags::<MmapFile>::open(&MmapFs, dir.path(), false).unwrap();
+        DynamicStoredFlags::<MmapFile>::open(&MmapFs, dir.path(), populate).unwrap();
     dynamic_flags.set_len(&MmapFs, FLAG_COUNT).unwrap();
     dynamic_flags
         .set_ascending_bits(

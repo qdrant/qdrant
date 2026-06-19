@@ -5,7 +5,7 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{UniversalRead, UniversalReadFs, read_json_via};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs, read_json_via};
 
 use super::view::GridstoreView;
 use crate::Result;
@@ -28,6 +28,8 @@ pub struct GridstoreReader<V, S: UniversalRead> {
     pub(super) pages: Pages<S>,
     pub(super) base_path: PathBuf,
     pub(super) _value_type: std::marker::PhantomData<V>,
+    /// How to populate new attached pages
+    populate: Populate,
 }
 
 impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
@@ -59,19 +61,20 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Open an existing read-only storage at the given path.
     ///
     /// Infers page count by scanning for page files on disk.
-    pub fn open(fs: &S::Fs, base_path: PathBuf) -> Result<Self> {
+    pub fn open(fs: &S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
         // writable `Gridstore` opens these same files writable instead.
         let (config, tracker) = read_config_and_tracker(fs, &base_path, false)?;
 
-        let pages = Pages::<S>::open(fs, &base_path, false)?;
+        let pages = Pages::<S>::open(fs, &base_path, false, populate)?;
 
         Ok(Self {
             tracker,
             config,
             pages,
             base_path,
+            populate,
             _value_type: std::marker::PhantomData,
         })
     }
@@ -168,18 +171,16 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
             return Ok(());
         }
 
-        self.pages.live_reload(fs)?;
+        self.pages.live_reload(fs, self.populate)?;
 
         Ok(())
     }
 }
 
 impl<V, S: UniversalRead> GridstoreReader<V, S> {
-    /// Populate all pages and the tracker in the mmap.
-    pub fn populate(&self) -> Result<()> {
-        self.pages.populate()?;
-        self.tracker.populate()?;
-        Ok(())
+    /// Returns `true` if GridstoreReader is on disk, i.e. not populated on start/reload
+    pub fn is_on_disk(&self) -> bool {
+        !self.populate.to_bool::<S>()
     }
 
     /// Drop disk cache for pages.
@@ -189,6 +190,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
             tracker: _,
             pages,
             base_path: _,
+            populate: _,
             _value_type,
         } = self;
         pages.clear_cache()?;

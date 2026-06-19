@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, UniversalRead};
+use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead};
 use fs_err as fs;
 
 use super::buffered_offsets::BufferedOffsets;
@@ -584,7 +584,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
 
     let deleted = BitvecFlags::new(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+        DynamicStoredFlags::open(&MmapFs, &deleted_path, Populate::from(populate))?,
     )?;
     let deleted_count = deleted.count_trues();
 
