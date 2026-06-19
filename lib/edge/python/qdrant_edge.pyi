@@ -1475,7 +1475,7 @@ class StopwordsSet:
         """Custom stopwords."""
         ...
 
-StemmingAlgorithm = Union["SnowballParams"]
+StemmingAlgorithm = Union["SnowballParams", "DisabledStemmer"]
 
 class SnowballParams:
     """Snowball stemming algorithm parameters."""
@@ -1492,6 +1492,18 @@ class SnowballParams:
     @property
     def language(self) -> "SnowballLanguage":
         """Snowball language."""
+        ...
+
+class DisabledStemmer:
+    """
+    Explicitly disable stemming, overriding the language default.
+
+    Use together with an empty stopword set for language-neutral text
+    processing, instead of the deprecated ``language="none"`` hack.
+    """
+
+    def __init__(self) -> None:
+        """Create a DisabledStemmer."""
         ...
 
 class SnowballLanguage(Enum):

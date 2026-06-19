@@ -40,7 +40,9 @@ use super::qdrant::{
     start_from,
 };
 use super::stemming_algorithm::StemmingParams;
-use super::{Expression, Formula, RecoQuery, SnowballParams, StemmingAlgorithm, Usage};
+use super::{
+    DisabledStemmer, Expression, Formula, RecoQuery, SnowballParams, StemmingAlgorithm, Usage,
+};
 use crate::conversions::json::{self, json_to_proto};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
@@ -442,6 +444,9 @@ impl From<segment::data_types::index::StemmingAlgorithm> for StemmingAlgorithm {
                 let language = language.to_string();
                 StemmingParams::Snowball(SnowballParams { language })
             }
+            segment::data_types::index::StemmingAlgorithm::Disabled(_) => {
+                StemmingParams::Disabled(DisabledStemmer {})
+            }
         };
 
         StemmingAlgorithm {
@@ -638,6 +643,13 @@ impl TryFrom<StemmingParams> for segment::data_types::index::StemmingAlgorithm {
                     segment::data_types::index::SnowballParams {
                         r#type: segment::data_types::index::Snowball::Snowball,
                         language,
+                    },
+                ))
+            }
+            StemmingParams::Disabled(_) => {
+                Ok(segment::data_types::index::StemmingAlgorithm::Disabled(
+                    segment::data_types::index::DisabledStemmerParams {
+                        r#type: segment::data_types::index::NoStemmer::None,
                     },
                 ))
             }

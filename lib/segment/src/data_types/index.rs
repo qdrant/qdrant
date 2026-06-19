@@ -270,11 +270,29 @@ pub struct SnowballParams {
     pub language: SnowballLanguage,
 }
 
+/// Tag selecting the explicit "no stemming" algorithm.
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NoStemmer {
+    #[default]
+    None,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+pub struct DisabledStemmerParams {
+    pub r#type: NoStemmer,
+}
+
 /// Different stemming algorithms with their configs.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged)]
 pub enum StemmingAlgorithm {
     Snowball(SnowballParams),
+    /// Explicitly opt out of stemming (`{"type": "none"}`).
+    ///
+    /// Differs from leaving `stemmer` unset, which falls back to the
+    /// language default stemmer.
+    Disabled(DisabledStemmerParams),
 }
 
 /// Languages supported by snowball stemmer.
@@ -469,7 +487,7 @@ impl FromStr for Language {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 pub struct StopwordsSet {
     /// Set of languages to use for stopwords.
     /// Multiple pre-defined lists of stopwords can be combined.
@@ -542,6 +560,32 @@ pub struct DatetimeIndexParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_stemming_algorithm_serialization() {
+        // Snowball round-trips with its `type`/`language` shape.
+        let snowball = StemmingAlgorithm::Snowball(SnowballParams {
+            r#type: Snowball::Snowball,
+            language: SnowballLanguage::English,
+        });
+        let json = serde_json::to_string(&snowball).unwrap();
+        assert_eq!(json, r#"{"type":"snowball","language":"english"}"#);
+        let deserialized: StemmingAlgorithm = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, snowball);
+
+        // Disabled is selected by `{"type": "none"}` and round-trips.
+        let disabled = StemmingAlgorithm::Disabled(DisabledStemmerParams {
+            r#type: NoStemmer::None,
+        });
+        let json = serde_json::to_string(&disabled).unwrap();
+        assert_eq!(json, r#"{"type":"none"}"#);
+        let deserialized: StemmingAlgorithm = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, disabled);
+
+        // The two variants must not alias each other.
+        let from_none: StemmingAlgorithm = serde_json::from_str(r#"{"type":"none"}"#).unwrap();
+        assert!(matches!(from_none, StemmingAlgorithm::Disabled(_)));
+    }
 
     #[test]
     fn test_stopwords_option_language_serialization() {

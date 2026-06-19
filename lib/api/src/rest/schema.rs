@@ -228,7 +228,9 @@ const fn default_avg_len() -> NotNan<f64> {
 pub struct TextPreprocessingConfig {
     /// Defines which language to use for text preprocessing.
     /// This parameter is used to construct default stopwords filter and stemmer.
-    /// To disable language-specific processing, set this to `"language": "none"`.
+    /// To disable language-specific processing, set `stemmer` to `{"type": "none"}`
+    /// and configure an empty stopword set. The legacy `"language": "none"` hack is
+    /// deprecated and may be rejected in a future release.
     /// If not specified, English is assumed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,

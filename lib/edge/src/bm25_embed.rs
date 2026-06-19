@@ -204,7 +204,8 @@ fn build_tokens_processor(
 
     let stemmer = match stemmer {
         None => Stemmer::try_default_from_language(&language_str),
-        Some(algorithm) => Some(Stemmer::from_algorithm(&algorithm)),
+        // `Disabled` resolves to `None` here, giving an explicit opt-out of stemming.
+        Some(algorithm) => Stemmer::from_algorithm(&algorithm),
     };
 
     let stopwords_config = match stopwords {
@@ -261,6 +262,28 @@ mod tests {
         let model = EdgeBm25::new(cfg).unwrap();
         let v = model.embed_document("alpha beta gamma");
         assert_eq!(v.indices.len(), 3);
+    }
+
+    #[test]
+    fn disabled_stemmer_keeps_inflections_distinct() {
+        use segment::data_types::index::{DisabledStemmerParams, NoStemmer};
+
+        let stemmed = EdgeBm25::new(EdgeBm25Config::default()).unwrap();
+        // English default stems "running" -> "run", colliding with "run".
+        let stemmed_vec = stemmed.embed_document("running run");
+        assert_eq!(stemmed_vec.indices.len(), 1);
+
+        let cfg = EdgeBm25Config {
+            stemmer: Some(StemmingAlgorithm::Disabled(DisabledStemmerParams {
+                r#type: NoStemmer::None,
+            })),
+            // Empty stopword set: the recommended language-neutral setup.
+            stopwords: Some(StopwordsInterface::Set(Default::default())),
+            ..Default::default()
+        };
+        let unstemmed = EdgeBm25::new(cfg).unwrap();
+        let unstemmed_vec = unstemmed.embed_document("running run");
+        assert_eq!(unstemmed_vec.indices.len(), 2);
     }
 
     #[test]

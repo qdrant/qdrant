@@ -1435,7 +1435,7 @@ pub struct TextIndexParams {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StemmingAlgorithm {
-    #[prost(oneof = "stemming_algorithm::StemmingParams", tags = "1")]
+    #[prost(oneof = "stemming_algorithm::StemmingParams", tags = "1, 2")]
     pub stemming_params: ::core::option::Option<stemming_algorithm::StemmingParams>,
 }
 /// Nested message and enum types in `StemmingAlgorithm`.
@@ -1446,6 +1446,9 @@ pub mod stemming_algorithm {
         /// Parameters for snowball stemming
         #[prost(message, tag = "1")]
         Snowball(super::SnowballParams),
+        /// Explicitly disable stemming (overrides the language default)
+        #[prost(message, tag = "2")]
+        Disabled(super::DisabledStemmer),
     }
 }
 #[derive(serde::Serialize)]
@@ -1455,6 +1458,10 @@ pub struct SnowballParams {
     #[prost(string, tag = "1")]
     pub language: ::prost::alloc::string::String,
 }
+/// Marker selecting the "no stemming" algorithm.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DisabledStemmer {}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BoolIndexParams {
