@@ -59,6 +59,11 @@ jobs:
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          # Dedicated cache for this job would mostly sit idle and get evicted between runs.
+          # Instead, we reuse the integration-tests cache, which overlaps enough to speed this build up.
+          shared-key: integration-tests
+          save-if: "false"
 
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
