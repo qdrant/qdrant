@@ -141,7 +141,10 @@ where
     let local = if let Some(state) = file.local.get() {
         state
     } else {
-        file.init_local_state(true, known_len)?;
+        let mut init_guard = file.init_lock.lock();
+        if file.local.get().is_none() {
+            file.init_local_state(&mut init_guard, true, known_len)?;
+        }
         file.local.get().expect("just initialized")
     };
 

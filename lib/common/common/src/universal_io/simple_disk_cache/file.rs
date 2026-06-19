@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 
 use super::BLOCK_SIZE;
 use super::fs::DiskCacheFs;
@@ -51,7 +51,7 @@ where
     /// Lazily-initialized local mirror.
     pub(super) local: OnceLock<LocalState>,
     /// Guards initialization of `local` and carries the source of init.
-    init_lock: Arc<Mutex<InitSource<R>>>,
+    pub(super) init_lock: Arc<Mutex<InitSource<R>>>,
 }
 
 impl<R> Debug for DiskCache<R>
@@ -141,7 +141,12 @@ where
             return Ok(state);
         }
 
-        self.init_local_state(true, None)?;
+        let mut init_guard = self.init_lock.lock();
+
+        // Try again now that we have the lock, in case another thread initialized it first.
+        if self.local.get().is_none() {
+            self.init_local_state(&mut init_guard, true, None)?;
+        }
 
         Ok(self.local.get().expect("just initialized"))
     }
@@ -152,16 +157,13 @@ where
     /// This is helpful for [`Self::reopen`] scenario where we can avoid work if no reads have taken place.
     pub(super) fn init_local_state(
         &self,
+        init_guard: &mut MutexGuard<'_, InitSource<R>>,
         allow_from_scratch: bool,
         known_length: Option<u64>,
     ) -> Result<()> {
         // Only the first thread is able to initialize.
-        let mut guard = self.init_lock.lock();
-        if self.local.get().is_some() {
-            return Ok(());
-        }
 
-        let local = match std::mem::replace(&mut *guard, InitSource::FromScratch) {
+        let local = match std::mem::replace(&mut **init_guard, InitSource::FromScratch) {
             InitSource::FromScratch => {
                 if !allow_from_scratch {
                     return Ok(());
@@ -255,7 +257,8 @@ where
 
     fn reopen(&mut self) -> Result<()> {
         // Wait for InitSource::Prefill, if set.
-        self.init_local_state(false, None)?;
+        let mut init_guard = self.init_lock.lock();
+        self.init_local_state(&mut init_guard, false, None)?;
 
         if self.local.get().is_none() {
             return Ok(());
