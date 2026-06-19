@@ -106,6 +106,8 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     }
 
     /// Use each value's posting of point ids, invoking `f` once per value.
+    ///
+    /// Order of invocations is not guaranteed.
     fn for_values_map<V: Borrow<N>>(
         &self,
         values: impl Iterator<Item = V>,
