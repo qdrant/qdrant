@@ -37,10 +37,6 @@ jobs:
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
-          cache-from: |
-            type=gha,scope=${{ github.ref }}-e2e
-            type=gha,scope=${{ github.base_ref }}-e2e
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
           load: true
           build-args: |
             PROFILE=ci
