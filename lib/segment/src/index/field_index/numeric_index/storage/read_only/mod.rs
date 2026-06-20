@@ -9,6 +9,7 @@ use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 mod trait_impls;
 

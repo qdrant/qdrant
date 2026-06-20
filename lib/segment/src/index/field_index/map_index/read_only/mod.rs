@@ -7,6 +7,7 @@ use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnly
 use crate::index::field_index::map_index::on_disk_map_index::OnDiskMapIndex;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart of [`MapIndex`][1], parameterised by a

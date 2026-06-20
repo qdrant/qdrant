@@ -396,3 +396,53 @@ fn test_live_reload_withholds_partially_written_version() {
         assert_in_sync(&read_only, &mutable);
     }
 }
+
+#[test]
+fn test_merge_accumulates_unapplied_delta() {
+    // A delete folded into an earlier insert/delete delta keeps both lists sorted
+    // and deduplicated, and survives so a failed reload can replay it.
+    let mut pending = LiveReloadResult {
+        inserted: vec![5, 1, 3],
+        deleted: vec![10, 2],
+    };
+    pending.merge(LiveReloadResult {
+        inserted: vec![7],
+        deleted: vec![8, 2],
+    });
+    assert_eq!(pending.inserted, vec![1, 3, 5, 7]);
+    assert_eq!(pending.deleted, vec![2, 8, 10]);
+}
+
+#[test]
+fn test_merge_cancels_insert_then_delete() {
+    // An offset inserted (but not yet applied) and then deleted is ultimately gone:
+    // dropped from `inserted`, kept in `deleted` so a partially-applied component
+    // drops it on replay.
+    let mut pending = LiveReloadResult {
+        inserted: vec![3, 4],
+        deleted: vec![],
+    };
+    pending.merge(LiveReloadResult {
+        inserted: vec![],
+        deleted: vec![4],
+    });
+    assert_eq!(pending.inserted, vec![3]);
+    assert_eq!(pending.deleted, vec![4]);
+    assert!(!pending.is_empty());
+}
+
+#[test]
+fn test_merge_empty_is_noop() {
+    let mut pending = LiveReloadResult {
+        inserted: vec![1],
+        deleted: vec![2],
+    };
+    pending.merge(LiveReloadResult::default());
+    assert_eq!(pending.inserted, vec![1]);
+    assert_eq!(pending.deleted, vec![2]);
+
+    let mut empty = LiveReloadResult::default();
+    assert!(empty.is_empty());
+    empty.merge(LiveReloadResult::default());
+    assert!(empty.is_empty());
+}
