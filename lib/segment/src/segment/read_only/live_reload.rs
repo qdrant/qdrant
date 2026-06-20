@@ -23,8 +23,6 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
     ) -> OperationResult<()> {
         let Self {
             uuid: _,
-            initial_version: _,
-            version: _,
             segment_path: _,
             id_tracker,
             vector_data,

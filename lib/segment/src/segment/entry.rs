@@ -38,10 +38,6 @@ use crate::vector_storage::{VectorStorage, VectorStorageRead};
 /// This is a basic implementation of the trait, meaning that it implements the _actual_ operations with data and not
 /// any kind of proxy or wrapping.
 impl ReadSegmentEntry for Segment {
-    fn version(&self) -> SeqNumberType {
-        self.version.unwrap_or(0)
-    }
-
     fn is_proxy(&self) -> bool {
         false
     }
@@ -368,6 +364,10 @@ impl Segment {
 }
 
 impl StorageSegmentEntry for Segment {
+    fn version(&self) -> SeqNumberType {
+        self.version.unwrap_or(0)
+    }
+
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.error_status.clone()
     }

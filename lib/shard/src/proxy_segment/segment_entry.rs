@@ -29,10 +29,6 @@ use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
 
 impl ReadSegmentEntry for ProxySegment {
-    fn version(&self) -> SeqNumberType {
-        cmp::max(self.wrapped_segment.get().read().version(), self.version)
-    }
-
     fn is_proxy(&self) -> bool {
         true
     }
@@ -761,6 +757,10 @@ impl ReadSegmentEntry for ProxySegment {
 }
 
 impl StorageSegmentEntry for ProxySegment {
+    fn version(&self) -> SeqNumberType {
+        cmp::max(self.wrapped_segment.get().read().version(), self.version)
+    }
+
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.wrapped_segment.get().read().check_error()
     }
