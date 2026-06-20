@@ -7,6 +7,7 @@ mod hw_metrics;
 mod payload;
 mod points_dedup;
 mod query_prefetch_offset_limit;
+mod segment_manifest;
 mod sha_256_test;
 mod shard_query;
 mod shard_telemetry;

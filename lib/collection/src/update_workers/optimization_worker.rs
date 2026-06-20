@@ -15,6 +15,7 @@ use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_manifest::SegmentsManifest;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, watch};
 use tokio::task;
@@ -55,6 +56,7 @@ impl UpdateWorkers {
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         optimization_finished_sender: watch::Sender<()>,
@@ -121,6 +123,11 @@ impl UpdateWorkers {
                 log::error!("Failed to ensure there are appendable segments with capacity: {err}");
                 panic!("Failed to ensure there are appendable segments with capacity: {err}");
             }
+
+            // Keep the segment manifest in sync with the live segment set. This wake-up follows a
+            // completed optimization (reaped above by `cleanup_optimization_handles`) and/or a new
+            // appendable segment, both of which change the set; the helper no-ops if it didn't.
+            update_segment_manifest(&segment_manifest, &segments);
 
             // If not forcing, wait on next signal if we have too many handles
             if !ignore_max_handles && optimization_handles.lock().await.len() >= max_handles {
@@ -532,5 +539,28 @@ impl UpdateWorkers {
             }
         };
         Ok(0)
+    }
+}
+
+/// Rewrite the segment manifest (`segments/manifest.json`) to match the live segment set, if the
+/// `write_segment_manifest` feature flag is enabled (i.e. `segment_manifest` is `Some`).
+///
+/// Idempotent and cheap: it reads the current segment UUIDs and only writes when they differ from
+/// the persisted manifest, so it is safe to call on every optimizer wake-up.
+fn update_segment_manifest(
+    segment_manifest: &Option<Arc<SaveOnDisk<SegmentsManifest>>>,
+    segments: &LockedSegmentHolder,
+) {
+    let Some(segment_manifest) = segment_manifest else {
+        return;
+    };
+
+    let current = SegmentsManifest::from_segment_holder(&segments.read());
+    if *segment_manifest.read() == current {
+        return;
+    }
+
+    if let Err(err) = segment_manifest.write(|manifest| *manifest = current) {
+        log::error!("Failed to write segment manifest: {err}");
     }
 }
