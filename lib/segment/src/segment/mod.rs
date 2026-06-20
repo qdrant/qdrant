@@ -14,7 +14,7 @@ mod read_view;
 mod tests;
 
 #[allow(dead_code)]
-mod read_only;
+pub mod read_only;
 
 use std::collections::HashMap;
 use std::fmt;

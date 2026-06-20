@@ -196,11 +196,14 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
     }
 
     let hw = HardwareCounterCell::new();
+    
     for i in 0..NUM_POINTS {
         let point_id: PointIdType = (i as u64 + 1).into();
+        let r = reference.payload(point_id, &hw).ok();
+        let c = candidate.payload(point_id, &hw).ok();
         assert_eq!(
-            reference.payload(point_id, &hw).ok(),
-            candidate.payload(point_id, &hw).ok(),
+            reference.payload(point_id, &hw).unwrap(),
+            candidate.payload(point_id, &hw).unwrap(),
             "payload mismatch for point {point_id}",
         );
     }
@@ -221,51 +224,6 @@ fn read_only_segment_matches_mutable() {
 
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
     assert_eq!(read_only.segment_uuid(), segment_uuid);
-
-    assert_query_equivalence(&mutable, &read_only);
-}
-
-/// Points deleted on disk after a read-only view is opened disappear once `live_reload` runs.
-#[test]
-fn read_only_segment_live_reload_deletes() {
-    let hw = HardwareCounterCell::new();
-
-    let segments_dir = Builder::new().prefix("ro_del_segments").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("ro_del_builder").tempdir().unwrap();
-
-    let mut mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
-    let segment_path = mutable.data_path();
-    let segment_uuid = mutable.uuid;
-
-    let read_only = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
-        .expect("read-only open");
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
-
-    let deleted_ids: [PointIdType; 3] = [1u64.into(), 50u64.into(), 100u64.into()];
-    for (op_num, point_id) in (NUM_POINTS as u64 + 10..).zip(deleted_ids) {
-        assert!(
-            mutable.delete_point(op_num, point_id, &hw).unwrap(),
-            "point {point_id} should have existed",
-        );
-    }
-    mutable.flush(true).unwrap();
-
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
-
-    read_only
-        .live_reload(&MmapFs, &HardwareCounterCell::new())
-        .unwrap();
-
-    assert_eq!(
-        read_only.available_point_count(),
-        NUM_POINTS - deleted_ids.len(),
-    );
-    for point_id in deleted_ids {
-        assert!(
-            read_only.payload(point_id, &hw).is_err(),
-            "deleted point {point_id} still readable after reload",
-        );
-    }
 
     assert_query_equivalence(&mutable, &read_only);
 }

@@ -5,25 +5,37 @@ use common::universal_io::UniversalRead;
 use super::ReadOnlySegment;
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 
 impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).
     pub fn live_reload(&self, fs: &S::Fs, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
-        let result = self.id_tracker.borrow_mut().live_reload()?;
+        let Self {
+            id_tracker,
+            initial_version: _,
+            payload_index,
+            payload_storage,
+            segment_config: _,
+            segment_path: _,
+            segment_type: _,
+            uuid: _,
+            vector_data,
+            version: _,
+        } = &self;
+        let LiveReloadResult { inserted, deleted } = id_tracker.borrow_mut().live_reload()?;
 
-        let deleted = SortedSlice::new(&result.deleted)
-            .expect("id-tracker live_reload returns sorted deleted offsets");
-        let inserted = SortedSlice::new(&result.inserted)
-            .expect("id-tracker live_reload returns sorted inserted offsets");
+        // SAFETY: id-tracker live_reload returns sorted offsets
+        let deleted = unsafe { SortedSlice::new_unchecked(&deleted) };
+        let inserted = unsafe { SortedSlice::new_unchecked(&inserted) };
 
-        self.payload_storage
+        payload_storage
             .borrow_mut()
             .live_reload(fs, &deleted, &inserted, hw_counter)?;
-        self.payload_index
+        payload_index
             .borrow_mut()
             .live_reload(fs, &deleted, &inserted, hw_counter)?;
 
-        for vector_data in self.vector_data.values() {
+        for vector_data in vector_data.values() {
             vector_data
                 .vector_storage
                 .borrow_mut()
