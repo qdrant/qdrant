@@ -6,19 +6,22 @@ mod facet;
 mod info;
 mod optimize;
 mod query;
+mod read_only;
+mod read_view;
 mod reexports;
 mod retrieve;
 mod scroll;
 mod search;
+mod shard_read;
 mod snapshots;
 mod types;
 pub use types::*;
 mod update;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
 
 pub use builders::{EdgeConfigBuilder, EdgeSparseVectorParamsBuilder, EdgeVectorParamsBuilder};
 use common::save_on_disk::SaveOnDisk;
@@ -28,6 +31,8 @@ pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 use fs_err as fs;
 pub use info::ShardInfo;
 use parking_lot::Mutex;
+pub use read_only::{LocalSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator};
+pub use read_view::{EdgeShardRead, ReadSegmentHandle};
 pub use reexports::*;
 use segment::entry::ReadSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
@@ -36,6 +41,7 @@ use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
+use uuid::Uuid;
 
 use crate::config::shard::EDGE_CONFIG_FILE;
 
@@ -250,16 +256,17 @@ fn resolve_initial_config(
     })
 }
 
-fn load_segments(
-    _path: &Path,
-    segments_path: &Path,
-    config: &mut Option<EdgeConfig>,
-) -> OperationResult<SegmentHolder> {
+/// Scan a `segments/` directory and return the valid, complete segment directories keyed by UUID.
+///
+/// Skips non-directories, hidden (`.`-prefixed) entries, and (via [`normalize_segment_dir`])
+/// `.deleted` leftovers and segments without a written `version.info`. Shared by [`EdgeShard`]
+/// loading and by the read-only follower's refresh, so both observe the same segment set.
+pub(crate) fn scan_segment_dirs(segments_path: &Path) -> OperationResult<HashMap<Uuid, PathBuf>> {
     let segments_dir = fs::read_dir(segments_path).map_err(|err| {
         OperationError::service_error(format!("failed to read segments directory: {err}"))
     })?;
 
-    let mut segments = SegmentHolder::default();
+    let mut result = HashMap::new();
 
     for entry in segments_dir {
         let entry = entry.map_err(|err| {
@@ -294,6 +301,20 @@ fn load_segments(
             continue;
         };
 
+        result.insert(segment_uuid, segment_path);
+    }
+
+    Ok(result)
+}
+
+fn load_segments(
+    _path: &Path,
+    segments_path: &Path,
+    config: &mut Option<EdgeConfig>,
+) -> OperationResult<SegmentHolder> {
+    let mut segments = SegmentHolder::default();
+
+    for (segment_uuid, segment_path) in scan_segment_dirs(segments_path)? {
         let mut segment = load_segment(&segment_path, segment_uuid, None, &AtomicBool::new(false))
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -356,6 +377,3 @@ fn ensure_appendable_segment(
     debug_assert!(segments.has_appendable_segment());
     Ok(())
 }
-
-// Default timeout of 1h used as a placeholder in Edge
-pub(crate) const DEFAULT_EDGE_TIMEOUT: Duration = Duration::from_secs(3600);
