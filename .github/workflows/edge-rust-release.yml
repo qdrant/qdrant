@@ -57,6 +57,10 @@ jobs:
 
       - name: Restore Rust build cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: edge
+          # edge-test (edge-test.yml) is the broadest build in this group and owns saving the cache
+          save-if: "false"
 
       - name: Prepare data files (for testing examples)
         if: steps.setup-qdrant.conclusion == 'success'

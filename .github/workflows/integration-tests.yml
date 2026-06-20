@@ -27,6 +27,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: integration-tests
+          # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.13'
@@ -55,6 +57,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: integration-tests
+          # integration-tests is the broadest build in this group and owns saving the cache
+          save-if: "false"
       - name: Install dependencies
         run: sudo apt-get install clang
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -104,10 +108,8 @@ jobs:
         with:
           context: .
           tags: qdrant_consensus
-          cache-from: |
-            type=gha,scope=${{ github.base_ref || github.ref_name }}-consensus
-            type=gha,scope=dev-consensus
-          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-consensus', github.ref_name) || '' }}
+          cache-from: type=gha,scope=docker-integration-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-integration-tests' || '' }}
           load: true
           build-args: |
             PROFILE=ci
@@ -124,9 +126,6 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: integration-tests
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Install dependencies
@@ -136,14 +135,7 @@ jobs:
         with:
           context: tools/schema2openapi
           tags: schema2openapi
-          cache-from: |
-            type=gha,scope=${{ github.ref }}-schema2openapi
-            type=gha,scope=${{ github.base_ref }}-schema2openapi
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
           load: true
-          build-args: |
-            PROFILE=ci
-            FEATURES=staging
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: gRPC file consistency check
@@ -171,10 +163,12 @@ jobs:
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: integration-tests
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+          # integration-tests is the broadest build in this group and owns saving the cache
+          save-if: "false"
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: Install dependencies
@@ -245,10 +239,8 @@ jobs:
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
-          cache-from: |
-            type=gha,scope=${{ github.base_ref || github.ref_name }}-e2e
-            type=gha,scope=dev-e2e
-          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-e2e', github.ref_name) || '' }}
+          cache-from: type=gha,scope=docker-e2e-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-e2e-tests' || '' }}
           load: true
           build-args: |
             PROFILE=ci
