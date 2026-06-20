@@ -103,4 +103,8 @@ where
         let bytes = self.file.get_range_bytes(start..end, align)?;
         Ok(Some((user_data, bytes)))
     }
+
+    fn into_inner(self) -> CachedSlice {
+        self.file
+    }
 }

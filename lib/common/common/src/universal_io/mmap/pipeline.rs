@@ -102,4 +102,8 @@ where
         let slice = read_bytes(bytes, range)?;
         Ok(Some((user_data, ACow::Borrowed(slice))))
     }
+
+    fn into_inner(self) -> MmapFile {
+        self.file
+    }
 }

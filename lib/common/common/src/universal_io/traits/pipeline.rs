@@ -89,6 +89,13 @@ where
     /// See [`BorrowedReadPipeline::wait()`].
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>>;
 
+    /// Consume the pipeline and return the underlying file, so it can be reused
+    /// without re-opening it.
+    ///
+    /// Any reads that were scheduled but not yet drained via [`Self::wait`] are
+    /// discarded.
+    fn into_inner(self) -> Self::File;
+
     #[inline]
     fn wait_bytemuck<T: Item>(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
         let Some((user_data, bytes)) = self.wait()? else {

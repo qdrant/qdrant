@@ -61,4 +61,8 @@ where
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         Ok(self.inner.wait()?.map(|(u, v)| (u, ACow::Owned(v))))
     }
+
+    fn into_inner(self) -> BlobFile<A> {
+        self.file
+    }
 }

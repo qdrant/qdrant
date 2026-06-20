@@ -403,4 +403,8 @@ where
             unsafe { commit_and_read::<R>(&self.file, &bytes, scheduled_read)? };
         Ok(Some((user_data, ACow::Borrowed(items))))
     }
+
+    fn into_inner(self) -> DiskCache<R> {
+        self.file
+    }
 }

@@ -105,6 +105,18 @@ where
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         self.inner.wait()
     }
+
+    fn into_inner(self) -> IoUringFile {
+        // Wrap in `ManuallyDrop` so our own `Drop` impl doesn't run; we take
+        // both fields out by hand instead.
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: `this` is `ManuallyDrop`, so its destructor never runs and
+        // each field is taken exactly once.
+        let file = unsafe { ManuallyDrop::take(&mut this.file) };
+        let inner = unsafe { ManuallyDrop::take(&mut this.inner) };
+        drop(inner);
+        file
+    }
 }
 
 impl<U> Drop for OwnedIoUringPipeline<U>

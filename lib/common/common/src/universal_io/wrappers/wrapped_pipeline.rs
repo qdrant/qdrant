@@ -103,4 +103,9 @@ where
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         self.inner.wait()
     }
+
+    #[inline]
+    fn into_inner(self) -> File {
+        File::wrap(self.inner.into_inner())
+    }
 }
