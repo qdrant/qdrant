@@ -1,32 +1,60 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use segment::common::operation_error::OperationResult;
-use shard::files::SEGMENTS_PATH;
+use shard::files::{SEGMENT_MANIFEST_FILE, SEGMENTS_PATH};
+use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 use uuid::Uuid;
 
 use crate::scan_segment_dirs;
 
-/// Enumerates the segment directories currently present on the backend, keyed by their UUID.
+/// Enumerates the segments that make up the shard, keyed by their UUID.
 ///
-/// **Temporary seam.** Until segments are tracked by an on-disk manifest, there is no cross-backend
-/// way to list segment directories: the universal-IO `list_files` is local-only files-and-non
-/// recursive, and the proper S3 primitive (`object_store` `list_with_delimiter` → common prefixes)
-/// is not exposed by the fs abstraction. So the follower delegates discovery to an enumerator,
-/// chosen by whoever knows the backend:
+/// The follower delegates discovery to an enumerator, chosen by whoever knows the backend:
 ///
-/// * local / mmap → [`LocalSegmentEnumerator`] (reads the `segments/` directory);
-/// * S3 → a caller-supplied enumerator backed by `object_store` `list_with_delimiter`;
-/// * future → a `ManifestSegmentEnumerator` reading the segment manifest, at which point this seam
-///   collapses to a single implementation.
+/// * the default ([`ManifestSegmentEnumerator`], wired by
+///   [`open_mmap`](super::ReadOnlyEdgeShard::open_mmap)) reads the leader's segment manifest;
+/// * [`LocalSegmentEnumerator`] scans the local `segments/` directory;
+/// * an S3 follower can supply its own (e.g. reading the manifest over object storage).
 ///
 /// Called on every [`refresh`](super::ReadOnlyEdgeShard::refresh), so it must reflect the current
-/// on-disk set. The returned paths are segment directory paths interpreted relative to the backend
-/// root (e.g. `segments/<uuid>`), matching what [`ReadOnlySegment::open`] expects.
+/// set. The returned paths are segment directory paths interpreted relative to the backend root
+/// (e.g. `segments/<uuid>`), matching what [`ReadOnlySegment::open`] expects.
 ///
 /// [`ReadOnlySegment::open`]: segment::segment::read_only::ReadOnlySegment::open
 pub trait SegmentEnumerator: Send + Sync {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>>;
+}
+
+/// [`SegmentEnumerator`] that reads the leader's segment manifest (`segments/manifest.json`) and
+/// returns its `active` segments — the proper, scan-free discovery path. Errors if no manifest is
+/// present: the manifest is the source of truth, so a follower using this enumerator requires the
+/// leader to write one (the `write_segment_manifest` feature flag).
+///
+/// Wired automatically by [`ReadOnlyEdgeShard::open_mmap`](super::ReadOnlyEdgeShard::open_mmap).
+pub struct ManifestSegmentEnumerator {
+    segments_path: PathBuf,
+}
+
+impl ManifestSegmentEnumerator {
+    /// `shard_path` is the shard root (the directory containing `segments/`).
+    pub fn new(shard_path: &Path) -> Self {
+        Self {
+            segments_path: shard_path.join(SEGMENTS_PATH),
+        }
+    }
+}
+
+impl SegmentEnumerator for ManifestSegmentEnumerator {
+    fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
+        let manifest_path = self.segments_path.join(SEGMENT_MANIFEST_FILE);
+        let manifest = SegmentsManifest::load(&manifest_path)?;
+        Ok(manifest
+            .iter()
+            .filter(|(_, state)| matches!(state, SegmentManifestState::Active))
+            .map(|(uuid, _)| (*uuid, self.segments_path.join(uuid.to_string())))
+            .collect())
+    }
 }
 
 /// [`SegmentEnumerator`] for local filesystems: scans the `segments/` directory. Wired

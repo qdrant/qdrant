@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use crate::EdgeConfig;
 use crate::read_only::ReadOnlyEdgeShard;
-use crate::read_only::lifecycle::is_transient_open_error;
 
 impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
     /// Refresh the follower to the leader's current on-disk state.
@@ -55,17 +54,9 @@ impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
                 if holder.contains(uuid) {
                     continue;
                 }
-                match ReadOnlySegment::<S>::open(&self.fs, segment_path, *uuid, None) {
-                    Ok(segment) => {
-                        let appendable = segment.segment_config.is_appendable();
-                        holder.insert(*uuid, appendable, Arc::new(RwLock::new(segment)));
-                    }
-                    // Mid-write by the leader or removed underneath us — retried next refresh.
-                    Err(err) if is_transient_open_error(&err) => {}
-                    Err(err) => {
-                        log::warn!("failed to open segment {uuid} during refresh: {err}");
-                    }
-                }
+                let segment = ReadOnlySegment::<S>::open(&self.fs, segment_path, *uuid, None)?;
+                let appendable = segment.segment_config.is_appendable();
+                holder.insert(*uuid, appendable, Arc::new(RwLock::new(segment)));
             }
 
             holder.remove_missing(&on_disk);

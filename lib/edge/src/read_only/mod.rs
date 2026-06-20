@@ -27,7 +27,9 @@ use parking_lot::RwLock;
 use segment::segment::read_only::ReadOnlySegment;
 
 use crate::EdgeConfig;
-pub use crate::read_only::enumerate::{LocalSegmentEnumerator, SegmentEnumerator};
+pub use crate::read_only::enumerate::{
+    LocalSegmentEnumerator, ManifestSegmentEnumerator, SegmentEnumerator,
+};
 use crate::read_only::holder::ReadOnlySegmentHolder;
 use crate::read_view::EdgeShardRead;
 

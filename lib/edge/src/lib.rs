@@ -31,15 +31,18 @@ pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 use fs_err as fs;
 pub use info::ShardInfo;
 use parking_lot::Mutex;
-pub use read_only::{LocalSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator};
+pub use read_only::{
+    LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,
+};
 pub use read_view::{EdgeShardRead, ReadSegmentHandle};
 pub use reexports::*;
 use segment::entry::ReadSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
-use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH};
+use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_manifest::SegmentsManifest;
 use shard::wal::SerdeWal;
 use uuid::Uuid;
 
@@ -51,6 +54,10 @@ pub struct EdgeShard {
     config: SaveOnDisk<EdgeConfig>,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
+    /// Segment manifest (`segments/manifest.json`), kept in sync with the live segment set so a
+    /// read-only follower can discover segments without scanning. `Some` only when the
+    /// `write_segment_manifest` feature flag is enabled.
+    segment_manifest: Option<SaveOnDisk<SegmentsManifest>>,
 }
 
 const WAL_PATH: &str = "wal";
@@ -79,11 +86,14 @@ impl EdgeShard {
         let config = SaveOnDisk::new(&config_path, config)
             .map_err(|e| OperationError::service_error(e.to_string()))?;
 
+        let segment_manifest = init_segment_manifest(path, &segments)?;
+
         Ok(Self {
             path: path.into(),
             config,
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
+            segment_manifest,
         })
     }
 
@@ -129,12 +139,33 @@ impl EdgeShard {
         let config = SaveOnDisk::new(&config_path, config)
             .map_err(|e| OperationError::service_error(e.to_string()))?;
 
+        let segment_manifest = init_segment_manifest(path, &segments)?;
+
         Ok(Self {
             path: path.into(),
             config,
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
+            segment_manifest,
         })
+    }
+
+    /// Rebuild and persist the segment manifest from the current live segment set, when enabled.
+    /// Cheap and idempotent: only writes when the set differs from what's persisted.
+    pub(crate) fn update_segment_manifest(&self) -> OperationResult<()> {
+        let Some(manifest) = &self.segment_manifest else {
+            return Ok(());
+        };
+
+        let current = SegmentsManifest::from_segment_holder(&self.segments.read());
+        if *manifest.read() == current {
+            return Ok(());
+        }
+
+        manifest
+            .write(|manifest| *manifest = current)
+            .map_err(|err| OperationError::service_error(err.to_string()))?;
+        Ok(())
     }
 
     pub fn config(&self) -> parking_lot::RwLockReadGuard<'_, EdgeConfig> {
@@ -192,6 +223,22 @@ impl Drop for EdgeShard {
     fn drop(&mut self) {
         self.flush();
     }
+}
+
+/// Initialize the segment manifest from the current segments, when the `write_segment_manifest`
+/// feature flag is enabled. Returns `None` (and writes nothing) when disabled.
+fn init_segment_manifest(
+    path: &Path,
+    segments: &SegmentHolder,
+) -> OperationResult<Option<SaveOnDisk<SegmentsManifest>>> {
+    if !common::flags::feature_flags().write_segment_manifest {
+        return Ok(None);
+    }
+
+    let manifest = SegmentsManifest::from_segment_holder(segments);
+    let manifest = SaveOnDisk::new(segment_manifest_path(path), manifest)
+        .map_err(|err| OperationError::service_error(err.to_string()))?;
+    Ok(Some(manifest))
 }
 
 fn has_existing_segments(path: &Path) -> bool {

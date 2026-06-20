@@ -3,15 +3,16 @@
 //! leader's flushed state after a [`refresh`](ReadOnlyEdgeShard::refresh).
 #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use common::flags::{FeatureFlags, init_feature_flags};
 use common::universal_io::{MmapFile, MmapFs};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
 use shard::count::CountRequestInternal;
-use shard::files::SEGMENTS_PATH;
+use shard::files::{SEGMENTS_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
@@ -20,7 +21,9 @@ use shard::scroll::ScrollRequestInternal;
 use uuid::Uuid;
 
 use crate::config::vectors::EdgeVectorParams;
-use crate::read_only::{ReadOnlyEdgeShard, SegmentEnumerator};
+use crate::read_only::{
+    LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,
+};
 use crate::read_view::EdgeShardRead;
 use crate::{EdgeConfig, EdgeShard, scan_segment_dirs};
 
@@ -70,6 +73,12 @@ fn upsert(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
 fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
     let ids = ids.into_iter().map(ExtendedPointId::NumId).collect();
     shard.update(PointOperation(DeletePoints { ids })).unwrap();
+}
+
+/// Open a follower that discovers segments by scanning the directory (no manifest required) — used
+/// by the read/refresh tests, whose leaders don't write a manifest.
+fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
+    ReadOnlyEdgeShard::<MmapFile>::open(MmapFs, path, LocalSegmentEnumerator::new(path)).unwrap()
 }
 
 fn exact_count(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
@@ -150,7 +159,7 @@ fn follower_sees_flushed_data() {
     upsert(&leader, 1..=100);
     leader.flush();
 
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let follower = open_follower(dir.path());
     follower.refresh().unwrap();
 
     assert_eq!(exact_count(&follower), 100);
@@ -170,7 +179,7 @@ fn refresh_picks_up_incremental_writes() {
     upsert(&leader, 1..=50);
     leader.flush();
 
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let follower = open_follower(dir.path());
     follower.refresh().unwrap();
     assert_eq!(exact_count(&follower), 50);
 
@@ -195,7 +204,7 @@ fn follower_reflects_deletes() {
     upsert(&leader, 1..=100);
     leader.flush();
 
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let follower = open_follower(dir.path());
     follower.refresh().unwrap();
     assert_eq!(exact_count(&follower), 100);
 
@@ -232,7 +241,7 @@ fn follower_tracks_optimization_swap() {
     delete(&leader, 1..=300);
     leader.flush();
 
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let follower = open_follower(dir.path());
     follower.refresh().unwrap();
     assert_eq!(exact_count(&follower), 700);
 
@@ -259,7 +268,7 @@ fn refresh_on_unchanged_dir_is_noop() {
     upsert(&leader, 1..=10);
     leader.flush();
 
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let follower = open_follower(dir.path());
     follower.refresh().unwrap();
     let before = exact_count(&follower);
 
@@ -319,7 +328,7 @@ fn follower_uses_injected_enumerator() {
     let hidden = *all_segments.keys().next().unwrap();
 
     // Baseline: the default (local) enumerator discovers every segment on disk.
-    let baseline = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let baseline = open_follower(dir.path());
     assert_eq!(baseline.segments_count(), all_segments.len());
 
     // Injected enumerator hides one segment: the follower must track exactly what it reports, not
@@ -338,4 +347,85 @@ fn follower_uses_injected_enumerator() {
     // A refresh still goes through the same enumerator, so the hidden segment stays hidden.
     follower.refresh().unwrap();
     assert_eq!(follower.segments_count(), all_segments.len() - 1);
+}
+
+/// `ManifestSegmentEnumerator` requires a manifest (it errors without one, rather than scanning) and
+/// returns only the manifest's `active` segments.
+#[test]
+fn manifest_enumerator_requires_manifest() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-manifest")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=100);
+    leader.flush();
+
+    let segments_path = dir.path().join(SEGMENTS_PATH);
+    let on_disk: HashSet<Uuid> = scan_segment_dirs(&segments_path)
+        .unwrap()
+        .into_keys()
+        .collect();
+    assert!(!on_disk.is_empty());
+
+    let enumerator = ManifestSegmentEnumerator::new(dir.path());
+    let manifest_path = segment_manifest_path(dir.path());
+
+    // No manifest → error, not a directory scan.
+    let _ = fs_err::remove_file(&manifest_path);
+    assert!(enumerator.list_segments().is_err());
+
+    // With a manifest, only its `active` segments are returned — here just one of the on-disk dirs.
+    let active = *on_disk.iter().next().unwrap();
+    fs_err::write(&manifest_path, format!(r#"{{"{active}":"active"}}"#)).unwrap();
+    let from_manifest: HashSet<Uuid> = enumerator.list_segments().unwrap().into_keys().collect();
+    assert_eq!(from_manifest, HashSet::from([active]));
+}
+
+/// With the `write_segment_manifest` flag enabled, the leader `EdgeShard` writes a manifest listing
+/// its segments, and a follower opened over the same directory loads through it.
+#[test]
+#[allow(clippy::field_reassign_with_default)]
+fn leader_writes_manifest_and_follower_loads_it() {
+    let mut flags = FeatureFlags::default();
+    flags.write_segment_manifest = true;
+    init_feature_flags(flags);
+
+    // Another test in this process may have initialized flags first; the assertions below only hold
+    // with the flag enabled.
+    if !common::flags::feature_flags().write_segment_manifest {
+        return;
+    }
+
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-manifest-write")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=100);
+    leader.flush();
+
+    // The leader wrote a manifest listing every live segment.
+    let manifest_path = segment_manifest_path(dir.path());
+    assert!(
+        manifest_path.exists(),
+        "leader should write the segment manifest"
+    );
+    let on_disk: HashSet<Uuid> = scan_segment_dirs(&dir.path().join(SEGMENTS_PATH))
+        .unwrap()
+        .into_keys()
+        .collect();
+    let from_manifest: HashSet<Uuid> = ManifestSegmentEnumerator::new(dir.path())
+        .list_segments()
+        .unwrap()
+        .into_keys()
+        .collect();
+    assert_eq!(from_manifest, on_disk);
+
+    // The follower discovers and serves the data through the manifest.
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    follower.refresh().unwrap();
+    assert_eq!(exact_count(&follower), 100);
 }
