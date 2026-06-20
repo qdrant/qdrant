@@ -5,6 +5,7 @@ use super::on_disk_text_index::OnDiskFullTextIndex;
 use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart of [`FullTextIndex`][1], parameterised by a
