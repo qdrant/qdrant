@@ -7,6 +7,7 @@ use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::universal_io::UniversalRead;
 use uuid::Uuid;
 
+use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::read_only::VectorIndexReadEnum;
@@ -39,6 +40,15 @@ pub struct ReadOnlySegment<S: UniversalRead + 'static> {
     pub vector_data: HashMap<VectorNameBuf, ReadOnlyVectorData<S>>,
     pub payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
     pub payload_storage: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
+
+    /// Id-tracker delta consumed but not yet fully applied to every component.
+    ///
+    /// [`live_reload`](ReadOnlySegment::live_reload) drains the id-tracker delta
+    /// (which advances tracker state and cannot be replayed) and fans it out to
+    /// all components. If any component fails mid-way, the delta is kept here so
+    /// the next reload folds in fresh changes and replays the union — components
+    /// can't drift out of sync. Empty once everything is in sync.
+    pub pending_reload: AtomicRefCell<LiveReloadResult>,
 
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,

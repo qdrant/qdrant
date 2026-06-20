@@ -23,6 +23,39 @@ pub struct LiveReloadResult {
     pub deleted: Vec<PointOffsetType>,
 }
 
+impl LiveReloadResult {
+    /// `true` if this delta carries no changes.
+    pub fn is_empty(&self) -> bool {
+        self.inserted.is_empty() && self.deleted.is_empty()
+    }
+
+    /// Fold a freshly-read delta into this not-yet-applied one, keeping both lists
+    /// sorted ascending and deduplicated.
+    ///
+    /// Used to retain unapplied changes across a failed reload: the next reload
+    /// folds in the tracker's new delta and replays the union, so no change is
+    /// dropped. Offsets are monotonic (a deleted offset is never reused), so the
+    /// only cross-conflict is an offset that was inserted (but not yet applied)
+    /// and then deleted — it is ultimately gone, so it is dropped from `inserted`
+    /// and kept in `deleted`. That way a component which already ingested it
+    /// during the failed attempt drops it when the union is replayed.
+    pub fn merge(&mut self, other: LiveReloadResult) {
+        let LiveReloadResult { inserted, deleted } = other;
+
+        self.inserted.extend(inserted);
+        self.inserted.sort_unstable();
+        self.inserted.dedup();
+
+        self.deleted.extend(deleted);
+        self.deleted.sort_unstable();
+        self.deleted.dedup();
+
+        let deleted = &self.deleted;
+        self.inserted
+            .retain(|offset| deleted.binary_search(offset).is_err());
+    }
+}
+
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Consume mapping and version changes appended to storage since the last reload.
     ///

@@ -10,7 +10,17 @@ use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 
 impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).
-    pub fn live_reload(&self, fs: &S::Fs, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    ///
+    /// Draining the id-tracker advances its internal state and cannot be replayed,
+    /// so the delta is accumulated into `pending_reload` and only cleared once
+    /// every component has reloaded successfully. If a component fails mid-way the
+    /// delta is retained, and a later reload folds in the tracker's new changes and
+    /// replays the union — no component is left drifting on a partial reload.
+    pub fn live_reload(
+        &mut self,
+        fs: &S::Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let Self {
             uuid: _,
             initial_version: _,
@@ -20,26 +30,39 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
             vector_data,
             payload_index,
             payload_storage,
+            pending_reload,
             segment_type: _,
             segment_config: _,
         } = self;
 
-        let LiveReloadResult { inserted, deleted } = id_tracker.borrow_mut().live_reload()?;
+        // Drain the tracker delta and fold it into whatever a previous reload left
+        // unapplied. This must happen before any component reload can fail, so the
+        // accumulated delta survives an error and is replayed on the next call.
+        let fresh = id_tracker.borrow_mut().live_reload()?;
+        let mut pending = pending_reload.borrow_mut();
+        pending.merge(fresh);
 
-        // SAFETY: id-tracker live_reload returns sorted offsets
-        let deleted = unsafe { SortedSlice::new_unchecked(&deleted) };
-        let inserted = unsafe { SortedSlice::new_unchecked(&inserted) };
+        // Replay the full accumulated delta to every component. Bail on the first
+        // error without clearing `pending`, so the next reload retries the union.
+        {
+            // SAFETY: `merge` keeps both lists sorted ascending.
+            let deleted = unsafe { SortedSlice::new_unchecked(&pending.deleted) };
+            let inserted = unsafe { SortedSlice::new_unchecked(&pending.inserted) };
 
-        payload_storage
-            .borrow_mut()
-            .live_reload(fs, &deleted, &inserted, hw_counter)?;
-        payload_index
-            .borrow_mut()
-            .live_reload(fs, &deleted, &inserted, hw_counter)?;
+            payload_storage
+                .borrow_mut()
+                .live_reload(fs, &deleted, &inserted, hw_counter)?;
+            payload_index
+                .borrow_mut()
+                .live_reload(fs, &deleted, &inserted, hw_counter)?;
 
-        for vector_data in vector_data.values() {
-            vector_data.live_reload(fs, &deleted, &inserted, hw_counter)?;
+            for vector_data in vector_data.values() {
+                vector_data.live_reload(fs, &deleted, &inserted, hw_counter)?;
+            }
         }
+
+        // Every component is now in sync; discard the applied delta.
+        *pending = LiveReloadResult::default();
 
         Ok(())
     }

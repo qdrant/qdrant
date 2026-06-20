@@ -145,6 +145,7 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
             vector_data,
             payload_index,
             payload_storage,
+            pending_reload: AtomicRefCell::new(Default::default()),
             segment_type,
             segment_config: config,
         })
