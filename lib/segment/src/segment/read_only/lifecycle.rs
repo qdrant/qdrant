@@ -45,8 +45,8 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
         }
 
         let SegmentState {
-            initial_version,
-            version,
+            initial_version: _,
+            version: _,
             config,
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
 
@@ -143,8 +143,6 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
 
         Ok(Self {
             uuid,
-            initial_version,
-            version,
             segment_path: segment_path.to_path_buf(),
             id_tracker,
             vector_data,
