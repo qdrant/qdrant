@@ -147,7 +147,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CreateCollection.optimizers_config", ""),
             ("CreateCollection.vectors_config", ""),
             ("CreateCollection.quantization_config", ""),
-            ("CreateCollection.shard_number", "range(min = 1)"),
+            ("CreateCollection.shard_number", "range(min = 1, max = 10000)"),
             ("CreateCollection.replication_factor", "range(min = 1)"),
             ("CreateCollection.write_consistency_factor", "range(min = 1)"),
             ("CreateCollection.strict_mode_config", ""),

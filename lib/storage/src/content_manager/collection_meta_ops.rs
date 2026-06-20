@@ -122,7 +122,7 @@ pub struct CreateCollection {
     ///  - Default is 1, meaning that each shard key will be mapped to a single shard
     ///  - Minimum is 1
     #[serde(default)]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 10000))]
     pub shard_number: Option<u32>,
     /// Sharding method
     /// Default is Auto - points are distributed across all available shards
