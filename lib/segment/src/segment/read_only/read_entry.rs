@@ -35,10 +35,6 @@ use crate::types::{
 /// accordingly. All other operations delegate to the shared `SegmentReadView`,
 /// exactly like the mutable `Segment`.
 impl<S: UniversalRead + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
-    fn version(&self) -> SeqNumberType {
-        self.version.unwrap_or(0)
-    }
-
     fn is_proxy(&self) -> bool {
         false
     }

@@ -16,7 +16,7 @@ use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
-use crate::types::{SegmentConfig, SegmentType, SeqNumberType, VectorNameBuf};
+use crate::types::{SegmentConfig, SegmentType, VectorNameBuf};
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -28,11 +28,6 @@ mod tests;
 
 pub struct ReadOnlySegment<S: UniversalRead + 'static> {
     pub uuid: Uuid,
-    /// Initial version this segment was created at
-    pub initial_version: Option<SeqNumberType>,
-    /// Latest update operation number, applied to this segment
-    /// If None, there were no updates and segment is empty
-    pub version: Option<SeqNumberType>,
     /// Path to the segment directory
     pub segment_path: PathBuf,
 

@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::manifest::{FileVersion, SegmentManifest};
 use crate::entry::ReadSegmentEntry as _;
+use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
