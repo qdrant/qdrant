@@ -196,11 +196,9 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
     }
 
     let hw = HardwareCounterCell::new();
-    
+
     for i in 0..NUM_POINTS {
         let point_id: PointIdType = (i as u64 + 1).into();
-        let r = reference.payload(point_id, &hw).ok();
-        let c = candidate.payload(point_id, &hw).ok();
         assert_eq!(
             reference.payload(point_id, &hw).unwrap(),
             candidate.payload(point_id, &hw).unwrap(),
