@@ -158,6 +158,109 @@ async fn test_optimization_process() {
     assert_eq!(total_optimized_points.load(Ordering::Relaxed), 119);
 }
 
+/// Regression test for the manifest safety invariant: the on-disk segment manifest must never
+/// reference a segment that has been deleted from disk while its replacement is unregistered (that
+/// would lose data when loading a read replica from that moment).
+///
+/// During a merge optimization the input segments are deleted from disk and replaced by a new
+/// optimized segment. The holder drops the superseded segments from the manifest as part of the
+/// swap, and `finish_optimization` confirms the manifest is in sync *before* deleting them from
+/// disk, so afterwards the persisted manifest must list exactly the live segment set — never a
+/// merged-away segment. This test runs the optimization directly (no worker loop, so the lazy
+/// backstop never runs); the holder's in-place manifest maintenance is the only thing keeping it
+/// correct here.
+#[tokio::test]
+async fn optimization_keeps_manifest_consistent_with_live_segments() {
+    use shard::segment_manifest::SegmentsManifest;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let dim = 256;
+    let mut holder = SegmentHolder::default();
+
+    let segments_to_merge = [
+        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+    ];
+    let segment_to_index = holder.add_new(random_segment(dir.path(), 100, 110, dim));
+    let _other_segment_ids = [
+        holder.add_new(random_segment(dir.path(), 100, 20, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 20, dim)),
+    ];
+
+    // UUIDs of the segments that will be optimized away and deleted from disk.
+    let optimized_away_uuids = segments_to_merge
+        .iter()
+        .chain(std::iter::once(&segment_to_index))
+        .map(|&sid| holder.get(sid).unwrap().get().read().segment_uuid())
+        .collect_vec();
+
+    // Initialize the manifest from the starting segment set and attach it to the holder, like a
+    // freshly built shard would. From here on the holder keeps it in sync automatically.
+    let manifest_path = dir.path().join("manifest.json");
+    let manifest = Arc::new(
+        SaveOnDisk::new(
+            manifest_path.clone(),
+            SegmentsManifest::from_segment_holder(&holder),
+        )
+        .unwrap(),
+    );
+    holder.set_segment_manifest(Some(manifest));
+
+    let merge_optimizer: Arc<Optimizer> =
+        Arc::new(get_merge_optimizer(dir.path(), temp_dir.path(), dim, None));
+    let indexing_optimizer: Arc<Optimizer> =
+        Arc::new(get_indexing_optimizer(dir.path(), temp_dir.path(), dim));
+    let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
+
+    let optimizers_log = Arc::new(Mutex::new(Default::default()));
+    let total_optimized_points = Arc::new(AtomicUsize::new(0));
+    let segments = LockedSegmentHolder::new(holder);
+
+    // Drain all scheduled optimizations (may take several rounds under a tight CPU budget).
+    loop {
+        let handles = UpdateWorkers::launch_optimization(
+            optimizers.clone(),
+            optimizers_log.clone(),
+            total_optimized_points.clone(),
+            &ResourceBudget::default(),
+            segments.clone(),
+            || {},
+            None,
+        );
+        if handles.is_empty() {
+            break;
+        }
+        let join_res = join_all(handles.into_iter().map(|x| x.join_handle).collect_vec()).await;
+        for res in join_res {
+            assert!(res.is_ok());
+        }
+    }
+
+    // Sanity: an optimization actually happened, otherwise the test is vacuous.
+    assert!(total_optimized_points.load(Ordering::Relaxed) > 0);
+
+    // The persisted manifest must reflect exactly the live segment set: never missing a live
+    // segment, never referencing a deleted one.
+    let persisted: SegmentsManifest = common::fs::read_json(&manifest_path).unwrap();
+    let live = SegmentsManifest::from_segment_holder(&segments.read());
+    assert_eq!(
+        persisted, live,
+        "persisted manifest must match the live segment set after optimization",
+    );
+
+    // Explicitly assert the optimized-away segments (deleted from disk) are not referenced.
+    for uuid in &optimized_away_uuids {
+        assert!(
+            persisted.get(uuid).is_none(),
+            "manifest must not reference an optimized-away (deleted) segment {uuid}",
+        );
+    }
+    assert!(!persisted.is_empty());
+}
+
 #[tokio::test]
 async fn test_cancel_optimization() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -336,6 +439,90 @@ async fn test_new_segment_when_all_over_capacity() {
     )
     .unwrap();
     assert_eq!(segments.read().len(), 7);
+}
+
+/// Regression test: when a new appendable segment is created at runtime because all existing
+/// appendable segments are over capacity, it must be registered in the manifest *before* it
+/// becomes a live write target. The holder does this automatically when the segment is added; this
+/// test calls `ensure_appendable_segment_with_capacity` in isolation (no worker loop, so the lazy
+/// backstop never runs), so the holder's in-place registration is the only thing keeping it correct.
+#[tokio::test]
+async fn ensure_appendable_segment_registers_in_manifest() {
+    use std::collections::HashSet;
+
+    use shard::segment_manifest::SegmentsManifest;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 256;
+    let collection_params = CollectionParams {
+        vectors: VectorsConfig::Single(VectorParamsBuilder::new(dim as u64, Distance::Dot).build()),
+        ..CollectionParams::empty()
+    };
+    // Tiny max segment size so all existing segments are considered over capacity.
+    let optimizer_thresholds = OptimizerThresholds {
+        max_segment_size_kb: 1,
+        memmap_threshold_kb: 1_000_000,
+        indexing_threshold_kb: 1_000_000,
+        deferred_internal_id: None,
+    };
+    let hnsw_config = Default::default();
+    let segment_config =
+        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
+
+    let payload_schema_file = dir.path().join("payload.schema");
+    let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
+
+    let mut holder = SegmentHolder::default();
+    for _ in 0..3 {
+        holder.add_new(random_segment(dir.path(), 100, 3, dim));
+    }
+
+    let initial_uuids: HashSet<_> = holder
+        .iter()
+        .map(|(_, seg)| seg.get().read().segment_uuid())
+        .collect();
+
+    // Initialize the manifest from the starting segment set and attach it to the holder, like a
+    // freshly built shard would.
+    let manifest_path = dir.path().join("manifest.json");
+    let manifest = Arc::new(
+        SaveOnDisk::new(
+            manifest_path.clone(),
+            SegmentsManifest::from_segment_holder(&holder),
+        )
+        .unwrap(),
+    );
+    holder.set_segment_manifest(Some(manifest));
+
+    let segments = LockedSegmentHolder::new(holder);
+
+    UpdateWorkers::ensure_appendable_segment_with_capacity(
+        &segments,
+        dir.path(),
+        &segment_config,
+        &optimizer_thresholds,
+        payload_index_schema,
+    )
+    .unwrap();
+
+    // A new appendable segment must have been created.
+    assert_eq!(segments.read().len(), initial_uuids.len() + 1);
+
+    // It must already be in the persisted manifest, which must match the live segment set exactly:
+    // never missing a live (writable) segment.
+    let persisted: SegmentsManifest = common::fs::read_json(&manifest_path).unwrap();
+    let live = SegmentsManifest::from_segment_holder(&segments.read());
+    assert_eq!(
+        persisted, live,
+        "manifest must include the newly created appendable segment",
+    );
+
+    // Sanity: the manifest grew by exactly the new segment and still lists the originals.
+    assert_eq!(persisted.len(), initial_uuids.len() + 1);
+    for uuid in &initial_uuids {
+        assert!(persisted.get(uuid).is_some());
+    }
 }
 
 #[test]

@@ -10,7 +10,6 @@ use parking_lot::Mutex;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
-use shard::segment_manifest::SegmentsManifest;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
@@ -77,7 +76,6 @@ pub struct UpdateHandler {
     collection_name: CollectionId,
     shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-    segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Log of optimizer statuses
@@ -144,7 +142,6 @@ impl UpdateHandler {
         collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
@@ -165,7 +162,6 @@ impl UpdateHandler {
             collection_name,
             shared_storage_config,
             payload_index_schema,
-            segment_manifest,
             optimizers,
             segments,
             update_worker: None,
@@ -212,7 +208,6 @@ impl UpdateHandler {
                 self.max_optimization_threads,
                 self.has_triggered_optimizers.clone(),
                 self.payload_index_schema.clone(),
-                self.segment_manifest.clone(),
                 self.scroll_read_lock.clone(),
                 self.update_tracker.clone(),
                 optimization_finished_sender,

@@ -84,7 +84,7 @@ fn test_multi_filterable_hnsw(
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
     for n in 0..num_points {
         let idx = n.into();
         // Random number of vectors per multivec point

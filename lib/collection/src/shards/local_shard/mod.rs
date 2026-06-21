@@ -51,12 +51,11 @@ use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
     SeqNumberType, StrictModeConfig,
 };
-use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles, segment_manifest_path};
+use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimization};
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::segment_holder::locked::LockedSegmentHolder;
-use shard::segment_manifest::SegmentsManifest;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -241,7 +240,6 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_resource_budget: ResourceBudget,
@@ -277,7 +275,6 @@ impl LocalShard {
             collection_name.clone(),
             shared_storage_config.clone(),
             payload_index_schema.clone(),
-            segment_manifest,
             optimizers.clone(),
             optimizers_log.clone(),
             total_optimized_points.clone(),
@@ -345,24 +342,6 @@ impl LocalShard {
     #[cfg(any(test, feature = "testing"))]
     pub fn segments(&self) -> LockedSegmentHolder {
         self.segments.clone()
-    }
-
-    /// Initialize the segment manifest from the current segments, when the `write_segment_manifest`
-    /// feature flag is enabled. Returns `None` (and writes nothing) when disabled.
-    fn init_segment_manifest(
-        shard_path: &Path,
-        segment_holder: &SegmentHolder,
-    ) -> CollectionResult<Option<Arc<SaveOnDisk<SegmentsManifest>>>> {
-        if !common::flags::feature_flags().write_segment_manifest {
-            return Ok(None);
-        }
-
-        let manifest = SegmentsManifest::from_segment_holder(segment_holder);
-        let manifest =
-            SaveOnDisk::new(segment_manifest_path(shard_path), manifest).map_err(|err| {
-                CollectionError::service_error(format!("failed to write segment manifest: {err}"))
-            })?;
-        Ok(Some(Arc::new(manifest)))
     }
 
     /// Recovers shard from disk.
@@ -481,7 +460,7 @@ impl LocalShard {
                     .get(),
             );
 
-        let mut segment_holder = SegmentHolder::default();
+        let mut segment_holder = SegmentHolder::builder();
 
         while let Some(result) = segment_stream.next().await {
             let Some(segment) = result?? else {
@@ -530,7 +509,8 @@ impl LocalShard {
             )?;
         }
 
-        let segment_manifest = Self::init_segment_manifest(shard_path, &segment_holder)?;
+        // Finalize the holder, wiring up the segment manifest from the freshly populated set.
+        let segment_holder = segment_holder.build(shard_path)?;
 
         let local_shard = LocalShard::new(
             collection_id.clone(),
@@ -538,7 +518,6 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             payload_index_schema,
-            segment_manifest,
             wal,
             optimizers,
             optimizer_resource_budget,
@@ -635,7 +614,7 @@ impl LocalShard {
                 ))
             })?;
 
-        let mut segment_holder = SegmentHolder::default();
+        let mut segment_holder = SegmentHolder::builder();
         let mut build_handlers = vec![];
 
         let vector_params = config
@@ -670,7 +649,7 @@ impl LocalShard {
             .collect_vec();
 
         for join_result in join_results {
-            let segment = join_result.map_err(|err| {
+            let (segment, _token) = join_result.map_err(|err| {
                 let message = panic::downcast_str(&err).unwrap_or("");
                 let separator = if !message.is_empty() { "with:\n" } else { "" };
 
@@ -696,7 +675,8 @@ impl LocalShard {
 
         drop(config); // release `shared_config` from borrow checker
 
-        let segment_manifest = Self::init_segment_manifest(shard_path, &segment_holder)?;
+        // Finalize the holder, wiring up the segment manifest from the freshly populated set.
+        let segment_holder = segment_holder.build(shard_path)?;
 
         let local_shard = LocalShard::new(
             collection_id,
@@ -704,7 +684,6 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             payload_index_schema,
-            segment_manifest,
             wal,
             optimizers,
             optimizer_resource_budget,

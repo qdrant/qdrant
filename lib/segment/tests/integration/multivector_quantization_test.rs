@@ -224,7 +224,7 @@ fn test_multivector_quantization_hnsw(
 
     let int_key = "int";
 
-    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

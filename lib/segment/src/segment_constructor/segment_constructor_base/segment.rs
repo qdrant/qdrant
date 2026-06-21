@@ -17,6 +17,31 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::segment::{Segment, SegmentVersion};
 use crate::types::SegmentConfig;
 
+/// Proof that a segment was just built, obliging the builder to register it in the segment manifest.
+///
+/// Returned by [`build_segment`] (and the shard-level builders that wrap it). The `#[must_use]` lint
+/// turns "built a segment but forgot to register it" into a compiler warning: discharge it by
+/// registering the segment (its [`id`](Self::id) is the segment UUID), or drop it explicitly
+/// (`let _ = token`) for segments that will not join a manifest-tracked holder (loading, tests,
+/// transient segments).
+///
+/// Carries only the segment UUID; there is deliberately no `Drop` bomb — the lint is the enforcement.
+#[must_use = "a newly built segment must be registered in the segment manifest, or explicitly dropped"]
+pub struct NewSegmentToken(Uuid);
+
+impl NewSegmentToken {
+    /// Mint a token for a freshly built segment. Restricted to this crate so the obligation can
+    /// only originate from a real segment build ([`build_segment`]).
+    pub(crate) fn new(uuid: Uuid) -> Self {
+        NewSegmentToken(uuid)
+    }
+
+    /// UUID of the newly built segment, to register in the manifest.
+    pub fn id(&self) -> Uuid {
+        self.0
+    }
+}
+
 /// Normalize segment directory.
 ///
 /// Might delete or rename the directory.
@@ -161,8 +186,10 @@ pub fn build_segment(
     config: &SegmentConfig,
     deferred_internal_id: Option<PointOffsetType>,
     ready: bool,
-) -> OperationResult<Segment> {
+) -> OperationResult<(Segment, NewSegmentToken)> {
     let uuid = Uuid::new_v4();
+    let token = NewSegmentToken::new(uuid);
+
     let segment_path = segments_path.join(uuid.to_string());
     let stopped = AtomicBool::new(false);
 
@@ -185,5 +212,5 @@ pub fn build_segment(
         SegmentVersion::save(&segment_path)?;
     }
 
-    Ok(segment)
+    Ok((segment, token))
 }

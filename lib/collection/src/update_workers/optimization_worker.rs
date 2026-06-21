@@ -15,7 +15,6 @@ use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
-use shard::segment_manifest::SegmentsManifest;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, watch};
 use tokio::task;
@@ -56,7 +55,6 @@ impl UpdateWorkers {
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         optimization_finished_sender: watch::Sender<()>,
@@ -124,10 +122,13 @@ impl UpdateWorkers {
                 panic!("Failed to ensure there are appendable segments with capacity: {err}");
             }
 
-            // Keep the segment manifest in sync with the live segment set. This wake-up follows a
-            // completed optimization (reaped above by `cleanup_optimization_handles`) and/or a new
-            // appendable segment, both of which change the set; the helper no-ops if it didn't.
-            update_segment_manifest(&segment_manifest, &segments);
+            // Backstop: reconcile the segment manifest with the live segment set. Registration
+            // normally happens at each publication site via the `NewSegmentToken`; this wake-up is
+            // the recovery path that picks up any registration that was skipped (e.g. an ignored
+            // token). No-op if already in sync.
+            if let Err(err) = segments.read().sync_segment_manifest(None) {
+                log::error!("Failed to write segment manifest: {err}");
+            }
 
             // If not forcing, wait on next signal if we have too many handles
             if !ignore_max_handles && optimization_handles.lock().await.len() >= max_handles {
@@ -472,13 +473,15 @@ impl UpdateWorkers {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
 
             let segments_guard = segments.upgradable_read();
-            let new_segment = segments_guard.build_tmp_segment(
+            // Building the segment yields a `NewSegmentToken` obliging us to register it.
+            let (new_segment, token) = segments_guard.build_tmp_segment(
                 segments_path,
                 Some(segment_config.plain_segment_config()),
                 payload_index_schema,
                 thresholds_config.deferred_internal_id,
                 true,
             )?;
+            segments_guard.sync_segment_manifest(Some(token))?;
             let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
             write_guard.add_new_locked(new_segment);
         }
@@ -539,28 +542,5 @@ impl UpdateWorkers {
             }
         };
         Ok(0)
-    }
-}
-
-/// Rewrite the segment manifest (`segments/manifest.json`) to match the live segment set, if the
-/// `write_segment_manifest` feature flag is enabled (i.e. `segment_manifest` is `Some`).
-///
-/// Idempotent and cheap: it reads the current segment UUIDs and only writes when they differ from
-/// the persisted manifest, so it is safe to call on every optimizer wake-up.
-fn update_segment_manifest(
-    segment_manifest: &Option<Arc<SaveOnDisk<SegmentsManifest>>>,
-    segments: &LockedSegmentHolder,
-) {
-    let Some(segment_manifest) = segment_manifest else {
-        return;
-    };
-
-    let current = SegmentsManifest::from_segment_holder(&segments.read());
-    if *segment_manifest.read() == current {
-        return;
-    }
-
-    if let Err(err) = segment_manifest.write(|manifest| *manifest = current) {
-        log::error!("Failed to write segment manifest: {err}");
     }
 }

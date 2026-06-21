@@ -287,7 +287,7 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let mut segment = build_segment(
+        let (mut segment, _) = build_segment(
             segments_dir.path(),
             &segment_config,
             deferred_internal_id,
@@ -1011,7 +1011,7 @@ mod tests {
         let segment_config = segment_optimizer_config.plain_segment_config();
 
         let hw_counter = HardwareCounterCell::new();
-        let mut segment = build_segment(
+        let (mut segment, _) = build_segment(
             segments_dir.path(),
             &segment_config,
             Some(deferred_internal_id),

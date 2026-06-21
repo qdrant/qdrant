@@ -7,7 +7,7 @@ mod tests;
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -35,6 +35,7 @@ use smallvec::SmallVec;
 
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
+use crate::segment_manifest::{NewSegmentToken, SegmentsManifest};
 
 pub type SegmentId = usize;
 
@@ -74,6 +75,16 @@ pub struct SegmentHolder {
 
     /// The amount of currently running optimizations.
     pub running_optimizations: ProcessCounter,
+
+    /// On-disk manifest of this shard's segments, kept in sync with the live segment set so that
+    /// out-of-process readers can discover segments. `None` when the `write_segment_manifest`
+    /// feature flag is off (or before the holder has been wired up, e.g. during loading).
+    ///
+    /// The manifest is owned here, by the single source of truth for segment membership, precisely
+    /// so that no segment can be added or removed without the manifest following: every mutation
+    /// funnels through [`add_existing_locked`](Self::add_existing_locked) and
+    /// [`remove`](Self::remove), which reconcile it.
+    segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
 }
 
 impl Drop for SegmentHolder {
@@ -81,6 +92,45 @@ impl Drop for SegmentHolder {
         if let Err(flushing_err) = self.lock_flushing() {
             log::error!("Failed to flush segments holder during drop: {flushing_err}");
         }
+    }
+}
+
+/// Builder for a [`SegmentHolder`] that guarantees its segment manifest is wired up.
+///
+/// The only way to get a finished [`SegmentHolder`] out is [`build`](Self::build), which initializes
+/// the manifest from the populated segment set — so a shard's holder can never be constructed
+/// without it (no separate, easy-to-forget init step). Populate it through the deref to
+/// [`SegmentHolder`] (e.g. [`add_new`](SegmentHolder::add_new)), then call `build`.
+#[must_use = "the segment holder is only created by calling `.build(shard_path)`"]
+pub struct SegmentHolderBuilder {
+    holder: SegmentHolder,
+}
+
+impl SegmentHolderBuilder {
+    fn new() -> Self {
+        Self {
+            holder: SegmentHolder::default(),
+        }
+    }
+
+    /// Finalize: initialize the segment manifest from the current segment set and return the holder.
+    pub fn build(mut self, shard_path: &Path) -> OperationResult<SegmentHolder> {
+        self.holder.init_segment_manifest(shard_path)?;
+        Ok(self.holder)
+    }
+}
+
+impl Deref for SegmentHolderBuilder {
+    type Target = SegmentHolder;
+
+    fn deref(&self) -> &Self::Target {
+        &self.holder
+    }
+}
+
+impl DerefMut for SegmentHolderBuilder {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.holder
     }
 }
 
@@ -101,6 +151,55 @@ impl SegmentHolder {
             LockedSegment::Original(original) => Some((id, original)),
             LockedSegment::Proxy(_) => None,
         })
+    }
+
+    /// Start building a holder. The only way to obtain a finished [`SegmentHolder`] from the builder
+    /// is [`SegmentHolderBuilder::build`], which wires up the segment manifest — so a shard's holder
+    /// can never be constructed without it.
+    pub fn builder() -> SegmentHolderBuilder {
+        SegmentHolderBuilder::new()
+    }
+
+    /// Attach a pre-built segment manifest to this holder. Test-only escape hatch; production code
+    /// goes through [`SegmentHolder::builder`] so the manifest is always initialized.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn set_segment_manifest(&mut self, manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>) {
+        self.segment_manifest = manifest;
+    }
+
+    /// Initialize the segment manifest from the current segments and attach it to this holder, when
+    /// the `write_segment_manifest` feature flag is enabled. No-op when disabled.
+    ///
+    /// Private: only [`SegmentHolderBuilder::build`] calls this, right after the holder has been
+    /// populated, so the manifest reflects the initial segment set. From then on the holder keeps it
+    /// in sync.
+    fn init_segment_manifest(&mut self, shard_path: &Path) -> OperationResult<()> {
+        if !common::flags::feature_flags().write_segment_manifest {
+            return Ok(());
+        }
+
+        let manifest = SegmentsManifest::from_segment_holder(self);
+        let manifest = SaveOnDisk::new(crate::files::segment_manifest_path(shard_path), manifest)
+            .map_err(|err| {
+            OperationError::service_error(format!("failed to write segment manifest: {err}"))
+        })?;
+        self.segment_manifest = Some(Arc::new(manifest));
+        Ok(())
+    }
+
+    /// Register a newly built segment in the on-disk manifest, consuming its [`NewSegmentToken`].
+    ///
+    /// The token is produced when a segment is built (e.g. [`build_tmp_segment`](Self::build_tmp_segment));
+    /// its `#[must_use]` marker turns "built a segment but forgot to register it" into a compiler
+    /// warning. Reconciles the manifest with the current live segment set.
+    ///
+    /// No-op when no manifest is attached (feature flag off / not yet wired). Errors propagate so
+    /// callers that gate destructive work (deleting superseded segments from disk) on a fresh
+    /// manifest can abort instead of risking a stale manifest. Idempotent: only writes on change.
+    pub fn sync_segment_manifest(&self, token: Option<NewSegmentToken>) -> OperationResult<()> {
+        // Register the newly built segment ASAP: it exists on disk, so it must be in the manifest,
+        // even if it has not been added to the holder yet (passed as `extra_segment`).
+        SegmentsManifest::sync(self.segment_manifest.as_ref(), self, token.map(|t| t.id()))
     }
 
     pub fn len(&self) -> usize {
@@ -778,13 +877,16 @@ impl SegmentHolder {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<LockedSegment> {
-        let segment = self.build_tmp_segment(
+        let (segment, token) = self.build_tmp_segment(
             segments_path,
             Some(segment_config),
             payload_index_schema,
             deferred_internal_id,
             true,
         )?;
+        // Register the new segment ASAP — it exists on disk, so it must be in the manifest. No-op
+        // when no manifest is attached yet (e.g. during shard load).
+        self.sync_segment_manifest(Some(token))?;
         self.add_new_locked(segment.clone());
         Ok(segment)
     }
@@ -813,7 +915,7 @@ impl SegmentHolder {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         deferred_internal_id: Option<PointOffsetType>,
         save_version: bool,
-    ) -> OperationResult<LockedSegment> {
+    ) -> OperationResult<(LockedSegment, NewSegmentToken)> {
         let config = match segment_config {
             // Base config on collection params
             Some(config) => config,
@@ -832,7 +934,7 @@ impl SegmentHolder {
                 .clone(),
         };
 
-        let mut segment =
+        let (mut segment, token) =
             build_segment(segments_path, &config, deferred_internal_id, save_version)?;
 
         // Internal operation.
@@ -843,7 +945,7 @@ impl SegmentHolder {
             segment.create_field_index(0, key, Some(schema), &hw_counter)?;
         }
 
-        Ok(LockedSegment::new(segment))
+        Ok((LockedSegment::new(segment), token))
     }
 
     /// Method tries to remove the segment with the given ID under the following conditions:
