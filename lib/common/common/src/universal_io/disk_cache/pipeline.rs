@@ -91,6 +91,9 @@ where
 
     fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
         let eof = self.file.len::<u8>() as u64;
+        if from >= eof {
+            return Ok(());
+        }
         self.schedule::<Sequential>(user_data, from..eof, 1)
     }
 
