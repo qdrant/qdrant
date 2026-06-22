@@ -129,7 +129,7 @@ bm25 = { path = "lib/bm25" }
 gpu = { path = "lib/gpu" }
 wal = { path = "lib/wal" }
 
-actix-multipart = "0.7.2"
+actix-multipart = "0.8.0"
 constant_time_eq = "0.4.2"
 
 # Profiling
