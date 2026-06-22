@@ -128,6 +128,26 @@ impl LocalShard {
                     manifest.as_ref(),
                 )?;
 
+                // Staging delay: widen the window between snapshotting the segments and archiving
+                // the clocks for WAL-less snapshots. The WAL lock is not held yet, so concurrent
+                // updates can advance (and, with a short flush interval, persist) the clocks past
+                // the just-snapshotted segment data, reproducing the "clocks ahead of data" hazard
+                // this path guards against. Exercised by `wal_less_snapshot_clocks_test`.
+                #[cfg(feature = "staging")]
+                if !save_wal {
+                    let delay_secs: f64 =
+                        std::env::var("QDRANT__STAGING__SNAPSHOT_SHARD_SEGMENTS_DELAY")
+                            .ok()
+                            .and_then(|str| str.parse().ok())
+                            .unwrap_or(0.0);
+
+                    if delay_secs > 0.0 {
+                        log::debug!("Staging: Delaying shard clock snapshot for {delay_secs}s");
+                        std::thread::sleep(std::time::Duration::from_secs_f64(delay_secs));
+                        log::debug!("Staging: Delay complete, snapshotting shard clocks");
+                    }
+                }
+
                 let wal_guard = wal.blocking_lock_owned();
 
                 // Archive the clock maps. For WAL-inclusive snapshots, copy the persisted clock
