@@ -7,11 +7,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 use indexmap::IndexSet;
+use itertools::Itertools;
 
 use super::key::MapIndexKey;
 use super::{IdIter, MapIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::facets::FacetValue;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::payload_config::{IndexMutability, StorageType};
@@ -105,24 +105,34 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         self.values_count(idx).unwrap_or(0) == 0
     }
 
-    /// Backs [`FacetIndex::for_values_map`]: yield each value's posting,
-    /// skipping values whose variant doesn't match this index's key type.
+    /// Use each value's posting of point ids, invoking `f` once per value.
     ///
-    /// [`FacetIndex::for_values_map`]: crate::index::field_index::FacetIndex::for_values_map
-    fn for_values_map(
+    /// Order of invocations is not guaranteed.
+    fn for_values_map<V: Borrow<N>>(
         &self,
-        values: impl Iterator<Item = FacetValue>,
+        values: impl Iterator<Item = V>,
         hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+        mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         for value in values {
-            let Some(key) = N::from_facet_value(&value) else {
-                continue;
-            };
-            let mut ids = self.get_iterator(key, hw_counter);
+            let value = value.borrow();
+            let mut ids = self.get_iterator(value, hw_counter);
             f(value, &mut ids)?;
         }
         Ok(())
+    }
+
+    /// Iterator over deduplicated points matching **any** of the given `values`.
+    fn iter_for_values<V: Borrow<N> + 'a>(
+        &'a self,
+        values: impl Iterator<Item = V> + 'a,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<IdIter<'a>> {
+        Ok(Box::new(
+            values
+                .flat_map(move |value| self.get_iterator(value.borrow(), hw_counter))
+                .unique(),
+        ))
     }
 
     fn match_cardinality(
@@ -376,6 +386,33 @@ where
             MapIndex::Mutable(index) => index.for_each_value_map(hw_counter, f),
             MapIndex::Immutable(index) => index.for_each_value_map(hw_counter, f),
             MapIndex::OnDisk(index) => index.for_each_value_map(hw_counter, f),
+        }
+    }
+
+    // Dispatch instead of using default impl, for on-disk impl to use batched reads
+    fn for_values_map<V: Borrow<N>>(
+        &self,
+        values: impl Iterator<Item = V>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.for_values_map(values, hw_counter, f),
+            MapIndex::Immutable(index) => index.for_values_map(values, hw_counter, f),
+            MapIndex::OnDisk(index) => index.for_values_map(values, hw_counter, f),
+        }
+    }
+
+    // Dispatch instead of using default impl, for on-disk impl to use batched reads
+    fn iter_for_values<V: Borrow<N> + 'a>(
+        &'a self,
+        values: impl Iterator<Item = V> + 'a,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<IdIter<'a>> {
+        match self {
+            MapIndex::Mutable(index) => index.iter_for_values(values, hw_counter),
+            MapIndex::Immutable(index) => index.iter_for_values(values, hw_counter),
+            MapIndex::OnDisk(index) => index.iter_for_values(values, hw_counter),
         }
     }
 

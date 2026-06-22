@@ -16,9 +16,9 @@ pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug {
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned;
 
-    /// Borrow this key type out of a [`FacetValue`], or `None` if the variant
-    /// doesn't match (e.g. a keyword value against an integer index).
-    fn from_facet_value(value: &FacetValue) -> Option<&Self>;
+    /// Convert a [`FacetValue`] into this key's owned type, or `None` if the
+    /// variant doesn't match (e.g. a keyword value against an integer index).
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned>;
 
     fn gridstore_block_size() -> usize {
         size_of::<<Self as MapIndexKey>::Owned>()
@@ -38,9 +38,9 @@ impl MapIndexKey for str {
         EcoString::from(self)
     }
 
-    fn from_facet_value(value: &FacetValue) -> Option<&Self> {
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned> {
         match value {
-            FacetValue::Keyword(keyword) => Some(keyword.as_str()),
+            FacetValue::Keyword(keyword) => Some(EcoString::from(keyword)),
             FacetValue::Uuid(_) | FacetValue::Int(_) | FacetValue::Bool(_) => None,
         }
     }
@@ -65,7 +65,7 @@ impl MapIndexKey for IntPayloadType {
         *self
     }
 
-    fn from_facet_value(value: &FacetValue) -> Option<&Self> {
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned> {
         match value {
             FacetValue::Int(int) => Some(int),
             FacetValue::Keyword(_) | FacetValue::Uuid(_) | FacetValue::Bool(_) => None,
@@ -80,7 +80,7 @@ impl MapIndexKey for UuidIntType {
         *self
     }
 
-    fn from_facet_value(value: &FacetValue) -> Option<&Self> {
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned> {
         match value {
             FacetValue::Uuid(uuid) => Some(uuid),
             FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Bool(_) => None,

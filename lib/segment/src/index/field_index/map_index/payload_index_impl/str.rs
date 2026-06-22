@@ -6,7 +6,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use gridstore::Blob;
-use itertools::Itertools;
 
 use super::super::MapIndex;
 use super::super::key::MapIndexKey;
@@ -14,6 +13,7 @@ use super::super::read_only::ReadOnlyMapIndex;
 use super::super::read_ops::MapIndexRead;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::map_index::IdIter;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     PrimaryCondition,
@@ -132,8 +132,8 @@ fn filter_impl<'a, T: MapIndexRead<'a, str>>(
     index: &'a T,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-    let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> = match &condition.r#match {
+) -> OperationResult<Option<IdIter<'a>>> {
+    let result: Option<IdIter<'a>> = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
             ValueVariants::String(keyword) => {
                 Some(Box::new(index.get_iterator(keyword.as_str(), hw_counter)))
@@ -142,12 +142,9 @@ fn filter_impl<'a, T: MapIndexRead<'a, str>>(
             ValueVariants::Bool(_) => None,
         },
         Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-            AnyVariants::Strings(keywords) => Some(Box::new(
-                keywords
-                    .iter()
-                    .flat_map(move |keyword| index.get_iterator(keyword.as_str(), hw_counter))
-                    .unique(),
-            )),
+            AnyVariants::Strings(keywords) => {
+                Some(index.iter_for_values(keywords.iter().map(AsRef::as_ref), hw_counter)?)
+            }
             AnyVariants::Integers(integers) => {
                 if integers.is_empty() {
                     Some(Box::new(iter::empty()))

@@ -1,5 +1,5 @@
 use std::borrow::Borrow;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::hint::black_box;
 use std::path::Path;
 
@@ -457,4 +457,99 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
     hits.sort();
     assert_eq!(hits, vec![3]);
+}
+
+/// Run `for_values_map` for the given keys and collect `value -> sorted ids`.
+/// Batched reads (the on-disk variant) may invoke the callback out of order, so
+/// we sort each posting and key by a `BTreeMap`.
+fn collect_for_values_map(
+    index: &MapIndex<IntPayloadType>,
+    keys: &[IntPayloadType],
+) -> BTreeMap<IntPayloadType, Vec<PointOffsetType>> {
+    let hw_counter = HardwareCounterCell::new();
+    let mut out = BTreeMap::new();
+    MapIndexRead::for_values_map(index, keys.iter(), &hw_counter, |key, ids| {
+        let mut ids: Vec<PointOffsetType> = ids.collect();
+        ids.sort_unstable();
+        out.insert(*key, ids);
+        Ok(())
+    })
+    .unwrap();
+    out
+}
+
+/// The on-disk variant overrides `for_values_map` with a batched read; assert it
+/// agrees with the in-memory variants (which use the default per-key impl) and
+/// with the directly-computed expectation.
+#[test]
+fn test_for_values_map_congruence() {
+    // Points 0..5; value 3 spans three points, value 6 only one.
+    #[rustfmt::skip]
+    let data = vec![
+        vec![1, 2, 3],
+        vec![2, 3, 4],
+        vec![3],
+        vec![6],
+        vec![1, 5],
+    ];
+    // Present values (multi- and single-point) plus an absent one (99), which
+    // must still be reported with an empty posting.
+    let query = [1, 2, 3, 4, 5, 99];
+
+    let expected: BTreeMap<IntPayloadType, Vec<PointOffsetType>> = query
+        .iter()
+        .map(|&q| {
+            let ids = data
+                .iter()
+                .enumerate()
+                .filter(|(_, vals)| vals.contains(&q))
+                .map(|(i, _)| i as PointOffsetType)
+                .collect();
+            (q, ids)
+        })
+        .collect();
+
+    for index_type in [
+        IndexType::MutableGridstore,
+        IndexType::Mmap,
+        IndexType::RamMmap,
+    ] {
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
+
+        let result = collect_for_values_map(&index, &query);
+        assert_eq!(result, expected, "mismatch for {index_type:?}");
+    }
+}
+
+/// The batched on-disk `for_values_map` must drop deleted points from postings,
+/// mirroring `get_iterator`.
+#[test]
+fn test_for_values_map_on_disk_deleted() {
+    let data = vec![vec![1, 2, 3], vec![2, 3, 4], vec![3], vec![1, 5]];
+
+    let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+    save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| (*v).into());
+
+    // Load the on-disk variant with points 0 and 2 marked deleted.
+    let deleted = deleted_with(&[0, 2]);
+    let index = MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &deleted)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(index, MapIndex::OnDisk(_)));
+
+    let result = collect_for_values_map(&index, &[1, 2, 3, 4, 5]);
+
+    // Postings with deleted points {0, 2} removed.
+    let expected: BTreeMap<IntPayloadType, Vec<PointOffsetType>> = [
+        (1, vec![3]),
+        (2, vec![1]),
+        (3, vec![1]),
+        (4, vec![1]),
+        (5, vec![3]),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(result, expected);
 }

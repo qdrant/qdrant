@@ -5,7 +5,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use gridstore::Blob;
-use itertools::Itertools;
 
 use super::super::MapIndex;
 use super::super::key::MapIndexKey;
@@ -147,12 +146,9 @@ fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
                     None
                 }
             }
-            AnyVariants::Integers(integers) => Some(Box::new(
-                integers
-                    .iter()
-                    .flat_map(move |integer| index.get_iterator(integer, hw_counter))
-                    .unique(),
-            )),
+            AnyVariants::Integers(integers) => {
+                Some(index.iter_for_values(integers.iter(), hw_counter)?)
+            }
         },
         Some(Match::Except(MatchExcept { except })) => match except {
             AnyVariants::Strings(_) => None,

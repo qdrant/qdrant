@@ -8,7 +8,6 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use gridstore::Blob;
 use indexmap::IndexSet;
-use itertools::Itertools;
 use uuid::Uuid;
 
 use super::super::MapIndex;
@@ -156,12 +155,7 @@ fn filter_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
                     return Ok(None);
                 };
 
-                Some(Box::new(
-                    uuids
-                        .into_iter()
-                        .flat_map(move |uuid| index.get_iterator(&uuid, hw_counter))
-                        .unique(),
-                ))
+                Some(index.iter_for_values(uuids.into_iter(), hw_counter)?)
             }
             AnyVariants::Integers(integers) => {
                 if integers.is_empty() {

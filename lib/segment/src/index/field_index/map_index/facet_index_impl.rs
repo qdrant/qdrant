@@ -70,9 +70,12 @@ where
         &self,
         values: impl Iterator<Item = FacetValue>,
         hw_counter: &HardwareCounterCell,
-        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        MapIndexRead::for_values_map(self, values, hw_counter, f)
+        let keys = values.filter_map(N::from_facet_value);
+        MapIndexRead::for_values_map(self, keys, hw_counter, |key, ids| {
+            f(Into::<FacetValueRef>::into(key).to_owned(), ids)
+        })
     }
 
     fn for_each_count_per_value(
@@ -153,9 +156,12 @@ where
         &self,
         values: impl Iterator<Item = FacetValue>,
         hw_counter: &HardwareCounterCell,
-        f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+        mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        MapIndexRead::for_values_map(self, values, hw_counter, f)
+        let keys = values.filter_map(N::from_facet_value);
+        MapIndexRead::for_values_map(self, keys, hw_counter, |key, ids| {
+            f(Into::<FacetValueRef>::into(key).to_owned(), ids)
+        })
     }
 
     fn for_each_count_per_value(
