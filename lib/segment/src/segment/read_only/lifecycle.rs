@@ -159,7 +159,7 @@ impl<S: UniversalRead + 'static> ReadOnlyVectorData<S> {
     /// Open one dense vector's quantized vectors and index over `fs`, mirroring
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     #[allow(clippy::too_many_arguments)]
-    fn open_dense(
+    pub(super) fn open_dense(
         fs: &S::Fs,
         segment_path: &Path,
         vector_name: &VectorName,
@@ -211,7 +211,7 @@ impl<S: UniversalRead + 'static> ReadOnlyVectorData<S> {
 
     /// Open one sparse vector's index over `fs`, mirroring
     /// `open_sparse_vector_data`. Sparse vectors are never quantized.
-    fn open_sparse(
+    pub(super) fn open_sparse(
         fs: &S::Fs,
         segment_path: &Path,
         vector_name: &VectorName,

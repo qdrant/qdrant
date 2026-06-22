@@ -20,8 +20,11 @@ use crate::types::{SegmentConfig, SegmentType, VectorNameBuf};
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
+mod config_reload;
 mod lifecycle;
 mod live_reload;
+
+pub use config_reload::SegmentConfigReloadDiff;
 mod read_entry;
 #[cfg(test)]
 mod tests;

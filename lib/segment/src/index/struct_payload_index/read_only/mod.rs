@@ -19,11 +19,13 @@ use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::{PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
+mod config_reload;
 mod lifecycle;
+
+pub use config_reload::PayloadIndexReloadDiff;
 
 type ReadOnlyIndexesMap<S> = HashMap<PayloadKeyType, Vec<ReadOnlyFieldIndex<S>>>;
 
-#[expect(dead_code)] // `path` is read once live-reload lands
 pub struct ReadOnlyStructPayloadIndex<S: UniversalRead> {
     /// Payload storage
     pub(super) payload: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
