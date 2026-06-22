@@ -943,8 +943,8 @@ impl RemoteShard {
                             snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
                                 snapshot_priority,
                             ) as i32,
-                            checksum: checksum.map(Into::into),
-                            api_key: api_key.map(Into::into),
+                            checksum: checksum.map(String::from),
+                            api_key: api_key.map(String::from),
                         })
                         .await
                 },
