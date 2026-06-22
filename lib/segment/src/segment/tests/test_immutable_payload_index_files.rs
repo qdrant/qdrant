@@ -85,7 +85,7 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
 
     // Step 1: appendable source segment with payload + field indices.
     let source_dir = Builder::new().prefix("source_seg").tempdir().unwrap();
-    let mut source = build_segment(
+    let (mut source, _) = build_segment(
         source_dir.path(),
         &SegmentConfig {
             vector_data: HashMap::from([(

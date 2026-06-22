@@ -41,6 +41,7 @@ use crate::proxy_segment::{
 };
 use crate::segment_holder::SegmentId;
 use crate::segment_holder::locked::LockedSegmentHolder;
+use crate::segment_manifest::NewSegmentToken;
 
 /// Result of optimization execution
 #[derive(Debug)]
@@ -69,7 +70,10 @@ pub trait OptimizationStrategy: Send {
     ) -> OperationResult<SegmentBuilder>;
 
     /// Create a temporary COW segment for writes during optimization.
-    fn create_temp_segment(&self) -> OperationResult<LockedSegment>;
+    ///
+    /// Returns the segment together with the [`NewSegmentToken`] obliging the caller to register it
+    /// in the manifest once it is published into the holder.
+    fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)>;
 }
 
 /// Restores original segments from proxies
@@ -583,6 +587,11 @@ fn finish_optimization(
             .try_for_each(|chunk| read_segment_holder.deduplicate_points(chunk, hw_counter))?;
     }
 
+    // It is important to update manifest before we drop proxy data,
+    // as we don't want to have a situation, where new segment is not yet registered, but
+    // old segment data is already dropped.
+    read_segment_holder.sync_segment_manifest(None)?;
+
     drop(read_segment_holder);
     // Allow updates again
     drop(update_guard);
@@ -746,9 +755,14 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     let hw_counter = HardwareCounterCell::disposable();
 
-    let extra_cow_segment_opt = need_extra_cow_segment
-        .then(|| factory.create_temp_segment())
-        .transpose()?;
+    // Building the cow segment yields a `NewSegmentToken`; we register it below, once it is added to
+    // the holder, and before the slow build can route writes into it.
+    let (extra_cow_segment_opt, extra_cow_token_opt) = if need_extra_cow_segment {
+        let (segment, token) = factory.create_temp_segment()?;
+        (Some(segment), Some(token))
+    } else {
+        (None, None)
+    };
 
     let mut proxies = Vec::new();
     for sg in input_segments.iter() {
@@ -765,6 +779,9 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     // If this ends up not being saved due to a crash, the segment will not be used
     match &extra_cow_segment_opt {
         Some(LockedSegment::Original(segment)) => {
+            // Register the freshly added cow segment in the manifest before we save the version,
+            // it guarantees that no writes will happen into unregistered segment.
+            segment_holder_read.sync_segment_manifest(extra_cow_token_opt)?;
             let segment_path = &segment.read().segment_path;
             SegmentVersion::save(segment_path)?;
         }

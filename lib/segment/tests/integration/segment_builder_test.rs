@@ -615,7 +615,7 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
     );
     drop(template);
     let source_dir2 = Builder::new().prefix("segment_source2").tempdir().unwrap();
-    let mut source = build_segment(source_dir2.path(), &source_config, None, true).unwrap();
+    let (mut source, _) = build_segment(source_dir2.path(), &source_config, None, true).unwrap();
     for i in 0..3u64 {
         let vectors = NamedVectors::from_pairs([
             (DEFAULT_VECTOR_NAME.to_owned(), vec![0.5, 0.5, 0.5, 0.5]),

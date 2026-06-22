@@ -31,6 +31,14 @@ pub struct FeatureFlags {
 
     /// Use io_uring-based payload storage implementation.
     pub async_payload_storage: bool,
+
+    /// Write a segment manifest (`segments/manifest.json`) listing the shard's segments and their
+    /// state, so out-of-process readers can discover segments without scanning the filesystem.
+    pub write_segment_manifest: bool,
+
+    /// Build new segments in append-only mode: in-place point mutations become clone-and-tombstone
+    /// appends instead. Intended for testing the append-only storage path.
+    pub append_only_mutations: bool,
 }
 
 impl Default for FeatureFlags {
@@ -41,6 +49,8 @@ impl Default for FeatureFlags {
             appendable_quantization: true,
             single_file_mmap_vector_storage: true,
             async_payload_storage: false,
+            write_segment_manifest: false,
+            append_only_mutations: false,
         }
     }
 }
@@ -58,6 +68,10 @@ impl FeatureFlags {
             appendable_quantization: true,
             single_file_mmap_vector_storage: true,
             async_payload_storage: true,
+            write_segment_manifest: true,
+            // Deliberately not enabled by `all`: this is a test-only escape hatch that changes
+            // mutation semantics, and `all` is enabled in dev and e2e configs.
+            append_only_mutations: false,
         }
     }
 }

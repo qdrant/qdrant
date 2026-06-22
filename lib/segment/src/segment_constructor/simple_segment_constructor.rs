@@ -45,6 +45,7 @@ pub fn build_simple_segment(
         None,
         true,
     )
+    .map(|(segment, _token)| segment)
 }
 
 pub fn build_simple_segment_with_payload_storage(
@@ -74,6 +75,7 @@ pub fn build_simple_segment_with_payload_storage(
         None,
         true,
     )
+    .map(|(segment, _token)| segment)
 }
 
 pub fn build_multivec_segment(
@@ -118,6 +120,7 @@ pub fn build_multivec_segment(
         None,
         true,
     )
+    .map(|(segment, _token)| segment)
 }
 
 #[cfg(test)]

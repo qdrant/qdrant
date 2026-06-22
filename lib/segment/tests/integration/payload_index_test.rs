@@ -88,9 +88,9 @@ impl TestSegments {
 
         let config = Self::make_simple_config(true);
 
-        let mut plain_segment =
+        let (mut plain_segment, _) =
             build_segment(&base_dir.path().join("plain"), &config, None, true).unwrap();
-        let mut struct_segment =
+        let (mut struct_segment, _) =
             build_segment(&base_dir.path().join("struct"), &config, None, true).unwrap();
 
         let num_points = 3000;

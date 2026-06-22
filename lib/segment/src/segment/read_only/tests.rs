@@ -40,7 +40,7 @@ fn build_immutable_segment(segments_path: &Path, temp_path: &Path) -> Segment {
     let hw = HardwareCounterCell::new();
 
     let source_dir = Builder::new().prefix("ro_source").tempdir().unwrap();
-    let mut source = build_segment(
+    let (mut source, _) = build_segment(
         source_dir.path(),
         &SegmentConfig {
             vector_data: HashMap::from([(

@@ -4,6 +4,8 @@ use fs_err as fs;
 
 pub const WAL_PATH: &str = "wal";
 pub const SEGMENTS_PATH: &str = "segments";
+/// Segment manifest, written inside the `segments/` directory.
+pub const SEGMENT_MANIFEST_FILE: &str = "manifest.json";
 pub const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
 pub const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 pub const APPLIED_SEQ_FILE: &str = "applied_seq.json";
@@ -22,6 +24,12 @@ pub struct ShardDataFiles {
 #[inline]
 pub fn segments_path(shard_path: &Path) -> PathBuf {
     shard_path.join(SEGMENTS_PATH)
+}
+
+/// Path to the segment manifest (`segments/manifest.json`) for a shard.
+#[inline]
+pub fn segment_manifest_path(shard_path: &Path) -> PathBuf {
+    segments_path(shard_path).join(SEGMENT_MANIFEST_FILE)
 }
 
 #[inline]

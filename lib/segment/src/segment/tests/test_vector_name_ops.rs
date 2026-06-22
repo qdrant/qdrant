@@ -68,7 +68,7 @@ fn hw() -> HardwareCounterCell {
 
 /// Build an appendable segment with NUM_POINTS points on the default vector.
 fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
-    let mut segment = build_segment(
+    let (mut segment, _) = build_segment(
         path,
         &SegmentConfig {
             vector_data: HashMap::from([(

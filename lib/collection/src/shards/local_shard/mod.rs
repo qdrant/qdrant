@@ -460,7 +460,7 @@ impl LocalShard {
                     .get(),
             );
 
-        let mut segment_holder = SegmentHolder::default();
+        let mut segment_holder = SegmentHolder::builder();
 
         while let Some(result) = segment_stream.next().await {
             let Some(segment) = result?? else {
@@ -508,6 +508,9 @@ impl LocalShard {
                 deferred_internal_id,
             )?;
         }
+
+        // Finalize the holder, wiring up the segment manifest from the freshly populated set.
+        let segment_holder = segment_holder.build(shard_path)?;
 
         let local_shard = LocalShard::new(
             collection_id.clone(),
@@ -611,7 +614,7 @@ impl LocalShard {
                 ))
             })?;
 
-        let mut segment_holder = SegmentHolder::default();
+        let mut segment_holder = SegmentHolder::builder();
         let mut build_handlers = vec![];
 
         let vector_params = config
@@ -646,7 +649,7 @@ impl LocalShard {
             .collect_vec();
 
         for join_result in join_results {
-            let segment = join_result.map_err(|err| {
+            let (segment, _token) = join_result.map_err(|err| {
                 let message = panic::downcast_str(&err).unwrap_or("");
                 let separator = if !message.is_empty() { "with:\n" } else { "" };
 
@@ -671,6 +674,9 @@ impl LocalShard {
         );
 
         drop(config); // release `shared_config` from borrow checker
+
+        // Finalize the holder, wiring up the segment manifest from the freshly populated set.
+        let segment_holder = segment_holder.build(shard_path)?;
 
         let local_shard = LocalShard::new(
             collection_id,

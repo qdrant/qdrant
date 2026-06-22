@@ -776,7 +776,7 @@ fn create_deferred_segment(
     let deferred_internal_id = (n_deferred > 0).then_some(n_vectors as PointOffsetType);
 
     let total_vectors = n_vectors + n_deferred;
-    let mut segment = build_segment(
+    let (mut segment, _) = build_segment(
         dir.path(),
         &SegmentConfig {
             vector_data: HashMap::from([(
@@ -1215,7 +1215,7 @@ fn test_deferred_point_with_behavior_accessors() {
     let dim = 4;
 
     // Threshold so any new point lands beyond the cutoff (deferred).
-    let mut segment = build_segment(
+    let (mut segment, _) = build_segment(
         dir.path(),
         &SegmentConfig {
             vector_data: HashMap::from([(

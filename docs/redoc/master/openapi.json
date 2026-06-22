@@ -12682,6 +12682,16 @@
             "description": "Use io_uring-based payload storage implementation.",
             "default": false,
             "type": "boolean"
+          },
+          "write_segment_manifest": {
+            "description": "Write a segment manifest (`segments/manifest.json`) listing the shard's segments and their state, so out-of-process readers can discover segments without scanning the filesystem.",
+            "default": false,
+            "type": "boolean"
+          },
+          "append_only_mutations": {
+            "description": "Build new segments in append-only mode: in-place point mutations become clone-and-tombstone appends instead. Intended for testing the append-only storage path.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },

@@ -609,7 +609,7 @@ fn sparse_vector_index_persistence_test() {
         )]),
         payload_storage_type: Default::default(),
     };
-    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -785,7 +785,7 @@ fn sparse_vector_test_large_index() {
         )]),
         payload_storage_type: Default::default(),
     };
-    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
