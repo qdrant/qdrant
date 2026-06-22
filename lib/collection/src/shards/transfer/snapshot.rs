@@ -229,10 +229,6 @@ pub(super) async fn transfer_snapshot(
                 ))
             })?;
         let snapshot_temp_path = TempPath::try_from_path(snapshot_temp_path)?;
-        
-        if snapshot_checksum.is_none() {
-            snapshot_checksum = Some(crate::common::sha_256::hash_file(&snapshot_temp_path).await?);
-        }
 
         let snapshot_checksum_temp_path =
             TempPath::try_from_path(get_checksum_path(&snapshot_temp_path))?;
