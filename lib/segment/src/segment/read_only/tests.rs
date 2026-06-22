@@ -304,3 +304,77 @@ fn read_only_segment_over_s3() {
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
     assert_query_equivalence(&mutable, &read_only);
 }
+
+/// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
+/// payload config (the `num` field index) while its index files stay in place,
+/// and assert the read-only segment loads/drops the field index accordingly and
+/// keeps answering queries identically to the reference.
+#[test]
+fn read_only_segment_config_reload_payload_index() {
+    use crate::index::payload_config::PayloadConfig;
+    use crate::segment_constructor::get_payload_index_path;
+
+    let segments_dir = Builder::new().prefix("ro_cfg_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_cfg_builder").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+
+    let kw_field = JsonPath::new("kw");
+    let num_field = JsonPath::new("num");
+
+    // The built segment indexes both `kw` and `num`. Stash the full config, then
+    // write a reduced one that drops `num` (its index files are left untouched).
+    let payload_index_path = get_payload_index_path(&segment_path);
+    let config_path = PayloadConfig::get_config_path(&payload_index_path);
+    let full_config = PayloadConfig::load(&config_path).unwrap();
+    assert!(full_config.indices.contains_key(&num_field));
+    let mut reduced_config = full_config.clone();
+    reduced_config.indices.remove(&num_field);
+    reduced_config.save(&config_path).unwrap();
+
+    // Open read-only: only `kw` is indexed.
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
+            .expect("read-only open");
+    {
+        let payload_index = read_only.payload_index.borrow();
+        assert!(payload_index.field_indexes.contains_key(&kw_field));
+        assert!(!payload_index.field_indexes.contains_key(&num_field));
+    }
+
+    // Restore the full config and reload: the `num` index is loaded and installed.
+    full_config.save(&config_path).unwrap();
+    let diff = read_only
+        .config_reload_diff(&MmapFs)
+        .expect("config reload diff");
+    assert!(!diff.is_empty());
+    read_only.apply_config_reload(diff);
+    {
+        let payload_index = read_only.payload_index.borrow();
+        assert!(payload_index.field_indexes.contains_key(&kw_field));
+        assert!(payload_index.field_indexes.contains_key(&num_field));
+    }
+    assert_query_equivalence(&mutable, &read_only);
+
+    // Reloading against the unchanged on-disk config is a no-op.
+    let diff = read_only
+        .config_reload_diff(&MmapFs)
+        .expect("config reload diff");
+    assert!(diff.is_empty());
+
+    // Drop `num` again on disk and reload: the index is removed.
+    reduced_config.save(&config_path).unwrap();
+    let diff = read_only
+        .config_reload_diff(&MmapFs)
+        .expect("config reload diff");
+    assert!(!diff.is_empty());
+    read_only.apply_config_reload(diff);
+    {
+        let payload_index = read_only.payload_index.borrow();
+        assert!(payload_index.field_indexes.contains_key(&kw_field));
+        assert!(!payload_index.field_indexes.contains_key(&num_field));
+    }
+    assert_query_equivalence(&mutable, &read_only);
+}
