@@ -6,13 +6,15 @@ use collection::collection::distance_matrix::{
 };
 use collection::config::ShardingMethod;
 use collection::grouping::GroupBy;
-use collection::grouping::group_by::GroupRequest;
+use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::*;
-use collection::operations::universal_query::collection_query::CollectionQueryRequest;
+use collection::operations::universal_query::collection_query::{
+    CollectionPrefetch, CollectionQueryRequest,
+};
 use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard_trait::WaitUntil;
 use collection::{discovery, recommendations};
@@ -30,6 +32,60 @@ use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::rbac::Auth;
 
 impl TableOfContent {
+    async fn validate_lookup_from_collection_exists(
+        &self,
+        collection_name: &str,
+    ) -> StorageResult<()> {
+        self.get_collection_unchecked(collection_name).await?;
+        Ok(())
+    }
+
+    async fn validate_recommend_lookup_from(
+        &self,
+        request: &RecommendRequestInternal,
+    ) -> StorageResult<()> {
+        if let Some(lookup_from) = &request.lookup_from {
+            self.validate_lookup_from_collection_exists(&lookup_from.collection)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn validate_query_lookup_from(
+        &self,
+        request: &CollectionQueryRequest,
+    ) -> StorageResult<()> {
+        if let Some(lookup_from) = &request.lookup_from {
+            self.validate_lookup_from_collection_exists(&lookup_from.collection)
+                .await?;
+        }
+
+        let mut prefetches: Vec<&CollectionPrefetch> = request.prefetch.iter().collect();
+        while let Some(prefetch) = prefetches.pop() {
+            if let Some(lookup_from) = &prefetch.lookup_from {
+                self.validate_lookup_from_collection_exists(&lookup_from.collection)
+                    .await?;
+            }
+            prefetches.extend(prefetch.prefetch.iter());
+        }
+
+        Ok(())
+    }
+
+    async fn validate_group_lookup_from(&self, request: &GroupRequest) -> StorageResult<()> {
+        match &request.source {
+            SourceRequest::Search(_) => {}
+            SourceRequest::Recommend(request) => {
+                self.validate_recommend_lookup_from(request).await?;
+            }
+            SourceRequest::Query(request) => {
+                self.validate_query_lookup_from(request).await?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Recommend points using positive and negative example from the request
     ///
     /// # Arguments
@@ -55,6 +111,7 @@ impl TableOfContent {
         let collection_pass = auth.check_point_op(collection_name, &request, "recommend")?;
 
         let collection = self.get_collection(&collection_pass).await?;
+        self.validate_recommend_lookup_from(&request).await?;
         recommendations::recommend_by(
             request,
             &collection,
@@ -100,6 +157,9 @@ impl TableOfContent {
         };
 
         let collection = self.get_collection(&collection_pass).await?;
+        for (request, _shard_selector) in &requests {
+            self.validate_recommend_lookup_from(request).await?;
+        }
         recommendations::recommend_batch_by(
             requests,
             &collection,
@@ -256,6 +316,7 @@ impl TableOfContent {
         let collection_pass = auth.check_point_op(collection_name, &request, "group")?;
 
         let collection = self.get_collection(&collection_pass).await?;
+        self.validate_group_lookup_from(&request).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);
 
@@ -396,6 +457,9 @@ impl TableOfContent {
         };
 
         let collection = self.get_collection(&collection_pass).await?;
+        for (request, _shard_selector) in &requests {
+            self.validate_query_lookup_from(request).await?;
+        }
 
         collection
             .query_batch(
