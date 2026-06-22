@@ -568,6 +568,14 @@ mod tests {
             "Testing that only largest segment is not Mmap"
         );
 
+        // Optimizations defer destroying their source segments to a post-flush action; the files
+        // are removed once a flush confirms the optimized data is durable (see
+        // `SegmentHolder::register_post_flush_action`). Flush to run the action before counting dirs.
+        locked_holder
+            .read()
+            .flush_all(true, true)
+            .expect("failed to flush segment holder");
+
         let segment_dirs = fs::read_dir(segments_dir.path()).unwrap().collect_vec();
         assert_eq!(
             segment_dirs.len(),

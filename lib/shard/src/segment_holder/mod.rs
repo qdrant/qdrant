@@ -33,7 +33,7 @@ use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::SmallVec;
 
-use crate::locked_segment::LockedSegment;
+use crate::locked_segment::{DropDataOutcome, LockedSegment};
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::segment_manifest::{NewSegmentToken, SegmentsManifest};
 
@@ -41,6 +41,36 @@ pub type SegmentId = usize;
 
 /// All occurrences of a point across segments: (segment_id, version, is_deferred).
 type PointOccurrences = SmallVec<[(SegmentId, SeqNumberType, bool); 2]>;
+
+/// Result of running a [`DeferredAction`].
+pub enum PostFlushOutcome {
+    /// The action completed and should be removed from the queue.
+    Done,
+    /// The action could not complete yet; keep it queued and retry on a later flush. Its ack pin
+    /// stays in effect until it completes.
+    Retry,
+}
+
+/// An action deferred until a flush proves the data it touches is durable.
+/// See [`SegmentHolder::register_post_flush_action`].
+struct DeferredAction {
+    /// Run the action once the durable waterline reaches this version.
+    ready_at: SeqNumberType,
+    /// Until the action completes, cap the WAL acknowledge at this version.
+    ack_pin: SeqNumberType,
+    /// Retryable: returns [`PostFlushOutcome::Retry`] (or `Err`) without finishing, and is called
+    /// again on a later flush. Must keep enough state to resume.
+    action: Box<dyn FnMut() -> OperationResult<PostFlushOutcome> + Send>,
+}
+
+impl std::fmt::Debug for DeferredAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeferredAction")
+            .field("ready_at", &self.ready_at)
+            .field("ack_pin", &self.ack_pin)
+            .finish_non_exhaustive()
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
@@ -68,6 +98,17 @@ pub struct SegmentHolder {
     /// Dependency graph also stores the maximum version of the operation, which created the dependency,
     /// so we can clear all dependencies after flushing up to certain operation.
     flush_dependency: Arc<Mutex<TopoSort<SegmentId, SeqNumberType>>>,
+
+    /// Actions deferred until a flush proves the data they touch is durable.
+    /// Each runs once the durable waterline reaches its `ready_at`, and pins the WAL
+    /// acknowledge at its `ack_pin` until then. See [`SegmentHolder::register_post_flush_action`].
+    post_flush_actions: Mutex<Vec<DeferredAction>>,
+
+    /// Ack-pin floor of the actions `run_ready_post_flush_actions` is currently running, while they
+    /// are briefly removed from `post_flush_actions`. Folded into `pending_post_flush_ack_cap` so a
+    /// concurrent flush cannot advance the WAL acknowledge past their pins during that window.
+    /// Guarded by the `post_flush_actions` lock (always taken first) to stay consistent with it.
+    in_flight_ack_floor: Mutex<Option<SeqNumberType>>,
 
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.
@@ -372,6 +413,175 @@ impl SegmentHolder {
     /// Return non-appendable segment IDs sorted by IDs
     pub fn non_appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.non_appendable_segments.keys().copied().collect()
+    }
+
+    /// Register an action to run once a future flush proves its data durable, i.e. the durable
+    /// waterline (the version every segment is persisted up to) has reached `ready_at`. Until it
+    /// runs, the version returned by [`flush_all`](Self::flush_all), and thus the WAL acknowledge,
+    /// is capped at `ack_pin`, so any operation the not-yet-cleaned data contradicts stays
+    /// replayable across a restart.
+    ///
+    /// Optimizations use this to defer destroying a swapped-out source segment. Points are
+    /// copy-on-write moved out of it in memory, and WAL replay can re-derive such a move only
+    /// while the source's on-disk pre-image survives; the moved copies may still sit unflushed in
+    /// appendable segments, so destroying the source right at the swap would lose them on a
+    /// restart. Deferring the destruction to `ready_at` (the optimized segment's version) ensures
+    /// those copies are durable in their new home first; in the meantime a restart loads the old
+    /// files next to their replacement and load-time deduplication resolves the overlap.
+    ///
+    /// `ack_pin` is the version up to which the deferred files stay truthful (the source segment's
+    /// persisted version). Beyond it they contradict newer state living elsewhere, most importantly
+    /// deletions: the files keep a deleted point positively alive, and an absence in the
+    /// replacement segment cannot outvote it at load time. Capping the WAL acknowledge at `ack_pin`
+    /// keeps those operations replayable until the files are gone; the same pin the proxy imposed
+    /// while the optimization ran, extended until the action runs.
+    ///
+    /// `action` is retried on a later flush if it returns [`PostFlushOutcome::Retry`] or `Err`, so
+    /// the ack pin survives a transient failure (e.g. the data is briefly still in use); see
+    /// [`run_ready_post_flush_actions`](Self::run_ready_post_flush_actions).
+    pub fn register_post_flush_action(
+        &self,
+        ready_at: SeqNumberType,
+        ack_pin: SeqNumberType,
+        action: impl FnMut() -> OperationResult<PostFlushOutcome> + Send + 'static,
+    ) {
+        self.post_flush_actions.lock().push(DeferredAction {
+            ready_at,
+            ack_pin,
+            action: Box::new(action),
+        });
+    }
+
+    /// Register a [post-flush action](Self::register_post_flush_action) that destroys `segment`'s
+    /// data once durable. If the segment is still in use when the action runs, it is handed back
+    /// and the destruction is retried on a later flush, keeping the `ack_pin` in effect until the
+    /// files are actually gone.
+    pub fn register_segment_drop(
+        &self,
+        ready_at: SeqNumberType,
+        ack_pin: SeqNumberType,
+        segment: LockedSegment,
+    ) {
+        let mut segment = Some(segment);
+        self.register_post_flush_action(ready_at, ack_pin, move || {
+            let to_drop = segment
+                .take()
+                .expect("post-flush segment drop retried after completion");
+            match to_drop.try_drop_data() {
+                Ok(()) => Ok(PostFlushOutcome::Done),
+                Err(DropDataOutcome::StillInUse(returned, err)) => {
+                    log::warn!(
+                        "Deferred segment data destruction not ready yet, will retry: {err}"
+                    );
+                    segment = Some(returned);
+                    Ok(PostFlushOutcome::Retry)
+                }
+                Err(DropDataOutcome::Failed(err)) => Err(err),
+            }
+        });
+    }
+
+    /// The WAL acknowledge cap imposed by pending post-flush actions, if any: the minimum `ack_pin`
+    /// across both the queued actions and any currently being run (briefly out of the queue, see
+    /// `in_flight_ack_floor`). See [`SegmentHolder::register_post_flush_action`].
+    pub(super) fn pending_post_flush_ack_cap(&self) -> Option<SeqNumberType> {
+        // Hold the actions lock across both reads so the result is consistent with
+        // `run_ready_post_flush_actions`, which moves actions between the queue and the floor under
+        // it. Lock order is always actions then floor.
+        let actions = self.post_flush_actions.lock();
+        let queued = actions.iter().map(|action| action.ack_pin).min();
+        let in_flight = *self.in_flight_ack_floor.lock();
+        drop(actions);
+
+        match (queued, in_flight) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (cap, None) | (None, cap) => cap,
+        }
+    }
+
+    /// Run every post-flush action whose `ready_at` is covered by the durable waterline
+    /// `persisted_version` (every segment's state up to that version is on disk, so the data each
+    /// action cleans up is durable in its new home and replay of any still-unacknowledged
+    /// operation on it is an idempotent no-op).
+    ///
+    /// Returns the remaining WAL acknowledge cap: the minimum `ack_pin` of the actions that did
+    /// not run, or `None` when none are pending. See [`SegmentHolder::register_post_flush_action`].
+    ///
+    /// Like the WAL acknowledge, the maturity waterline is capped by the first failed operation:
+    /// its effects are not in the segments, and recovering it may need the deferred pre-images.
+    ///
+    /// Perf note: the waterline is the minimum persisted version across all segments, so a freshly
+    /// created appendable segment (which reports `persistent_version() == 0` until its first flush)
+    /// holds the waterline near zero and keeps actions from running. Under heavy optimizer churn
+    /// this lets the action backlog and the capped WAL grow, slowing startup replay. A fresh
+    /// segment cannot hold any operation from before it existed, so it could report its creation
+    /// version as vacuously persisted (e.g. floor `Segment::persistent_version()` on a stamped
+    /// `initial_version`) and stop dragging the waterline down. Left out here to keep this change
+    /// surgical: it changes the segment durability contract for every caller and deserves its own
+    /// change.
+    fn run_ready_post_flush_actions(
+        &self,
+        persisted_version: SeqNumberType,
+    ) -> OperationResult<Option<SeqNumberType>> {
+        let waterline = match self.failed_operation.first() {
+            Some(failed) => persisted_version.min(*failed),
+            None => persisted_version,
+        };
+        let mut ready: Vec<_> = {
+            let mut actions = self.post_flush_actions.lock();
+            let (ready, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut *actions)
+                .into_iter()
+                .partition(|action| action.ready_at <= waterline);
+            *actions = keep;
+            // Record the pins of the actions we are about to run while they are out of the queue, so
+            // a concurrent flush still accounts for them and cannot advance the WAL acknowledge past
+            // data their files still contradict. Set under the actions lock (see
+            // `pending_post_flush_ack_cap`).
+            *self.in_flight_ack_floor.lock() = ready.iter().map(|action| action.ack_pin).min();
+            ready
+        };
+        // Run in `ready_at` order: an action can release a resource a later action needs to take
+        // sole ownership of (a proxy keeps its shared write segment alive, and `drop_data` needs
+        // sole ownership; `ready_at` grows with each optimization). Once an action does not
+        // complete (`Retry` or `Err`), stop and re-queue the rest: a later action likely depends on
+        // the resource the blocked one still holds. Re-queued actions keep their ack pin in effect
+        // until they complete on a later flush, so a transient failure never advances the WAL
+        // acknowledge past data that is still on disk.
+        ready.sort_by_key(|action| action.ready_at);
+        let mut first_error = None;
+        let mut blocked = false;
+        let mut keep = Vec::new();
+        for mut action in ready {
+            if blocked {
+                keep.push(action);
+                continue;
+            }
+            match (action.action)() {
+                Ok(PostFlushOutcome::Done) => {}
+                Ok(PostFlushOutcome::Retry) => {
+                    keep.push(action);
+                    blocked = true;
+                }
+                // Hard failure: the action is dropped (its data is being destroyed and cannot be
+                // retried), the error is surfaced, and the rest is deferred to the next flush.
+                Err(err) => {
+                    first_error = Some(err);
+                    blocked = true;
+                }
+            }
+        }
+        {
+            // Re-queue survivors and clear the in-flight floor together under the actions lock:
+            // survivors are back in the queue before the floor stops covering them, so the cap never
+            // dips. Lock order is always actions then floor.
+            let mut actions = self.post_flush_actions.lock();
+            actions.extend(keep);
+            *self.in_flight_ack_floor.lock() = None;
+        }
+        if let Some(err) = first_error {
+            return Err(err);
+        }
+        Ok(self.pending_post_flush_ack_cap())
     }
 
     /// Suggests a new maximum persisted segment version when calling `flush_all`. This can be used to make WAL acknowledge no-op operations,
