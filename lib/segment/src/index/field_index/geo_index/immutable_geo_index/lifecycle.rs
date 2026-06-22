@@ -65,34 +65,27 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         // Track deleted points to adjust point and value counts after loading
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
             Vec::with_capacity(index.deleted_count);
-        let collected = index
+        // Batched reads only report non-empty points and may arrive out of
+        // order, so we pre-fill with empty value lists and index by point id.
+        let mut point_to_values: Vec<Vec<GeoPoint>> =
+            vec![Vec::new(); index.storage.point_to_values.len()];
+        index
             .storage
             .point_to_values
-            .iter()
-            .map(|id_values| {
-                let (id, values) = id_values?;
+            .for_all_points_values(|id, values| {
+                let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
                 let is_deleted = index
                     .storage
                     .deleted
                     .get_bit(id as usize)
                     .unwrap_or_default();
-                let values = match (is_deleted, values) {
-                    (false, Some(values)) => values.map(Cow::into_owned).collect(),
-                    (false, None) => vec![],
-                    (true, Some(values)) => {
-                        let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
-                        deleted_points.push((id, geo_points));
-                        vec![]
-                    }
-                    (true, None) => {
-                        deleted_points.push((id, vec![]));
-                        vec![]
-                    }
-                };
-                Ok(values)
-            })
-            .collect::<OperationResult<Vec<_>>>();
-        let point_to_values = ImmutablePointToValues::new(collected?);
+                if is_deleted {
+                    deleted_points.push((id, geo_points));
+                } else {
+                    point_to_values[id as usize] = geo_points;
+                }
+            })?;
+        let point_to_values = ImmutablePointToValues::new(point_to_values);
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
