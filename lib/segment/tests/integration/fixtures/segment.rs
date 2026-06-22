@@ -128,7 +128,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
 }
 
 pub fn build_segment_3(path: &Path) -> Segment {
-    let mut segment3 = build_segment(
+    let (mut segment3, _) = build_segment(
         path,
         &SegmentConfig {
             vector_data: HashMap::from([
@@ -255,7 +255,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
 }
 
 pub fn build_segment_sparse_1(path: &Path) -> Segment {
-    let mut segment1 = build_segment(
+    let (mut segment1, _) = build_segment(
         path,
         &SegmentConfig {
             vector_data: Default::default(),
@@ -349,7 +349,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
 }
 
 pub fn build_segment_sparse_2(path: &Path) -> Segment {
-    let mut segment2 = build_segment(
+    let (mut segment2, _) = build_segment(
         path,
         &SegmentConfig {
             vector_data: Default::default(),

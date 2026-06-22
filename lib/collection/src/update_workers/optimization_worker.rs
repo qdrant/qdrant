@@ -122,6 +122,14 @@ impl UpdateWorkers {
                 panic!("Failed to ensure there are appendable segments with capacity: {err}");
             }
 
+            // Backstop: reconcile the segment manifest with the live segment set. Registration
+            // normally happens at each publication site via the `NewSegmentToken`; this wake-up is
+            // the recovery path that picks up any registration that was skipped (e.g. an ignored
+            // token). No-op if already in sync.
+            if let Err(err) = segments.read().sync_segment_manifest(None) {
+                log::error!("Failed to write segment manifest: {err}");
+            }
+
             // If not forcing, wait on next signal if we have too many handles
             if !ignore_max_handles && optimization_handles.lock().await.len() >= max_handles {
                 continue;
@@ -465,13 +473,15 @@ impl UpdateWorkers {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
 
             let segments_guard = segments.upgradable_read();
-            let new_segment = segments_guard.build_tmp_segment(
+            // Building the segment yields a `NewSegmentToken` obliging us to register it.
+            let (new_segment, token) = segments_guard.build_tmp_segment(
                 segments_path,
                 Some(segment_config.plain_segment_config()),
                 payload_index_schema,
                 thresholds_config.deferred_internal_id,
                 true,
             )?;
+            segments_guard.sync_segment_manifest(Some(token))?;
             let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
             write_guard.add_new_locked(new_segment);
         }

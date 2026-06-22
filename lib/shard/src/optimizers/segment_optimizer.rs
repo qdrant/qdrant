@@ -25,6 +25,7 @@ use crate::operations::optimization::OptimizerThresholds;
 use crate::optimize::{OptimizationPaths, OptimizationStrategy, execute_optimization};
 use crate::segment_holder::locked::LockedSegmentHolder;
 use crate::segment_holder::{SegmentHolder, SegmentId};
+use crate::segment_manifest::NewSegmentToken;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -57,7 +58,7 @@ impl<O: SegmentOptimizer + ?Sized> OptimizationStrategy for ShardOptimizationStr
         self.optimizer.optimized_segment_builder(input_segments)
     }
 
-    fn create_temp_segment(&self) -> OperationResult<LockedSegment> {
+    fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)> {
         self.optimizer.temp_segment(false)
     }
 }
@@ -137,14 +138,19 @@ pub trait SegmentOptimizer: Sync {
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
 
     /// Build temp segment
-    fn temp_segment(&self, save_version: bool) -> OperationResult<LockedSegment> {
+    fn temp_segment(
+        &self,
+        save_version: bool,
+    ) -> OperationResult<(LockedSegment, NewSegmentToken)> {
         let config = self.segment_optimizer_config().plain_segment_config();
-        Ok(LockedSegment::new(build_segment(
+        let (segment, token) = build_segment(
             self.segments_path(),
             &config,
             self.threshold_config().deferred_internal_id,
             save_version,
-        )?))
+        )?;
+        let segment = LockedSegment::new(segment);
+        Ok((segment, token))
     }
 
     /// Build optimized segment

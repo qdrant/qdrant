@@ -34,7 +34,7 @@ pub use paths::{
     get_vector_name_with_prefix, get_vector_storage_path,
 };
 pub(crate) use payload_storage::create_payload_storage;
-pub use segment::{build_segment, load_segment, normalize_segment_dir};
+pub use segment::{NewSegmentToken, build_segment, load_segment, normalize_segment_dir};
 #[cfg(feature = "testing")]
 pub use sparse_vector_index::create_sparse_vector_index_test;
 pub(crate) use sparse_vector_index::open_or_create_sparse_vector_index;
