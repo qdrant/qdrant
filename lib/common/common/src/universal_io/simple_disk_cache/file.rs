@@ -75,9 +75,9 @@ pub(super) enum InitSource<R: UniversalRead> {
     /// Build an empty local mmap and let reads fill blocks on demand.
     FromScratch,
     /// Wait for the prefill pipeline.
-    FromPrefiller(R::OwnedReadPipeline<()>),
+    Prefiller(R::OwnedReadPipeline<()>),
     /// Wait for the prefill pipeline, but from reopen
-    FromPartialPrefiller {
+    PartialPrefiller {
         prefiller: R::OwnedReadPipeline<u64>,
         local_state: LocalState,
     },
@@ -90,8 +90,8 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InitSource::FromScratch => write!(f, "FromScratch"),
-            InitSource::FromPrefiller(_) => write!(f, "FromPrefiller"),
-            InitSource::FromPartialPrefiller { .. } => write!(f, "FromPartialPrefiller"),
+            InitSource::Prefiller(_) => write!(f, "Prefiller"),
+            InitSource::PartialPrefiller { .. } => write!(f, "PartialPrefiller"),
         }
     }
 }
@@ -180,7 +180,7 @@ where
                 }
                 self.new_local_state_from_scratch(known_length)?
             }
-            InitSource::FromPrefiller(mut prefiller) => {
+            InitSource::Prefiller(mut prefiller) => {
                 let local = match prefiller.wait()? {
                     Some((_, bytes)) => {
                         let local = LocalState::new(
@@ -211,7 +211,7 @@ where
 
                 local
             }
-            InitSource::FromPartialPrefiller {
+            InitSource::PartialPrefiller {
                 mut prefiller,
                 mut local_state,
             } => {
@@ -355,7 +355,7 @@ where
                     InitSource::FromScratch,
                     "by this point, InitSource must be FromScratch"
                 );
-                *init_guard = InitSource::FromPartialPrefiller {
+                *init_guard = InitSource::PartialPrefiller {
                     prefiller: remote_pipeline,
                     local_state: local,
                 };

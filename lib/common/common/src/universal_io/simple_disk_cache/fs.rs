@@ -155,7 +155,7 @@ where
                 // FIXME: check `can_schedule` in a loop first
                 pipeline.schedule_whole((), 0)?;
 
-                InitSource::FromPrefiller(pipeline)
+                InitSource::Prefiller(pipeline)
             }
         };
 
