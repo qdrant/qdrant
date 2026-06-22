@@ -186,7 +186,7 @@ mod tests {
     fn fuzzy_matching_starts_after_exact_prefix() {
         let automaton = PrefixLevenshtein::new("abc", 2, 1).unwrap();
 
-        let state = accept_str(&automaton, "abd");
+        let state = accept_str(&automaton, "abd"); // codespell:ignore abd
 
         assert!(matches!(state, PrefixLevState::Fuzzy(_)));
         assert!(automaton.is_match(&state));
