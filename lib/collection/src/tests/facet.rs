@@ -18,19 +18,22 @@
 //! and within each strategy the filter selectivity steers the terminal op
 //! (direct counts / filter-iter / facet-iter).
 //!
-//! Two invariants are asserted:
+//! Every case asserts one invariant: the top-[`LIMIT`] hits of approximate
+//! faceting equal those of exact faceting. The full strategy (low cardinality)
+//! enumerates exhaustively, so its entire result matches. The sampling strategy
+//! (high cardinality) may omit rare values, but the Zipf skew keeps the heaviest
+//! values — the only ones that can reach the top-[`LIMIT`] — over-represented
+//! enough to be sampled on every run, and each value it surfaces carries an
+//! exact count. Truncating both sides to their top hits therefore tolerates
+//! sampling's incompleteness while still catching any miscount.
 //!
-//! * **Full strategy (low cardinality)** — enumeration is exhaustive, so the
-//!   approximate result must equal the exact one *exactly* (same values, same
-//!   counts).
-//! * **Sampling strategy (high cardinality)** — sampling trades completeness for
-//!   speed: it may omit values, but every value it surfaces must carry the exact
-//!   count.
-//!
-//! The shard holds a single appendable segment with each point upserted once, so
-//! no point appears in multiple segments with different versions — the
-//! per-segment-sum `approx_facet` performs equals the cross-segment dedup
-//! `exact_facet` performs, and the two are expected to agree on counts.
+//! The shard holds a single appendable segment, and the fixture deletes and
+//! overwrites a slice of the points after the initial insert (see
+//! [`build_facet_fixture`]). Even so, no point ever lands in two segments with
+//! different versions: both mutations rewrite that one segment in place. The
+//! per-segment-sum `approx_facet` performs therefore still equals the
+//! cross-segment dedup `exact_facet` performs — now additionally proving both
+//! paths honour deletions and payload overwrites.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -59,7 +62,7 @@ use crate::operations::point_ops::{
 };
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
-use crate::tests::fixtures::{create_collection_config};
+use crate::tests::fixtures::create_collection_config;
 use crate::tests::payload::create_index;
 
 /// Total points in the fixture.
@@ -84,6 +87,15 @@ const TAG_KEY: &str = "tag";
 const SEQ_KEY: &str = "seq";
 
 const COLOURS: [&str; 4] = ["red", "blue", "green", "yellow"];
+
+/// New `colour` value introduced only by overwrites — never present at insert
+/// time, so the facet index must surface a value it did not originally index.
+const OVERWRITE_COLOUR: &str = "magenta";
+
+/// One point in every `MUTATION_STRIDE` is deleted and a different one is
+/// overwritten (disjoint residues). The stride is coprime with `COLOURS.len()`,
+/// so both mutation sets spread evenly across colours.
+const MUTATION_STRIDE: usize = 5;
 
 const LIMIT: usize = 10;
 const TIMEOUT: Duration = Duration::from_secs(60);
@@ -139,6 +151,23 @@ fn seq_below(n: usize) -> Filter {
     )))
 }
 
+/// Build one point. `id` and `seq` both derive from the index `i`; `colour` and
+/// `tag` populate the two facet fields.
+fn make_point(i: usize, colour: &str, tag: u64) -> PointStructPersisted {
+    PointStructPersisted {
+        id: (i as u64 + 1).into(),
+        vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+        payload: Some(
+            serde_json::from_value(serde_json::json!({
+                COLOUR_KEY: colour,
+                TAG_KEY: format!("tag_{tag}"),
+                SEQ_KEY: i as f64,
+            }))
+            .unwrap(),
+        ),
+    }
+}
+
 /// Build a single-shard fixture of `N_POINTS` points. Each point carries:
 /// * `colour` — keyword, `COLOURS.len()` uniques, low cardinality → full strategy.
 /// * `tag` — keyword, Zipf-distributed over a large vocabulary, high cardinality
@@ -178,18 +207,7 @@ async fn build_facet_fixture() -> ShardFixture {
     let points: Vec<PointStructPersisted> = (0..N_POINTS)
         .map(|i| {
             let tag = zipf.sample(&mut rng) as u64;
-            PointStructPersisted {
-                id: (i as u64 + 1).into(),
-                vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
-                payload: Some(
-                    serde_json::from_value(serde_json::json!({
-                        COLOUR_KEY: COLOURS[i % COLOURS.len()],
-                        TAG_KEY: format!("tag_{tag}"),
-                        SEQ_KEY: i as f64,
-                    }))
-                    .unwrap(),
-                ),
-            }
+            make_point(i, COLOURS[i % COLOURS.len()], tag)
         })
         .collect();
 
@@ -215,6 +233,52 @@ async fn build_facet_fixture() -> ShardFixture {
     ] {
         create_index(&shard, &payload_index_schema, name, field_type).await;
     }
+
+    // Mutate the fresh insert so both facet paths must reconcile removals and
+    // payload rewrites, not just a pristine load. The two mutation sets are
+    // disjoint residues mod `MUTATION_STRIDE`.
+
+    // Delete one point in every `MUTATION_STRIDE`. Deleted points must vanish
+    // from both counts (this exercises `DeferredBehavior::VisibleOnly`).
+    let delete = CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+        ids: (0..N_POINTS)
+            .filter(|i| i % MUTATION_STRIDE == 0)
+            .map(|i| (i as u64 + 1).into())
+            .collect(),
+    });
+    shard
+        .update(
+            delete.into(),
+            WaitUntil::Visible,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    // Overwrite a different point in every `MUTATION_STRIDE` with a fresh
+    // payload: the brand-new `OVERWRITE_COLOUR` and a freshly Zipf-sampled `tag`,
+    // keeping `seq` so the range filters keep their selectivity. The facet index
+    // must drop the stale values and adopt the new ones.
+    let overwrites: Vec<PointStructPersisted> = (0..N_POINTS)
+        .filter(|i| i % MUTATION_STRIDE == 1)
+        .map(|i| {
+            let tag = zipf.sample(&mut rng) as u64;
+            make_point(i, OVERWRITE_COLOUR, tag)
+        })
+        .collect();
+    let overwrite = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(overwrites),
+    ));
+    shard
+        .update(
+            overwrite.into(),
+            WaitUntil::Visible,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
 
     ShardFixture {
         _collection_dir: collection_dir,
