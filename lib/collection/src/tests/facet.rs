@@ -67,7 +67,7 @@ const BROAD: usize = N_POINTS * 9 / 10;
 /// values, so the field engages the sampling strategy.
 const ZIPF_CARDINALITY: usize = 2_000;
 /// Zipf exponent — a realistic, moderately skewed facet distribution.
-const ZIPF_SKEW: f64 = 0.7;
+const ZIPF_SKEW: f64 = 0.6;
 /// Fixed seed: the fixture must be deterministic.
 const ZIPF_SEED: u64 = 0xFACE_F00D;
 
