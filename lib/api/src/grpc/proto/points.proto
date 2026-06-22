@@ -517,6 +517,14 @@ message SearchParams {
 
   // ACORN search params
   optional AcornSearchParams acorn = 5;
+
+  // Scope for IDF statistics used by sparse vector queries with the IDF modifier
+  optional IdfSearchScope idf = 6;
+}
+
+enum IdfSearchScope {
+  Global = 0;
+  PerFilter = 1;
 }
 
 message SearchPoints {

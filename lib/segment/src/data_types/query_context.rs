@@ -9,19 +9,79 @@ use common::cow::SimpleCow;
 use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
 
-use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::types::{ScoredPoint, VectorName, VectorNameBuf};
+use crate::types::{Filter, IdfSearchScope, ScoredPoint, SearchParams, VectorName, VectorNameBuf};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum IdfStatsKey {
+    Global {
+        vector_name: VectorNameBuf,
+    },
+    PerFilter {
+        vector_name: VectorNameBuf,
+        filter: Filter,
+    },
+}
+
+impl IdfStatsKey {
+    pub fn global(vector_name: &VectorName) -> Self {
+        Self::Global {
+            vector_name: vector_name.to_owned(),
+        }
+    }
+
+    pub fn per_filter(vector_name: &VectorName, filter: Filter) -> Self {
+        Self::PerFilter {
+            vector_name: vector_name.to_owned(),
+            filter,
+        }
+    }
+
+    pub fn for_search(
+        vector_name: &VectorName,
+        filter: Option<&Filter>,
+        params: Option<&SearchParams>,
+    ) -> Self {
+        match params.and_then(|params| params.idf).unwrap_or_default() {
+            IdfSearchScope::Global => Self::global(vector_name),
+            IdfSearchScope::PerFilter => match filter {
+                Some(filter) => Self::per_filter(vector_name, filter.clone()),
+                None => Self::global(vector_name),
+            },
+        }
+    }
+
+    pub fn vector_name(&self) -> &VectorName {
+        match self {
+            Self::Global { vector_name } | Self::PerFilter { vector_name, .. } => vector_name,
+        }
+    }
+
+    pub fn filter(&self) -> Option<&Filter> {
+        match self {
+            Self::Global { .. } => None,
+            Self::PerFilter { filter, .. } => Some(filter),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct IdfStats {
+    /// Element frequency for sparse-vector query dimensions.
+    pub idf: HashMap<DimId, usize>,
+
+    /// Number of vectors in the IDF scope.
+    pub indexed_vectors: usize,
+}
 
 #[derive(Debug, Default)]
 pub struct QueryIdfStats {
-    /// Statistics of the element frequency,
-    /// collected over all segments.
+    /// Statistics of the element frequency, collected over all segments.
+    ///
     /// Required for processing sparse vector search with `idf-dot` similarity.
-    pub idf: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
-
-    /// Number of indexed vectors per vector name.
-    pub indexed_vectors: tiny_map::TinyMap<VectorNameBuf, usize>,
+    /// Global IDF scopes are keyed by vector name. Per-filter IDF scopes are
+    /// additionally keyed by the request filter.
+    pub stats: HashMap<IdfStatsKey, IdfStats>,
 }
 
 #[derive(Debug)]
@@ -85,28 +145,20 @@ impl QueryContext {
 
     /// Fill indices of sparse vectors, which are required for `idf-dot` similarity
     /// with zeros, so the statistics can be collected.
-    pub fn init_idf(&mut self, vector_name: &VectorName, indices: &[DimId]) {
-        self.idf_stats
-            .indexed_vectors
-            .insert(vector_name.to_owned(), 0);
-
-        // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
-        let idf = if let Some(idf) = self.idf_stats.idf.get_mut(vector_name) {
-            idf
-        } else {
-            self.idf_stats
-                .idf
-                .insert(vector_name.to_owned(), HashMap::default());
-            self.idf_stats.idf.get_mut(vector_name).unwrap()
-        };
+    pub fn init_idf(&mut self, key: IdfStatsKey, indices: &[DimId]) {
+        let stats = self.idf_stats.stats.entry(key).or_default();
 
         for index in indices {
-            idf.insert(*index, 0);
+            stats.idf.insert(*index, 0);
         }
     }
 
     pub fn mut_idf_stats(&mut self) -> &mut QueryIdfStats {
         &mut self.idf_stats
+    }
+
+    pub fn is_stopped_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.is_stopped)
     }
 
     pub fn get_segment_query_context(&self) -> SegmentQueryContext<'_> {
@@ -143,16 +195,16 @@ impl<'a> SegmentQueryContext<'a> {
     }
 
     pub fn get_vector_context(&self, vector_name: &VectorName) -> VectorQueryContext<'_> {
+        self.get_vector_context_for_key(&IdfStatsKey::global(vector_name))
+    }
+
+    pub fn get_vector_context_for_key(&self, key: &IdfStatsKey) -> VectorQueryContext<'_> {
+        let stats = self.query_context.idf_stats.stats.get(key);
         VectorQueryContext {
             search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,
             is_stopped: Some(&self.query_context.is_stopped),
-            idf: self.query_context.idf_stats.idf.get(vector_name),
-            indexed_vectors: self
-                .query_context
-                .idf_stats
-                .indexed_vectors
-                .get(vector_name)
-                .copied(),
+            idf: stats.map(|stats| &stats.idf),
+            indexed_vectors: stats.map(|stats| stats.indexed_vectors),
             deleted_points: self.deleted_points,
             hardware_counter: self.hardware_counter.fork(),
         }
