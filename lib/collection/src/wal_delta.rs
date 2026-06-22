@@ -574,6 +574,59 @@ mod tests {
         assert_wal_ordering_property(&c_wal, true).await;
     }
 
+    /// Regression guard: a shard's recovery point must
+    /// not claim clock ticks its WAL cannot supply. A clocks-ahead-of-data snapshot restore
+    /// violates this, so a later WAL-delta skips the missing batch. Red while the bug exists.
+    #[tokio::test]
+    async fn test_recovery_point_does_not_overclaim_beyond_wal() {
+        const PRE: usize = 5; // ops actually in the WAL
+        const BATCH: usize = 3; // ticks the restored clocks claim, with no WAL entries
+
+        let (dst_wal, _dst_dir) = fixture_empty_wal();
+        let peer_id = 1;
+        let clock_id = 0;
+
+        // The WAL actually contains ticks 1..=PRE.
+        for n in 0..PRE {
+            let tag = ClockTag::new(peer_id, clock_id, (n + 1) as u64);
+            let mut op = OperationWithClockTag::new(mock_operation(n as u64), Some(tag));
+            dst_wal.lock_and_write(&mut op).await.unwrap();
+        }
+
+        // A clocks-ahead-of-data snapshot restore installs clocks claiming the batch ticks
+        // (PRE+1..=PRE+BATCH) without the corresponding WAL entries.
+        {
+            let mut newest = dst_wal.newest_clocks.lock().await;
+            for n in 0..BATCH {
+                newest.advance_clock(ClockTag::new(peer_id, clock_id, (PRE + n + 1) as u64));
+            }
+        }
+
+        let wal_max = dst_wal
+            .wal
+            .lock()
+            .await
+            .read(0)
+            .map(Result::unwrap)
+            .filter_map(|(_, op)| op.clock_tag)
+            .map(|tag| tag.clock_tick)
+            .max()
+            .unwrap();
+        let recovery_point_max = dst_wal
+            .recovery_point()
+            .await
+            .iter_as_clock_tags()
+            .map(|tag| tag.clock_tick)
+            .max()
+            .unwrap();
+
+        assert!(
+            recovery_point_max <= wal_max,
+            "recovery point claims tick {recovery_point_max} but the WAL only supplies up to \
+             {wal_max} (clocks ahead of data -> WAL-delta would skip the gap)",
+        );
+    }
+
     /// Test WAL delta resolution with a many missed operations on node C.
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
