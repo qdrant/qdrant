@@ -1,39 +1,27 @@
-//! Accuracy coverage for approximate faceting, comparing it against exact
-//! faceting on a real [`LocalShard`].
+//! Accuracy coverage for approximate faceting, checked against exact faceting on
+//! a real [`LocalShard`] — the lowest level where both run on the same data
+//! ([`LocalShard::exact_facet`] dedups points across segments; the approximate
+//! path lives in `segment/src/segment/read_view/facet.rs`).
 //!
-//! The approximate facet implementation lives in
-//! `segment/src/segment/read_view/facet.rs`, but the *exact* counterpart is only
-//! reachable one level up, at the shard: [`LocalShard::exact_facet`] enumerates
-//! every value and counts each with a filtered read, deduplicating points across
-//! segments. The shard is therefore the lowest level where both paths can be run
-//! against the same data and compared.
-//!
-//! The test sweeps a 2×3 matrix to exercise every approximate plan:
+//! The test sweeps a 2×3 matrix to hit every approximate plan, with filter
+//! selectivity steering the terminal op (direct counts / filter-iter / facet-iter):
 //!
 //! | field                         | no filter | selective filter | broad filter |
 //! |-------------------------------|-----------|------------------|--------------|
 //! | low cardinality (`colour`)    | full      | full             | full         |
 //! | high cardinality (`tag`, Zipf)| sampling  | sampling         | sampling     |
 //!
-//! and within each strategy the filter selectivity steers the terminal op
-//! (direct counts / filter-iter / facet-iter).
+//! Each case asserts the same invariant: the top-[`LIMIT`] hits of approximate
+//! faceting equal those of exact faceting. The full strategy enumerates
+//! exhaustively; the sampling strategy may drop rare values, but the Zipf skew
+//! keeps the top-[`LIMIT`] values frequent enough to always be sampled (with
+//! exact counts), so truncating to the top hits hides the incompleteness.
 //!
-//! Every case asserts one invariant: the top-[`LIMIT`] hits of approximate
-//! faceting equal those of exact faceting. The full strategy (low cardinality)
-//! enumerates exhaustively, so its entire result matches. The sampling strategy
-//! (high cardinality) may omit rare values, but the Zipf skew keeps the heaviest
-//! values — the only ones that can reach the top-[`LIMIT`] — over-represented
-//! enough to be sampled on every run, and each value it surfaces carries an
-//! exact count. Truncating both sides to their top hits therefore tolerates
-//! sampling's incompleteness while still catching any miscount.
-//!
-//! The shard holds a single appendable segment, and the fixture deletes and
-//! overwrites a slice of the points after the initial insert (see
-//! [`build_facet_fixture`]). Even so, no point ever lands in two segments with
-//! different versions: both mutations rewrite that one segment in place. The
-//! per-segment-sum `approx_facet` performs therefore still equals the
-//! cross-segment dedup `exact_facet` performs — now additionally proving both
-//! paths honour deletions and payload overwrites.
+//! The fixture also optimizes the insert into an immutable, indexed segment, then
+//! deletes and overwrites a slice of points (see [`build_facet_fixture`]), so the
+//! read paths must handle soft-deletes in immutable postings and points living in
+//! two segments at different versions — the cross-segment case `exact_facet`
+//! dedups and `approx_facet` sums visibly.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,6 +48,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
+use crate::operations::types::ShardStatus;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::tests::fixtures::create_collection_config;
@@ -96,6 +85,15 @@ const OVERWRITE_COLOUR: &str = "magenta";
 /// overwritten (disjoint residues). The stride is coprime with `COLOURS.len()`,
 /// so both mutation sets spread evenly across colours.
 const MUTATION_STRIDE: usize = 5;
+
+/// Indexing threshold (KB of vector data) used to force optimization, derived to
+/// sit midway between the full insert and the smaller overwrite batch: the
+/// initial `N_POINTS` exceed it so they get indexed into an immutable segment,
+/// while the later `N_POINTS / MUTATION_STRIDE` overwrites stay below it and
+/// remain appendable — so no second optimization pass disturbs the cross-segment
+/// state at query time. Tracks the fixture sizes instead of hard-coding a value
+/// coupled to them. (Vectors are 4-dim `f32` = 16 bytes.)
+const INDEXING_THRESHOLD_KB: usize = (N_POINTS + N_POINTS / MUTATION_STRIDE) * 16 / 2 / 1024;
 
 const LIMIT: usize = 10;
 const TIMEOUT: Duration = Duration::from_secs(60);
@@ -168,6 +166,50 @@ fn make_point(i: usize, colour: &str, tag: u64) -> PointStructPersisted {
     }
 }
 
+/// Issue `op` against the shard and wait for it to become visible.
+async fn apply(shard: &LocalShard, op: CollectionUpdateOperations) {
+    shard
+        .update(op.into(), WaitUntil::Visible, None, HwMeasurementAcc::new())
+        .await
+        .unwrap();
+}
+
+/// Poll until the shard reaches a stable optimized state — `Green` with no proxy
+/// segment in flight — so the segment layout is deterministic before querying.
+async fn wait_for_optimization(shard: &LocalShard) {
+    let start = std::time::Instant::now();
+    loop {
+        let (status, _) = shard.local_shard_status().await;
+        let has_proxy = shard
+            .segments()
+            .read()
+            .iter()
+            .any(|(_, segment)| !segment.is_original());
+        if status == ShardStatus::Green && !has_proxy {
+            return;
+        }
+        assert!(
+            start.elapsed() < TIMEOUT,
+            "timed out waiting for optimization (status: {status:?}, has_proxy: {has_proxy})",
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Assert the shard holds at least one immutable (non-appendable) segment, i.e.
+/// optimization actually produced the indexed segment the test means to cover.
+fn assert_has_immutable_segment(shard: &LocalShard) {
+    let segments = shard.segments();
+    let has_immutable = segments
+        .read()
+        .iter()
+        .any(|(_, segment)| !segment.get().read().is_appendable());
+    assert!(
+        has_immutable,
+        "expected an immutable segment after optimization",
+    );
+}
+
 /// Build a single-shard fixture of `N_POINTS` points. Each point carries:
 /// * `colour` — keyword, `COLOURS.len()` uniques, low cardinality → full strategy.
 /// * `tag` — keyword, Zipf-distributed over a large vocabulary, high cardinality
@@ -177,7 +219,10 @@ async fn build_facet_fixture() -> ShardFixture {
     let collection_dir = Builder::new().prefix("facet_collection").tempdir().unwrap();
     let schema_dir = Builder::new().prefix("facet_schema").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let mut config = create_collection_config();
+    // Force the initial insert to be optimized into an immutable, indexed segment
+    // so the facet paths run against immutable storage, not only appendable.
+    config.optimizer_config.indexing_threshold = Some(INDEXING_THRESHOLD_KB);
 
     let update_runtime = Handle::current();
     let search_runtime = AdaptiveSearchHandle::current_for_tests();
@@ -200,6 +245,17 @@ async fn build_facet_fixture() -> ShardFixture {
     .await
     .unwrap();
 
+    // Faceting requires a map index (keyword); `seq` is indexed too so range
+    // filters resolve against an index. Create the indexes up front, before any
+    // data, so the optimizer carries them into the immutable segment it builds.
+    for (name, field_type) in [
+        (COLOUR_KEY, PayloadSchemaType::Keyword),
+        (TAG_KEY, PayloadSchemaType::Keyword),
+        (SEQ_KEY, PayloadSchemaType::Float),
+    ] {
+        create_index(&shard, &payload_index_schema, name, field_type).await;
+    }
+
     // Upsert all points in a single operation, drawing `tag` from a deterministic
     // Zipf distribution so the high-cardinality field has a realistic skew.
     let mut rng = StdRng::seed_from_u64(ZIPF_SEED);
@@ -210,51 +266,41 @@ async fn build_facet_fixture() -> ShardFixture {
             make_point(i, COLOURS[i % COLOURS.len()], tag)
         })
         .collect();
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::from(points),
+        )),
+    )
+    .await;
 
-    let upsert = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(points),
-    ));
-    shard
-        .update(
-            upsert.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        )
-        .await
-        .unwrap();
+    // Optimize the insert into an immutable, indexed segment and confirm it
+    // actually materialized before mutating.
+    wait_for_optimization(&shard).await;
+    assert_has_immutable_segment(&shard);
 
-    // Faceting requires a map index (keyword); `seq` is indexed too so range
-    // filters resolve against an index.
-    for (name, field_type) in [
-        (COLOUR_KEY, PayloadSchemaType::Keyword),
-        (TAG_KEY, PayloadSchemaType::Keyword),
-        (SEQ_KEY, PayloadSchemaType::Float),
-    ] {
-        create_index(&shard, &payload_index_schema, name, field_type).await;
-    }
-
-    // Mutate the fresh insert so both facet paths must reconcile removals and
-    // payload rewrites, not just a pristine load. The two mutation sets are
-    // disjoint residues mod `MUTATION_STRIDE`.
+    // Mutate the optimized fixture so both facet paths must reconcile removals
+    // and payload rewrites against immutable storage, not just a pristine load.
+    // The two mutation sets are disjoint residues mod `MUTATION_STRIDE`.
+    //
+    // Since the points now live in an immutable segment, a delete becomes a
+    // soft-delete recorded against it, and an overwrite soft-deletes the old copy
+    // there while writing the new one to the appendable segment — so the same
+    // point exists in two segments with different versions, the cross-segment
+    // case `exact_facet` must dedup and `approx_facet` must sum visibly.
 
     // Delete one point in every `MUTATION_STRIDE`. Deleted points must vanish
     // from both counts (this exercises `DeferredBehavior::VisibleOnly`).
-    let delete = CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
-        ids: (0..N_POINTS)
-            .filter(|i| i % MUTATION_STRIDE == 0)
-            .map(|i| (i as u64 + 1).into())
-            .collect(),
-    });
-    shard
-        .update(
-            delete.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        )
-        .await
-        .unwrap();
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+            ids: (0..N_POINTS)
+                .filter(|i| i % MUTATION_STRIDE == 0)
+                .map(|i| (i as u64 + 1).into())
+                .collect(),
+        }),
+    )
+    .await;
 
     // Overwrite a different point in every `MUTATION_STRIDE` with a fresh
     // payload: the brand-new `OVERWRITE_COLOUR` and a freshly Zipf-sampled `tag`,
@@ -267,18 +313,18 @@ async fn build_facet_fixture() -> ShardFixture {
             make_point(i, OVERWRITE_COLOUR, tag)
         })
         .collect();
-    let overwrite = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::from(overwrites),
-    ));
-    shard
-        .update(
-            overwrite.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        )
-        .await
-        .unwrap();
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::from(overwrites),
+        )),
+    )
+    .await;
+
+    // The overwrite batch stays below `INDEXING_THRESHOLD_KB` and the soft-deletes
+    // stay below the vacuum threshold, so nothing else should optimize; wait
+    // anyway to pin down a deterministic segment layout before querying.
+    wait_for_optimization(&shard).await;
 
     ShardFixture {
         _collection_dir: collection_dir,
