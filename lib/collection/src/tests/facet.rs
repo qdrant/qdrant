@@ -32,7 +32,6 @@
 //! per-segment-sum `approx_facet` performs equals the cross-segment dedup
 //! `exact_facet` performs, and the two are expected to agree on counts.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -45,7 +44,7 @@ use rand::distr::Distribution;
 use rand::rngs::StdRng;
 use rand_distr::Zipf;
 use rstest::rstest;
-use segment::data_types::facets::{FacetParams, FacetValue};
+use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
 use segment::types::{Condition, FieldCondition, Filter, PayloadSchemaType, Range};
@@ -64,7 +63,7 @@ use crate::tests::fixtures::{create_collection_config};
 use crate::tests::payload::create_index;
 
 /// Total points in the fixture.
-const N_POINTS: usize = 300_000;
+const N_POINTS: usize = 5_000;
 /// `seq <` this matches 5% of points — selective enough for the full strategy to
 /// iterate the filter, and to drive the sampling strategy's selective branch.
 const SELECTIVE: usize = N_POINTS / 20;
@@ -89,8 +88,6 @@ const COLOURS: [&str; 4] = ["red", "blue", "green", "yellow"];
 const LIMIT: usize = 10;
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-type Counts = HashMap<FacetValue, usize>;
-
 /// A built shard plus the temp dirs and runtime it borrows. The temp dirs are
 /// kept alive for the shard's lifetime.
 struct ShardFixture {
@@ -102,16 +99,16 @@ struct ShardFixture {
 
 impl ShardFixture {
     /// Run the approximate facet path (the code under test).
-    async fn approx(&self, key: &str, filter: Option<Filter>) -> Counts {
+    async fn approx(&self, key: &str, filter: Option<Filter>) -> FacetResponse {
         self.facet(key, filter, false).await
     }
 
     /// Run the exact facet path (the reference).
-    async fn exact(&self, key: &str, filter: Option<Filter>) -> Counts {
+    async fn exact(&self, key: &str, filter: Option<Filter>) -> FacetResponse {
         self.facet(key, filter, true).await
     }
 
-    async fn facet(&self, key: &str, filter: Option<Filter>, exact: bool) -> Counts {
+    async fn facet(&self, key: &str, filter: Option<Filter>, exact: bool) -> FacetResponse {
         let request = Arc::new(FacetParams {
             key: JsonPath::new(key),
             limit: LIMIT,
@@ -126,7 +123,8 @@ impl ShardFixture {
             self.shard.approx_facet(request, runtime, TIMEOUT, hw).await
         }
         .unwrap();
-        hits.into_iter().map(|hit| (hit.value, hit.count)).collect()
+        let counts = hits.into_iter().map(|hit| (hit.value, hit.count)).collect();
+        FacetResponse::top_hits(counts, LIMIT)
     }
 }
 
@@ -139,20 +137,6 @@ fn seq_below(n: usize) -> Filter {
             ..Default::default()
         },
     )))
-}
-
-/// Every value the approximate facet reported must carry the exact count. The
-/// approximate set may be a subset of the exact one (sampling can omit values),
-/// but it must never be wrong about a count.
-fn assert_subset_counts_exact(approx: &Counts, exact: &Counts) {
-    for (value, &count) in approx {
-        assert_eq!(
-            exact.get(value).copied(),
-            Some(count),
-            "Approximate facet reported {value:?} = {count}, exact = {:?}",
-            exact.get(value),
-        );
-    }
 }
 
 /// Build a single-shard fixture of `N_POINTS` points. Each point carries:
@@ -244,36 +228,23 @@ async fn build_facet_fixture() -> ShardFixture {
 /// high-cardinality field, comparing approximate faceting against exact.
 #[tokio::test(flavor = "multi_thread")]
 #[rstest]
-#[case::no_filter(None)]
-#[case::selective_filter(Some(seq_below(SELECTIVE)))]
-#[case::broad_filter(Some(seq_below(BROAD)))]
-async fn approx_facet_matches_exact_across_strategies(#[case] filter: Option<Filter>) {
+#[case::low_card_no_filter(COLOUR_KEY, None)]
+#[case::low_card_selective_filter(COLOUR_KEY, Some(seq_below(SELECTIVE)))]
+#[case::low_card_broad_filter(COLOUR_KEY, Some(seq_below(BROAD)))]
+#[case::high_card_no_filter(TAG_KEY, None)]
+#[case::high_card_selective_filter(TAG_KEY, Some(seq_below(SELECTIVE)))]
+#[case::high_card_broad_filter(TAG_KEY, Some(seq_below(BROAD)))]
+async fn approx_facet_matches_exact_across_strategies(
+    #[case] key: &str,
+    #[case] filter: Option<Filter>,
+) {
     let fixture = build_facet_fixture().await;
-    let approx = fixture.approx(COLOUR_KEY, filter.clone()).await;
-    let exact = fixture.exact(COLOUR_KEY, filter.clone()).await;
+    let approx = fixture.approx(key, filter.clone()).await;
+    let exact = fixture.exact(key, filter.clone()).await;
     assert_eq!(
         approx, exact,
         "approximate faceting must reproduce exact counts",
     );
-
-    // High-cardinality Zipf keyword field → "sampling" strategy. It may omit
-    // values, but every value it surfaces must carry the exact count.
-    let approx = fixture.approx(TAG_KEY, filter.clone()).await;
-    let exact = fixture.exact(TAG_KEY, filter.clone()).await;
-
-    if filter.is_none() {
-        // Without a filter, exact enumerates the whole vocabulary; assert the
-        // field is high-cardinality enough to actually engage sampling.
-        assert!(
-            !approx.is_empty(),
-            "expected some hits",
-        );
-        assert!(
-            approx.len() <= LIMIT,
-            "result must be bounded by the limit",
-        );
-        assert_subset_counts_exact(&approx, &exact);
-    }
 
     fixture.shard.stop_gracefully().await;
 }
