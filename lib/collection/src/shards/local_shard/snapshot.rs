@@ -80,13 +80,33 @@ impl LocalShard {
         let tar = tar.clone();
         let temp_path = temp_path.to_path_buf();
 
-        let plunger_notify = if !save_wal {
-            // If we are not saving WAL, we still need to make sure that all submitted by this point
-            // updates have made it to the segments. So we use the Plunger to achieve that.
-            // It will notify us when all submitted updates so far have been processed.
-            Some(self.plunge_async().await?)
+        // For snapshots that exclude the WAL (e.g. shard transfer), capture the clock maps before
+        // plunging and archive these captured maps instead of the persisted clock files (see the
+        // blocking task below).
+        //
+        // The persisted clocks track the WAL *write* position and therefore run ahead of the applied
+        // segment state. With no WAL in the snapshot, a recovered shard cannot replay operations to
+        // catch up, so archiving the persisted (too new) clocks would leave it with a recovery point
+        // ahead of its data, causing later WAL-delta recovery to skip operations.
+        //
+        // The plunger waits until all updates submitted before it have been applied to the segments.
+        // By capturing the clocks *before* the plunger, the segments snapshotted below are guaranteed
+        // to include every operation reflected in the captured clocks, so the archived clocks are
+        // never ahead of the snapshot data.
+        let (plunger_notify, pinned_clocks) = if !save_wal {
+            // Capture oldest before newest, so that a concurrent cutoff update (which advances newest
+            // before oldest) can never make the captured oldest exceed the captured newest.
+            let oldest_clocks = self.wal.oldest_clocks.lock().await.clone();
+            let newest_clocks = self.wal.newest_clocks.lock().await.clone();
+
+            // We still need to make sure that all updates submitted by this point have made it to the
+            // segments. So we use the Plunger to achieve that. It will notify us when all submitted
+            // updates so far have been processed.
+            let plunger_notify = self.plunge_async().await?;
+
+            (Some(plunger_notify), Some((newest_clocks, oldest_clocks)))
         } else {
-            None
+            (None, None)
         };
 
         let future = async move {
@@ -110,7 +130,18 @@ impl LocalShard {
 
                 let wal_guard = wal.blocking_lock_owned();
 
-                LocalShardClocks::archive_data(&shard_path, &tar)?;
+                // Archive the clock maps. For WAL-inclusive snapshots, copy the persisted clock
+                // files from disk; any operations the clocks are ahead of are present in the WAL and
+                // replayed on recovery. For WAL-less snapshots, archive the clocks captured before
+                // the plunger above, which the snapshotted segments are guaranteed to include.
+                match &pinned_clocks {
+                    Some((newest_clocks, oldest_clocks)) => {
+                        LocalShardClocks::archive_data_from(newest_clocks, oldest_clocks, &tar)?;
+                    }
+                    None => {
+                        LocalShardClocks::archive_data(&shard_path, &tar)?;
+                    }
+                }
 
                 // Staging delay
                 #[cfg(feature = "staging")]
