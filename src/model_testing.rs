@@ -123,6 +123,13 @@ struct Args {
     #[clap(long, default_value_t = false)]
     pre_restart_check: bool,
 
+    /// Fix the number of Tokio worker threads instead of defaulting to the CPU core count.
+    /// Doesn't make thread interleaving reproducible (work-stealing timing, OS scheduling and
+    /// I/O readiness still vary), but pins the runtime shape so a `--seed` repro shares the same
+    /// worker count across machines. Leave unset for full parallelism on soak runs.
+    #[clap(long, value_parser = clap::value_parser!(u64).range(1..))]
+    worker_threads: Option<u64>,
+
     /// Promote the always-disabled (`FORCE_OFF`) ops — DeleteByFilter, CreateVectorName,
     /// DeleteVectorName — to forced-on, so they're enabled in every swarm config and guaranteed
     /// to fire. These ops are masked off by default because they trip known engine bugs (see the
@@ -132,13 +139,33 @@ struct Args {
     enable_force_off: bool,
 }
 
-#[tokio::main(flavor = "multi_thread")]
-async fn main() {
+fn main() {
+    let args = Args::parse();
+
+    // Built by hand (not `#[tokio::main]`) to seed Tokio's RNG off `--seed`, pinning in-poll
+    // draws like `select!` branch selection. `rng_seed` needs `--cfg tokio_unstable`; without
+    // it the binary still builds, just unseeded.
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder.enable_all();
+    if let Some(worker_threads) = args.worker_threads {
+        builder.worker_threads(worker_threads as usize);
+    }
+    #[cfg(tokio_unstable)]
+    {
+        builder.rng_seed(tokio::runtime::RngSeed::from_bytes(
+            &args.seed.to_le_bytes(),
+        ));
+    }
+    let runtime = builder.build().expect("failed to build tokio runtime");
+
+    runtime.block_on(run_main(args));
+}
+
+async fn run_main(args: Args) {
     env_logger::init();
     init_feature_flags(FeatureFlags::default());
     let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(true);
     init_requests_profile_collector(tokio::runtime::Handle::current());
-    let args = Args::parse();
 
     // Ctrl-C handler: first signal flags shutdown so the run loop exits cleanly between
     // ops; a second Ctrl-C falls through to the default handler and terminates. Wired
