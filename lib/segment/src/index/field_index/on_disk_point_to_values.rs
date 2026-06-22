@@ -240,6 +240,66 @@ where
         Ok(Some(iter))
     }
 
+    /// Batched counterpart of [`values_iter`](Self::values_iter).
+    ///
+    /// Non-existing points, or points without values will be skipped.
+    pub fn values_iter_batch(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        hw_counter: ConditionedCounter,
+        mut callback: impl FnMut(PointOffsetType, ValuesIter<'_, T>),
+    ) -> OperationResult<()> {
+        let hw_cell = hw_counter.payload_index_io_read_counter();
+
+        let points_count = self.header.points_count as PointOffsetType;
+        let ranges_start = self.header.ranges_start;
+        let file_len = self.store.len::<u8>()?;
+
+        // Batch 1: Resolve each values' range and count
+        let range_reads = points.filter_map(|point_id| {
+            if point_id >= points_count {
+                return None;
+            }
+
+            let byte_offset = ranges_start + u64::from(point_id) * size_of::<MmapRange>() as u64;
+
+            // Fetch 2 `MmapRange` entries per id, so we can get range start..end.
+            // In case of being the last entry, we will do start..file_len
+            let length = if point_id + 1 < points_count { 2 } else { 1 };
+            Some((point_id, ReadRange::new(byte_offset, length)))
+        });
+        let mut value_reads = Vec::new();
+        self.store
+            .read_batch::<Random, MmapRange, _>(range_reads, |point_id, ranges| {
+                let MmapRange { start, count } = ranges[0];
+
+                // Use next point's start as end offset for this one.
+                let end = ranges.get(1).map_or(file_len, |next| next.start);
+                let length = end - start;
+
+                // Mirror `values_iter`: account the per-point access overhead
+                // plus the length of the values.
+                hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + length as usize);
+
+                if count > 0 {
+                    value_reads.push((point_id, count as usize, ReadRange::new(start, length)));
+                }
+                Ok(())
+            })?;
+
+        // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
+        let value_reads = value_reads
+            .into_iter()
+            .map(|(point_id, count, range)| ((point_id, count), range));
+        self.store
+            .read_batch::<Random, u8, _>(value_reads, |(point_id, count), bytes| {
+                callback(point_id, ValuesIter::new(Cow::Borrowed(bytes), count));
+                Ok(())
+            })?;
+
+        Ok(())
+    }
+
     pub fn get_values_count(&self, point_id: PointOffsetType) -> OperationResult<Option<usize>> {
         self.get_range(point_id)
             .map_some(|range| range.count as usize)
@@ -310,14 +370,21 @@ where
         Ok(())
     }
 
-    pub fn iter(
+    /// Read every point's values in batches, invoking `f` once per point that
+    /// has at least one value.
+    ///
+    /// The callback may be invoked in any order, since batched reads can
+    /// complete out of order. Points without values are not reported.
+    pub fn for_all_points_values(
         &self,
-    ) -> impl Iterator<
-        Item = OperationResult<(PointOffsetType, Option<impl Iterator<Item = Cow<'_, T>>>)>,
-    > + Clone {
+        callback: impl FnMut(PointOffsetType, ValuesIter<'_, T>),
+    ) -> OperationResult<()> {
         // TODO: Propagate counter upwards
-        (0..self.len() as PointOffsetType)
-            .map(|idx| Ok((idx, self.values_iter(idx, ConditionedCounter::never())?)))
+        self.values_iter_batch(
+            0..self.len() as PointOffsetType,
+            ConditionedCounter::never(),
+            callback,
+        )
     }
 }
 
