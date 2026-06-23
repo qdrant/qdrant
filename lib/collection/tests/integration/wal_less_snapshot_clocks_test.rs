@@ -244,7 +244,7 @@ async fn test_wal_less_snapshot_clocks_not_ahead_of_data() {
 
 /// Extract and parse `newest_clocks.json` from a shard snapshot tar.
 fn read_archived_newest_clocks(snapshot_path: &Path) -> ArchivedClockMap {
-    let file = std::fs::File::open(snapshot_path)
+    let file = fs_err::File::open(snapshot_path)
         .unwrap_or_else(|err| panic!("failed to open snapshot {}: {err}", snapshot_path.display()));
     let mut archive = tar::Archive::new(file);
 
