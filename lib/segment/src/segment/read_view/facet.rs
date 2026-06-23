@@ -13,6 +13,7 @@ use crate::data_types::facets::{FacetParams, FacetValue, FacetValueRef};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::{CardinalityEstimation, FacetIndex};
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -76,9 +77,7 @@ fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> F
 /// or precomputed and only check against a bitmap.
 pub enum FilterProbe<'a> {
     /// Evaluate the filter lazily on each check.
-    Lazy {
-        context: Box<dyn ConditionChecker<Error = OperationError> + 'a>,
-    },
+    Lazy { context: OptimizedFilter<'a> },
     /// The filter was materialized into a bitmap of matching points.
     Precomputed(RoaringBitmap),
 }
