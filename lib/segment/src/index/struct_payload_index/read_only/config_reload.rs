@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::UniversalRead;
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::payload_config::PayloadConfig;
 use crate::types::{PayloadKeyType, VectorName, VectorNameBuf};
@@ -18,7 +18,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// Produced by [`ReadOnlyStructPayloadIndex::config_reload_diff`] (heavy load,
 /// shared `&self`) and consumed by [`ReadOnlyStructPayloadIndex::apply_config_reload`]
 /// (cheap swap, `&mut self`).
-pub struct PayloadIndexReloadDiff<S: UniversalRead> {
+pub struct PayloadIndexReloadDiff<S: UniversalReadExt> {
     /// Full on-disk payload config to install on apply.
     new_config: PayloadConfig,
     /// Field indexes that are new, or whose config changed — loaded, ready to
@@ -29,7 +29,7 @@ pub struct PayloadIndexReloadDiff<S: UniversalRead> {
     removed: Vec<PayloadKeyType>,
 }
 
-impl<S: UniversalRead> PayloadIndexReloadDiff<S> {
+impl<S: UniversalReadExt> PayloadIndexReloadDiff<S> {
     /// Whether the on-disk config matches the loaded field indexes (nothing to apply).
     pub fn is_empty(&self) -> bool {
         let Self {
@@ -41,7 +41,7 @@ impl<S: UniversalRead> PayloadIndexReloadDiff<S> {
     }
 }
 
-impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// Compute the difference between the loaded field indexes and `new_config`,
     /// eagerly loading every new or changed field index through `fs`.
     ///

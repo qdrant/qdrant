@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use common::universal_io::UniversalRead;
 use uuid::Uuid;
 
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::read_only::VectorIndexReadEnum;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
@@ -29,7 +29,7 @@ mod read_entry;
 #[cfg(test)]
 mod tests;
 
-pub struct ReadOnlySegment<S: UniversalRead + 'static> {
+pub struct ReadOnlySegment<S: UniversalReadExt + 'static> {
     pub uuid: Uuid,
     /// Path to the segment directory
     pub segment_path: PathBuf,
@@ -53,13 +53,13 @@ pub struct ReadOnlySegment<S: UniversalRead + 'static> {
     pub segment_config: SegmentConfig,
 }
 
-pub struct ReadOnlyVectorData<S: UniversalRead + 'static> {
+pub struct ReadOnlyVectorData<S: UniversalReadExt + 'static> {
     pub vector_index: Arc<AtomicRefCell<VectorIndexReadEnum<S>>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
 }
 
-impl<S: UniversalRead + 'static> VectorDataRead for ReadOnlyVectorData<S> {
+impl<S: UniversalReadExt + 'static> VectorDataRead for ReadOnlyVectorData<S> {
     type IndexRef<'a>
         = AtomicRef<'a, VectorIndexReadEnum<S>>
     where
@@ -94,7 +94,7 @@ pub type ReadOnlySegmentReadViewFor<'s, S> = SegmentReadView<
     ReadOnlyVectorData<S>,
 >;
 
-impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     pub fn with_view<T>(&self, f: impl FnOnce(ReadOnlySegmentReadViewFor<'_, S>) -> T) -> T {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();

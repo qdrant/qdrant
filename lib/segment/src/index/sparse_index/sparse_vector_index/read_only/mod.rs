@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion as _;
-use common::universal_io::UniversalRead;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -28,7 +28,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// was loaded — an immutable-ram or an `S`-backed mmap variant.
 ///
 /// [`SparseVectorIndex`]: super::SparseVectorIndex
-pub struct ReadOnlySparseVectorIndex<S: UniversalRead, TInvertedIndex: InvertedIndex> {
+pub struct ReadOnlySparseVectorIndex<S: UniversalReadExt, TInvertedIndex: InvertedIndex> {
     config: SparseIndexConfig,
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
@@ -54,7 +54,7 @@ type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
     TInvertedIndex,
 >;
 
-pub struct ReadOnlySparseVectorIndexOpenArgs<'a, S: UniversalRead> {
+pub struct ReadOnlySparseVectorIndexOpenArgs<'a, S: UniversalReadExt> {
     pub fs: &'a S::Fs,
     pub config: SparseIndexConfig,
     pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
@@ -63,7 +63,9 @@ pub struct ReadOnlySparseVectorIndexOpenArgs<'a, S: UniversalRead> {
     pub path: &'a Path,
 }
 
-impl<S: UniversalRead, TInvertedIndex: InvertedIndex> ReadOnlySparseVectorIndex<S, TInvertedIndex> {
+impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
+    ReadOnlySparseVectorIndex<S, TInvertedIndex>
+{
     /// Similar to [`super::SparseVectorIndex::open`].
     pub fn open(args: ReadOnlySparseVectorIndexOpenArgs<S>) -> OperationResult<Self>
     where

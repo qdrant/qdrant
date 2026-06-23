@@ -1,13 +1,13 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 
 use super::VectorIndexReadEnum;
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
 
-impl<S: UniversalRead> LiveReload for VectorIndexReadEnum<S> {
+impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
     type Fs = S::Fs;
 
     /// No-op for every variant: read-only vector indexes are immutable — the HNSW

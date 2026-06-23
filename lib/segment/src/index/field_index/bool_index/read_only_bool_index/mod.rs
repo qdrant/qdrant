@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use common::universal_io::UniversalRead;
-
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::index::UniversalReadExt;
 use crate::index::payload_config::IndexMutability;
 
 mod lifecycle;
@@ -26,7 +25,7 @@ mod read_ops;
 /// [3]: common::universal_io::UniversalRead
 /// [4]: super::read_ops::BoolIndexRead
 /// [5]: crate::index::field_index::LiveReload
-pub struct ReadOnlyBoolIndex<S: UniversalRead> {
+pub struct ReadOnlyBoolIndex<S: UniversalReadExt> {
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage<S>,
     pub(super) indexed_count: usize,
@@ -34,14 +33,14 @@ pub struct ReadOnlyBoolIndex<S: UniversalRead> {
     pub(super) falses_count: usize,
 }
 
-pub(super) struct ReadOnlyStorage<S: UniversalRead> {
+pub(super) struct ReadOnlyStorage<S: UniversalReadExt> {
     /// Points which have at least one `true` value
     pub(super) trues_flags: ReadOnlyRoaringFlags<S>,
     /// Points which have at least one `false` value
     pub(super) falses_flags: ReadOnlyRoaringFlags<S>,
 }
 
-impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// Reports the on-disk format's mutability, mirroring
     /// [`BoolIndex::get_mutability_type`][1].
     ///

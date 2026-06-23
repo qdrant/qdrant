@@ -13,9 +13,11 @@ pub mod read_only;
 mod sample_estimation;
 pub mod sparse_index;
 pub mod struct_payload_index;
+mod universal_io;
 pub mod vector_index_base;
 mod vector_index_search_common;
 mod visited_pool;
 
 pub use payload_index_base::*;
+pub use universal_io::UniversalReadExt;
 pub use vector_index_base::*;
