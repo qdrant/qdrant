@@ -489,7 +489,7 @@ dependencies = [
  "ahash",
  "chrono",
  "common",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "ordered-float 5.3.0",
  "parking_lot",
  "prost 0.14.4",
@@ -1319,7 +1319,7 @@ dependencies = [
  "indexmap 2.14.0",
  "indicatif",
  "issues",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "object_store",
  "ordered-float 5.3.0",
@@ -1408,7 +1408,7 @@ dependencies = [
  "fs4 1.1.0",
  "fs_extra",
  "io-uring",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "memmap2",
  "nix 0.31.3",
@@ -2159,7 +2159,7 @@ dependencies = [
  "bm25",
  "common",
  "fs-err",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "ordered-float 5.3.0",
  "parking_lot",
@@ -3053,7 +3053,7 @@ dependencies = [
  "ecow",
  "env_logger",
  "fs-err",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "lz4_flex",
  "parking_lot",
@@ -3867,6 +3867,15 @@ name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
 dependencies = [
  "either",
 ]
@@ -5492,7 +5501,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "log",
  "multimap 0.10.1",
  "petgraph 0.8.3",
@@ -5539,7 +5548,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -5795,7 +5804,7 @@ dependencies = [
  "gpu",
  "http 1.4.2",
  "issues",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "jsonwebtoken",
  "log",
  "mockito",
@@ -6967,7 +6976,7 @@ dependencies = [
  "integer-encoding",
  "io-uring",
  "io_bridge_object_store",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "macro_rules_attribute",
  "macros",
@@ -7299,7 +7308,7 @@ dependencies = [
  "fs-err",
  "fs4 1.1.0",
  "indexmap 2.14.0",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "ordered-float 5.3.0",
  "parking_lot",
@@ -7508,7 +7517,7 @@ dependencies = [
  "gridstore",
  "half 2.7.1",
  "indicatif",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "memmap2",
  "ordered-float 5.3.0",
@@ -7590,7 +7599,7 @@ dependencies = [
  "futures",
  "http 1.4.2",
  "issues",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "log",
  "mockito",
  "parking_lot",
@@ -8377,7 +8386,7 @@ dependencies = [
  "cap",
  "criterion",
  "foyer",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "parking_lot",
  "quick_cache",
  "rand 0.10.1",
