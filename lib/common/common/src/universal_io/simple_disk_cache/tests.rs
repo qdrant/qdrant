@@ -244,7 +244,7 @@ mod tests_mod {
 
         // In both Populate::No and Populate::PreferBackground, we still
         // have local marked as uninitialized at this point
-        assert!(cache.local.get().is_none());
+        assert!(cache.state.get().is_none());
     }
 
     /// Reopen on an unchanged remote must not resize, repopulate, or mutate
@@ -262,7 +262,11 @@ mod tests_mod {
             .unwrap();
 
         let (len_before, populated_before, fetched_before) = {
-            let local = cache.local.get().expect("local initialized after read");
+            let local = &cache
+                .state
+                .get()
+                .expect("local initialized after read")
+                .local;
             (
                 local.mmap().len::<u8>().unwrap(),
                 local.fully_populated.load(Ordering::Acquire),
@@ -275,10 +279,14 @@ mod tests_mod {
         let local = if PREFILL {
             // in case of Populate::PreferBackground, we need to await for
             // completion to get the local_state back.
-            cache.local_state().unwrap()
+            &cache.state().unwrap().local
         } else {
             // in case of Populate::No, local_state should still be there
-            cache.local.get().expect("local must still be initialized")
+            &cache
+                .state
+                .get()
+                .expect("local must still be initialized")
+                .local
         };
 
         assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);

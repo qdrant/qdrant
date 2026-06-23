@@ -170,7 +170,7 @@ where
 
         if matches!(populate, Populate::Blocking) {
             // Force the prefill to resolve before returning.
-            cache.local_state()?;
+            cache.state()?;
         }
 
         Ok(cache)

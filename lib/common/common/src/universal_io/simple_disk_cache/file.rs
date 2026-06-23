@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use parking_lot::{Mutex, MutexGuard};
+use parking_lot::Mutex;
 
 use super::BLOCK_SIZE;
 use super::fs::DiskCacheFs;
@@ -40,19 +40,21 @@ where
     remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
     /// Path to the remote file. Used to lazily open `remote`.
     remote_path: PathBuf,
-    /// Lazily-opened remote handle. Only initialized when needed (cache miss
-    /// or `len()` before local is set).
-    ///
-    // We could switch to LazyLock, but there is no fallible initialization
-    remote: OnceLock<R>,
     /// Open options for when the local mmap is initialized.
     pub(super) open_options: OpenOptions,
     /// Path to the local mmap file.
     pub(super) local_path: PathBuf,
-    /// Lazily-initialized local mirror.
-    pub(super) local: OnceLock<LocalState>,
+    /// Lazily-initialized mirror.
+    // We could switch to LazyLock, but there is no fallible initialization
+    pub(super) state: OnceLock<State<R>>,
     /// Guards initialization of `local` and carries the source of init.
     pub(super) init_lock: Arc<Mutex<InitSource<R>>>,
+}
+
+#[derive(Debug)]
+pub(super) struct State<R> {
+    pub remote: R,
+    pub local: LocalState,
 }
 
 impl<R> Debug for DiskCache<R>
@@ -61,11 +63,11 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DiskCache")
+            .field("remote_fs", &self.remote_fs)
             .field("remote_path", &self.remote_path)
-            .field("remote", &self.remote)
             .field("open_options", &self.open_options)
             .field("local_path", &self.local_path)
-            .field("local", &self.local)
+            .field("state", &self.state)
             .finish_non_exhaustive()
     }
 }
@@ -112,30 +114,14 @@ where
             remote_fs,
             remote_extra,
             remote_path: remote_path.as_ref().to_owned(),
-            remote: OnceLock::new(),
             open_options: options,
             local_path,
-            local: OnceLock::new(),
+            state: OnceLock::new(),
             init_lock: Arc::new(Mutex::new(init_source)),
         }
     }
 
-    /// Lazily open the remote handle. The remote is only needed for cache
-    /// misses and for `len()` before the local mmap exists.
-    pub(super) fn remote(&self) -> Result<&R> {
-        if let Some(r) = self.remote.get() {
-            return Ok(r);
-        }
-
-        let remote = self.open_remote()?;
-        // If another thread set this concurrently, let our R be dropped.
-        //
-        // OnceLock::get_or_try_init would be better but it is not available on stable
-        let _ = self.remote.set(remote);
-        Ok(self.remote.get().expect("just set or already set"))
-    }
-
-    fn open_remote(&self) -> Result<R> {
+    pub(super) fn open_remote(&self) -> Result<R> {
         let remote_options = OpenOptions {
             writeable: false,
             populate: Populate::No,
@@ -147,41 +133,41 @@ where
             .open(&self.remote_path, remote_options, self.remote_extra.clone())
     }
 
-    /// Return the cached [`LocalState`], initializing it on first call.
-    pub(super) fn local_state(&self) -> Result<&LocalState> {
-        if let Some(state) = self.local.get() {
+    /// Return the cached [`State`], initializing it on first call.
+    pub(super) fn state(&self) -> Result<&State<R>> {
+        if let Some(state) = self.state.get() {
             return Ok(state);
         }
 
         let mut init_guard = self.init_lock.lock();
 
         // Try again now that we have the lock, in case another thread initialized it first.
-        if self.local.get().is_none() {
-            self.init_local_state(&mut init_guard, true, None)?;
+        if self.state.get().is_none() {
+            self.init_state(&mut init_guard, true, None)?;
         }
 
-        Ok(self.local.get().expect("just initialized"))
+        Ok(self.state.get().expect("just initialized"))
     }
 
     /// Initialize the local state depending on `InitSource`
     ///
     /// If `allow_from_scratch` is false, this method will avoid initializing if `InitSource::FromScratch` is set.
     /// This is helpful for [`Self::reopen`] scenario where we can avoid work if no reads have taken place.
-    pub(super) fn init_local_state(
+    pub(super) fn init_state(
         &self,
-        init_guard: &mut MutexGuard<'_, InitSource<R>>,
+        init_guard: &mut InitSource<R>,
         allow_from_scratch: bool,
         known_length: Option<u64>,
     ) -> Result<()> {
-        let local = match std::mem::replace(&mut **init_guard, InitSource::FromScratch) {
+        let state = match std::mem::replace(init_guard, InitSource::FromScratch) {
             InitSource::FromScratch => {
                 if !allow_from_scratch {
                     return Ok(());
                 }
-                self.new_local_state_from_scratch(known_length)?
+                self.new_state_from_scratch(self.open_remote()?, known_length)?
             }
             InitSource::Prefiller(mut prefiller) => {
-                let local = match prefiller.wait()? {
+                match prefiller.wait()? {
                     Some((_, bytes)) => {
                         let local = LocalState::new(
                             &self.local_path,
@@ -191,7 +177,10 @@ where
                         )?;
                         let blocks_range = to_block_range(0..bytes.len() as u64);
                         unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
-                        local
+                        State {
+                            local,
+                            remote: prefiller.into_inner(),
+                        }
                     }
                     None => {
                         debug_assert!(
@@ -202,14 +191,9 @@ where
                             return Ok(());
                         }
                         // init from scratch
-                        self.new_local_state_from_scratch(known_length)?
+                        self.new_state_from_scratch(prefiller.into_inner(), known_length)?
                     }
-                };
-
-                let remote = prefiller.into_inner();
-                let _ = self.remote.set(remote);
-
-                local
+                }
             }
             InitSource::PartialPrefiller {
                 mut prefiller,
@@ -231,25 +215,29 @@ where
                 };
 
                 let remote = prefiller.into_inner();
-                let _ = self.remote.set(remote);
 
-                local_state
+                State {
+                    remote,
+                    local: local_state,
+                }
             }
         };
 
-        self.local
-            .set(local)
+        self.state
+            .set(state)
             .expect("OnceLock::set must succeed while holding init_lock");
 
         Ok(())
     }
 
-    fn new_local_state_from_scratch(&self, known_length: Option<u64>) -> Result<LocalState> {
-        let len = match known_length {
-            Some(len) => len,
-            None => self.remote()?.len::<u8>()?,
+    fn new_state_from_scratch(&self, remote: R, known_length: Option<u64>) -> Result<State<R>> {
+        let len = if let Some(len) = known_length {
+            len
+        } else {
+            remote.len::<u8>()?
         };
-        LocalState::new(&self.local_path, len, self.open_options)
+        let local = LocalState::new(&self.local_path, len, self.open_options)?;
+        Ok(State { remote, local })
     }
 
     /// Make sure every byte in the range `byte_start..remote_len` is present on the local file
@@ -258,7 +246,7 @@ where
             return Ok(());
         }
 
-        let remote_len = self.remote()?.len::<u8>()?;
+        let remote_len = self.state()?.remote.len::<u8>()?;
         if remote_len == 0 {
             return Ok(());
         }
@@ -296,25 +284,22 @@ where
     fn reopen(&mut self) -> Result<()> {
         // Wait for InitSource::Prefill, if set.
         let mut init_guard = self.init_lock.lock();
-        self.init_local_state(&mut init_guard, false, None)?;
+        self.init_state(&mut init_guard, false, None)?;
 
-        let Self { remote, local, .. } = self;
-
-        let Some(mut local) = local.take() else {
-            // If init_local_state didn't initialize after `init_local_state`, we are not populating
+        let Some(State {
+            mut remote,
+            mut local,
+        }) = self.state.take()
+        else {
+            // If `self.state` didn't initialize after `init_state`, we are not populating
             // and we haven't made any reads.
             //
             // The first read will take care of initializing to the remote length.
             return Ok(());
         };
 
-        let remote = if let Some(mut remote) = remote.take() {
-            // Reopen the remote so `len()` reflects the current file size
-            remote.reopen()?;
-            remote
-        } else {
-            self.open_remote()?
-        };
+        // Reopen remote so it reflects current length
+        remote.reopen()?;
 
         let local_len = local.mmap().len::<u8>()?;
 
@@ -335,10 +320,9 @@ where
                 local.resize(&self.local_path, remote_len)?;
 
                 // return the updated local state and remote
-                self.local.set(local).expect("we just take()'d them");
-                self.remote
-                    .set(remote)
-                    .expect("we just take()'d them (or we didn't have it)");
+                self.state
+                    .set(State { remote, local })
+                    .expect("we just take()'d it");
             }
             Populate::Blocking | Populate::PreferBackground => {
                 // Re-fetch from the start of the (possibly partial) tail block so
@@ -362,7 +346,7 @@ where
 
                 // For blocking, resolve the prefill now instead of on first read.
                 if matches!(self.open_options.populate, Populate::Blocking) {
-                    self.init_local_state(&mut init_guard, false, None)?;
+                    self.init_state(&mut init_guard, false, None)?;
                 }
             }
         }
@@ -378,13 +362,7 @@ where
     }
 
     fn len<T>(&self) -> Result<u64> {
-        let len = if let Some(local) = self.local.get() {
-            local.mmap().len::<T>()?
-        } else {
-            self.remote()?.len::<T>()?
-        };
-
-        Ok(len)
+        self.state()?.local.mmap().len::<T>()
     }
 
     fn populate(&self) -> Result<()> {
@@ -396,8 +374,8 @@ where
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
-        if let Some(state) = self.local.get() {
-            state.mmap().clear_ram_cache()?;
+        if let Some(state) = self.state.get() {
+            state.local.mmap().clear_ram_cache()?;
         }
         Ok(())
     }
