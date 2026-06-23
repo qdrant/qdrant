@@ -1,10 +1,11 @@
 use std::cmp;
+use std::collections::BTreeMap;
 use std::sync::{Arc, LazyLock};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};
-use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
+use segment::types::{Payload, QuantizationConfig, StrictModeConfig, VectorNameBuf};
 use semver::Version;
 use shard::count::CountRequestInternal;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
@@ -371,6 +372,17 @@ impl Collection {
 
     pub async fn vectors_config(&self) -> VectorsConfig {
         self.collection_config.read().await.params.vectors.clone()
+    }
+
+    pub async fn sparse_vectors_config(
+        &self,
+    ) -> Option<BTreeMap<VectorNameBuf, SparseVectorParams>> {
+        self.collection_config
+            .read()
+            .await
+            .params
+            .sparse_vectors
+            .clone()
     }
 
     pub async fn info(

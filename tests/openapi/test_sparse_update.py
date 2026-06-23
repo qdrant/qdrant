@@ -144,8 +144,33 @@ def test_sparse_dense_updates(collection_name):
                     "values": [0.9]
                 }
             }
-        }
+        },
     )
     assert response.ok
     assert len(response.json()['result']) == 1
 
+
+def test_unknown_sparse_vector_name_rejected(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 2,
+                    "vector": {
+                        "missing": {
+                            "indices": [10],
+                            "values": [0.9],
+                        }
+                    },
+                }
+            ]
+        },
+    )
+    assert not response.ok
+    assert response.status_code == 400
+    assert "vector name" in response.json()["status"]["error"].lower()
+    assert "missing" in response.json()["status"]["error"].lower()
