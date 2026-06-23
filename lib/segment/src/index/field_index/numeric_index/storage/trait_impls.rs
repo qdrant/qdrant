@@ -19,7 +19,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::numeric_index_read::NumericIndexRead;
-use super::super::{Encodable, StreamRange, query};
+use super::super::{Encodable, NumericIndexValue, StreamRange, query};
 use super::NumericIndexInner;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -31,8 +31,7 @@ use crate::index::field_index::{
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType, RangeInterface};
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> PayloadFieldIndex
-    for NumericIndexInner<T>
+impl<T: NumericIndexValue> PayloadFieldIndex for NumericIndexInner<T>
 where
     Vec<T>: Blob,
 {
@@ -57,8 +56,7 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> PayloadFieldIndexRead
-    for NumericIndexInner<T>
+impl<T: NumericIndexValue> PayloadFieldIndexRead for NumericIndexInner<T>
 where
     Vec<T>: Blob,
 {

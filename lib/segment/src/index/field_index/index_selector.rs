@@ -10,9 +10,8 @@ use super::geo_index::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder};
 use super::null_index::{ImmutableNullIndex, NullIndex};
 use super::numeric_index::{
-    Encodable, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
+    NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
 };
-use super::on_disk_point_to_values::StoredValue;
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
@@ -21,8 +20,7 @@ use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoIndex;
 use crate::index::field_index::null_index::MutableNullIndex;
-use crate::index::field_index::numeric_index::NumericIndex;
-use crate::index::field_index::numeric_point::Numericable;
+use crate::index::field_index::numeric_index::{NumericIndex, NumericIndexValue};
 use crate::index::payload_config::{FullPayloadIndexType, IndexMutability, PayloadIndexType};
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
@@ -322,7 +320,7 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn numeric_new<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
+    fn numeric_new<T: NumericIndexValue, P>(
         &self,
         field: &JsonPath,
         create_if_missing: bool,
@@ -341,7 +339,7 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn numeric_builder<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
+    fn numeric_builder<T: NumericIndexValue, P>(
         &self,
         field: &JsonPath,
         make_mmap: fn(NumericIndexMmapBuilder<T, P>) -> FieldIndexBuilder,

@@ -12,12 +12,10 @@ use gridstore::Blob;
 use super::numeric_index_read::NumericIndexRead;
 use super::storage::NumericIndexInner;
 use super::{
-    Encodable, NumericIndex, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue,
-    NumericIndexMmapBuilder,
+    NumericIndex, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue,
+    NumericIndexMmapBuilder, NumericIndexValue,
 };
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -25,7 +23,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 pub(super) const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 pub(super) const HISTOGRAM_PRECISION: f64 = 0.01;
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P> NumericIndex<T, P>
+impl<T: NumericIndexValue, P> NumericIndex<T, P>
 where
     Vec<T>: Blob,
 {

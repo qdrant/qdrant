@@ -11,19 +11,17 @@ use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use super::super::super::numeric_index_read::NumericIndexRead;
-use super::super::super::{Encodable, query};
+use super::super::super::{NumericIndexValue, query};
 use super::ReadOnlyNumericIndexInner;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, S: UniversalRead>
-    PayloadFieldIndexRead for ReadOnlyNumericIndexInner<T, S>
+impl<T: NumericIndexValue, S: UniversalRead> PayloadFieldIndexRead
+    for ReadOnlyNumericIndexInner<T, S>
 where
     Vec<T>: Blob,
 {
