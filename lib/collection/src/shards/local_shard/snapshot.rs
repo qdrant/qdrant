@@ -12,7 +12,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
 use segment::entry::StorageSegmentEntry;
 use segment::types::{SegmentConfig, SnapshotFormat};
-use shard::files::{APPLIED_SEQ_FILE, SEGMENTS_PATH, WAL_PATH};
+use shard::files::{APPLIED_SEQ_FILE, SEGMENT_MANIFEST_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
 use shard::operations::OperationWithClockTag;
 use shard::payload_index_schema::PayloadIndexSchema;
@@ -265,6 +265,22 @@ pub fn snapshot_all_segments(
 ) -> OperationResult<()> {
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
+
+    // If the shard maintains a segment manifest (`segments/manifest.json`), include it in the
+    // snapshot so out-of-process readers can discover segments without scanning the filesystem.
+    // Captured before proxying: proxies preserve the wrapped segments' UUIDs, which are exactly the
+    // segment directories written into the snapshot, so the manifest matches the snapshot contents.
+    if let Some(segment_manifest) = segments.read().segment_manifest_for_snapshot() {
+        let segment_manifest_json = serde_json::to_vec(&segment_manifest).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to serialize segment manifest into JSON: {err}"
+            ))
+        })?;
+        tar.blocking_append_data(&segment_manifest_json, Path::new(SEGMENT_MANIFEST_FILE))
+            .map_err(|err| {
+                OperationError::service_error(format!("failed to archive segment manifest: {err}"))
+            })?;
+    }
 
     proxy_all_segments_and_apply(
         segments,
