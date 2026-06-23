@@ -103,3 +103,34 @@ def test_async_batch_upsert_wrong_dimension_rejected(collection_name):
     assert not response.ok
     assert response.status_code == 400
     assert "dimension" in response.json()["status"]["error"].lower()
+
+
+def test_named_vector_in_single_vector_collection_rejected(collection_name):
+    """Named vector input should not be silently accepted by single-vector collections."""
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 102,
+                    "vector": {"name": [0.1, 0.2, 0.3, 0.4]},
+                }
+            ]
+        }
+    )
+    assert not response.ok
+    assert response.status_code == 400
+    assert "vector name" in response.json()["status"]["error"].lower()
+    assert "name" in response.json()["status"]["error"].lower()
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/count',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={"exact": True},
+    )
+    assert response.ok
+    assert response.json()["result"]["count"] == 0
