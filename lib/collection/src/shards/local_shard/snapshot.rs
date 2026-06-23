@@ -111,6 +111,7 @@ impl LocalShard {
 
         let future = async move {
             if let Some(plunger_notify) = plunger_notify {
+                // Plunging is enough as `snapshot_all_segments` will flush all to disk
                 plunger_notify.await?;
             }
 
