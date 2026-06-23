@@ -550,32 +550,33 @@ impl SegmentHolder {
         ready.sort_by_key(|action| action.ready_at);
         let mut first_error = None;
         let mut blocked = false;
-        let mut keep = Vec::new();
-        for mut action in ready {
+        ready.retain_mut(|action| {
             if blocked {
-                keep.push(action);
-                continue;
+                return true;
             }
+
             match (action.action)() {
-                Ok(PostFlushOutcome::Done) => {}
+                Ok(PostFlushOutcome::Done) => false,
                 Ok(PostFlushOutcome::Retry) => {
-                    keep.push(action);
                     blocked = true;
+                    true
                 }
                 // Hard failure: the action is dropped (its data is being destroyed and cannot be
                 // retried), the error is surfaced, and the rest is deferred to the next flush.
                 Err(err) => {
                     first_error = Some(err);
                     blocked = true;
+                    false
                 }
             }
-        }
+        });
+
         {
             // Re-queue survivors and clear the in-flight floor together under the actions lock:
             // survivors are back in the queue before the floor stops covering them, so the cap never
             // dips. Lock order is always actions then floor.
             let mut actions = self.post_flush_actions.lock();
-            actions.extend(keep);
+            actions.extend(ready);
             *self.in_flight_ack_floor.lock() = None;
         }
         if let Some(err) = first_error {
