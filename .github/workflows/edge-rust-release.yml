@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout Qdrant
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
@@ -97,7 +97,7 @@ jobs:
         run: uv tool install ast-grep-cli
 
       - name: Checkout Qdrant
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Amalgamate
         run: uv run lib/edge/publish/amalgamate.py
