@@ -110,10 +110,13 @@ where
         // Wrap in `ManuallyDrop` so our own `Drop` impl doesn't run; we take
         // both fields out by hand instead.
         let mut this = ManuallyDrop::new(self);
+
+        let Self { file, inner } = &mut *this;
+
         // SAFETY: `this` is `ManuallyDrop`, so its destructor never runs and
         // each field is taken exactly once.
-        let file = unsafe { ManuallyDrop::take(&mut this.file) };
-        let inner = unsafe { ManuallyDrop::take(&mut this.inner) };
+        let file = unsafe { ManuallyDrop::take(file) };
+        let inner = unsafe { ManuallyDrop::take(inner) };
         drop(inner);
         file
     }
