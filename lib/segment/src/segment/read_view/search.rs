@@ -287,7 +287,10 @@ where
                                 .query_points(filter, &hw_counter, &is_stopped)?;
 
                         vector_storage.read_vectors::<Random, _>(
-                            filtered_points.into_iter().map(|idx| (idx, idx)),
+                            filtered_points
+                                .into_iter()
+                                .map(|idx| (idx, idx))
+                                .stop_if(is_stopped.as_ref()),
                             |_, _, vector| {
                                 let CowVector::Sparse(sparse) = vector else {
                                     return;
@@ -305,6 +308,7 @@ where
                                 }
                             },
                         );
+                        check_stopped(is_stopped.as_ref())?;
                     }
                 }
             }

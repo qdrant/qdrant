@@ -53,14 +53,21 @@ impl IdfStatsKey {
 
     pub fn vector_name(&self) -> &VectorName {
         match self {
-            Self::Global { vector_name } | Self::PerFilter { vector_name, .. } => vector_name,
+            Self::Global { vector_name } => vector_name,
+            Self::PerFilter {
+                vector_name,
+                filter: _,
+            } => vector_name,
         }
     }
 
     pub fn filter(&self) -> Option<&Filter> {
         match self {
-            Self::Global { .. } => None,
-            Self::PerFilter { filter, .. } => Some(filter),
+            Self::Global { vector_name: _ } => None,
+            Self::PerFilter {
+                vector_name: _,
+                filter,
+            } => Some(filter),
         }
     }
 }

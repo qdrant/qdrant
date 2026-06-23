@@ -949,7 +949,7 @@ impl From<SearchParams> for segment::types::SearchParams {
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as usize),
             exact: exact.unwrap_or(false),
-            quantization: quantization.map(QuantizationSearchParams::into),
+            quantization: quantization.map(segment::types::QuantizationSearchParams::from),
             indexed_only: indexed_only.unwrap_or(false),
             acorn: acorn.map(segment::types::AcornSearchParams::from),
             idf: idf
@@ -972,7 +972,7 @@ impl From<segment::types::SearchParams> for SearchParams {
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as u64),
             exact: Some(exact),
-            quantization: quantization.map(Into::into),
+            quantization: quantization.map(QuantizationSearchParams::from),
             indexed_only: Some(indexed_only),
             acorn: acorn.map(AcornSearchParams::from),
             idf: idf.map(|idf| i32::from(grpc::IdfSearchScope::from(idf))),

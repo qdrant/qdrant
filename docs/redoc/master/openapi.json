@@ -9961,6 +9961,17 @@
                 "nullable": true
               }
             ]
+          },
+          "idf": {
+            "description": "Scope for IDF statistics used by sparse vector queries with the IDF modifier.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdfSearchScope"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -10005,6 +10016,25 @@
             "nullable": true
           }
         }
+      },
+      "IdfSearchScope": {
+        "description": "Scope for IDF statistics used by sparse vector queries.",
+        "oneOf": [
+          {
+            "description": "Use collection-wide IDF statistics.",
+            "type": "string",
+            "enum": [
+              "global"
+            ]
+          },
+          {
+            "description": "Use IDF statistics collected over the points matching the request filter.",
+            "type": "string",
+            "enum": [
+              "per_filter"
+            ]
+          }
+        ]
       },
       "ScoredPoint": {
         "description": "Search result",
