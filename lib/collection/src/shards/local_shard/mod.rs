@@ -59,7 +59,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
+use tokio::sync::{Mutex, RwLock as TokioRwLock, Semaphore, mpsc, oneshot};
 use tokio_util::task::AbortOnDropHandle;
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -142,6 +142,14 @@ pub struct LocalShard {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
+
+    /// Limits the shard to a single in-flight snapshot at a time.
+    ///
+    /// Acquired in async context when creating a snapshot, before the snapshot task occupies a
+    /// blocking thread and takes the segment holder lock. Waiting for an in-flight snapshot must
+    /// happen on this semaphore, where it is cancellable and threadless, never on the segment
+    /// holder lock inside a blocking task. See [`LocalShard::get_snapshot_creator`].
+    snapshot_semaphore: Arc<Semaphore>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -336,6 +344,7 @@ impl LocalShard {
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
+            snapshot_semaphore: Arc::new(Semaphore::new(1)),
         }
     }
 

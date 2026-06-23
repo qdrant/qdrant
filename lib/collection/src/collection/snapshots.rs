@@ -120,7 +120,16 @@ impl Collection {
 
             for future in futures {
                 future.await.map_err(|err| {
-                    CollectionError::service_error(format!("failed to create snapshot: {err}"))
+                    // Keep the transient timeout class (e.g. another snapshot of a shard is
+                    // still in flight), so the collection snapshot fails as retriable timeout
+                    // rather than internal error
+                    if let CollectionError::Timeout { description } = err {
+                        CollectionError::Timeout {
+                            description: format!("failed to create snapshot: {description}"),
+                        }
+                    } else {
+                        CollectionError::service_error(format!("failed to create snapshot: {err}"))
+                    }
                 })?;
             }
         }

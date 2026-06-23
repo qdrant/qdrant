@@ -23,6 +23,7 @@ fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tar = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 approx = "0.5.1"
 collection = { path = ".", features = ["testing"] }
 common = { path = "../common/common", features = ["testing"] }

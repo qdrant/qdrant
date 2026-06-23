@@ -51,6 +51,13 @@ impl LockedSegmentHolder {
         self.holder.upgradable_read()
     }
 
+    pub fn try_upgradable_read_for(
+        &self,
+        timeout: Duration,
+    ) -> Option<RwLockUpgradableReadGuard<'_, SegmentHolder>> {
+        self.holder.try_upgradable_read_for(timeout)
+    }
+
     pub fn try_read_for(&self, timeout: Duration) -> Option<RwLockReadGuard<'_, SegmentHolder>> {
         self.holder.try_read_for(timeout)
     }
