@@ -64,8 +64,14 @@ impl SegmentHolder {
         let max_applied_version = segment_reads.iter().map(|s| s.version()).max().unwrap_or(0);
 
         if !sync && self.is_background_flushing() {
-            // There is already a background flush ongoing, return current max persisted version
-            return Ok(self.get_max_persisted_version(segment_reads, lock_order));
+            // There is already a background flush ongoing, return current max persisted version.
+            // Cap by pending post-flush actions like the main path below, but leave running them
+            // to the next full pass.
+            let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
+            return Ok(match self.pending_post_flush_ack_cap() {
+                Some(ack_cap) => min(persisted_version, ack_cap),
+                None => persisted_version,
+            });
         }
 
         // This lock also prevents multiple parallel sync flushes
@@ -107,7 +113,22 @@ impl SegmentHolder {
             );
         }
 
-        Ok(self.get_max_persisted_version(segment_reads, lock_order))
+        // Persisted versions at this point reflect completed flushes only (an ongoing background
+        // pass was joined by `lock_flushing` above; a freshly spawned one has not updated them
+        // yet), so the result is a durable waterline: every segment's state up to it is on disk.
+        // Post-flush actions scheduled at or below it can run now, since the data they clean up is
+        // durable in its new home by now.
+        //
+        // Actions that are not yet ready cap the returned version (and with it the WAL
+        // acknowledge): the data they have not cleaned up yet contradicts operations past their
+        // pin, so those operations must stay replayable until the action runs. See
+        // [`SegmentHolder::register_post_flush_action`].
+        let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
+        let pending_ack_cap = self.run_ready_post_flush_actions(persisted_version)?;
+        Ok(match pending_ack_cap {
+            Some(ack_cap) => min(persisted_version, ack_cap),
+            None => persisted_version,
+        })
     }
 
     fn non_appendable_then_appendable_segments_ids(&self) -> impl Iterator<Item = SegmentId> {

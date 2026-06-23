@@ -195,6 +195,14 @@ mod tests {
             }
         }
 
+        // The optimization defers destroying the merged source segments to a post-flush action;
+        // their files are removed once a flush confirms the merged data is durable (see
+        // `SegmentHolder::register_post_flush_action`). Flush to run the action before asserting.
+        locked_holder
+            .read()
+            .flush_all(true, true)
+            .expect("failed to flush segment holder");
+
         // Check if optimized segments removed from disk
         old_path.into_iter().for_each(|x| assert!(!x.exists()));
     }

@@ -11,6 +11,20 @@ use crate::proxy_segment::ProxySegment;
 
 const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);
 const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+/// Short timeout for the retryable drop ([`LockedSegment::try_drop_data`]): the caller's retry
+/// loop provides the real waiting, so we only absorb brief contention here instead of blocking for
+/// up to [`DROP_DATA_TIMEOUT`].
+const DROP_DATA_RETRY_TIMEOUT: Duration = Duration::from_millis(100);
+
+/// Outcome of a failed [`LockedSegment::try_drop_data`].
+pub enum DropDataOutcome {
+    /// The segment is still in use; its data is untouched and the segment is handed back so the
+    /// caller can retry later.
+    StillInUse(LockedSegment, OperationError),
+    /// Destroying the data itself failed; the segment was consumed and its data may be partially
+    /// gone, so a retry is not possible.
+    Failed(OperationError),
+}
 
 /// Object, which unifies the access to different types of segments, but still allows to
 /// access the original type of the segment if it is required for more efficient operations.
@@ -72,25 +86,53 @@ impl LockedSegment {
     }
 
     /// Consume the LockedSegment and drop the underlying segment data.
-    /// Operation fails if the segment is used by other thread for longer than `timeout`.
+    /// Operation fails if the segment is used by other thread for longer than [`DROP_DATA_TIMEOUT`].
     pub fn drop_data(self) -> OperationResult<()> {
+        self.drop_data_with_timeout(DROP_DATA_TIMEOUT)
+            .map_err(|outcome| match outcome {
+                DropDataOutcome::StillInUse(_, err) | DropDataOutcome::Failed(err) => err,
+            })
+    }
+
+    /// Like [`drop_data`](Self::drop_data), but with a short timeout and the segment handed back on
+    /// a [`DropDataOutcome::StillInUse`] failure so the caller can retry on a later attempt.
+    pub fn try_drop_data(self) -> Result<(), DropDataOutcome> {
+        self.drop_data_with_timeout(DROP_DATA_RETRY_TIMEOUT)
+    }
+
+    fn drop_data_with_timeout(self, timeout: Duration) -> Result<(), DropDataOutcome> {
         match self {
             LockedSegment::Original(segment) => {
-                match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
-                    Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                    Err(locked_segment) => Err(OperationError::service_error(format!(
-                        "Removing segment which is still in use: {:?}",
-                        locked_segment.read().data_path(),
-                    ))),
+                match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, timeout) {
+                    Ok(raw_locked_segment) => raw_locked_segment
+                        .into_inner()
+                        .drop_data()
+                        .map_err(DropDataOutcome::Failed),
+                    Err(arc) => {
+                        let err = OperationError::service_error(format!(
+                            "Removing segment which is still in use: {:?}",
+                            arc.read().data_path(),
+                        ));
+                        Err(DropDataOutcome::StillInUse(
+                            LockedSegment::Original(arc),
+                            err,
+                        ))
+                    }
                 }
             }
             LockedSegment::Proxy(proxy) => {
-                match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
-                    Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                    Err(locked_segment) => Err(OperationError::service_error(format!(
-                        "Removing proxy segment which is still in use: {:?}",
-                        locked_segment.read().data_path(),
-                    ))),
+                match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, timeout) {
+                    Ok(raw_locked_segment) => raw_locked_segment
+                        .into_inner()
+                        .drop_data()
+                        .map_err(DropDataOutcome::Failed),
+                    Err(arc) => {
+                        let err = OperationError::service_error(format!(
+                            "Removing proxy segment which is still in use: {:?}",
+                            arc.read().data_path(),
+                        ));
+                        Err(DropDataOutcome::StillInUse(LockedSegment::Proxy(arc), err))
+                    }
                 }
             }
         }

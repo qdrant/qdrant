@@ -231,6 +231,16 @@ mod tests {
             }
         }
 
+        // The optimization defers destroying the source segment to a post-flush action; its files
+        // are removed once a flush confirms the optimized data is durable (see
+        // `SegmentHolder::register_post_flush_action`). Flush to run the action before asserting.
+        drop(segment_guard);
+        drop(holder_guard);
+        locked_holder
+            .read()
+            .flush_all(true, true)
+            .expect("failed to flush segment holder");
+
         // Check old segment data is removed from disk
         assert!(!original_segment_path.exists());
     }

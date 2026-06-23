@@ -1525,6 +1525,117 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
     );
 }
 
+/// A post-flush action that does not complete keeps its ack pin in effect across flushes,
+/// capping the returned WAL acknowledge until it finally completes.
+#[test]
+fn test_post_flush_action_retry_keeps_ack_pin() {
+    use std::sync::atomic::AtomicUsize;
+
+    const ACK_PIN: SeqNumberType = 5;
+    const WATERLINE: SeqNumberType = 100;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(empty_segment(dir.path()));
+    // Make the durable waterline observably higher than the ack pin so the cap is visible.
+    holder.bump_max_segment_version_overwrite(WATERLINE);
+
+    // An action that must run three times: Retry, Retry, then Done.
+    let runs = Arc::new(AtomicUsize::new(0));
+    let runs_in_action = Arc::clone(&runs);
+    holder.register_post_flush_action(0, ACK_PIN, move || {
+        let previous = runs_in_action.fetch_add(1, Ordering::SeqCst);
+        if previous < 2 {
+            Ok(PostFlushOutcome::Retry)
+        } else {
+            Ok(PostFlushOutcome::Done)
+        }
+    });
+
+    // While the action is pending, the ack pin caps the returned version.
+    let version = holder.flush_all(true, true).unwrap();
+    assert_eq!(version, ACK_PIN, "ack pin must cap the WAL acknowledge");
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+
+    // Still pending after the second retry: the pin remains in effect.
+    let version = holder.flush_all(true, true).unwrap();
+    assert_eq!(version, ACK_PIN);
+    assert_eq!(runs.load(Ordering::SeqCst), 2);
+
+    // The third flush completes the action, lifting the cap.
+    let version = holder.flush_all(true, true).unwrap();
+    assert_eq!(
+        version, WATERLINE,
+        "cap is lifted once the action completes"
+    );
+    assert_eq!(runs.load(Ordering::SeqCst), 3);
+
+    // The completed action is gone and is not run again.
+    let version = holder.flush_all(true, true).unwrap();
+    assert_eq!(version, WATERLINE);
+    assert_eq!(runs.load(Ordering::SeqCst), 3);
+}
+
+/// While an action is being run it is briefly removed from the queue, but its ack pin must stay
+/// visible to `pending_post_flush_ack_cap` so a concurrent flush cannot over-acknowledge the WAL.
+#[test]
+fn test_post_flush_action_in_flight_pin_stays_visible() {
+    const ACK_PIN: SeqNumberType = 5;
+    const WATERLINE: SeqNumberType = 100;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(empty_segment(dir.path()));
+    holder.bump_max_segment_version_overwrite(WATERLINE);
+    let holder = Arc::new(holder);
+
+    // From inside the action (when it is out of the queue) observe the cap a concurrent flush
+    // would see.
+    let observed = Arc::new(Mutex::new(None));
+    let observed_in_action = Arc::clone(&observed);
+    let holder_in_action = Arc::clone(&holder);
+    holder.register_post_flush_action(0, ACK_PIN, move || {
+        *observed_in_action.lock() = Some(holder_in_action.pending_post_flush_ack_cap());
+        Ok(PostFlushOutcome::Done)
+    });
+
+    let version = holder.flush_all(true, true).unwrap();
+
+    assert_eq!(
+        *observed.lock(),
+        Some(Some(ACK_PIN)),
+        "in-flight action's ack pin must remain visible while it runs",
+    );
+    // Once it completed, the cap is lifted.
+    assert_eq!(version, WATERLINE);
+    assert_eq!(holder.pending_post_flush_ack_cap(), None);
+}
+
+/// A post-flush action that fails hard (not retryable) is dropped and surfaces its error; a
+/// later flush is then unaffected.
+#[test]
+fn test_post_flush_action_hard_failure_is_dropped() {
+    const WATERLINE: SeqNumberType = 100;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(empty_segment(dir.path()));
+    holder.bump_max_segment_version_overwrite(WATERLINE);
+
+    holder.register_post_flush_action(0, 5, move || Err(OperationError::service_error("boom")));
+
+    // The flush surfaces the action's error.
+    let err = holder.flush_all(true, true).unwrap_err();
+    assert!(format!("{err}").contains("boom"));
+
+    // The failed action is gone, so the next flush is clean and uncapped.
+    let version = holder.flush_all(true, true).unwrap();
+    assert_eq!(version, WATERLINE);
+}
+
 /// Test that CoW deletes the source point when the destination copy is NOT deferred.
 ///
 /// This is the standard CoW behavior: after successfully moving a point to the appendable
