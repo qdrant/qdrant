@@ -8,16 +8,16 @@ use common::fs::atomic_save_json;
 use common::mmap::MmapFlusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
-use common::universal_io::{read_json_via, UniversalReadFs};
+use common::universal_io::{UniversalReadFs, read_json_via};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use crate::encoded_storage::{validate_storage_vector_size, EncodedStorage, EncodedStorageBuilder};
+use crate::EncodingError;
+use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{
-    validate_vector_parameters, DistanceType, EncodedVectors, VectorParameters,
+    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
-use crate::EncodingError;
 
 pub const ALIGNMENT: usize = 16;
 // Each encoded vector stores an additional f32 at the beginning. Define it's size here.
