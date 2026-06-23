@@ -3,35 +3,28 @@ use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-
-pub type DynConditionChecker<'a> = Box<dyn ConditionChecker<Error = OperationError> + 'a>;
-
-pub enum OptimizedCondition<'a> {
-    Checker(DynConditionChecker<'a>),
-    /// Nested filter
-    Filter(OptimizedFilter<'a>),
-}
+use crate::index::condition_checker::ConditionCheckerEnum;
 
 pub struct OptimizedFilter<'a> {
     /// At least one of those conditions should match, if not empty.
-    pub should: Vec<OptimizedCondition<'a>>,
+    pub should: Vec<ConditionCheckerEnum<'a>>,
     /// At least minimum amount of given conditions should match
-    pub min_should: Vec<OptimizedCondition<'a>>,
+    pub min_should: Vec<ConditionCheckerEnum<'a>>,
     pub min_should_count: usize,
     /// All conditions must match
-    pub must: Vec<OptimizedCondition<'a>>,
+    pub must: Vec<ConditionCheckerEnum<'a>>,
     /// All conditions must NOT match
-    pub must_not: Vec<OptimizedCondition<'a>>,
+    pub must_not: Vec<ConditionCheckerEnum<'a>>,
 }
 
 impl<'a> OptimizedFilter<'a> {
     /// A filter that matches a point iff the single given checker matches it.
-    pub fn from_checker(checker: DynConditionChecker<'a>) -> Self {
+    pub fn from_checker(checker: ConditionCheckerEnum<'a>) -> Self {
         OptimizedFilter {
             should: Vec::new(),
             min_should: Vec::new(),
             min_should_count: 0,
-            must: vec![OptimizedCondition::Checker(checker)],
+            must: vec![checker],
             must_not: Vec::new(),
         }
     }
@@ -86,23 +79,5 @@ impl ConditionChecker for OptimizedFilter<'_> {
         }
 
         Ok(true)
-    }
-}
-
-impl ConditionChecker for OptimizedCondition<'_> {
-    type Error = OperationError;
-
-    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        match self {
-            OptimizedCondition::Filter(filter) => filter.check(point_id),
-            OptimizedCondition::Checker(checker) => checker.check(point_id),
-        }
-    }
-
-    fn check_infallible(&self, point_id: PointOffsetType) -> bool {
-        match self {
-            OptimizedCondition::Filter(filter) => filter.check_infallible(point_id),
-            OptimizedCondition::Checker(checker) => checker.check_infallible(point_id),
-        }
     }
 }

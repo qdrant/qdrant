@@ -11,8 +11,8 @@ use serde_json::Value;
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerRead;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::FieldIndexRead;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
@@ -36,7 +36,7 @@ where
         payload_provider: PayloadProvider<S>,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<DynConditionChecker<'b>> {
+    ) -> OperationResult<ConditionCheckerEnum<'b>> {
         let id_tracker = self.id_tracker;
         let field_indexes = self.field_indexes;
         Ok(match condition {
@@ -88,15 +88,15 @@ where
                         id_tracker.internal_id_with_behavior(*external_id, deferred_behavior)
                     })
                     .collect();
-                Box::new(IdsConditionChecker(segment_ids))
+                ConditionCheckerEnum::Ids(IdsConditionChecker(segment_ids))
             }
             Condition::HasVector(has_vector) => {
                 if let Some(vector_storage) =
                     self.vector_storages.get(&has_vector.has_vector).cloned()
                 {
-                    Box::new(HasVectorConditionChecker(vector_storage))
+                    ConditionCheckerEnum::Dyn(Box::new(HasVectorConditionChecker(vector_storage)))
                 } else {
-                    Box::new(ConstantConditionChecker::MATCH_NONE)
+                    ConditionCheckerEnum::Constant(ConstantConditionChecker::MATCH_NONE)
                 }
             }
             Condition::Nested(nested) => {
@@ -122,7 +122,7 @@ where
 
                 let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
 
-                Box::new(PayloadConditionChecker {
+                ConditionCheckerEnum::Dyn(Box::new(PayloadConditionChecker {
                     payload_provider,
                     hw_counter: hw_counter.fork(),
                     check: move |payload, point_id, hw| {
@@ -150,7 +150,7 @@ where
                         }
                         Ok(false)
                     },
-                })
+                }))
             }
             Condition::CustomIdChecker(cond) => {
                 let segment_ids: AHashSet<_> = id_tracker
@@ -162,7 +162,7 @@ where
                     })
                     .collect();
 
-                Box::new(IdsConditionChecker(segment_ids))
+                ConditionCheckerEnum::Ids(IdsConditionChecker(segment_ids))
             }
             Condition::Filter(_) => unreachable!(),
         })
@@ -177,7 +177,7 @@ fn field_condition_checker<'a>(
     field_condition: &FieldCondition,
     payload_provider: PayloadProvider<impl PayloadStorageRead + 'a>,
     check: impl Fn(OwnedPayloadRef, &HardwareCounterCell) -> OperationResult<bool> + 'a,
-) -> OperationResult<DynConditionChecker<'a>> {
+) -> OperationResult<ConditionCheckerEnum<'a>> {
     // 1. Find first index that can check condition.
     if let Some(indexes) = field_indexes.get(key) {
         for index in indexes {
@@ -189,11 +189,13 @@ fn field_condition_checker<'a>(
     }
 
     // 2. None found => fallback to payload check.
-    Ok(Box::new(PayloadConditionChecker {
-        payload_provider,
-        hw_counter: hw_counter.fork(),
-        check: move |payload, _, hw| check(payload, hw),
-    }))
+    Ok(ConditionCheckerEnum::Dyn(Box::new(
+        PayloadConditionChecker {
+            payload_provider,
+            hw_counter: hw_counter.fork(),
+            check: move |payload, _, hw| check(payload, hw),
+        },
+    )))
 }
 
 /// For [`field_condition_checker`] and [`Condition::Nested`].
@@ -224,7 +226,7 @@ where
 }
 
 /// For [`Condition::HasId`] and [`Condition::CustomIdChecker`].
-struct IdsConditionChecker(AHashSet<PointOffsetType>);
+pub struct IdsConditionChecker(AHashSet<PointOffsetType>);
 
 impl ConditionChecker for IdsConditionChecker {
     type Error = OperationError;

@@ -19,7 +19,6 @@ use std::cmp::{max, min};
 use std::path::PathBuf;
 
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
@@ -32,7 +31,6 @@ use crate::index::field_index::geo_hash::{
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{CheckGeoPoint, FieldCondition, GeoPoint, PayloadKeyType};
 
@@ -325,55 +323,20 @@ pub(super) fn for_each_payload_block<G: GeoIndexRead + ?Sized>(
         })
 }
 
-pub(super) fn condition_checker<'a, G: GeoIndexRead + ?Sized>(
-    geo: &'a G,
-    condition: &FieldCondition,
-    hw_acc: HwMeasurementAcc,
-) -> Option<DynConditionChecker<'a>> {
-    // Destructure explicitly (no `..`) so a new field added to
-    // `FieldCondition` forces this method to be revisited.
-    let FieldCondition {
-        key: _,
-        r#match: _,
-        range: _,
-        geo_radius,
-        geo_bounding_box,
-        geo_polygon,
-        values_count: _,
-        is_empty: _,
-        is_null: _,
-    } = condition;
-
-    let hw_counter = hw_acc.get_counter_cell();
-
-    if let Some(geo_radius) = *geo_radius {
-        return Some(make_checker(geo, hw_counter, geo_radius));
-    }
-    if let Some(geo_bounding_box) = *geo_bounding_box {
-        return Some(make_checker(geo, hw_counter, geo_bounding_box));
-    }
-    if let Some(geo_polygon) = geo_polygon.as_ref() {
-        return Some(make_checker(geo, hw_counter, geo_polygon.convert()));
-    }
-    None
-}
-
-struct GeoConditionChecker<'a, G: ?Sized, F> {
+pub struct GeoConditionChecker<'a, G: ?Sized, F> {
     geo: &'a G,
     hw_counter: HardwareCounterCell,
     filter: F,
 }
 
-fn make_checker<'a>(
-    geo: &'a (impl GeoIndexRead + ?Sized),
-    hw_counter: HardwareCounterCell,
-    filter: impl CheckGeoPoint + 'a,
-) -> DynConditionChecker<'a> {
-    Box::new(GeoConditionChecker {
-        geo,
-        hw_counter,
-        filter,
-    })
+impl<'a, G: ?Sized, F> GeoConditionChecker<'a, G, F> {
+    pub(super) fn new(geo: &'a G, hw_counter: HardwareCounterCell, filter: F) -> Self {
+        Self {
+            geo,
+            hw_counter,
+            filter,
+        }
+    }
 }
 
 impl<G, P> ConditionChecker for GeoConditionChecker<'_, G, P>

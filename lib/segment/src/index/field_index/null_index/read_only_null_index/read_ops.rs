@@ -7,10 +7,11 @@ use super::super::read_ops::{self, NullIndexRead};
 use super::ReadOnlyNullIndex;
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> NullIndexRead for ReadOnlyNullIndex<S> {
@@ -33,7 +34,7 @@ impl<S: UniversalRead> NullIndexRead for ReadOnlyNullIndex<S> {
     }
 }
 
-impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
+impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
     fn count_indexed_points(&self) -> usize {
         self.indexed_points_count()
     }
@@ -68,7 +69,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(read_ops::condition_checker(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(read_ops::condition_checker(self, condition, hw_acc).map(S::condition_checker_null))
     }
 }

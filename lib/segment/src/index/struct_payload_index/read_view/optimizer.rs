@@ -7,12 +7,13 @@ use itertools::Itertools;
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{CardinalityEstimation, FieldIndexRead};
 use crate::index::query_estimator::{
     combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
     invert_estimation,
 };
-use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, Filter, MinShould};
@@ -125,7 +126,7 @@ where
         total: usize,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Vec<(OptimizedCondition<'b>, CardinalityEstimation)>> {
+    ) -> OperationResult<Vec<(ConditionCheckerEnum<'b>, CardinalityEstimation)>> {
         conditions
             .iter()
             .map(|condition| match condition {
@@ -137,7 +138,7 @@ where
                         deferred_behavior,
                         hw_counter,
                     )?;
-                    Ok((OptimizedCondition::Filter(optimized_filter), estimation))
+                    Ok((ConditionCheckerEnum::Filter(optimized_filter), estimation))
                 }
                 Condition::Field(_)
                 | Condition::IsEmpty(_)
@@ -154,7 +155,7 @@ where
                         deferred_behavior,
                         hw_counter,
                     )?;
-                    Ok((OptimizedCondition::Checker(condition_checker), estimation))
+                    Ok((condition_checker, estimation))
                 }
             })
             .collect()
@@ -167,7 +168,7 @@ where
         total: usize,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
+    ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         if conditions.is_empty() {
             // Empty `should` => match every point.
             return Ok((Vec::new(), CardinalityEstimation::exact(total)));
@@ -195,7 +196,7 @@ where
         total: usize,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
+    ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         let mut converted = self.convert_conditions(
             conditions,
             payload_provider,
@@ -225,7 +226,7 @@ where
         total: usize,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
+    ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         let mut converted = self.convert_conditions(
             conditions,
             payload_provider,
@@ -247,7 +248,7 @@ where
         total: usize,
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
+    ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         let mut converted = self.convert_conditions(
             conditions,
             payload_provider,

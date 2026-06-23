@@ -1,10 +1,11 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex;
 use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
@@ -17,12 +18,11 @@ use crate::index::field_index::numeric_index::{
 use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
+impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
     fn count_indexed_points(&self) -> usize {
         match self {
             ReadOnlyFieldIndex::IntIndex(idx) => idx.count_indexed_points(),
@@ -112,7 +112,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
         match self {
             ReadOnlyFieldIndex::IntIndex(idx) => idx.condition_checker(condition, hw_acc),
             ReadOnlyFieldIndex::DatetimeIndex(idx) => idx.condition_checker(condition, hw_acc),
@@ -172,7 +172,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
     }
 }
 
-impl<S: UniversalRead> FieldIndexRead for ReadOnlyFieldIndex<S> {
+impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         match self {
             ReadOnlyFieldIndex::IntIndex(idx) => idx.get_telemetry_data(),

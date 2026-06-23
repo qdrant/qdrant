@@ -25,6 +25,7 @@ use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::PayloadIndexRead;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::PayloadBlockCondition;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
@@ -673,7 +674,7 @@ fn build_filtered_graph(
         let internal_hardware_counter = HardwareCounterCell::disposable();
 
         let block_condition_checker =
-            OptimizedFilter::from_checker(Box::new(BuildConditionChecker {
+            OptimizedFilter::from_checker(ConditionCheckerEnum::Build(BuildConditionChecker {
                 filter_list: block_filter_list,
                 current_point: block_point_id,
             }));

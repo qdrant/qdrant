@@ -30,7 +30,6 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -294,7 +293,7 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     idx: &'a N,
     condition: &FieldCondition,
     _hw_acc: HwMeasurementAcc,
-) -> Option<DynConditionChecker<'a>> {
+) -> Option<BoolConditionChecker<'a, N>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -313,10 +312,10 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     match cond_match {
         Match::Value(MatchValue {
             value: ValueVariants::Bool(is_true),
-        }) => Some(Box::new(BoolConditionChecker {
+        }) => Some(BoolConditionChecker {
             idx,
             is_true: *is_true,
-        })),
+        }),
         Match::Value(MatchValue {
             value: ValueVariants::String(_) | ValueVariants::Integer(_),
         })
@@ -332,7 +331,7 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     }
 }
 
-struct BoolConditionChecker<'a, N> {
+pub struct BoolConditionChecker<'a, N> {
     idx: &'a N,
     is_true: bool,
 }

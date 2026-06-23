@@ -15,7 +15,6 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::payload_config::{IndexMutability, StorageType};
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::telemetry::PayloadIndexTelemetry;
 
@@ -233,12 +232,12 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         &'a self,
         hw_counter: HardwareCounterCell,
         value: impl Borrow<N>,
-    ) -> DynConditionChecker<'a> {
-        Box::new(MapConditionChecker {
+    ) -> MapConditionChecker<'a, N, Self> {
+        MapConditionChecker {
             index: self,
             hw_counter,
             predicate: MapPredicate::Value(<N as MapIndexKey>::to_owned(value.borrow())),
-        })
+        }
     }
 
     /// Condition checker for
@@ -249,7 +248,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         hw_counter: HardwareCounterCell,
         list: IndexSet<K, A>,
         negate: bool,
-    ) -> DynConditionChecker<'a>
+    ) -> MapConditionChecker<'a, N, Self>
     where
         A: BuildHasher,
         K: Borrow<N> + Hash + Eq,
@@ -259,7 +258,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
             .iter()
             .map(|key| <N as MapIndexKey>::to_owned(key.borrow()))
             .collect();
-        Box::new(MapConditionChecker {
+        MapConditionChecker {
             index: self,
             hw_counter,
             predicate: if scan {
@@ -267,7 +266,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
             } else {
                 MapPredicate::AnyProbe { list, negate }
             },
-        })
+        }
     }
 }
 
@@ -513,7 +512,7 @@ where
     }
 }
 
-struct MapConditionChecker<'a, N: MapIndexKey + ?Sized, T> {
+pub struct MapConditionChecker<'a, N: MapIndexKey + ?Sized, T> {
     index: &'a T,
     hw_counter: HardwareCounterCell,
     predicate: MapPredicate<N>,

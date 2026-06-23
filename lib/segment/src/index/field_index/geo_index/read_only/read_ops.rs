@@ -5,15 +5,16 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use super::super::read_ops::{self, GeoIndexRead};
+use super::super::read_ops::{self, GeoConditionChecker, GeoIndexRead};
 use super::ReadOnlyGeoIndex;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
 /// Dispatcher impl: forwards every [`GeoIndexRead`] method to the active
@@ -209,7 +210,7 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     }
 }
 
-impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
+impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
     fn count_indexed_points(&self) -> usize {
         GeoIndexRead::points_count(self)
     }
@@ -243,7 +244,31 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(read_ops::condition_checker(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_radius,
+            geo_bounding_box,
+            geo_polygon,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+        let hw_counter = hw_acc.get_counter_cell();
+        if let Some(filter) = *geo_radius {
+            let checker = GeoConditionChecker::new(self, hw_counter, filter);
+            return Ok(Some(S::condition_checker_geo_radius(checker)));
+        }
+        if let Some(filter) = *geo_bounding_box {
+            let checker = GeoConditionChecker::new(self, hw_counter, filter);
+            return Ok(Some(S::condition_checker_geo_bounding_box(checker)));
+        }
+        if let Some(polygon) = geo_polygon.as_ref() {
+            let checker = GeoConditionChecker::new(self, hw_counter, polygon.convert());
+            return Ok(Some(S::condition_checker_geo_polygon(checker)));
+        }
+        Ok(None)
     }
 }

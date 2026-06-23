@@ -6,6 +6,7 @@ use self::immutable_map_index::ImmutableMapIndex;
 pub use self::key::MapIndexKey;
 use self::mutable_map_index::MutableMapIndex;
 use self::on_disk_map_index::OnDiskMapIndex;
+pub use self::read_ops::MapConditionChecker;
 
 mod builders;
 mod facet_index_impl;

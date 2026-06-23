@@ -21,7 +21,7 @@ use self::immutable_geo_index::ImmutableGeoIndex;
 use self::mutable_geo_index::MutableGeoIndex;
 use self::on_disk_geo_index::OnDiskGeoIndex;
 pub use self::read_only::ReadOnlyGeoIndex;
-pub use self::read_ops::GeoIndexRead;
+pub use self::read_ops::{GeoConditionChecker, GeoIndexRead};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::{IndexMutability, StorageType};

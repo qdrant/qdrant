@@ -21,7 +21,7 @@ pub use numeric_field_index::{
     NumericFieldIndex, NumericFieldIndexRead, NumericFieldIndexView, ReadOnlyNumericFieldIndex,
 };
 pub use numeric_index_read::NumericIndexRead;
-pub use query::NumericIndexValue;
+pub use query::{NumericIndexValue, RangeConditionChecker};
 pub use read_only::{NumericValueToJson, ReadOnlyNumericIndex};
 pub use read_ops::StreamRange;
 pub use storage::NumericIndexInner;

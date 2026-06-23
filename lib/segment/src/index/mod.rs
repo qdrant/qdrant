@@ -1,3 +1,4 @@
+mod condition_checker;
 pub mod field_index;
 pub mod hnsw_index;
 mod key_encoding;
@@ -18,6 +19,7 @@ pub mod vector_index_base;
 mod vector_index_search_common;
 mod visited_pool;
 
+pub use condition_checker::ConditionCheckerEnum;
 pub use payload_index_base::*;
 pub use universal_io::UniversalReadExt;
 pub use vector_index_base::*;

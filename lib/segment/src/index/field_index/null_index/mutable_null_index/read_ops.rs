@@ -7,10 +7,10 @@ use super::super::read_ops::{self, NullIndexRead};
 use super::MutableNullIndex;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::OperationResult;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl NullIndexRead for MutableNullIndex {
@@ -68,7 +68,8 @@ impl PayloadFieldIndexRead for MutableNullIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(read_ops::condition_checker(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(read_ops::condition_checker(self, condition, hw_acc)
+            .map(ConditionCheckerEnum::NullMutable))
     }
 }
