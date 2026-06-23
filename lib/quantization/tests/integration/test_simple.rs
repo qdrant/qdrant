@@ -266,7 +266,7 @@ mod tests {
             &stopped,
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(query);
 
         (0..vectors_count)
             .map(|index| {
