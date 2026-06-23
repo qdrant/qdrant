@@ -1333,6 +1333,7 @@ dependencies = [
  "pprof",
  "proptest",
  "rand 0.10.1",
+ "rand_distr",
  "ringbuffer",
  "rmp-serde",
  "rstest",

@@ -153,7 +153,7 @@ async fn test_payload_missing_index_check() {
     );
 }
 
-async fn create_index(
+pub async fn create_index(
     shard: &LocalShard,
     payload_index_schema: &Arc<SaveOnDisk<PayloadIndexSchema>>,
     name: &str,

@@ -21,6 +21,7 @@ staging = ["shard/staging"]
 criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
+rand_distr = { workspace = true }
 rstest = { workspace = true }
 tar = { workspace = true }
 approx = "0.5.1"
