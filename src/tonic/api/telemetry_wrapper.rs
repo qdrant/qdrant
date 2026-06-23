@@ -464,7 +464,6 @@ mod tests {
     use api::grpc::qdrant::points_server::Points;
     use api::grpc::qdrant::shard_snapshots_server::ShardSnapshots;
     use api::grpc::qdrant::snapshots_server::Snapshots;
-    use api::grpc::qdrant::*;
     use tonic::{Request, Response, Status};
 
     use super::*;

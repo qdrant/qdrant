@@ -206,7 +206,6 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 mod tests {
     use bytes::Bytes;
     use common::universal_io::{ReadRange, UniversalRead, UniversalReadFileOps};
-    use object_store::ObjectStoreExt as _;
     use object_store::memory::InMemory;
 
     use super::*;
