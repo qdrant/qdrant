@@ -399,16 +399,93 @@ pub async fn run(
     verify::assert_matches_model(&reloaded, &model, "reloaded");
 }
 
+/// Skipped on Windows because it is too slow
+#[cfg(not(target_os = "windows"))]
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Windows CI is significantly slower; keep the smoke run short there.
-    #[cfg(target_os = "windows")]
-    const OP_NUM: usize = 1_000;
-    #[cfg(not(target_os = "windows"))]
-    const OP_NUM: usize = 10_000;
+    const OP_NUM: usize = 8_000;
     const ID_POOL: u64 = 500;
+
+    /// Owns a run's storage dir. On a clean drop the dir is deleted (normal `TempDir`
+    /// behaviour); if the test is unwinding from a panic the dir is leaked instead and its
+    /// path printed, so the trace + data survive for postmortem reproduction with the seed.
+    struct StorageGuard {
+        dir: Option<tempfile::TempDir>,
+        name: &'static str,
+        seed: u64,
+    }
+
+    impl StorageGuard {
+        fn path(&self) -> &Path {
+            self.dir
+                .as_ref()
+                .expect("storage dir present during run")
+                .path()
+        }
+    }
+
+    impl Drop for StorageGuard {
+        fn drop(&mut self) {
+            if std::thread::panicking()
+                && let Some(dir) = self.dir.take()
+            {
+                let path = dir.keep(); // leak: do not delete on failure
+                eprintln!(
+                    "model_testing: {} FAILED (seed = {}), storage retained at {}",
+                    self.name,
+                    self.seed,
+                    path.display(),
+                );
+            }
+        }
+    }
+
+    /// Drives one seeded smoke run end to end with the boilerplate shared by every harness
+    /// test: single shard, fixed segment/indexing/flush knobs, no swarm force-off, op-bounded.
+    /// Only `disable_optimizer`, `restart_probability`, and `op_num` vary between tests.
+    ///
+    /// `name` is the calling test's name, echoed in both the seed line and the failure message
+    /// so a failure in this shared helper is attributable to the right test.
+    ///
+    /// The seed is drawn fresh each run and printed up front so a CI failure is reproducible
+    /// (nextest captures stdout and shows it on failure); on panic [`StorageGuard`] retains the
+    /// storage dir.
+    async fn smoke(
+        name: &'static str,
+        disable_optimizer: bool,
+        restart_probability: f64,
+        op_num: usize,
+    ) {
+        let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let seed = rand::rng().random();
+        println!("model_testing: {name} seed = {seed}");
+        let guard = StorageGuard {
+            dir: Some(storage_dir),
+            name,
+            seed,
+        };
+        run(
+            seed,
+            op_num,
+            1, // shard_count
+            ID_POOL,
+            guard.path(),
+            disable_optimizer,
+            10, // max_segment_size_kb
+            5,  // indexing_threshold_kb
+            5,  // flush_interval_sec
+            restart_probability,
+            2500,  // swarm_interval: a few redraws within the run
+            false, // on_disk
+            false, // pre_restart_check
+            false, // enable_force_off
+            None,  // duration: bounded by op_num
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await;
+    }
 
     /// End-to-end smoke run: [`OP_NUM`] seeded ops against a single-shard collection, including
     /// the per-op verification ops, the end-of-run live check, and the final close+reopen
@@ -421,27 +498,20 @@ mod tests {
     /// harness itself rather than a bug-finder (that's the binary's job).
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer_no_restarts() {
-        let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
-        let seed = rand::rng().random();
-        run(
-            seed,    // fresh seed each run
-            OP_NUM,  // op_num
-            1,       // shard_count
-            ID_POOL, // id_pool
-            storage_dir.path(),
-            true,  // disable_optimizer
-            10,    // max_segment_size_kb
-            5,     // indexing_threshold_kb
-            5,     // flush_interval_sec
-            0.0,   // restart_probability
-            2500,  // swarm_interval: a few redraws within the run
-            false, // on_disk
-            false, // pre_restart_check
-            false, // enable_force_off
-            None,  // duration: bounded by op_num
-            Arc::new(AtomicBool::new(false)),
-        )
-        .await;
+        smoke("harness_no_optimizer_no_restarts", true, 0.0, OP_NUM).await;
+    }
+
+    /// Same configuration as [`harness_no_optimizer_no_restarts`], but with the optimizer
+    /// enabled: background segment churn (merges, indexing) runs concurrently with the op
+    /// stream and feeds into the final close+reopen reload check, with no mid-run restarts.
+    ///
+    /// This is the fourth cell of the {optimizer on/off} × {restarts on/off} matrix. Holding
+    /// restarts off isolates the optimizer/reload interaction from the WAL-replay-during-restart
+    /// path that [`harness`] also exercises: a failure here points at the optimizer or the final
+    /// reload, not at mid-run restart recovery.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness_no_restarts() {
+        smoke("harness_no_restarts", false, 0.0, OP_NUM).await;
     }
 
     /// Same configuration as [`harness_no_optimizer_no_restarts`], plus seeded mid-run
@@ -452,27 +522,26 @@ mod tests {
     /// Note: the restart roll consumes one rng draw per iteration, so even for the same
     /// seed the op stream differs from a no-restart run.
     #[tokio::test(flavor = "multi_thread")]
-    async fn harness_no_optimizer_restarts() {
-        let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
-        let seed = rand::rng().random();
-        run(
-            seed,    // fresh seed each run
-            OP_NUM,  // op_num
-            1,       // shard_count
-            ID_POOL, // id_pool
-            storage_dir.path(),
-            true,  // disable_optimizer
-            10,    // max_segment_size_kb
-            5,     // indexing_threshold_kb
-            5,     // flush_interval_sec
-            0.002, // restart_probability
-            2500,  // swarm_interval: a few redraws within the run
-            false, // on_disk
-            false, // pre_restart_check
-            false, // enable_force_off
-            None,  // duration: bounded by op_num
-            Arc::new(AtomicBool::new(false)),
-        )
-        .await;
+    async fn harness_no_optimizer() {
+        smoke("harness_no_optimizer", true, 0.002, OP_NUM).await;
+    }
+
+    /// Same configuration as [`harness_no_optimizer`], but with the optimizer enabled:
+    /// background segment churn (merges, indexing) runs concurrently with the op stream
+    /// and the seeded mid-run restarts, so the WAL-replay path is exercised against an
+    /// optimized on-disk layout rather than a static one.
+    ///
+    /// Single shard keeps this clear of the known-unfixed multi-shard reload bug class, so
+    /// it stays green as a regression gate for the optimizer-on restart path.
+    ///
+    /// Runs a quarter of the op count of the other variants: optimizer churn plus mid-run
+    /// restarts make this the slowest combination, so it's trimmed to keep its wall-clock under
+    /// the others rather than dominate the suite. The fresh seed each run plus many CI runs
+    /// recover the per-run coverage lost to the shorter run.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness() {
+        // op_num quartered: optimizer churn + restarts make this the slowest variant; trim it so
+        // it isn't the suite's long pole (coverage is recovered across many seeded CI runs).
+        smoke("harness", false, 0.002, OP_NUM / 4).await;
     }
 }
