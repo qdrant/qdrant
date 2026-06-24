@@ -13,7 +13,6 @@ on:
         description: 'RNG seed (leave empty for a random seed)'
         required: false
         default: ''
-  pull_request:  # TODO: temporary, remove before merge (test-drive on PR)
 
 permissions:
   contents: read
