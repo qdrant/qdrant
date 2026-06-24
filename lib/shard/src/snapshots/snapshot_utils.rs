@@ -5,7 +5,7 @@ use fs_err as fs;
 use segment::common::operation_error::OperationResult;
 use segment::segment::Segment;
 
-use crate::files::{ShardDataFiles, get_shard_data_files, segments_path};
+use crate::files::{SEGMENT_MANIFEST_FILE, ShardDataFiles, get_shard_data_files, segments_path};
 use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
 pub struct SnapshotUtils;
@@ -32,19 +32,20 @@ impl SnapshotUtils {
         // Read dir first as the directory contents would change during restore
         let entries = fs::read_dir(segments_path(snapshot_path))?.collect::<Result<Vec<_>, _>>()?;
 
-        // Filter out hidden entries
+        // Filter out hidden entries and the segment manifest (`segments/manifest.json`), which is
+        // not a segment directory. The manifest is regenerated from the loaded segments when the
+        // shard's segment holder is built, so it does not need to be restored in place here.
         let entries = entries.into_iter().filter(|entry| {
-            let is_hidden = entry
-                .file_name()
-                .to_str()
-                .is_some_and(|s| s.starts_with('.'));
+            let file_name = entry.file_name();
+            let is_hidden = file_name.to_str().is_some_and(|s| s.starts_with('.'));
             if is_hidden {
                 log::debug!(
                     "Ignoring hidden segment in local shard during snapshot recovery: {}",
                     entry.path().display(),
                 );
             }
-            !is_hidden
+            let is_segment_manifest = file_name == SEGMENT_MANIFEST_FILE;
+            !is_hidden && !is_segment_manifest
         });
 
         for entry in entries {
