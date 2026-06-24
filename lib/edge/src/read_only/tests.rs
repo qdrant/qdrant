@@ -78,7 +78,12 @@ fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
 /// Open a follower that discovers segments by scanning the directory (no manifest required) — used
 /// by the read/refresh tests, whose leaders don't write a manifest.
 fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
-    ReadOnlyEdgeShard::<MmapFile>::open(MmapFs, path, LocalSegmentEnumerator::new(path)).unwrap()
+    ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        path,
+        LocalSegmentEnumerator::new(path),
+    )
+    .unwrap()
 }
 
 fn exact_count(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
@@ -279,20 +284,27 @@ fn refresh_on_unchanged_dir_is_noop() {
     assert_eq!(before, 10);
 }
 
+/// A read-only follower has no `edge_config.json`: it derives its config from the segments. Opening
+/// after deleting the config the leader happened to write must still succeed and read the data.
 #[test]
-fn open_without_config_fails() {
+fn open_without_config_derives_from_segments() {
     let dir = tempfile::Builder::new()
         .prefix("edge-ro-noconfig")
         .tempdir()
         .unwrap();
 
-    let Err(err) = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()) else {
-        panic!("expected open to fail without edge_config.json");
-    };
-    assert!(
-        err.to_string().contains("edge_config.json not found"),
-        "unexpected error: {err}",
-    );
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush();
+    let expected = leader_exact_count(&leader);
+    drop(leader);
+
+    // Remove the config the leader wrote: a follower must not depend on it.
+    fs_err::remove_file(dir.path().join("edge_config.json")).unwrap();
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), expected);
+    assert_eq!(expected, 10);
 }
 
 /// A [`SegmentEnumerator`] that scans the local `segments/` directory but hides a chosen UUID,
@@ -333,7 +345,7 @@ fn follower_uses_injected_enumerator() {
 
     // Injected enumerator hides one segment: the follower must track exactly what it reports, not
     // whatever happens to be on disk — proving discovery goes through the enumerator.
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open(
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         dir.path(),
         ExcludingEnumerator {
@@ -369,7 +381,7 @@ fn manifest_enumerator_requires_manifest() {
         .collect();
     assert!(!on_disk.is_empty());
 
-    let enumerator = ManifestSegmentEnumerator::new(dir.path());
+    let enumerator = ManifestSegmentEnumerator::new(MmapFs, dir.path());
     let manifest_path = segment_manifest_path(dir.path());
 
     // No manifest → error, not a directory scan.
@@ -417,7 +429,7 @@ fn leader_writes_manifest_and_follower_loads_it() {
         .unwrap()
         .into_keys()
         .collect();
-    let from_manifest: HashSet<Uuid> = ManifestSegmentEnumerator::new(dir.path())
+    let from_manifest: HashSet<Uuid> = ManifestSegmentEnumerator::new(MmapFs, dir.path())
         .list_segments()
         .unwrap()
         .into_keys()

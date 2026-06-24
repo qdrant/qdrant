@@ -42,8 +42,9 @@ pub struct ReadOnlyEdgeShard<S: UniversalRead + 'static> {
     path: PathBuf,
     /// Read backend handle; passed to segment `open` and `live_reload`.
     fs: S::Fs,
-    /// Config snapshot, re-read from `edge_config.json` on each refresh. Stored as an `Arc` so a
-    /// read view can cheaply clone the current snapshot while a refresh swaps in a new one.
+    /// Config snapshot, derived from the segments (a follower has no `edge_config.json`) and
+    /// re-derived on each refresh. Stored as an `Arc` so a read view can cheaply clone the current
+    /// snapshot while a refresh swaps in a new one.
     config: RwLock<Arc<EdgeConfig>>,
     segments: RwLock<ReadOnlySegmentHolder<S>>,
     /// Discovers the current segment directories. Injected because segment discovery is

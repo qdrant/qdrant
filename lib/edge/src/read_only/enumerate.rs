@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::universal_io::{UniversalReadFs, read_json_via};
 use segment::common::operation_error::OperationResult;
 use shard::files::{SEGMENTS_PATH, segment_manifest_path};
 use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
@@ -32,27 +33,35 @@ pub trait SegmentEnumerator: Send + Sync {
 /// follower using this enumerator requires the leader to write one (the `write_segment_manifest`
 /// feature flag).
 ///
-/// Wired automatically by [`ReadOnlyEdgeShard::open_mmap`](super::ReadOnlyEdgeShard::open_mmap).
-pub struct ManifestSegmentEnumerator {
+/// Generic over the read backend `F` (a [`UniversalReadFs`]), so it reads the manifest over any
+/// storage — local memory-mapped files ([`MmapFs`](common::universal_io::MmapFs)) or a blob/S3
+/// backend alike. Wired with `MmapFs` by
+/// [`ReadOnlyEdgeShard::open_mmap`](super::ReadOnlyEdgeShard::open_mmap); an object-storage follower
+/// constructs it with its own blob filesystem.
+pub struct ManifestSegmentEnumerator<F: UniversalReadFs> {
+    /// Read backend used to read the manifest file.
+    fs: F,
     /// The segment manifest, sitting next to (not inside) the `segments/` directory.
     manifest_path: PathBuf,
     /// The `segments/` directory; segment directories live under it as `segments/<uuid>`.
     segments_path: PathBuf,
 }
 
-impl ManifestSegmentEnumerator {
-    /// `shard_path` is the shard root (the directory containing `segments/`).
-    pub fn new(shard_path: &Path) -> Self {
+impl<F: UniversalReadFs> ManifestSegmentEnumerator<F> {
+    /// `shard_path` is the shard root (the directory containing `segments/`); `fs` is the backend the
+    /// manifest is read through.
+    pub fn new(fs: F, shard_path: &Path) -> Self {
         Self {
+            fs,
             manifest_path: segment_manifest_path(shard_path),
             segments_path: shard_path.join(SEGMENTS_PATH),
         }
     }
 }
 
-impl SegmentEnumerator for ManifestSegmentEnumerator {
+impl<F: UniversalReadFs + Send + Sync> SegmentEnumerator for ManifestSegmentEnumerator<F> {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
-        let manifest = SegmentsManifest::load(&self.manifest_path)?;
+        let manifest: SegmentsManifest = read_json_via(&self.fs, &self.manifest_path)?;
         Ok(manifest
             .iter()
             .filter(|(_, state)| matches!(state, SegmentManifestState::Active))

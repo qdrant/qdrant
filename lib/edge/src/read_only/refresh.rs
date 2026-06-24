@@ -24,18 +24,10 @@ impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
 
     /// [`refresh`](Self::refresh) with a caller-supplied hardware counter.
     pub fn refresh_with(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
-        // 1. Reload the config snapshot (best-effort: a transient read while the leader rewrites it
-        //    just leaves the previous snapshot in place until the next refresh).
-        match EdgeConfig::load(&self.path) {
-            Some(Ok(config)) => *self.config.write() = Arc::new(config),
-            Some(Err(err)) => log::warn!("failed to reload edge config during refresh: {err}"),
-            None => {}
-        }
-
-        // 2. Snapshot the current on-disk segment set (backend-specific; see `SegmentEnumerator`).
+        // 1. Snapshot the current on-disk segment set (backend-specific; see `SegmentEnumerator`).
         let on_disk = self.enumerator.list_segments()?;
 
-        // 3. Under the holder lock, add newly-appeared segments and drop removed ones, then collect
+        // 2. Under the holder lock, add newly-appeared segments and drop removed ones, then collect
         //    the survivors to live_reload *after* releasing the lock — so reads only block during
         //    the cheap add/drop, not during the reload.
         let survivors: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)> = {
@@ -66,6 +58,14 @@ impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
                 .filter_map(|uuid| holder.segment_arc(&uuid).map(|segment| (uuid, segment)))
                 .collect()
         };
+
+        // 3. Re-derive the config from the current segments — a read-only follower has no
+        //    edge_config.json, so the segments are the source of truth. No-op for an empty shard
+        //    (the previous snapshot stays in place until segments appear).
+        if let Some(segment) = self.segments.read().read_handles().into_iter().next() {
+            let config = EdgeConfig::from_segment_config(&segment.read().segment_config);
+            *self.config.write() = Arc::new(config);
+        }
 
         // 4. Live-reload survivors to fold in the leader's flushed in-place appends and deletes.
         //    Newly-added segments are already current, so they are skipped.

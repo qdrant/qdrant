@@ -2185,9 +2185,6 @@ dependencies = [
  "log",
  "object_store",
  "serde_json",
- "shard",
- "tempfile",
- "uuid",
 ]
 
 [[package]]

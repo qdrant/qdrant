@@ -1,17 +1,19 @@
-//! Experimental binary that opens a [`ReadOnlyEdgeShard`] directly over an S3
-//! (or S3-compatible: MinIO, RustFS, LocalStack) bucket and runs a single
+//! Experimental binary that opens a [`ReadOnlyEdgeShard`] directly over object
+//! storage (AWS S3 / S3-compatible, or Google Cloud Storage) and runs a single
 //! scroll request, optionally filtered by a payload field (`--filter-key` /
 //! `--filter-value`).
 //!
-//! The shard data is read straight from object storage via the
-//! `io_bridge_object_store` blob backend; only `edge_config.json` is fetched to
-//! a local temp directory first, because [`ReadOnlyEdgeShard::open`] reads the
-//! config from the local filesystem.
+//! The shard data is read through the `io_bridge_object_store` blob backend,
+//! wrapped in a [`DiskCache`] so each remote block is fetched once and then
+//! served from a local mirror directory. Segments are discovered from the
+//! leader's segment manifest, and the shard config is derived from the segments
+//! themselves, so no `edge_config.json` is required.
 //!
 //! Example (RustFS/MinIO running locally):
 //!
 //! ```sh
 //! cargo run -p edge-s3-scroll -- \
+//!     --backend  aws \
 //!     --endpoint http://localhost:9000 \
 //!     --bucket   test-bucket \
 //!     --region   us-east-1 \
@@ -23,62 +25,88 @@
 //!     --limit    20
 //! ```
 //!
+//! Example (Google Cloud Storage with a service-account key):
+//!
+//! ```sh
+//! cargo run -p edge-s3-scroll -- \
+//!     --backend  gcs \
+//!     --bucket   my-bucket \
+//!     --gcs-service-account-path /path/to/key.json \
+//!     --prefix   collection/0
+//! ```
+//!
 //! `--prefix` is the key prefix inside the bucket that points at the edge-shard
 //! root — the directory that contains `edge_config.json` and `segments/`.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use clap::Parser;
-use common::universal_io::{UniversalReadFileOps, read_json_via, read_whole_via};
+use clap::{Parser, ValueEnum};
+use common::universal_io::{
+    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+};
 use edge::{
-    Condition, EdgeShardRead, FieldCondition, Filter, JsonPath, Match, OperationError,
-    OperationResult, ReadOnlyEdgeShard, Record, ScrollRequest, SegmentEnumerator, ValueVariants,
+    Condition, EdgeShardRead, FieldCondition, Filter, JsonPath, Match, ReadOnlyEdgeShard, Record,
+    ScrollRequest, ValueVariants,
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
-use io_bridge_object_store::{BlobFile, BlobFs};
+use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
+use io_bridge_object_store::{AsyncRead, BlobFile};
 use object_store::aws::AmazonS3;
-use shard::files::{SEGMENTS_PATH, segment_manifest_path};
-use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
-use uuid::Uuid;
+use object_store::gcp::GoogleCloudStorage;
 
-type S3File = BlobFile<Arc<AmazonS3>>;
-type S3Fs = BlobFs<Arc<AmazonS3>>;
-
-/// Config file name at the edge-shard root. Mirrors `edge`'s internal constant
-/// (which is crate-private).
-const EDGE_CONFIG_FILE: &str = "edge_config.json";
+/// Object-storage backend to read from.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum Backend {
+    /// AWS S3 or an S3-compatible store (MinIO, RustFS, LocalStack, ...).
+    Aws,
+    /// Google Cloud Storage.
+    Gcs,
+}
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Open a ReadOnlyEdgeShard over an S3 bucket and run a scroll, optionally filtered by a payload field"
+    about = "Open a ReadOnlyEdgeShard over S3/GCS object storage and run a scroll, optionally filtered by a payload field"
 )]
 struct Args {
-    /// Custom S3 endpoint URL (set for MinIO / RustFS / LocalStack). Omit for real AWS.
+    /// Which object-storage backend to use.
+    #[arg(long, value_enum, default_value = "aws")]
+    backend: Backend,
+
+    /// Bucket name (without any scheme prefix). Used by both backends.
+    #[arg(long, env = "BLOB_BUCKET")]
+    bucket: String,
+
+    /// [AWS] Custom S3 endpoint URL (set for MinIO / RustFS / LocalStack). Omit for real AWS.
     #[arg(long, env = "S3_ENDPOINT")]
     endpoint: Option<String>,
 
-    /// S3 bucket name (without the `s3://` prefix).
-    #[arg(long, env = "S3_BUCKET")]
-    bucket: String,
-
-    /// AWS region (e.g. `us-east-1`). Required for real AWS; optional for S3-compatible endpoints.
+    /// [AWS] Region (e.g. `us-east-1`). Required for real AWS; optional for S3-compatible endpoints.
     #[arg(long, env = "S3_REGION")]
     region: Option<String>,
 
-    /// AWS access key id. If omitted, the AWS default credential chain is used.
+    /// [AWS] Access key id. If omitted, the AWS default credential chain is used.
     #[arg(long, env = "S3_ACCESS_KEY")]
     access_key: Option<String>,
 
-    /// AWS secret access key. Required when `--access-key` is given.
+    /// [AWS] Secret access key. Required when `--access-key` is given.
     #[arg(long, env = "S3_SECRET_KEY")]
     secret_key: Option<String>,
 
-    /// Optional session token for short-lived credentials.
+    /// [AWS] Optional session token for short-lived credentials.
     #[arg(long, env = "S3_SESSION_TOKEN")]
     session_token: Option<String>,
+
+    /// [GCS] Path to a service-account JSON key file. Takes precedence over
+    /// `--gcs-service-account-key`; if neither is set, application default
+    /// credentials (ADC) are used.
+    #[arg(long, env = "GCS_SERVICE_ACCOUNT_PATH")]
+    gcs_service_account_path: Option<String>,
+
+    /// [GCS] Inline service-account JSON key contents (instead of a path).
+    #[arg(long, env = "GCS_SERVICE_ACCOUNT_KEY")]
+    gcs_service_account_key: Option<String>,
 
     /// Key prefix inside the bucket pointing at the edge-shard root (contains
     /// `edge_config.json` and `segments/`). Empty means the bucket root.
@@ -95,6 +123,13 @@ struct Args {
     #[arg(long, requires = "filter_key")]
     filter_value: Option<String>,
 
+    /// Local directory for the segment disk cache. Remote blocks are fetched
+    /// from object storage once and mirrored here; later reads hit this
+    /// directory instead. Defaults to a stable subdirectory of the system temp
+    /// dir, so the cache persists across runs.
+    #[arg(long)]
+    cache_dir: Option<PathBuf>,
+
     /// Maximum number of points to return.
     #[arg(long, default_value_t = 10)]
     limit: usize,
@@ -102,34 +137,6 @@ struct Args {
     /// Include vectors in the output.
     #[arg(long, default_value_t = false)]
     with_vectors: bool,
-}
-
-/// [`SegmentEnumerator`] that reads the leader's segment manifest over the blob
-/// backend (the local [`edge::ManifestSegmentEnumerator`] reads it from the
-/// local filesystem, which is not where it lives for an S3 follower).
-struct S3ManifestSegmentEnumerator {
-    fs: S3Fs,
-    /// The segment manifest, sitting next to (not inside) the `segments/` directory.
-    manifest_path: PathBuf,
-    /// The `segments/` directory; segment directories live under it as `segments/<uuid>`.
-    segments_path: PathBuf,
-}
-
-impl SegmentEnumerator for S3ManifestSegmentEnumerator {
-    fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
-        let manifest: SegmentsManifest =
-            read_json_via(&self.fs, &self.manifest_path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to read segment manifest {} over S3: {err}",
-                    self.manifest_path.display(),
-                ))
-            })?;
-        Ok(manifest
-            .iter()
-            .filter(|(_, state)| matches!(state, SegmentManifestState::Active))
-            .map(|(uuid, _)| (*uuid, self.segments_path.join(uuid.to_string())))
-            .collect())
-    }
 }
 
 /// Build the scroll filter from the `--filter-key`/`--filter-value` pair.
@@ -181,23 +188,46 @@ fn build_aws_config(args: &Args) -> Result<AwsConfig> {
     })
 }
 
-/// Fetch `edge_config.json` from the bucket into a local temp directory, because
-/// [`ReadOnlyEdgeShard::open`] reads the config from the local filesystem.
-/// Returns the temp directory holding the config (kept alive by the caller).
-fn fetch_config_locally(fs: &S3Fs, prefix: &Path) -> Result<tempfile::TempDir> {
-    let remote_config = prefix.join(EDGE_CONFIG_FILE);
-    let bytes: Vec<u8> = read_whole_via(fs, &remote_config, |bytes| Ok(bytes.into_owned()))
-        .with_context(|| format!("failed to read {} over S3", remote_config.display()))?;
+fn build_gcs_config(args: &Args) -> GcsConfig {
+    let credentials = if let Some(key) = &args.gcs_service_account_key {
+        GcsCredentials::ServiceAccountKey(key.clone())
+    } else if let Some(path) = &args.gcs_service_account_path {
+        GcsCredentials::ServiceAccountPath(path.clone())
+    } else {
+        GcsCredentials::Default
+    };
 
-    let temp_dir = tempfile::Builder::new()
-        .prefix("edge-s3-scroll-")
-        .tempdir()
-        .context("failed to create temp dir for edge_config.json")?;
-    let local_config = temp_dir.path().join(EDGE_CONFIG_FILE);
-    fs_err::write(&local_config, &bytes)
-        .with_context(|| format!("failed to write {}", local_config.display()))?;
+    GcsConfig {
+        bucket: args.bucket.clone(),
+        credentials,
+    }
+}
 
-    Ok(temp_dir)
+/// Build the disk-cache-backed filesystem used to read segment data.
+///
+/// Remote objects under `remote_prefix` are mirrored into `cache_dir`: each
+/// block is fetched from object storage the first time it is read and served
+/// from the local mirror afterwards. `cache_dir` must exist locally, so it is
+/// created first.
+fn build_cached_fs<A>(
+    remote_config: A::Config,
+    remote_prefix: &Path,
+    cache_dir: &Path,
+) -> Result<DiskCacheFs<BlobFile<A>>>
+where
+    A: AsyncRead + Clone,
+{
+    fs_err::create_dir_all(cache_dir)
+        .with_context(|| format!("failed to create cache dir {}", cache_dir.display()))?;
+
+    let config = DiskCacheConfig::new(remote_prefix.to_path_buf(), cache_dir.to_path_buf())
+        .context("failed to build disk cache config")?;
+
+    DiskCacheFs::<BlobFile<A>>::from_context(DiskCacheFsContext {
+        config: Arc::new(config),
+        remote: remote_config,
+    })
+    .context("failed to build disk-cache filesystem")
 }
 
 fn print_records(records: &[Record], next_offset: Option<edge::PointId>) -> Result<()> {
@@ -219,35 +249,24 @@ fn print_records(records: &[Record], next_offset: Option<edge::PointId>) -> Resu
     Ok(())
 }
 
-fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+/// Open the read-only shard over backend `A` and run the scroll.
+///
+/// Generic over the object-storage backend handle `A` (e.g. `Arc<AmazonS3>` or
+/// `Arc<GoogleCloudStorage>`) so the whole read path stays monomorphic per
+/// backend. `remote_config` is that backend's connection config.
+fn run<A>(args: &Args, prefix: &Path, cache_dir: &Path, remote_config: A::Config) -> Result<()>
+where
+    A: AsyncRead + Clone,
+{
+    // Segment data — and the segment manifest used for discovery — are read through a disk cache:
+    // fetched from object storage once, then served from the local mirror directory afterwards.
+    let cached_fs = build_cached_fs::<A>(remote_config, prefix, cache_dir)?;
+    log::info!("caching segment reads under {}", cache_dir.display());
 
-    let args = Args::parse();
-    let aws_config = build_aws_config(&args)?;
-    let prefix = PathBuf::from(&args.prefix);
-
-    log::info!(
-        "opening read-only edge shard over s3 bucket={:?} prefix={:?} endpoint={:?}",
-        args.bucket,
-        args.prefix,
-        args.endpoint,
-    );
-
-    // Blob filesystem backed by the S3 bucket; drives async object-store reads
-    // through the global bridge runtime.
-    let fs = S3Fs::from_context(aws_config).context("failed to build S3 blob filesystem")?;
-
-    // edge_config.json must exist locally for `open`; fetch it from the bucket.
-    let config_dir = fetch_config_locally(&fs, &prefix)?;
-
-    let enumerator = S3ManifestSegmentEnumerator {
-        fs: fs.clone(),
-        manifest_path: segment_manifest_path(&prefix),
-        segments_path: prefix.join(SEGMENTS_PATH),
-    };
-
-    let shard = ReadOnlyEdgeShard::<S3File>::open(fs, config_dir.path(), enumerator)
-        .context("failed to open read-only edge shard over S3")?;
+    // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
+    // them via the manifest. `prefix` is passed only as the shard's (logical) path label.
+    let shard = ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix)
+        .context("failed to open read-only edge shard over object storage")?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
     let filter = build_filter(args.filter_key.as_deref(), args.filter_value.as_deref())?;
@@ -266,7 +285,30 @@ fn main() -> Result<()> {
     };
 
     let (records, next_offset) = shard.scroll(request).context("scroll request failed")?;
-    print_records(&records, next_offset)?;
+    print_records(&records, next_offset)
+}
 
-    Ok(())
+fn main() -> Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let args = Args::parse();
+    let prefix = PathBuf::from(&args.prefix);
+    let cache_dir = args
+        .cache_dir
+        .clone()
+        .unwrap_or_else(|| std::env::temp_dir().join("edge-s3-scroll-cache"));
+
+    log::info!(
+        "opening read-only edge shard backend={:?} bucket={:?} prefix={:?}",
+        args.backend,
+        args.bucket,
+        args.prefix,
+    );
+
+    match args.backend {
+        Backend::Aws => run::<Arc<AmazonS3>>(&args, &prefix, &cache_dir, build_aws_config(&args)?),
+        Backend::Gcs => {
+            run::<Arc<GoogleCloudStorage>>(&args, &prefix, &cache_dir, build_gcs_config(&args))
+        }
+    }
 }
