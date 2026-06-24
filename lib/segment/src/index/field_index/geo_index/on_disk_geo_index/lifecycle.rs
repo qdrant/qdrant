@@ -191,7 +191,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             TypedStorage::open(fs, &points_map_path, open_options, Default::default())?;
         let points_map_ids =
             TypedStorage::open(fs, &points_map_ids_path, open_options, Default::default())?;
-        let point_to_values = OnDiskPointToValues::open(fs, path, true)?;
+        let point_to_values = OnDiskPointToValues::open(fs, path, true.into())?;
 
         let mut deleted = deleted_points.to_owned();
 
