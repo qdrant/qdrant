@@ -243,7 +243,7 @@ impl SegmentHolder {
         SegmentsManifest::sync(self.segment_manifest.as_ref(), self, token.map(|t| t.id()))
     }
 
-    /// Build the segment manifest (`segments/manifest.json`) describing the current live segments,
+    /// Build the segment manifest (`segments_manifest.json`) describing the current live segments,
     /// for inclusion in a shard snapshot.
     ///
     /// Returns `None` when no manifest is attached (the `write_segment_manifest` feature flag is
