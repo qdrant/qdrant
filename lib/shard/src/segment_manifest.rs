@@ -7,10 +7,8 @@
 //! when to write it lives in the owner of the segments (e.g. `LocalShard`).
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
-use common::fs::read_json;
 use common::save_on_disk::SaveOnDisk;
 use segment::common::operation_error::{OperationError, OperationResult};
 // Re-exported from `segment` (where `build_segment` mints it) since the manifest is what consumes it.
@@ -116,16 +114,6 @@ impl SegmentsManifest {
             OperationError::service_error(format!("failed to persist segment manifest: {err}"))
         })?;
         Ok(())
-    }
-
-    /// Load a manifest from a `manifest.json` file.
-    pub fn load(path: &Path) -> OperationResult<Self> {
-        read_json(path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to read segment manifest {}: {err}",
-                path.display(),
-            ))
-        })
     }
 
     pub fn get(&self, uuid: &Uuid) -> Option<SegmentManifestState> {
