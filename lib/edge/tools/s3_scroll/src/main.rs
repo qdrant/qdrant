@@ -1,6 +1,7 @@
 //! Experimental binary that opens a [`ReadOnlyEdgeShard`] directly over an S3
 //! (or S3-compatible: MinIO, RustFS, LocalStack) bucket and runs a single
-//! scroll request with a hard-coded filter.
+//! scroll request, optionally filtered by a payload field (`--filter-key` /
+//! `--filter-value`).
 //!
 //! The shard data is read straight from object storage via the
 //! `io_bridge_object_store` blob backend; only `edge_config.json` is fetched to
@@ -17,6 +18,8 @@
 //!     --access-key  rustfsadmin \
 //!     --secret-key  rustfsadmin \
 //!     --prefix   collection/0 \
+//!     --filter-key   city \
+//!     --filter-value London \
 //!     --limit    20
 //! ```
 //!
@@ -31,8 +34,8 @@ use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use common::universal_io::{UniversalReadFileOps, read_json_via, read_whole_via};
 use edge::{
-    EdgeShardRead, Filter, OperationError, OperationResult, ReadOnlyEdgeShard, Record,
-    ScrollRequest, SegmentEnumerator,
+    Condition, EdgeShardRead, FieldCondition, Filter, JsonPath, Match, OperationError,
+    OperationResult, ReadOnlyEdgeShard, Record, ScrollRequest, SegmentEnumerator, ValueVariants,
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::{BlobFile, BlobFs};
@@ -40,22 +43,6 @@ use object_store::aws::AmazonS3;
 use shard::files::{SEGMENT_MANIFEST_FILE, SEGMENTS_PATH};
 use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 use uuid::Uuid;
-
-/// Hard-coded filter applied to the scroll request.
-///
-/// Edit this to experiment with different conditions. It is parsed into an
-/// [`edge::Filter`] at startup; an invalid JSON filter aborts the run. Set it to
-/// `"{}"` to match everything.
-const HARD_CODED_FILTER: &str = r#"
-{
-    "must": [
-        {
-            "key": "city",
-            "match": { "value": "London" }
-        }
-    ]
-}
-"#;
 
 type S3File = BlobFile<Arc<AmazonS3>>;
 type S3Fs = BlobFs<Arc<AmazonS3>>;
@@ -66,7 +53,7 @@ const EDGE_CONFIG_FILE: &str = "edge_config.json";
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Open a ReadOnlyEdgeShard over an S3 bucket and run a scroll with a hard-coded filter"
+    about = "Open a ReadOnlyEdgeShard over an S3 bucket and run a scroll, optionally filtered by a payload field"
 )]
 struct Args {
     /// Custom S3 endpoint URL (set for MinIO / RustFS / LocalStack). Omit for real AWS.
@@ -97,6 +84,16 @@ struct Args {
     /// `edge_config.json` and `segments/`). Empty means the bucket root.
     #[arg(long, default_value = "")]
     prefix: String,
+
+    /// Payload field to filter on (e.g. `city`). When omitted, no filter is
+    /// applied and the scroll returns all points.
+    #[arg(long, requires = "filter_value")]
+    filter_key: Option<String>,
+
+    /// Value the `--filter-key` field must equal. Parsed as an integer or
+    /// boolean when it looks like one, otherwise as a string.
+    #[arg(long, requires = "filter_key")]
+    filter_value: Option<String>,
 
     /// Maximum number of points to return.
     #[arg(long, default_value_t = 10)]
@@ -131,6 +128,32 @@ impl SegmentEnumerator for S3ManifestSegmentEnumerator {
             .map(|(uuid, _)| (*uuid, self.segments_path.join(uuid.to_string())))
             .collect())
     }
+}
+
+/// Build the scroll filter from the `--filter-key`/`--filter-value` pair.
+///
+/// Returns `None` when neither is set (scroll everything). `clap`'s `requires`
+/// already enforces that the two are supplied together. The value is parsed as
+/// an integer or boolean when it looks like one, otherwise treated as a string.
+fn build_filter(key: Option<&str>, value: Option<&str>) -> Result<Option<Filter>> {
+    let (Some(key), Some(value)) = (key, value) else {
+        return Ok(None);
+    };
+
+    let path: JsonPath = key
+        .parse()
+        .map_err(|()| anyhow!("invalid --filter-key path: {key:?}"))?;
+
+    let value = if let Ok(int) = value.parse::<i64>() {
+        ValueVariants::Integer(int)
+    } else if let Ok(flag) = value.parse::<bool>() {
+        ValueVariants::Bool(flag)
+    } else {
+        ValueVariants::String(value.to_string())
+    };
+
+    let condition = FieldCondition::new_match(path, Match::from(value));
+    Ok(Some(Filter::new_must(Condition::Field(condition))))
 }
 
 fn build_aws_config(args: &Args) -> Result<AwsConfig> {
@@ -224,14 +247,16 @@ fn main() -> Result<()> {
         .context("failed to open read-only edge shard over S3")?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
-    let filter: Filter =
-        serde_json::from_str(HARD_CODED_FILTER).context("failed to parse hard-coded filter")?;
-    log::info!("scrolling with filter: {}", serde_json::to_string(&filter)?);
+    let filter = build_filter(args.filter_key.as_deref(), args.filter_value.as_deref())?;
+    match &filter {
+        Some(filter) => log::info!("scrolling with filter: {}", serde_json::to_string(filter)?),
+        None => log::info!("scrolling with no filter (all points)"),
+    }
 
     let request = ScrollRequest {
         offset: None,
         limit: Some(args.limit),
-        filter: Some(filter),
+        filter,
         with_payload: None,
         with_vector: args.with_vectors.into(),
         order_by: None,
