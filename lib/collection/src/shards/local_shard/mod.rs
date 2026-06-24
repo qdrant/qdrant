@@ -160,6 +160,7 @@ impl LocalShard {
         let ShardDataFiles {
             wal_path: wal_from,
             segments_path: segments_from,
+            segment_manifest_path: segment_manifest_path_from,
             newest_clocks_path: newest_clocks_path_from,
             oldest_clocks_path: oldest_clocks_path_from,
             applied_seq_path: applied_seq_path_from,
@@ -168,6 +169,7 @@ impl LocalShard {
         let ShardDataFiles {
             wal_path: wal_to,
             segments_path: segments_to,
+            segment_manifest_path: segment_manifest_path_to,
             newest_clocks_path: newest_clocks_path_to,
             oldest_clocks_path: oldest_clocks_path_to,
             applied_seq_path: applied_seq_path_to,
@@ -175,6 +177,10 @@ impl LocalShard {
 
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
+
+        if segment_manifest_path_from.exists() {
+            move_file(segment_manifest_path_from, segment_manifest_path_to).await?;
+        }
 
         if newest_clocks_path_from.exists() {
             move_file(newest_clocks_path_from, newest_clocks_path_to).await?;
@@ -205,6 +211,7 @@ impl LocalShard {
         let ShardDataFiles {
             wal_path,
             segments_path,
+            segment_manifest_path,
             newest_clocks_path,
             oldest_clocks_path,
             applied_seq_path,
@@ -216,6 +223,10 @@ impl LocalShard {
 
         if segments_path.exists() {
             tokio_fs::remove_dir_all(segments_path).await?;
+        }
+
+        if segment_manifest_path.exists() {
+            tokio_fs::remove_file(segment_manifest_path).await?;
         }
 
         if newest_clocks_path.exists() {

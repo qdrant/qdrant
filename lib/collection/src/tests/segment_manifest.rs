@@ -14,8 +14,8 @@ use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::shards::local_shard::LocalShard;
 use crate::tests::fixtures::create_collection_config;
 
-/// With the `write_segment_manifest` flag enabled, building a shard writes `segments/manifest.json`
-/// listing the shard's segments as `active`.
+/// With the `write_segment_manifest` flag enabled, building a shard writes `segments_manifest.json`
+/// (next to the `segments/` directory) listing the shard's segments as `active`.
 #[tokio::test]
 #[allow(clippy::field_reassign_with_default)]
 async fn writes_segment_manifest_when_flag_enabled() {
@@ -56,7 +56,7 @@ async fn writes_segment_manifest_when_flag_enabled() {
     let manifest_path = segment_manifest_path(collection_dir.path());
     assert!(
         manifest_path.exists(),
-        "manifest.json should be written when the flag is enabled",
+        "segments_manifest.json should be written when the flag is enabled",
     );
 
     let manifest: SegmentsManifest = read_json(&manifest_path).unwrap();

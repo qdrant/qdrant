@@ -32,7 +32,8 @@ pub struct FeatureFlags {
     /// Use io_uring-based payload storage implementation.
     pub async_payload_storage: bool,
 
-    /// Write a segment manifest (`segments/manifest.json`) listing the shard's segments and their
+    /// Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory)
+    /// listing the shard's segments and their
     /// state, so out-of-process readers can discover segments without scanning the filesystem.
     pub write_segment_manifest: bool,
 

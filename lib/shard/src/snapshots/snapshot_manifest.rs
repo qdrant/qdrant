@@ -8,7 +8,7 @@ use segment::data_types::manifest::SegmentManifest;
 use segment::segment::snapshot::SEGMENT_MANIFEST_FILE_NAME;
 use segment::types::SeqNumberType;
 
-use crate::files::{SEGMENT_MANIFEST_FILE, segments_path};
+use crate::files::segments_path;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
@@ -32,12 +32,6 @@ impl SnapshotManifest {
 
         for segment_entry in fs::read_dir(segments_path)? {
             let segment_entry = segment_entry?;
-
-            // The segment manifest (`segments/manifest.json`) lives alongside the segment
-            // directories but is not a segment; skip it.
-            if segment_entry.file_name() == SEGMENT_MANIFEST_FILE {
-                continue;
-            }
 
             let segment_path = segment_entry.path();
 

@@ -5,7 +5,7 @@ use fs_err as fs;
 use segment::common::operation_error::OperationResult;
 use segment::segment::Segment;
 
-use crate::files::{SEGMENT_MANIFEST_FILE, ShardDataFiles, get_shard_data_files, segments_path};
+use crate::files::{ShardDataFiles, get_shard_data_files, segments_path};
 use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
 pub struct SnapshotUtils;
@@ -32,9 +32,9 @@ impl SnapshotUtils {
         // Read dir first as the directory contents would change during restore
         let entries = fs::read_dir(segments_path(snapshot_path))?.collect::<Result<Vec<_>, _>>()?;
 
-        // Filter out hidden entries and the segment manifest (`segments/manifest.json`), which is
-        // not a segment directory. The manifest is regenerated from the loaded segments when the
-        // shard's segment holder is built, so it does not need to be restored in place here.
+        // Filter out hidden entries. The segment manifest (`segments_manifest.json`) lives next to
+        // the `segments/` directory rather than inside it, so it is not encountered here; it is
+        // regenerated from the loaded segments when the shard's segment holder is built.
         let entries = entries.into_iter().filter(|entry| {
             let file_name = entry.file_name();
             let is_hidden = file_name.to_str().is_some_and(|s| s.starts_with('.'));
@@ -44,8 +44,7 @@ impl SnapshotUtils {
                     entry.path().display(),
                 );
             }
-            let is_segment_manifest = file_name == SEGMENT_MANIFEST_FILE;
-            !is_hidden && !is_segment_manifest
+            !is_hidden
         });
 
         for entry in entries {
@@ -98,6 +97,9 @@ impl SnapshotUtils {
         let ShardDataFiles {
             wal_path: from_wal_path,
             segments_path: from_segments_path,
+            // The segment manifest is regenerated when the holder is built, so it is not part of the
+            // partial-snapshot merge plan.
+            segment_manifest_path: _,
             newest_clocks_path: from_newest_clocks_path,
             oldest_clocks_path: from_oldest_clocks_path,
             applied_seq_path: from_applied_seq_path,
@@ -106,6 +108,7 @@ impl SnapshotUtils {
         let ShardDataFiles {
             wal_path: to_wal_path,
             segments_path: to_segments_path,
+            segment_manifest_path: _,
             newest_clocks_path: to_newest_clocks_path,
             oldest_clocks_path: to_oldest_clocks_path,
             applied_seq_path: to_applied_seq_path,

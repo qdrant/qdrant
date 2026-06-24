@@ -1,4 +1,5 @@
-//! The segment manifest (`segments/manifest.json`): a small file listing the shard's segments and
+//! The segment manifest (`segments_manifest.json`, sitting next to the `segments/` directory): a
+//! small file listing the shard's segments and
 //! their state, so out-of-process readers (e.g. a read-only follower, possibly over object storage)
 //! can discover segments without scanning the filesystem.
 //!
@@ -33,7 +34,7 @@ pub enum SegmentManifestState {
     Retiring,
 }
 
-/// Contents of `segments/manifest.json`: a flat map of segment UUID to its state, e.g.
+/// Contents of `segments_manifest.json`: a flat map of segment UUID to its state, e.g.
 /// `{ "1b4e28ba-...": "active", "6ba7b810-...": "active" }`.
 ///
 /// # Consistency assumptions (important for readers)

@@ -4,8 +4,9 @@ use fs_err as fs;
 
 pub const WAL_PATH: &str = "wal";
 pub const SEGMENTS_PATH: &str = "segments";
-/// Segment manifest, written inside the `segments/` directory.
-pub const SEGMENT_MANIFEST_FILE: &str = "manifest.json";
+/// Segment manifest, written next to (not inside) the `segments/` directory so that older versions
+/// of Qdrant — which would otherwise choke on an unknown file inside `segments/` — are unaffected.
+pub const SEGMENT_MANIFEST_FILE: &str = "segments_manifest.json";
 pub const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
 pub const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 pub const APPLIED_SEQ_FILE: &str = "applied_seq.json";
@@ -16,6 +17,7 @@ pub const APPLIED_SEQ_FILE: &str = "applied_seq.json";
 pub struct ShardDataFiles {
     pub wal_path: PathBuf,
     pub segments_path: PathBuf,
+    pub segment_manifest_path: PathBuf,
     pub newest_clocks_path: PathBuf,
     pub oldest_clocks_path: PathBuf,
     pub applied_seq_path: PathBuf,
@@ -26,10 +28,11 @@ pub fn segments_path(shard_path: &Path) -> PathBuf {
     shard_path.join(SEGMENTS_PATH)
 }
 
-/// Path to the segment manifest (`segments/manifest.json`) for a shard.
+/// Path to the segment manifest (`segments_manifest.json`) for a shard, sitting next to the
+/// `segments/` directory rather than inside it.
 #[inline]
 pub fn segment_manifest_path(shard_path: &Path) -> PathBuf {
-    segments_path(shard_path).join(SEGMENT_MANIFEST_FILE)
+    shard_path.join(SEGMENT_MANIFEST_FILE)
 }
 
 #[inline]
@@ -57,6 +60,7 @@ pub fn get_shard_data_files(shard_path: &Path) -> ShardDataFiles {
     ShardDataFiles {
         wal_path: wal_path(shard_path),
         segments_path: segments_path(shard_path),
+        segment_manifest_path: segment_manifest_path(shard_path),
         newest_clocks_path: newest_clocks_path(shard_path),
         oldest_clocks_path: oldest_clocks_path(shard_path),
         applied_seq_path: applied_seq_path(shard_path),
@@ -75,6 +79,7 @@ pub fn clear_data(shard_path: &Path) -> std::io::Result<()> {
     let ShardDataFiles {
         wal_path,
         segments_path,
+        segment_manifest_path,
         newest_clocks_path,
         oldest_clocks_path,
         applied_seq_path,
@@ -86,6 +91,10 @@ pub fn clear_data(shard_path: &Path) -> std::io::Result<()> {
 
     if segments_path.exists() {
         fs::remove_dir_all(segments_path)?;
+    }
+
+    if segment_manifest_path.exists() {
+        fs::remove_file(segment_manifest_path)?;
     }
 
     if newest_clocks_path.exists() {
@@ -110,6 +119,7 @@ pub fn move_data(from_shard_path: &Path, to_shard_path: &Path) -> std::io::Resul
     let ShardDataFiles {
         wal_path: from_wal_path,
         segments_path: from_segments_path,
+        segment_manifest_path: from_segment_manifest_path,
         newest_clocks_path: from_newest_clocks_path,
         oldest_clocks_path: from_oldest_clocks_path,
         applied_seq_path: from_applied_seq_path,
@@ -118,6 +128,7 @@ pub fn move_data(from_shard_path: &Path, to_shard_path: &Path) -> std::io::Resul
     let ShardDataFiles {
         wal_path: to_wal_path,
         segments_path: to_segments_path,
+        segment_manifest_path: to_segment_manifest_path,
         newest_clocks_path: to_newest_clocks_path,
         oldest_clocks_path: to_oldest_clocks_path,
         applied_seq_path: to_applied_seq_path,
@@ -129,6 +140,10 @@ pub fn move_data(from_shard_path: &Path, to_shard_path: &Path) -> std::io::Resul
 
     if from_segments_path.exists() {
         common::fs::move_dir(&from_segments_path, &to_segments_path)?;
+    }
+
+    if from_segment_manifest_path.exists() {
+        common::fs::move_file(&from_segment_manifest_path, &to_segment_manifest_path)?;
     }
 
     if from_newest_clocks_path.exists() {
