@@ -1,0 +1,79 @@
+name: Nightly Model Testing
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # At 02:00
+  workflow_dispatch:
+  pull_request:  # TODO: temporary, remove before merge (test-drive on PR)
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  OP_NUM: 100000
+  SHARD_COUNT: 1
+  RESTART_PROBABILITY: 0.001
+
+jobs:
+  model-testing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: Install Protoc
+        uses: ./.github/actions/setup-protoc
+      - name: Install mold
+        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+      - name: Enable mold
+        # Only set the linker here. The mold link-arg goes into RUSTFLAGS below, because a
+        # command-line RUSTFLAGS overrides (does not merge with) config.toml's rustflags.
+        run: |
+          mkdir -p .cargo
+          echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
+          echo "linker = \"clang\"" >> .cargo/config.toml
+        shell: bash
+      - name: Build model testing binary
+        run: |
+          RUSTFLAGS="--cfg tokio_unstable -C link-arg=-fuse-ld=/usr/local/bin/mold" \
+            cargo build --bin model_testing --features service_debug --profile perf
+        shell: bash
+        timeout-minutes: 60
+      # Both runs reuse the single binary built above.
+      - name: Run model testing (async scorer)
+        run: |
+          target/perf/model_testing \
+            --op-num "$OP_NUM" \
+            --shard-count "$SHARD_COUNT" \
+            --restart-probability "$RESTART_PROBABILITY" \
+            --on-disk \
+            --async-scorer
+        shell: bash
+        timeout-minutes: 300
+      - name: Run model testing (no io_uring)
+        run: |
+          target/perf/model_testing \
+            --op-num "$OP_NUM" \
+            --shard-count "$SHARD_COUNT" \
+            --restart-probability "$RESTART_PROBABILITY" \
+            --on-disk
+        shell: bash
+        timeout-minutes: 300
