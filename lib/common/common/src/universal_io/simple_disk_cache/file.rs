@@ -231,10 +231,9 @@ where
     }
 
     fn new_state_from_scratch(&self, remote: R, known_length: Option<u64>) -> Result<State<R>> {
-        let len = if let Some(len) = known_length {
-            len
-        } else {
-            remote.len::<u8>()?
+        let len = match known_length {
+            Some(len) => len,
+            None => remote.len::<u8>()?,
         };
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
         Ok(State { remote, local })
@@ -286,17 +285,18 @@ where
         let mut init_guard = self.init_lock.lock();
         self.init_state(&mut init_guard, false, None)?;
 
-        let Some(State {
-            mut remote,
-            mut local,
-        }) = self.state.take()
-        else {
+        let Some(state) = self.state.take() else {
             // If `self.state` didn't initialize after `init_state`, we are not populating
             // and we haven't made any reads.
             //
             // The first read will take care of initializing to the remote length.
             return Ok(());
         };
+
+        let State {
+            mut remote,
+            mut local,
+        } = state;
 
         // Reopen remote so it reflects current length
         remote.reopen()?;
