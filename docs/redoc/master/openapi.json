@@ -12684,7 +12684,7 @@
             "type": "boolean"
           },
           "write_segment_manifest": {
-            "description": "Write a segment manifest (`segments/manifest.json`) listing the shard's segments and their state, so out-of-process readers can discover segments without scanning the filesystem.",
+            "description": "Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory) listing the shard's segments and their state, so out-of-process readers can discover segments without scanning the filesystem.",
             "default": false,
             "type": "boolean"
           },

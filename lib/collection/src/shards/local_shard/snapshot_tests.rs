@@ -78,7 +78,8 @@ fn test_snapshot_all() {
 }
 
 /// With the `write_segment_manifest` flag enabled, a shard snapshot includes the segment manifest
-/// (`segments/manifest.json`) listing every snapshotted segment as `active`.
+/// (`segments_manifest.json`, next to the `segments/` directory) listing every snapshotted segment
+/// as `active`.
 #[test]
 #[allow(clippy::field_reassign_with_default)]
 fn test_snapshot_includes_segment_manifest() {
@@ -100,7 +101,8 @@ fn test_snapshot_includes_segment_manifest() {
         .into_iter()
         .collect::<HashSet<_>>();
 
-    // The manifest is written to `<shard>/segments/manifest.json`, so the directory must exist.
+    // The manifest is written to `<shard>/segments_manifest.json`, next to the `segments/`
+    // directory, so that directory must exist for the segments themselves.
     fs_err::create_dir_all(dir.path().join(SEGMENTS_PATH)).unwrap();
 
     let mut holder = SegmentHolder::builder();
@@ -119,6 +121,19 @@ fn test_snapshot_includes_segment_manifest() {
     let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
         Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
 
+    // Write the segment manifest next to `segments/` at the snapshot root, mirroring how the local
+    // shard snapshot is produced.
+    let segment_manifest = holder
+        .read()
+        .segment_manifest_for_snapshot()
+        .expect("manifest must be present when flag is enabled");
+    let segment_manifest_json = serde_json::to_vec(&segment_manifest).unwrap();
+    tar.blocking_append_data(
+        &segment_manifest_json,
+        std::path::Path::new(SEGMENT_MANIFEST_FILE),
+    )
+    .unwrap();
+
     snapshot_all_segments(
         holder.clone(),
         segments_dir.path(),
@@ -133,7 +148,8 @@ fn test_snapshot_includes_segment_manifest() {
     )
     .unwrap();
 
-    let manifest_entry_path = format!("{SEGMENTS_PATH}/{SEGMENT_MANIFEST_FILE}");
+    // The manifest sits at the snapshot root, next to (not inside) `segments/`.
+    let manifest_entry_path = SEGMENT_MANIFEST_FILE.to_string();
 
     let mut tar = tar::Archive::new(File::open(snapshot_file.path()).unwrap());
     let mut manifest_bytes = None;
@@ -148,7 +164,7 @@ fn test_snapshot_includes_segment_manifest() {
     }
 
     let manifest_bytes =
-        manifest_bytes.expect("snapshot must contain segments/manifest.json when flag is enabled");
+        manifest_bytes.expect("snapshot must contain segments_manifest.json when flag is enabled");
     let manifest: SegmentsManifest = serde_json::from_slice(&manifest_bytes).unwrap();
 
     let manifest_uuids = manifest

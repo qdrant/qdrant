@@ -96,6 +96,32 @@ impl LocalShard {
 
             let handle = tokio::task::spawn_blocking(move || {
                 // Do not change segments while snapshotting
+
+                // If the shard maintains a segment manifest (`segments_manifest.json`), include it
+                // in the snapshot so out-of-process readers can discover segments without scanning
+                // the filesystem. It lives next to (not inside) the `segments/` directory, so older
+                // versions of Qdrant that don't know about it are unaffected. Captured before
+                // proxying: proxies preserve the wrapped segments' UUIDs, which are exactly the
+                // segment directories written into the snapshot, so the manifest matches the
+                // snapshot contents.
+                if let Some(segment_manifest) = segments.read().segment_manifest_for_snapshot() {
+                    let segment_manifest_json =
+                        serde_json::to_vec(&segment_manifest).map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "failed to serialize segment manifest into JSON: {err}"
+                            ))
+                        })?;
+                    tar.blocking_append_data(
+                        &segment_manifest_json,
+                        Path::new(SEGMENT_MANIFEST_FILE),
+                    )
+                    .map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "failed to archive segment manifest: {err}"
+                        ))
+                    })?;
+                }
+
                 snapshot_all_segments(
                     segments.clone(),
                     &segments_path,
@@ -265,22 +291,6 @@ pub fn snapshot_all_segments(
 ) -> OperationResult<()> {
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
-
-    // If the shard maintains a segment manifest (`segments/manifest.json`), include it in the
-    // snapshot so out-of-process readers can discover segments without scanning the filesystem.
-    // Captured before proxying: proxies preserve the wrapped segments' UUIDs, which are exactly the
-    // segment directories written into the snapshot, so the manifest matches the snapshot contents.
-    if let Some(segment_manifest) = segments.read().segment_manifest_for_snapshot() {
-        let segment_manifest_json = serde_json::to_vec(&segment_manifest).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to serialize segment manifest into JSON: {err}"
-            ))
-        })?;
-        tar.blocking_append_data(&segment_manifest_json, Path::new(SEGMENT_MANIFEST_FILE))
-            .map_err(|err| {
-                OperationError::service_error(format!("failed to archive segment manifest: {err}"))
-            })?;
-    }
 
     proxy_all_segments_and_apply(
         segments,
