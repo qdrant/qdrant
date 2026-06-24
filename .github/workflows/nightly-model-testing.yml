@@ -44,19 +44,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
-      - name: Install mold
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-      - name: Enable mold
-        # Only set the linker here. The mold link-arg goes into RUSTFLAGS below, because a
-        # command-line RUSTFLAGS overrides (does not merge with) config.toml's rustflags.
-        run: |
-          mkdir -p .cargo
-          echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
-          echo "linker = \"clang\"" >> .cargo/config.toml
-        shell: bash
       - name: Build model testing binary
         run: |
-          RUSTFLAGS="--cfg tokio_unstable -C link-arg=-fuse-ld=/usr/local/bin/mold" \
+          RUSTFLAGS="--cfg tokio_unstable" \
             cargo build --bin model_testing --features service_debug --profile perf
         shell: bash
         timeout-minutes: 60
