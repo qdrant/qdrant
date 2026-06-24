@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
-use serde::Serialize;
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 // Multivector should be small enough to fit the chunk of vector storage
@@ -63,6 +65,125 @@ where
         err.add_param(Cow::from("max"), &max);
     }
     Err(err)
+}
+
+pub fn deserialize_usize_field<'de, D>(
+    deserializer: D,
+    field: &str,
+    min: usize,
+) -> Result<usize, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    value_to_usize(value, field, min)
+}
+
+pub fn deserialize_option_usize_field<'de, D>(
+    deserializer: D,
+    field: &str,
+    min: usize,
+) -> Result<Option<usize>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    value
+        .map(|value| value_to_usize(value, field, min))
+        .transpose()
+}
+
+pub fn deserialize_u32_field<'de, D>(
+    deserializer: D,
+    field: &str,
+    min: u32,
+) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let value = value_to_usize(value, field, min as usize)?;
+    u32::try_from(value).map_err(|_| {
+        D::Error::custom(format!(
+            "{field}: value {value} invalid, must fit into a 32-bit unsigned integer"
+        ))
+    })
+}
+
+pub fn deserialize_option_f32_field<'de, D>(
+    deserializer: D,
+    field: &str,
+) -> Result<Option<f32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    value.map(|value| value_to_f32(value, field)).transpose()
+}
+
+fn value_to_usize<E>(value: Value, field: &str, min: usize) -> Result<usize, E>
+where
+    E: Error,
+{
+    match value {
+        Value::Number(number) => {
+            if let Some(value) = number.as_u64() {
+                usize::try_from(value).map_err(|_| {
+                    E::custom(format!(
+                        "{field}: value {value} invalid, must fit into an unsigned integer"
+                    ))
+                })
+            } else if let Some(value) = number.as_i64() {
+                Err(E::custom(format!(
+                    "{field}: value {value} invalid, must be {min} or larger"
+                )))
+            } else {
+                Err(E::custom(format!(
+                    "{field}: invalid value {number}, expected an integer"
+                )))
+            }
+        }
+        other => Err(E::custom(format!(
+            "{field}: invalid type {}, expected an integer",
+            json_type_name(&other)
+        ))),
+    }
+}
+
+fn value_to_f32<E>(value: Value, field: &str) -> Result<f32, E>
+where
+    E: Error,
+{
+    match value {
+        Value::Number(number) => {
+            let Some(value) = number.as_f64() else {
+                return Err(E::custom(format!(
+                    "{field}: invalid value {number}, expected a finite number"
+                )));
+            };
+            if !value.is_finite() || value < f32::MIN as f64 || value > f32::MAX as f64 {
+                return Err(E::custom(format!(
+                    "{field}: value {value} invalid, expected a finite 32-bit float"
+                )));
+            }
+            Ok(value as f32)
+        }
+        other => Err(E::custom(format!(
+            "{field}: invalid type {}, expected a number",
+            json_type_name(&other)
+        ))),
+    }
+}
+
+fn json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
 }
 
 /// Build the `ValidationError` for a sparse vector configured with the

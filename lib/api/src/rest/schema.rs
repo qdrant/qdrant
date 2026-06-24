@@ -38,6 +38,50 @@ pub(crate) fn validate_non_empty_dense(vector: &[f32]) -> Result<(), ValidationE
     Ok(())
 }
 
+fn deserialize_limit<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_usize_field(deserializer, "limit", 1)
+}
+
+fn deserialize_optional_limit<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_option_usize_field(deserializer, "limit", 1)
+}
+
+fn deserialize_group_size<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_u32_field(deserializer, "group_size", 1)
+}
+
+fn deserialize_u32_limit<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_u32_field(deserializer, "limit", 1)
+}
+
+fn deserialize_optional_group_size<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_option_usize_field(deserializer, "group_size", 1)
+}
+
+fn deserialize_optional_score_threshold<'de, D>(
+    deserializer: D,
+) -> Result<Option<ScoreType>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_option_f32_field(deserializer, "score_threshold")
+}
+
 /// Vector Data
 /// Vectors can be described directly with values
 /// Or specified with source "objects" for inference
@@ -586,9 +630,11 @@ pub struct QueryRequestInternal {
     pub params: Option<SearchParams>,
 
     /// Return points with scores better than this threshold.
+    #[serde(default, deserialize_with = "deserialize_optional_score_threshold")]
     pub score_threshold: Option<ScoreType>,
 
     /// Max number of points to return. Default is 10.
+    #[serde(default, deserialize_with = "deserialize_optional_limit")]
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
 
@@ -1137,10 +1183,12 @@ pub struct BaseGroupRequest {
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group
+    #[serde(deserialize_with = "deserialize_group_size")]
     #[validate(range(min = 1))]
     pub group_size: u32,
 
     /// Maximum amount of groups to return
+    #[serde(deserialize_with = "deserialize_u32_limit")]
     #[validate(range(min = 1))]
     pub limit: u32,
 
@@ -1173,6 +1221,7 @@ pub struct SearchGroupsRequestInternal {
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    #[serde(default, deserialize_with = "deserialize_optional_score_threshold")]
     pub score_threshold: Option<ScoreType>,
 
     #[serde(flatten)]
@@ -1197,6 +1246,7 @@ pub struct SearchRequestInternal {
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
+    #[serde(deserialize_with = "deserialize_limit")]
     #[validate(range(min = 1))]
     pub limit: usize,
     /// Offset of the first result to return.
@@ -1212,6 +1262,7 @@ pub struct SearchRequestInternal {
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    #[serde(default, deserialize_with = "deserialize_optional_score_threshold")]
     pub score_threshold: Option<ScoreType>,
 }
 
@@ -1224,10 +1275,12 @@ pub struct QueryBaseGroupRequest {
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group. Default is 3.
+    #[serde(default, deserialize_with = "deserialize_optional_group_size")]
     #[validate(range(min = 1))]
     pub group_size: Option<usize>,
 
     /// Maximum amount of groups to return. Default is 10.
+    #[serde(default, deserialize_with = "deserialize_optional_limit")]
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
 
@@ -1572,5 +1625,60 @@ impl From<MaxOptimizationThreads> for Option<usize> {
             MaxOptimizationThreads::Setting(MaxOptimizationThreadsSetting::Auto) => None,
             MaxOptimizationThreads::Threads(threads) => Some(threads),
         }
+    }
+}
+
+#[cfg(test)]
+mod serde_error_tests {
+    use super::*;
+
+    fn deserialize_error<T>(json: &str) -> String
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        match serde_json::from_str::<T>(json) {
+            Ok(_) => panic!("expected deserialization error"),
+            Err(err) => err.to_string(),
+        }
+    }
+
+    #[test]
+    fn search_limit_deserialization_error_names_field() {
+        let err = deserialize_error::<SearchRequestInternal>(
+            r#"{"vector":[0.1,0.2,0.3,0.4],"limit":-1}"#,
+        );
+
+        assert!(err.contains("limit"), "{err}");
+        assert!(!err.contains("usize"), "{err}");
+    }
+
+    #[test]
+    fn search_score_threshold_deserialization_error_names_field() {
+        let err = deserialize_error::<SearchRequestInternal>(
+            r#"{"vector":[0.1,0.2,0.3,0.4],"limit":5,"score_threshold":"not_a_number"}"#,
+        );
+
+        assert!(err.contains("score_threshold"), "{err}");
+        assert!(!err.contains("f32"), "{err}");
+    }
+
+    #[test]
+    fn query_limit_deserialization_error_names_field() {
+        let err = deserialize_error::<QueryRequestInternal>(
+            r#"{"query":{"nearest":[0.1,0.2,0.3,0.4]},"limit":-1}"#,
+        );
+
+        assert!(err.contains("limit"), "{err}");
+        assert!(!err.contains("usize"), "{err}");
+    }
+
+    #[test]
+    fn group_size_deserialization_error_names_field() {
+        let err = deserialize_error::<BaseGroupRequest>(
+            r#"{"group_by":"group","group_size":-1,"limit":5}"#,
+        );
+
+        assert!(err.contains("group_size"), "{err}");
+        assert!(!err.contains("u32"), "{err}");
     }
 }
