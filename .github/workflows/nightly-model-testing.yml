@@ -4,16 +4,28 @@ on:
   schedule:
     - cron: '0 2 * * *'  # At 02:00
   workflow_dispatch:
+    inputs:
+      op_num:
+        description: 'Number of ops (leave empty to use the default OP_NUM)'
+        required: false
+        default: ''
+      seed:
+        description: 'RNG seed (leave empty for a random seed)'
+        required: false
+        default: ''
   pull_request:  # TODO: temporary, remove before merge (test-drive on PR)
 
 permissions:
   contents: read
+  issues: write  # open/update an issue when the nightly fails
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
   OP_NUM: 100000
   SHARD_COUNT: 1
   RESTART_PROBABILITY: 0.001
+  ID_POOL: 1000
 
 jobs:
   model-testing:
@@ -40,8 +52,10 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          # Save only on the nightly run (scheduled events run in the default-branch
+          # context, so its cache is restorable by all branches). dispatch/PR runs
+          # just restore, avoiding feature-branch caches churning the 10 GB budget.
+          save-if: ${{ github.event_name == 'schedule' }}
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: Build model testing binary
@@ -50,23 +64,62 @@ jobs:
             cargo build --bin model_testing --features service_debug --profile perf
         shell: bash
         timeout-minutes: 60
-      # Both runs reuse the single binary built above.
+      # Resolve the per-run parameters. workflow_dispatch inputs override the env
+      # constants when set; otherwise we keep OP_NUM and pick a fresh random seed so
+      # each night explores a different op sequence. The seed is logged in each run's
+      # banner (model_testing: seed=...), so a failing night stays reproducible.
+      # Inputs are read via env (not ${{ }} interpolation) to avoid script injection.
+      - name: Resolve run parameters
+        env:
+          INPUT_OP_NUM: ${{ inputs.op_num }}
+          INPUT_SEED: ${{ inputs.seed }}
+        run: |
+          if [ -n "$INPUT_OP_NUM" ]; then
+            echo "OP_NUM=$INPUT_OP_NUM" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$INPUT_SEED" ]; then
+            echo "SEED=$INPUT_SEED" >> "$GITHUB_ENV"
+          else
+            echo "SEED=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')" >> "$GITHUB_ENV"
+          fi
+        shell: bash
+      # Both runs reuse the single binary built above and share the same seed.
       - name: Run model testing (async scorer)
         run: |
           target/perf/model_testing \
+            --seed "$SEED" \
             --op-num "$OP_NUM" \
             --shard-count "$SHARD_COUNT" \
             --restart-probability "$RESTART_PROBABILITY" \
+            --id-pool "$ID_POOL" \
             --on-disk \
             --async-scorer
         shell: bash
         timeout-minutes: 300
       - name: Run model testing (no io_uring)
+        # Run even if the async-scorer pass failed, so both signals are collected.
+        if: ${{ !cancelled() }}
         run: |
           target/perf/model_testing \
+            --seed "$SEED" \
             --op-num "$OP_NUM" \
             --shard-count "$SHARD_COUNT" \
             --restart-probability "$RESTART_PROBABILITY" \
+            --id-pool "$ID_POOL" \
             --on-disk
         shell: bash
         timeout-minutes: 300
+      # Only alert for unattended nightly failures; dispatch/PR runs are watched live.
+      - name: Open issue on failure
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        continue-on-error: true
+        uses: JasonEtco/create-an-issue@1b14a70e4d8dc185e5cc76d3bec9eab20257b2c5 # v2.9.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEED: ${{ env.SEED }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        with:
+          filename: .github/ISSUE_TEMPLATE/model_testing_failure.md
+          update_existing: true
