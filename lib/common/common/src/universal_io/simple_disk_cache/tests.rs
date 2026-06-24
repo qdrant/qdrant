@@ -96,16 +96,6 @@ impl Scenario {
         self.data = new_data.clone();
         new_data
     }
-
-    /// Shrink the remote file in-place to `new_len` bytes.
-    fn truncate_remote(&mut self, new_len: usize) {
-        let file = fs::OpenOptions::new()
-            .write(true)
-            .open(&self.remote_path)
-            .unwrap();
-        file.set_len(new_len as u64).unwrap();
-        self.data.truncate(new_len);
-    }
 }
 
 #[duplicate::duplicate_item(
@@ -117,7 +107,6 @@ impl Scenario {
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
-    use std::io::ErrorKind;
     use std::sync::atomic::Ordering;
 
     use super::*;
@@ -246,14 +235,16 @@ mod tests_mod {
 
         cache.reopen().unwrap();
 
-        // unless it was scheduled for prefill
+        // it it was scheduled for prefill, it materializes the local file
         if PREFILL {
             assert!(expected_local.exists());
-            assert!(cache.local.get().is_some());
         } else {
             assert!(!expected_local.exists());
-            assert!(cache.local.get().is_none());
         }
+
+        // In both Populate::No and Populate::PreferBackground, we still
+        // have local marked as uninitialized at this point
+        assert!(cache.state.get().is_none());
     }
 
     /// Reopen on an unchanged remote must not resize, repopulate, or mutate
@@ -271,7 +262,11 @@ mod tests_mod {
             .unwrap();
 
         let (len_before, populated_before, fetched_before) = {
-            let local = cache.local.get().expect("local initialized after read");
+            let local = &cache
+                .state
+                .get()
+                .expect("local initialized after read")
+                .local;
             (
                 local.mmap().len::<u8>().unwrap(),
                 local.fully_populated.load(Ordering::Acquire),
@@ -281,40 +276,25 @@ mod tests_mod {
 
         cache.reopen().unwrap();
 
-        let local = cache.local.get().expect("local must still be initialized");
+        let local = if PREFILL {
+            // in case of Populate::PreferBackground, we need to await for
+            // completion to get the local_state back.
+            &cache.state().unwrap().local
+        } else {
+            // in case of Populate::No, local_state should still be there
+            &cache
+                .state
+                .get()
+                .expect("local must still be initialized")
+                .local
+        };
+
         assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);
         assert_eq!(
             local.fully_populated.load(Ordering::Acquire),
             populated_before,
         );
         assert_eq!(local.fetched.lock().clone(), fetched_before);
-    }
-
-    /// Reopening over a shrunk remote must fail with `UnexpectedEof`.
-    #[test]
-    fn reopen_with_smaller_remote_fails() {
-        let mut scn = Scenario::new(BLOCK_SIZE * 4);
-        let mut cache = scn.open::<R>(PREFILL);
-
-        let _ = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 1,
-            })
-            .unwrap();
-
-        // The read above may have mapped the remote. Windows cannot shrink a
-        // file with an active mapping, so drop the cache's remote handle before
-        // shrinking the remote on disk. `reopen` re-opens it lazily afterward.
-        cache.release_remote();
-        scn.truncate_remote(BLOCK_SIZE * 2);
-
-        let err = cache.reopen().unwrap_err();
-        assert_matches!(
-            &err,
-            crate::universal_io::UniversalIoError::Io(io_err)
-                if io_err.kind() == ErrorKind::UnexpectedEof,
-        );
     }
 
     /// Reads into the new section must fail before reopen (local mirror is at

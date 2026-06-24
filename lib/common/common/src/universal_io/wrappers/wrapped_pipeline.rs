@@ -95,12 +95,17 @@ where
     }
 
     #[inline]
-    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        self.inner.schedule_whole(user_data)
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
+        self.inner.schedule_whole(user_data, from)
     }
 
     #[inline]
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         self.inner.wait()
+    }
+
+    #[inline]
+    fn into_inner(self) -> File {
+        File::wrap(self.inner.into_inner())
     }
 }
