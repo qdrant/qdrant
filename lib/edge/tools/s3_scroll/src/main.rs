@@ -40,7 +40,7 @@ use edge::{
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::{BlobFile, BlobFs};
 use object_store::aws::AmazonS3;
-use shard::files::{SEGMENT_MANIFEST_FILE, SEGMENTS_PATH};
+use shard::files::{SEGMENTS_PATH, segment_manifest_path};
 use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 use uuid::Uuid;
 
@@ -109,17 +109,19 @@ struct Args {
 /// local filesystem, which is not where it lives for an S3 follower).
 struct S3ManifestSegmentEnumerator {
     fs: S3Fs,
+    /// The segment manifest, sitting next to (not inside) the `segments/` directory.
+    manifest_path: PathBuf,
+    /// The `segments/` directory; segment directories live under it as `segments/<uuid>`.
     segments_path: PathBuf,
 }
 
 impl SegmentEnumerator for S3ManifestSegmentEnumerator {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
-        let manifest_path = self.segments_path.join(SEGMENT_MANIFEST_FILE);
         let manifest: SegmentsManifest =
-            read_json_via(&self.fs, &manifest_path).map_err(|err| {
+            read_json_via(&self.fs, &self.manifest_path).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to read segment manifest {} over S3: {err}",
-                    manifest_path.display(),
+                    self.manifest_path.display(),
                 ))
             })?;
         Ok(manifest
@@ -240,6 +242,7 @@ fn main() -> Result<()> {
 
     let enumerator = S3ManifestSegmentEnumerator {
         fs: fs.clone(),
+        manifest_path: segment_manifest_path(&prefix),
         segments_path: prefix.join(SEGMENTS_PATH),
     };
 
