@@ -34,7 +34,10 @@ jobs:
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          # Force dev on the nightly schedule; otherwise let checkout use its default
+          # ref (e.g. the PR merge ref). github.ref_name would be "<pr>/merge" here,
+          # which checkout wrongly resolves as a branch and fails to fetch.
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
