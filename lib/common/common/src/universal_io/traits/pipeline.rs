@@ -84,10 +84,17 @@ where
 
     /// Like `Self::schedule`, but doesn't need to know file length upfront.
     /// Reads the entire file, byte-aligned (align = 1).
-    fn schedule_whole(&mut self, user_data: U) -> Result<()>;
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()>;
 
     /// See [`BorrowedReadPipeline::wait()`].
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>>;
+
+    /// Consume the pipeline and return the underlying file, so it can be reused
+    /// without re-opening it.
+    ///
+    /// Any reads that were scheduled but not yet drained via [`Self::wait`] are
+    /// discarded.
+    fn into_inner(self) -> Self::File;
 
     #[inline]
     fn wait_bytemuck<T: Item>(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {

@@ -89,9 +89,12 @@ where
         Ok(())
     }
 
-    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        let length = self.file.len::<u8>() as u64;
-        self.schedule::<Sequential>(user_data, 0..length, 1)
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
+        let eof = self.file.len::<u8>() as u64;
+        if from >= eof {
+            return Ok(());
+        }
+        self.schedule::<Sequential>(user_data, from..eof, 1)
     }
 
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
@@ -102,5 +105,9 @@ where
         let end = usize::try_from(range.end).expect("range.end is within usize");
         let bytes = self.file.get_range_bytes(start..end, align)?;
         Ok(Some((user_data, bytes)))
+    }
+
+    fn into_inner(self) -> CachedSlice {
+        self.file
     }
 }

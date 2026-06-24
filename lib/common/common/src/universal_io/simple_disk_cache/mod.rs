@@ -20,6 +20,7 @@ pub trait DiskCacheRemote:
     UniversalRead<
         Fs: Clone + Send + Sync + UniversalReadFs<OpenExtra: Clone + Send + Sync>,
         OwnedReadPipeline<()>: Send,
+        OwnedReadPipeline<u64>: Send,
     > + Clone
 {
 }
@@ -30,6 +31,7 @@ where
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
     R::OwnedReadPipeline<()>: Send,
+    R::OwnedReadPipeline<u64>: Send,
 {
 }
 

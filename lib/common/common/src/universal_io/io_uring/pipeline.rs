@@ -94,13 +94,31 @@ where
         }
     }
 
-    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        let length = self.file.len::<u8>()?;
-        self.schedule::<Sequential>(user_data, 0..length, 1)
+    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
+        let eof = self.file.len::<u8>()?;
+        if from >= eof {
+            return Ok(());
+        }
+        self.schedule::<Sequential>(user_data, from..eof, 1)
     }
 
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         self.inner.wait()
+    }
+
+    fn into_inner(self) -> IoUringFile {
+        // Wrap in `ManuallyDrop` so our own `Drop` impl doesn't run; we take
+        // both fields out by hand instead.
+        let mut this = ManuallyDrop::new(self);
+
+        let Self { file, inner } = &mut *this;
+
+        // SAFETY: `this` is `ManuallyDrop`, so its destructor never runs and
+        // each field is taken exactly once.
+        let file = unsafe { ManuallyDrop::take(file) };
+        let inner = unsafe { ManuallyDrop::take(inner) };
+        drop(inner);
+        file
     }
 }
 
