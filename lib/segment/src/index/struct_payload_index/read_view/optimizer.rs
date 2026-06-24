@@ -12,9 +12,7 @@ use crate::index::query_estimator::{
     combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
     invert_estimation,
 };
-use crate::index::query_optimization::optimized_filter::{
-    OptimizedCondition, OptimizedFilter, OptimizedMinShould,
-};
+use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, Filter, MinShould};
@@ -55,78 +53,63 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(OptimizedFilter<'b>, CardinalityEstimation)> {
         let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
+        let Filter {
+            should,
+            min_should,
+            must,
+            must_not,
+        } = filter;
 
-        let optimized_filter = OptimizedFilter {
-            should: if let Some(conditions) = filter.should.as_ref()
-                && !conditions.is_empty()
-            {
-                let (optimized_conditions, estimation) = self.optimize_should(
-                    conditions,
-                    payload_provider.clone(),
-                    total,
-                    deferred_behavior,
-                    hw_counter,
-                )?;
-                filter_estimations.push(estimation);
-                Some(optimized_conditions)
-            } else {
-                None
-            },
-            // Keep an empty `min_should` when `min_count > 0`: it's
-            // unsatisfiable (match-none), and dropping it would match all
-            // (issue #9369). Only the no-op (empty, `min_count == 0`) is dropped.
-            min_should: if let Some(MinShould {
+        let (should, estimation) = self.optimize_should(
+            should.as_deref().unwrap_or(&[]),
+            payload_provider.clone(),
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
+        filter_estimations.push(estimation);
+
+        let (min_should, min_should_count) = match min_should.as_ref() {
+            Some(MinShould {
                 conditions,
                 min_count,
-            }) = filter.min_should.as_ref()
-                && (!conditions.is_empty() || *min_count > 0)
-            {
-                let (optimized_conditions, estimation) = self.optimize_min_should(
-                    conditions,
-                    *min_count,
-                    payload_provider.clone(),
-                    total,
-                    deferred_behavior,
-                    hw_counter,
-                )?;
-                filter_estimations.push(estimation);
-                Some(OptimizedMinShould {
-                    conditions: optimized_conditions,
-                    min_count: *min_count,
-                })
-            } else {
-                None
-            },
-            must: if let Some(conditions) = filter.must.as_ref()
-                && !conditions.is_empty()
-            {
-                let (optimized_conditions, estimation) = self.optimize_must(
-                    conditions,
-                    payload_provider.clone(),
-                    total,
-                    deferred_behavior,
-                    hw_counter,
-                )?;
-                filter_estimations.push(estimation);
-                Some(optimized_conditions)
-            } else {
-                None
-            },
-            must_not: if let Some(conditions) = filter.must_not.as_ref()
-                && !conditions.is_empty()
-            {
-                let (optimized_conditions, estimation) = self.optimize_must_not(
-                    conditions,
-                    payload_provider,
-                    total,
-                    deferred_behavior,
-                    hw_counter,
-                )?;
-                filter_estimations.push(estimation);
-                Some(optimized_conditions)
-            } else {
-                None
-            },
+            }) => (conditions.as_slice(), *min_count),
+            None => (&[][..], 0),
+        };
+        let (min_should, estimation) = self.optimize_min_should(
+            min_should,
+            min_should_count,
+            payload_provider.clone(),
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
+        filter_estimations.push(estimation);
+
+        let (must, estimation) = self.optimize_must(
+            must.as_deref().unwrap_or(&[]),
+            payload_provider.clone(),
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
+        filter_estimations.push(estimation);
+
+        let (must_not, estimation) = self.optimize_must_not(
+            must_not.as_deref().unwrap_or(&[]),
+            payload_provider,
+            total,
+            deferred_behavior,
+            hw_counter,
+        )?;
+        filter_estimations.push(estimation);
+
+        let optimized_filter = OptimizedFilter {
+            should,
+            min_should,
+            min_should_count,
+            must,
+            must_not,
         };
 
         Ok((
@@ -185,6 +168,11 @@ where
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'b>>, CardinalityEstimation)> {
+        if conditions.is_empty() {
+            // Empty `should` => match every point.
+            return Ok((Vec::new(), CardinalityEstimation::exact(total)));
+        }
+
         let mut converted = self.convert_conditions(
             conditions,
             payload_provider,
