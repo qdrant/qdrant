@@ -25,8 +25,12 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Tools in the main `qdrant` crate, gated behind its `service_debug` feature.
   # Keep this list in sync with the `service_debug` [[bin]] targets in Cargo.toml
   DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
+  # Standalone tool crates (own workspace member, no `service_debug` feature),
+  # built with `-p`. Bin name must match the crate name.
+  EDGE_BINS: edge-s3-scroll
   # Static target so the binaries run everywhere
   TARGET: x86_64-unknown-linux-musl
   # ---- Adjust to your GCS bucket ----
@@ -66,14 +70,19 @@ jobs:
 
       - name: Build debug tools
         run: |
+          # Tools in the qdrant crate (need the service_debug feature)
           cargo build --release --locked --features service_debug \
             --target "$TARGET" \
             $(printf -- '--bin %s ' $DEBUG_BINS)
+          # Standalone tool crates (no service_debug feature)
+          cargo build --release --locked \
+            --target "$TARGET" \
+            $(printf -- '-p %s ' $EDGE_BINS)
 
       - name: Collect binaries
         run: |
           mkdir -p debug-tools
-          for bin in $DEBUG_BINS; do
+          for bin in $DEBUG_BINS $EDGE_BINS; do
             cp "target/$TARGET/release/$bin" debug-tools/
           done
 
@@ -104,7 +113,7 @@ jobs:
           # Surface direct links in the job summary
           echo "## Debug tools uploaded" >> "$GITHUB_STEP_SUMMARY"
           echo "Latest (\`$branch\`):" >> "$GITHUB_STEP_SUMMARY"
-          for bin in $DEBUG_BINS; do
+          for bin in $DEBUG_BINS $EDGE_BINS; do
             echo "- [\`$bin\`]($base/$branch/$bin)" >> "$GITHUB_STEP_SUMMARY"
           done
           echo "Immutable: \`$base/$branch-${sha}/<bin>\`" >> "$GITHUB_STEP_SUMMARY"
