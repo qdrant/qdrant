@@ -20,7 +20,7 @@ env:
   # Keep this list in sync with the `service_debug` [[bin]] targets in Cargo.toml
   DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
   # ---- Adjust to your GCS bucket ----
-  GCS_BUCKET: qdrant-debug-tools
+  GCS_BUCKET: qdrant-debug
   GCS_ENDPOINT: https://storage.googleapis.com
   # GCS interop ignores the region, but the AWS CLI requires one to be set.
   AWS_REGION: auto
