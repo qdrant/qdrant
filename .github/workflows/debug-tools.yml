@@ -73,6 +73,11 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.GCS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.GCS_SECRET_ACCESS_KEY }}
           BRANCH: ${{ inputs.branch || github.ref_name }}
+          # Recent AWS CLI adds default CRC32 integrity checksums that GCS's
+          # S3-compatible UploadPart rejects (SignatureDoesNotMatch). Opt out so
+          # multipart uploads of the larger binaries work.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
           branch="${BRANCH//\//-}" # replace all / with -
           sha="$(git rev-parse HEAD)" # actual commit built from the chosen branch
