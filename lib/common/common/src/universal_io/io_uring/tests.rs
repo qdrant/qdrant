@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -23,36 +24,34 @@ fn test_file<T: bytemuck::Pod>(path: &Path, data: &[T], direct_io: bool) -> Resu
     )
 }
 
+/// Build a [`ReadRange`] for type `T` spanning `length` elements starting at
+/// element `offset`. E.g. `read_range::<u64>(2, 10)` covers `[2_u64..12_u64]`
+/// from the start of the file.
+fn read_range<T>(offset: usize, length: usize) -> ReadRange {
+    ReadRange {
+        byte_offset: (offset * size_of::<T>()) as u64,
+        length: length as u64,
+    }
+}
+
 #[test]
-fn test_io_uring_file_for_u64() -> Result<()> {
-    // 1. Write some u64 binary data to a file using regular std::fs APIs
+fn test_io_uring_read() -> Result<()> {
+    // 1. Populate test file with u64 binary data
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test_u64.bin");
 
     let data: Vec<u64> = (0..128).collect();
-    let bytes = bytemuck::cast_slice(&data);
-    fs_err::write(&path, bytes).unwrap();
+    let file = test_file(&dir.path().join("test_u64.bin"), &data, false)?;
+    let file = TypedStorage::<_, u64>::new(file);
 
-    let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra::default();
-    let fs = IoUringFs::from_context(Default::default())?;
-
-    // 2. Read data back using `IoUringFile` and verify it matches what was written
-    let file = TypedStorage::<IoUringFile, u64>::open(&fs, &path, opts, extra)?;
+    // 2. Read data back and verify it matches what was written
 
     // Read all elements
-    let read_back = file.read::<Sequential>(ReadRange {
-        byte_offset: 0,
-        length: data.len() as u64,
-    })?;
-    assert_eq!(read_back.as_ref(), &data);
+    let full = file.read::<Sequential>(read_range::<u64>(0, data.len()))?;
+    assert_eq!(full.as_ref(), &data);
 
-    // Read a sub-range (start at element 10, byte offset = 10 * size_of::<u64>())
-    let read_sub = file.read::<Sequential>(ReadRange {
-        byte_offset: 10 * size_of::<u64>() as u64,
-        length: 20,
-    })?;
-    assert_eq!(read_sub.as_ref(), &data[10..30]);
+    // Read a sub-range (elements 10..30)
+    let sub = file.read::<Sequential>(read_range::<u64>(10, 20))?;
+    assert_eq!(sub.as_ref(), &data[10..30]);
 
     // Verify len()
     let len = file.len()?;
@@ -62,30 +61,22 @@ fn test_io_uring_file_for_u64() -> Result<()> {
 }
 
 #[test]
-fn test_io_uring_read_batch() -> Result<()> {
+fn test_io_uring_read_batch_read_iter() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test_batch.bin");
 
     let data: Vec<u64> = (0..256).collect();
-    fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
+    let file = test_file(&dir.path().join("test_batch.bin"), &data, false)?;
+    let file = TypedStorage::<_, u64>::new(file);
 
-    let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra::default();
-    let fs = IoUringFs::from_context(Default::default())?;
-
-    let file = TypedStorage::<IoUringFile, u64>::open(&fs, &path, opts, extra)?;
-    let elem = size_of::<u64>() as u64;
-
-    // Non-contiguous ranges across the file.
-    #[rustfmt::skip]
+    // Non-contiguous ranges across the file (element offset, elements count)
     let ranges = [
-        ReadRange { byte_offset: 0,          length: 10 }, // [0..10]
-        ReadRange { byte_offset: 50 * elem,  length: 20 }, // [50..70]
-        ReadRange { byte_offset: 100 * elem, length: 5  }, // [100..105]
-        ReadRange { byte_offset: 200 * elem, length: 56 }, // [200..256]
+        read_range::<u64>(0, 10),   // [0..10]
+        read_range::<u64>(50, 20),  // [50..70]
+        read_range::<u64>(100, 5),  // [100..105]
+        read_range::<u64>(200, 56), // [200..256]
     ];
 
-    let expected: Vec<&[u64]> = vec![
+    let expected = [
         &data[0..10],
         &data[50..70],
         &data[100..105],
@@ -93,62 +84,61 @@ fn test_io_uring_read_batch() -> Result<()> {
     ];
 
     // --- read_batch (callback API) ---
-    let mut batch_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    file.read_batch::<Sequential, _>(ranges.iter().copied().enumerate(), |idx, slice| {
-        batch_results.push((idx, slice.to_vec()));
+    let mut batch_results = Vec::new();
+
+    file.read_batch::<Sequential, _>(ranges.into_iter().enumerate(), |idx, items| {
+        batch_results.push((idx, items.to_vec()));
         Ok(())
     })?;
 
-    batch_results.sort_by_key(|(idx, _)| *idx);
-    for (idx, items) in &batch_results {
+    batch_results.sort_by_key(|&(idx, _)| idx);
+
+    for (idx, items) in batch_results {
         assert_eq!(
             items.as_slice(),
-            expected[*idx],
+            expected[idx],
             "read_batch mismatch at index {idx}"
         );
     }
 
     // --- read_iter (iterator API) ---
-    let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    for record in file.read_iter::<Sequential, _>(ranges.iter().copied().enumerate())? {
-        let (idx, cow) = record?;
-        iter_results.push((idx, cow.into_owned()));
-    }
+    let read_iter = file.read_iter::<Sequential, _>(ranges.into_iter().enumerate())?;
 
-    iter_results.sort_by_key(|(idx, _)| *idx);
-    for (idx, items) in &iter_results {
+    let mut iter_results: Vec<_> = read_iter.collect::<Result<Vec<_>>>()?;
+    iter_results.sort_by_key(|&(idx, _)| idx);
+
+    for (idx, items) in iter_results {
         assert_eq!(
-            items.as_slice(),
-            expected[*idx],
+            items.as_ref(),
+            expected[idx],
             "read_iter mismatch at index {idx}"
         );
     }
 
     // --- read_iter with more ranges than the io_uring queue depth (64 > 16) ---
-    let many_ranges = (0..64).map(|i| ReadRange {
-        byte_offset: i as u64 * elem,
-        length: 1,
-    });
+    let many_ranges = (0..64).map(|i| read_range::<u64>(i, 1)).enumerate();
 
     let mut count = 0;
-    for record in file.read_iter::<Sequential, _>(many_ranges.enumerate())? {
-        let (idx, cow) = record?;
+    for record in file.read_iter::<Sequential, _>(many_ranges)? {
+        let (idx, items) = record?;
+
         assert_eq!(
-            cow.as_ref(),
+            items.as_ref(),
             &[data[idx]],
             "many-ranges mismatch at index {idx}"
         );
+
         count += 1;
     }
+
     assert_eq!(count, 64);
 
     Ok(())
 }
 
 #[test]
-fn test_io_uring_concurrent_read_iter() -> Result<()> {
+fn test_io_uring_read_iter_concurrent() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
-    let elem = size_of::<u64>() as u64;
 
     // Large enough to span many io_uring batches (64 ranges, queue depth 16).
     const NUM_ELEMENTS: u64 = 6400;
@@ -156,30 +146,18 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
     const CHUNK: u64 = NUM_ELEMENTS / NUM_RANGES; // 100 elements per range
 
     // File A: 0..NUM_ELEMENTS
-    let path_a = dir.path().join("a.bin");
     let data_a: Vec<u64> = (0..NUM_ELEMENTS).collect();
-    fs_err::write(&path_a, bytemuck::cast_slice(&data_a)).unwrap();
+    let file_a = test_file(&dir.path().join("a.bin"), &data_a, false)?;
+    let file_a = TypedStorage::<_, u64>::new(file_a);
 
     // File B: offset so values never overlap with A.
-    let path_b = dir.path().join("b.bin");
     let data_b: Vec<u64> = (1_000_000..1_000_000 + NUM_ELEMENTS).collect();
-    fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
-
-    let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra::default();
-    let fs = IoUringFs::from_context(Default::default())?;
-    let file_a = TypedStorage::<IoUringFile, u64>::open(&fs, &path_a, opts, extra)?;
-    let file_b = TypedStorage::<IoUringFile, u64>::open(&fs, &path_b, opts, extra)?;
+    let file_b = test_file(&dir.path().join("b.bin"), &data_b, false)?;
+    let file_b = TypedStorage::<_, u64>::new(file_b);
 
     // NUM_RANGES ranges, each reading CHUNK elements — well over the queue depth.
-    let ranges_a = (0..NUM_RANGES).map(|i| ReadRange {
-        byte_offset: i * CHUNK * elem,
-        length: CHUNK,
-    });
-    let ranges_b = (0..NUM_RANGES).map(|i| ReadRange {
-        byte_offset: i * CHUNK * elem,
-        length: CHUNK,
-    });
+    let ranges_a = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
+    let ranges_b = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
 
     let iter_a = file_a.read_iter::<Sequential, _>(ranges_a.enumerate())?;
     let iter_b = file_b.read_iter::<Sequential, _>(ranges_b.enumerate())?;
@@ -188,25 +166,32 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
     // thread-local io_uring ring. With in-flight operations left across
     // next() calls, one iterator can reap the other's CQEs.
     let mut count = 0u64;
+
     for (rec_a, rec_b) in iter_a.zip(iter_b) {
         let (idx_a, cow_a) = rec_a?;
         let (idx_b, cow_b) = rec_b?;
 
-        let start_a = idx_a as u64 * CHUNK;
+        let chunk_len = CHUNK as usize;
+
+        let offset_a = idx_a * chunk_len;
+        let data_a = &data_a[offset_a..offset_a + chunk_len];
         assert_eq!(
             cow_a.as_ref(),
-            &data_a[start_a as usize..(start_a + CHUNK) as usize],
+            data_a,
             "file A mismatch at range index {idx_a}"
         );
 
-        let start_b = idx_b as u64 * CHUNK;
+        let offset_b = idx_b * chunk_len;
+        let data_b = &data_b[offset_b..offset_b + chunk_len];
         assert_eq!(
             cow_b.as_ref(),
-            &data_b[start_b as usize..(start_b + CHUNK) as usize],
+            data_b,
             "file B mismatch at range index {idx_b}"
         );
+
         count += 1;
     }
+
     assert_eq!(count, NUM_RANGES);
 
     Ok(())
@@ -215,50 +200,44 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
 #[test]
 fn test_io_uring_read_multi_iter_basic() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
-    let elem = size_of::<u64>() as u64;
 
-    // File 0: 0..128
-    let path_0 = dir.path().join("f0.bin");
-    let data_0: Vec<u64> = (0..128).collect();
-    fs_err::write(&path_0, bytemuck::cast_slice(&data_0)).unwrap();
+    // File A: 0..128
+    let data_a: Vec<u64> = (0..128).collect();
+    let file_a = test_file(&dir.path().join("f0.bin"), &data_a, false)?;
 
-    // File 1: 1000..1128
-    let path_1 = dir.path().join("f1.bin");
-    let data_1: Vec<u64> = (1000..1128).collect();
-    fs_err::write(&path_1, bytemuck::cast_slice(&data_1)).unwrap();
-
-    let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra::default();
-    let fs = IoUringFs::from_context(Default::default())?;
-    let file_0 = fs.open(&path_0, opts, extra)?;
-    let file_1 = fs.open(&path_1, opts, extra)?;
-    let files = [file_0, file_1];
+    // File B: 1000..1128
+    let data_b: Vec<u64> = (1000..1128).collect();
+    let file_b = test_file(&dir.path().join("f1.bin"), &data_b, false)?;
 
     // Interleaved reads across both files.
-    #[rustfmt::skip]
     let reads = [
-        ('a', &files[0], ReadRange { byte_offset: 0,         length: 10 }), // f0[0..10]
-        ('b', &files[1], ReadRange { byte_offset: 20 * elem,  length: 5 }),  // f1[20..25]
-        ('c', &files[0], ReadRange { byte_offset: 50 * elem, length: 20 }), // f0[50..70]
-        ('d', &files[1], ReadRange { byte_offset: 0,         length: 10 }), // f1[0..10]
+        ('a', &file_a, read_range::<u64>(0, 10)),  // f0[0..10]
+        ('b', &file_b, read_range::<u64>(20, 5)),  // f1[20..25]
+        ('c', &file_a, read_range::<u64>(50, 20)), // f0[50..70]
+        ('d', &file_b, read_range::<u64>(0, 10)),  // f1[0..10]
     ];
 
     let expected = [
-        ('a', data_0[0..10].to_vec()),
-        ('b', data_1[20..25].to_vec()),
-        ('c', data_0[50..70].to_vec()),
-        ('d', data_1[0..10].to_vec()),
+        ('a', &data_a[0..10]),
+        ('b', &data_b[20..25]),
+        ('c', &data_a[50..70]),
+        ('d', &data_b[0..10]),
     ];
 
-    let mut results: Vec<(char, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
-        let (idx, cow) = record?;
-        results.push((idx, cow.into_owned()));
-    }
+    let iter = IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)?;
 
-    results.sort_by_key(|(idx, _)| *idx);
-    for (result, expected) in std::iter::zip(&results, &expected) {
-        assert_eq!(result, expected, "mismatch for read index {}", result.0);
+    let mut results: Vec<_> = iter.collect::<Result<_>>()?;
+    results.sort_by_key(|&(idx, _)| idx);
+
+    for (result, expected) in results.into_iter().zip(expected) {
+        let (res_char, res_bytes) = result;
+        let (exp_char, exp_bytes) = expected;
+
+        assert_eq!(
+            (res_char, res_bytes.as_ref()),
+            (exp_char, exp_bytes),
+            "mismatch for read index {res_char}",
+        );
     }
 
     Ok(())
@@ -267,7 +246,6 @@ fn test_io_uring_read_multi_iter_basic() -> Result<()> {
 #[test]
 fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
-    let elem = size_of::<u64>() as u64;
 
     const NUM_FILES: usize = 4;
     const ELEMENTS_PER_FILE: u64 = 256;
@@ -276,53 +254,41 @@ fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
     let mut all_data: Vec<Vec<u64>> = Vec::new();
     let mut files: Vec<IoUringFile> = Vec::new();
 
-    let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra::default();
-    let fs = IoUringFs::from_context(Default::default())?;
-
     for i in 0..NUM_FILES {
         let base = (i as u64) * 10_000;
-        let data: Vec<u64> = (base..base + ELEMENTS_PER_FILE).collect();
-        let path = dir.path().join(format!("f{i}.bin"));
-        fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-        let file = fs.open(&path, opts, extra)?;
-        files.push(file);
+        let data: Vec<u64> = (base..base + ELEMENTS_PER_FILE).collect();
+        let file = test_file(&dir.path().join(format!("f{i}.bin")), &data, false)?;
+
         all_data.push(data);
+        files.push(file);
     }
 
     // Generate reads: round-robin across files, each reading a small chunk.
-    let reads: Vec<((usize, usize), &IoUringFile, ReadRange)> = (0..NUM_FILES as u64
-        * RANGES_PER_FILE)
-        .map(|i| {
-            let file_idx = (i as usize) % NUM_FILES;
-            let range_idx = i / NUM_FILES as u64;
-            let offset = range_idx * 10; // non-overlapping chunks of 10
-            (
-                (file_idx, offset as usize),
-                &files[file_idx],
-                ReadRange {
-                    byte_offset: offset * elem,
-                    length: 10,
-                },
-            )
-        })
-        .collect();
+    let reads = (0..NUM_FILES as u64 * RANGES_PER_FILE).map(|i| {
+        let file_idx = (i as usize) % NUM_FILES;
+        let range_idx = i / NUM_FILES as u64;
+        let offset = (range_idx * 10) as usize; // non-overlapping chunks of 10
 
-    let mut results: Vec<((usize, usize), Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
-        let (idx, cow) = record?;
-        results.push((idx, cow.into_owned()));
-    }
+        let meta = (file_idx, offset);
+        let file = &files[file_idx];
+        let range = read_range::<u64>(offset, 10);
+
+        (meta, file, range)
+    });
+
+    let iter = IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)?;
+
+    let mut results: Vec<_> = iter.collect::<Result<_>>()?;
+    results.sort_by_key(|&(idx, _)| idx);
 
     assert_eq!(results.len(), NUM_FILES * RANGES_PER_FILE as usize);
 
-    results.sort_by_key(|(idx, _)| *idx);
-    for ((file_idx, offset), result) in results {
+    for ((file_idx, offset), items) in results {
         assert_eq!(
-            result.as_slice(),
+            items.as_ref(),
             &all_data[file_idx][offset..offset + 10],
-            "data mismatch at offset {offset}, file {file_idx}"
+            "data mismatch at offset {offset}, file {file_idx}",
         );
     }
 
@@ -332,55 +298,49 @@ fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
 /// Verify that `read_multi` (callback API) and `read_multi_iter` produce identical
 /// results, confirming the callback version correctly delegates to the iterator.
 #[test]
-fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
+fn test_io_uring_read_multi_read_multi_iter() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
-    let elem = size_of::<u64>() as u64;
 
-    let path_a = dir.path().join("a.bin");
     let data_a: Vec<u64> = (0..200).collect();
-    fs_err::write(&path_a, bytemuck::cast_slice(&data_a)).unwrap();
+    let file_a = test_file(&dir.path().join("a.bin"), &data_a, false)?;
 
-    let path_b = dir.path().join("b.bin");
     let data_b: Vec<u64> = (5000..5200).collect();
-    fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
+    let file_b = test_file(&dir.path().join("b.bin"), &data_b, false)?;
 
-    let opts = OpenOptions::new_for_test();
-    #[allow(clippy::default_constructed_unit_structs)]
-    let fs = IoUringFs::default();
-    let file_a = fs.open(&path_a, opts, IoUringOpenExtra::default())?;
-    let file_b = fs.open(&path_b, opts, IoUringOpenExtra::default())?;
-    let files = [file_a, file_b];
-
-    #[rustfmt::skip]
-    let reads: Vec<(usize, &IoUringFile, ReadRange)> = vec![
-        (0, &files[0], ReadRange { byte_offset: 0,           length: 50  }),
-        (1, &files[1], ReadRange { byte_offset: 10 * elem,   length: 30  }),
-        (2, &files[0], ReadRange { byte_offset: 100 * elem,  length: 50  }),
-        (3, &files[1], ReadRange { byte_offset: 0,           length: 100 }),
-        (4, &files[0], ReadRange { byte_offset: 150 * elem,  length: 50  }),
+    let reads = vec![
+        (0, &file_a, read_range::<u64>(0, 50)),
+        (1, &file_b, read_range::<u64>(10, 30)),
+        (2, &file_a, read_range::<u64>(100, 50)),
+        (3, &file_b, read_range::<u64>(0, 100)),
+        (4, &file_a, read_range::<u64>(150, 50)),
     ];
 
     // Collect via callback.
-    let mut callback_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    IoUringFile::read_multi::<Sequential, u64, _>(reads.clone(), |idx, data| {
-        callback_results.push((idx, data.to_vec()));
+    let mut callback_results = Vec::new();
+
+    IoUringFile::read_multi::<Sequential, u64, _>(reads.clone(), |idx, items| {
+        callback_results.push((idx, items.to_vec()));
         Ok(())
     })?;
 
+    callback_results.sort_by_key(|&(idx, _)| idx);
+
     // Collect via iterator.
-    let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
-        let (idx, cow) = record?;
-        iter_results.push((idx, cow.into_owned()));
-    }
+    let iter = IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)?;
 
-    callback_results.sort_by_key(|(idx, _)| *idx);
-    iter_results.sort_by_key(|(idx, _)| *idx);
+    let mut iter_results: Vec<_> = iter.collect::<Result<_>>()?;
+    iter_results.sort_by_key(|&(idx, _)| idx);
 
+    // Compare results
     assert_eq!(callback_results.len(), iter_results.len());
-    for (cb, it) in callback_results.iter().zip(iter_results.iter()) {
-        assert_eq!(cb.0, it.0, "operation index mismatch");
-        assert_eq!(cb.1, it.1, "data mismatch at op {}", cb.0);
+    for ((cb_idx, cb_items), (it_idx, it_items)) in callback_results.into_iter().zip(iter_results) {
+        assert_eq!(cb_idx, it_idx, "operation index mismatch");
+
+        assert_eq!(
+            cb_items.as_slice(),
+            it_items.as_ref(),
+            "data mismatch at op {cb_idx}"
+        );
     }
 
     Ok(())
@@ -400,6 +360,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         sa.sa_sigaction = noop_signal_handler as *const () as usize;
         sa.sa_flags = 0;
         libc::sigemptyset(&mut sa.sa_mask);
+
         let ret = libc::sigaction(libc::SIGUSR1, &sa, std::ptr::null_mut());
         assert_eq!(ret, 0, "failed to install SIGUSR1 handler");
     }
@@ -411,18 +372,10 @@ fn test_io_uring_eintr_handling() -> Result<()> {
     const TEST_DURATION_SECS: u64 = 10;
 
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("eintr_test.bin");
-    let data: Vec<u64> = (0..NUM_ELEMENTS).collect();
-    fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-    #[allow(clippy::default_constructed_unit_structs)]
-    let fs = IoUringFs::default();
-    let file = TypedStorage::<IoUringFile, u64>::open(
-        &fs,
-        &path,
-        OpenOptions::new_for_test(),
-        IoUringOpenExtra::default(),
-    )?;
+    let data: Vec<u64> = (0..NUM_ELEMENTS).collect();
+    let file = test_file(&dir.path().join("eintr_test.bin"), &data, false)?;
+    let file = TypedStorage::<_, u64>::new(file);
 
     let stop = Arc::new(AtomicBool::new(false));
     let signals_sent = Arc::new(AtomicU64::new(0));
@@ -440,7 +393,6 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         })
     };
 
-    let elem = size_of::<u64>() as u64;
     let chunk_size = NUM_ELEMENTS / RANGES_PER_ROUND;
     let mut eintr_errors = 0u64;
     let mut panics = 0u64;
@@ -453,31 +405,27 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         // Evict pages so reads actually block in io_uring_enter.
         file.clear_ram_cache().ok();
 
-        let ranges: Vec<(u64, ReadRange)> = (0..RANGES_PER_ROUND)
-            .map(|i| {
-                (
-                    i,
-                    ReadRange {
-                        byte_offset: i * chunk_size * elem,
-                        length: chunk_size,
-                    },
-                )
-            })
-            .collect();
+        let ranges = (0..RANGES_PER_ROUND).map(|i| {
+            let range = read_range::<u64>((i * chunk_size) as usize, chunk_size as usize);
+            (i, range)
+        });
 
         // catch_unwind: the Drop path has debug_assert!(self.is_empty())
         // which panics when in-flight requests leak due to EINTR.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
+
             let Ok(iter) = file.read_iter::<Sequential, _>(ranges) else {
                 return 1;
             };
+
             for record in iter {
                 if record.is_err() {
                     errors += 1;
                     break;
                 }
             }
+
             errors
         }));
 
