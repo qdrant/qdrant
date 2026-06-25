@@ -2,16 +2,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use nix::libc;
-use rstest::rstest;
 
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
 
-#[rstest]
-#[case(false)]
-#[case(true)]
-fn test_io_uring_file_for_u64(#[case] o_direct: bool) -> Result<()> {
+#[test]
+fn test_io_uring_file_for_u64() -> Result<()> {
     // 1. Write some u64 binary data to a file using regular std::fs APIs
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test_u64.bin");
@@ -21,9 +18,7 @@ fn test_io_uring_file_for_u64(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path, bytes).unwrap();
 
     let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra {
-        prevent_caching: o_direct,
-    };
+    let extra = IoUringOpenExtra::default();
     let fs = IoUringFs::from_context(Default::default())?;
 
     // 2. Read data back using `IoUringFile` and verify it matches what was written
@@ -50,10 +45,8 @@ fn test_io_uring_file_for_u64(#[case] o_direct: bool) -> Result<()> {
     Ok(())
 }
 
-#[rstest]
-#[case(false)]
-#[case(true)]
-fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
+#[test]
+fn test_io_uring_read_batch() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test_batch.bin");
 
@@ -61,9 +54,7 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
     let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra {
-        prevent_caching: o_direct,
-    };
+    let extra = IoUringOpenExtra::default();
     let fs = IoUringFs::from_context(Default::default())?;
 
     let file = TypedStorage::<IoUringFile, u64>::open(&fs, &path, opts, extra)?;
@@ -138,10 +129,8 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
     Ok(())
 }
 
-#[rstest]
-#[case(true)]
-#[case(false)]
-fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
+#[test]
+fn test_io_uring_concurrent_read_iter() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let elem = size_of::<u64>() as u64;
 
@@ -161,9 +150,7 @@ fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
     let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra {
-        prevent_caching: o_direct,
-    };
+    let extra = IoUringOpenExtra::default();
     let fs = IoUringFs::from_context(Default::default())?;
     let file_a = TypedStorage::<IoUringFile, u64>::open(&fs, &path_a, opts, extra)?;
     let file_b = TypedStorage::<IoUringFile, u64>::open(&fs, &path_b, opts, extra)?;
@@ -209,10 +196,8 @@ fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
     Ok(())
 }
 
-#[rstest]
-#[case(false)]
-#[case(true)]
-fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
+#[test]
+fn test_io_uring_read_multi_iter_basic() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let elem = size_of::<u64>() as u64;
 
@@ -227,9 +212,7 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
     fs_err::write(&path_1, bytemuck::cast_slice(&data_1)).unwrap();
 
     let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra {
-        prevent_caching: o_direct,
-    };
+    let extra = IoUringOpenExtra::default();
     let fs = IoUringFs::from_context(Default::default())?;
     let file_0 = fs.open(&path_0, opts, extra)?;
     let file_1 = fs.open(&path_1, opts, extra)?;
@@ -265,10 +248,8 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
     Ok(())
 }
 
-#[rstest]
-#[case(false)]
-#[case(true)]
-fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<()> {
+#[test]
+fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let elem = size_of::<u64>() as u64;
 
@@ -280,9 +261,7 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
     let mut files: Vec<IoUringFile> = Vec::new();
 
     let opts = OpenOptions::new_for_test();
-    let extra = IoUringOpenExtra {
-        prevent_caching: o_direct,
-    };
+    let extra = IoUringOpenExtra::default();
     let fs = IoUringFs::from_context(Default::default())?;
 
     for i in 0..NUM_FILES {
