@@ -130,7 +130,7 @@ struct Args {
     #[clap(long, value_parser = clap::value_parser!(u64).range(1..))]
     worker_threads: Option<u64>,
 
-    /// Promote the always-disabled (`FORCE_OFF`) ops — DeleteByFilter, CreateVectorName,
+    /// Promote the always-disabled (`FORCE_OFF`) ops — CreateVectorName,
     /// DeleteVectorName — to forced-on, so they're enabled in every swarm config and guaranteed
     /// to fire. These ops are masked off by default because they trip known engine bugs (see the
     /// `FORCE_OFF` comment in `op/mod.rs`); enable this to deliberately reproduce them. The rng-draw
