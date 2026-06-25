@@ -417,6 +417,22 @@ impl ShardHolder {
             }
         }
 
+        // Staging-only: hard-crash after reverting the scaled-down receiver
+        // replicas back to `Active` (each already persisted above) but before
+        // clearing `resharding_state` below. Reproduces a crash in the
+        // partial-persist window: replica state durably `Active`, resharding
+        // state still `Some`. On replay the `is_resharding()` gate reads `Active`
+        // and never re-runs the abort, so the orphaned resharding state survives.
+        // The env arms the build; a `crash_on_scale_down_revert` marker file in
+        // the working directory selects exactly which peer crashes.
+        #[cfg(feature = "staging")]
+        if direction == ReshardingDirection::Down
+            && std::env::var("QDRANT_STAGING_RESHARDING_CRASH_ON_SCALE_DOWN_REVERT").is_ok()
+            && std::path::Path::new("crash_on_scale_down_revert").exists()
+        {
+            std::process::exit(1);
+        }
+
         if let Some(ring) = self.rings.get_mut(shard_key) {
             log::debug!("reverting resharding hashring for shard {shard_id}");
             ring.abort_resharding(shard_id, direction);
