@@ -1,11 +1,11 @@
 name: Build debug tools
 
 # Builds the `service_debug` helper binaries (wal_inspector, segment_inspector, ...)
-# and uploads them to S3. These are debug-only tools built between releases; they are
-# intentionally NOT part of the release artifacts.
+# and uploads them to a GCS bucket via the S3-compatible XML API. These are debug-only
+# tools built between releases; they are intentionally NOT part of the release artifacts.
 #
 # Download (public):
-#   curl -LO https://<bucket>.s3.<region>.amazonaws.com/debug-tools/dev/wal_inspector
+#   curl -LO https://storage.googleapis.com/<bucket>/debug-tools/dev/wal_inspector
 
 on:
   push:
@@ -19,9 +19,11 @@ env:
   CARGO_TERM_COLOR: always
   # Keep this list in sync with the `service_debug` [[bin]] targets in Cargo.toml
   DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
-  # ---- Adjust these two to your bucket ----
-  S3_BUCKET: qdrant-debug-tools
-  AWS_REGION: us-east-1
+  # ---- Adjust to your GCS bucket ----
+  GCS_BUCKET: qdrant-debug-tools
+  GCS_ENDPOINT: https://storage.googleapis.com
+  # GCS interop ignores the region, but the AWS CLI requires one to be set.
+  AWS_REGION: auto
 
 jobs:
   build-debug-tools:
@@ -57,21 +59,21 @@ jobs:
             cp "target/release/$bin" debug-tools/
           done
 
-      - name: Upload to S3
+      - name: Upload to GCS
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # GCS HMAC interoperability keys (AWS-style), stored as repo secrets.
+          AWS_ACCESS_KEY_ID: ${{ secrets.GCS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.GCS_SECRET_ACCESS_KEY }}
         run: |
           branch="${GITHUB_REF_NAME//\//-}" # replace all / with -
-          base="https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/debug-tools"
+          base="${GCS_ENDPOINT}/${GCS_BUCKET}/debug-tools"
 
           # Upload under a moving branch prefix (always latest) and an immutable
-          # per-commit prefix (history). `--acl public-read` makes the objects
-          # downloadable over plain HTTPS; drop it if the bucket has ACLs disabled
-          # and grants public read via bucket policy instead.
+          # per-commit prefix (history). Public read is granted at the bucket/IAM
+          # level (allUsers -> Storage Object Viewer), so no per-object ACL here.
           for prefix in "$branch" "$branch-${GITHUB_SHA}"; do
-            aws s3 cp debug-tools/ "s3://${S3_BUCKET}/debug-tools/${prefix}/" \
-              --recursive --acl public-read --region "$AWS_REGION"
+            aws s3 cp debug-tools/ "s3://${GCS_BUCKET}/debug-tools/${prefix}/" \
+              --recursive --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
           done
 
           # Surface direct links in the job summary
