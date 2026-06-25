@@ -1,11 +1,11 @@
 name: Build debug tools
 
 # Builds the `service_debug` helper binaries (wal_inspector, segment_inspector, ...)
-# and publishes them to GHCR as an OCI artifact via ORAS. These are debug-only tools
-# built between releases; they are intentionally NOT part of the release artifacts.
+# and uploads them to S3. These are debug-only tools built between releases; they are
+# intentionally NOT part of the release artifacts.
 #
-# Pull them with:
-#   oras pull ghcr.io/qdrant/qdrant/debug-tools:dev
+# Download (public):
+#   curl -LO https://<bucket>.s3.<region>.amazonaws.com/debug-tools/dev/wal_inspector
 
 on:
   push:
@@ -19,13 +19,13 @@ env:
   CARGO_TERM_COLOR: always
   # Keep this list in sync with the `service_debug` [[bin]] targets in Cargo.toml
   DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
+  # ---- Adjust these two to your bucket ----
+  S3_BUCKET: qdrant-debug-tools
+  AWS_REGION: us-east-1
 
 jobs:
   build-debug-tools:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
@@ -57,23 +57,27 @@ jobs:
             cp "target/release/$bin" debug-tools/
           done
 
-      - name: Install ORAS
-        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
-
-      - name: Push to GHCR
-        working-directory: debug-tools
+      - name: Upload to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            oras login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-          repo="ghcr.io/${{ github.repository }}/debug-tools"
           branch="${GITHUB_REF_NAME//\//-}" # replace all / with -
+          base="https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/debug-tools"
 
-          # Comma-separated tags share a single push: a moving `dev` tag plus an
-          # immutable per-commit tag for history.
-          oras push \
-            "$repo:$branch,$branch-${GITHUB_SHA}" \
-            --artifact-type application/vnd.qdrant.debug-tools \
-            --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            $(printf '%s:application/octet-stream ' $DEBUG_BINS)
+          # Upload under a moving branch prefix (always latest) and an immutable
+          # per-commit prefix (history). `--acl public-read` makes the objects
+          # downloadable over plain HTTPS; drop it if the bucket has ACLs disabled
+          # and grants public read via bucket policy instead.
+          for prefix in "$branch" "$branch-${GITHUB_SHA}"; do
+            aws s3 cp debug-tools/ "s3://${S3_BUCKET}/debug-tools/${prefix}/" \
+              --recursive --acl public-read --region "$AWS_REGION"
+          done
+
+          # Surface direct links in the job summary
+          echo "## Debug tools uploaded" >> "$GITHUB_STEP_SUMMARY"
+          echo "Latest (\`$branch\`):" >> "$GITHUB_STEP_SUMMARY"
+          for bin in $DEBUG_BINS; do
+            echo "- [\`$bin\`]($base/$branch/$bin)" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "Immutable: \`$base/$branch-${GITHUB_SHA}/<bin>\`" >> "$GITHUB_STEP_SUMMARY"
