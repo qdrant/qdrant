@@ -9,17 +9,17 @@ use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::order_by::{Direction, OrderBy};
+use segment::entry::ReadSegmentEntry;
 use segment::types::*;
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 use shard::retrieve::record_internal::RecordInternal;
-use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::retrieve::retrieve_blocking::retrieve_over;
 use shard::scroll::ScrollRequestInternal;
 
-use super::EdgeShard;
-use crate::DEFAULT_EDGE_TIMEOUT;
+use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
-impl EdgeShard {
-    pub fn scroll(
+impl<H: ReadSegmentHandle> EdgeReadView<H> {
+    pub(crate) fn scroll(
         &self,
         request: ScrollRequestInternal,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
@@ -74,7 +74,7 @@ impl EdgeShard {
         }
     }
 
-    pub fn query_scroll(
+    pub(crate) fn query_scroll(
         &self,
         request: &QueryScrollRequestInternal,
     ) -> OperationResult<Vec<ScoredPoint>> {
@@ -137,14 +137,13 @@ impl EdgeShard {
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
-        let (non_appendable, appendable) = self.segments.read().split_segments();
         let hw_counter = hw_measurement_acc.get_counter_cell();
 
-        let point_ids: Vec<_> = non_appendable
-            .into_iter()
-            .chain(appendable)
+        let point_ids: Vec<_> = self
+            .segments
+            .iter()
             .map(|segment| {
-                segment.get().read().read_filtered(
+                segment.read_segment().read_filtered(
                     offset,
                     Some(limit),
                     filter,
@@ -155,12 +154,11 @@ impl EdgeShard {
             })
             .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
-        let mut points = retrieve_blocking(
-            self.segments.clone(),
+        let mut points = retrieve_over(
+            self.segment_arcs(),
             &point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
-            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,
@@ -183,14 +181,13 @@ impl EdgeShard {
         order_by: &OrderBy,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
-        let (non_appendable, appendable) = self.segments.read().split_segments();
         let hw_counter = hw_measurement_acc.get_counter_cell();
 
-        let read_results: Vec<_> = non_appendable
-            .into_iter()
-            .chain(appendable)
+        let read_results: Vec<_> = self
+            .segments
+            .iter()
             .map(|segment| {
-                segment.get().read().read_ordered_filtered(
+                segment.read_segment().read_ordered_filtered(
                     Some(limit),
                     filter,
                     order_by,
@@ -211,12 +208,11 @@ impl EdgeShard {
             .take(limit)
             .unzip();
 
-        let points = retrieve_blocking(
-            self.segments.clone(),
+        let points = retrieve_over(
+            self.segment_arcs(),
             &point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
-            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,
@@ -243,15 +239,13 @@ impl EdgeShard {
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
-        let (non_appendable, appendable) = self.segments.read().split_segments();
         let hw_counter = hw_measurement_acc.get_counter_cell();
 
-        let (point_count, mut point_ids): (Vec<_>, Vec<_>) = non_appendable
-            .into_iter()
-            .chain(appendable)
+        let (point_count, mut point_ids): (Vec<_>, Vec<_>) = self
+            .segments
+            .iter()
             .map(|segment| {
-                let segment = segment.get();
-                let segment = segment.read();
+                let segment = segment.read_segment();
 
                 let point_count = segment.available_point_count_without_deferred();
                 let point_ids = segment.read_random_filtered(
@@ -316,12 +310,11 @@ impl EdgeShard {
 
         let random_point_ids: Vec<_> = random_point_ids.into_iter().collect();
 
-        let random_points = retrieve_blocking(
-            self.segments.clone(),
+        let random_points = retrieve_over(
+            self.segment_arcs(),
             &random_point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
-            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,

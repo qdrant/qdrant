@@ -2,13 +2,15 @@ use std::io::Cursor;
 
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
-use common::universal_io::{ReadRange, UniversalRead};
+use common::universal_io::{OkNotFound, ReadRange, UniversalRead};
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::change::MappingChange;
-use crate::id_tracker::mutable_id_tracker::mappings_storage::read_mappings_iter;
-use crate::id_tracker::mutable_id_tracker::versions_storage::VERSION_ELEMENT_SIZE;
+use crate::id_tracker::mutable_id_tracker::mappings_storage::{mappings_path, read_mappings_iter};
+use crate::id_tracker::mutable_id_tracker::versions_storage::{
+    VERSION_ELEMENT_SIZE, versions_path,
+};
 use crate::types::SeqNumberType;
 
 /// Set of point offsets that changed during a [`ReadOnlyAppendableIdTracker::live_reload`].
@@ -123,11 +125,22 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// The read stops at the last fully-readable entry; a partial trailing entry is left in place
     /// so it can be consumed on a later reload once the writer flushed it completely.
     fn read_new_mapping_changes(&mut self) -> OperationResult<Vec<MappingChange>> {
-        // Refresh the handle to observe data appended by the writer.
-        self.mappings_file.reopen()?;
-        let file = &self.mappings_file;
+        // The mappings file is absent until the writer flushes the first point; open it lazily once
+        // it appears. Until then there is nothing to read.
+        if self.mappings_file.is_none() {
+            self.mappings_file = Self::try_open(&self.fs, &mappings_path(&self.segment_path))?;
+        }
+        let Some(file) = self.mappings_file.as_mut() else {
+            return Ok(Vec::new());
+        };
 
-        let file_len = file.len::<u8>()?;
+        // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+        // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+        // an empty file.
+        file.reopen().ok_not_found()?;
+        let Some(file_len) = file.len::<u8>().ok_not_found()? else {
+            return Ok(Vec::new());
+        };
 
         // Defensive: committed entries are never removed, but a flush may truncate a partial
         // trailing entry. If the file ever ends up shorter than our read position, continue from
@@ -169,19 +182,22 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// `None` for it (it is never given a fake version) until its version is appended here. We do
     /// not read versions for deleted points, a deleted point's version is considered gone.
     fn reload_versions(&mut self) -> OperationResult<usize> {
-        // Refresh the handle to observe data appended by the writer.
-        self.versions_file.reopen()?;
+        // The versions file is absent until the writer flushes the first point; open it lazily once
+        // it appears. Until then no version is committed.
+        if self.versions_file.is_none() {
+            self.versions_file = Self::try_open(&self.fs, &versions_path(&self.segment_path))?;
+        }
+        let Some(versions_file) = self.versions_file.as_mut() else {
+            return Ok(self.internal_to_version.len());
+        };
 
-        // Split the borrow so the read (from `versions_file`) can extend `internal_to_version`.
-        let Self {
-            segment_path: _,
-            internal_to_version,
-            mappings: _,
-            pending_inserts: _,
-            mappings_read_to: _,
-            mappings_file: _,
-            versions_file,
-        } = self;
+        // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+        // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+        // an empty file (no committed versions).
+        versions_file.reopen().ok_not_found()?;
+
+        // Disjoint field borrow so the read (from `versions_file`) can extend `internal_to_version`.
+        let internal_to_version = &mut self.internal_to_version;
 
         let loaded_len = internal_to_version.len() as u64;
 
@@ -189,7 +205,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // flush) is ignored, only fully-written versions are loaded. We read the byte length rather
         // than `len::<SeqNumberType>()` on purpose, some backends debug-assert the file length is a
         // whole number of elements, which a torn flush violates.
-        let versions_len = versions_file.len::<u8>()? / VERSION_ELEMENT_SIZE;
+        let Some(versions_bytes) = versions_file.len::<u8>().ok_not_found()? else {
+            return Ok(internal_to_version.len());
+        };
+        let versions_len = versions_bytes / VERSION_ELEMENT_SIZE;
 
         // Append the newly flushed tail. Anything beyond `versions_len` is not flushed yet and
         // stays absent until a later reload (the mapped-but-versionless case).

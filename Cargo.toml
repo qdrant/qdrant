@@ -361,6 +361,7 @@ members = [
     "lib/edge",
     "lib/edge/python",
     "lib/edge/python/codegen",
+    "lib/edge/tools/s3_scroll",
     "lib/gridstore",
     "lib/macros",
     "lib/posting_list",

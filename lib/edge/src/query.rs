@@ -10,6 +10,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::query_context::FormulaContext;
+use segment::entry::ReadSegmentEntry;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
     Filter, HasIdCondition, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -18,15 +19,14 @@ use shard::query::mmr::mmr_from_points_with_vector;
 use shard::query::planned_query::*;
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 use shard::query::*;
-use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::retrieve::retrieve_blocking::retrieve_over;
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use super::EdgeShard;
-use crate::DEFAULT_EDGE_TIMEOUT;
+use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
-impl EdgeShard {
-    pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
+impl<H: ReadSegmentHandle> EdgeReadView<H> {
+    pub(crate) fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
         let planned_query = PlannedQuery::try_from(vec![request])?;
 
         let PlannedQuery {
@@ -303,7 +303,7 @@ impl EdgeShard {
         Ok(top_fused)
     }
 
-    pub fn rescore_with_formula(
+    pub(crate) fn rescore_with_formula(
         &self,
         formula: ParsedFormula,
         prefetches_results: Vec<Vec<ScoredPoint>>,
@@ -324,17 +324,9 @@ impl EdgeShard {
 
         let mut rescored_results = Vec::new();
 
-        // Collect the segments first so we don't lock the segment holder during the operations.
-        let segments = self
-            .segments
-            .read()
-            .non_appendable_then_appendable_segments()
-            .collect::<Vec<_>>();
-
-        for segment in segments {
+        for segment in &self.segments {
             let rescored_result = segment
-                .get()
-                .read()
+                .read_segment()
                 .rescore_with_formula(ctx.clone(), &hw_counter)?;
 
             rescored_results.push(rescored_result);
@@ -371,16 +363,12 @@ impl EdgeShard {
             .into_iter()
             .flatten();
 
-        let vector_data_config = self
-            .config
-            .read()
-            .vector_data_config(&mmr.using)
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "vector data config for vector {} not found",
-                    mmr.using,
-                ))
-            })?;
+        let vector_data_config = self.config.vector_data_config(&mmr.using).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "vector data config for vector {} not found",
+                mmr.using,
+            ))
+        })?;
 
         // Even if we have fewer points than requested, still calculate MMR.
         let mut top_mmr = mmr_from_points_with_vector(
@@ -419,12 +407,11 @@ impl EdgeShard {
             .map(|scored_point| scored_point.id)
             .collect();
 
-        let records_map = retrieve_blocking(
-            self.segments.clone(),
+        let records_map = retrieve_over(
+            self.segment_arcs(),
             &point_ids,
             &WithPayload::from(with_payload),
             &with_vector,
-            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,

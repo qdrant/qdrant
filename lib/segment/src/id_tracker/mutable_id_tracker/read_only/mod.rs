@@ -25,12 +25,21 @@ use crate::types::{PointIdType, SeqNumberType};
 /// object storage, ...). The handles are retained between reloads and refreshed via
 /// [`UniversalRead::reopen`] to pick up data appended by the writer.
 ///
+/// The mappings and versions files may be absent: the writer only creates them once it flushes the
+/// first point (an empty file is never written), exactly as
+/// [`MutableIdTracker::open`](crate::id_tracker::mutable_id_tracker::MutableIdTracker::open)
+/// tolerates. A missing file is treated as an empty storage; the retained [`Self::fs`] lets the
+/// handle be opened lazily once the file appears.
+///
 /// The mapping only ever contains *committed* points. The writer flushes mappings before data
 /// before versions, so a point is fully written only once its version is present. An insert read
 /// from the mappings log is therefore held in [`Self::pending_inserts`] until its version is
 /// flushed, and only then linked into [`Self::mappings`].
 pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     segment_path: PathBuf,
+    /// Filesystem handle, retained so the mappings/versions files can be opened lazily once the
+    /// writer creates them (they are absent while empty).
+    fs: S::Fs,
     internal_to_version: Vec<SeqNumberType>,
     mappings: PointMappings,
 
@@ -48,9 +57,11 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// entry, so a partial trailing entry (a flush in progress) is re-read on the next reload.
     mappings_read_to: u64,
 
-    /// Backing handle for the append-only mappings log. Refreshed on live-reload.
-    mappings_file: S,
+    /// Backing handle for the append-only mappings log. `None` until the file exists; opened lazily
+    /// and refreshed on live-reload.
+    mappings_file: Option<S>,
 
-    /// Backing handle for the random-access versions array. Refreshed on live-reload.
-    versions_file: S,
+    /// Backing handle for the random-access versions array. `None` until the file exists; opened
+    /// lazily and refreshed on live-reload.
+    versions_file: Option<S>,
 }

@@ -5,12 +5,12 @@ use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVector};
 use shard::retrieve::record_internal::RecordInternal;
-use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::retrieve::retrieve_blocking::retrieve_over;
 
-use crate::{DEFAULT_EDGE_TIMEOUT, EdgeShard};
+use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
-impl EdgeShard {
-    pub fn retrieve(
+impl<H: ReadSegmentHandle> EdgeReadView<H> {
+    pub(crate) fn retrieve(
         &self,
         point_ids: &[ExtendedPointId],
         with_payload: Option<WithPayloadInterface>,
@@ -20,12 +20,11 @@ impl EdgeShard {
             WithPayload::from(with_payload.unwrap_or(WithPayloadInterface::Bool(true)));
         let with_vector = with_vector.unwrap_or(WithVector::Bool(false));
 
-        let mut points = retrieve_blocking(
-            self.segments.clone(),
+        let mut points = retrieve_over(
+            self.segment_arcs(),
             point_ids,
             &with_payload,
             &with_vector,
-            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             HwMeasurementAcc::disposable_edge(),
             DeferredBehavior::VisibleOnly,
