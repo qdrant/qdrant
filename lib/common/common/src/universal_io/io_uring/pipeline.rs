@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
-use std::ops::Range;
+use std::ops::{DerefMut as _, Range};
 
 use ::io_uring::types::Fd;
 
@@ -15,19 +15,22 @@ pub struct BorrowedIoUringPipeline<'file, U>
 where
     U: UserData,
 {
-    inner: IoUringPipelineInner<'file, U>,
+    inner: IoUringPipelineInner<U>,
+    _phantom: PhantomData<&'file ()>,
 }
 
-impl<'file, U> BorrowedReadPipeline<'file, U> for BorrowedIoUringPipeline<'file, U>
-where
-    U: UserData,
-{
+impl<'file, U: UserData> BorrowedReadPipeline<'file, U> for BorrowedIoUringPipeline<'file, U> {
     type File = IoUringFile;
 
     fn new() -> Result<Self> {
-        Ok(Self {
-            inner: IoUringPipelineInner::new()?,
-        })
+        let inner = IoUringPipelineInner::new()?;
+
+        let pipeline = Self {
+            inner,
+            _phantom: PhantomData,
+        };
+
+        Ok(pipeline)
     }
 
     fn can_schedule(&mut self) -> bool {
@@ -41,8 +44,7 @@ where
         range: Range<u64>,
         align: usize,
     ) -> Result<()> {
-        // Safety: `file.fd()` doesn't outlive the inner pipeline because of
-        // `'file` lifetime.
+        // SAFETY: `fd` does not outlive inner pipeline because `Self` is bound to `'file` lifetime
         unsafe {
             self.inner
                 .schedule(user_data, file.fd(), file.direct_io, range, align)
@@ -54,26 +56,23 @@ where
     }
 }
 
-pub struct OwnedIoUringPipeline<U>
-where
-    U: UserData,
-{
+pub struct OwnedIoUringPipeline<U: UserData> {
+    inner: ManuallyDrop<IoUringPipelineInner<U>>,
     file: ManuallyDrop<IoUringFile>,
-    inner: ManuallyDrop<IoUringPipelineInner<'static, U>>,
 }
 
-impl<U> OwnedReadPipeline<U> for OwnedIoUringPipeline<U>
-where
-    U: UserData,
-{
+impl<U: UserData> OwnedReadPipeline<U> for OwnedIoUringPipeline<U> {
     type File = IoUringFile;
 
     fn new(file: IoUringFile) -> Result<Self> {
         let inner = IoUringPipelineInner::new()?;
-        Ok(Self {
-            file: ManuallyDrop::new(file),
+
+        let pipeline = Self {
             inner: ManuallyDrop::new(inner),
-        })
+            file: ManuallyDrop::new(file),
+        };
+
+        Ok(pipeline)
     }
 
     fn can_schedule(&mut self) -> bool {
@@ -86,8 +85,7 @@ where
         range: Range<u64>,
         align: usize,
     ) -> Result<()> {
-        // Safety: `self.file.fd()` doesn't outlive the inner pipeline because
-        // of explicit drop order in `impl Drop`.
+        // SAFETY: `fd` does not outlive inner pipeline because of explicit drop order in `Drop`
         unsafe {
             self.inner
                 .schedule(user_data, self.file.fd(), self.file.direct_io, range, align)
@@ -96,9 +94,11 @@ where
 
     fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
         let eof = self.file.len::<u8>()?;
+
         if from >= eof {
             return Ok(());
         }
+
         self.schedule::<Sequential>(user_data, from..eof, 1)
     }
 
@@ -107,52 +107,39 @@ where
     }
 
     fn into_inner(self) -> IoUringFile {
-        // Wrap in `ManuallyDrop` so our own `Drop` impl doesn't run; we take
-        // both fields out by hand instead.
+        // Wrap `self` in `ManuallyDrop` so own `Drop` doesn't run at the end of `into_inner` scope
         let mut this = ManuallyDrop::new(self);
 
-        let Self { file, inner } = &mut *this;
+        // Drop `inner` before taking `file`
+        let Self { file, inner } = this.deref_mut();
 
-        // SAFETY: `this` is `ManuallyDrop`, so its destructor never runs and
-        // each field is taken exactly once.
-        let file = unsafe { ManuallyDrop::take(file) };
-        let inner = unsafe { ManuallyDrop::take(inner) };
-        drop(inner);
-        file
+        unsafe {
+            ManuallyDrop::drop(inner);
+            ManuallyDrop::take(file)
+        }
     }
 }
 
-impl<U> Drop for OwnedIoUringPipeline<U>
-where
-    U: UserData,
-{
+impl<U: UserData> Drop for OwnedIoUringPipeline<U> {
     fn drop(&mut self) {
-        // Drop `inner` before `file`.
+        // Drop `inner` before `file`
         let Self { file, inner } = self;
-        let file: IoUringFile = unsafe { ManuallyDrop::take(file) };
-        let inner: IoUringPipelineInner<_> = unsafe { ManuallyDrop::take(inner) };
-        drop(inner);
-        drop(file);
+
+        unsafe {
+            ManuallyDrop::drop(inner);
+            ManuallyDrop::drop(file);
+        }
     }
 }
 
-struct IoUringPipelineInner<'file, U>
-where
-    U: UserData,
-{
+struct IoUringPipelineInner<U: UserData> {
     runtime: IoUringReadRuntime<U>,
-    _phantom: PhantomData<&'file ()>,
 }
 
-impl<'file, U> IoUringPipelineInner<'file, U>
-where
-    U: UserData,
-{
+impl<U: UserData> IoUringPipelineInner<U> {
     fn new() -> Result<Self> {
-        Ok(Self {
-            runtime: IoUringReadRuntime::new()?,
-            _phantom: PhantomData,
-        })
+        let runtime = IoUringReadRuntime::new()?;
+        Ok(Self { runtime })
     }
 
     fn can_schedule(&mut self) -> bool {
@@ -161,7 +148,7 @@ where
 
     /// # Safety
     ///
-    /// The caller must ensure that the `fd` will not outlive the pipeline.
+    /// The caller must ensure that `fd` will not outlive the pipeline.
     unsafe fn schedule(
         &mut self,
         user_data: U,
@@ -184,7 +171,7 @@ where
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
+    fn wait<'a>(&mut self) -> Result<Option<(U, ACow<'a>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();
