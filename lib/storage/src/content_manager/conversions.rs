@@ -30,6 +30,7 @@ impl From<StorageError> for Status {
             StorageError::NotFound { .. } => tonic::Code::NotFound,
             StorageError::ServiceError { .. } => tonic::Code::Internal,
             StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
+            StorageError::StandaloneMode { .. } => tonic::Code::Unimplemented,
             StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
             StorageError::Timeout { .. } => tonic::Code::DeadlineExceeded,
             StorageError::AlreadyExists { .. } => tonic::Code::AlreadyExists,

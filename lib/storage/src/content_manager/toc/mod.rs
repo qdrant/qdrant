@@ -558,9 +558,11 @@ impl TableOfContent {
         let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
 
         if wait {
-            let dispatcher = self.toc_dispatcher.lock().clone().ok_or_else(|| {
-                StorageError::service_error("Qdrant is running in standalone mode")
-            })?;
+            let dispatcher = self
+                .toc_dispatcher
+                .lock()
+                .clone()
+                .ok_or_else(StorageError::standalone_mode)?;
             dispatcher
                 .consensus_state()
                 .propose_consensus_op_with_await(operation, None)
@@ -774,7 +776,7 @@ impl TableOfContent {
     fn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {
         self.consensus_proposal_sender
             .as_ref()
-            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))
+            .ok_or_else(StorageError::standalone_mode)
     }
 
     /// Insert dispatcher for access to table of contents and consensus.
