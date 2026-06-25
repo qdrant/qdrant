@@ -7,7 +7,6 @@ use super::mutable_geo_index::read_only::ReadOnlyAppendableGeoIndex;
 use super::on_disk_geo_index::OnDiskGeoIndex;
 use super::read_ops::GeoIndexRead;
 use crate::common::utils::MultiValue;
-use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 use crate::index::payload_config::IndexMutability;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 
@@ -39,8 +38,6 @@ mod read_ops;
 pub enum ReadOnlyGeoIndex<S: UniversalRead> {
     /// Loads into RAM from appendable Gridstore storage format.
     Appendable(ReadOnlyAppendableGeoIndex<S>),
-    /// Loads into RAM in immutable format.
-    Immutable(ImmutableGeoIndex<S>),
     /// Directly reads from storage in immutable format.
     OnDisk(OnDiskGeoIndex<S>),
 }
@@ -78,7 +75,6 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
             Self::Appendable(_) => IndexMutability::Mutable,
-            Self::Immutable(_) => IndexMutability::Immutable,
             Self::OnDisk(_) => IndexMutability::Immutable,
         }
     }

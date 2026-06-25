@@ -58,7 +58,8 @@ where
             false => Populate::PreferBackground,
         };
 
-        let Some(on_disk_index) = OnDiskNumericIndex::open(fs, path, populate, deleted_points)? else {
+        let Some(on_disk_index) = OnDiskNumericIndex::open(fs, path, populate, deleted_points)?
+        else {
             return Ok(None);
         };
 

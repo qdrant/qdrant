@@ -24,7 +24,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn points_count(&self) -> usize {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::points_count(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::points_count(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::points_count(index),
         }
     }
@@ -32,7 +31,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn points_values_count(&self) -> usize {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::points_values_count(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::points_values_count(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::points_values_count(index),
         }
     }
@@ -40,7 +38,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn max_values_per_point(&self) -> usize {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::max_values_per_point(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::max_values_per_point(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::max_values_per_point(index),
         }
     }
@@ -52,9 +49,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     ) -> OperationResult<usize> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
-                GeoIndexRead::points_of_hash(index, hash, hw_counter)
-            }
-            ReadOnlyGeoIndex::Immutable(index) => {
                 GeoIndexRead::points_of_hash(index, hash, hw_counter)
             }
             ReadOnlyGeoIndex::OnDisk(index) => {
@@ -70,9 +64,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     ) -> OperationResult<usize> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
-                GeoIndexRead::values_of_hash(index, hash, hw_counter)
-            }
-            ReadOnlyGeoIndex::Immutable(index) => {
                 GeoIndexRead::values_of_hash(index, hash, hw_counter)
             }
             ReadOnlyGeoIndex::OnDisk(index) => {
@@ -91,9 +82,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
             ReadOnlyGeoIndex::Appendable(index) => {
                 GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
             }
-            ReadOnlyGeoIndex::Immutable(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
-            }
             ReadOnlyGeoIndex::OnDisk(index) => {
                 GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
             }
@@ -103,7 +91,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn values_count(&self, idx: PointOffsetType) -> usize {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::values_count(index, idx),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::values_count(index, idx),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::values_count(index, idx),
         }
     }
@@ -111,7 +98,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::get_values(index, idx),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::get_values(index, idx),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::get_values(index, idx),
         }
     }
@@ -122,7 +108,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::iterator(index, values),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values),
         }
     }
@@ -135,9 +120,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
             ReadOnlyGeoIndex::Appendable(index) => {
                 GeoIndexRead::points_per_hash_filtered(index, filter)
             }
-            ReadOnlyGeoIndex::Immutable(index) => {
-                GeoIndexRead::points_per_hash_filtered(index, filter)
-            }
             ReadOnlyGeoIndex::OnDisk(index) => {
                 GeoIndexRead::points_per_hash_filtered(index, filter)
             }
@@ -147,7 +129,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn get_storage_type(&self) -> StorageType {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::get_storage_type(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::get_storage_type(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::get_storage_type(index),
         }
     }
@@ -155,7 +136,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn ram_usage_bytes(&self) -> usize {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::ram_usage_bytes(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::ram_usage_bytes(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::ram_usage_bytes(index),
         }
     }
@@ -163,7 +143,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn is_on_disk(&self) -> bool {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::is_on_disk(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::is_on_disk(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::is_on_disk(index),
         }
     }
@@ -171,7 +150,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn populate(&self) -> OperationResult<()> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::populate(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::populate(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::populate(index),
         }
     }
@@ -179,7 +157,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn clear_cache(&self) -> OperationResult<()> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::clear_cache(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::clear_cache(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::clear_cache(index),
         }
     }
@@ -187,7 +164,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn files(&self) -> Vec<PathBuf> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::files(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::files(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::files(index),
         }
     }
@@ -195,7 +171,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn immutable_files(&self) -> Vec<PathBuf> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::immutable_files(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::immutable_files(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::immutable_files(index),
         }
     }
@@ -203,7 +178,6 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn telemetry_index_type(&self) -> &'static str {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::telemetry_index_type(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::telemetry_index_type(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::telemetry_index_type(index),
         }
     }

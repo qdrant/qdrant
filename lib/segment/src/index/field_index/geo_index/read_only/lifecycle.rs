@@ -7,7 +7,6 @@ use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoIndex;
 use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::ReadOnlyGeoIndex;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 
 impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     /// Read-only mirror of [`GeoIndex::new_mutable`][1]: open the
@@ -50,18 +49,15 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
 
         let Some(on_disk_index) = OnDiskGeoIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
 
-        let index = if is_on_disk {
-            Self::OnDisk(on_disk_index)
-        } else {
-            Self::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
-        };
-
-        Ok(Some(index))
+        Ok(Some(Self::OnDisk(on_disk_index)))
     }
 }

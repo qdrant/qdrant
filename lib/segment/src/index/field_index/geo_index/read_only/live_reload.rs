@@ -21,9 +21,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyGeoIndex<S> {
             ReadOnlyGeoIndex::Appendable(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }
-            ReadOnlyGeoIndex::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
             ReadOnlyGeoIndex::OnDisk(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }
