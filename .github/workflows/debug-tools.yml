@@ -63,6 +63,9 @@ jobs:
           key: ${{ env.TARGET }}
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
           save-if: ${{ (inputs.branch || github.ref_name) == 'dev' }}
+          # The build succeeds but later steps (e.g. the GCS upload) can fail; still
+          # persist the compiled artifacts so the next run doesn't rebuild from scratch.
+          cache-on-failure: true
 
       - name: Build debug tools
         run: |
