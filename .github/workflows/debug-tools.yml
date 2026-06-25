@@ -8,9 +8,12 @@ name: Build debug tools
 #   curl -LO https://storage.googleapis.com/<bucket>/debug-tools/dev/wal_inspector
 
 on:
-  push:
-    branches: [ dev ]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build the debug tools from'
+        required: true
+        default: dev
 
 permissions:
   contents: read
@@ -32,10 +35,12 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.branch }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          save-if: ${{ inputs.branch == 'dev' }}
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: Install mold
@@ -64,14 +69,16 @@ jobs:
           # GCS HMAC interoperability keys (AWS-style), stored as repo secrets.
           AWS_ACCESS_KEY_ID: ${{ secrets.GCS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.GCS_SECRET_ACCESS_KEY }}
+          BRANCH: ${{ inputs.branch }}
         run: |
-          branch="${GITHUB_REF_NAME//\//-}" # replace all / with -
+          branch="${BRANCH//\//-}" # replace all / with -
+          sha="$(git rev-parse HEAD)" # actual commit built from the chosen branch
           base="${GCS_ENDPOINT}/${GCS_BUCKET}/debug-tools"
 
           # Upload under a moving branch prefix (always latest) and an immutable
           # per-commit prefix (history). Public read is granted at the bucket/IAM
           # level (allUsers -> Storage Object Viewer), so no per-object ACL here.
-          for prefix in "$branch" "$branch-${GITHUB_SHA}"; do
+          for prefix in "$branch" "$branch-${sha}"; do
             aws s3 cp debug-tools/ "s3://${GCS_BUCKET}/debug-tools/${prefix}/" \
               --recursive --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
           done
@@ -82,4 +89,4 @@ jobs:
           for bin in $DEBUG_BINS; do
             echo "- [\`$bin\`]($base/$branch/$bin)" >> "$GITHUB_STEP_SUMMARY"
           done
-          echo "Immutable: \`$base/$branch-${GITHUB_SHA}/<bin>\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Immutable: \`$base/$branch-${sha}/<bin>\`" >> "$GITHUB_STEP_SUMMARY"
