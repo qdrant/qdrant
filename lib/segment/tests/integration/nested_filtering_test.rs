@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;

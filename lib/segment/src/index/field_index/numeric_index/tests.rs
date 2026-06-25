@@ -15,8 +15,6 @@ use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
@@ -789,9 +787,7 @@ fn test_numeric_index_reload_short_deleted_bitslice(#[case] index_type: IndexTyp
     assert_eq!(index.inner().get_points_count(), 7);
 }
 
-fn test_cond<
-    T: Encodable + Numericable + PartialOrd + Clone + StoredValue + Send + Sync + Default + 'static,
->(
+fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
     index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,
     result: Vec<u32>,

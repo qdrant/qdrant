@@ -15,7 +15,7 @@ use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
@@ -75,7 +75,7 @@ pub trait PayloadIndexRead {
         &'a self,
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<DynConditionChecker<'a>>;
+    ) -> OperationResult<OptimizedFilter<'a>>;
 
     /// Look up a numeric index for the given payload key, if one exists.
     ///

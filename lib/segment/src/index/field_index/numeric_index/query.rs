@@ -16,6 +16,7 @@ use common::condition_checker::ConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use gridstore::Blob;
 use itertools::Either;
 use ordered_float::OrderedFloat;
 use uuid::Uuid;
@@ -30,7 +31,8 @@ use crate::index::field_index::utils::check_boundaries;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{
-    FieldCondition, Match, MatchValue, PayloadKeyType, Range, RangeInterface, ValueVariants,
+    FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchValue, PayloadKeyType, Range,
+    RangeInterface, UuidIntType, ValueVariants,
 };
 
 /// Histogram-driven cardinality estimation for a range condition.
@@ -345,13 +347,13 @@ where
     }))
 }
 
-struct RangeConditionChecker<'a, T, I> {
+struct RangeConditionChecker<'a, I, T> {
     index: &'a I,
     typed_range: Range<T>,
     hw_counter: HardwareCounterCell,
 }
 
-impl<T, I> ConditionChecker for RangeConditionChecker<'_, T, I>
+impl<I, T> ConditionChecker for RangeConditionChecker<'_, I, T>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
     I: NumericIndexRead<T>,
@@ -366,6 +368,18 @@ where
         ))
     }
 }
+
+pub trait NumericIndexValue: Encodable + Numericable + StoredValue + Send + Sync + Default
+where
+    Vec<Self>: Blob,
+{
+}
+
+impl NumericIndexValue for IntPayloadType {}
+
+impl NumericIndexValue for FloatPayloadType {}
+
+impl NumericIndexValue for UuidIntType {}
 
 /// Stream `(value, point)` pairs of the given range in ascending order.
 ///

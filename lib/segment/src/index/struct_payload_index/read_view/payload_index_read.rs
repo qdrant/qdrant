@@ -19,7 +19,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
 };
 use crate::index::query_estimator::estimate_filter;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
@@ -257,12 +257,8 @@ where
         &'b self,
         filter: &'b Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<DynConditionChecker<'b>> {
-        Ok(Box::new(self.optimized_filter(
-            filter,
-            DeferredBehavior::VisibleOnly,
-            hw_counter,
-        )?))
+    ) -> OperationResult<OptimizedFilter<'b>> {
+        self.optimized_filter(filter, DeferredBehavior::VisibleOnly, hw_counter)
     }
 
     fn for_each_payload_block(

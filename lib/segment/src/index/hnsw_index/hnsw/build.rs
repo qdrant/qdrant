@@ -4,7 +4,7 @@ use std::thread;
 
 use common::bitvec::{BitSliceExt as _, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::BoxCow;
+use common::cow::SimpleCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::progress_tracker::ProgressTracker;
@@ -39,6 +39,7 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::json_path::JsonPath;
@@ -671,15 +672,16 @@ fn build_filtered_graph(
         // This hardware counter can be discarded, since it is only used for internal operations
         let internal_hardware_counter = HardwareCounterCell::disposable();
 
-        let block_condition_checker = BuildConditionChecker {
-            filter_list: block_filter_list,
-            current_point: block_point_id,
-        };
+        let block_condition_checker =
+            OptimizedFilter::from_checker(Box::new(BuildConditionChecker {
+                filter_list: block_filter_list,
+                current_point: block_point_id,
+            }));
         let points_scorer = FilteredScorer::new_internal(
             block_point_id,
             vector_storage,
             quantized_vectors.as_ref(),
-            Some(BoxCow::Borrowed(&block_condition_checker)),
+            Some(SimpleCow::Borrowed(&block_condition_checker)),
             id_tracker.deleted_point_bitslice(),
             internal_hardware_counter,
         )?;

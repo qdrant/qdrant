@@ -1,6 +1,6 @@
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::BoxCow;
+use common::cow::SimpleCow;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 
 use super::HNSWIndexReadView;
@@ -12,7 +12,7 @@ use crate::index::PayloadIndexRead;
 use crate::index::hnsw_index::graph_layers::{GraphLayersWithVectors, SearchAlgorithm};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
@@ -110,7 +110,7 @@ where
                     .map(|f| {
                         self.payload_index
                             .filter_context(f, &hw_counter)
-                            .map(BoxCow::Owned)
+                            .map(SimpleCow::Owned)
                     })
                     .transpose()?,
                 deleted_points,
@@ -361,7 +361,7 @@ fn construct_search_scorer<'a, V, Q>(
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
     hardware_counter: HardwareCounterCell,
-    filter_context: Option<DynConditionChecker<'a>>,
+    filter_context: Option<OptimizedFilter<'a>>,
 ) -> OperationResult<FilteredScorer<'a>>
 where
     V: VectorStorageRead + RawScorerBuilder,
@@ -372,7 +372,7 @@ where
         vector.to_owned(),
         vector_storage,
         quantization_enabled.then_some(quantized_storage).flatten(),
-        filter_context.map(BoxCow::Owned),
+        filter_context.map(SimpleCow::Owned),
         deleted_points,
         hardware_counter,
     )
@@ -387,7 +387,7 @@ fn construct_batch_searcher<'a, V, Q>(
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
     hardware_counter: HardwareCounterCell,
-    filter_context: Option<DynConditionChecker<'a>>,
+    filter_context: Option<OptimizedFilter<'a>>,
 ) -> OperationResult<BatchFilteredSearcher<'a>>
 where
     V: VectorStorageRead + RawScorerBuilder,
@@ -398,7 +398,7 @@ where
         vectors,
         vector_storage,
         quantization_enabled.then_some(quantized_storage).flatten(),
-        filter_context.map(BoxCow::Owned),
+        filter_context.map(SimpleCow::Owned),
         top,
         deleted_points,
         hardware_counter,

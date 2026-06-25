@@ -3,14 +3,15 @@ use std::sync::atomic::AtomicBool;
 use common::bitvec::BitSlice;
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::BoxCow;
+use common::cow::SimpleCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use smallvec::SmallVec;
 
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -60,7 +61,7 @@ pub struct FilteredScorer<'a> {
 }
 
 pub struct ScorerFilters<'a> {
-    filter_context: Option<DynConditionChecker<'a>>,
+    filter_context: Option<FilterContext<'a>>,
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
     /// If there are no flags for some points, they are considered deleted.
@@ -70,7 +71,7 @@ pub struct ScorerFilters<'a> {
     vec_deleted: &'a BitSlice,
 }
 
-type DynConditionChecker<'a> = BoxCow<'a, dyn ConditionChecker<Error = OperationError> + 'a>;
+type FilterContext<'a> = SimpleCow<'a, OptimizedFilter<'a>>;
 
 impl<'a> ScorerFilters<'a> {
     /// Return true if vector satisfies current search context for given point:
@@ -85,7 +86,7 @@ impl<'a> ScorerFilters<'a> {
 
     fn as_borrowed(&'a self) -> Self {
         ScorerFilters {
-            filter_context: self.filter_context.as_ref().map(BoxCow::as_borrowed),
+            filter_context: self.filter_context.as_ref().map(SimpleCow::as_borrowed),
             point_deleted: self.point_deleted,
             vec_deleted: self.vec_deleted,
         }
@@ -123,7 +124,7 @@ impl<'a> FilteredScorer<'a> {
         query: QueryVector,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<DynConditionChecker<'a>>,
+        filter_context: Option<FilterContext<'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -150,7 +151,7 @@ impl<'a> FilteredScorer<'a> {
         point_id: PointOffsetType,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<DynConditionChecker<'a>>,
+        filter_context: Option<FilterContext<'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -291,7 +292,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         queries: &[&QueryVector],
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<DynConditionChecker<'a>>,
+        filter_context: Option<FilterContext<'a>>,
         top: usize,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
