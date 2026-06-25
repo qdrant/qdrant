@@ -21,9 +21,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFullTextIndex<S> {
             ReadOnlyFullTextIndex::Appendable(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }
-            ReadOnlyFullTextIndex::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
+
             ReadOnlyFullTextIndex::OnDisk(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }

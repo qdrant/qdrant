@@ -8,7 +8,6 @@ use super::super::on_disk_text_index::OnDiskFullTextIndex;
 use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::payload_config::IndexMutability;
 
 impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
@@ -53,7 +52,10 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
 
         let Some(on_disk_index) =
             OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points)?
@@ -61,13 +63,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            Self::OnDisk(on_disk_index)
-        } else {
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
-        };
-
-        Ok(Some(index))
+        return Ok(Some(Self::OnDisk(on_disk_index)));
     }
 
     /// Reports the on-disk format's mutability, mirroring
@@ -85,7 +81,6 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         match self {
             Self::Appendable(_) => IndexMutability::Mutable,
             Self::OnDisk(_) => IndexMutability::Immutable,
-            Self::Immutable(_) => IndexMutability::Immutable,
         }
     }
 }

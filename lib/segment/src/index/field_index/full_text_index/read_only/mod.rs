@@ -2,7 +2,6 @@ use common::universal_io::UniversalRead;
 
 use super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 use super::on_disk_text_index::OnDiskFullTextIndex;
-use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 
 mod lifecycle;
 mod live_reload;
@@ -35,8 +34,6 @@ mod read_ops;
 pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
     /// Loads into RAM from appendable storage format
     Appendable(ReadOnlyAppendableFullTextIndex<S>),
-    /// Loads into RAM from immutable format
-    Immutable(ImmutableFullTextIndex<S>),
     /// Directly reads from storage in immutable format
     OnDisk(OnDiskFullTextIndex<S>),
 }

@@ -25,7 +25,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.tokenizer(),
             ReadOnlyFullTextIndex::OnDisk(index) => index.tokenizer(),
-            ReadOnlyFullTextIndex::Immutable(index) => index.tokenizer(),
         }
     }
 
@@ -33,7 +32,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.telemetry_index_type(),
             ReadOnlyFullTextIndex::OnDisk(index) => index.telemetry_index_type(),
-            ReadOnlyFullTextIndex::Immutable(index) => index.telemetry_index_type(),
         }
     }
 
@@ -41,7 +39,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.points_count(),
             ReadOnlyFullTextIndex::OnDisk(index) => index.points_count(),
-            ReadOnlyFullTextIndex::Immutable(index) => index.points_count(),
         }
     }
 
@@ -49,7 +46,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.values_count(point_id),
             ReadOnlyFullTextIndex::OnDisk(index) => index.values_count(point_id),
-            ReadOnlyFullTextIndex::Immutable(index) => index.values_count(point_id),
         }
     }
 
@@ -57,7 +53,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.values_is_empty(point_id),
             ReadOnlyFullTextIndex::OnDisk(index) => index.values_is_empty(point_id),
-            ReadOnlyFullTextIndex::Immutable(index) => index.values_is_empty(point_id),
         }
     }
 
@@ -72,7 +67,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
                 index.for_each_token_id(iter, hw_counter, f)
             }
             ReadOnlyFullTextIndex::OnDisk(index) => index.for_each_token_id(iter, hw_counter, f),
-            ReadOnlyFullTextIndex::Immutable(index) => index.for_each_token_id(iter, hw_counter, f),
         }
     }
 
@@ -84,7 +78,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.filter_query(query, hw_counter),
             ReadOnlyFullTextIndex::OnDisk(index) => index.filter_query(query, hw_counter),
-            ReadOnlyFullTextIndex::Immutable(index) => index.filter_query(query, hw_counter),
         }
     }
 
@@ -101,9 +94,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
             ReadOnlyFullTextIndex::OnDisk(index) => {
                 index.estimate_query_cardinality(query, condition, hw_counter)
             }
-            ReadOnlyFullTextIndex::Immutable(index) => {
-                index.estimate_query_cardinality(query, condition, hw_counter)
-            }
         }
     }
 
@@ -111,7 +101,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.check_match(query, point_id),
             ReadOnlyFullTextIndex::OnDisk(index) => index.check_match(query, point_id),
-            ReadOnlyFullTextIndex::Immutable(index) => index.check_match(query, point_id),
         }
     }
 
@@ -128,9 +117,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
             ReadOnlyFullTextIndex::OnDisk(index) => {
                 index.for_each_payload_block_inner(threshold, key, f)
             }
-            ReadOnlyFullTextIndex::Immutable(index) => {
-                index.for_each_payload_block_inner(threshold, key, f)
-            }
         }
     }
 
@@ -138,7 +124,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.get_storage_type(),
             ReadOnlyFullTextIndex::OnDisk(index) => index.get_storage_type(),
-            ReadOnlyFullTextIndex::Immutable(index) => index.get_storage_type(),
         }
     }
 
@@ -146,7 +131,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.ram_usage_bytes(),
             ReadOnlyFullTextIndex::OnDisk(index) => index.ram_usage_bytes(),
-            ReadOnlyFullTextIndex::Immutable(index) => index.ram_usage_bytes(),
         }
     }
 
@@ -154,7 +138,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.is_on_disk(),
             ReadOnlyFullTextIndex::OnDisk(index) => index.is_on_disk(),
-            ReadOnlyFullTextIndex::Immutable(index) => index.is_on_disk(),
         }
     }
 }
