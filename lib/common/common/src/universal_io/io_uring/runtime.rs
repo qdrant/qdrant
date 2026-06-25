@@ -8,9 +8,6 @@ use slab::Slab;
 
 use super::*;
 
-/// Required alignment for `O_DIRECT` reads (both file offset and buffer).
-const KERNEL_PAGE_SIZE: usize = 4096; // 4 kB
-
 pub type IoUringReadRuntime<U> = IoUringRuntime<Read, U>;
 pub type IoUringWriteRuntime<'data, U> = IoUringRuntime<Write<'data>, U>;
 

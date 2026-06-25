@@ -7,6 +7,22 @@ use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
 
+/// Create `path`, populate it with the binary representation of `data`,
+/// then open and return it.
+fn test_file<T: bytemuck::Pod>(path: &Path, data: &[T], direct_io: bool) -> Result<IoUringFile> {
+    fs_err::write(path, bytemuck::cast_slice(data))?;
+
+    let fs = IoUringFs::from_context(Default::default())?;
+
+    fs.open(
+        path,
+        OpenOptions::new_for_test(),
+        IoUringOpenExtra {
+            prevent_caching: direct_io,
+        },
+    )
+}
+
 #[test]
 fn test_io_uring_file_for_u64() -> Result<()> {
     // 1. Write some u64 binary data to a file using regular std::fs APIs
@@ -487,6 +503,65 @@ fn test_io_uring_eintr_handling() -> Result<()> {
          {eintr_errors} errors, {panics} panics in {rounds} rounds ({total_signals} signals). \
          Fix: retry submit_and_wait when it returns io::ErrorKind::Interrupted."
     );
+
+    Ok(())
+}
+
+/// Reads an `O_DIRECT` file via [`IoUringFile::read_bytes`] and [`BorrowedIoUringPipeline`].
+///
+/// Every read is `KERNEL_PAGE_SIZE` aligned on both ends, with `align` set to `KERNEL_PAGE_SIZE`.
+/// The last block extends past EOF, so its read returns a truncated tail of valid bytes.
+#[test]
+fn test_io_uring_direct_io() -> Result<()> {
+    use super::pipeline::BorrowedIoUringPipeline;
+
+    let dir = tempfile::tempdir().unwrap();
+
+    // 2 + some pages of data
+    let data: Vec<u8> = (0..KERNEL_PAGE_SIZE * 2 + 1337)
+        .map(|idx| (idx % 256) as u8)
+        .collect();
+
+    let file = test_file(&dir.path().join("o_direct.bin"), &data, true)?;
+
+    // Read each page-aligned block. Both ends of the range and `align` are `KERNEL_PAGE_SIZE`
+    // aligned, as `O_DIRECT` requires.
+
+    // --- via `read_bytes` ---
+    for (idx, expected) in data.chunks(KERNEL_PAGE_SIZE).enumerate() {
+        let start = idx * KERNEL_PAGE_SIZE;
+        let end = start + expected.len();
+
+        let range = start as u64..end as u64;
+        let bytes = file.read_bytes::<Sequential>(range, KERNEL_PAGE_SIZE)?;
+
+        assert_eq!(bytes.as_ref(), expected, "O_DIRECT block {idx} mismatch");
+    }
+
+    // --- via read pipeline ---
+    let mut pipeline = BorrowedIoUringPipeline::new()?;
+
+    for (idx, expected) in data.chunks(KERNEL_PAGE_SIZE).enumerate() {
+        let start = idx * KERNEL_PAGE_SIZE;
+        let end = start + expected.len();
+
+        let range = start as u64..end as u64;
+        pipeline.schedule::<Sequential>((idx, expected), &file, range, KERNEL_PAGE_SIZE)?;
+    }
+
+    let mut count = 0;
+    while let Some(((idx, expected), bytes)) = pipeline.wait()? {
+        assert_eq!(
+            bytes.as_ref(),
+            expected,
+            "O_DIRECT pipeline block {idx} mismatch",
+        );
+
+        count += 1;
+    }
+
+    let num_blocks = data.len().div_ceil(KERNEL_PAGE_SIZE);
+    assert_eq!(count, num_blocks);
 
     Ok(())
 }

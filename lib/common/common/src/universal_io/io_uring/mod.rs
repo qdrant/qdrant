@@ -26,6 +26,9 @@ use super::*;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 
+/// Required alignment for `O_DIRECT` reads (both file offset and buffer).
+pub const KERNEL_PAGE_SIZE: usize = 4096; // 4 KB
+
 #[derive(Debug, Clone)]
 pub struct IoUringFile {
     file: Arc<fs::File>,
