@@ -27,9 +27,6 @@ where
             ReadOnlyMapIndex::Appendable(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }
-            ReadOnlyMapIndex::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
             ReadOnlyMapIndex::OnDisk(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }

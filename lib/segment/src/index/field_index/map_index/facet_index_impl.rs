@@ -120,12 +120,6 @@ where
                 });
                 Ok(())
             }
-            ReadOnlyMapIndex::Immutable(index) => {
-                index.for_points_values(points, |idx, slice| {
-                    f(idx, &mut slice.iter().map(|v| v.borrow().into()));
-                });
-                Ok(())
-            }
             ReadOnlyMapIndex::OnDisk(index) => {
                 index.for_points_values(points, hw_counter, |idx, vals| {
                     f(idx, &mut vals.map(|v| v.into()));
