@@ -1,0 +1,79 @@
+name: Build debug tools
+
+# Builds the `service_debug` helper binaries (wal_inspector, segment_inspector, ...)
+# and publishes them to GHCR as an OCI artifact via ORAS. These are debug-only tools
+# built between releases; they are intentionally NOT part of the release artifacts.
+#
+# Pull them with:
+#   oras pull ghcr.io/qdrant/qdrant/debug-tools:dev
+
+on:
+  push:
+    branches: [ dev ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep this list in sync with the `service_debug` [[bin]] targets in Cargo.toml
+  DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
+
+jobs:
+  build-debug-tools:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: Install Protoc
+        uses: ./.github/actions/setup-protoc
+      - name: Install mold
+        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+      - name: Enable mold
+        run: |
+          mkdir -p .cargo
+          echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
+          echo "linker = \"clang\"" >> .cargo/config.toml
+          echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+
+      - name: Build debug tools
+        run: |
+          cargo build --release --locked --features service_debug \
+            $(printf -- '--bin %s ' $DEBUG_BINS)
+
+      - name: Collect binaries
+        run: |
+          mkdir -p debug-tools
+          for bin in $DEBUG_BINS; do
+            cp "target/release/$bin" debug-tools/
+          done
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
+
+      - name: Push to GHCR
+        working-directory: debug-tools
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          repo="ghcr.io/${{ github.repository }}/debug-tools"
+          branch="${GITHUB_REF_NAME//\//-}" # replace all / with -
+
+          # Comma-separated tags share a single push: a moving `dev` tag plus an
+          # immutable per-commit tag for history.
+          oras push \
+            "$repo:$branch,$branch-${GITHUB_SHA}" \
+            --artifact-type application/vnd.qdrant.debug-tools \
+            --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            $(printf '%s:application/octet-stream ' $DEBUG_BINS)
