@@ -4,6 +4,9 @@ name: Build debug tools
 # and uploads them to a GCS bucket via the S3-compatible XML API. These are debug-only
 # tools built between releases; they are intentionally NOT part of the release artifacts.
 #
+# Built for x86_64-unknown-linux-musl so the binaries are statically linked and run on
+# any Linux host (glibc or musl, any distro).
+#
 # Download (public):
 #   curl -LO https://storage.googleapis.com/<bucket>/debug-tools/dev/wal_inspector
 
@@ -24,6 +27,8 @@ env:
   CARGO_TERM_COLOR: always
   # Keep this list in sync with the `service_debug` [[bin]] targets in Cargo.toml
   DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
+  # Static target so the binaries run everywhere
+  TARGET: x86_64-unknown-linux-musl
   # ---- Adjust to your GCS bucket ----
   GCS_BUCKET: qdrant-debug
   GCS_ENDPOINT: https://storage.googleapis.com
@@ -34,37 +39,42 @@ jobs:
   build-debug-tools:
     runs-on: ubuntu-latest
     steps:
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # `inputs.branch` on manual dispatch; the pushed branch otherwise
           ref: ${{ inputs.branch || github.ref_name }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
-          # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-          save-if: ${{ (inputs.branch || github.ref_name) == 'dev' }}
+          targets: x86_64-unknown-linux-musl
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
-      - name: Install mold
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-      - name: Enable mold
-        run: |
-          mkdir -p .cargo
-          echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
-          echo "linker = \"clang\"" >> .cargo/config.toml
-          echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+      - name: Install cross-compilation tools
+        uses: taiki-e/setup-cross-toolchain-action@3d9770ce98eb7dbcf378563182a5e8031165f75b # v1.41.0
+        with:
+          target: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          # Namespace the cache per target so the musl build doesn't collide with gnu caches
+          key: ${{ env.TARGET }}
+          # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
+          save-if: ${{ (inputs.branch || github.ref_name) == 'dev' }}
 
       - name: Build debug tools
         run: |
           cargo build --release --locked --features service_debug \
+            --target "$TARGET" \
             $(printf -- '--bin %s ' $DEBUG_BINS)
 
       - name: Collect binaries
         run: |
           mkdir -p debug-tools
           for bin in $DEBUG_BINS; do
-            cp "target/release/$bin" debug-tools/
+            cp "target/$TARGET/release/$bin" debug-tools/
           done
 
       - name: Upload to GCS
