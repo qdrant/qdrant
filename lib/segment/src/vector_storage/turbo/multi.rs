@@ -116,7 +116,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
         &path.join(OFFSETS_PATH),
         1,
         AdviceSetting::Global,
-        Some(in_ram),
+        populate,
     )?;
 
     let deleted = BitvecFlags::new(

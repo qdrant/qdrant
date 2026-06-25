@@ -64,7 +64,7 @@ mod tests {
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -138,7 +138,7 @@ mod tests {
             Distance::Dot,
             MultiVectorConfig::default(),
             AdviceSetting::Global,
-            false,
+            Populate::No,
         )
         .unwrap();
 
@@ -207,7 +207,7 @@ mod tests {
                 Distance::Dot,
                 MultiVectorConfig::default(),
                 AdviceSetting::Global,
-                false,
+                Populate::No,
             )
             .unwrap();
         assert_eq!(reader.total_vector_count(), first.len());

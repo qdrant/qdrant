@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::{Advice, AdviceSetting};
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
 use super::VectorStorageReadEnum;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -33,6 +33,11 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
             }
             // No on-disk data to open for these storage types: no-op.
             VectorStorageType::Memory | VectorStorageType::Empty => return Ok(None),
+        };
+
+        let populate = match populate {
+            true => Populate::PreferBackground,
+            false => Populate::No,
         };
 
         // Multivectors always use the appendable chunked layout.

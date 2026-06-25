@@ -48,12 +48,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         fs: &S::Fs,
         vectors_path: &Path,
         dim: usize,
-        populate: bool,
+        populate: Populate,
     ) -> OperationResult<Self> {
         let options = UniversalOpenOptions {
             writeable: false,
             need_sequential: true,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Global,
         };
         let read_only =
@@ -217,7 +217,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
-        populate: bool,
+        populate: Populate,
     ) -> OperationResult<Self> {
         // Allocate/open vectors file
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)

@@ -53,13 +53,10 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
         let is_appendable = config.is_appendable();
         let deferred_internal_id = deferred_internal_id.filter(|_| is_appendable);
 
-        // TODO(uio): use `Populate::PreferBackground` here and drill it into gridstore
-        let payload_populate =
-            if matches!(config.payload_storage_type, PayloadStorageType::InRamMmap) {
-                Populate::PreferBackground
-            } else {
-                Populate::No
-            };
+        let payload_populate = match config.payload_storage_type {
+            PayloadStorageType::InRamMmap => Populate::PreferBackground,
+            PayloadStorageType::Mmap => Populate::No,
+        };
         let payload_storage = Arc::new(AtomicRefCell::new(ReadOnlyPayloadStorage::open(
             fs,
             segment_path.to_path_buf(),

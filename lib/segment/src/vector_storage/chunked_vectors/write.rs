@@ -66,7 +66,7 @@ where
         fs: &S::Fs,
         directory: &Path,
         dim: usize,
-        populate: Option<bool>,
+        populate: bool,
     ) -> OperationResult<ChunkedVectorsConfig> {
         let config_file = ChunkedVectorsRead::<T, S>::config_file(directory);
         match ChunkedVectorsRead::<T, S>::load_config(fs, &config_file) {
@@ -92,7 +92,7 @@ where
     fn create_config(
         config_file: &Path,
         dim: usize,
-        populate: Option<bool>,
+        populate: bool,
     ) -> OperationResult<ChunkedVectorsConfig> {
         if dim == 0 {
             return Err(OperationError::service_error(
@@ -109,7 +109,7 @@ where
             chunk_size_bytes: corrected_chunk_size_bytes,
             chunk_size_vectors,
             dim,
-            populate,
+            populate: Some(populate),
         };
         atomic_save_json(config_file, &config)?;
         Ok(config)
@@ -120,7 +120,7 @@ where
         directory: &Path,
         dim: usize,
         advice: AdviceSetting,
-        populate: Option<bool>,
+        populate: Populate,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(directory)?;
         let status_path = Self::ensure_status_file(&fs, directory)?;
@@ -131,21 +131,21 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: populate.map(Populate::from).unwrap_or_default(),
+                populate,
                 advice: AdviceSetting::Global,
             },
             Default::default(),
         )?;
 
-        let config = Self::ensure_config(&fs, directory, dim, populate)?;
-        let chunks = read_chunks(&fs, directory, advice, populate.unwrap_or_default(), true)?;
+        let config = Self::ensure_config(&fs, directory, dim, populate.to_bool::<S>())?;
+        let chunks = read_chunks(&fs, directory, advice, populate, true)?;
         let inner = ChunkedVectorsRead {
             config,
             len: status.len,
             chunks,
             directory: directory.to_owned(),
             advice,
-            populate: populate.unwrap_or_default(),
+            populate,
         };
         Ok(Self { inner, status, fs })
     }
