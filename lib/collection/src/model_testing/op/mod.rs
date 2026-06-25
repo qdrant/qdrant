@@ -104,9 +104,8 @@ pub(super) enum Op {
     },
     /// Same as `DeleteVectors` but driven by a `num == X` filter instead of an id list.
     ///
-    /// NOTE: this is structurally similar to `DeleteByFilter` (which is currently disabled
-    /// due to a proxy-installation race — see that variant's comment). If post-reload count
-    /// mismatches appear here, the same engine-side race is the prime suspect.
+    /// NOTE: this is structurally similar to `DeleteByFilter`. If post-reload count
+    /// mismatches appear here, a filtered-delete reload-durability race is the prime suspect.
     DeleteVectorsByFilter {
         num: i64,
         names: Vec<VectorNameBuf>,
@@ -267,9 +266,6 @@ impl Swarm {
     /// is just removing it from `FORCE_OFF`.
     //
     // Currently in `FORCE_OFF` (known-broken):
-    // - DeleteByFilter (3): post-reload count mismatch — a live-time deletion doesn't survive
-    //   reload and the point is resurrected. #9116 fixed only the live filtered-search drop, NOT
-    //   reload durability; needs a forward-port of "durable proxy deletes" before re-enabling.
     // - CreateVectorName / DeleteVectorName (22, 23): (1) proxy-segment schema race (optimizer-on)
     //   → "missing / Not existing vector name"; (2) DeleteVectorName vs. storage incoherence
     //   (fires without the optimizer too) — `delete_named_vector` updates `CollectionParams` but
@@ -317,7 +313,7 @@ impl Swarm {
     const FORCE_ON: [usize; 1] = [0]; // Upsert
 
     /// Indices kept disabled in every swarm config: known-broken ops (see `BASE`).
-    const FORCE_OFF: [usize; 3] = [3, 22, 23]; // DeleteByFilter, CreateVectorName, DeleteVectorName
+    const FORCE_OFF: [usize; 2] = [22, 23]; // CreateVectorName, DeleteVectorName
 
     /// Draw a per-run config: each non-forced op is included with probability 0.5 (keeping its
     /// base weight); omitted ops get weight 0.
