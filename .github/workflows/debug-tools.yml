@@ -8,6 +8,8 @@ name: Build debug tools
 #   curl -LO https://storage.googleapis.com/<bucket>/debug-tools/dev/wal_inspector
 
 on:
+  push:
+    branches: [ dev ]
   workflow_dispatch:
     inputs:
       branch:
@@ -36,11 +38,12 @@ jobs:
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ inputs.branch }}
+          # `inputs.branch` on manual dispatch; the pushed branch otherwise
+          ref: ${{ inputs.branch || github.ref_name }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-          save-if: ${{ inputs.branch == 'dev' }}
+          save-if: ${{ (inputs.branch || github.ref_name) == 'dev' }}
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - name: Install mold
@@ -69,7 +72,7 @@ jobs:
           # GCS HMAC interoperability keys (AWS-style), stored as repo secrets.
           AWS_ACCESS_KEY_ID: ${{ secrets.GCS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.GCS_SECRET_ACCESS_KEY }}
-          BRANCH: ${{ inputs.branch }}
+          BRANCH: ${{ inputs.branch || github.ref_name }}
         run: |
           branch="${BRANCH//\//-}" # replace all / with -
           sha="$(git rev-parse HEAD)" # actual commit built from the chosen branch
