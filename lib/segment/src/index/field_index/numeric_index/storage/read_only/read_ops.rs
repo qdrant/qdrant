@@ -37,9 +37,6 @@ where
             ReadOnlyNumericIndexInner::Appendable(index) => {
                 index.check_values_any(idx, check_fn, hw_counter)
             }
-            ReadOnlyNumericIndexInner::Immutable(index) => {
-                index.check_values_any(idx, check_fn, hw_counter)
-            }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
                 index.check_values_any(idx, check_fn, hw_counter)
             }
@@ -49,7 +46,6 @@ where
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.get_values(idx),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.get_values(idx),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.get_values(idx),
         }
     }
@@ -57,7 +53,6 @@ where
     fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.values_count(idx),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.values_count(idx),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.values_count(idx),
         }
     }
@@ -65,7 +60,6 @@ where
     fn total_unique_values_count(&self) -> OperationResult<usize> {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.total_unique_values_count(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.total_unique_values_count(),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.total_unique_values_count(),
         }
     }
@@ -78,9 +72,6 @@ where
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         let boxed: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
             ReadOnlyNumericIndexInner::Appendable(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
-            }
-            ReadOnlyNumericIndexInner::Immutable(index) => {
                 Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
             }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
@@ -99,9 +90,6 @@ where
             ReadOnlyNumericIndexInner::Appendable(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound)?)
             }
-            ReadOnlyNumericIndexInner::Immutable(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
-            }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound)?)
             }
@@ -112,7 +100,6 @@ where
     fn get_histogram(&self) -> &Histogram<T> {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.get_histogram(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.get_histogram(),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.get_histogram(),
         }
     }
@@ -120,7 +107,6 @@ where
     fn get_points_count(&self) -> usize {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.get_points_count(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.get_points_count(),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.get_points_count(),
         }
     }
@@ -128,7 +114,6 @@ where
     fn get_max_values_per_point(&self) -> usize {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.get_max_values_per_point(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.get_max_values_per_point(),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.get_max_values_per_point(),
         }
     }
@@ -136,7 +121,6 @@ where
     fn storage_type(&self) -> StorageType {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.storage_type(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.storage_type(),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.storage_type(),
         }
     }
@@ -144,7 +128,6 @@ where
     fn ram_usage_bytes(&self) -> usize {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.ram_usage_bytes(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.ram_usage_bytes(),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.ram_usage_bytes(),
         }
     }
@@ -152,7 +135,6 @@ where
     fn telemetry_index_type(&self) -> &'static str {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => index.telemetry_index_type(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.telemetry_index_type(),
             ReadOnlyNumericIndexInner::OnDisk(index) => index.telemetry_index_type(),
         }
     }

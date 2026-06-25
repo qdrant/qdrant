@@ -29,9 +29,6 @@ where
             ReadOnlyNumericIndexInner::Appendable(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }
-            ReadOnlyNumericIndexInner::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
                 index.live_reload(fs, deleted_points, new_points, hw_counter)
             }

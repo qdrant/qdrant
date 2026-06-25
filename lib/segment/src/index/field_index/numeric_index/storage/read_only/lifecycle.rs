@@ -8,7 +8,6 @@ use super::super::super::Encodable;
 use super::super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
 use super::ReadOnlyNumericIndexInner;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
@@ -54,18 +53,16 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let populate = Populate::from(!effective_is_on_disk);
-        let Some(mmap_index) = OnDiskNumericIndex::open(fs, path, populate, deleted_points)? else {
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
+
+        let Some(on_disk_index) = OnDiskNumericIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            Self::OnDisk(mmap_index)
-        } else {
-            Self::Immutable(ImmutableNumericIndex::load_from_on_disk(mmap_index))
-        };
-
-        Ok(Some(index))
+        Ok(Some(Self::OnDisk(on_disk_index)))
     }
 
     /// Reports the on-disk format's mutability, mirroring
@@ -85,7 +82,6 @@ where
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
             Self::Appendable(_) => IndexMutability::Mutable,
-            Self::Immutable(_) => IndexMutability::Immutable,
             Self::OnDisk(_) => IndexMutability::Immutable,
         }
     }
