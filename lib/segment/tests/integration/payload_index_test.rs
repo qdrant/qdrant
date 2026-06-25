@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use fnv::FnvBuildHasher;

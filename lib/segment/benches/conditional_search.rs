@@ -3,6 +3,7 @@ mod prof;
 
 use std::sync::atomic::AtomicBool;
 
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};

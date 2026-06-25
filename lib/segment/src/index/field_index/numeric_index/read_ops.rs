@@ -11,10 +11,9 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 use serde_json::Value;
 
-use super::{Encodable, NumericIndex};
+use super::{Encodable, NumericIndex, NumericIndexValue};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::{Numericable, Point};
-use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
@@ -48,8 +47,7 @@ impl<T: Encodable + Numericable> Range<T> {
     }
 }
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P> PayloadFieldIndexRead
-    for NumericIndex<T, P>
+impl<T: NumericIndexValue, P> PayloadFieldIndexRead for NumericIndex<T, P>
 where
     Vec<T>: Blob,
 {

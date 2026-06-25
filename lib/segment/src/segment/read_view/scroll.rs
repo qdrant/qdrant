@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::DeferredBehavior;

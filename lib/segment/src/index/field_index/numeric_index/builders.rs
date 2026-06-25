@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use super::on_disk_numeric_index::OnDiskNumericIndex;
 use super::storage::NumericIndexInner;
-use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
+use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue, NumericIndexValue};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
@@ -168,8 +168,7 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P> FieldIndexBuilderTrait
-    for NumericIndexGridstoreBuilder<T, P>
+impl<T: NumericIndexValue, P> FieldIndexBuilderTrait for NumericIndexGridstoreBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
     Vec<T>: Blob,

@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::BoxCow;
+use common::cow::SimpleCow;
 use common::types::PointOffsetType;
 
 use super::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
@@ -18,7 +18,7 @@ use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::visited_pool::VisitedListHandle;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
@@ -89,15 +89,16 @@ pub(super) fn build_filtered_graph_on_gpu(
         1,
         |block_point_id| -> OperationResult<_> {
             let hardware_counter = HardwareCounterCell::disposable();
-            let block_condition_checker: DynConditionChecker = Box::new(BuildConditionChecker {
-                filter_list: block_filter_list,
-                current_point: block_point_id,
-            });
+            let block_condition_checker =
+                OptimizedFilter::from_checker(Box::new(BuildConditionChecker {
+                    filter_list: block_filter_list,
+                    current_point: block_point_id,
+                }));
             FilteredScorer::new_internal(
                 block_point_id,
                 vector_storage,
                 quantized_vectors.as_ref(),
-                Some(BoxCow::Owned(block_condition_checker)),
+                Some(SimpleCow::Owned(block_condition_checker)),
                 id_tracker.deleted_point_bitslice(),
                 hardware_counter,
             )

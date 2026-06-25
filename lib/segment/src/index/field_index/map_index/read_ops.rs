@@ -1,10 +1,10 @@
 use std::borrow::{Borrow, Cow};
 use std::hash::{BuildHasher, Hash};
-use std::marker::PhantomData;
 
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fnv::FnvBuildHasher;
 use gridstore::Blob;
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -232,13 +232,12 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     fn match_value_checker(
         &'a self,
         hw_counter: HardwareCounterCell,
-        value: impl Borrow<N> + 'a,
+        value: impl Borrow<N>,
     ) -> DynConditionChecker<'a> {
         Box::new(MapConditionChecker {
             index: self,
             hw_counter,
-            predicate: move |v: &N| v == value.borrow(),
-            _key: PhantomData,
+            predicate: MapPredicate::Value(<N as MapIndexKey>::to_owned(value.borrow())),
         })
     }
 
@@ -252,24 +251,23 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         negate: bool,
     ) -> DynConditionChecker<'a>
     where
-        A: BuildHasher + 'a,
-        K: Borrow<N> + Hash + Eq + 'a,
+        A: BuildHasher,
+        K: Borrow<N> + Hash + Eq,
     {
-        if list.len() < INDEXSET_ITER_THRESHOLD {
-            Box::new(MapConditionChecker {
-                index: self,
-                hw_counter,
-                predicate: move |value: &N| list.iter().any(|e| e.borrow() == value) != negate,
-                _key: PhantomData,
-            })
-        } else {
-            Box::new(MapConditionChecker {
-                index: self,
-                hw_counter,
-                predicate: move |value: &N| list.contains(value) != negate,
-                _key: PhantomData,
-            })
-        }
+        let scan = list.len() < INDEXSET_ITER_THRESHOLD;
+        let list = list
+            .iter()
+            .map(|key| <N as MapIndexKey>::to_owned(key.borrow()))
+            .collect();
+        Box::new(MapConditionChecker {
+            index: self,
+            hw_counter,
+            predicate: if scan {
+                MapPredicate::AnyScan { list, negate }
+            } else {
+                MapPredicate::AnyProbe { list, negate }
+            },
+        })
     }
 }
 
@@ -515,23 +513,44 @@ where
     }
 }
 
-struct MapConditionChecker<'a, T, N: ?Sized, F> {
+struct MapConditionChecker<'a, N: MapIndexKey + ?Sized, T> {
     index: &'a T,
     hw_counter: HardwareCounterCell,
-    predicate: F,
-    _key: PhantomData<fn(&N)>,
+    predicate: MapPredicate<N>,
 }
 
-impl<'a, N, T, F> ConditionChecker for MapConditionChecker<'a, T, N, F>
+enum MapPredicate<N: MapIndexKey + ?Sized> {
+    /// For [`crate::types::Match::Value`].
+    Value(<N as MapIndexKey>::Owned),
+    /// For [`crate::types::Match::Any`] and [`crate::types::Match::Except`],
+    /// Linear scan version.
+    AnyScan {
+        list: IndexSet<<N as MapIndexKey>::Owned, FnvBuildHasher>,
+        negate: bool,
+    },
+    /// For [`crate::types::Match::Any`] and [`crate::types::Match::Except`],
+    /// hash-probe version.
+    AnyProbe {
+        list: IndexSet<<N as MapIndexKey>::Owned, FnvBuildHasher>,
+        negate: bool,
+    },
+}
+
+impl<'a, N, T> ConditionChecker for MapConditionChecker<'a, N, T>
 where
     N: MapIndexKey + ?Sized + 'a,
     T: MapIndexRead<'a, N>,
-    F: Fn(&N) -> bool,
 {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         self.index
-            .check_values_any(point_id, &self.hw_counter, &self.predicate)
+            .check_values_any(point_id, &self.hw_counter, |value| match &self.predicate {
+                MapPredicate::Value(expected) => value == expected.borrow(),
+                MapPredicate::AnyScan { list, negate } => {
+                    list.iter().any(|key| key.borrow() == value) != *negate
+                }
+                MapPredicate::AnyProbe { list, negate } => list.contains(value) != *negate,
+            })
     }
 }

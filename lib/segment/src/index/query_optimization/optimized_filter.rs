@@ -24,6 +24,19 @@ pub struct OptimizedFilter<'a> {
     pub must_not: Vec<OptimizedCondition<'a>>,
 }
 
+impl<'a> OptimizedFilter<'a> {
+    /// A filter that matches a point iff the single given checker matches it.
+    pub fn from_checker(checker: DynConditionChecker<'a>) -> Self {
+        OptimizedFilter {
+            should: Vec::new(),
+            min_should: Vec::new(),
+            min_should_count: 0,
+            must: vec![OptimizedCondition::Checker(checker)],
+            must_not: Vec::new(),
+        }
+    }
+}
+
 impl ConditionChecker for OptimizedFilter<'_> {
     type Error = OperationError;
 

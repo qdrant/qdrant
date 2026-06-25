@@ -242,42 +242,41 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
     } = condition;
 
     if let Some(is_empty) = *is_empty {
-        return Some(Box::new(IsEmptyConditionChecker {
+        return Some(Box::new(NullConditionChecker {
             null_index,
-            is_empty,
+            kind: CheckKind::IsEmpty,
+            expected: is_empty,
         }));
     }
     if let Some(is_null) = *is_null {
-        return Some(Box::new(IsNullConditionChecker {
+        return Some(Box::new(NullConditionChecker {
             null_index,
-            is_null,
+            kind: CheckKind::IsNull,
+            expected: is_null,
         }));
     }
     None
 }
 
-struct IsEmptyConditionChecker<'a, N> {
+struct NullConditionChecker<'a, N> {
     null_index: &'a N,
-    is_empty: bool,
+    kind: CheckKind,
+    expected: bool,
 }
 
-impl<N: NullIndexRead> ConditionChecker for IsEmptyConditionChecker<'_, N> {
+enum CheckKind {
+    IsEmpty,
+    IsNull,
+}
+
+impl<N: NullIndexRead> ConditionChecker for NullConditionChecker<'_, N> {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.null_index.values_is_empty(point_id) == self.is_empty)
-    }
-}
-
-struct IsNullConditionChecker<'a, N> {
-    null_index: &'a N,
-    is_null: bool,
-}
-
-impl<N: NullIndexRead> ConditionChecker for IsNullConditionChecker<'_, N> {
-    type Error = OperationError;
-
-    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.null_index.values_is_null(point_id) == self.is_null)
+        let actual = match self.kind {
+            CheckKind::IsEmpty => self.null_index.values_is_empty(point_id),
+            CheckKind::IsNull => self.null_index.values_is_null(point_id),
+        };
+        Ok(actual == self.expected)
     }
 }

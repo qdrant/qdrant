@@ -22,7 +22,7 @@ use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
@@ -133,11 +133,13 @@ impl PayloadIndexRead for PlainPayloadIndex {
         &'a self,
         filter: &'a Filter,
         _: &HardwareCounterCell,
-    ) -> OperationResult<DynConditionChecker<'a>> {
-        Ok(Box::new(PlainFilterContext {
-            filter,
-            condition_checker: self.condition_checker.clone(),
-        }))
+    ) -> OperationResult<OptimizedFilter<'a>> {
+        Ok(OptimizedFilter::from_checker(Box::new(
+            PlainFilterContext {
+                filter,
+                condition_checker: self.condition_checker.clone(),
+            },
+        )))
     }
 
     fn for_each_payload_block(
