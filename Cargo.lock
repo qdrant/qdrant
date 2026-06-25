@@ -2172,6 +2172,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "edge-s3-scroll"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "common",
+ "edge",
+ "env_logger",
+ "fs-err",
+ "io_bridge_object_store",
+ "log",
+ "object_store",
+ "serde_json",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

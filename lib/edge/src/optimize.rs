@@ -70,6 +70,9 @@ impl EdgeShard {
                 }
             }
 
+            // Optimization swapped segments in/out; reflect the new set in the manifest.
+            self.update_segment_manifest()?;
+
             // Avoid repeating the same plan forever if no optimizer made effective progress.
             if !optimized_in_iteration {
                 return Ok(optimized_any);

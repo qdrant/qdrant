@@ -1,0 +1,25 @@
+[package]
+name = "edge-s3-scroll"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "edge-s3-scroll"
+path = "src/main.rs"
+
+[dependencies]
+edge = { path = "../.." }
+common = { path = "../../../common/common" }
+io_bridge_object_store = { path = "../../../common/io_bridge_object_store" }
+
+fs-err = { workspace = true }
+object_store = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }

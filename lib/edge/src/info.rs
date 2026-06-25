@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
+use segment::entry::ReadSegmentEntry;
 use segment::types::{PayloadIndexInfo, PayloadKeyType};
 
-use super::EdgeShard;
+use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 #[derive(Clone, Debug)]
 pub struct ShardInfo {
@@ -20,17 +21,17 @@ pub struct ShardInfo {
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }
 
-impl EdgeShard {
-    pub fn info(&self) -> ShardInfo {
+impl<H: ReadSegmentHandle> EdgeReadView<H> {
+    pub(crate) fn info(&self) -> ShardInfo {
         let mut segments_count = 0;
         let mut points_count = 0;
         let mut indexed_vectors_count = 0;
         let mut payload_schema = HashMap::new();
 
-        for (_, segment) in self.segments.read().iter() {
+        for segment in &self.segments {
             segments_count += 1;
 
-            let segment_info = segment.get().read().info();
+            let segment_info = segment.read_segment().info();
 
             points_count += segment_info.num_points;
             indexed_vectors_count += segment_info.num_indexed_vectors;

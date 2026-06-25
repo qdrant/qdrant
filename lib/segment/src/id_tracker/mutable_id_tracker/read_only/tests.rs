@@ -93,15 +93,18 @@ fn test_open_matches_mutable_tracker() {
 }
 
 #[test]
-fn test_open_without_storage_errors() {
+fn test_open_without_storage_is_empty() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    // No storage exists yet, opening a read-only view must error rather than produce an empty one.
-    assert!(ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).is_err());
+    // No storage exists yet: the files are absent while empty, so a read-only view opens as an
+    // empty tracker (matching `MutableIdTracker::open`) rather than erroring.
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(read_only.available_point_count(), 0);
+    assert_eq!(read_only.total_point_count(), 0);
 }
 
 #[test]
-fn test_open_with_missing_versions_errors() {
+fn test_open_with_missing_versions_is_empty() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     // Create only the mappings file by writing then removing the versions file.
@@ -110,7 +113,10 @@ fn test_open_with_missing_versions_errors() {
     flush(&mutable);
     fs::remove_file(versions_path(segment_dir.path())).unwrap();
 
-    assert!(ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).is_err());
+    // With no versions file no point is committed (a point becomes visible only once its version is
+    // present), so the read-only view opens empty instead of erroring.
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(read_only.available_point_count(), 0);
 }
 
 #[test]

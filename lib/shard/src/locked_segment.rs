@@ -78,6 +78,18 @@ impl LockedSegment {
         }
     }
 
+    /// Owned, type-erased read handle to the segment.
+    ///
+    /// Unlike [`Self::get_read`] (which borrows), this clones the inner `Arc` and coerces it to
+    /// `dyn ReadSegmentEntry`, so the handle can outlive the holder lock — used to snapshot a set
+    /// of segments for reads (see `EdgeReadView` / `retrieve_over`).
+    pub fn get_read_arc(&self) -> Arc<RwLock<dyn ReadSegmentEntry>> {
+        match self {
+            LockedSegment::Original(segment) => segment.clone(),
+            LockedSegment::Proxy(proxy) => proxy.clone(),
+        }
+    }
+
     pub fn is_original(&self) -> bool {
         match self {
             LockedSegment::Original(_) => true,
