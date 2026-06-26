@@ -2,7 +2,7 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::ReadOnlySparseVectorStorage;
@@ -80,7 +80,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
             .unwrap_or_else(CowVector::default_sparse)
     }
 
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),

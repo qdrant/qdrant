@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, Populate};
+use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
 use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
@@ -283,7 +283,7 @@ impl VectorStorageRead for MmapSparseVectorStorage {
             .unwrap_or_else(CowVector::default_sparse)
     }
 
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),

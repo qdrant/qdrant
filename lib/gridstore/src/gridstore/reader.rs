@@ -5,7 +5,7 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs, read_json_via};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs, UserData, read_json_via};
 
 use super::view::GridstoreView;
 use crate::Result;
@@ -135,6 +135,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     ) -> Result<(), E>
     where
         P: AccessPattern,
+        U: UserData,
         E: From<GridstoreError>,
     {
         self.view().read_values::<P, _, _>(
