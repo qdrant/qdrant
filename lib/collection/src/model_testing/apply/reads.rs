@@ -685,7 +685,7 @@ pub(super) async fn apply_query_fusion(
         },
         FusionKind::Dbsf => FusionInternal::Dbsf,
     };
-    let returned_ids = collection
+    let returned = collection
         .query(
             ShardQueryRequest {
                 prefetches: shard_prefetches,
@@ -705,10 +705,16 @@ pub(super) async fn apply_query_fusion(
             HwMeasurementAcc::new(),
         )
         .await
-        .expect("query fusion failed")
-        .iter()
-        .map(|r| r.id)
-        .collect::<AHashSet<PointIdType>>();
+        .expect("query fusion failed");
+    // Collect ids as a Vec first so we can assert fusion actually deduplicated overlapping prefetch
+    // hits — collapsing straight into a set would silently hide an engine returning a point twice.
+    let returned_vec: Vec<PointIdType> = returned.iter().map(|r| r.id).collect();
+    let returned_ids: AHashSet<PointIdType> = returned_vec.iter().copied().collect();
+    assert_eq!(
+        returned_vec.len(),
+        returned_ids.len(),
+        "query_fusion(fusion={fusion:?}, filter={filter_num:?}) returned duplicate ids",
+    );
 
     // Two independent upper bounds on the fused result, both narrowed by the outer `limit`:
     // - it's a subset of the outer-filtered union of every prefetch's candidates;
