@@ -41,7 +41,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     }
 
     fn is_on_disk(&self) -> bool {
-        !self.populate
+        !self.populate.to_bool::<S>()
     }
 
     fn total_vector_count(&self) -> usize {

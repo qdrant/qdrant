@@ -22,7 +22,7 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
     fs: &S::Fs,
     directory: &Path,
     advice: AdviceSetting,
-    populate: bool,
+    populate: Populate,
     writeable: bool,
 ) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
     read_chunks_from(fs, directory, 0, advice, populate, writeable)
@@ -34,7 +34,7 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
     directory: &Path,
     start_chunk_id: usize,
     advice: AdviceSetting,
-    populate: bool,
+    populate: Populate,
     writeable: bool,
 ) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
     // List only the chunk files via the prefix, so unrelated files in the
@@ -68,7 +68,7 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
             OpenOptions {
                 writeable,
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
-                populate: Populate::from(populate),
+                populate,
                 advice,
             },
             Default::default(),

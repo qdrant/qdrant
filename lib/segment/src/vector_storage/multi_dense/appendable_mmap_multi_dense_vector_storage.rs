@@ -576,8 +576,15 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedVectors::open(MmapFs, &vectors_path, dim, madvise, Some(populate))?;
-    let offsets = ChunkedVectors::open(MmapFs, &offsets_path, 1, madvise, Some(populate))?;
+    let vectors = ChunkedVectors::open(
+        MmapFs,
+        &vectors_path,
+        dim,
+        madvise,
+        Populate::from(populate),
+    )?;
+    let offsets =
+        ChunkedVectors::open(MmapFs, &offsets_path, 1, madvise, Populate::from(populate))?;
     // The offsets store is buffered so its durable state can never race ahead of
     // the durable `vectors` length, which would corrupt points on reload.
     let offsets = BufferedOffsets::new(offsets);

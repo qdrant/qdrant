@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::AdviceSetting;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
 use super::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -26,20 +26,15 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
         distance: Distance,
         multi_vector_config: MultiVectorConfig,
         advice: AdviceSetting,
-        populate: bool,
+        populate: Populate,
     ) -> OperationResult<Self> {
-        let vectors = ChunkedVectorsRead::open(
-            fs,
-            &path.join(VECTORS_DIR_PATH),
-            dim,
-            advice,
-            Some(populate),
-        )?;
+        let vectors =
+            ChunkedVectorsRead::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
 
         // Offsets store one `MultivectorMmapOffset` element per point, so the
         // chunked storage dimensionality is 1.
         let offsets =
-            ChunkedVectorsRead::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, Some(populate))?;
+            ChunkedVectorsRead::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 
