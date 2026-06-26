@@ -153,6 +153,16 @@ impl Generalizer for VectorInternal {
                     2,
                 ))
             }
+            // Strip the bytes; keep just the dimensionality marker, matching the
+            // shape the dequantized form would generalize to (a multivector keeps
+            // the 2-element `[num_vectors, dim]` marker, a single stays 1-element).
+            VectorInternal::Quantized(q) => match q.multivector_count {
+                None => VectorInternal::Dense(vec![q.dim as f32]),
+                Some(count) => VectorInternal::MultiDense(MultiDenseVectorInternal::new(
+                    vec![count as f32, q.dim as f32],
+                    2,
+                )),
+            },
         }
     }
 }

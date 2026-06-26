@@ -18,7 +18,9 @@ use std::sync::atomic::AtomicBool;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName};
+use crate::types::{
+    SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorStorageDatatype,
+};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
 
@@ -216,6 +218,24 @@ fn check_vector_against_config(
             }
             Ok(())
         }
+        VectorRef::Quantized(quantized) => {
+            if vector_config.datatype != Some(VectorStorageDatatype::Turbo4) {
+                return Err(OperationError::service_error(format!(
+                    "Incompatible vector datatype: expected {:?}, received {:?}",
+                    vector_config.datatype,
+                    Some(VectorStorageDatatype::Turbo4)
+                )));
+            }
+
+            let dim = vector_config.size;
+            if quantized.dim != dim {
+                return Err(OperationError::WrongVectorDimension {
+                    expected_dim: dim,
+                    received_dim: quantized.dim,
+                });
+            }
+            Ok(())
+        }
     }
 }
 
@@ -227,6 +247,7 @@ fn check_sparse_vector_against_config(
         VectorRef::Dense(_) => Err(OperationError::WrongSparse),
         VectorRef::Sparse(_vector) => Ok(()), // TODO(sparse) check vector by config
         VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
+        VectorRef::Quantized(_) => Err(OperationError::WrongSparse),
     }
 }
 

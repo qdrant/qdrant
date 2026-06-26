@@ -1712,3 +1712,225 @@ fn test_flush_survives_concurrent_field_index_drop() {
     // version at 0.
     assert_eq!(segment.persistent_version(), 3);
 }
+
+/// Regression test for the TurboQuant round-trip drift bug on within-segment
+/// copy-on-write. On an append-only segment a payload mutation clones the point
+/// to a fresh slot; the vector must be copied as native encoded bytes, not
+/// dequantized and re-quantized, so its encoding never drifts across repeated
+/// payload writes.
+#[test]
+fn test_append_only_cow_preserves_turbo_encoding() {
+    use common::generic_consts::Random;
+
+    use crate::data_types::named_vectors::CowVector;
+    use crate::types::VectorStorageDatatype;
+    use crate::vector_storage::VectorStorageRead;
+
+    init_logger();
+
+    let dim = 128;
+    let dir = Builder::new()
+        .prefix("turbo_cow_segment")
+        .tempdir()
+        .unwrap();
+
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    // Appendable storage so clone-and-mutate can grow it.
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: Some(VectorStorageDatatype::Turbo4),
+                },
+            )]),
+            sparse_vector_data: HashMap::new(),
+            payload_storage_type: Default::default(),
+        },
+        None,
+        true,
+    )
+    .unwrap();
+
+    // Force the append-only clone-and-tombstone mutation path.
+    segment.append_only_mutations = true;
+    assert!(segment.is_append_only());
+
+    let hw_counter = HardwareCounterCell::new();
+    let point = PointIdType::from(0u64);
+
+    let mut rng = StdRng::seed_from_u64(0x7142);
+    let dense: Vec<f32> = {
+        let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        v.iter().map(|&x| x / norm).collect()
+    };
+
+    segment
+        .upsert_point(1, point, only_default_vector(&dense), &hw_counter)
+        .unwrap();
+
+    // Helper: read the encoded bytes of the point's current (deferred) head.
+    let read_encoded = |segment: &Segment| -> Vec<u8> {
+        let internal = segment
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point, DeferredBehavior::WithDeferred)
+            .expect("point must exist");
+        let vector_data = segment.vector_data.get(DEFAULT_VECTOR_NAME).unwrap();
+        let storage = vector_data.vector_storage.borrow();
+        match storage
+            .get_vector_opt::<Random>(internal)
+            .expect("turbo storage must yield a vector")
+        {
+            CowVector::Quantized(quantized) => quantized.bytes.into_owned(),
+            other @ (CowVector::Dense(_) | CowVector::Sparse(_) | CowVector::MultiDense(_)) => {
+                panic!("expected quantized vector, got {other:?}")
+            }
+        }
+    };
+
+    let original_encoding = read_encoded(&segment);
+
+    // Each payload write clones the point on an append-only segment. The vector
+    // is untouched, so its encoding must stay byte-identical every time.
+    for op_num in 2..=20 {
+        let mut payload = Payload::default();
+        payload
+            .0
+            .insert("iter".to_string(), Value::Number(Number::from(op_num)));
+        segment
+            .set_full_payload(op_num, point, &payload, &hw_counter)
+            .unwrap();
+
+        let encoding = read_encoded(&segment);
+        assert_eq!(
+            encoding, original_encoding,
+            "turbo encoding drifted after {op_num} copy-on-write payload writes",
+        );
+    }
+}
+
+/// Same regression as [`test_append_only_cow_preserves_turbo_encoding`] but for a
+/// TurboQuant *multivector* storage: a payload mutation clones the point and must
+/// re-store the inner encoded records verbatim, never dequantize-and-re-quantize.
+#[test]
+fn test_append_only_cow_preserves_turbo_multi_encoding() {
+    use common::generic_consts::Random;
+
+    use crate::data_types::named_vectors::CowVector;
+    use crate::data_types::vectors::MultiDenseVectorInternal;
+    use crate::types::{MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
+    use crate::vector_storage::VectorStorageRead;
+
+    init_logger();
+
+    let dim = 64;
+    let inner_count = 5;
+    let dir = Builder::new()
+        .prefix("turbo_multi_cow_segment")
+        .tempdir()
+        .unwrap();
+
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: Some(MultiVectorConfig {
+                        comparator: MultiVectorComparator::MaxSim,
+                    }),
+                    datatype: Some(VectorStorageDatatype::Turbo4),
+                },
+            )]),
+            sparse_vector_data: HashMap::new(),
+            payload_storage_type: Default::default(),
+        },
+        None,
+        true,
+    )
+    .unwrap();
+
+    segment.append_only_mutations = true;
+    assert!(segment.is_append_only());
+
+    let hw_counter = HardwareCounterCell::new();
+    let point = PointIdType::from(0u64);
+
+    let mut rng = StdRng::seed_from_u64(0x51A6);
+    let flattened: Vec<f32> = {
+        let v: Vec<f32> = (0..dim * inner_count)
+            .map(|_| rng.random_range(-1.0..1.0))
+            .collect();
+        // Normalize each inner vector independently.
+        v.chunks_exact(dim)
+            .flat_map(|inner| {
+                let norm = inner.iter().map(|&x| x * x).sum::<f32>().sqrt();
+                inner.iter().map(move |&x| x / norm)
+            })
+            .collect()
+    };
+    let multi = MultiDenseVectorInternal::new(flattened, dim);
+
+    segment
+        .upsert_point(
+            1,
+            point,
+            NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&multi)),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let read_encoded = |segment: &Segment| -> (Vec<u8>, Option<usize>) {
+        let internal = segment
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point, DeferredBehavior::WithDeferred)
+            .expect("point must exist");
+        let vector_data = segment.vector_data.get(DEFAULT_VECTOR_NAME).unwrap();
+        let storage = vector_data.vector_storage.borrow();
+        match storage
+            .get_vector_opt::<Random>(internal)
+            .expect("turbo storage must yield a vector")
+        {
+            CowVector::Quantized(quantized) => {
+                (quantized.bytes.into_owned(), quantized.multivector_count)
+            }
+            other @ (CowVector::Dense(_) | CowVector::Sparse(_) | CowVector::MultiDense(_)) => {
+                panic!("expected quantized multivector, got {other:?}")
+            }
+        }
+    };
+
+    let (original_encoding, original_count) = read_encoded(&segment);
+    assert_eq!(original_count, Some(inner_count));
+
+    for op_num in 2..=20 {
+        let mut payload = Payload::default();
+        payload
+            .0
+            .insert("iter".to_string(), Value::Number(Number::from(op_num)));
+        segment
+            .set_full_payload(op_num, point, &payload, &hw_counter)
+            .unwrap();
+
+        let (encoding, count) = read_encoded(&segment);
+        assert_eq!(
+            (encoding, count),
+            (original_encoding.clone(), original_count),
+            "turbo multivector encoding drifted after {op_num} copy-on-write payload writes",
+        );
+    }
+}

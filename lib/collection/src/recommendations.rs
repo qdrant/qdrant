@@ -68,6 +68,40 @@ fn avg_vectors<'a>(
                     },
                 ));
             }
+            VectorRef::Quantized(q) => {
+                // Encoded-primary (TurboQuant) storages hand out native bytes;
+                // decode and fold into the running average exactly like a plain
+                // dense or multidense input of the same kind.
+                match q.dequantize() {
+                    VectorInternal::Dense(vector) => {
+                        dense_count += 1;
+                        for i in 0..vector.len() {
+                            if i >= avg_dense.len() {
+                                avg_dense.push(vector[i])
+                            } else {
+                                avg_dense[i] += vector[i];
+                            }
+                        }
+                    }
+                    VectorInternal::MultiDense(vector) => {
+                        multi_count += 1;
+                        avg_multi = Some(avg_multi.map_or_else(
+                            || vector.clone(),
+                            |mut avg_multi| {
+                                avg_multi
+                                    .flattened_vectors
+                                    .extend_from_slice(&vector.flattened_vectors);
+                                avg_multi
+                            },
+                        ));
+                    }
+                    VectorInternal::Sparse(_) | VectorInternal::Quantized(_) => {
+                        return Err(CollectionError::service_error(
+                            "TurboQuant vector dequantized to an unexpected form",
+                        ));
+                    }
+                }
+            }
         }
     }
 

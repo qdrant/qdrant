@@ -2711,6 +2711,10 @@ pub fn into_named_vector_struct(
     use sparse::common::sparse_vector::SparseVector;
 
     Ok(match vector_internal {
+        // Decode quantized bytes to floats before building the named struct.
+        VectorInternal::Quantized(q) => {
+            return into_named_vector_struct(vector_name, q.dequantize());
+        }
         VectorInternal::Dense(vector) => {
             if let Some(name) = vector_name {
                 NamedVectorStruct::Dense(NamedVector { name, vector })

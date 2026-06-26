@@ -28,10 +28,9 @@ use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::data_types::named_vectors::{CowMultiVector, CowVector};
+use crate::data_types::named_vectors::{CowQuantizedVector, CowVector};
 use crate::data_types::vectors::{
-    MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType,
-    VectorRef,
+    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -170,30 +169,6 @@ impl TurboMultiVectorStorage {
         previous
     }
 
-    /// Decode one inner record into `out`: dequantize, rotate back, drop the padding tail.
-    fn dequantize_inner_into(&self, encoded: &[u8], out: &mut Vec<VectorElementType>) {
-        let mut dequantized = self.quantizer.dequantize::<f64>(encoded);
-        self.quantizer.apply_inverse_rotation(&mut dequantized);
-        out.extend(
-            dequantized[..self.dim]
-                .iter()
-                .map(|&x| x as VectorElementType),
-        );
-    }
-
-    /// Decode the full multivector behind an offset record.
-    fn dequantize_multi(&self, offset: MultivectorMmapOffset) -> CowVector<'_> {
-        let mut flattened = Vec::with_capacity(offset.count as usize * self.dim);
-        for inner_id in offset.offset..offset.offset + offset.count {
-            let encoded = self.storage.get_vector_data(inner_id);
-            self.dequantize_inner_into(&encoded, &mut flattened);
-        }
-        CowVector::MultiDense(CowMultiVector::Owned(TypedMultiDenseVector {
-            flattened_vectors: flattened,
-            dim: self.dim,
-        }))
-    }
-
     /// Start of a fresh range for `count` records, never straddling a chunk
     /// boundary: skips the tail when the range wouldn't fit it, errors when
     /// even a whole chunk can't hold it.
@@ -252,6 +227,67 @@ impl TurboMultiVectorStorage {
                 &quantized,
                 hw_counter,
             )?;
+        }
+        self.offsets
+            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
+        self.set_deleted(key, false);
+
+        Ok(())
+    }
+
+    /// Upsert a pre-encoded multivector blob at `key`, bypassing quantization:
+    /// the bytes are `count` concatenated inner encodings produced by an identical
+    /// quantizer. Mirrors [`Self::insert_multi`] but copies the records verbatim.
+    fn insert_quantized_multi(
+        &mut self,
+        key: PointOffsetType,
+        quantized: &CowQuantizedVector,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(inner_count) = quantized.multivector_count else {
+            return Err(OperationError::service_error(
+                "Cannot insert a dense-encoded TQ vector into multivector storage",
+            ));
+        };
+        // A blob from another TQ storage with the same per-record size but a
+        // different dim/distance would decode/score wrong; reject it.
+        if quantized.dim != self.dim || quantized.distance != self.distance {
+            return Err(OperationError::service_error(format!(
+                "Cannot insert quantized multivector: blob context (dim={}, distance={:?}) does \
+                 not match this storage (dim={}, distance={:?})",
+                quantized.dim, quantized.distance, self.dim, self.distance,
+            )));
+        }
+        let inner_size = self.quantizer.quantized_size();
+        let expected = inner_count * inner_size;
+        if quantized.bytes.len() != expected {
+            return Err(OperationError::service_error(format!(
+                "Cannot insert encoded TQ multivector: got {} bytes, expected {expected} \
+                 ({inner_count} x {inner_size})",
+                quantized.bytes.len(),
+            )));
+        }
+
+        let count = inner_count as PointOffsetType;
+        let mut offset = self
+            .offsets
+            .get::<Random>(key as VectorOffsetType)
+            .map(|x| x.first().copied().unwrap_or_default())
+            .unwrap_or_default();
+
+        if count > offset.capacity {
+            offset = MultivectorMmapOffset {
+                offset: self.fresh_range_start(count)?,
+                count,
+                capacity: count,
+            };
+        } else {
+            offset.count = count;
+        }
+
+        for (i, inner) in quantized.bytes.chunks_exact(inner_size).enumerate() {
+            self.storage
+                .upsert_vector(offset.offset + i as PointOffsetType, inner, hw_counter)?;
         }
         self.offsets
             .insert(key as VectorOffsetType, &[offset], hw_counter)?;
@@ -423,7 +459,19 @@ impl VectorStorageRead for TurboMultiVectorStorage {
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        Some(self.dequantize_multi(self.get_offset::<P>(key)?))
+        // Hand out the native encoded inner records verbatim (no dequantize), so a
+        // copy-on-write or transfer re-stores the exact bytes. The blob is the
+        // point's `count` inner encodings concatenated; `dim` is the inner dim.
+        let offset = self.get_offset::<P>(key)?;
+        let bytes = self
+            .storage
+            .get_many::<P>(offset.offset, offset.count as usize)?;
+        Some(CowVector::Quantized(CowQuantizedVector {
+            bytes,
+            dim: self.dim,
+            distance: self.distance,
+            multivector_count: Some(offset.count as usize),
+        }))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -456,6 +504,13 @@ impl VectorStorage for TurboMultiVectorStorage {
         vector: VectorRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        // Native-encoded input (read back from this or another TQ multivector
+        // storage): write the inner byte records verbatim instead of
+        // dequantizing and re-quantizing, so the encoding never drifts on a
+        // copy-on-write or transfer.
+        if let VectorRef::Quantized(quantized) = vector {
+            return self.insert_quantized_multi(key, quantized, hw_counter);
+        }
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         self.insert_multi(key, multi_vector, hw_counter)
     }
@@ -566,7 +621,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal};
+    use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, VectorInternal};
     use crate::vector_storage::common::CHUNK_SIZE;
 
     /// Deterministic multivectors of unit inner vectors; point `i` gets `(i % 4) + 1` inner vectors.
@@ -601,12 +656,19 @@ mod tests {
         dot / (na * nb)
     }
 
-    /// Extract the owned multivector; this storage always returns `Owned`.
+    /// Decode the multivector; this storage always returns native quantized bytes.
     fn to_multi(vector: CowVector) -> MultiDenseVectorInternal {
         match vector {
-            CowVector::MultiDense(CowMultiVector::Owned(multi)) => multi,
-            CowVector::Dense(_) | CowVector::Sparse(_) | CowVector::MultiDense(_) => {
-                panic!("expected owned multi-dense vector")
+            CowVector::Quantized(quantized) => match quantized.dequantize() {
+                VectorInternal::MultiDense(multi) => multi,
+                other @ (VectorInternal::Dense(_)
+                | VectorInternal::Sparse(_)
+                | VectorInternal::Quantized(_)) => {
+                    panic!("expected multi-dense dequantize, got {other:?}")
+                }
+            },
+            other @ (CowVector::Dense(_) | CowVector::Sparse(_) | CowVector::MultiDense(_)) => {
+                panic!("expected quantized multivector, got {other:?}")
             }
         }
     }

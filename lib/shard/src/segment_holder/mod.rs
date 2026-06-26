@@ -793,11 +793,21 @@ impl SegmentHolder {
                         // fail with `PointIdError`, surfacing as a spurious
                         // "No point with id ... found" on a plain upsert that
                         // races a `prevent_unoptimized` optimization.
-                        let mut all_vectors = write_segment.all_vectors_with_behavior(
-                            point_id,
-                            DeferredBehavior::WithDeferred,
-                            hw_counter,
-                        )?;
+                        // Read the point's vectors in their storage-native form
+                        // (TurboQuant comes back as `CowVector::Quantized`). A
+                        // vector the cow operation leaves untouched is written back
+                        // verbatim — no lossy dequantize -> re-quantize round-trip;
+                        // a vector it overwrites is re-quantized as usual. The move
+                        // closures only insert/replace vectors, never read them as
+                        // float, so the quantized form passes through safely and
+                        // `upsert_point`'s write path preserves it.
+                        let mut all_vectors = write_segment
+                            .all_vectors_with_behavior(
+                                point_id,
+                                DeferredBehavior::WithDeferred,
+                                hw_counter,
+                            )?
+                            .into_owned();
                         let mut payload = write_segment.payload_with_behavior(
                             point_id,
                             DeferredBehavior::WithDeferred,

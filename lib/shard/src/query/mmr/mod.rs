@@ -67,6 +67,19 @@ pub fn mmr_from_points_with_vector(
         return Ok(candidates);
     }
 
+    // Quantized candidates (e.g. TurboQuant) have no borrowed float view; decode
+    // them once up front so both the volatile storage population *and* the
+    // pairwise similarity matrix operate on plain floats, not raw bytes.
+    let vectors: Vec<VectorInternal> = vectors
+        .into_iter()
+        .map(|vector| match vector {
+            VectorInternal::Quantized(quantized) => quantized.dequantize(),
+            vector @ (VectorInternal::Dense(_)
+            | VectorInternal::Sparse(_)
+            | VectorInternal::MultiDense(_)) => vector,
+        })
+        .collect();
+
     let volatile_storage = create_volatile_storage(
         &vectors,
         distance,
@@ -100,6 +113,10 @@ pub fn mmr_from_points_with_vector(
 }
 
 /// Creates a volatile (in-memory and not persistent) vector storage and inserts the vectors in the provided order.
+///
+/// `vectors` must already be decoded (no `VectorInternal::Quantized`); the caller
+/// decodes once so the same float vectors feed both this storage and the
+/// similarity matrix.
 fn create_volatile_storage(
     vectors: &[VectorInternal],
     distance: Distance,
@@ -128,6 +145,11 @@ fn create_volatile_storage(
             }
 
             VectorInternal::Sparse(_) => new_volatile_sparse_vector_storage(),
+
+            // The caller decodes quantized candidates before calling, so this is unreachable here.
+            VectorInternal::Quantized(_) => {
+                unreachable!("quantized vectors are decoded by the caller")
+            }
         }
     };
 

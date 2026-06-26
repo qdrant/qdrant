@@ -10,7 +10,7 @@ use super::vectors::{
     VectorElementType, VectorElementTypeByte, VectorElementTypeHalf, VectorInternal, VectorRef,
 };
 use crate::common::operation_error::OperationError;
-use crate::types::{VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype};
+use crate::types::{Distance, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype};
 
 type CowKey<'a> = Cow<'a, VectorName>;
 
@@ -46,11 +46,74 @@ where
     }
 }
 
+/// A storage-native quantized vector carried as opaque encoded bytes plus the
+/// local context needed to decode it (TurboQuant is fully deterministic given
+/// `dim` + `distance`). This is the in-memory representation that lets a
+/// quantized vector travel through `NamedVectors` / CoW / clone-and-mutate
+/// without a dequantize -> re-quantize round-trip; only the TQ storage's write
+/// path consumes the bytes verbatim, every other consumer dequantizes on demand.
+///
+/// `dim` / `distance` are local context (from the owning or target storage).
+/// Equality is by all fields, so comparing two `Quantized` is a byte compare —
+/// exactly the "unchanged" check a copy-on-write needs.
+///
+/// Handles both dense single vectors and multivectors. `multivector_count`
+/// distinguishes them: `None` is a dense single (`dim` floats); `Some(n)` is a
+/// multivector of `n` inner vectors, the bytes being `n` concatenated inner
+/// encodings of `dim` floats each. `dim` is always the inner-vector dimension.
+///
+/// There is no encoding-version field: within a single node every blob is
+/// produced and consumed by the same process with the same TQDT constants, so a
+/// version would always equal itself. Versioning only matters when bytes cross a
+/// node/build boundary, where it rides the wire type separately.
+#[derive(Clone, PartialEq, Debug, serde::Serialize)]
+pub struct CowQuantizedVector<'a> {
+    pub bytes: Cow<'a, [u8]>,
+    pub dim: usize,
+    pub distance: Distance,
+    /// `None` for a dense single vector; `Some(inner_count)` for a multivector.
+    pub multivector_count: Option<usize>,
+}
+
+impl CowQuantizedVector<'_> {
+    /// Decode back to a plain float vector: dense for a single, multi for a
+    /// multivector (TurboQuant).
+    pub fn dequantize(&self) -> VectorInternal {
+        match self.multivector_count {
+            None => VectorInternal::Dense(crate::vector_storage::turbo::dequantize_tqdt_dense(
+                &self.bytes,
+                self.dim,
+                self.distance,
+            )),
+            Some(count) => {
+                VectorInternal::MultiDense(crate::vector_storage::turbo::dequantize_tqdt_multi(
+                    &self.bytes,
+                    self.dim,
+                    self.distance,
+                    count,
+                ))
+            }
+        }
+    }
+
+    pub fn into_owned(self) -> CowQuantizedVector<'static> {
+        CowQuantizedVector {
+            bytes: Cow::Owned(self.bytes.into_owned()),
+            dim: self.dim,
+            distance: self.distance,
+            multivector_count: self.multivector_count,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum CowVector<'a> {
     Dense(Cow<'a, [VectorElementType]>),
     Sparse(Cow<'a, SparseVector>),
     MultiDense(CowMultiVector<'a, VectorElementType>),
+    /// Storage-native quantized bytes (e.g. TurboQuant), decoded on demand by
+    /// any float consumer; preserved verbatim only by a matching TQ storage.
+    Quantized(CowQuantizedVector<'a>),
 }
 
 impl Default for CowVector<'_> {
@@ -67,6 +130,7 @@ impl CowVector<'_> {
             CowVector::MultiDense(cow_multi_vector) => {
                 cow_multi_vector.flattened_len() * size_of::<VectorElementType>()
             }
+            CowVector::Quantized(q) => q.bytes.len(),
         }
     }
 }
@@ -102,11 +166,29 @@ impl CowVector<'_> {
         CowVector::Sparse(Cow::Owned(SparseVector::default()))
     }
 
+    /// Own the vector **preserving its native encoding** (a `Quantized` becomes
+    /// [`VectorInternal::Quantized`], not a dequantized float). `VectorInternal`
+    /// is "maybe-encoded": consumers that need floats decode it explicitly (the
+    /// compiler forces them at each match / `From`/`TryFrom`).
     pub fn to_owned(self) -> VectorInternal {
         match self {
             CowVector::Dense(v) => VectorInternal::Dense(v.into_owned()),
             CowVector::Sparse(v) => VectorInternal::Sparse(v.into_owned()),
             CowVector::MultiDense(v) => VectorInternal::MultiDense(v.to_owned()),
+            CowVector::Quantized(q) => VectorInternal::Quantized(q.into_owned()),
+        }
+    }
+
+    /// Own any borrowed data **without dequantizing**: a `Quantized` stays
+    /// `Quantized` (with owned bytes), unlike [`Self::to_owned`] which decodes to
+    /// a float `VectorInternal`. Used to carry a vector across a storage borrow
+    /// while preserving its native encoding.
+    pub fn into_owned(self) -> CowVector<'static> {
+        match self {
+            CowVector::Dense(v) => CowVector::Dense(Cow::Owned(v.into_owned())),
+            CowVector::Sparse(v) => CowVector::Sparse(Cow::Owned(v.into_owned())),
+            CowVector::MultiDense(v) => CowVector::MultiDense(CowMultiVector::Owned(v.to_owned())),
+            CowVector::Quantized(q) => CowVector::Quantized(q.into_owned()),
         }
     }
 
@@ -115,6 +197,7 @@ impl CowVector<'_> {
             CowVector::Dense(v) => VectorRef::Dense(v.as_ref()),
             CowVector::Sparse(v) => VectorRef::Sparse(v.as_ref()),
             CowVector::MultiDense(v) => VectorRef::MultiDense(v.as_vec_ref()),
+            CowVector::Quantized(q) => VectorRef::Quantized(q),
         }
     }
 }
@@ -134,6 +217,7 @@ impl From<VectorInternal> for CowVector<'_> {
             VectorInternal::Dense(v) => CowVector::Dense(Cow::Owned(v)),
             VectorInternal::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
             VectorInternal::MultiDense(v) => CowVector::MultiDense(CowMultiVector::Owned(v)),
+            VectorInternal::Quantized(q) => CowVector::Quantized(q),
         }
     }
 }
@@ -193,6 +277,7 @@ impl<'a> TryFrom<CowVector<'a>> for SparseVector {
             CowVector::Dense(_) => Err(OperationError::WrongSparse),
             CowVector::Sparse(v) => Ok(v.into_owned()),
             CowVector::MultiDense(_) => Err(OperationError::WrongSparse),
+            CowVector::Quantized(_) => Err(OperationError::WrongSparse),
         }
     }
 }
@@ -205,6 +290,12 @@ impl<'a> TryFrom<CowVector<'a>> for DenseVector {
             CowVector::Dense(v) => Ok(v.into_owned()),
             CowVector::Sparse(_) => Err(OperationError::WrongSparse),
             CowVector::MultiDense(_) => Err(OperationError::WrongMulti),
+            CowVector::Quantized(q) => match q.dequantize() {
+                VectorInternal::Dense(v) => Ok(v),
+                VectorInternal::Sparse(_)
+                | VectorInternal::MultiDense(_)
+                | VectorInternal::Quantized(_) => Err(OperationError::WrongMulti),
+            },
         }
     }
 }
@@ -217,6 +308,12 @@ impl<'a> TryFrom<CowVector<'a>> for Cow<'a, [VectorElementType]> {
             CowVector::Dense(v) => Ok(v),
             CowVector::Sparse(_) => Err(OperationError::WrongSparse),
             CowVector::MultiDense(_) => Err(OperationError::WrongMulti),
+            CowVector::Quantized(q) => match q.dequantize() {
+                VectorInternal::Dense(v) => Ok(Cow::Owned(v)),
+                VectorInternal::Sparse(_)
+                | VectorInternal::MultiDense(_)
+                | VectorInternal::Quantized(_) => Err(OperationError::WrongMulti),
+            },
         }
     }
 }
@@ -227,6 +324,7 @@ impl<'a> From<VectorRef<'a>> for CowVector<'a> {
             VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
             VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
             VectorRef::MultiDense(v) => CowVector::MultiDense(CowMultiVector::Borrowed(v)),
+            VectorRef::Quantized(q) => CowVector::Quantized(q.clone()),
         }
     }
 }
@@ -258,6 +356,13 @@ impl<'a> NamedVectors<'a> {
             .insert(CowKey::Owned(name), CowVector::from(vector));
     }
 
+    /// Insert an already-built [`CowVector`], preserving a
+    /// [`CowVector::Quantized`] (unlike [`Self::insert`], which takes an owned
+    /// float `VectorInternal`). Used by the native read path.
+    pub fn insert_cow(&mut self, name: VectorNameBuf, vector: CowVector<'a>) {
+        self.map.insert(CowKey::Owned(name), vector);
+    }
+
     pub fn remove_ref(&mut self, key: &VectorName) {
         self.map.remove(key);
     }
@@ -278,6 +383,13 @@ impl<'a> NamedVectors<'a> {
         self.map.iter().map(|(k, _)| k.as_ref())
     }
 
+    /// Iterate `(name, &CowVector)` without borrowing a float view, so it is
+    /// safe in the presence of [`CowVector::Quantized`] (unlike [`Self::iter`],
+    /// which calls `as_vec_ref`).
+    pub fn iter_cow(&self) -> impl Iterator<Item = (&VectorName, &CowVector<'a>)> {
+        self.map.iter().map(|(k, v)| (k.as_ref(), v))
+    }
+
     pub fn into_owned_map(self) -> HashMap<VectorNameBuf, VectorInternal> {
         self.map
             .into_iter()
@@ -285,12 +397,13 @@ impl<'a> NamedVectors<'a> {
             .collect()
     }
 
-    /// Materialise into a fully-owned `NamedVectors<'static>` by cloning
-    /// any borrowed keys/values into owned ones.
+    /// Materialise into a fully-owned `NamedVectors<'static>` by cloning any
+    /// borrowed keys/values into owned ones, **preserving native encoding** (a
+    /// `Quantized` vector is not dequantized — see [`CowVector::into_owned`]).
     pub fn into_owned(self) -> NamedVectors<'static> {
         let mut out = NamedVectors::default();
         for (name, vector) in self {
-            out.insert(name.into_owned(), vector.to_owned());
+            out.insert_cow(name.into_owned(), vector.into_owned());
         }
         out
     }
@@ -301,6 +414,13 @@ impl<'a> NamedVectors<'a> {
 
     pub fn get(&self, key: &VectorName) -> Option<VectorRef<'_>> {
         self.map.get(key).map(|v| v.as_vec_ref())
+    }
+
+    /// Like [`Self::get`] but returns the owning [`CowVector`], which (unlike a
+    /// borrowed `VectorRef`) can be a [`CowVector::Quantized`]. The write path
+    /// uses this so it can route quantized vectors without dequantizing.
+    pub fn get_cow(&self, key: &VectorName) -> Option<&CowVector<'_>> {
+        self.map.get(key)
     }
 
     pub fn preprocess<'b>(
@@ -338,6 +458,10 @@ impl<'a> NamedVectors<'a> {
                     }
                     *multi_vector = CowMultiVector::Owned(owned_multi_vector);
                 }
+                // Preprocess chokepoint: a quantized vector is already final encoded
+                // bytes (the original float was normalized/cast before quantizing),
+                // so normalization/datatype casting must NOT touch it. Pass through.
+                CowVector::Quantized(_) => {}
             }
         }
     }

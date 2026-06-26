@@ -43,7 +43,9 @@ impl QueryEnum {
         match self {
             QueryEnum::Nearest(named) => match &named.query {
                 VectorInternal::Sparse(sparse_vector) => f(named.get_name(), sparse_vector),
-                VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
+                VectorInternal::Dense(_)
+                | VectorInternal::MultiDense(_)
+                | VectorInternal::Quantized(_) => {}
             },
             QueryEnum::RecommendBestScore(reco_query)
             | QueryEnum::RecommendSumScores(reco_query) => {
@@ -51,7 +53,9 @@ impl QueryEnum {
                 for vector in reco_query.query.flat_iter() {
                     match vector {
                         VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
-                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
+                        VectorInternal::Dense(_)
+                        | VectorInternal::MultiDense(_)
+                        | VectorInternal::Quantized(_) => {}
                     }
                 }
             }
@@ -60,7 +64,9 @@ impl QueryEnum {
                 for vector in discover_query.query.flat_iter() {
                     match vector {
                         VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
-                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
+                        VectorInternal::Dense(_)
+                        | VectorInternal::MultiDense(_)
+                        | VectorInternal::Quantized(_) => {}
                     }
                 }
             }
@@ -69,7 +75,9 @@ impl QueryEnum {
                 for vector in context_query.query.flat_iter() {
                     match vector {
                         VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
-                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
+                        VectorInternal::Dense(_)
+                        | VectorInternal::MultiDense(_)
+                        | VectorInternal::Quantized(_) => {}
                     }
                 }
             }
@@ -78,7 +86,9 @@ impl QueryEnum {
                 for vector in feedback_query.query.flat_iter() {
                     match vector {
                         VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
-                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
+                        VectorInternal::Dense(_)
+                        | VectorInternal::MultiDense(_)
+                        | VectorInternal::Quantized(_) => {}
                     }
                 }
             }

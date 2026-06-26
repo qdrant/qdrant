@@ -14,9 +14,11 @@ mod test;
 mod turbo_encoded_vectors;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, OnceLock, RwLock};
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -30,8 +32,8 @@ use self::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::OperationResult;
-use crate::data_types::named_vectors::CowVector;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::named_vectors::{CowQuantizedVector, CowVector};
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -42,6 +44,85 @@ use crate::vector_storage::{DenseTQVectorStorage, VectorStorage, VectorStorageRe
 const TQDT_BITS: TQBits = TQBits::Bits4;
 const TQDT_MODE: TQMode = TQMode::Normal;
 const TQDT_ROTATION: TQRotation = TQRotation::Unpadded;
+
+/// Build the canonical TQDT quantizer for a `(dim, distance)`.
+///
+/// Single source of truth for the `TQDT_*` constants so the owning storage, the
+/// process-wide dequant cache, and tests all construct an identical quantizer —
+/// which is what makes encoded bytes portable and decodable without a storage.
+pub(crate) fn tqdt_quantizer(dim: usize, distance: Distance) -> TurboQuantizer {
+    TurboQuantizer::new(
+        dim,
+        TQDT_BITS,
+        TQDT_MODE,
+        distance.into(),
+        TQDT_ROTATION,
+        None,
+    )
+}
+
+/// Process-wide cache of TQDT quantizers keyed by `(dim, distance)`.
+///
+/// The quantizer is fully determined by these two plus the global `TQDT_*`
+/// constants, so a cached instance decodes bytes identically to the owning
+/// storage. This lets a free-floating `CowVector::Quantized` dequantize without
+/// holding a storage reference. Constructing a quantizer rebuilds the Hadamard
+/// rotation, so we cache rather than rebuild per decode.
+fn tqdt_quantizer_cached(dim: usize, distance: Distance) -> Arc<TurboQuantizer> {
+    type QuantizerCache = HashMap<(usize, Distance), Arc<TurboQuantizer>>;
+    static CACHE: OnceLock<RwLock<QuantizerCache>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    if let Some(quantizer) = cache.read().unwrap().get(&(dim, distance)) {
+        return quantizer.clone();
+    }
+    cache
+        .write()
+        .unwrap()
+        .entry((dim, distance))
+        .or_insert_with(|| Arc::new(tqdt_quantizer(dim, distance)))
+        .clone()
+}
+
+/// Decode one TQDT-encoded dense vector to `f32`, dropping the padding tail so
+/// the result has the original dimensionality. Shared by the storage's own
+/// `dequantize_vector` and the storage-free [`dequantize_tqdt_dense`].
+fn decode_dense(quantizer: &TurboQuantizer, bytes: &[u8], dim: usize) -> DenseVector {
+    let mut dequantized = quantizer.dequantize::<f64>(bytes);
+    quantizer.apply_inverse_rotation(&mut dequantized);
+    dequantized[..dim].iter().map(|i| *i as f32).collect()
+}
+
+/// Dequantize TQDT-encoded bytes of a single dense vector, resolving the
+/// quantizer from the process-wide cache (see [`tqdt_quantizer_cached`]).
+pub fn dequantize_tqdt_dense(bytes: &[u8], dim: usize, distance: Distance) -> DenseVector {
+    decode_dense(&tqdt_quantizer_cached(dim, distance), bytes, dim)
+}
+
+/// Dequantize a TQDT-encoded multivector blob: `count` concatenated inner
+/// encodings, each one dense record of `dim` floats. Mirrors the dense decode
+/// per inner vector and reassembles the flattened multivector.
+pub fn dequantize_tqdt_multi(
+    bytes: &[u8],
+    dim: usize,
+    distance: Distance,
+    count: usize,
+) -> crate::data_types::vectors::MultiDenseVectorInternal {
+    let quantizer = tqdt_quantizer_cached(dim, distance);
+    let inner_size = quantizer.quantized_size();
+    let mut flattened = Vec::with_capacity(count * dim);
+    for inner in bytes.chunks_exact(inner_size) {
+        let mut dequantized = quantizer.dequantize::<f64>(inner);
+        quantizer.apply_inverse_rotation(&mut dequantized);
+        flattened.extend(dequantized[..dim].iter().map(|i| *i as f32));
+    }
+    crate::data_types::vectors::MultiDenseVectorInternal::new(flattened, dim)
+}
+
+/// Size in bytes of one TQDT-encoded dense vector for `(dim, distance)`. Used to
+/// validate a byte upsert and to split a concatenated multivector blob.
+pub fn tqdt_quantized_size(dim: usize, distance: Distance) -> usize {
+    tqdt_quantizer_cached(dim, distance).quantized_size()
+}
 
 const VECTORS_PATH: &str = "tq_vectors.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -74,6 +155,41 @@ impl TurboVectorStorage {
     /// Raw encoded vector blob for one vector (no dequantization/lloyd lookup).
     pub fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_quantized_vector(key)
+    }
+
+    /// Wrap raw encoded bytes into a [`CowQuantizedVector`] with this storage's
+    /// decode context (`dim`, `distance`).
+    fn quantized_cow<'a>(&self, bytes: Cow<'a, [u8]>) -> CowQuantizedVector<'a> {
+        CowQuantizedVector {
+            bytes,
+            dim: self.dim,
+            distance: self.distance,
+            multivector_count: None,
+        }
+    }
+
+    /// Insert a pre-encoded TQ vector blob at `key`, bypassing quantization.
+    ///
+    /// The bytes must have been produced by an identical quantizer (same TQDT
+    /// constants); the caller guarantees that. Used by the native
+    /// segment-to-segment transfer path to avoid a lossy TQ -> float -> TQ
+    /// round-trip.
+    pub fn insert_quantized_vector(
+        &mut self,
+        key: PointOffsetType,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let expected = self.quantizer.quantized_size();
+        if bytes.len() != expected {
+            return Err(OperationError::service_error(format!(
+                "Cannot insert encoded TQ vector: got {} bytes, expected {expected}",
+                bytes.len(),
+            )));
+        }
+        self.storage.upsert_vector(key, bytes, hw_counter)?;
+        self.set_deleted(key, false);
+        Ok(())
     }
 
     /// Populate all pages of the encoded vectors into the page cache.
@@ -151,22 +267,6 @@ impl TurboVectorStorage {
         let score = self.quantizer.score_symmetric(&v1, &v2);
         if self.invert_score() { -score } else { score }
     }
-
-    fn dequantize_vector(&self, quantized: Cow<[u8]>) -> CowVector<'_> {
-        let mut dequantized = self.quantizer.dequantize::<f64>(&quantized);
-
-        // Rotate back
-        self.quantizer.apply_inverse_rotation(&mut dequantized);
-
-        // Drop the padding tail: callers expect the original dimensionality.
-        CowVector::Dense(Cow::Owned(
-            // Skip the padding
-            dequantized[..self.dim]
-                .iter()
-                .map(|i| *i as f32)
-                .collect::<Vec<_>>(),
-        ))
-    }
 }
 
 impl std::fmt::Debug for TurboVectorStorage {
@@ -232,14 +332,7 @@ fn open_turbo_vector_storage_impl(
 ) -> OperationResult<TurboVectorStorage> {
     fs_err::create_dir_all(path)?;
 
-    let quantizer = TurboQuantizer::new(
-        dim,
-        TQDT_BITS,
-        TQDT_MODE,
-        distance.into(),
-        TQDT_ROTATION,
-        None,
-    );
+    let quantizer = tqdt_quantizer(dim, distance);
 
     let storage = open_storage(&path.join(VECTORS_PATH), quantizer.quantized_size())?;
 
@@ -284,12 +377,19 @@ impl VectorStorageRead for TurboVectorStorage {
         self.storage.vectors_count()
     }
 
+    /// A TurboQuant storage holds only encoded bytes — it has **no float view**.
+    /// `get_vector` therefore returns the storage-native [`CowVector::Quantized`]
+    /// (borrowed bytes, no copy); any float consumer decodes on demand via
+    /// [`CowQuantizedVector::dequantize`], a deterministic free function over the
+    /// bytes. There is intentionally no dequantize method on the storage.
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.dequantize_vector(self.storage.get_quantized_vector(key))
+        CowVector::Quantized(self.quantized_cow(self.storage.get_quantized_vector(key)))
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        Some(self.dequantize_vector(self.storage.get_quantized_vector_opt(key)?))
+        Some(CowVector::Quantized(
+            self.quantized_cow(self.storage.get_quantized_vector_opt(key)?),
+        ))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -312,6 +412,32 @@ impl VectorStorage for TurboVectorStorage {
         vector: VectorRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        // Native-encoded input (read back from this or another TQ storage): write
+        // the bytes verbatim instead of dequantizing and re-quantizing, so the
+        // encoding never drifts on a copy-on-write or transfer. This is what makes
+        // `VectorRef::Quantized` a first-class storage input — no separate index
+        // method or upsert chokepoint is needed.
+        if let VectorRef::Quantized(quantized) = vector {
+            // Byte length alone is ambiguous (a count-1 multivector blob has the
+            // same length as a dense one). Reject a blob from a different TQ
+            // context so we never copy bytes that would decode/score wrong.
+            if quantized.dim != self.dim
+                || quantized.distance != self.distance
+                || quantized.multivector_count.is_some()
+            {
+                return Err(OperationError::service_error(format!(
+                    "Cannot insert quantized vector: blob context (dim={}, distance={:?}, \
+                     multivector_count={:?}) does not match this dense storage (dim={}, distance={:?})",
+                    quantized.dim,
+                    quantized.distance,
+                    quantized.multivector_count,
+                    self.dim,
+                    self.distance,
+                )));
+            }
+            return self.insert_quantized_vector(key, &quantized.bytes, hw_counter);
+        }
+
         let dense: &[VectorElementType] = vector.try_into()?;
 
         let quantized = self
@@ -433,6 +559,64 @@ mod tests {
     /// Seeds swept by the data-dependent tests below, so each runs over several
     /// independent random inputs instead of a single fixed one.
     const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E];
+
+    /// The native byte-copy primitive (`insert_quantized_vector`) must preserve
+    /// the encoding bit-for-bit, unlike the lossy dequantize -> re-quantize path
+    /// that drives the TQ round-trip drift bug.
+    #[test]
+    fn insert_quantized_vector_preserves_encoding_exactly() {
+        let dim = 256;
+        let distance = Distance::Dot;
+        let dir = Builder::new()
+            .prefix("turbo_native_copy")
+            .tempdir()
+            .unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut storage =
+            open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+
+        let input = &make_vectors(dim, 1, 0xABCD)[0];
+
+        // key 0: float -> quantize (the original encoding).
+        storage
+            .insert_vector(0, input.as_slice().into(), &hw_counter)
+            .unwrap();
+        let b0 = storage.get_quantized_vector(0).into_owned();
+
+        // key 1: dequantize(b0) -> re-quantize. This is the lossy round-trip.
+        // `get_vector` now returns the storage-native `Quantized`; `DenseVector::
+        // try_from` decodes it to the float the re-quantize path consumes.
+        let dequantized = DenseVector::try_from(storage.get_vector::<Random>(0).to_owned())
+            .expect("dense vector");
+        storage
+            .insert_vector(1, dequantized.as_slice().into(), &hw_counter)
+            .unwrap();
+        let b1 = storage.get_quantized_vector(1).into_owned();
+
+        // key 2: native byte copy of b0 -> must be byte-identical to b0.
+        storage
+            .insert_quantized_vector(2, &b0, &hw_counter)
+            .unwrap();
+        let b2 = storage.get_quantized_vector(2).into_owned();
+
+        assert_eq!(
+            b2, b0,
+            "native byte copy must preserve the encoding exactly"
+        );
+        assert!(!storage.is_deleted_vector(2));
+        // b1 is the re-quantized round-trip; it is allowed to drift from b0.
+        // We don't assert it differs (some vectors are fixed points), but the
+        // native copy (b2) is guaranteed not to.
+        let _ = b1;
+
+        // A wrong-sized blob must be rejected, not silently corrupt the slot.
+        assert!(
+            storage
+                .insert_quantized_vector(3, &b0[..b0.len() - 1], &hw_counter)
+                .is_err(),
+        );
+    }
 
     #[test]
     fn upsert_flush_reload_in_ram_matches_independent_oracle() {

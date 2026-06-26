@@ -48,7 +48,9 @@ where
             let search_results = if query_context.is_require_idf() {
                 let vector = (*vector).clone().transform(|mut vector| {
                     match &mut vector {
-                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {
+                        VectorInternal::Dense(_)
+                        | VectorInternal::MultiDense(_)
+                        | VectorInternal::Quantized(_) => {
                             return Err(OperationError::WrongSparse);
                         }
                         VectorInternal::Sparse(sparse) => {

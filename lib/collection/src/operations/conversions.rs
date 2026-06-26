@@ -1204,6 +1204,15 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
             VectorInternal::MultiDense(_vector) => Err(Status::invalid_argument(
                 "MultiDense vector is not supported in search request",
             )),
+            // User input is never quantized; decode defensively if it ever is.
+            VectorInternal::Quantized(q) => match q.dequantize() {
+                VectorInternal::Dense(vector) => Ok(Self::Dense(vector)),
+                VectorInternal::Sparse(_)
+                | VectorInternal::MultiDense(_)
+                | VectorInternal::Quantized(_) => {
+                    Err(Status::invalid_argument("unexpected quantized vector"))
+                }
+            },
         }
     }
 }

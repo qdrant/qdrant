@@ -12,8 +12,9 @@ use tempfile::Builder;
 
 use super::multi::{TurboMultiVectorStorage, open_appendable_turbo_multi_vector_storage};
 use super::*;
-use crate::data_types::named_vectors::CowMultiVector;
-use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVectorRef};
+use crate::data_types::vectors::{
+    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorInternal,
+};
 use crate::types::MultiVectorConfig;
 use crate::vector_storage::MultiTQVectorStorage;
 
@@ -40,9 +41,16 @@ fn to_dense(vector: CowVector) -> DenseVector {
 
 fn to_multi(vector: CowVector) -> MultiDenseVectorInternal {
     match vector {
-        CowVector::MultiDense(CowMultiVector::Owned(multi)) => multi,
-        CowVector::Dense(_) | CowVector::Sparse(_) | CowVector::MultiDense(_) => {
-            panic!("expected owned multi-dense vector")
+        CowVector::Quantized(quantized) => match quantized.dequantize() {
+            VectorInternal::MultiDense(multi) => multi,
+            other @ (VectorInternal::Dense(_)
+            | VectorInternal::Sparse(_)
+            | VectorInternal::Quantized(_)) => {
+                panic!("expected multi-dense dequantize, got {other:?}")
+            }
+        },
+        other @ (CowVector::Dense(_) | CowVector::Sparse(_) | CowVector::MultiDense(_)) => {
+            panic!("expected quantized multivector, got {other:?}")
         }
     }
 }

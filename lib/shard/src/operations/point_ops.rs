@@ -809,6 +809,8 @@ impl From<VectorInternal> for VectorPersisted {
             VectorInternal::MultiDense(vector) => {
                 VectorPersisted::MultiDense(vector.into_multi_vectors())
             }
+            // The float persisted form carries no encoding; decode the bytes.
+            VectorInternal::Quantized(q) => Self::from(q.dequantize()),
         }
     }
 }

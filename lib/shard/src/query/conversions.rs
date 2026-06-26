@@ -495,12 +495,16 @@ impl QueryEnum {
                         Some(name),
                         VectorInternal::MultiDense(_)
                         | VectorInternal::Sparse(_)
-                        | VectorInternal::Dense(_),
+                        | VectorInternal::Dense(_)
+                        | VectorInternal::Quantized(_),
                     ) => name,
 
-                    (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
-                        DEFAULT_VECTOR_NAME.to_owned()
-                    }
+                    (
+                        None,
+                        VectorInternal::MultiDense(_)
+                        | VectorInternal::Dense(_)
+                        | VectorInternal::Quantized(_),
+                    ) => DEFAULT_VECTOR_NAME.to_owned(),
                 };
 
                 let named_vector = NamedQuery::new(vector, name);

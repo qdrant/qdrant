@@ -173,6 +173,8 @@ impl From<Vector> for Vectors {
             VectorInternal::Sparse(v) => Self(VectorStructInternal::Named(
                 [(String::new(), VectorInternal::Sparse(v))].into(),
             )),
+            // Output boundary: decode quantized bytes to floats for the user.
+            VectorInternal::Quantized(q) => Self::from(Vector(q.dequantize())),
         }
     }
 }

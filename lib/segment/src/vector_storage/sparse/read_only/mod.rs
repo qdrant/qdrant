@@ -90,7 +90,7 @@ mod tests {
                     assert_eq!(got.indices, sparse_vectors[id as usize].indices);
                     assert_eq!(got.values, sparse_vectors[id as usize].values);
                 }
-                CowVector::Dense(_) | CowVector::MultiDense(_) => {
+                CowVector::Dense(_) | CowVector::MultiDense(_) | CowVector::Quantized(_) => {
                     panic!("expected sparse vector for point {id}")
                 }
             }
@@ -157,7 +157,9 @@ mod tests {
         // The appended vector is visible; deleted ones are flagged.
         match reader.get_vector::<Random>(first.len() as PointOffsetType) {
             CowVector::Sparse(got) => assert_eq!(got.values, second[0].values),
-            CowVector::Dense(_) | CowVector::MultiDense(_) => panic!("expected sparse vector"),
+            CowVector::Dense(_) | CowVector::MultiDense(_) | CowVector::Quantized(_) => {
+                panic!("expected sparse vector")
+            }
         }
         for &id in &deleted_ids {
             assert!(reader.is_deleted_vector(id));

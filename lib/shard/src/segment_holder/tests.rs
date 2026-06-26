@@ -1576,3 +1576,102 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
         "Point 100 should be deleted from the source"
     );
 }
+
+/// Regression test for the TurboQuant round-trip drift bug on cross-segment
+/// copy-on-write. A payload write on a point living in a non-appendable segment
+/// moves it to an appendable segment; the vector must be relocated as native
+/// encoded bytes, not dequantized and re-quantized, so its encoding is identical
+/// before and after the move.
+#[test]
+fn test_cow_preserves_turbo_encoding() {
+    use common::types::DeferredBehavior;
+    use segment::data_types::named_vectors::CowVector;
+    use segment::data_types::vectors::only_default_vector;
+    use segment::segment_constructor::build_segment;
+    use segment::types::{
+        Indexes, SegmentConfig, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    };
+
+    let dim = 128;
+    let dir = Builder::new().prefix("turbo_cow_holder").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let turbo_config = || SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+        payload_storage_type: Default::default(),
+    };
+
+    // Source: a Turbo segment holding the point, then frozen as non-appendable so
+    // a mutation forces a copy-on-write move into the appendable target.
+    let (mut source, _) = build_segment(dir.path(), &turbo_config(), None, true).unwrap();
+
+    let point = 1.into();
+    let mut rng = rand::rng();
+    let dense: Vec<f32> = {
+        let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        v.iter().map(|&x| x / norm).collect()
+    };
+    source
+        .upsert_point(1, point, only_default_vector(&dense), &hw_counter)
+        .unwrap();
+
+    let read_encoding = |segment: &dyn SegmentEntry| -> Vec<u8> {
+        let native = segment
+            .all_vectors_with_behavior(point, DeferredBehavior::WithDeferred, &hw_counter)
+            .unwrap();
+        match native
+            .get_cow(DEFAULT_VECTOR_NAME)
+            .expect("default vector must exist")
+        {
+            CowVector::Quantized(quantized) => quantized.bytes.to_vec(),
+            other @ (CowVector::Dense(_) | CowVector::Sparse(_) | CowVector::MultiDense(_)) => {
+                panic!("expected quantized vector, got {other:?}")
+            }
+        }
+    };
+
+    let original_encoding = read_encoding(&source);
+
+    source.appendable_flag = false;
+
+    // Empty appendable Turbo target to receive the moved point.
+    let (target, _) = build_segment(dir.path(), &turbo_config(), None, true).unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let target_id = holder.add_new(target);
+    let _source_id = holder.add_new(source);
+
+    holder
+        .apply_points_with_conditional_move(
+            100,
+            &[point],
+            |_point_id, _segment| Ok(true),
+            |_point_id, _vectors, payload| {
+                *payload = payload_json! { "moved": true };
+            },
+            &hw_counter,
+        )
+        .unwrap();
+
+    let target = holder.get(target_id).unwrap().get();
+    let target = target.read();
+    let moved_encoding = read_encoding(&*target);
+
+    assert_eq!(
+        moved_encoding, original_encoding,
+        "turbo encoding drifted across a copy-on-write segment move",
+    );
+}

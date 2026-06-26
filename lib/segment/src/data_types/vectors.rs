@@ -30,6 +30,12 @@ pub enum VectorInternal {
     Dense(DenseVector),
     Sparse(SparseVector),
     MultiDense(MultiDenseVectorInternal),
+    /// A storage-native quantized vector (e.g. TurboQuant bytes), carried owned
+    /// without dequantizing. `VectorInternal` is therefore "maybe-encoded": every
+    /// consumer that needs floats decodes it (compiler-enforced at each match /
+    /// `From`/`TryFrom`); only a matching TQ storage write consumes the bytes
+    /// verbatim, which is what makes a move/transfer lossless.
+    Quantized(super::named_vectors::CowQuantizedVector<'static>),
 }
 
 impl Hash for VectorInternal {
@@ -51,6 +57,9 @@ impl Hash for VectorInternal {
             VectorInternal::MultiDense(v) => {
                 v.hash(state);
             }
+            VectorInternal::Quantized(q) => {
+                q.bytes.hash(state);
+            }
         }
     }
 }
@@ -62,6 +71,8 @@ impl VectorInternal {
             VectorInternal::Dense(_dense) => 1,
             VectorInternal::Sparse(sparse) => sparse.indices.len().div_ceil(SPARSE_DIMS_COST_UNIT),
             VectorInternal::MultiDense(multivec) => multivec.vectors_count(),
+            // A quantized vector is dense — one comparison, like `Dense`.
+            VectorInternal::Quantized(_) => 1,
         }
     }
 
@@ -77,6 +88,8 @@ impl VectorInternal {
                 }
             }
             VectorInternal::MultiDense(_) => {}
+            // Already-final encoded bytes; nothing to preprocess.
+            VectorInternal::Quantized(_) => {}
         }
     }
 
@@ -97,6 +110,10 @@ pub enum VectorRef<'a> {
     Dense(&'a [VectorElementType]),
     Sparse(&'a SparseVector),
     MultiDense(TypedMultiDenseVectorRef<'a, VectorElementType>),
+    /// A borrowed storage-native quantized vector (e.g. TurboQuant bytes). It has
+    /// no float view, so float consumers must dequantize (`try_into`); only a
+    /// matching TQ storage's `insert_vector` consumes the bytes verbatim.
+    Quantized(&'a super::named_vectors::CowQuantizedVector<'a>),
 }
 
 impl<'a> TryFrom<VectorRef<'a>> for &'a [VectorElementType] {
@@ -107,6 +124,11 @@ impl<'a> TryFrom<VectorRef<'a>> for &'a [VectorElementType] {
             VectorRef::Dense(v) => Ok(v),
             VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
             VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
+            // A quantized vector has no borrowed float view — it must be owned
+            // (dequantized) first, or consumed verbatim by a matching TQ storage.
+            VectorRef::Quantized(_) => Err(OperationError::service_error(
+                "cannot borrow a quantized vector as a float slice; dequantize it first",
+            )),
         }
     }
 }
@@ -119,6 +141,7 @@ impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
             VectorRef::Dense(_) => Err(OperationError::WrongSparse),
             VectorRef::Sparse(v) => Ok(v),
             VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
+            VectorRef::Quantized(_) => Err(OperationError::WrongSparse),
         }
     }
 }
@@ -134,6 +157,7 @@ impl<'a> TryFrom<VectorRef<'a>> for TypedMultiDenseVectorRef<'a, f32> {
             }),
             VectorRef::Sparse(_v) => Err(OperationError::WrongSparse),
             VectorRef::MultiDense(v) => Ok(v),
+            VectorRef::Quantized(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -157,6 +181,8 @@ impl TryFrom<VectorInternal> for DenseVector {
             VectorInternal::Dense(v) => Ok(v),
             VectorInternal::Sparse(_) => Err(OperationError::WrongSparse),
             VectorInternal::MultiDense(_) => Err(OperationError::WrongMulti),
+            // Decode the quantized bytes, then take the dense result.
+            VectorInternal::Quantized(q) => Self::try_from(q.dequantize()),
         }
     }
 }
@@ -169,6 +195,7 @@ impl TryFrom<VectorInternal> for SparseVector {
             VectorInternal::Dense(_) => Err(OperationError::WrongSparse),
             VectorInternal::Sparse(v) => Ok(v),
             VectorInternal::MultiDense(_) => Err(OperationError::WrongMulti),
+            VectorInternal::Quantized(_) => Err(OperationError::WrongSparse),
         }
     }
 }
@@ -185,6 +212,7 @@ impl TryFrom<VectorInternal> for MultiDenseVectorInternal {
             }
             VectorInternal::Sparse(_) => Err(OperationError::WrongSparse),
             VectorInternal::MultiDense(v) => Ok(v),
+            VectorInternal::Quantized(q) => Self::try_from(q.dequantize()),
         }
     }
 }
@@ -245,6 +273,7 @@ impl<'a> From<&'a VectorInternal> for VectorRef<'a> {
             VectorInternal::MultiDense(v) => {
                 VectorRef::MultiDense(TypedMultiDenseVectorRef::from(v))
             }
+            VectorInternal::Quantized(q) => VectorRef::Quantized(q),
         }
     }
 }
@@ -482,6 +511,8 @@ impl VectorRef<'_> {
             VectorRef::Dense(v) => VectorInternal::Dense(v.to_vec()),
             VectorRef::Sparse(v) => VectorInternal::Sparse(v.clone()),
             VectorRef::MultiDense(v) => VectorInternal::MultiDense(v.to_owned()),
+            // Preserve the native encoding (see `CowVector::to_owned`).
+            VectorRef::Quantized(q) => VectorInternal::Quantized(q.clone().into_owned()),
         }
     }
 }
@@ -494,6 +525,10 @@ impl<'a> TryInto<&'a [VectorElementType]> for &'a VectorInternal {
             VectorInternal::Dense(v) => Ok(v),
             VectorInternal::Sparse(_) => Err(OperationError::WrongSparse),
             VectorInternal::MultiDense(_) => Err(OperationError::WrongMulti),
+            // No borrowed float view — it must be owned (dequantized) first.
+            VectorInternal::Quantized(_) => Err(OperationError::service_error(
+                "cannot borrow a quantized vector as a float slice; dequantize it first",
+            )),
         }
     }
 }
@@ -506,6 +541,7 @@ impl<'a> TryInto<&'a SparseVector> for &'a VectorInternal {
             VectorInternal::Dense(_) => Err(OperationError::WrongSparse),
             VectorInternal::Sparse(v) => Ok(v),
             VectorInternal::MultiDense(_) => Err(OperationError::WrongMulti),
+            VectorInternal::Quantized(_) => Err(OperationError::WrongSparse),
         }
     }
 }
@@ -518,6 +554,7 @@ impl<'a> TryInto<&'a MultiDenseVectorInternal> for &'a VectorInternal {
             VectorInternal::Dense(_) => Err(OperationError::WrongMulti), // &Dense vector cannot be converted to &MultiDense
             VectorInternal::Sparse(_) => Err(OperationError::WrongSparse),
             VectorInternal::MultiDense(v) => Ok(v),
+            VectorInternal::Quantized(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -572,6 +609,18 @@ impl From<NamedVectors<'_>> for VectorStructInternal {
             let vector_ref = v.get(DEFAULT_VECTOR_NAME).unwrap();
 
             match vector_ref {
+                VectorRef::Quantized(q) => match q.dequantize() {
+                    VectorInternal::Dense(v) => VectorStructInternal::Single(v),
+                    // A quantized multivector must produce the same `MultiDense`
+                    // shape as its plain equivalent (the `VectorRef::MultiDense`
+                    // arm below), not a `Named` wrapper.
+                    VectorInternal::MultiDense(v) => VectorStructInternal::MultiDense(v),
+                    other @ (VectorInternal::Sparse(_) | VectorInternal::Quantized(_)) => {
+                        let mut map = HashMap::new();
+                        map.insert(DEFAULT_VECTOR_NAME.to_owned(), other);
+                        VectorStructInternal::Named(map)
+                    }
+                },
                 VectorRef::Dense(v) => VectorStructInternal::Single(v.to_owned()),
                 VectorRef::Sparse(v) => {
                     debug_assert!(false, "Sparse vector cannot be default");
@@ -606,6 +655,18 @@ impl From<NamedVectorsOwned> for VectorStructInternal {
                     VectorStructInternal::Named(map)
                 }
                 VectorInternal::MultiDense(v) => VectorStructInternal::MultiDense(v),
+                // Output boundary: decode the quantized bytes to a float vector.
+                VectorInternal::Quantized(q) => match q.dequantize() {
+                    VectorInternal::Dense(v) => VectorStructInternal::Single(v),
+                    // Keep a quantized multivector aligned with the plain
+                    // `MultiDense` arm above instead of wrapping it in `Named`.
+                    VectorInternal::MultiDense(v) => VectorStructInternal::MultiDense(v),
+                    other @ (VectorInternal::Sparse(_) | VectorInternal::Quantized(_)) => {
+                        let mut map = HashMap::new();
+                        map.insert(DEFAULT_VECTOR_NAME.to_owned(), other);
+                        VectorStructInternal::Named(map)
+                    }
+                },
             }
         } else {
             VectorStructInternal::Named(v.into_iter().collect())

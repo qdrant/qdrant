@@ -37,6 +37,8 @@ impl From<VectorInternal> for VectorOutput {
             VectorInternal::MultiDense(vector) => {
                 VectorOutput::MultiDense(vector.into_multi_vectors())
             }
+            // Output boundary: a quantized vector is decoded to floats for the user.
+            VectorInternal::Quantized(q) => VectorOutput::from(q.dequantize()),
         }
     }
 }

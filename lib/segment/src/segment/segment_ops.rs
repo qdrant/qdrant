@@ -174,6 +174,11 @@ impl Segment {
         //    `update_vector(_, None, _)` insert — including those would
         //    promote phantom data into the fresh slot, so we skip them
         //    and write `None` at new_id (re-tombstoning the slot).
+        // For an encoded-primary storage (e.g. TurboQuant) `get_vector_opt`
+        // yields a `CowVector::Quantized`; `to_owned` preserves the encoding as
+        // `VectorInternal::Quantized`, so the native bytes ride through the
+        // `mutate` closure and back into storage untouched unless the closure
+        // actually replaces the vector — no lossy TQ -> float -> TQ round-trip.
         let mut vectors: NamedVectors<'static> = NamedVectors::default();
         for (vector_name, vector_data) in self.vector_data.iter() {
             let storage = vector_data.vector_storage.borrow();

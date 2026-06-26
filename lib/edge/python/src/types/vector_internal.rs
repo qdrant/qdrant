@@ -150,6 +150,10 @@ impl<'py> IntoPyObject<'py> for &PyNamedVectorInternal {
             VectorInternal::Dense(dense) => dense.into_bound_py_any(py),
             VectorInternal::Sparse(sparse) => PySparseVector(sparse.clone()).into_bound_py_any(py),
             VectorInternal::MultiDense(multi) => multi_dense_into_py(multi, py),
+            // Output boundary: decode quantized bytes to floats for Python.
+            VectorInternal::Quantized(q) => {
+                (&PyNamedVectorInternal(q.dequantize())).into_pyobject(py)
+            }
         }
     }
 }
@@ -160,6 +164,7 @@ impl Repr for PyNamedVectorInternal {
             VectorInternal::Dense(dense) => dense.fmt(f),
             VectorInternal::Sparse(sparse) => PySparseVector::wrap_ref(sparse).fmt(f),
             VectorInternal::MultiDense(multi) => f.list(multi.multi_vectors()),
+            VectorInternal::Quantized(q) => Repr::fmt(&PyNamedVectorInternal(q.dequantize()), f),
         }
     }
 }

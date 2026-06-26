@@ -102,6 +102,8 @@ impl TryFrom<rest::VectorStructOutput> for grpc::VectorsOutput {
 impl From<VectorInternal> for grpc::VectorOutput {
     fn from(vector: VectorInternal) -> Self {
         let vector = match vector {
+            // Output boundary: decode quantized bytes to floats for the user.
+            VectorInternal::Quantized(q) => return Self::from(q.dequantize()),
             VectorInternal::Dense(vector) => {
                 grpc::vector_output::Vector::Dense(grpc::DenseVector { data: vector })
             }
@@ -419,6 +421,8 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
 impl From<VectorInternal> for grpc::Vector {
     fn from(vector: VectorInternal) -> Self {
         let vector = match vector {
+            // Output boundary: decode quantized bytes to floats for the user.
+            VectorInternal::Quantized(q) => return Self::from(q.dequantize()),
             VectorInternal::Dense(vector) => {
                 grpc::vector::Vector::Dense(grpc::DenseVector { data: vector })
             }
@@ -608,6 +612,8 @@ impl From<VectorInternal> for grpc::RawVector {
         use crate::grpc::qdrant::raw_vector::Variant;
 
         let variant = match value {
+            // Output boundary: decode quantized bytes to floats for the user.
+            VectorInternal::Quantized(q) => return Self::from(q.dequantize()),
             VectorInternal::Dense(vector) => Variant::Dense(grpc::DenseVector::from(vector)),
             VectorInternal::Sparse(vector) => Variant::Sparse(grpc::SparseVector::from(vector)),
             VectorInternal::MultiDense(vector) => {
