@@ -4,7 +4,7 @@ use common::ext::aligned_vec::ACow;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{OwnedReadPipeline, Result, UniversalRead, UserData};
 
-use super::buffer::read_into_byte_buffer;
+use super::buffer::{read_into_byte_buffer, read_whole_into_byte_buffer};
 use super::inner::PipelineInner;
 use crate::file::BlobFile;
 use crate::read::AsyncRead;
@@ -50,7 +50,11 @@ where
     }
 
     fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
-        // TODO(uio): implement schedule_whole in `AsyncRead`
+        if from == 0 {
+            let future = read_whole_into_byte_buffer::<A>(&self.file, 1);
+            return self.inner.schedule(&self.file.runtime, user_data, future);
+        }
+        // A tail read from a known offset still needs the current length.
         let eof = self.file.len::<u8>()?;
         if from >= eof {
             return Ok(());

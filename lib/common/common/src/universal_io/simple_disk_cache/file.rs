@@ -1,4 +1,5 @@
 use std::assert_matches;
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::{self, ErrorKind};
 use std::ops::Range;
@@ -16,7 +17,7 @@ use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
 use crate::universal_io::{
-    BorrowedReadPipeline, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result,
+    BorrowedReadPipeline, Item, OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result,
     UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
@@ -239,6 +240,39 @@ where
         Ok(State { remote, local })
     }
 
+    /// Fill the local mirror from one whole-object read when the cache is cold
+    /// (`InitSource::FromScratch`); other init sources fall back to the normal
+    /// initialization.
+    fn ensure_whole_local(&self) -> Result<()> {
+        if self.state.get().is_some() {
+            return Ok(());
+        }
+
+        let mut init_guard = self.init_lock.lock();
+        if self.state.get().is_some() {
+            return Ok(());
+        }
+
+        if !matches!(*init_guard, InitSource::FromScratch) {
+            return self.init_state(&mut init_guard, true, None);
+        }
+
+        let remote = self.open_remote()?;
+        let bytes = remote.read_whole::<u8>()?;
+        let len = bytes.len() as u64;
+        let local = LocalState::new(&self.local_path, len, self.open_options)?;
+        if len > 0 {
+            // SAFETY: `bytes` covers the whole file `0..len` and the remote is
+            // immutable, so the mmap is filled exactly once with correct data.
+            unsafe { local.write_mmap_bytes(&bytes, to_block_range(0..len)) };
+        }
+        self.state
+            .set(State { remote, local })
+            .expect("OnceLock::set must succeed while holding init_lock");
+
+        Ok(())
+    }
+
     /// Make sure every byte in the range `byte_start..remote_len` is present on the local file
     fn populate_from(&self, byte_start: u64) -> std::result::Result<(), UniversalIoError> {
         if crate::low_memory::low_memory_mode().skip_populate() {
@@ -359,6 +393,15 @@ where
         pipeline.schedule::<P>((), self, range, align)?;
         let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
         Ok(bytes)
+    }
+
+    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
+        self.ensure_whole_local()?;
+        let length = self.len::<T>()?;
+        self.read::<Sequential, T>(ReadRange {
+            byte_offset: 0,
+            length,
+        })
     }
 
     fn len<T>(&self) -> Result<u64> {

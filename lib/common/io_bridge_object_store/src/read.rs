@@ -65,6 +65,14 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
         range: Range<u64>,
     ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static;
 
+    /// Fetch the whole object at `path` in one request, returning its total
+    /// length (from the GET response) alongside the body stream — no separate
+    /// `len`/HEAD round-trip.
+    fn read_whole(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static;
+
     fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static;
 
     fn is_empty(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
