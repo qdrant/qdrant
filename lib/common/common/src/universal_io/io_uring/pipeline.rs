@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
-use std::ops::{DerefMut as _, Range};
+use std::ops::Range;
 
 use ::io_uring::types::Fd;
 
@@ -44,7 +44,8 @@ impl<'file, U: UserData> BorrowedReadPipeline<'file, U> for BorrowedIoUringPipel
         range: Range<u64>,
         align: usize,
     ) -> Result<()> {
-        // SAFETY: `fd` does not outlive inner pipeline because `Self` is bound to `'file` lifetime
+        // SAFETY: `fd` does not outlive `inner` pipeline, because `Self` is bound by `'file` lifetime
+
         unsafe {
             self.inner
                 .schedule(user_data, file.fd(), file.direct_io, range, align)
@@ -85,7 +86,8 @@ impl<U: UserData> OwnedReadPipeline<U> for OwnedIoUringPipeline<U> {
         range: Range<u64>,
         align: usize,
     ) -> Result<()> {
-        // SAFETY: `fd` does not outlive inner pipeline because of explicit drop order in `Drop`
+        // SAFETY: `fd` does not outlive `inner` pipeline, because `inner` is always dropped before `file`
+
         unsafe {
             self.inner
                 .schedule(user_data, self.file.fd(), self.file.direct_io, range, align)
@@ -112,29 +114,50 @@ impl<U: UserData> OwnedReadPipeline<U> for OwnedIoUringPipeline<U> {
         self.inner.wait()
     }
 
+    #[expect(
+        clippy::let_and_return,
+        reason = "better readability around unsafe code"
+    )]
     fn into_inner(self) -> IoUringFile {
-        // Wrap `self` in `ManuallyDrop` so own `Drop` doesn't run at the end of `into_inner` scope
+        // Wrap `self` in `ManuallyDrop`, so `Drop` doesn't run at the end of `into_inner` scope
         let mut this = ManuallyDrop::new(self);
 
-        // Drop `inner` before taking `file`
-        let Self { file, inner } = this.deref_mut();
-
-        unsafe {
-            ManuallyDrop::drop(inner);
-            ManuallyDrop::take(file)
-        }
+        // Drop `inner` during `destructure`, then return `file`
+        let file = unsafe { this.destructure() };
+        file
     }
 }
 
-impl<U: UserData> Drop for OwnedIoUringPipeline<U> {
-    fn drop(&mut self) {
-        // Drop `inner` before `file`
-        let Self { file, inner } = self;
+impl<U> OwnedIoUringPipeline<U> {
+    /// Destructure the pipeline. Drop `inner` and return `file`.
+    ///
+    /// # Safety:
+    ///
+    /// Must only be called once. `self` is uninitilized after `destructure` call,
+    /// so caller must prevent `Drop` from running and ensure `self` is not accessed
+    /// after the call.
+    unsafe fn destructure(&mut self) -> IoUringFile {
+        // `inner` might borrow `file`, so we must drop it before returning `file`.
+        //
+        // Take `file` and `inner` out of `ManuallyDrop`, so that we can rely on drop
+        // at the end of scope or panic. Default drop order is *reverse* of declaration,
+        // so we must take `file` *before* `inner`.
 
-        unsafe {
-            ManuallyDrop::drop(inner);
-            ManuallyDrop::drop(file);
-        }
+        let Self { inner, file } = self;
+
+        let file = unsafe { ManuallyDrop::take(file) };
+        let inner = unsafe { ManuallyDrop::take(inner) };
+
+        drop(inner);
+        file
+    }
+}
+
+impl<U> Drop for OwnedIoUringPipeline<U> {
+    fn drop(&mut self) {
+        // Drop `inner` during `destructure`, then drop `file` explicitly
+        let file = unsafe { self.destructure() };
+        drop(file);
     }
 }
 
@@ -177,7 +200,7 @@ impl<U: UserData> IoUringPipelineInner<U> {
         Ok(())
     }
 
-    fn wait<'a>(&mut self) -> Result<Option<(U, ACow<'a>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'static>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();
