@@ -4,7 +4,7 @@ use std::ops::{DerefMut as _, Range};
 
 use ::io_uring::types::Fd;
 
-use super::{IoUringFile, IoUringReadRuntime};
+use super::{IoUringFile, IoUringReadRuntime, KERNEL_PAGE_SIZE};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{
@@ -99,7 +99,13 @@ impl<U: UserData> OwnedReadPipeline<U> for OwnedIoUringPipeline<U> {
             return Ok(());
         }
 
-        self.schedule::<Sequential>(user_data, from..eof, 1)
+        let align = if self.file.direct_io {
+            KERNEL_PAGE_SIZE
+        } else {
+            1
+        };
+
+        self.schedule::<Sequential>(user_data, from..eof, align)
     }
 
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
