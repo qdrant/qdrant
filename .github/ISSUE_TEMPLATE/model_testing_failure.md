@@ -1,6 +1,6 @@
 ---
 title: Nightly model testing failure
-labels: bug
+labels: bug, model testing
 ---
 
 ## Last failure
