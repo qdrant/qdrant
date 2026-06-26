@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::UniversalRead;
 use sparse::common::types::DimId;
 
 use super::ReadOnlyPlainVectorIndex;
@@ -10,12 +9,12 @@ use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
-use crate::index::VectorIndexRead;
+use crate::index::{UniversalReadExt, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
 
-impl<S: UniversalRead> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
+impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
     fn search(
         &self,
         query_vectors: &[&QueryVector],

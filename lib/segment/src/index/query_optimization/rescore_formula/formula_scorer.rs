@@ -12,7 +12,7 @@ use super::parsed_formula::{
 };
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::query_optimization::optimized_filter::OptimizedCondition;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::json_path::JsonPath;
 use crate::types::{DateTimePayloadType, GeoPoint};
 
@@ -28,7 +28,7 @@ pub struct FormulaScorer<'a> {
     /// Payload key -> retriever function
     payload_retrievers: HashMap<JsonPath, VariableRetrieverFn<'a>>,
     /// Condition id -> checker function
-    condition_checkers: Vec<OptimizedCondition<'a>>,
+    condition_checkers: Vec<ConditionCheckerEnum<'a>>,
     /// Default values for all variables
     defaults: HashMap<VariableId, Value>,
 }
@@ -60,7 +60,7 @@ impl<'a> FormulaScorer<'a> {
         formula: ParsedExpression,
         prefetches_scores: &'a [AHashMap<PointOffsetType, ScoreType>],
         payload_retrievers: HashMap<JsonPath, VariableRetrieverFn<'a>>,
-        condition_checkers: Vec<OptimizedCondition<'a>>,
+        condition_checkers: Vec<ConditionCheckerEnum<'a>>,
         defaults: HashMap<VariableId, Value>,
     ) -> Self {
         FormulaScorer {
@@ -401,8 +401,8 @@ mod tests {
             );
 
             let condition_checkers = vec![
-                OptimizedCondition::Checker(Box::new(ConstantConditionChecker::MATCH_ALL)),
-                OptimizedCondition::Checker(Box::new(ConstantConditionChecker::MATCH_NONE)),
+                ConditionCheckerEnum::Constant(ConstantConditionChecker::MATCH_ALL),
+                ConditionCheckerEnum::Constant(ConstantConditionChecker::MATCH_NONE),
             ];
 
             FormulaScorer {

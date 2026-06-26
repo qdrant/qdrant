@@ -5,13 +5,14 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFileOps, read_json_via};
+use common::universal_io::{Populate, UniversalReadFileOps, read_json_via};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::immutable_id_tracker;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::read_only::{ReadOnlyVectorIndexOpenArgs, VectorIndexReadEnum};
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -28,7 +29,7 @@ use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVector
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
-impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Read-only mirror of `load_segment`: assembles every read-only component
     /// from `fs` (id tracker, payload storage+index, per-vector storage/index). No writes.
     pub fn open(
@@ -155,7 +156,7 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
     }
 }
 
-impl<S: UniversalRead + 'static> ReadOnlyVectorData<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Open one dense vector's quantized vectors and index over `fs`, mirroring
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     #[allow(clippy::too_many_arguments)]

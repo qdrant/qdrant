@@ -7,20 +7,20 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use super::super::super::numeric_index_read::NumericIndexRead;
 use super::super::super::{NumericIndexValue, query};
 use super::ReadOnlyNumericIndexInner;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl<T: NumericIndexValue, S: UniversalRead> PayloadFieldIndexRead
+impl<T: NumericIndexValue, S: UniversalReadExt> PayloadFieldIndexRead
     for ReadOnlyNumericIndexInner<T, S>
 where
     Vec<T>: Blob,
@@ -58,7 +58,8 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(query::condition_checker(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(query::condition_checker(self, condition, hw_acc)
+            .map(T::condition_checker_read_only::<S>))
     }
 }

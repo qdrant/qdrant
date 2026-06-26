@@ -1,9 +1,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::universal_io::{MmapFile, MmapFs, UniversalRead};
+use common::universal_io::{MmapFile, MmapFs};
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationResult;
+use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 
 use crate::EdgeConfig;
@@ -20,7 +21,7 @@ impl ReadOnlyEdgeShard<MmapFile> {
     }
 }
 
-impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Open a read-only follower over the edge-shard directory at `path` using read backend `fs`.
     ///
     /// Segments are discovered through the leader's segment manifest (read via `fs`) — a read-only

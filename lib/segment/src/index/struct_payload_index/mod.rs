@@ -2,7 +2,7 @@ mod build;
 mod payload_index;
 mod read_view;
 
-pub use read_view::StructPayloadIndexReadView;
+pub use read_view::{IdsConditionChecker, StructPayloadIndexReadView};
 
 pub mod read_only;
 #[cfg(test)]

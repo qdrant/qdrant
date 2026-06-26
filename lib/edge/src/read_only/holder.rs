@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::universal_io::UniversalRead;
 use parking_lot::RwLock;
+use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 use uuid::Uuid;
 
@@ -11,12 +11,12 @@ use uuid::Uuid;
 ///
 /// The UUID is the stable cross-process identity of a segment directory; the [`Slot::id`] is a
 /// follower-local ordering counter only.
-pub(crate) struct ReadOnlySegmentHolder<S: UniversalRead + 'static> {
+pub(crate) struct ReadOnlySegmentHolder<S: UniversalReadExt + 'static> {
     by_uuid: HashMap<Uuid, Slot<S>>,
     id_source: usize,
 }
 
-struct Slot<S: UniversalRead + 'static> {
+struct Slot<S: UniversalReadExt + 'static> {
     /// Follower-local ordering id. Cross-segment retrieval dedup keys on point version, not on this
     /// id, so it need not match the leader's segment ids.
     id: usize,
@@ -24,7 +24,7 @@ struct Slot<S: UniversalRead + 'static> {
     segment: Arc<RwLock<ReadOnlySegment<S>>>,
 }
 
-impl<S: UniversalRead + 'static> Default for ReadOnlySegmentHolder<S> {
+impl<S: UniversalReadExt + 'static> Default for ReadOnlySegmentHolder<S> {
     fn default() -> Self {
         Self {
             by_uuid: HashMap::new(),
@@ -33,7 +33,7 @@ impl<S: UniversalRead + 'static> Default for ReadOnlySegmentHolder<S> {
     }
 }
 
-impl<S: UniversalRead + 'static> ReadOnlySegmentHolder<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlySegmentHolder<S> {
     pub(crate) fn contains(&self, uuid: &Uuid) -> bool {
         self.by_uuid.contains_key(uuid)
     }

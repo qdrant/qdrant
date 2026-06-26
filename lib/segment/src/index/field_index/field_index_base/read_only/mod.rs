@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 
 pub(crate) use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
 use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex;
 use crate::index::field_index::geo_index::ReadOnlyGeoIndex;
@@ -28,7 +28,7 @@ use crate::types::{
 // have no in-lib caller yet, so the variants would trip `dead_code`. Allow at
 // the enum level until a read-only segment wires the opens in.
 #[allow(dead_code, clippy::enum_variant_names)]
-pub enum ReadOnlyFieldIndex<S: UniversalRead> {
+pub enum ReadOnlyFieldIndex<S: UniversalReadExt> {
     IntIndex(ReadOnlyNumericIndex<IntPayloadType, IntPayloadType, S>),
     DatetimeIndex(ReadOnlyNumericIndex<IntPayloadType, DateTimePayloadType, S>),
     IntMapIndex(ReadOnlyMapIndex<IntPayloadType, S>),
@@ -47,7 +47,7 @@ pub enum ReadOnlyFieldIndex<S: UniversalRead> {
 /// writable side, where the underlying typed index is also not formatted).
 ///
 /// [1]: crate::index::field_index::FieldIndex
-impl<S: UniversalRead> Debug for ReadOnlyFieldIndex<S> {
+impl<S: UniversalReadExt> Debug for ReadOnlyFieldIndex<S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ReadOnlyFieldIndex::IntIndex(_) => write!(f, "IntIndex"),
@@ -98,7 +98,7 @@ impl<S: UniversalRead> Debug for ReadOnlyFieldIndex<S> {
 ///
 /// [1]: crate::index::field_index::FieldIndex
 #[allow(dead_code)] // skeleton: no caller in the lib yet; surface is here for follow-ups
-impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     pub fn files(&self) -> Vec<PathBuf> {
         match self {
             ReadOnlyFieldIndex::IntMapIndex(_)
@@ -355,7 +355,7 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
     }
 }
 
-impl<S: UniversalRead> LiveReload for ReadOnlyFieldIndex<S> {
+impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
     type Fs = S::Fs;
 
     fn live_reload(

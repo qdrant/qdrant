@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::{Populate, UniversalRead};
+use common::universal_io::Populate;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -25,12 +26,12 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// Read-only, generic-over-storage counterpart of [`HNSWIndex`].
 ///
 /// The graph itself stays a plain [`GraphLayers`] (it materializes into RAM on
-/// load via [`GraphLayers::load_universal`] over a [`UniversalRead`] filesystem),
+/// load via [`GraphLayers::load_universal`] over a [`UniversalRead`](common::universal_io::UniversalRead) filesystem),
 /// so only the id tracker, vector storage and quantized vectors are
 /// parameterized by the backing storage `S`.
 ///
 /// [`HNSWIndex`]: super::super::HNSWIndex
-pub struct ReadOnlyHNSWIndex<S: UniversalRead> {
+pub struct ReadOnlyHNSWIndex<S: UniversalReadExt> {
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
@@ -61,7 +62,7 @@ type ReadView<'a, S> = HNSWIndexReadView<
     >,
 >;
 
-impl<S: UniversalRead> ReadOnlyHNSWIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// Read-only mirror of `HNSWIndex::open`: loads the graph through `fs`.
     pub fn open(
         fs: &S::Fs,

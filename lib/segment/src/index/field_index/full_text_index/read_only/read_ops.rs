@@ -9,11 +9,12 @@ use super::super::read_ops;
 use super::super::tokenizers::Tokenizer;
 use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Dispatcher impl: forwards every [`FullTextIndexRead`] method to the active
@@ -159,7 +160,7 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
     }
 }
 
-impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
+impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
     fn count_indexed_points(&self) -> usize {
         FullTextIndexRead::points_count(self)
     }
@@ -193,8 +194,8 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        read_ops::condition_checker(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        read_ops::condition_checker(self, condition, hw_acc, S::condition_checker_full_text)
     }
 
     fn special_check_condition(

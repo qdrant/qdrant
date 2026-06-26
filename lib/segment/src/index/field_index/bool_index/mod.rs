@@ -10,7 +10,7 @@ use common::universal_io::MmapFile;
 pub use immutable_bool_index::ImmutableBoolIndex;
 pub use mutable_bool_index::MutableBoolIndex;
 pub use read_only_bool_index::ReadOnlyBoolIndex;
-pub use read_ops::BoolIndexRead;
+pub use read_ops::{BoolConditionChecker, BoolIndexRead};
 use serde_json::Value as JsonValue;
 
 use super::facet_index::FacetIndex;
@@ -18,8 +18,8 @@ use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::payload_config::IndexMutability;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::FieldCondition;
 
@@ -140,8 +140,11 @@ impl PayloadFieldIndexRead for BoolIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(read_ops::condition_checker(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        match self {
+            BoolIndex::Mutable(index) => index.condition_checker(condition, hw_acc),
+            BoolIndex::Immutable(index) => index.condition_checker(condition, hw_acc),
+        }
     }
 }
 

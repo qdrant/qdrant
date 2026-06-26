@@ -1,14 +1,13 @@
 use std::path::Path;
 
-use common::universal_io::UniversalRead;
-
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::UniversalReadExt;
 
-impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// Open a read-only bool index at `path`, threading every file open through
     /// the filesystem handle `fs`.
     ///

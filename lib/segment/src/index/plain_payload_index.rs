@@ -18,6 +18,7 @@ use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
@@ -134,7 +135,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         filter: &'a Filter,
         _: &HardwareCounterCell,
     ) -> OperationResult<OptimizedFilter<'a>> {
-        Ok(OptimizedFilter::from_checker(Box::new(
+        Ok(OptimizedFilter::from_checker(ConditionCheckerEnum::Plain(
             PlainFilterContext {
                 filter,
                 condition_checker: self.condition_checker.clone(),

@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
-use common::universal_io::UniversalRead;
 use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::FacetResponse;
 use segment::entry::ReadSegmentEntry;
+use segment::index::UniversalReadExt;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::segment::read_only::ReadOnlySegment;
 use segment::types::{ExtendedPointId, PointIdType, ScoredPoint, WithPayloadInterface, WithVector};
@@ -43,7 +43,7 @@ pub trait ReadSegmentHandle {
     fn segment_arc(&self) -> Arc<RwLock<Self::Segment>>;
 }
 
-impl<S: UniversalRead + 'static> ReadSegmentHandle for Arc<RwLock<ReadOnlySegment<S>>> {
+impl<S: UniversalReadExt + 'static> ReadSegmentHandle for Arc<RwLock<ReadOnlySegment<S>>> {
     type Segment = ReadOnlySegment<S>;
 
     fn read_segment(&self) -> RwLockReadGuard<'_, ReadOnlySegment<S>> {

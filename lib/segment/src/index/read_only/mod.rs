@@ -8,7 +8,6 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::UniversalRead;
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -19,6 +18,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::hnsw_index::hnsw::read_only::ReadOnlyHNSWIndex;
 use crate::index::plain_vector_index::read_only::ReadOnlyPlainVectorIndex;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -37,7 +37,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// Wraps each read-capable index type with its read-only newtype. The mutable
 /// RAM sparse index is intentionally absent because it has no persisted
 /// read-only representation.
-pub enum VectorIndexReadEnum<S: UniversalRead + 'static> {
+pub enum VectorIndexReadEnum<S: UniversalReadExt + 'static> {
     Plain(Box<ReadOnlyPlainVectorIndex<S>>),
     Hnsw(Box<ReadOnlyHNSWIndex<S>>),
     SparseCompressedImmutableRamF32(
@@ -61,7 +61,7 @@ pub enum VectorIndexReadEnum<S: UniversalRead + 'static> {
 }
 
 /// Shared read-only backends plus the `fs`/`path` an index opens its files from.
-pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalRead + 'static> {
+pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalReadExt + 'static> {
     pub fs: &'a S::Fs,
     pub path: &'a Path,
     pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
@@ -70,7 +70,7 @@ pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalRead + 'static> {
     pub quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
 }
 
-impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
+impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     /// Open the read-only dense vector index from its config (sparse: follow-up).
     pub fn open(
         vector_config: &VectorDataConfig,
@@ -143,7 +143,7 @@ impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
             path,
         };
 
-        fn open<S: UniversalRead + 'static, TInvertedIndex: InvertedIndexReadOnly<S>>(
+        fn open<S: UniversalReadExt + 'static, TInvertedIndex: InvertedIndexReadOnly<S>>(
             args: ReadOnlySparseVectorIndexOpenArgs<'_, S>,
         ) -> OperationResult<Box<ReadOnlySparseVectorIndex<S, TInvertedIndex>>> {
             Ok(Box::new(ReadOnlySparseVectorIndex::open(args)?))
@@ -228,7 +228,7 @@ impl<S: UniversalRead + 'static> VectorIndexReadEnum<S> {
     }
 }
 
-impl<S: UniversalRead + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
+impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
     fn search(
         &self,
         vectors: &[&QueryVector],

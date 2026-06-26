@@ -10,11 +10,11 @@ use super::full_text_index_read::{FullTextIndexRead, PayloadMatchQueryType};
 use super::inverted_index::{ParsedQuery, TokenId};
 use super::tokenizers::Tokenizer;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{
     FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
     PayloadKeyType,
@@ -181,8 +181,13 @@ impl PayloadFieldIndexRead for FullTextIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        condition_checker(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        condition_checker(
+            self,
+            condition,
+            hw_acc,
+            ConditionCheckerEnum::FullTextWritable,
+        )
     }
 
     fn special_check_condition(
@@ -281,7 +286,8 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> OperationResult<Option<DynConditionChecker<'a>>> {
+    to_enum: impl FnOnce(FullTextConditionChecker<'a, T>) -> ConditionCheckerEnum<'a>,
+) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -320,16 +326,18 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     }?;
 
     let Some(parsed_query) = query_opt else {
-        return Ok(Some(Box::new(ConstantConditionChecker::MATCH_NONE)));
+        return Ok(Some(ConditionCheckerEnum::Constant(
+            ConstantConditionChecker::MATCH_NONE,
+        )));
     };
 
-    Ok(Some(Box::new(FullTextConditionChecker {
+    Ok(Some(to_enum(FullTextConditionChecker {
         index,
         parsed_query,
     })))
 }
 
-struct FullTextConditionChecker<'a, T> {
+pub struct FullTextConditionChecker<'a, T> {
     index: &'a T,
     parsed_query: ParsedQuery,
 }

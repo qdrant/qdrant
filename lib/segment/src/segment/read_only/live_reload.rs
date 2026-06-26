@@ -1,14 +1,14 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
+use crate::index::UniversalReadExt;
 
-impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).
     ///
     /// Draining the id-tracker advances its internal state and cannot be replayed,
@@ -66,7 +66,7 @@ impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
     }
 }
 
-impl<S: UniversalRead + 'static> ReadOnlyVectorData<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Refresh this vector's storage, index and quantized vectors to the current
     /// on-disk state.
     ///

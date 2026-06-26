@@ -3,10 +3,11 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion;
-use common::universal_io::{UniversalRead, read_json_via};
+use common::universal_io::read_json_via;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::read_only::PayloadIndexReloadDiff;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
@@ -53,7 +54,7 @@ fn diff_config_map<C: PartialEq>(
 /// A vector present in both configs but with a changed config is *reloaded*: its
 /// name appears in both `removed_vectors` and `added_vectors`, so apply drops the
 /// stale component and installs the freshly loaded one.
-pub struct SegmentConfigReloadDiff<S: UniversalRead + 'static> {
+pub struct SegmentConfigReloadDiff<S: UniversalReadExt + 'static> {
     /// Full on-disk segment config to install on apply.
     new_config: SegmentConfig,
     /// Vectors that are new or changed — loaded, ready to install.
@@ -64,7 +65,7 @@ pub struct SegmentConfigReloadDiff<S: UniversalRead + 'static> {
     payload: PayloadIndexReloadDiff<S>,
 }
 
-impl<S: UniversalRead + 'static> SegmentConfigReloadDiff<S> {
+impl<S: UniversalReadExt + 'static> SegmentConfigReloadDiff<S> {
     /// Whether the on-disk config matches the in-memory state (nothing to apply).
     pub fn is_empty(&self) -> bool {
         let Self {
@@ -77,7 +78,7 @@ impl<S: UniversalRead + 'static> SegmentConfigReloadDiff<S> {
     }
 }
 
-impl<S: UniversalRead + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Re-read the on-disk config and compute its difference against the
     /// in-memory config, eagerly loading every new or changed component.
     ///

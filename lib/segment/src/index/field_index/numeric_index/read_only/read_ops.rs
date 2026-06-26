@@ -13,6 +13,8 @@ use super::super::numeric_index_read::NumericIndexRead;
 use super::super::{Encodable, NumericIndexValue};
 use super::ReadOnlyNumericIndex;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
@@ -20,7 +22,6 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P, S: UniversalRead>
@@ -91,7 +92,7 @@ where
     }
 }
 
-impl<T: NumericIndexValue, P, S: UniversalRead> PayloadFieldIndexRead
+impl<T: NumericIndexValue, P, S: UniversalReadExt> PayloadFieldIndexRead
     for ReadOnlyNumericIndex<T, P, S>
 where
     Vec<T>: Blob,
@@ -129,7 +130,7 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
         self.inner.condition_checker(condition, hw_acc)
     }
 }

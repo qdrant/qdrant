@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, TelemetryDetail};
-use common::universal_io::UniversalRead;
 use uuid::Uuid;
 
 use super::ReadOnlySegment;
@@ -18,8 +17,8 @@ use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::ReadSegmentEntry;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
+use crate::index::{PayloadIndexRead, UniversalReadExt};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -34,7 +33,7 @@ use crate::types::{
 /// `false` and the `appendable_flag` passed into the view builders is hard-coded
 /// accordingly. All other operations delegate to the shared `SegmentReadView`,
 /// exactly like the mutable `Segment`.
-impl<S: UniversalRead + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
+impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
     fn is_proxy(&self) -> bool {
         false
     }

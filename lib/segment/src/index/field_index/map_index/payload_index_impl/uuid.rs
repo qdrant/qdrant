@@ -5,7 +5,6 @@ use std::str::FromStr;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 use gridstore::Blob;
 use indexmap::IndexSet;
 use uuid::Uuid;
@@ -13,15 +12,16 @@ use uuid::Uuid;
 use super::super::MapIndex;
 use super::super::key::MapIndexKey;
 use super::super::read_only::ReadOnlyMapIndex;
-use super::super::read_ops::MapIndexRead;
+use super::super::read_ops::{MapConditionChecker, MapIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     PrimaryCondition,
 };
 use crate::index::query_estimator::combine_should_estimations;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
     UuidIntType, ValueVariants,
@@ -79,12 +79,13 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(condition_checker_impl(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(condition_checker_impl(self, condition, hw_acc)
+            .map(ConditionCheckerEnum::MapUuidWritable))
     }
 }
 
-impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyMapIndex<UuidIntType, S>
+impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyMapIndex<UuidIntType, S>
 where
     Vec<<UuidIntType as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -121,8 +122,8 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(condition_checker_impl(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(condition_checker_impl(self, condition, hw_acc).map(S::condition_checker_map_uuid))
     }
 }
 
@@ -296,7 +297,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, UuidIntType> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
-) -> Option<DynConditionChecker<'a>> {
+) -> Option<MapConditionChecker<'a, UuidIntType, T>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
