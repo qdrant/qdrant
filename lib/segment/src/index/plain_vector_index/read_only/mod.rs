@@ -3,12 +3,12 @@ mod read;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::UniversalRead;
 use parking_lot::Mutex;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::plain_vector_index::read_view::PlainVectorIndexReadView;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
@@ -17,7 +17,7 @@ use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
-pub struct ReadOnlyPlainVectorIndex<S: UniversalRead> {
+pub struct ReadOnlyPlainVectorIndex<S: UniversalReadExt> {
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
@@ -45,7 +45,7 @@ type ReadView<'a, S> = PlainVectorIndexReadView<
     >,
 >;
 
-impl<S: UniversalRead> ReadOnlyPlainVectorIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyPlainVectorIndex<S> {
     /// Read-only mirror of `PlainVectorIndex::new`: wires the shared backends.
     pub fn open(
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,

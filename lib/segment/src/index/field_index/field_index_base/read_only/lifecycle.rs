@@ -1,11 +1,11 @@
 use std::path::Path;
 
 use common::bitvec::BitSlice;
-use common::universal_io::UniversalRead;
 
 use super::ReadOnlyFieldIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
 use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex;
 use crate::index::field_index::geo_index::ReadOnlyGeoIndex;
@@ -24,7 +24,7 @@ use crate::types::{
 /// Which read-only open path a leaf index should take, derived from the stored
 /// [`StorageType`]. Phrased as a mutability distinction (matching the
 /// `open_appendable` / `open_immutable` leaf methods) rather than a concrete
-/// backend: the read-only stack is generic over [`UniversalRead`], so the
+/// backend: the read-only stack is generic over [`UniversalRead`](common::universal_io::UniversalRead), so the
 /// on-disk-vs-in-memory choice is just the `is_on_disk` flag on the immutable
 /// variant, picked from the index type rather than passed in by the caller.
 #[derive(Clone, Copy)]
@@ -36,7 +36,7 @@ enum ReadMode {
     Immutable { is_on_disk: bool },
 }
 
-impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// Read-only mirror of [`IndexSelector::new_index_with_type`][1]: dispatches
     /// on [`FullPayloadIndexType::index_type`] and forwards to each per-index
     /// parent's open, wrapping the leaf in the matching variant.
@@ -44,7 +44,7 @@ impl<S: UniversalRead> ReadOnlyFieldIndex<S> {
     /// The open path (appendable vs immutable) is picked from the stored
     /// [`FullPayloadIndexType::storage_type`]; `is_on_disk` rides on the
     /// immutable mode. Generic over `S`: every per-index open threads the
-    /// [`UniversalRead`] handle `fs` (the map, numeric, geo and full-text leaves
+    /// [`UniversalRead`](common::universal_io::UniversalRead) handle `fs` (the map, numeric, geo and full-text leaves
     /// are all fs-generic), so the dispatcher needn't fix a concrete backend.
     ///
     /// `payload_schema` is consulted only by the full-text arm (it carries the

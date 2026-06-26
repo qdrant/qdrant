@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::UniversalRead;
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationResult;
+use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 use uuid::Uuid;
 
 use crate::EdgeConfig;
 use crate::read_only::ReadOnlyEdgeShard;
 
-impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Refresh the follower to the leader's current on-disk state.
     ///
     /// Caller-driven (never self-triggered), mirroring `ReadOnlySegment::live_reload`: the host

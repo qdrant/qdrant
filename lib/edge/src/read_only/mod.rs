@@ -22,8 +22,8 @@ mod tests;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use common::universal_io::UniversalRead;
 use parking_lot::RwLock;
+use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 
 use crate::EdgeConfig;
@@ -38,7 +38,7 @@ use crate::read_view::EdgeShardRead;
 /// Generic over the read backend `S` (e.g. `MmapFile` for local memory-mapped files; the same
 /// abstraction `ReadOnlySegment` uses, so blob/S3 backends are possible). Use
 /// [`open_mmap`](ReadOnlyEdgeShard::open_mmap) for the common local case.
-pub struct ReadOnlyEdgeShard<S: UniversalRead + 'static> {
+pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     path: PathBuf,
     /// Read backend handle; passed to segment `open` and `live_reload`.
     fs: S::Fs,
@@ -52,7 +52,7 @@ pub struct ReadOnlyEdgeShard<S: UniversalRead + 'static> {
     enumerator: Box<dyn SegmentEnumerator>,
 }
 
-impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -65,7 +65,7 @@ impl<S: UniversalRead + 'static> ReadOnlyEdgeShard<S> {
 
 /// The follower's segments are homogeneous, so its handle is the concrete
 /// `Arc<RwLock<ReadOnlySegment<S>>>` — the read path is fully monomorphized, no dynamic dispatch.
-impl<S: UniversalRead + 'static> EdgeShardRead for ReadOnlyEdgeShard<S> {
+impl<S: UniversalReadExt + 'static> EdgeShardRead for ReadOnlyEdgeShard<S> {
     type Handle = Arc<RwLock<ReadOnlySegment<S>>>;
 
     fn read_segments(&self) -> Vec<Arc<RwLock<ReadOnlySegment<S>>>> {

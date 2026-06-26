@@ -3,19 +3,19 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::UniversalRead;
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerRead;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::payload_config::PayloadConfig;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::VectorNameBuf;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
-impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// Read-only mirror of `StructPayloadIndex::open`: loads the payload config
     /// and each persisted field index through `fs` (never builds/migrates/writes).
     pub fn open(

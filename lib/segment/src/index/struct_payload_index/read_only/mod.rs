@@ -6,11 +6,11 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
@@ -26,7 +26,7 @@ pub use config_reload::PayloadIndexReloadDiff;
 
 type ReadOnlyIndexesMap<S> = HashMap<PayloadKeyType, Vec<ReadOnlyFieldIndex<S>>>;
 
-pub struct ReadOnlyStructPayloadIndex<S: UniversalRead> {
+pub struct ReadOnlyStructPayloadIndex<S: UniversalReadExt> {
     /// Payload storage
     pub(super) payload: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
     /// Used for `has_id` condition and estimating cardinality
@@ -43,7 +43,7 @@ pub struct ReadOnlyStructPayloadIndex<S: UniversalRead> {
     pub(super) visited_pool: VisitedPool,
 }
 
-impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     pub fn with_view<R>(
         &self,
         f: impl FnOnce(
@@ -69,7 +69,7 @@ impl<S: UniversalRead> ReadOnlyStructPayloadIndex<S> {
     }
 }
 
-impl<S: UniversalRead> LiveReload for ReadOnlyStructPayloadIndex<S> {
+impl<S: UniversalReadExt> LiveReload for ReadOnlyStructPayloadIndex<S> {
     type Fs = S::Fs;
 
     fn live_reload(

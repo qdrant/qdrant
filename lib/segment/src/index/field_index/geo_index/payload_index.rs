@@ -6,15 +6,15 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::GeoIndex;
-use super::read_ops::{self, GeoIndexRead};
+use super::read_ops::{self, GeoConditionChecker, GeoIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
 };
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
@@ -144,7 +144,31 @@ impl PayloadFieldIndexRead for GeoIndex {
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(read_ops::condition_checker(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_radius,
+            geo_bounding_box,
+            geo_polygon,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+        let hw_counter = hw_acc.get_counter_cell();
+        if let Some(filter) = *geo_radius {
+            let checker = GeoConditionChecker::new(self, hw_counter, filter);
+            return Ok(Some(ConditionCheckerEnum::GeoRadiusWritable(checker)));
+        }
+        if let Some(filter) = *geo_bounding_box {
+            let checker = GeoConditionChecker::new(self, hw_counter, filter);
+            return Ok(Some(ConditionCheckerEnum::GeoBoundingBoxWritable(checker)));
+        }
+        if let Some(polygon) = geo_polygon.as_ref() {
+            let checker = GeoConditionChecker::new(self, hw_counter, polygon.convert());
+            return Ok(Some(ConditionCheckerEnum::GeoPolygonWritable(checker)));
+        }
+        Ok(None)
     }
 }

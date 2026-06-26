@@ -26,7 +26,6 @@ use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::payload_config::StorageType;
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::FieldCondition;
 
@@ -226,7 +225,7 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &FieldCondition,
     _hw_acc: HwMeasurementAcc,
-) -> Option<DynConditionChecker<'a>> {
+) -> Option<NullConditionChecker<'a, N>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -242,23 +241,23 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
     } = condition;
 
     if let Some(is_empty) = *is_empty {
-        return Some(Box::new(NullConditionChecker {
+        return Some(NullConditionChecker {
             null_index,
             kind: CheckKind::IsEmpty,
             expected: is_empty,
-        }));
+        });
     }
     if let Some(is_null) = *is_null {
-        return Some(Box::new(NullConditionChecker {
+        return Some(NullConditionChecker {
             null_index,
             kind: CheckKind::IsNull,
             expected: is_null,
-        }));
+        });
     }
     None
 }
 
-struct NullConditionChecker<'a, N> {
+pub struct NullConditionChecker<'a, N> {
     null_index: &'a N,
     kind: CheckKind,
     expected: bool,

@@ -1,6 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalRead};
+use common::universal_io::MmapFile;
 use itertools::Itertools;
 
 use super::bool_index::{BoolIndex, ReadOnlyBoolIndex};
@@ -8,6 +8,7 @@ use super::map_index::MapIndex;
 use super::map_index::read_only::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
+use crate::index::UniversalReadExt;
 use crate::types::{IntPayloadType, UuidIntType};
 
 pub trait FacetIndex {
@@ -109,13 +110,13 @@ pub trait FacetIndex {
 
 /// Borrowed view over any concrete index that can produce facet counts.
 ///
-/// The `S: UniversalRead` parameter is consumed by the map-based `*ReadOnly`
+/// The `S: UniversalReadExt` parameter is consumed by the map-based `*ReadOnly`
 /// variants (`ReadOnlyMapIndex<N, S>`) and threaded as a phantom by
 /// `ReadOnlyBoolIndex<S>` (so it can re-read its flags through `S::Fs` on
 /// live-reload); the in-memory variants (`Keyword`, `Int`, `Uuid`, `Bool`)
 /// ignore it. The default `S = MmapFile` keeps the common construction path
 /// (`FieldIndex::as_facet_index`) free of turbofish.
-pub enum FacetIndexEnum<'a, S: UniversalRead = MmapFile> {
+pub enum FacetIndexEnum<'a, S: UniversalReadExt = MmapFile> {
     Keyword(&'a MapIndex<str>),
     Int(&'a MapIndex<IntPayloadType>),
     Uuid(&'a MapIndex<UuidIntType>),
@@ -133,7 +134,7 @@ pub enum FacetIndexEnum<'a, S: UniversalRead = MmapFile> {
     BoolReadOnly(&'a ReadOnlyBoolIndex<S>),
 }
 
-impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
+impl<'a, S: UniversalReadExt> FacetIndex for FacetIndexEnum<'a, S> {
     fn unique_values_count(&self) -> usize {
         match self {
             FacetIndexEnum::Keyword(index) => FacetIndex::unique_values_count(*index),

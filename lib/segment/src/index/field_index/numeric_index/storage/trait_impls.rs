@@ -23,12 +23,12 @@ use super::super::{Encodable, NumericIndexValue, StreamRange, query};
 use super::NumericIndexInner;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
 };
-use crate::index::query_optimization::optimized_filter::DynConditionChecker;
 use crate::types::{FieldCondition, PayloadKeyType, RangeInterface};
 
 impl<T: NumericIndexValue> PayloadFieldIndex for NumericIndexInner<T>
@@ -93,8 +93,8 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
-    ) -> OperationResult<Option<DynConditionChecker<'a>>> {
-        Ok(query::condition_checker(self, condition, hw_acc))
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(query::condition_checker(self, condition, hw_acc).map(T::condition_checker_writable))
     }
 }
 

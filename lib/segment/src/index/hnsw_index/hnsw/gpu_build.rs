@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use super::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
@@ -90,7 +91,7 @@ pub(super) fn build_filtered_graph_on_gpu(
         |block_point_id| -> OperationResult<_> {
             let hardware_counter = HardwareCounterCell::disposable();
             let block_condition_checker =
-                OptimizedFilter::from_checker(Box::new(BuildConditionChecker {
+                OptimizedFilter::from_checker(ConditionCheckerEnum::Build(BuildConditionChecker {
                     filter_list: block_filter_list,
                     current_point: block_point_id,
                 }));
