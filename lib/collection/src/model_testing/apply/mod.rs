@@ -161,6 +161,15 @@ pub(super) async fn apply(
         Op::ScrollPaged { limit, filter } => {
             reads::apply_scroll_paged(collection, model, *limit, filter).await
         }
+        Op::QueryFusion {
+            prefetches,
+            fusion,
+            limit,
+            filter_num,
+        } => {
+            reads::apply_query_fusion(collection, model, prefetches, *fusion, *limit, *filter_num)
+                .await
+        }
     }
 }
 

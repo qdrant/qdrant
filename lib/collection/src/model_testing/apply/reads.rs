@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, OrderValue};
 use segment::data_types::vectors::{
@@ -12,12 +13,13 @@ use segment::types::{
     PointIdType, SearchParams, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
-use shard::query::{ScoringQuery, ShardQueryRequest};
+use shard::query::{FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
-    NamedVectors, ScrollFilter, canonical_sparse, has_num, match_has_id_filter,
-    match_has_vector_filter, match_num_filter, match_tag_filter, num_matches, tag_matches,
+    FusionKind, NamedVectors, Prefetch, ScrollFilter, canonical_sparse, has_num,
+    match_has_id_filter, match_has_vector_filter, match_num_filter, match_tag_filter, num_matches,
+    tag_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -643,6 +645,112 @@ pub(super) async fn apply_query(
     )
     .await;
     assert_nearest_results_valid(returned_ids, model, vector_name, filter_num, "query");
+}
+
+/// Coverage of the Query API's `prefetch` + fusion path (the plain `Query` op only does a top-level
+/// Nearest). Each prefetch is an independent Nearest source; the outer query fuses their union with
+/// RRF or DBSF, then the optional outer `num` filter applies on top.
+///
+/// Fusion ranking is score-based and approximate (and which points land in each prefetch's top-k is
+/// score-dependent), so the oracle is upper-bound only — like the approximate `Search`/`Query`
+/// path: every returned id must be some prefetch's candidate (its vector populated + that
+/// prefetch's filter) *and* pass the outer filter, and the result size can't exceed the
+/// outer-filtered union capped at `limit`. Scores and order are never checked.
+pub(super) async fn apply_query_fusion(
+    collection: &Collection,
+    model: &Model,
+    prefetches: &[Prefetch],
+    fusion: FusionKind,
+    limit: usize,
+    filter_num: Option<i64>,
+) {
+    let shard_prefetches = prefetches
+        .iter()
+        .map(|p| {
+            let named_query = NamedQuery::new(nearest_internal_query(&p.query), &p.vector_name);
+            ShardPrefetch {
+                prefetches: vec![],
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(named_query))),
+                limit: p.limit,
+                params: None,
+                filter: p.filter_num.map(match_num_filter),
+                score_threshold: None,
+            }
+        })
+        .collect();
+    let fusion_internal = match fusion {
+        FusionKind::Rrf => FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        },
+        FusionKind::Dbsf => FusionInternal::Dbsf,
+    };
+    let returned_ids = collection
+        .query(
+            ShardQueryRequest {
+                prefetches: shard_prefetches,
+                query: Some(ScoringQuery::Fusion(fusion_internal)),
+                filter: filter_num.map(match_num_filter),
+                score_threshold: None,
+                limit,
+                offset: 0,
+                params: None,
+                with_vector: WithVector::Bool(false),
+                with_payload: WithPayloadInterface::Bool(false),
+            },
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("query fusion failed")
+        .iter()
+        .map(|r| r.id)
+        .collect::<AHashSet<PointIdType>>();
+
+    // Two independent upper bounds on the fused result, both narrowed by the outer `limit`:
+    // - it's a subset of the outer-filtered union of every prefetch's candidates;
+    // - it's no larger than the sum of per-prefetch caps (each prefetch returns at most
+    //   `min(p.limit, |its candidates|)` points, and fusion only dedups that union smaller).
+    // `nearest_candidates` hands back exactly that per-prefetch cap as its second element.
+    let mut union: AHashSet<PointIdType> = AHashSet::new();
+    let mut prefetch_cap = 0usize;
+    for p in prefetches {
+        let (candidates, cap) = nearest_candidates(model, &p.vector_name, p.filter_num, p.limit);
+        prefetch_cap += cap;
+        union.extend(candidates);
+    }
+    if let Some(n) = filter_num {
+        union.retain(|id| model.get(id).is_some_and(|e| num_matches(&e.payload, n)));
+    }
+    let expected_len = limit.min(union.len()).min(prefetch_cap);
+    assert!(
+        returned_ids.len() <= expected_len,
+        "query_fusion(fusion={fusion:?}, filter={filter_num:?}) returned {} points, expected at most {expected_len}",
+        returned_ids.len(),
+    );
+
+    for id in &returned_ids {
+        let entry = model
+            .get(id)
+            .unwrap_or_else(|| panic!("query_fusion returned unknown id {id:?}"));
+        let is_prefetch_candidate = prefetches.iter().any(|p| {
+            entry.vectors.contains_key(&p.vector_name)
+                && p.filter_num.is_none_or(|n| num_matches(&entry.payload, n))
+        });
+        assert!(
+            is_prefetch_candidate,
+            "query_fusion returned id {id:?} matching no prefetch source",
+        );
+        if let Some(n) = filter_num {
+            assert!(
+                num_matches(&entry.payload, n),
+                "query_fusion(outer filter num=={n}) returned id {id:?} that does not match",
+            );
+        }
+    }
 }
 
 pub(super) async fn apply_count_by_num(collection: &Collection, model: &Model, num: i64) {
