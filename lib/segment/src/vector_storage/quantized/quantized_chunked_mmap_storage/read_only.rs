@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -28,7 +28,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
             path,
             quantized_vector_size,
             AdviceSetting::Global,
-            None, // populate
+            Populate::No, // TODO(uio): consider `always_in_ram`?
         )?;
         Ok(Self { data })
     }

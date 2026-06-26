@@ -32,7 +32,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorSt
         path: &Path,
         dim: usize,
         distance: Distance,
-        populate: bool,
+        populate: Populate,
     ) -> OperationResult<Self> {
         let vectors = ImmutableDenseVectorData::open(fs, &path.join(VECTORS_PATH), dim, populate)?;
         let deleted = open_deleted_flags::<S>(fs, &path.join(DELETED_PATH), vectors.num_vectors)?;

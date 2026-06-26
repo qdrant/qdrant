@@ -1,4 +1,4 @@
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -21,7 +21,7 @@ pub struct ReadOnlyImmutableDenseVectorStorage<T: PrimitiveVectorElement, S: Uni
     deleted: InMemoryBitvecFlags,
     distance: Distance,
     /// Whether vector data is populated into RAM (drives `is_on_disk`).
-    populate: bool,
+    populate: Populate,
 }
 
 #[cfg(test)]
@@ -88,7 +88,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
-            false,
+            Populate::No,
         )
         .unwrap();
 
@@ -141,7 +141,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
-            false,
+            Populate::No,
         )
         .unwrap();
         assert_eq!(reader.deleted_vector_count(), 0);

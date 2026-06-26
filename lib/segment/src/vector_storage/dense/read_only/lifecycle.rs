@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::AdviceSetting;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead};
 
 use super::ReadOnlyChunkedDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -24,15 +24,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
         dim: usize,
         distance: Distance,
         advice: AdviceSetting,
-        populate: bool,
+        populate: Populate,
     ) -> OperationResult<Self> {
-        let vectors = ChunkedVectorsRead::open(
-            fs,
-            &path.join(VECTORS_DIR_PATH),
-            dim,
-            advice,
-            Some(populate),
-        )?;
+        let vectors =
+            ChunkedVectorsRead::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 

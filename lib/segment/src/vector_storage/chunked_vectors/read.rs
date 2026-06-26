@@ -7,7 +7,7 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    ReadRange, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
+    Populate, ReadRange, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
     read_json_via, read_whole_via,
 };
 use num_traits::AsPrimitive;
@@ -36,7 +36,7 @@ pub struct ChunkedVectorsRead<T: bytemuck::Pod + Send, S: UniversalRead> {
     pub(super) directory: PathBuf,
     /// Open-time chunk settings, reused by live-reload to open new chunks.
     pub(super) advice: AdviceSetting,
-    pub(super) populate: bool,
+    pub(super) populate: Populate,
 }
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
@@ -63,13 +63,12 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     ///
     /// Both `config.json` and `status.dat` must already exist; this function
     /// will not create them.
-    #[allow(dead_code)] // pending: read-only vector storage enum will use this
     pub fn open(
         fs: &S::Fs,
         directory: &Path,
         dim: usize,
         advice: AdviceSetting,
-        populate: Option<bool>,
+        populate: Populate,
     ) -> OperationResult<Self> {
         let config_file = Self::config_file(directory);
         let config = Self::load_config(fs, &config_file)?.ok_or_else(|| {
@@ -87,7 +86,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
 
         let len = read_status_len(fs, &Self::status_file(directory))?;
-        let chunks = read_chunks(fs, directory, advice, populate.unwrap_or_default(), false)?;
+        let chunks = read_chunks(fs, directory, advice, populate, false)?;
 
         Ok(Self {
             config,
@@ -95,7 +94,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             chunks,
             directory: directory.to_owned(),
             advice,
-            populate: populate.unwrap_or_default(),
+            populate,
         })
     }
 
@@ -371,7 +370,7 @@ mod tests {
             dir.path(),
             DIM,
             AdviceSetting::Global,
-            Some(false),
+            Populate::No,
         )
         .unwrap();
         for vector in &first {
@@ -384,7 +383,7 @@ mod tests {
             dir.path(),
             DIM,
             AdviceSetting::Global,
-            Some(false),
+            Populate::No,
         )
         .unwrap();
         assert_eq!(reader.len(), first.len());
@@ -421,7 +420,7 @@ mod tests {
             dir.path(),
             DIM,
             AdviceSetting::Global,
-            Some(false),
+            Populate::No,
         )
         .unwrap();
         for s in 0..4000 {
@@ -434,7 +433,7 @@ mod tests {
             dir.path(),
             DIM,
             AdviceSetting::Global,
-            Some(false),
+            Populate::No,
         )
         .unwrap();
         assert_eq!(reader.len(), 4000);

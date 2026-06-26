@@ -275,7 +275,13 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedVectors::open(MmapFs, &vectors_path, dim, madvise, Some(populate))?;
+    let vectors = ChunkedVectors::open(
+        MmapFs,
+        &vectors_path,
+        dim,
+        madvise,
+        Populate::from(populate),
+    )?;
 
     let deleted = BitvecFlags::new(
         MmapFs,

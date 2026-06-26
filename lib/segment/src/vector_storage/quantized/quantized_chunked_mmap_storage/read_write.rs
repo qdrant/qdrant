@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalWrite};
+use common::universal_io::{MmapFile, Populate, UniversalWrite};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -36,7 +36,7 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
             path,
             quantized_vector_size,
             advice,
-            Some(in_ram), // populate
+            Populate::from(in_ram),
         )?;
         Ok(Self { data })
     }
@@ -158,7 +158,7 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorageBuilder<S> {
             path,
             quantized_vector_size,
             advice,
-            Some(in_ram), // populate
+            Populate::from(in_ram),
         )?;
         Ok(Self {
             data,

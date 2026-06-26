@@ -230,7 +230,7 @@ impl BufferedOffsets {
 mod tests {
     use common::generic_consts::Sequential;
     use common::mmap::AdviceSetting;
-    use common::universal_io::MmapFs;
+    use common::universal_io::{MmapFs, Populate};
     use tempfile::Builder;
 
     use super::*;
@@ -244,7 +244,7 @@ mod tests {
     }
 
     fn open_inner(dir: &std::path::Path) -> OffsetsStore {
-        ChunkedVectors::open(MmapFs, dir, 1, AdviceSetting::Global, Some(false)).unwrap()
+        ChunkedVectors::open(MmapFs, dir, 1, AdviceSetting::Global, Populate::No).unwrap()
     }
 
     /// The core property: a write that lands *after* a flusher is created must not

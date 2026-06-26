@@ -13,7 +13,7 @@ mod tests {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::mmap::AdviceSetting;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use tempfile::Builder;
@@ -37,8 +37,14 @@ mod tests {
 
         {
             let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> =
-                ChunkedVectors::open(MmapFs, dir.path(), dim, AdviceSetting::Global, Some(true))
-                    .unwrap();
+                ChunkedVectors::open(
+                    MmapFs,
+                    dir.path(),
+                    dim,
+                    AdviceSetting::Global,
+                    Populate::Blocking,
+                )
+                .unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec, &hw_counter).unwrap();

@@ -9,7 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, UniversalRead};
+use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead};
 use fs_err::{File, OpenOptions};
 
 use crate::common::Flusher;
@@ -197,7 +197,13 @@ where
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
 
-    let vectors = ImmutableDenseVectors::open(&fs, &vectors_path, &deleted_path, dim, populate)?;
+    let vectors = ImmutableDenseVectors::open(
+        &fs,
+        &vectors_path,
+        &deleted_path,
+        dim,
+        Populate::from(populate),
+    )?;
     let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
@@ -278,7 +284,7 @@ where
             &self.vectors_path,
             &self.deleted_path,
             dim,
-            false, // No need to populate
+            Populate::No, // No need to populate
         )?);
 
         // Flush deleted flags into store

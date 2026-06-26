@@ -279,13 +279,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
         } else {
             AdviceSetting::Global
         };
-        let data = ChunkedVectors::open(
-            fs,
-            path,
-            1,
-            advice,
-            Some(in_ram), // populate
-        )?;
+        let data = ChunkedVectors::open(fs, path, 1, advice, Populate::from(in_ram))?;
         Ok(Self { data })
     }
 
@@ -376,7 +370,13 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
     pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
-        let data = ChunkedVectorsRead::open(fs, path, 1, AdviceSetting::Global, None)?;
+        let data = ChunkedVectorsRead::open(
+            fs,
+            path,
+            1,
+            AdviceSetting::Global,
+            Populate::No, // TODO(uio): consider `in_ram`?
+        )?;
         Ok(Self { data })
     }
 
