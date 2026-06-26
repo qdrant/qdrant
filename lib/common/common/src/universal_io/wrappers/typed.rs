@@ -47,6 +47,13 @@ where
     S: UniversalRead,
     T: Item,
 {
+    pub fn new(inner: S) -> Self {
+        TypedStorage {
+            inner,
+            _phantom: PhantomData,
+        }
+    }
+
     /// Open through the provided filesystem handle and wrap the result.
     #[inline]
     pub fn open(
@@ -55,10 +62,7 @@ where
         options: OpenOptions,
         extra: <S::Fs as UniversalReadFs>::OpenExtra,
     ) -> Result<Self> {
-        fs.open(path, options, extra).map(|inner| TypedStorage {
-            inner,
-            _phantom: PhantomData,
-        })
+        fs.open(path, options, extra).map(Self::new)
     }
 
     pub fn reopen(&mut self) -> Result<()> {

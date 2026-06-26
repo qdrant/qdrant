@@ -12,6 +12,14 @@ use crate::universal_io::{
     self, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UserData,
 };
 
+#[cfg(target_os = "linux")]
+/// Required alignment when using io_uring with `O_DIRECT` on Linux
+const REMOTE_READ_ALIGNMENT: usize = universal_io::io_uring::KERNEL_PAGE_SIZE;
+
+#[cfg(not(target_os = "linux"))]
+/// Default alignment on non-Linux platforms
+const REMOTE_READ_ALIGNMENT: usize = 1;
+
 struct RemoteMeta<File, U> {
     file: File,
     scheduled_read: ScheduledRead,
@@ -215,7 +223,7 @@ where
         user_data: U,
         file: &'file DiskCache<R>,
         range: Range<u64>,
-        align: usize,
+        _align: usize,
     ) -> universal_io::Result<()> {
         let state = file.state()?;
         match pick_source::<P>(&state.local, range.clone())? {
@@ -244,7 +252,7 @@ where
                     remote_meta,
                     &state.remote,
                     blocks_byte_range,
-                    align,
+                    REMOTE_READ_ALIGNMENT,
                 )?;
             }
         }
@@ -335,7 +343,7 @@ where
         &mut self,
         user_data: U,
         range: Range<u64>,
-        align: usize,
+        _align: usize,
     ) -> universal_io::Result<()> {
         match pick_source::<P>(&self.file.state()?.local, range.clone())? {
             Source::Local {
@@ -357,7 +365,11 @@ where
                     user_data,
                 };
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
-                remote_pipeline.schedule::<P>(remote_meta, blocks_byte_range, align)?;
+                remote_pipeline.schedule::<P>(
+                    remote_meta,
+                    blocks_byte_range,
+                    REMOTE_READ_ALIGNMENT,
+                )?;
             }
         }
         Ok(())
