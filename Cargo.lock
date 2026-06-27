@@ -2172,7 +2172,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "edge-s3-scroll"
+name = "edge-shard-query"
 version = "0.1.0"
 dependencies = [
  "anyhow",
