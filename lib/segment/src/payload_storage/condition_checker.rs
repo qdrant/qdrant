@@ -150,7 +150,9 @@ impl ValueChecker for FieldCondition {
             return !*is_null;
         }
         if let Some(values_count) = values_count {
-            // A missing field is treated as having 0 values.
+            // If the field is missing/empty, its value count is logically 0.
+            // Delegate the evaluation to the values_count condition handler with a count of 0
+            // to check if bounds conditions (such as lt: 1, gte: 0, lte: 0) are satisfied.
             return values_count.check_empty();
         }
         false
