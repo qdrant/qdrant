@@ -1,5 +1,5 @@
 [package]
-name = "edge-s3-scroll"
+name = "edge-shard-query"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -8,7 +8,7 @@ publish = false
 workspace = true
 
 [[bin]]
-name = "edge-s3-scroll"
+name = "edge-shard-query"
 path = "src/main.rs"
 
 [dependencies]
