@@ -89,3 +89,31 @@ def test_filter_values_count(collection_name):
     json = response.json()
     assert len(json['result']) == 3
     assert json['result'][0]['id'] == 1
+
+
+def test_values_count_lte_zero_matches_missing_key(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "key": "city",
+                        "values_count": {
+                            "lte": 0
+                        }
+                    }
+                ]
+            },
+            "limit": 10,
+            "with_payload": True,
+        }
+    )
+    assert response.ok
+    ids = sorted(p['id'] for p in response.json()['result']['points'])
+    # Points 5 and 6 (missing key), 7 (null value), 8 and 10 (empty array []) should match
+    assert ids == [5, 6, 7, 8, 10]
+
+

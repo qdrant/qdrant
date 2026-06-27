@@ -131,6 +131,10 @@ impl ValueChecker for FieldCondition {
         }
     }
 
+    /// Check condition in case of empty payload value (missing or null field).
+    ///
+    /// For `values_count` conditions, a missing field has a value count of 0,
+    /// so we delegate to the values count checker with 0.
     fn check_empty(&self) -> bool {
         let FieldCondition {
             r#match: _,
@@ -138,7 +142,7 @@ impl ValueChecker for FieldCondition {
             geo_radius: _,
             geo_bounding_box: _,
             geo_polygon: _,
-            values_count: _,
+            values_count,
             key: _,
             is_empty,
             is_null,
@@ -148,6 +152,12 @@ impl ValueChecker for FieldCondition {
         }
         if let Some(is_null) = is_null {
             return !*is_null;
+        }
+        if let Some(values_count) = values_count {
+            // If the field is missing/empty, its value count is logically 0.
+            // Delegate the evaluation to the values_count condition handler with a count of 0
+            // to check if bounds conditions (such as lt: 1, gte: 0, lte: 0) are satisfied.
+            return values_count.check_empty();
         }
         false
     }
@@ -504,4 +514,39 @@ mod tests {
         assert!(is_not_null.check(&number));
         assert!(is_not_null.check(&bool));
     }
+
+    #[test]
+    fn test_values_count_missing_key_matches_lte_zero() {
+        let lte_zero = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(0),
+        };
+        assert!(lte_zero.check_empty());
+
+        let eq_zero = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(0),
+            lte: Some(0),
+        };
+        assert!(eq_zero.check_empty());
+
+        let lte_zero_field = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: Some(lte_zero),
+            key: JsonPath::new("comments"),
+            is_empty: None,
+            is_null: None,
+        };
+        assert!(lte_zero_field.check_empty());
+        assert!(!lte_zero_field.check(&json!(["one"])));
+        assert!(lte_zero_field.check(&json!([])));
+    }
 }
+
