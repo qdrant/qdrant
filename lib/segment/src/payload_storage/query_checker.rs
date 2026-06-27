@@ -486,6 +486,7 @@ mod tests {
             )));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
+        // Verify values_count conditions on non-existent fields (which are treated as having 0 values)
         let missing_value_count_condition =
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
                 JsonPath::new("non_existent_field"),
