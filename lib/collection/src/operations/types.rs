@@ -1341,7 +1341,7 @@ impl From<Datatype> for VectorStorageDatatype {
 #[anonymize(false)]
 pub struct VectorParams {
     /// Size of a vectors used
-    #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
+    #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65535"))]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
@@ -1380,11 +1380,11 @@ pub struct VectorParams {
     pub multivector_config: Option<MultiVectorConfig>,
 }
 
-/// Validate the value is in `[1, 65536]` or `None`.
-pub fn validate_nonzerou64_range_min_1_max_65536(
+/// Validate the value is in `[1, 65535]` or `None`.
+pub fn validate_nonzerou64_range_min_1_max_65535(
     value: &NonZeroU64,
 ) -> Result<(), ValidationError> {
-    validate_range_generic(value.get(), Some(1), Some(65536))
+    validate_range_generic(value.get(), Some(1), Some(65535))
 }
 
 /// Reject the `Turbo4` datatype on sparse vector configs.

@@ -58,7 +58,7 @@ pub struct SparseVectorNameConfig {
 #[serde(rename_all = "snake_case")]
 pub struct DenseVectorConfig {
     /// Dimensionality of the vectors
-    #[validate(range(min = 1, max = 65536))]
+    #[validate(range(min = 1, max = 65535))]
     pub size: usize,
     /// Distance function used for measuring distance between vectors
     pub distance: Distance,
