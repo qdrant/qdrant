@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead};
+use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
 use fs_err as fs;
 
 use super::buffered_offsets::BufferedOffsets;
@@ -328,7 +328,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),

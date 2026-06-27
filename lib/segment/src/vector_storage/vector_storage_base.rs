@@ -11,6 +11,7 @@ use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
+use common::universal_io::UserData;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::dense_vector_storage::DenseVectorStorageImpl;
@@ -99,7 +100,7 @@ pub trait VectorStorageRead {
     /// straight back to the callback alongside its offset and vector, so
     /// callers can map results into a parallel input array without keeping a
     /// separate `offset → ...` lookup table.
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
@@ -931,7 +932,7 @@ impl VectorStorageRead for VectorStorageEnum {
         }
     }
 
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
