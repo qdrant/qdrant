@@ -138,7 +138,7 @@ impl ValueChecker for FieldCondition {
             geo_radius: _,
             geo_bounding_box: _,
             geo_polygon: _,
-            values_count: _,
+            values_count,
             key: _,
             is_empty,
             is_null,
@@ -148,6 +148,9 @@ impl ValueChecker for FieldCondition {
         }
         if let Some(is_null) = is_null {
             return !*is_null;
+        }
+        if let Some(values_count) = values_count {
+            return values_count.check_empty();
         }
         false
     }

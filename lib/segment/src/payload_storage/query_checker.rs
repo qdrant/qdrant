@@ -486,6 +486,42 @@ mod tests {
             )));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
+        let missing_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("non_existent_field"),
+                ValuesCount {
+                    lt: Some(1),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )));
+        assert!(payload_checker.check(0, &missing_value_count_condition));
+
+        let missing_value_count_condition_gte =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("non_existent_field"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(0),
+                    lte: None,
+                },
+            )));
+        assert!(payload_checker.check(0, &missing_value_count_condition_gte));
+
+        let missing_value_count_condition_lte =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("non_existent_field"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: None,
+                    lte: Some(0),
+                },
+            )));
+        assert!(payload_checker.check(0, &missing_value_count_condition_lte));
+
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             JsonPath::new("location"),
             GeoBoundingBox {
