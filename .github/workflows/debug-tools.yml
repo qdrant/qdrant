@@ -30,7 +30,7 @@ env:
   DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
   # Standalone tool crates (own workspace member, no `service_debug` feature),
   # built with `-p`. Bin name must match the crate name.
-  EDGE_BINS: edge-s3-scroll
+  EDGE_BINS: edge-shard-query
   # Static target so the binaries run everywhere
   TARGET: x86_64-unknown-linux-musl
   # ---- Adjust to your GCS bucket ----
