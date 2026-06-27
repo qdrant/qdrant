@@ -19,7 +19,7 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
-    pub fn read_payloads<P: AccessPattern, U>(
+    pub fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,

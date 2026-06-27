@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -32,6 +32,7 @@ pub fn iter_vectors<'a, P, T, U, S>(
 where
     P: AccessPattern,
     T: PrimitiveVectorElement,
+    U: UserData,
     S: UniversalRead,
 {
     let point_offsets = keys

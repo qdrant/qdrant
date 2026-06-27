@@ -26,6 +26,19 @@ struct RemoteMeta<File, U> {
     user_data: U,
 }
 
+// Manual `Debug` impl: `RemoteMeta` is used as user data for the remote
+// pipeline, so it must be `Debug` (via `UserData`). `file` can be a
+// `&DiskCache<R>`, which is not `Debug`, so it is omitted from the output.
+impl<File, U: std::fmt::Debug> std::fmt::Debug for RemoteMeta<File, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteMeta")
+            .field("scheduled_read", &self.scheduled_read)
+            .field("user_data", &self.user_data)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
 enum ScheduledRead {
     Range {
         blocks_range: Range<u32>,
@@ -200,6 +213,7 @@ where
 impl<'file, R, U> BorrowedReadPipeline<'file, U> for DiskCachePipeline<'file, R, U>
 where
     R: DiskCacheRemote + 'file,
+    U: UserData,
 {
     type File = DiskCache<R>;
 
@@ -320,6 +334,7 @@ where
 impl<R, U> OwnedReadPipeline<U> for OwnedDiskCachePipeline<R, U>
 where
     R: DiskCacheRemote,
+    U: UserData,
 {
     type File = DiskCache<R>;
 

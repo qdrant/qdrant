@@ -38,6 +38,17 @@ struct Entry<'a, U: UserData, K: Key + ?Sized> {
     state: State<'a, K>,
 }
 
+// Manual `Debug` impl: `Entry` is used as user data for the read pipeline, so it
+// must be `Debug` (via `UserData`). Only `user_data` is printed; `state` carries
+// buffers and key references that are not `Debug`.
+impl<U: std::fmt::Debug + UserData, K: Key + ?Sized> std::fmt::Debug for Entry<'_, U, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Entry")
+            .field("user_data", &self.user_data)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Lifecycle:
 ///
 /// - [`Request::Offset`]             →             [`State::ReadingEntry`]

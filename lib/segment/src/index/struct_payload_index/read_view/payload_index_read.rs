@@ -292,7 +292,7 @@ where
         self.payload.borrow().get_sequential(point_id, hw_counter)
     }
 
-    fn read_payloads<AP: AccessPattern, U>(
+    fn read_payloads<AP: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_ids: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,

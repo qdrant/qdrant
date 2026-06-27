@@ -58,7 +58,7 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn read_payloads<P: AccessPattern, U>(
+    fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, Payload) -> OperationResult<()>,

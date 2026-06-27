@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use common::bitvec::BitSlice;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
@@ -98,7 +98,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),

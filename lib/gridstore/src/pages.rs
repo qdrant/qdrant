@@ -9,7 +9,7 @@ use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWrite,
+    UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
 
@@ -246,6 +246,7 @@ impl<S: UniversalRead> Pages<S> {
     ) -> Result<bool, E>
     where
         P: AccessPattern,
+        U: UserData,
         E: From<GridstoreError>,
     {
         struct Progress<U> {
@@ -255,6 +256,7 @@ impl<S: UniversalRead> Pages<S> {
             user_data: U,
         }
 
+        #[derive(Debug)]
         struct ReadMeta<U> {
             value_idx: usize,
             buffer_offset: usize,

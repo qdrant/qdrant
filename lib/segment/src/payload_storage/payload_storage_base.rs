@@ -42,7 +42,7 @@ pub trait PayloadStorageRead {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<OwnedPayloadRef<'_>>;
 
-    fn read_payloads<P: AccessPattern, U>(
+    fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,

@@ -49,7 +49,7 @@ where
     /// parallel input array without keeping a separate `offset → ...` lookup
     /// table. Deleted points are filtered out lazily — entries with deleted
     /// vectors or deleted points are simply not delivered to the callback.
-    pub fn vectors_by_offsets<U: Copy>(
+    pub fn vectors_by_offsets<U: Copy + common::universal_io::UserData>(
         &self,
         vector_name: &VectorName,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,

@@ -169,7 +169,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn read_payloads<P: AccessPattern, U>(
+    fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         _point_ids: impl Iterator<Item = (U, PointOffsetType)>,
         _callback: impl FnMut(U, Payload) -> OperationResult<()>,

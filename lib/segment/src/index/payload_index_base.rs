@@ -140,7 +140,7 @@ pub trait PayloadIndexRead {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
-    fn read_payloads<P: AccessPattern, U>(
+    fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_ids: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,

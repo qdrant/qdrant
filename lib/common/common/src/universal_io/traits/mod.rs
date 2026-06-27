@@ -4,6 +4,8 @@ mod pipeline;
 mod read;
 mod write;
 
+use std::fmt::Debug;
+
 pub use file_ops::{UniversalReadFileOps, UniversalReadFs};
 pub use open_extra::OpenExtra;
 pub use pipeline::{BorrowedReadPipeline, OwnedReadPipeline};
@@ -20,8 +22,8 @@ pub use write::UniversalWrite;
 /// `u64`.
 ///
 /// This trait exists for documentation/code navigation purposes only.
-pub trait UserData {}
-impl<T> UserData for T {}
+pub trait UserData: Debug {}
+impl<T: Debug> UserData for T {}
 
 /// Element type read from or written to a universal I/O storage.
 ///
