@@ -15,6 +15,7 @@
 mod enumerate;
 mod holder;
 mod lifecycle;
+mod load;
 mod refresh;
 #[cfg(test)]
 mod tests;

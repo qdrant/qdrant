@@ -5,12 +5,12 @@ use common::universal_io::{MmapFile, MmapFs};
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationResult;
 use segment::index::UniversalReadExt;
-use segment::segment::read_only::ReadOnlySegment;
 
 use crate::EdgeConfig;
 use crate::read_only::ReadOnlyEdgeShard;
 use crate::read_only::enumerate::{ManifestSegmentEnumerator, SegmentEnumerator};
 use crate::read_only::holder::ReadOnlySegmentHolder;
+use crate::read_only::load::load_segments_parallel;
 
 impl ReadOnlyEdgeShard<MmapFile> {
     /// Open a read-only follower over local memory-mapped files, discovering segments from the
@@ -33,7 +33,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// from a default config and re-derives one once segments appear on [`refresh`](Self::refresh).
     pub fn open(fs: S::Fs, path: &Path) -> OperationResult<Self>
     where
-        S::Fs: Send + Sync + 'static,
+        S::Fs: Send + Sync + Clone + 'static,
     {
         let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
         Self::open_with_enumerator(fs, path, enumerator)
@@ -50,11 +50,15 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         fs: S::Fs,
         path: &Path,
         enumerator: impl SegmentEnumerator + 'static,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Self>
+    where
+        S::Fs: Send + Sync + Clone + 'static,
+    {
+        let loaded = load_segments_parallel::<S>(&fs, enumerator.list_segments()?)?;
+
         let mut holder = ReadOnlySegmentHolder::default();
         let mut config: Option<EdgeConfig> = None;
-        for (uuid, segment_path) in enumerator.list_segments()? {
-            let segment = ReadOnlySegment::<S>::open(&fs, &segment_path, uuid, None)?;
+        for (uuid, segment) in loaded {
             // Derive the shard config from the first segment's own config.
             config.get_or_insert_with(|| EdgeConfig::from_segment_config(&segment.segment_config));
             let appendable = segment.segment_config.is_appendable();
