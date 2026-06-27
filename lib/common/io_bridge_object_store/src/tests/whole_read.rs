@@ -9,11 +9,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
 use common::generic_consts::Sequential;
 use common::universal_io::{
-    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, OpenOptions, Populate, ReadRange, Result,
-    UniversalKind, UniversalRead, UniversalReadFileOps, UniversalReadFs,
+    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, OpenOptions, OwnedReadPipeline, Populate,
+    ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs,
 };
 use futures::stream::{BoxStream, StreamExt};
 
+use crate::pipeline::OwnedBlobPipeline;
 use crate::read::AsyncRead;
 use crate::{BlobFile, BridgeRuntime};
 
@@ -24,6 +26,8 @@ struct Counters {
     len: Arc<AtomicUsize>,
     whole: Arc<AtomicUsize>,
     range: Arc<AtomicUsize>,
+    /// Open-ended tail GETs: `read_from` with a positive offset.
+    from: Arc<AtomicUsize>,
 }
 
 #[derive(Clone)]
@@ -108,15 +112,31 @@ impl AsyncRead for CountingSource {
         async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
     }
 
-    fn read_whole(
+    fn read_from(
         &self,
         _path: &Path,
+        from: u64,
     ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
     {
-        self.counters.whole.fetch_add(1, Ordering::Relaxed);
+        if from == 0 {
+            self.counters.whole.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.counters.from.fetch_add(1, Ordering::Relaxed);
+        }
+        let size = self.data.len() as u64;
         let data = self.data.clone();
-        let size = data.len() as u64;
-        async move { Ok((size, futures::stream::once(async move { Ok(data) }).boxed())) }
+        async move {
+            // A positive offset at or past EOF is an unsatisfiable range; mimic
+            // the backend's 416 rather than yielding an empty body, so the
+            // pipeline's empty-tail disambiguation is exercised.
+            if from > 0 && from >= size {
+                return Err(UniversalIoError::S3Config {
+                    description: "requested range not satisfiable".into(),
+                });
+            }
+            let tail = data.slice(from as usize..);
+            Ok((size, futures::stream::once(async move { Ok(tail) }).boxed()))
+        }
     }
 
     fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
@@ -151,6 +171,57 @@ fn blob_file_read_whole_uses_single_get_without_head() {
         0,
         "read_whole must not issue a separate len/HEAD request",
     );
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn owned_pipeline_tail_read_uses_single_get_without_head() {
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    let mut pipeline =
+        <OwnedBlobPipeline<CountingSource, ()> as OwnedReadPipeline<()>>::new(file).unwrap();
+    let from = 10u64;
+    pipeline.schedule_whole((), from).unwrap();
+    let (_, bytes) = pipeline.wait().unwrap().expect("exactly one read");
+
+    assert_eq!(&bytes[..], &DATA[from as usize..]);
+    assert_eq!(
+        counters.from.load(Ordering::Relaxed),
+        1,
+        "a tail read should issue exactly one open-ended GET",
+    );
+    assert_eq!(
+        counters.len.load(Ordering::Relaxed),
+        0,
+        "a tail read must not issue a separate len/HEAD request",
+    );
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 0);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn owned_pipeline_empty_tail_resolves_to_empty_read() {
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    let mut pipeline =
+        <OwnedBlobPipeline<CountingSource, ()> as OwnedReadPipeline<()>>::new(file).unwrap();
+    // Offset exactly at EOF: there is no tail to read.
+    pipeline.schedule_whole((), DATA.len() as u64).unwrap();
+    let (_, bytes) = pipeline
+        .wait()
+        .unwrap()
+        .expect("an (empty) read is scheduled");
+
+    assert!(bytes.is_empty(), "an offset at EOF yields an empty read");
+    // The open-ended GET is attempted once, then a single len() confirms the
+    // offset is past EOF — there is no cheaper way to learn the tail is empty.
+    assert_eq!(counters.from.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 0);
     assert_eq!(counters.range.load(Ordering::Relaxed), 0);
 }
 

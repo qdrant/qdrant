@@ -65,13 +65,36 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
         range: Range<u64>,
     ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static;
 
-    /// Fetch the whole object at `path` in one request, returning its total
-    /// length (from the GET response) alongside the body stream — no separate
-    /// `len`/HEAD round-trip.
+    /// Fetch the object at `path` from byte offset `from` to its end in one
+    /// request — no separate `len`/HEAD round-trip. `from == 0` reads the whole
+    /// object.
+    ///
+    /// The returned `u64` is the **total size of the whole object, in bytes**
+    /// (as reported by the GET response, e.g. parsed from `Content-Range`/
+    /// `Content-Length`). It is *not* the length of the returned tail: the
+    /// stream yields exactly `total - from` bytes, so the absolute offset of EOF
+    /// is `total`, and on success `from <= total` always holds. For `from == 0`
+    /// the two coincide (`total` bytes are streamed).
+    ///
+    /// If `from` is at or past the end of the object the request may be rejected
+    /// by the backend as an unsatisfiable range (e.g. HTTP 416). Callers that
+    /// must tolerate an empty tail should disambiguate with [`len`](Self::len);
+    /// see `pipeline::read_from_into_byte_buffer`.
+    fn read_from(
+        &self,
+        path: &Path,
+        from: u64,
+    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static;
+
+    /// Fetch the whole object at `path` in one request. Convenience for
+    /// [`read_from(path, 0)`](Self::read_from).
     fn read_whole(
         &self,
         path: &Path,
-    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static;
+    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
+    {
+        self.read_from(path, 0)
+    }
 
     fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static;
 

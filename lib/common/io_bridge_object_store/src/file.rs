@@ -200,14 +200,15 @@ mod tests {
             async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
         }
 
-        fn read_whole(
+        fn read_from(
             &self,
             _path: &Path,
+            from: u64,
         ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
         {
-            let data = self.data.clone();
-            let size = data.len() as u64;
-            async move { Ok((size, futures::stream::once(async move { Ok(data) }).boxed())) }
+            let size = self.data.len() as u64;
+            let tail = self.data.slice(from as usize..);
+            async move { Ok((size, futures::stream::once(async move { Ok(tail) }).boxed())) }
         }
 
         fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
