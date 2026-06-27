@@ -166,6 +166,35 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         }
     }
 
+    fn read_from(
+        &self,
+        path: &Path,
+        from: u64,
+    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
+    {
+        let store = self.clone();
+        let key = build_key(path);
+        async move {
+            // `from == 0` is a plain whole-object GET; a positive offset asks the
+            // backend for everything from `from` onward in a single open-ended
+            // GET (`Range: bytes=from-`). Either way the response carries the
+            // object's total size, so no separate HEAD is needed.
+            let opts = GetOptions {
+                range: (from > 0).then_some(GetRange::Offset(from)),
+                ..Default::default()
+            };
+            let result = store.get_opts(&key, opts).await.map_err(|err| match err {
+                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
+                    path: PathBuf::from(key.to_string()),
+                },
+                other => UniversalIoError::s3(other),
+            })?;
+            let size = result.meta.size;
+            let stream = result.into_stream().map_err(UniversalIoError::s3).boxed();
+            Ok((size, stream))
+        }
+    }
+
     fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
         let store = self.clone();
         let key = build_key(path);

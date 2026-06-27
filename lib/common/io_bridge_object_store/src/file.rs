@@ -1,12 +1,15 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{Result, UniversalKind, UniversalRead, UserData};
+use common::universal_io::{Item, Result, UniversalKind, UniversalRead, UserData};
 
 use crate::fs::BlobFs;
-use crate::pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline, read_into_byte_buffer};
+use crate::pipeline::{
+    BorrowedBlobPipeline, OwnedBlobPipeline, read_into_byte_buffer, read_whole_into_byte_buffer,
+};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
 
@@ -88,6 +91,15 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
             .runtime
             .block_on(read_into_byte_buffer::<A>(self, range, align))?;
         Ok(ACow::Owned(buf))
+    }
+
+    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
+        let buf = self
+            .runtime
+            .block_on(read_whole_into_byte_buffer::<A>(self, align_of::<T>()))?;
+        Ok(ACow::Owned(buf)
+            .try_cast_bytemuck()
+            .expect("aligned whole-object buffer casts to [T]"))
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -186,6 +198,17 @@ mod tests {
         {
             let bytes = self.data.slice(range.start as usize..range.end as usize);
             async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
+        }
+
+        fn read_from(
+            &self,
+            _path: &Path,
+            from: u64,
+        ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
+        {
+            let size = self.data.len() as u64;
+            let tail = self.data.slice(from as usize..);
+            async move { Ok((size, futures::stream::once(async move { Ok(tail) }).boxed())) }
         }
 
         fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {

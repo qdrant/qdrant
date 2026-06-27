@@ -1,10 +1,10 @@
 use std::ops::Range;
 
 use common::ext::aligned_vec::ACow;
-use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{OwnedReadPipeline, Result, UniversalRead, UserData};
+use common::generic_consts::AccessPattern;
+use common::universal_io::{OwnedReadPipeline, Result, UserData};
 
-use super::buffer::read_into_byte_buffer;
+use super::buffer::{read_from_into_byte_buffer, read_into_byte_buffer};
 use super::inner::PipelineInner;
 use crate::file::BlobFile;
 use crate::read::AsyncRead;
@@ -50,12 +50,12 @@ where
     }
 
     fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
-        // TODO(uio): implement schedule_whole in `AsyncRead`
-        let eof = self.file.len::<u8>()?;
-        if from >= eof {
-            return Ok(());
-        }
-        self.schedule::<Sequential>(user_data, from..eof, 1)
+        // One open-ended GET from `from` to EOF, byte-aligned, sized from the
+        // response — no separate `len`/HEAD round-trip. `from == 0` reads the
+        // whole object; an offset at or past EOF resolves to an empty read
+        // inside the future (see `read_from_into_byte_buffer`).
+        let future = read_from_into_byte_buffer::<A>(&self.file, from, 1);
+        self.inner.schedule(&self.file.runtime, user_data, future)
     }
 
     fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
