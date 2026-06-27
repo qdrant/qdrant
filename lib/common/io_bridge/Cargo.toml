@@ -14,6 +14,7 @@ futures = { workspace = true }
 slab = { workspace = true }
 tokio = { workspace = true }
 aligned-vec = "0.6.4"
+log = { workspace = true }
 
 [dev-dependencies]
 common = { path = "../common", features = ["testing"] }

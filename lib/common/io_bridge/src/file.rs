@@ -85,9 +85,18 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
     }
 
     fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+        let start_time = std::time::Instant::now();
         let buf = self
             .runtime
-            .block_on(read_into_byte_buffer::<A>(self, range, align))?;
+            .block_on(read_into_byte_buffer::<A>(self, range.clone(), align))?;
+
+        log::warn!(
+            "read_bytes({}, {:?}) took {:?} and returned {} bytes",
+            self.path.display(),
+            range,
+            start_time.elapsed(),
+            buf.len()
+        );
         Ok(ACow::Owned(buf))
     }
 
@@ -101,9 +110,18 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
     }
 
     fn len<T>(&self) -> Result<u64> {
+        let start_time = std::time::Instant::now();
         let item_size = size_of::<T>() as u64;
         let len = self.runtime.block_on(self.inner.len(&self.path))?;
         debug_assert_eq!(len % item_size, 0);
+
+        log::warn!(
+            "len::<{}>({}) took {:?} and returned {} items",
+            std::any::type_name::<T>(),
+            self.path.display(),
+            start_time.elapsed(),
+            len / item_size
+        );
         Ok(len / item_size)
     }
 
