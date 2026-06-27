@@ -486,6 +486,47 @@ mod tests {
             )));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
+        // Verify that values_count conditions are correctly evaluated on non-existent fields.
+        // A missing field has logically 0 values, so it must satisfy filters such as:
+        // - lt: 1 (0 < 1 is true)
+        // - gte: 0 (0 >= 0 is true)
+        // - lte: 0 (0 <= 0 is true)
+        let missing_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("non_existent_field"),
+                ValuesCount {
+                    lt: Some(1),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )));
+        assert!(payload_checker.check(0, &missing_value_count_condition));
+
+        let missing_value_count_condition_gte =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("non_existent_field"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(0),
+                    lte: None,
+                },
+            )));
+        assert!(payload_checker.check(0, &missing_value_count_condition_gte));
+
+        let missing_value_count_condition_lte =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("non_existent_field"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: None,
+                    lte: Some(0),
+                },
+            )));
+        assert!(payload_checker.check(0, &missing_value_count_condition_lte));
+
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             JsonPath::new("location"),
             GeoBoundingBox {
