@@ -128,7 +128,7 @@ impl<U: UserData> OwnedReadPipeline<U> for OwnedIoUringPipeline<U> {
     }
 }
 
-impl<U> OwnedIoUringPipeline<U> {
+impl<U: UserData> OwnedIoUringPipeline<U> {
     /// Destructure the pipeline. Drop `inner` and return `file`.
     ///
     /// # Safety:
@@ -153,7 +153,7 @@ impl<U> OwnedIoUringPipeline<U> {
     }
 }
 
-impl<U> Drop for OwnedIoUringPipeline<U> {
+impl<U: UserData> Drop for OwnedIoUringPipeline<U> {
     fn drop(&mut self) {
         // Drop `inner` during `destructure`, then drop `file` explicitly
         let file = unsafe { self.destructure() };
