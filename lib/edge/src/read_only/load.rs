@@ -6,6 +6,8 @@ use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 use uuid::Uuid;
 
+type SegmentLoadHandle<S> = JoinHandle<OperationResult<(Uuid, ReadOnlySegment<S>)>>;
+
 /// Load each segment in a dedicated thread and return the opened segments.
 pub(crate) fn load_segments_parallel<S>(
     fs: &S::Fs,
@@ -15,7 +17,7 @@ where
     S: UniversalReadExt + 'static,
     S::Fs: Send + Sync + Clone + 'static,
 {
-    let handles: Vec<JoinHandle<OperationResult<(Uuid, ReadOnlySegment<S>)>>> = segments
+    let handles: Vec<SegmentLoadHandle<S>> = segments
         .into_iter()
         .map(|(uuid, segment_path)| {
             let fs = fs.clone();
