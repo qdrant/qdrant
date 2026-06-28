@@ -77,12 +77,13 @@ jobs:
 
       - name: Build debug tools
         run: |
-          # Single build: enable `service_debug` on the qdrant crate only (edge tools
-          # don't define that feature); shared deps still compile once in one graph.
-          cargo build --profile "$PROFILE" --locked --features qdrant/service_debug \
+          # Single build with explicit `--package qdrant` so `--features service_debug`
+          # applies only to qdrant (not edge tools, which lack that feature).
+          cargo build --profile "$PROFILE" --locked --features service_debug \
             --target "$TARGET" \
+            --package qdrant \
             $(printf -- '--bin %s ' $DEBUG_BINS) \
-            $(printf -- '-p %s ' $EDGE_BINS)
+            $(printf -- '--package %s ' $EDGE_BINS)
           sccache --show-stats
 
       - name: Collect binaries
