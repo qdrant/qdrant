@@ -83,7 +83,7 @@ jobs:
             --target "$TARGET" \
             --package qdrant \
             $(printf -- '--bin %s ' $DEBUG_BINS) \
-            $(printf -- '--package %s ' $EDGE_BINS)
+            $(for bin in $EDGE_BINS; do printf -- '--package %s --bin %s ' "$bin" "$bin"; done)
           sccache --show-stats
 
       - name: Collect binaries
