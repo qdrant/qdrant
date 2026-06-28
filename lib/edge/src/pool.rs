@@ -9,6 +9,7 @@
 use std::sync::Arc;
 
 use rayon::{ThreadPool, ThreadPoolBuilder};
+use segment::common::operation_error::{OperationError, OperationResult};
 
 /// Build a shard's search thread pool with `num_threads` worker threads.
 ///
@@ -16,12 +17,18 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 /// callers pass `config.search_thread_count()` so a configured `0` is expanded to the CPU-derived
 /// default that matches the core search runtime.
 ///
+/// Returns an error (rather than panicking) when the underlying thread spawn fails — this runs
+/// during shard open/load and follower open, so a transient resource failure must not abort the
+/// process.
+///
 /// [`EdgeConfig::search_thread_count`]: crate::EdgeConfig::search_thread_count
-pub(crate) fn build_search_pool(num_threads: usize) -> Arc<ThreadPool> {
+pub(crate) fn build_search_pool(num_threads: usize) -> OperationResult<Arc<ThreadPool>> {
     let pool = ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .thread_name(|idx| format!("edge-search-{idx}"))
         .build()
-        .expect("failed to build edge search thread pool");
-    Arc::new(pool)
+        .map_err(|err| {
+            OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
+        })?;
+    Ok(Arc::new(pool))
 }

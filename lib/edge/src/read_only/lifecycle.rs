@@ -57,7 +57,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         // A follower has no `edge_config.json` and derives its config from the segments — which never
         // carry `max_search_threads` — so the pool is always sized from the CPU-derived default.
         let search_pool =
-            crate::pool::build_search_pool(EdgeConfig::default().search_thread_count());
+            crate::pool::build_search_pool(EdgeConfig::default().search_thread_count())?;
 
         let loaded = load_segments_parallel::<S>(&search_pool, &fs, enumerator.list_segments()?)?;
 
