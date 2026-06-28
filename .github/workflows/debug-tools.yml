@@ -77,9 +77,9 @@ jobs:
 
       - name: Build debug tools
         run: |
-          # Single build: `--features service_debug` applies to the qdrant bins;
-          # edge tools share the unified dependency graph (no second compile pass).
-          cargo build --profile "$PROFILE" --locked --features service_debug \
+          # Single build: enable `service_debug` on the qdrant crate only (edge tools
+          # don't define that feature); shared deps still compile once in one graph.
+          cargo build --profile "$PROFILE" --locked --features qdrant/service_debug \
             --target "$TARGET" \
             $(printf -- '--bin %s ' $DEBUG_BINS) \
             $(printf -- '-p %s ' $EDGE_BINS)
