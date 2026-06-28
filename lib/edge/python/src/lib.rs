@@ -65,7 +65,8 @@ mod qdrant_edge {
     use super::scroll::PyScrollRequest;
     #[pymodule_export]
     use super::search::{
-        PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,
+        PyAcornSearchParams, PyIdfSearchScope, PyQuantizationSearchParams, PySearchParams,
+        PySearchRequest,
     };
     #[pymodule_export]
     use super::types::filter::{
