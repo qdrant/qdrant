@@ -138,11 +138,14 @@ impl ValueChecker for FieldCondition {
             geo_radius: _,
             geo_bounding_box: _,
             geo_polygon: _,
-            values_count: _,
+            values_count,
             key: _,
             is_empty,
             is_null,
         } = self;
+        if let Some(values_count) = values_count {
+            return values_count.check_count(0);
+        }
         if let Some(is_empty) = is_empty {
             return *is_empty;
         }
@@ -405,6 +408,40 @@ mod tests {
             lte: None,
         };
         assert!(gte_two_countries_query.check(&countries));
+    }
+
+    #[test]
+    fn test_values_count_missing_key_matches_lte_zero() {
+        let lte_zero = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(0),
+        };
+        assert!(lte_zero.check_empty());
+
+        let eq_zero = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(0),
+            lte: Some(0),
+        };
+        assert!(eq_zero.check_empty());
+
+        let lte_zero_field = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: Some(lte_zero),
+            key: JsonPath::new("comments"),
+            is_empty: None,
+            is_null: None,
+        };
+        assert!(lte_zero_field.check_empty());
+        assert!(!lte_zero_field.check(&json!(["one"])));
+        assert!(lte_zero_field.check(&json!([])));
     }
 
     #[test]

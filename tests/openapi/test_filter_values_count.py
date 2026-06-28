@@ -89,3 +89,61 @@ def test_filter_values_count(collection_name):
     json = response.json()
     assert len(json['result']) == 3
     assert json['result'][0]['id'] == 1
+
+
+def test_values_count_lte_zero_matches_missing_key():
+    collection_name = "test_values_count_missing_key"
+    drop_collection(collection_name)
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "size": 2,
+                "distance": "Cosine",
+            },
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {"id": 1, "vector": [1.0, 0.0], "payload": {"comments": ["one"]}},
+                {"id": 2, "vector": [1.0, 0.0], "payload": {"comments": []}},
+                {"id": 3, "vector": [1.0, 0.0], "payload": {}},
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "key": "comments",
+                        "values_count": {
+                            "lte": 0
+                        }
+                    }
+                ]
+            },
+            "limit": 10,
+            "with_payload": True,
+        }
+    )
+    assert response.ok
+    ids = sorted(p['id'] for p in response.json()['result']['points'])
+    assert ids == [2, 3]
+
+    drop_collection(collection_name)
