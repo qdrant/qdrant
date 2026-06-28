@@ -10,6 +10,19 @@ use crate::types::{
     GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny,
     MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
 };
+use serde_json::Number;
+
+/// Convert a JSON Number to i64, handling float values that represent whole integers
+/// (e.g., 42.0 → 42). Mirrors `value_to_integer` in `index/field_index/utils.rs`
+/// so the non-indexed exact-match fallback and integer payload indexes agree.
+fn number_to_integer(number: &Number) -> Option<i64> {
+    number.as_i64().or_else(|| {
+        number.as_f64().and_then(|v| {
+            let int = v as i64;
+            (int as f64 == v).then_some(int)
+        })
+    })
+}
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
 ///
@@ -160,7 +173,7 @@ impl ValueChecker for Match {
                 (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,
                 (Value::String(stored), ValueVariants::String(val)) => stored == val,
                 (Value::Number(stored), ValueVariants::Integer(val)) => {
-                    stored.as_i64().is_some_and(|num| num == *val)
+                    number_to_integer(stored).is_some_and(|num| num == *val)
                 }
                 _ => false,
             },
@@ -192,8 +205,7 @@ impl ValueChecker for Match {
                         list.contains(stored.as_str())
                     }
                 }
-                (Value::Number(stored), AnyVariants::Integers(list)) => stored
-                    .as_i64()
+                (Value::Number(stored), AnyVariants::Integers(list)) => number_to_integer(stored)
                     .map(|num| {
                         if list.len() < INDEXSET_ITER_THRESHOLD {
                             list.iter().any(|i| *i == num)
@@ -212,8 +224,7 @@ impl ValueChecker for Match {
                         !list.contains(stored.as_str())
                     }
                 }
-                (Value::Number(stored), AnyVariants::Integers(list)) => stored
-                    .as_i64()
+                (Value::Number(stored), AnyVariants::Integers(list)) => number_to_integer(stored)
                     .map(|num| {
                         if list.len() < INDEXSET_ITER_THRESHOLD {
                             !list.iter().any(|i| *i == num)
