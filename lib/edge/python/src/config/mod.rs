@@ -25,7 +25,7 @@ pub struct PyEdgeConfig(pub EdgeConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=true, hnsw_config=None, quantization_config=None, optimizers=None))]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=true, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None))]
     pub fn new(
         #[pyo3(from_py_with = option_edge_vectors_helper)] vectors: Option<
             HashMap<String, PyEdgeVectorParams>,
@@ -35,6 +35,7 @@ impl PyEdgeConfig {
         hnsw_config: Option<PyHnswIndexConfig>,
         quantization_config: Option<PyQuantizationConfig>,
         optimizers: Option<PyEdgeOptimizersConfig>,
+        max_search_threads: Option<usize>,
     ) -> PyResult<Self> {
         let vectors = vectors.unwrap_or_default();
         let sparse_vectors = sparse_vectors.unwrap_or_default();
@@ -55,6 +56,7 @@ impl PyEdgeConfig {
             quantization_config: quantization_config.map(QuantizationConfig::from),
             optimizers: optimizers.map(|o| o.0).unwrap_or_default(),
             wal_options: None,
+            max_search_threads,
         }))
     }
 
@@ -88,6 +90,11 @@ impl PyEdgeConfig {
         PyEdgeOptimizersConfig(self.0.optimizers.clone())
     }
 
+    #[getter]
+    pub fn max_search_threads(&self) -> Option<usize> {
+        self.0.max_search_threads
+    }
+
     pub fn __repr__(&self) -> String {
         self.repr()
     }
@@ -103,6 +110,7 @@ impl PyEdgeConfig {
             quantization_config: _,
             optimizers: _,
             wal_options: _,
+            max_search_threads: _,
         } = self.0;
     }
 }

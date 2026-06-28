@@ -4,6 +4,8 @@ use std::sync::Arc;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
 use parking_lot::{RwLock, RwLockReadGuard};
+use rayon::ThreadPool;
+use rayon::prelude::*;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::FacetResponse;
 use segment::entry::ReadSegmentEntry;
@@ -30,7 +32,11 @@ use crate::{EdgeConfig, ShardInfo};
 /// heterogeneous (`Segment` and `ProxySegment` coexist during optimization), uses the
 /// [`LockedSegment`] enum. Dynamic dispatch is confined to the `LockedSegment` impl, mirroring the
 /// pre-existing [`LockedSegment::get_read`].
-pub trait ReadSegmentHandle {
+///
+/// `Send + Sync` so a snapshot of handles can be shared across the shard's search thread pool and
+/// read in parallel (see [`EdgeReadView::par_map_segments`]). Both concrete handles —
+/// `Arc<RwLock<ReadOnlySegment<S>>>` and [`LockedSegment`] — already satisfy this.
+pub trait ReadSegmentHandle: Send + Sync {
     type Segment: ReadSegmentEntry + ?Sized;
 
     /// Acquire a read guard. One guard is held for the whole per-segment operation, so reads that
@@ -43,7 +49,10 @@ pub trait ReadSegmentHandle {
     fn segment_arc(&self) -> Arc<RwLock<Self::Segment>>;
 }
 
-impl<S: UniversalReadExt + 'static> ReadSegmentHandle for Arc<RwLock<ReadOnlySegment<S>>> {
+impl<S: UniversalReadExt + 'static> ReadSegmentHandle for Arc<RwLock<ReadOnlySegment<S>>>
+where
+    S::Fs: Send + Sync,
+{
     type Segment = ReadOnlySegment<S>;
 
     fn read_segment(&self) -> RwLockReadGuard<'_, ReadOnlySegment<S>> {
@@ -78,11 +87,17 @@ impl ReadSegmentHandle for LockedSegment {
 pub struct EdgeReadView<H: ReadSegmentHandle> {
     pub(crate) segments: Vec<H>,
     pub(crate) config: Arc<EdgeConfig>,
+    /// Shard search thread pool, used to run per-segment reads in parallel.
+    pub(crate) pool: Arc<ThreadPool>,
 }
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
-    pub(crate) fn new(segments: Vec<H>, config: Arc<EdgeConfig>) -> Self {
-        Self { segments, config }
+    pub(crate) fn new(segments: Vec<H>, config: Arc<EdgeConfig>, pool: Arc<ThreadPool>) -> Self {
+        Self {
+            segments,
+            config,
+            pool,
+        }
     }
 
     /// Owned read handles for the retrieval / version-dedup path.
@@ -91,6 +106,23 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .iter()
             .map(ReadSegmentHandle::segment_arc)
             .collect()
+    }
+
+    /// Run `f` over every segment in parallel on the shard's search thread pool, returning the
+    /// per-segment results in segment order. This is the single seam through which all per-segment
+    /// reads (search, scroll, count, facet, ...) are parallelized: the caller supplies the
+    /// per-segment work and merges the ordered results itself.
+    ///
+    /// The whole map runs inside [`ThreadPool::install`], so the configured pool — not the global
+    /// rayon pool — bounds the per-segment concurrency. With a single segment this is effectively a
+    /// direct call.
+    pub(crate) fn par_map_segments<R, F>(&self, f: F) -> OperationResult<Vec<R>>
+    where
+        F: Fn(&H) -> OperationResult<R> + Send + Sync,
+        R: Send,
+    {
+        self.pool
+            .install(|| self.segments.par_iter().map(f).collect())
     }
 }
 
@@ -111,6 +143,9 @@ pub trait EdgeShardRead {
 
     /// Snapshot the current config.
     fn config_snapshot(&self) -> Arc<EdgeConfig>;
+
+    /// The shard's search thread pool, used to run per-segment reads in parallel.
+    fn search_pool(&self) -> Arc<ThreadPool>;
 
     fn path(&self) -> &Path;
 
@@ -179,5 +214,9 @@ pub trait EdgeShardRead {
 /// Build a one-shot read snapshot for a shard. Private so it is not part of the trait's surface —
 /// the snapshot is an implementation detail of the default read methods.
 fn view<T: EdgeShardRead + ?Sized>(shard: &T) -> EdgeReadView<T::Handle> {
-    EdgeReadView::new(shard.read_segments(), shard.config_snapshot())
+    EdgeReadView::new(
+        shard.read_segments(),
+        shard.config_snapshot(),
+        shard.search_pool(),
+    )
 }

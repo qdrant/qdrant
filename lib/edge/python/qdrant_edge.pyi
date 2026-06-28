@@ -252,6 +252,7 @@ class EdgeConfig:
         hnsw_config: Optional["HnswIndexConfig"] = None,
         quantization_config: Optional[QuantizationConfigType] = None,
         optimizers: Optional["EdgeOptimizersConfig"] = None,
+        max_search_threads: Optional[int] = None,
     ) -> None:
         """
         Create an EdgeConfig.
@@ -265,6 +266,10 @@ class EdgeConfig:
             hnsw_config: Optional global HNSW config (used when building HNSW index).
             quantization_config: Optional global quantization config.
             optimizers: Optional optimizer settings.
+            max_search_threads: Number of threads in the shard's search thread pool, which
+                                runs per-segment reads in parallel and loads segments in
+                                parallel. None (the default) derives the count from the number
+                                of CPUs, matching the core search runtime.
         """
         ...
 
@@ -296,6 +301,11 @@ class EdgeConfig:
     @property
     def optimizers(self) -> "EdgeOptimizersConfig":
         """Optimizer settings."""
+        ...
+
+    @property
+    def max_search_threads(self) -> Optional[int]:
+        """Number of threads in the search thread pool, or None for the CPU-derived default."""
         ...
 
 class EdgeVectorParams:

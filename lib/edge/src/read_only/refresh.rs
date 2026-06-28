@@ -47,7 +47,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
                 .map(|(uuid, segment_path)| (*uuid, segment_path.clone()))
                 .collect()
         };
-        let loaded = load_segments_parallel::<S>(&self.fs, new_segments)?;
+        let loaded = load_segments_parallel::<S>(&self.search_pool, &self.fs, new_segments)?;
 
         let survivors: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)> = {
             let mut holder = self.segments.write();

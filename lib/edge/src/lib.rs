@@ -5,6 +5,7 @@ mod count;
 mod facet;
 mod info;
 mod optimize;
+mod pool;
 mod query;
 mod read_only;
 mod read_view;
@@ -58,6 +59,9 @@ pub struct EdgeShard {
     /// read-only follower can discover segments without scanning. `Some` only when the
     /// `write_segment_manifest` feature flag is enabled.
     segment_manifest: Option<SaveOnDisk<SegmentsManifest>>,
+    /// Fixed-size pool used to run per-segment reads in parallel. Sized from
+    /// [`EdgeConfig::max_search_threads`].
+    search_pool: Arc<rayon::ThreadPool>,
 }
 
 const WAL_PATH: &str = "wal";
@@ -82,6 +86,8 @@ impl EdgeShard {
         let mut segments = SegmentHolder::default();
         ensure_appendable_segment(&mut segments, path, &segments_path, &config)?;
 
+        let search_pool = pool::build_search_pool(config.search_thread_count());
+
         let config_path = path.join(EDGE_CONFIG_FILE);
         let config = SaveOnDisk::new(&config_path, config)
             .map_err(|e| OperationError::service_error(e.to_string()))?;
@@ -94,6 +100,7 @@ impl EdgeShard {
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
+            search_pool,
         })
     }
 
@@ -135,6 +142,8 @@ impl EdgeShard {
             OperationError::service_error("edge config is not provided and no segments were loaded")
         })?;
 
+        let search_pool = pool::build_search_pool(config.search_thread_count());
+
         let config_path = path.join(EDGE_CONFIG_FILE);
         let config = SaveOnDisk::new(&config_path, config)
             .map_err(|e| OperationError::service_error(e.to_string()))?;
@@ -147,6 +156,7 @@ impl EdgeShard {
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
+            search_pool,
         })
     }
 
