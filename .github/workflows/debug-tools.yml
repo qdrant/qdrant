@@ -25,14 +25,19 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
   # Tools in the main `qdrant` crate, gated behind its `service_debug` feature.
   # Keep this list in sync with the `service_debug` [[bin]] targets in Cargo.toml
   DEBUG_BINS: wal_inspector wal_pop segment_inspector schema_generator model_testing
-  # Standalone tool crates (own workspace member, no `service_debug` feature),
-  # built with `-p`. Bin name must match the crate name.
+  # Standalone tool crates (own workspace member), built with `-p`.
+  # Bin name must match the crate name. Built in the same invocation as the
+  # qdrant bins so Cargo unifies features and shared workspace crates compile once.
   EDGE_BINS: edge-shard-query
   # Static target so the binaries run everywhere
   TARGET: x86_64-unknown-linux-musl
+  # Faster to compile than release (no fat LTO); still opt-level 3. See [profile.perf].
+  PROFILE: perf
   # ---- Adjust to your GCS bucket ----
   GCS_BUCKET: qdrant-debug
   GCS_ENDPOINT: https://storage.googleapis.com
@@ -61,29 +66,30 @@ jobs:
         uses: taiki-e/setup-cross-toolchain-action@3d9770ce98eb7dbcf378563182a5e8031165f75b # v1.41.0
         with:
           target: x86_64-unknown-linux-musl
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@1583d6b38d7be47f593cb472781bbb21cab4321e # v0.0.10
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          # Namespace the cache per target so the musl build doesn't collide with gnu caches
-          key: ${{ env.TARGET }}
+          # Namespace cache per target/profile so musl perf doesn't collide with gnu/release caches
+          key: ${{ env.TARGET }}-${{ env.PROFILE }}
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
           save-if: ${{ (inputs.branch || github.ref_name) == 'dev' }}
 
       - name: Build debug tools
         run: |
-          # Tools in the qdrant crate (need the service_debug feature)
-          cargo build --release --locked --features service_debug \
+          # Single build: `--features service_debug` applies to the qdrant bins;
+          # edge tools share the unified dependency graph (no second compile pass).
+          cargo build --profile "$PROFILE" --locked --features service_debug \
             --target "$TARGET" \
-            $(printf -- '--bin %s ' $DEBUG_BINS)
-          # Standalone tool crates (no service_debug feature)
-          cargo build --release --locked \
-            --target "$TARGET" \
+            $(printf -- '--bin %s ' $DEBUG_BINS) \
             $(printf -- '-p %s ' $EDGE_BINS)
+          sccache --show-stats
 
       - name: Collect binaries
         run: |
           mkdir -p debug-tools
           for bin in $DEBUG_BINS $EDGE_BINS; do
-            cp "target/$TARGET/release/$bin" debug-tools/
+            cp "target/$TARGET/$PROFILE/$bin" debug-tools/
           done
 
       - name: Upload to GCS
