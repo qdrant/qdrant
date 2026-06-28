@@ -420,14 +420,16 @@ impl LocalShard {
         if availability.iter().all(|&count| count == 0) {
             return Ok(Vec::new());
         }
-        // The random sample holds at most `min(limit, total available points)`
-        // entries, so bound the pre-allocation by the points actually available.
-        // `limit` is a client-controlled request field that is unbounded by
-        // default (`StrictModeConfig::max_query_limit` is `None` unless an
-        // operator sets it), so `HashSet::with_capacity(limit)` would otherwise
-        // request an enormous up-front allocation that aborts the process
-        // (`handle_alloc_error`) on a single request.
-        let total_available: usize = availability.iter().sum();
+        // The random sample can only ever contain the candidate points actually
+        // read into `segments_reads` (the loop below pops/iterates exclusively
+        // from it), so bound the pre-allocation by that filter-aware candidate
+        // count rather than the raw, filter-unaware segment sizes. `limit` is a
+        // client-controlled request field that is unbounded by default
+        // (`StrictModeConfig::max_query_limit` is `None` unless an operator sets
+        // it), so a plain `HashSet::with_capacity(limit)` would otherwise reserve
+        // an enormous buffer and abort the process (`handle_alloc_error`) on a
+        // single request.
+        let candidate_count: usize = segments_reads.iter().map(|points| points.len()).sum();
 
         // Select points in a weighted fashion from each segment, depending on how many points each segment has.
         let distribution = WeightedIndex::new(availability).map_err(|err| {
@@ -437,7 +439,7 @@ impl LocalShard {
         })?;
 
         let mut rng = rand::make_rng::<StdRng>();
-        let mut random_points = HashSet::with_capacity(limit.min(total_available));
+        let mut random_points = HashSet::with_capacity(limit.min(candidate_count));
 
         // Randomly sample points in two stages
         //
