@@ -91,6 +91,14 @@ impl Select {
     }
 }
 
+impl Rest {
+    /// Helper for sequencing checks.
+    #[inline(always)]
+    pub const fn keep_if(self, more_checks_follow: bool) -> Rest {
+        if more_checks_follow { Rest::Keep } else { self }
+    }
+}
+
 /// The default implementation of [`ConditionChecker::check_batched`].
 pub fn partition_batched<K: CheckItem, E>(
     items: &mut [K],

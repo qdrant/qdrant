@@ -105,13 +105,8 @@ where
         )?;
         filter_estimations.push(estimation);
 
-        let optimized_filter = OptimizedFilter {
-            should,
-            min_should,
-            min_should_count,
-            must,
-            must_not,
-        };
+        let optimized_filter =
+            OptimizedFilter::new(should, min_should, min_should_count, must, must_not);
 
         Ok((
             optimized_filter,
