@@ -21,7 +21,7 @@ pub use self::simple_disk_cache::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
 pub use self::traits::{
-    BorrowedReadPipeline, Item, OpenExtra, OwnedReadPipeline, UniversalRead, UniversalReadFileOps,
+    Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalRead, UniversalReadFileOps,
     UniversalReadFs, UniversalWrite, UserData,
 };
 pub use self::types::{

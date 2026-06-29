@@ -461,7 +461,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
 /// The last block extends past EOF, so its read returns a truncated tail of valid bytes.
 #[test]
 fn test_io_uring_direct_io() -> Result<()> {
-    use super::pipeline::BorrowedIoUringPipeline;
+    use super::pipeline::IoUringPipeline;
 
     let dir = tempfile::tempdir().unwrap();
 
@@ -487,7 +487,7 @@ fn test_io_uring_direct_io() -> Result<()> {
     }
 
     // --- via read pipeline ---
-    let mut pipeline = BorrowedIoUringPipeline::new()?;
+    let mut pipeline = IoUringPipeline::new()?;
 
     for (idx, expected) in data.chunks(KERNEL_PAGE_SIZE).enumerate() {
         let start = idx * KERNEL_PAGE_SIZE;

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use bytemuck::TransparentWrapper;
 
-use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
+use super::WrappedReadPipeline;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
@@ -129,15 +129,10 @@ where
 {
     type Fs = ReadOnlyFs<S::Fs>;
 
-    type BorrowedReadPipeline<'file, U>
-        = BorrowedWrappedReadPipeline<'file, Self, S::BorrowedReadPipeline<'file, U>>
+    type ReadPipeline<'file, U>
+        = WrappedReadPipeline<Self, S::ReadPipeline<'file, U>>
     where
         Self: 'file,
-        U: UserData;
-
-    type OwnedReadPipeline<U>
-        = OwnedWrappedReadPipeline<Self, S::OwnedReadPipeline<U>>
-    where
         U: UserData;
 
     #[inline]

@@ -19,19 +19,20 @@ use crate::universal_io::{UniversalRead, UniversalReadFs};
 pub trait DiskCacheRemote:
     UniversalRead<
         Fs: Clone + Send + Sync + UniversalReadFs<OpenExtra: Clone + Send + Sync>,
-        OwnedReadPipeline<()>: Send,
-        OwnedReadPipeline<u64>: Send,
+        ReadPipeline<'static, ()>: Send,
+        ReadPipeline<'static, u64>: Send,
     > + Clone
+    + 'static
 {
 }
 
 impl<R> DiskCacheRemote for R
 where
-    R: UniversalRead + Clone,
+    R: UniversalRead + Clone + 'static,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<()>: Send,
-    R::OwnedReadPipeline<u64>: Send,
+    R::ReadPipeline<'static, ()>: Send,
+    R::ReadPipeline<'static, u64>: Send,
 {
 }
 

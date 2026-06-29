@@ -13,7 +13,7 @@ use std::io::{self, ErrorKind};
 
 use super::{DiskCache, InitSource, State};
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
-use crate::universal_io::{OwnedReadPipeline, Populate, Result, UniversalIoError, UniversalRead};
+use crate::universal_io::{OwnedPipeline, Populate, Result, UniversalIoError, UniversalRead};
 
 impl<R> DiskCache<R>
 where
@@ -23,7 +23,7 @@ where
     pub(super) fn reopen_impl(&mut self) -> Result<()> {
         // Wait for InitSource::Prefill, if set.
         let mut init_guard = self.init_lock.lock();
-        self.init_state(&mut init_guard, false, None)?;
+        self.init_state(&mut init_guard, false)?;
 
         let Some(state) = self.state.take() else {
             // If `self.state` didn't initialize after `init_state`, we are not populating
@@ -69,7 +69,7 @@ where
                 // we still make an page-aligned read.
                 let from = local_len.saturating_sub(local_len % BLOCK_SIZE as u64);
 
-                let mut remote_pipeline = R::OwnedReadPipeline::new(remote)?;
+                let mut remote_pipeline = OwnedPipeline::new(remote)?;
 
                 // FIXME: check can_schedule in a loop?
                 remote_pipeline.schedule_whole(from, from)?;
@@ -86,7 +86,7 @@ where
 
                 // For blocking, resolve the prefill now instead of on first read.
                 if matches!(self.open_options.populate, Populate::Blocking) {
-                    self.init_state(&mut init_guard, false, None)?;
+                    self.init_state(&mut init_guard, false)?;
                 }
             }
         }

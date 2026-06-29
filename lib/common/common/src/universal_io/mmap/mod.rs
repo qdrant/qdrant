@@ -10,7 +10,7 @@ use std::{fs, io, slice};
 use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
-use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
+use self::pipeline::MmapReadPipeline;
 use super::traits::{UniversalReadFileOps, UniversalReadFs};
 use super::*;
 use crate::ext::aligned_vec::ACow;
@@ -156,15 +156,10 @@ impl MmapFile {
 impl UniversalRead for MmapFile {
     type Fs = MmapFs;
 
-    type BorrowedReadPipeline<'a, U>
-        = BorrowedMmapReadPipeline<'a, U>
+    type ReadPipeline<'a, U>
+        = MmapReadPipeline<'a, U>
     where
         Self: 'a,
-        U: UserData;
-
-    type OwnedReadPipeline<U>
-        = OwnedMmapReadPipeline<U>
-    where
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {

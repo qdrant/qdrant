@@ -16,7 +16,7 @@ use crate::universal_io::{
 };
 
 #[derive(Debug)]
-pub(super) struct LocalState {
+pub(crate) struct LocalState {
     /// UnsafeCell so that we can write to it under non-mut reference.
     /// Such as when the pipeline reads from remote first.
     pub mmap: UnsafeCell<MmapFile>,

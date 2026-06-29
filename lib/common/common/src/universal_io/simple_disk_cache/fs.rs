@@ -7,7 +7,7 @@ use super::config::DiskCacheConfig;
 use super::file::{DiskCache, InitSource};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenExtra, OpenOptions, OwnedReadPipeline, Populate, Result, UniversalIoError, UniversalRead,
+    OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError, UniversalRead,
     UniversalReadFileOps, UniversalReadFs,
 };
 
@@ -150,7 +150,7 @@ where
                     extra.clone(),
                 )?;
 
-                let mut pipeline = R::OwnedReadPipeline::new(remote)?;
+                let mut pipeline = OwnedPipeline::new(remote)?;
 
                 // FIXME: check `can_schedule` in a loop first
                 pipeline.schedule_whole((), 0)?;

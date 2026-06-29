@@ -8,4 +8,4 @@ pub use buffered_update::SliceBufferedUpdateWrapper;
 pub use read_only::ReadOnly;
 pub use stored_struct::StoredStruct;
 pub use typed::TypedStorage;
-use wrapped_pipeline::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
+use wrapped_pipeline::WrappedReadPipeline;

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops::Range;
 
-use super::{BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalReadFs, UserData};
+use super::{Item, ReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{ReadBytesItem, ReadRange, Result, UniversalKind};
@@ -42,13 +42,10 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// constructor still accepts the unwrapped inner `S::Fs`.
     type Fs: UniversalReadFs<File = Self>;
 
-    type BorrowedReadPipeline<'file, U>: BorrowedReadPipeline<'file, U, File = Self>
+    /// Read-pipeline implementation for this backend.
+    type ReadPipeline<'file, U>: ReadPipeline<'file, U, File = Self>
     where
         Self: 'file,
-        U: UserData;
-
-    type OwnedReadPipeline<U>: OwnedReadPipeline<U, File = Self>
-    where
         U: UserData;
 
     /// Enables live-reloading of files. Append-only files can make the
@@ -124,7 +121,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         P: AccessPattern,
         U: UserData,
     {
-        let mut pipeline = Self::BorrowedReadPipeline::<'_, U>::new()?;
+        let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
 
         Ok(std::iter::from_fn(move || {
@@ -190,7 +187,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         U: UserData,
         Self: 'a,
     {
-        let mut pipeline = Self::BorrowedReadPipeline::<'a, U>::new()?;
+        let mut pipeline = Self::ReadPipeline::<'a, U>::new()?;
         let mut reads = reads.into_iter();
 
         let iter = std::iter::from_fn(move || {
