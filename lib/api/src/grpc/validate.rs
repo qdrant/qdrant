@@ -252,78 +252,53 @@ impl Validate for grpc::update_operation::Update {
 
 impl Validate for grpc::FieldCondition {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let grpc::FieldCondition {
-            key: _,
-            r#match,
-            range,
-            datetime_range,
-            geo_bounding_box,
-            geo_radius,
-            geo_polygon,
-            values_count,
-            is_empty,
-            is_null,
-        } = self;
+        let all_fields_none = matches!(
+            self,
+            grpc::FieldCondition {
+                key: _,
+                r#match: None,
+                range: None,
+                datetime_range: None,
+                geo_bounding_box: None,
+                geo_radius: None,
+                geo_polygon: None,
+                values_count: None,
+                is_empty: None,
+                is_null: None,
+            },
+        );
 
-        let all_fields_none = r#match.is_none()
-            && range.is_none()
-            && datetime_range.is_none()
-            && geo_bounding_box.is_none()
-            && geo_radius.is_none()
-            && geo_polygon.is_none()
-            && values_count.is_none()
-            && is_empty.is_none()
-            && is_null.is_none();
+        let mut errors = ValidationErrors::new();
 
         if all_fields_none {
-            let mut errors = ValidationErrors::new();
             errors.add(
                 "match",
                 ValidationError::new("At least one field condition must be specified"),
             );
-            return Err(errors);
         }
 
-        // Recurse into the geo polygon's own validator. Otherwise FieldCondition
-        // only checks that some field is set, so a malformed polygon (empty,
-        // fewer than 4 points, or an unclosed exterior/interior) is accepted here
-        // and later panics when the geo index processes it.
-        if let Some(geo_polygon) = geo_polygon {
-            geo_polygon.validate()?;
-            // Shape validation above does not check coordinate ranges.
-            if let Some(exterior) = &geo_polygon.exterior {
-                for point in &exterior.points {
-                    validate_geo_point(point)?;
-                }
-            }
-            for interior in &geo_polygon.interiors {
-                for point in &interior.points {
-                    validate_geo_point(point)?;
-                }
-            }
-        }
+        let grpc::FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            datetime_range: _,
+            geo_bounding_box,
+            geo_radius,
+            geo_polygon,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = self;
 
-        // Reject out-of-range coordinates in the bounding-box / radius
-        // sub-conditions. Latitude outside [-90, 90] or longitude outside
-        // [-180, 180] is accepted by prost decoding but panics once the geo
-        // index encodes it as a geohash. Mirrors
-        // `segment::types::GeoPoint::validate` (the api crate does not depend on
-        // segment).
-        if let Some(geo_bounding_box) = geo_bounding_box {
-            if let Some(top_left) = &geo_bounding_box.top_left {
-                validate_geo_point(top_left)?;
-            }
-            if let Some(bottom_right) = &geo_bounding_box.bottom_right {
-                validate_geo_point(bottom_right)?;
-            }
-        }
-        if let Some(geo_radius) = geo_radius
-            && let Some(center) = &geo_radius.center
-        {
-            validate_geo_point(center)?;
-        }
+        errors.merge_self("geo_bounding_box", geo_bounding_box.validate());
+        errors.merge_self("geo_radius", geo_radius.validate());
+        errors.merge_self("geo_polygon", geo_polygon.validate());
 
-        Ok(())
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
@@ -583,31 +558,16 @@ impl Validate for super::qdrant::points_selector::PointsSelectorOneOf {
     }
 }
 
-/// Reject geo coordinates outside the valid WGS84 ranges
-/// (latitude in `[-90, 90]`, longitude in `[-180, 180]`).
-///
-/// Out-of-range coordinates are accepted by prost decoding and are not covered
-/// by the geo polygon shape validation; they reach the geo index and panic
-/// during geohash encoding, which expects pre-validated input. This mirrors
-/// `segment::types::GeoPoint::validate`; the bounds are duplicated here because
-/// the `api` crate does not depend on `segment`.
-fn validate_geo_point(point: &grpc::GeoPoint) -> Result<(), ValidationErrors> {
-    const MIN_LON: f64 = -180.0;
-    const MAX_LON: f64 = 180.0;
-    const MIN_LAT: f64 = -90.0;
-    const MAX_LAT: f64 = 90.0;
-
-    if !(MIN_LON..=MAX_LON).contains(&point.lon) || !(MIN_LAT..=MAX_LAT).contains(&point.lat) {
-        let mut errors = ValidationErrors::new();
-        errors.add(
-            "geo",
-            ValidationError::new(
-                "Geo coordinate out of range: latitude must be within [-90, 90] and longitude within [-180, 180]",
-            ),
-        );
-        return Err(errors);
+impl Validate for grpc::GeoPoint {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let grpc::GeoPoint { lon, lat } = self;
+        segment::types::GeoPoint::validate(*lon, *lat).map_err(|err| {
+            let error = ValidationError::new("geo_point").with_message(Cow::Owned(err.to_string()));
+            let mut errors = ValidationErrors::new();
+            errors.add("geo", error);
+            errors
+        })
     }
-    Ok(())
 }
 
 #[cfg(test)]
