@@ -585,20 +585,24 @@ fn test_segment_builder_rejects_target_with_extra_vector_name() {
 }
 
 #[test]
-fn test_segment_builder_rejects_source_with_extra_vector_name() {
+fn test_segment_builder_drops_extra_source_vector_name() {
+    // Verifies that when a source segment carries a vector name absent from
+    // the target schema (the DeleteVectorName case — a vector was removed from
+    // the collection schema but old segment files still contain the data),
+    // the builder silently drops the stale data and succeeds rather than
+    // cancelling.  The CreateVectorName race is prevented upstream by
+    // serialising the proxy-install step, so this check is not needed there.
     use segment::segment_constructor::build_segment;
 
     let source_dir = Builder::new().prefix("segment_source").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+    let build_dir = Builder::new().prefix("segment_build").tempdir().unwrap();
+    let out_dir = Builder::new().prefix("segment_out").tempdir().unwrap();
 
     let stopped = AtomicBool::new(false);
     let hw_counter = HardwareCounterCell::new();
 
     let extra_vector_name = "extra_vec";
 
-    // Build a source segment carrying both the default vector and an extra
-    // named vector — emulates a segment that received `CreateVectorName(V)`
-    // while an optimizer in flight was holding a `target_config` without V.
     let template = build_segment_1(source_dir.path());
     let mut source_config = template.segment_config.clone();
     source_config.vector_data.insert(
@@ -626,24 +630,32 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
             .unwrap();
     }
 
-    // Target schema lacks the extra vector — the optimizer's pre-`CreateVectorName` view.
+    // Target schema lacks the extra vector — emulates a post-DeleteVectorName config.
     let mut target_config = source_config.clone();
     target_config.vector_data.remove(extra_vector_name);
 
     let mut builder = SegmentBuilder::new(
-        temp_dir.path(),
+        build_dir.path(),
         &target_config,
         &HnswGlobalConfig::default(),
     )
     .unwrap();
 
-    let err = builder
+    // Should succeed: the extra vector is silently dropped.
+    builder
         .update(&[&source], &stopped, &hw_counter)
-        .expect_err("merge must reject a source carrying a vector not in target");
-    let msg = err.to_string();
+        .expect("merge should succeed by dropping the extra source vector");
+
+    // The resulting segment must not carry the deleted vector name.
+    let built = builder.build_for_test(out_dir.path());
     assert!(
-        msg.contains("extra vector name") && msg.contains(extra_vector_name),
-        "unexpected error message: {msg}",
+        !built.vector_data.contains_key(extra_vector_name),
+        "built segment must not contain the dropped vector {extra_vector_name}",
+    );
+    // But the default vector must still be present.
+    assert!(
+        built.vector_data.contains_key(DEFAULT_VECTOR_NAME),
+        "built segment must retain the default vector",
     );
 }
 

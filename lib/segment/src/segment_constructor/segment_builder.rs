@@ -322,29 +322,25 @@ impl SegmentBuilder {
 
         let vector_storages: Vec<_> = segments.iter().map(|i| &i.vector_data).collect();
 
-        // Every named vector present on any source segment must also be in the
-        // target schema. The merge loop below iterates `self.vector_data`
-        // (target) and would otherwise silently drop source vectors that
-        // aren't in target — the harm behind the optimizer-vs-CreateVectorName
-        // race: an optimizer launched with a pre-`CreateVectorName(V)` config
-        // would observe sources that gained V mid-flight and emit a merged
-        // segment without V at version >= V_opnum, breaking the next
-        // optimization round that uses the refreshed config (which has V).
+        // The merge loop below iterates `self.vector_data` (target), so any
+        // vector names present in source segments but absent from the target
+        // schema are silently dropped. This is the correct behaviour for the
+        // DeleteVectorName case: a vector that was removed from the collection
+        // schema may still live in older segment files; rebuilding those
+        // segments should naturally prune the stale data.
         //
-        // Use `Cancelled` rather than `ServiceError` so the optimization
-        // worker treats this as a recoverable cancellation (logged at debug,
-        // tracker marked Cancelled, no shard-level optimizer_errors set, no
-        // RED status). The follow-up `recreate_optimizers_blocking` will
-        // restart workers with a refreshed `target_config` that matches the
-        // sources, and the retry merges cleanly.
+        // The CreateVectorName race (an optimizer built with a pre-CreateVectorName
+        // config would miss the new vector) is prevented upstream by serialising
+        // the proxy-install step against shard updates, so there is no need to
+        // cancel here.
         for vector_storage in &vector_storages {
             for source_vector_name in vector_storage.keys() {
                 if !self.vector_data.contains_key(source_vector_name) {
-                    return Err(OperationError::cancelled(format!(
-                        "Cannot update from other segment because it has an extra \
-                         vector name {source_vector_name} not in the target schema; \
-                         retry after optimizer config refresh"
-                    )));
+                    log::debug!(
+                        "Dropping vector name {source_vector_name} from source segment \
+                         during optimization; it is absent from the target schema \
+                         (likely a previously deleted vector name)"
+                    );
                 }
             }
         }
