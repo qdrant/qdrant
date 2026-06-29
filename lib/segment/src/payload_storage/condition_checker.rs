@@ -138,11 +138,17 @@ impl ValueChecker for FieldCondition {
             geo_radius: _,
             geo_bounding_box: _,
             geo_polygon: _,
-            values_count: _,
+            values_count,
             key: _,
             is_empty,
             is_null,
         } = self;
+        // A missing field is treated as having a value count of 0, so the
+        // `values_count` bounds must be evaluated against 0 instead of being
+        // skipped (which would incorrectly never match missing fields).
+        if let Some(values_count) = values_count {
+            return values_count.check_empty();
+        }
         if let Some(is_empty) = is_empty {
             return *is_empty;
         }
@@ -405,6 +411,62 @@ mod tests {
             lte: None,
         };
         assert!(gte_two_countries_query.check(&countries));
+    }
+
+    #[test]
+    fn test_value_count_missing_field() {
+        // A missing payload field must be treated as a value count of 0 by
+        // `values_count` filters (regression for
+        // https://github.com/qdrant/qdrant/issues/9586).
+        let key = JsonPath::new("tags");
+
+        let field_condition = |values_count: ValuesCount| FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: Some(values_count),
+            key: key.clone(),
+            is_empty: None,
+            is_null: None,
+        };
+
+        let lt_one = field_condition(ValuesCount {
+            lt: Some(1),
+            gt: None,
+            gte: None,
+            lte: None,
+        });
+        // 0 < 1 -> a missing field matches
+        assert!(lt_one.check_empty());
+
+        let gte_zero = field_condition(ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(0),
+            lte: None,
+        });
+        // 0 >= 0 -> a missing field matches
+        assert!(gte_zero.check_empty());
+
+        let lte_zero = field_condition(ValuesCount {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(0),
+        });
+        // 0 <= 0 -> a missing field matches
+        assert!(lte_zero.check_empty());
+
+        let gte_one = field_condition(ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(1),
+            lte: None,
+        });
+        // 0 >= 1 is false -> a missing field does not match
+        assert!(!gte_one.check_empty());
     }
 
     #[test]
