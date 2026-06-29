@@ -11,7 +11,7 @@ use crate::data_types::facets::FacetValue;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::types::{IntPayloadType, UuidIntType};
 
-pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug {
+pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug + 'static {
     type Owned: Borrow<Self> + Hash + Eq + Ord + Clone + FromStr + Default + 'static;
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned;
