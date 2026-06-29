@@ -305,6 +305,24 @@ fn op_payload(op: &Op) -> Value {
             "limit": limit,
             "filter": format!("{filter:?}"),
         }),
+        Op::QueryFusion {
+            prefetches,
+            fusion,
+            limit,
+            filter_num,
+        } => json!({
+            "fusion": format!("{fusion:?}"),
+            "limit": limit,
+            "filter_num": filter_num,
+            "prefetches": prefetches
+                .iter()
+                .map(|p| json!({
+                    "vector_name": p.vector_name.as_str(),
+                    "limit": p.limit,
+                    "filter_num": p.filter_num,
+                }))
+                .collect::<Vec<_>>(),
+        }),
     }
 }
 
