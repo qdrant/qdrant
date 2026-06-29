@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::persisted_hashmap::{Key, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 use itertools::Itertools;
 use roaring::RoaringBitmap;
 
@@ -40,6 +40,27 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         self.storage
             .point_to_values
             .check_values_any(idx, |v| check_fn(v), &hw_counter)
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        mut on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&N) -> bool,
+        M: FnMut(U, bool),
+    {
+        self.storage.point_to_values.values_iter_batch(
+            items,
+            &self.storage.deleted,
+            ConditionedCounter::always(hw_counter),
+            |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
+        )
     }
 
     fn get_values(

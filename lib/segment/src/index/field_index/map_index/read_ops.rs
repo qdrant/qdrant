@@ -1,9 +1,10 @@
 use std::borrow::{Borrow, Cow};
 use std::hash::{BuildHasher, Hash};
 
-use common::condition_checker::ConditionChecker;
+use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use fnv::FnvBuildHasher;
 use gridstore::Blob;
 use indexmap::IndexSet;
@@ -34,6 +35,26 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> OperationResult<bool>;
+
+    /// Batched counterpart of [`Self::check_values_any`].
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        mut on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&N) -> bool,
+        M: FnMut(U, bool),
+    {
+        for (tag, idx) in items {
+            on_match(tag, self.check_values_any(idx, hw_counter, &check_fn)?);
+        }
+        Ok(())
+    }
 
     fn get_values(
         &'a self,
@@ -563,15 +584,36 @@ where
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         self.index
-            .check_values_any(point_id, &self.hw_counter, |value| match &self.predicate {
-                MapPredicate::Value(expected) => value == expected.borrow(),
-                MapPredicate::Prefix(prefix) => {
-                    <N as MapIndexKey>::starts_with(value, prefix.borrow())
-                }
-                MapPredicate::AnyScan { list, negate } => {
-                    list.iter().any(|key| key.borrow() == value) != *negate
-                }
-                MapPredicate::AnyProbe { list, negate } => list.contains(value) != *negate,
-            })
+            .check_values_any(point_id, &self.hw_counter, |value| self.matches(value))
+    }
+
+    fn check_batched<K: CheckItem>(
+        &mut self,
+        ids: &mut [K],
+        select: Select,
+        _rest: Rest,
+    ) -> OperationResult<usize> {
+        let p = Partitioner::new(ids);
+        self.index.for_each_matching_value(
+            p.iter().map(|item| (item, item.point_id())),
+            &self.hw_counter,
+            |value| self.matches(value),
+            |item, matched| p.write(item, matched == select.is_match()),
+        )?;
+        Ok(p.finish())
+    }
+}
+
+impl<'a, N: MapIndexKey + ?Sized + 'a, T> MapConditionChecker<'a, N, T> {
+    /// Whether a single indexed `value` satisfies this checker's predicate.
+    fn matches(&self, value: &N) -> bool {
+        match &self.predicate {
+            MapPredicate::Value(expected) => value == expected.borrow(),
+            MapPredicate::Prefix(prefix) => N::starts_with(value, prefix.borrow()),
+            MapPredicate::AnyScan { list, negate } => {
+                list.iter().any(|key| key.borrow() == value) != *negate
+            }
+            MapPredicate::AnyProbe { list, negate } => list.contains(value) != *negate,
+        }
     }
 }
