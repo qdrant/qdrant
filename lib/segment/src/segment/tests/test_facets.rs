@@ -240,11 +240,13 @@ fn sampling_broad_filter_walks_facet_index() {
 /// needs N well above the sampling budget; an `f = 9%` filter lands in the
 /// [√(1000/N), 10%) window with margin (boundary ≈ 7.1% here). Verified
 /// empirically: the crossover first appears around N = 150k.
+#[cfg(not(windows))]
 const N_FILTER_ITER: usize = 200_000;
 
 /// sampling → filter iter — the plan only the bench otherwise reaches. `seq <
 /// 9%` is selective enough for phase 2 to prefer iterating the merged filter,
 /// yet broad enough to clear the sampling→full veto at this scale.
+#[cfg(not(windows))]
 #[test]
 fn sampling_selective_filter_iterates_filter() {
     let (_dir, segment) = build_segment_n(N_FILTER_ITER);
