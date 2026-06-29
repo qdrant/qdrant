@@ -282,14 +282,12 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> OnDiskMapIndex<N, S> {
         hw_counter: &HardwareCounterCell,
         f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
     ) -> OperationResult<()> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
-        // Skip deleted points
-        let points = points.filter(|&idx| self.storage.deleted.is_active(idx));
-
-        self.storage
-            .point_to_values
-            .values_iter_batch(points, hw_counter, f)
+        self.storage.point_to_values.values_iter_batch(
+            points.map(|point_id| (point_id, point_id)),
+            &self.storage.deleted,
+            ConditionedCounter::always(hw_counter),
+            f,
+        )
     }
 
     pub fn is_on_disk(&self) -> bool {
