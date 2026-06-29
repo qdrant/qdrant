@@ -243,7 +243,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendAverageVector(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -254,7 +254,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendBestScore(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -265,7 +265,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendSumScores(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -363,35 +363,36 @@ impl VectorQuery<VectorInputInternal> {
     }
 
     /// Resolves the references in the RecoQuery into actual vectors.
+    /// Returns an error if any referenced point ID cannot be resolved.
     fn resolve_reco_reference(
         reco_query: RecoQuery<VectorInputInternal>,
         ids_to_vectors: &ReferencedVectors,
         lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
-    ) -> (Vec<VectorInternal>, Vec<VectorInternal>) {
-        let positives = reco_query
+    ) -> CollectionResult<(Vec<VectorInternal>, Vec<VectorInternal>)> {
+        let positives: Vec<VectorInternal> = reco_query
             .positives
             .into_iter()
-            .filter_map(|vector_input| {
+            .map(|vector_input| {
                 ids_to_vectors.resolve_reference(
                     lookup_collection,
                     lookup_vector_name,
                     vector_input,
-                )
+                ).ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
-            .collect();
-        let negatives = reco_query
+            .collect::<CollectionResult<_>>()?;
+        let negatives: Vec<VectorInternal> = reco_query
             .negatives
             .into_iter()
-            .filter_map(|vector_input| {
+            .map(|vector_input| {
                 ids_to_vectors.resolve_reference(
                     lookup_collection,
                     lookup_vector_name,
                     vector_input,
-                )
+                ).ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
-            .collect();
-        (positives, negatives)
+            .collect::<CollectionResult<_>>()?;
+        Ok((positives, negatives))
     }
 }
 
