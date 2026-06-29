@@ -18,9 +18,10 @@
 use std::cmp::{max, min};
 use std::path::PathBuf;
 
-use common::condition_checker::ConditionChecker;
+use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 
 use super::GEO_QUERY_MAX_REGION;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -66,6 +67,26 @@ pub trait GeoIndexRead {
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool>;
+
+    /// Batched counterpart of [`Self::check_values_any`].
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        mut on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&GeoPoint) -> bool,
+        M: FnMut(U, bool),
+    {
+        for (tag, idx) in items {
+            on_match(tag, self.check_values_any(idx, hw_counter, &check_fn)?);
+        }
+        Ok(())
+    }
 
     fn values_count(&self, idx: PointOffsetType) -> usize;
 
@@ -351,5 +372,21 @@ where
             .check_values_any(point_id, &self.hw_counter, &|value| {
                 self.filter.check_point(value)
             })
+    }
+
+    fn check_batched<K: CheckItem>(
+        &mut self,
+        ids: &mut [K],
+        select: Select,
+        _rest: Rest,
+    ) -> OperationResult<usize> {
+        let p = Partitioner::new(ids);
+        self.geo.for_each_matching_value(
+            p.iter().map(|item| (item, item.point_id())),
+            &self.hw_counter,
+            |value| self.filter.check_point(value),
+            |item, matched| p.write(item, matched == select.is_match()),
+        )?;
+        Ok(p.finish())
     }
 }
