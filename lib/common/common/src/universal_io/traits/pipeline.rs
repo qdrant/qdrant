@@ -28,7 +28,7 @@ use std::ops::Range;
 
 use super::{Item, UniversalRead};
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::{AccessPattern, Sequential};
+use crate::generic_consts::AccessPattern;
 use crate::universal_io::{Result, UserData};
 
 /// File-borrowing read pipeline.
@@ -70,19 +70,8 @@ where
     ) -> Result<()>;
 
     /// Like `Self::schedule`, but doesn't need to know file length upfront.
-    /// Reads the entire file.
-    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()>
-    where
-        Self::File: UniversalRead,
-    {
-        let eof = file.len::<u8>()?;
-
-        if from >= eof {
-            return Ok(());
-        }
-
-        self.schedule::<Sequential>(user_data, file, from..eof, 1)
-    }
+    /// Reads starting at `from` offset until the end of file.
+    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()>;
 
     /// Block until any scheduled operation completes and consume its result.
     fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>>;

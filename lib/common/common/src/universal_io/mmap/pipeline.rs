@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use super::{MmapFile, read_bytes};
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{ReadPipeline, Result, UniversalIoError, UserData};
 
 pub struct MmapReadPipeline<'file, U> {
@@ -36,6 +36,11 @@ where
 
         self.result = Some((user_data, read_bytes(file.as_bytes::<P>(), range)?));
         Ok(())
+    }
+
+    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()> {
+        let eof = file.len as u64;
+        self.schedule::<Sequential>(user_data, file, from..eof, 1)
     }
 
     fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {

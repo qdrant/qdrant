@@ -48,6 +48,11 @@ where
             .schedule::<P>(user_data, File::peel_ref(file), range, align)
     }
 
+    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()> {
+        self.inner
+            .schedule_whole(user_data, File::peel_ref(file), from)
+    }
+
     #[inline]
     fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
         self.inner.wait()
