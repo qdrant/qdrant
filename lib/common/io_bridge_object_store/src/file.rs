@@ -7,9 +7,7 @@ use common::generic_consts::AccessPattern;
 use common::universal_io::{Item, Result, UniversalKind, UniversalRead, UserData};
 
 use crate::fs::BlobFs;
-use crate::pipeline::{
-    BorrowedBlobPipeline, OwnedBlobPipeline, read_into_byte_buffer, read_whole_into_byte_buffer,
-};
+use crate::pipeline::{BlobReadPipeline, read_into_byte_buffer, read_whole_into_byte_buffer};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
 
@@ -71,15 +69,10 @@ impl<A: AsyncRead> BlobFile<A> {
 impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
     type Fs = BlobFs<A>;
 
-    type BorrowedReadPipeline<'a, U>
-        = BorrowedBlobPipeline<'a, A, U>
+    type ReadPipeline<'a, U>
+        = BlobReadPipeline<'a, A, U>
     where
         Self: 'a,
-        U: UserData;
-
-    type OwnedReadPipeline<U>
-        = OwnedBlobPipeline<A, U>
-    where
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
@@ -99,7 +92,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
             .block_on(read_whole_into_byte_buffer::<A>(self, align_of::<T>()))?;
         Ok(ACow::Owned(buf)
             .try_cast_bytemuck()
-            .expect("aligned whole-object buffer casts to [T]"))
+            .expect("buffer has compatible layout"))
     }
 
     fn len<T>(&self) -> Result<u64> {

@@ -1,7 +1,6 @@
 //! The [`UniversalRead`] implementation for [`DiskCache`] — the public read
 //! surface. The heavy lifting lives elsewhere: first-use init in [`super::init`],
 //! growth handling in [`super::reopen`].
-
 use std::borrow::Cow;
 use std::ops::Range;
 
@@ -9,11 +8,10 @@ use super::DiskCache;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::simple_disk_cache::fs::DiskCacheFs;
-use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
+use crate::universal_io::simple_disk_cache::pipeline::DiskCachePipeline;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
 use crate::universal_io::{
-    BorrowedReadPipeline, Item, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
-    UserData,
+    Item, ReadPipeline, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UserData,
 };
 
 impl<R> DiskCache<R>
@@ -49,16 +47,11 @@ where
 {
     type Fs = DiskCacheFs<R>;
 
-    type BorrowedReadPipeline<'a, U>
+    type ReadPipeline<'a, U>
         = DiskCachePipeline<'a, R, U>
     where
-        R: 'a,
         Self: 'a,
-        U: UserData;
-
-    type OwnedReadPipeline<U>
-        = OwnedDiskCachePipeline<R, U>
-    where
+        R: 'a,
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {

@@ -19,7 +19,7 @@ mod tests;
 
 pub use cached_slice::CachedSlice;
 use controller::{CacheController, CacheRead};
-use pipeline::{BorrowedDiskCacheReadPipeline, OwnedDiskCacheReadPipeline};
+use pipeline::DiskCacheReadPipeline;
 
 use super::UniversalKind;
 
@@ -145,15 +145,10 @@ impl UniversalReadFs for BlockCacheFs {
 impl UniversalRead for CachedSlice {
     type Fs = BlockCacheFs;
 
-    type BorrowedReadPipeline<'a, U>
-        = BorrowedDiskCacheReadPipeline<'a, U>
+    type ReadPipeline<'a, U>
+        = DiskCacheReadPipeline<'a, U>
     where
         Self: 'a,
-        U: UserData;
-
-    type OwnedReadPipeline<U>
-        = OwnedDiskCacheReadPipeline<U>
-    where
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {

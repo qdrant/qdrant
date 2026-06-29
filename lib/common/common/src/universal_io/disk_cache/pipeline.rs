@@ -3,18 +3,13 @@ use std::ops::Range;
 use super::CachedSlice;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{
-    BorrowedReadPipeline, OwnedReadPipeline, Result, UniversalIoError, UserData,
-};
+use crate::universal_io::{ReadPipeline, Result, UniversalIoError, UserData};
 
-pub struct BorrowedDiskCacheReadPipeline<'file, U>
-where
-    U: UserData,
-{
+pub struct DiskCacheReadPipeline<'file, U> {
     result: Option<(U, ACow<'file>)>,
 }
 
-impl<'file, U> BorrowedReadPipeline<'file, U> for BorrowedDiskCacheReadPipeline<'file, U>
+impl<'file, U> ReadPipeline<'file, U> for DiskCacheReadPipeline<'file, U>
 where
     U: UserData,
 {
@@ -47,67 +42,12 @@ where
         Ok(())
     }
 
+    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()> {
+        let eof = file.len::<u8>() as u64;
+        self.schedule::<Sequential>(user_data, file, from..eof, 1)
+    }
+
     fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
         Ok(self.result.take())
-    }
-}
-
-pub struct OwnedDiskCacheReadPipeline<U> {
-    file: CachedSlice,
-    pending: Option<(U, Range<u64>, usize)>,
-}
-
-impl<U> OwnedReadPipeline<U> for OwnedDiskCacheReadPipeline<U>
-where
-    U: UserData,
-{
-    type File = CachedSlice;
-
-    fn new(file: CachedSlice) -> Result<Self> {
-        Ok(Self {
-            file,
-            pending: None,
-        })
-    }
-
-    fn can_schedule(&mut self) -> bool {
-        self.pending.is_none()
-    }
-
-    fn schedule<P: AccessPattern>(
-        &mut self,
-        user_data: U,
-        range: Range<u64>,
-        align: usize,
-    ) -> Result<()> {
-        if self.pending.is_some() {
-            return Err(UniversalIoError::QueueIsFull);
-        }
-
-        // FIXME: This is a temporary stub implementation.
-        self.pending = Some((user_data, range, align));
-        Ok(())
-    }
-
-    fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
-        let eof = self.file.len::<u8>() as u64;
-        if from >= eof {
-            return Ok(());
-        }
-        self.schedule::<Sequential>(user_data, from..eof, 1)
-    }
-
-    fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
-        let Some((user_data, range, align)) = self.pending.take() else {
-            return Ok(None);
-        };
-        let start = usize::try_from(range.start).expect("range.start is within usize");
-        let end = usize::try_from(range.end).expect("range.end is within usize");
-        let bytes = self.file.get_range_bytes(start..end, align)?;
-        Ok(Some((user_data, bytes)))
-    }
-
-    fn into_inner(self) -> CachedSlice {
-        self.file
     }
 }

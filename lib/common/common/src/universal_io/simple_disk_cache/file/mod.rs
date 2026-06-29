@@ -25,7 +25,7 @@ mod init;
 mod read;
 mod reopen;
 
-pub(in crate::universal_io::simple_disk_cache) use init::InitSource;
+pub(crate) use init::InitSource;
 
 /// A lazily-populated local mirror of an immutable remote file.
 ///
@@ -40,7 +40,7 @@ pub(in crate::universal_io::simple_disk_cache) use init::InitSource;
 /// Initializing multiple instances will try to re-read from remote.
 pub struct DiskCache<R>
 where
-    R: UniversalRead,
+    R: UniversalRead + 'static,
 {
     /// Clone of the remote filesystem handle, used to lazily open `remote`.
     remote_fs: R::Fs,
@@ -62,7 +62,7 @@ where
 /// The materialized mirror: the opened `remote` handle paired with its local
 /// mmap mirror. Created exactly once, lazily, by [`DiskCache::init_state`].
 #[derive(Debug)]
-pub(super) struct State<R> {
+pub(crate) struct State<R> {
     pub remote: R,
     pub local: LocalState,
 }

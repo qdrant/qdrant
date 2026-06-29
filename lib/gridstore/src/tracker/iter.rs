@@ -2,7 +2,7 @@ use std::mem::{align_of, size_of};
 
 use ahash::AHashMap;
 use common::generic_consts::Random;
-use common::universal_io::{BorrowedReadPipeline, UniversalRead, UserData};
+use common::universal_io::{ReadPipeline, UniversalRead, UserData};
 
 use crate::Result;
 use crate::tracker::{OptionalPointer, PointOffset, PointerUpdates, TrackerHeader, ValuePointer};
@@ -17,7 +17,7 @@ where
     storage: &'a S,
     storage_len: u64,
     pending_updates: &'a AHashMap<PointOffset, PointerUpdates>,
-    pipeline: S::BorrowedReadPipeline<'a, U>,
+    pipeline: S::ReadPipeline<'a, U>,
 }
 
 impl<'a, U, I, S> Iter<'a, U, I, S>
@@ -36,7 +36,7 @@ where
             storage,
             storage_len: storage.len::<u8>()?,
             pending_updates,
-            pipeline: S::BorrowedReadPipeline::new()?,
+            pipeline: S::ReadPipeline::new()?,
         };
 
         Ok(iter)
