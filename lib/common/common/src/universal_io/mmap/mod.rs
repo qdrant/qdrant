@@ -298,6 +298,20 @@ impl UniversalWrite for MmapFile {
         Ok(())
     }
 
+    fn write_grow<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
+        let needed = byte_offset as usize + size_of_val(items);
+        if needed > self.len {
+            // The mmap backend cannot grow and write in a single syscall, so
+            // emulate an append: resize the backing file and remap before
+            // writing. The gap (if any) is zero-filled by `set_len`.
+            local_file_ops::local_create(self.path(), needed)?;
+            self.reopen()?;
+        }
+        let mmap = self.as_bytes_mut();
+        write(mmap, byte_offset, items)?;
+        Ok(())
+    }
+
     fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
@@ -487,4 +501,97 @@ where
     mmap.copy_from_slice(bytes);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::generic_consts::Random;
+
+    fn open_writable(path: &Path) -> MmapFile {
+        MmapFs.open(path, OpenOptions::new_for_test(), ()).unwrap()
+    }
+
+    #[test]
+    fn test_write_grow_extends_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page.dat");
+
+        // Start from an empty (zero-length) file, like an append-only page.
+        MmapFs.create(&path, 0).unwrap();
+        let mut file = open_writable(&path);
+        assert_eq!(file.len::<u8>().unwrap(), 0);
+
+        // A plain `write` would be out of bounds; `write_grow` extends the file.
+        let data: [u8; 5] = [1, 2, 3, 4, 5];
+        file.write_grow(0, &data).unwrap();
+
+        assert_eq!(file.len::<u8>().unwrap(), 5);
+        let read = file
+            .read_bytes::<Random>(0..5, 1)
+            .unwrap()
+            .as_ref()
+            .to_vec();
+        assert_eq!(read, data);
+    }
+
+    #[test]
+    fn test_write_grow_appends_and_keeps_existing_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page.dat");
+
+        MmapFs.create(&path, 0).unwrap();
+        let mut file = open_writable(&path);
+
+        file.write_grow(0, &[1u8, 2, 3]).unwrap();
+        file.write_grow(3, &[4u8, 5, 6]).unwrap();
+
+        assert_eq!(file.len::<u8>().unwrap(), 6);
+        let read = file
+            .read_bytes::<Random>(0..6, 1)
+            .unwrap()
+            .as_ref()
+            .to_vec();
+        assert_eq!(read, [1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn test_write_grow_gap_reads_as_zeros() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page.dat");
+
+        MmapFs.create(&path, 0).unwrap();
+        let mut file = open_writable(&path);
+
+        // Write past the current end: the gap [0..4) must read back as zeros.
+        file.write_grow(4, &[9u8, 9]).unwrap();
+
+        assert_eq!(file.len::<u8>().unwrap(), 6);
+        let read = file
+            .read_bytes::<Random>(0..6, 1)
+            .unwrap()
+            .as_ref()
+            .to_vec();
+        assert_eq!(read, [0, 0, 0, 0, 9, 9]);
+    }
+
+    #[test]
+    fn test_write_grow_within_bounds_does_not_grow() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page.dat");
+
+        // Pre-sized file (like a dynamic page); writing within it must not resize.
+        MmapFs.create(&path, 8).unwrap();
+        let mut file = open_writable(&path);
+
+        file.write_grow(2, &[7u8, 7]).unwrap();
+
+        assert_eq!(file.len::<u8>().unwrap(), 8);
+        let read = file
+            .read_bytes::<Random>(0..8, 1)
+            .unwrap()
+            .as_ref()
+            .to_vec();
+        assert_eq!(read, [0, 0, 7, 7, 0, 0, 0, 0]);
+    }
 }

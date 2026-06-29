@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{OkNotFound, Populate, UniversalRead};
 use gridstore::error::GridstoreError;
-use gridstore::{Blob, GridstoreReader};
+use gridstore::{Blob, GridstoreReader, Mode};
 
 use super::super::MapIndexKey;
 use super::super::in_memory::InMemoryMapIndex;
@@ -34,6 +34,7 @@ where
             fs,
             path,
             Populate::Blocking,
+            Mode::default(),
         )
         .ok_not_found()?
         else {

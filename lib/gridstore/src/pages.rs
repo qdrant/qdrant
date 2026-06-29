@@ -25,7 +25,8 @@ pub fn page_path(base_path: &Path, page_id: PageId) -> PathBuf {
 #[derive(Debug)]
 pub(crate) struct Pages<S> {
     base_path: PathBuf,
-    pages: Vec<S>,
+    // TODO: don't use pub(super) here?
+    pub(super) pages: Vec<S>,
     /// Whether attached pages are opened writable. The writable [`Gridstore`]
     /// opens writable so it can append; a read-only [`GridstoreReader`] opens
     /// non-writable so it can sit on a write-enforced backend (e.g.
@@ -84,6 +85,16 @@ impl<S: UniversalRead> Pages<S> {
 
     pub fn num_pages(&self) -> usize {
         self.pages.len()
+    }
+
+    /// Byte length of the last (active) page. Used by append-only storage to
+    /// derive the next free block without a bitmask.
+    pub fn last_page_len(&self) -> Result<u64> {
+        let page = self
+            .pages
+            .last()
+            .expect("storage always has at least one page");
+        Ok(page.len::<u8>()?)
     }
 
     pub fn page_path(&self, page_id: PageId) -> PathBuf {
@@ -444,22 +455,45 @@ impl<S: UniversalRead> Pages<S> {
 }
 
 impl<S: UniversalWrite> Pages<S> {
+    /// Write a value into pre-sized pages (dynamic storage): the pages must
+    /// already be large enough to hold the value.
     pub fn write_to_pages(
         &mut self,
         pointer: ValuePointer,
         value: &[u8],
         config: &StorageConfig,
     ) -> Result<()> {
-        let writes =
-            Self::get_page_value_ranges(pointer, config).map(|(buf_offset, page, range)| {
-                let data = &value[buf_offset..buf_offset + range.length as usize];
-                (page as FileIndex, range.byte_offset, data)
-            });
-
+        let writes = Self::value_page_writes(pointer, value, config);
         // Execute writes (mutable borrow of self.pages)
         S::write_multi(self.pages.as_mut_slice(), writes)?;
-
         Ok(())
+    }
+
+    /// Append a value into pages (append-only / serverless storage): each page
+    /// is grown to fit by the write itself, as a single append operation. The
+    /// pages must already exist (be attached), but need not be pre-sized.
+    pub fn write_to_pages_grow(
+        &mut self,
+        pointer: ValuePointer,
+        value: &[u8],
+        config: &StorageConfig,
+    ) -> Result<()> {
+        let writes = Self::value_page_writes(pointer, value, config);
+        // Execute writes (mutable borrow of self.pages)
+        S::write_multi_grow(self.pages.as_mut_slice(), writes)?;
+        Ok(())
+    }
+
+    /// Split a value into per-page `(page, byte_offset, data)` write tuples.
+    fn value_page_writes<'a>(
+        pointer: ValuePointer,
+        value: &'a [u8],
+        config: &StorageConfig,
+    ) -> impl Iterator<Item = (FileIndex, u64, &'a [u8])> {
+        Self::get_page_value_ranges(pointer, config).map(|(buf_offset, page, range)| {
+            let data = &value[buf_offset..buf_offset + range.length as usize];
+            (page as FileIndex, range.byte_offset, data)
+        })
     }
 
     pub fn flusher(&self) -> Flusher {

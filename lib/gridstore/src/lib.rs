@@ -8,7 +8,7 @@ mod pages;
 mod tracker;
 
 pub use blob::Blob;
-pub use gridstore::{Gridstore, GridstoreReader, GridstoreView};
+pub use gridstore::{Gridstore, GridstoreReader, GridstoreView, Mode};
 
 use crate::error::GridstoreError;
 

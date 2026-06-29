@@ -6,6 +6,7 @@ use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
 use crate::config::{Compression, StorageOptions};
+use crate::gridstore::Mode;
 use crate::{Blob, Gridstore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -29,8 +30,17 @@ impl Blob for Payload {
 
 /// Create an empty storage with the default configuration
 pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
+    empty_storage_in_mode(Mode::default())
+}
+
+/// Create an empty storage with the default configuration in a specific mode.
+///
+/// Tests that assert dynamic-mode invariants (bitmask, block reuse,
+/// block-rounded sizes) should use [`Mode::Regular`].
+pub fn empty_storage_in_mode(mode: Mode) -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), Default::default()).unwrap();
+    let storage =
+        Gridstore::new(MmapFs, dir.path().to_path_buf(), Default::default(), mode).unwrap();
     (dir, storage)
 }
 
@@ -39,13 +49,22 @@ pub fn empty_storage_sized(
     page_size: usize,
     compression: Compression,
 ) -> (TempDir, Gridstore<Payload>) {
+    empty_storage_sized_in_mode(page_size, compression, Mode::default())
+}
+
+/// Create an empty storage with a specific page size in a specific mode.
+pub fn empty_storage_sized_in_mode(
+    page_size: usize,
+    compression: Compression,
+    mode: Mode,
+) -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let options = StorageOptions {
         page_size_bytes: Some(page_size),
         compression: Some(compression),
         ..Default::default()
     };
-    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options, mode).unwrap();
     (dir, storage)
 }
 

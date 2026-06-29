@@ -7,6 +7,7 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{Populate, UniversalRead, UniversalReadFs, UserData, read_json_via};
 
+use super::Mode;
 use super::view::GridstoreView;
 use crate::Result;
 use crate::blob::Blob;
@@ -30,6 +31,9 @@ pub struct GridstoreReader<V, S: UniversalRead> {
     pub(super) _value_type: std::marker::PhantomData<V>,
     /// How to populate new attached pages
     populate: Populate,
+    /// Storage engine mode this reader was opened with, mirroring
+    /// [`super::Gridstore`].
+    mode: Mode,
 }
 
 impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
@@ -61,7 +65,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Open an existing read-only storage at the given path.
     ///
     /// Infers page count by scanning for page files on disk.
-    pub fn open(fs: &S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
+    pub fn open(fs: &S::Fs, base_path: PathBuf, populate: Populate, mode: Mode) -> Result<Self> {
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
         // writable `Gridstore` opens these same files writable instead.
@@ -75,12 +79,18 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
             pages,
             base_path,
             populate,
+            mode,
             _value_type: std::marker::PhantomData,
         })
     }
 
     pub(super) fn page_path(&self, page_id: u32) -> PathBuf {
         self.base_path.join(format!("page_{page_id}.dat"))
+    }
+
+    /// Storage engine mode this reader was opened with.
+    pub fn mode(&self) -> Mode {
+        self.mode
     }
 
     pub fn get_value<P: AccessPattern>(
@@ -192,6 +202,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
             pages,
             base_path: _,
             populate: _,
+            mode: _,
             _value_type,
         } = self;
         pages.clear_cache()?;

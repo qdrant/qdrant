@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Gridstore;
+use gridstore::{Gridstore, Mode};
 use itertools::Itertools;
 
 use super::super::FullTextIndex;
@@ -30,15 +30,20 @@ impl MutableFullTextIndex {
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            Gridstore::open_or_create(MmapFs, path, GRIDSTORE_OPTIONS, Populate::Blocking).map_err(
-                |err| {
-                    OperationError::service_error(format!(
-                        "failed to open mutable full text index on gridstore: {err}"
-                    ))
-                },
-            )?
+            Gridstore::open_or_create(
+                MmapFs,
+                path,
+                GRIDSTORE_OPTIONS,
+                Populate::Blocking,
+                Mode::default(),
+            )
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to open mutable full text index on gridstore: {err}"
+                ))
+            })?
         } else if path.exists() {
-            Gridstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Gridstore::open(MmapFs, path, Populate::Blocking, Mode::default()).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable full text index on gridstore: {err}"
                 ))
@@ -67,7 +72,7 @@ impl MutableFullTextIndex {
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to load mutable full text index from gridstore: {err}"
+                    "Failed to load mutable full text index from gridstore: {err}",
                 ))
             })?;
 
@@ -84,16 +89,14 @@ impl MutableFullTextIndex {
     #[inline]
     pub(in super::super) fn init(&mut self) -> OperationResult<()> {
         self.storage.clear().map_err(|err| {
-            OperationError::service_error(
-                format!("Failed to clear mutable full text index: {err}",),
-            )
+            OperationError::service_error(format!("Failed to clear mutable full text index: {err}"))
         })
     }
 
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
         self.storage.wipe().map_err(|err| {
-            OperationError::service_error(format!("Failed to wipe mutable full text index: {err}",))
+            OperationError::service_error(format!("Failed to wipe mutable full text index: {err}"))
         })
     }
 
@@ -106,7 +109,7 @@ impl MutableFullTextIndex {
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.storage.clear_cache().map_err(|err| {
             OperationError::service_error(format!(
-                "Failed to clear mutable full text index gridstore cache: {err}"
+                "Failed to clear mutable full text index gridstore cache: {err}",
             ))
         })
     }

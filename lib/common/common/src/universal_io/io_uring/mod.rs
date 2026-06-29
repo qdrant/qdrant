@@ -222,6 +222,12 @@ impl UniversalWrite for IoUringFile {
         Ok(())
     }
 
+    fn write_grow<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
+        // `write_all_at` (pwrite) extends the file when writing past its end, so
+        // growing and writing are already a single operation here.
+        self.write(byte_offset, items)
+    }
+
     fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,

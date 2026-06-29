@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::universal_io::{Populate, UniversalRead};
-use gridstore::GridstoreReader;
+use gridstore::{GridstoreReader, Mode};
 
 use super::ReadOnlyPayloadStorage;
 use crate::common::operation_error::OperationResult;
@@ -15,7 +15,7 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
     /// [1]: crate::payload_storage::payload_storage_impl::PayloadStorageImpl::open_or_create
     pub fn open(fs: &S::Fs, path: PathBuf, populate: Populate) -> OperationResult<Self> {
         let path = storage_dir(path);
-        let storage = GridstoreReader::<Payload, S>::open(fs, path, populate)?;
+        let storage = GridstoreReader::<Payload, S>::open(fs, path, populate, Mode::default())?;
 
         Ok(Self { storage })
     }

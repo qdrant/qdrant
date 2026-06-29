@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::universal_io::{Populate, UniversalRead};
-use gridstore::GridstoreReader;
+use gridstore::{GridstoreReader, Mode};
 
 use super::ReadOnlySparseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -22,6 +22,7 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
             fs,
             path.join(STORAGE_DIRNAME),
             populate,
+            Mode::default(),
         )
         .map_err(|err| {
             OperationError::service_error(format!(

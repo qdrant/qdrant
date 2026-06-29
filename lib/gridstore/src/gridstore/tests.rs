@@ -21,7 +21,10 @@ use crate::blob::Blob;
 use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
 };
-use crate::fixtures::{HM_FIELDS, Payload, empty_storage, empty_storage_sized, random_payload};
+use crate::fixtures::{
+    HM_FIELDS, Payload, empty_storage, empty_storage_in_mode, empty_storage_sized,
+    empty_storage_sized_in_mode, random_payload,
+};
 
 #[test]
 fn test_empty_payload_storage() {
@@ -34,7 +37,8 @@ fn test_empty_payload_storage() {
 
 #[test]
 fn test_put_single_empty_value() {
-    let (_dir, mut storage) = empty_storage();
+    // Dynamic mode: asserts block-rounded storage size.
+    let (_dir, mut storage) = empty_storage_in_mode(Mode::Regular);
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter = hw_counter.ref_payload_io_write_counter();
@@ -57,7 +61,8 @@ fn test_put_single_empty_value() {
 
 #[test]
 fn test_put_single_payload() {
-    let (_dir, mut storage) = empty_storage();
+    // Dynamic mode: asserts block-rounded storage size.
+    let (_dir, mut storage) = empty_storage_in_mode(Mode::Regular);
 
     let mut payload = Payload::default();
     payload.0.insert(
@@ -88,7 +93,8 @@ fn test_put_single_payload() {
 
 #[test]
 fn test_storage_files() {
-    let (dir, mut storage) = empty_storage();
+    // Dynamic mode: asserts presence of bitmask files.
+    let (dir, mut storage) = empty_storage_in_mode(Mode::Regular);
 
     let mut payload = Payload::default();
     payload.0.insert(
@@ -157,7 +163,8 @@ fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usiz
 
 #[test]
 fn test_delete_single_payload() {
-    let (_dir, mut storage) = empty_storage();
+    // Dynamic mode: asserts block-rounded storage size and block reuse.
+    let (_dir, mut storage) = empty_storage_in_mode(Mode::Regular);
 
     let mut payload = Payload::default();
     payload.0.insert(
@@ -195,7 +202,8 @@ fn test_delete_single_payload() {
 
 #[test]
 fn test_update_single_payload() {
-    let (_dir, mut storage) = empty_storage();
+    // Dynamic mode: asserts block reuse on update.
+    let (_dir, mut storage) = empty_storage_in_mode(Mode::Regular);
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -236,7 +244,10 @@ fn test_update_single_payload() {
 #[test]
 fn test_write_across_pages() {
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-    let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+    // Dynamic mode: writes directly to a pre-sized page via the low-level
+    // `write_to_pages`, bypassing the append/grow path.
+    let (_dir, mut storage) =
+        empty_storage_sized_in_mode(page_size, Compression::None, Mode::Regular);
     let config = StorageConfig {
         page_size_bytes: page_size,
         block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
@@ -272,6 +283,106 @@ fn test_write_across_pages() {
         .unwrap();
 
     assert_eq!(value, read_value);
+}
+
+/// Serverless storage is append-only: writing a value grows the page file by
+/// exactly the value's byte length, with no block- or page-rounding.
+#[test]
+fn test_serverless_append_grows_page_by_exact_bytes() {
+    let (_dir, mut storage) = empty_storage_in_mode(Mode::Serverless);
+
+    let mut payload = Payload::default();
+    payload.0.insert(
+        "key".to_string(),
+        serde_json::Value::String("value".to_string()),
+    );
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    storage.put_value(0, &payload, hw_counter_ref).unwrap();
+
+    // The page file holds exactly the bytes written (the pointer length), unlike
+    // dynamic mode where the page is pre-sized to a full page.
+    let pointer = storage.get_pointer(0).unwrap();
+    assert_eq!(
+        storage.pages.read().last_page_len().unwrap(),
+        u64::from(pointer.length),
+    );
+    assert_eq!(
+        storage.get_storage_size_bytes().unwrap(),
+        pointer.length as usize,
+    );
+}
+
+/// Serverless append-only storage grows onto new pages as values spill over
+/// page boundaries, and reads correctly both before and after reopening.
+#[test]
+fn test_serverless_append_spans_pages_and_reopens() {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+
+    // Smallest valid page (block_size * region_size) so a handful of values
+    // already spill across page boundaries.
+    let options = StorageOptions {
+        page_size_bytes: Some(512),
+        block_size_bytes: Some(128),
+        region_size_blocks: Some(4),
+        compression: Some(Compression::None),
+    };
+    let mut storage =
+        Gridstore::<Payload>::new(MmapFs, path.clone(), options, Mode::Serverless).unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // Deterministic payloads of varying size, some larger than a block, so the
+    // appended stream crosses page boundaries.
+    let make = |i: u32| {
+        let mut payload = Payload::default();
+        payload.0.insert(
+            "key".to_string(),
+            serde_json::Value::String("x".repeat(40 + (i as usize % 7) * 20)),
+        );
+        payload
+    };
+    let payloads: Vec<_> = (0..40).map(|i| (i, make(i))).collect();
+
+    for (offset, payload) in &payloads {
+        storage.put_value(*offset, payload, hw_counter_ref).unwrap();
+    }
+
+    // Appending must have grown the storage onto multiple pages.
+    assert!(
+        storage.pages.read().num_pages() > 1,
+        "expected the appended value stream to span multiple pages",
+    );
+
+    // Read back (including page-spanning values) before flushing.
+    for (offset, payload) in &payloads {
+        assert_eq!(
+            storage
+                .get_value::<Random>(*offset, &hw_counter)
+                .unwrap()
+                .as_ref(),
+            Some(payload),
+        );
+    }
+
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Reopen serverless storage (no bitmask, page count inferred from files) and
+    // confirm every value survives.
+    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::Serverless).unwrap();
+    for (offset, payload) in &payloads {
+        assert_eq!(
+            storage
+                .get_value::<Random>(*offset, &hw_counter)
+                .unwrap()
+                .as_ref(),
+            Some(payload),
+        );
+    }
 }
 
 enum Operation {
@@ -543,8 +654,13 @@ fn test_behave_like_hashmap(
     drop(storage);
 
     // reopen storage
-    let storage =
-        Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    let storage = Gridstore::<Payload>::open(
+        MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        Mode::default(),
+    )
+    .unwrap();
     // assert same size
     assert_eq!(storage.get_storage_size_bytes().unwrap(), before_size);
     // assert same length
@@ -578,7 +694,8 @@ fn test_behave_like_hashmap(
 
 #[test]
 fn test_handle_huge_payload() {
-    let (_dir, mut storage) = empty_storage();
+    // Dynamic mode: inspects the bitmask and asserts block-level free space.
+    let (_dir, mut storage) = empty_storage_in_mode(Mode::Regular);
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let mut payload = Payload::default();
@@ -607,7 +724,11 @@ fn test_handle_huge_payload() {
 
     {
         // the fitting page should be 64MB, so we should still have about 14MB of free space
-        let free_blocks = storage.bitmask.read().free_blocks_for_page(1).unwrap();
+        let free_blocks = storage
+            .bitmask_for_test()
+            .read()
+            .free_blocks_for_page(1)
+            .unwrap();
         let min_expected = 1024 * 1024 * 13 / DEFAULT_BLOCK_SIZE_BYTES;
         let max_expected = 1024 * 1024 * 15 / DEFAULT_BLOCK_SIZE_BYTES;
         assert!((min_expected..max_expected).contains(&free_blocks));
@@ -642,7 +763,8 @@ fn test_storage_persistence_basic() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     {
-        let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+        let mut storage =
+            Gridstore::<_>::new(MmapFs, path.clone(), Default::default(), Mode::default()).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
         assert_eq!(storage.pages.read().num_pages(), 1);
 
@@ -659,7 +781,7 @@ fn test_storage_persistence_basic() {
     }
 
     // reopen storage
-    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::default()).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -752,7 +874,13 @@ fn test_with_real_hm_data() {
     storage.flusher()().unwrap();
     drop(storage);
 
-    let mut storage = Gridstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    let mut storage = Gridstore::open(
+        MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        Mode::default(),
+    )
+    .unwrap();
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
     assert_eq!(storage.pages.read().num_pages(), 4);
     assert_eq!(
@@ -812,7 +940,8 @@ fn test_different_block_sizes(#[case] block_size_bytes: usize) {
         block_size_bytes: Some(block_size_bytes),
         ..Default::default()
     };
-    let mut storage = Gridstore::<_>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage =
+        Gridstore::<_>::new(MmapFs, dir.path().to_path_buf(), options, Mode::default()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -840,7 +969,8 @@ fn test_different_block_sizes(#[case] block_size_bytes: usize) {
 /// - data is only written to disk when closure is invoked
 #[test]
 fn test_deferred_flush() {
-    let (dir, mut storage) = empty_storage();
+    // Dynamic mode: asserts block reuse / storage size across flushes.
+    let (dir, mut storage) = empty_storage_in_mode(Mode::Regular);
     let path = dir.path().to_path_buf();
 
     let hw_counter = HardwareCounterCell::new();
@@ -909,7 +1039,8 @@ fn test_deferred_flush() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let mut storage =
+        Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::Regular).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, we expect to read the data at the time the flusher was created
@@ -931,7 +1062,8 @@ fn test_deferred_flush() {
 /// Similar to [`test_deferred_flush`] but more complex, including multiple flushers and deletes
 #[test]
 fn test_deferred_flush_with_delete() {
-    let (dir, mut storage) = empty_storage();
+    // Dynamic mode: asserts block reuse (reused offsets after delete).
+    let (dir, mut storage) = empty_storage_in_mode(Mode::Regular);
     let path = dir.path().to_path_buf();
 
     let hw_counter = HardwareCounterCell::new();
@@ -991,7 +1123,8 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage =
+        Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let flusher = storage.flusher();
@@ -1010,7 +1143,8 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage =
+        Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, delete was flushed this time, expect point to be missing
@@ -1035,7 +1169,8 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage =
+        Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, value 4 was flushed, expect to read it
@@ -1061,28 +1196,32 @@ fn test_deferred_flush_with_delete() {
 
     // Not flushed, still expect to read value 4
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        let tmp_storage =
+            Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 4");
     }
 
     // First flusher flushed, expect to read value 5 if we load from disk
     flusher_1_value_5().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        let tmp_storage =
+            Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 5");
     }
 
     // Second flusher flushed, expect point to be missing if we load from disk
     flusher_2_delete().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        let tmp_storage =
+            Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
         assert!(get_payload(&tmp_storage).is_none());
     }
 
     // Third flusher flushed, expect to read value 6 if we load from disk
     flusher_3_value_6().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+        let tmp_storage =
+            Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::Regular).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 6");
     }
 
@@ -1122,7 +1261,8 @@ fn test_live_reload() {
     };
 
     // Step 1: Write initial data and flush
-    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+    let mut storage =
+        Gridstore::<_>::new(MmapFs, path.clone(), Default::default(), Mode::default()).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
     let payload_1 = make_payload("key", "value_1");
@@ -1131,8 +1271,13 @@ fn test_live_reload() {
     storage.flusher()().unwrap();
 
     // Step 2: Open a reader
-    let mut reader =
-        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
+    let mut reader = GridstoreReader::<Payload, MmapFile>::open(
+        &MmapFs,
+        path.clone(),
+        Populate::No,
+        Mode::default(),
+    )
+    .unwrap();
     assert_eq!(reader.max_point_offset(), 2);
 
     // Step 3: Verify reader sees initial data
@@ -1193,7 +1338,7 @@ fn test_live_reload_across_pages() {
         page_size_bytes: Some(page_size),
         ..Default::default()
     };
-    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options).unwrap();
+    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options, Mode::default()).unwrap();
 
     let payload = minimal_payload();
 
@@ -1208,8 +1353,13 @@ fn test_live_reload_across_pages() {
     let initial_pages = storage.pages.read().num_pages();
 
     // Open reader
-    let mut reader =
-        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
+    let mut reader = GridstoreReader::<Payload, MmapFile>::open(
+        &MmapFs,
+        path.clone(),
+        Populate::No,
+        Mode::default(),
+    )
+    .unwrap();
     assert_eq!(reader.max_point_offset(), first_batch);
 
     // Verify reader can read all initial data
@@ -1252,7 +1402,8 @@ fn test_live_reload_across_pages() {
 ///   something else
 #[test]
 fn test_skip_deferred_flush_after_clear() {
-    let (dir, mut storage) = empty_storage();
+    // Dynamic mode: inspects the bitmask via `bitmask_for_test`.
+    let (dir, mut storage) = empty_storage_in_mode(Mode::Regular);
     let path = dir.path().to_path_buf();
 
     let hw_counter = HardwareCounterCell::new();
@@ -1296,7 +1447,7 @@ fn test_skip_deferred_flush_after_clear() {
     let storage_arcs = (
         Arc::clone(&storage.pages),
         Arc::clone(&storage.tracker),
-        Arc::clone(&storage.bitmask),
+        Arc::clone(storage.bitmask_for_test()),
     );
 
     // We clear the storage, pending flusher must not write anything anymore
@@ -1313,7 +1464,8 @@ fn test_skip_deferred_flush_after_clear() {
 
     // If we reopen the storage it must still be empty
     drop(storage);
-    let storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let storage =
+        Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
     assert!(storage.get_pointer(0).is_none(), "point must not exist");
     assert_eq!(storage.max_point_offset(), 0, "must have zero points");
@@ -1513,6 +1665,7 @@ fn read_only_reader_over_write_enforced_backend() {
         &fs,
         dir.path().to_path_buf(),
         Populate::No,
+        Mode::Regular,
     )
     .unwrap();
 

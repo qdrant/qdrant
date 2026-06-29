@@ -10,8 +10,8 @@ use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
-use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
+use gridstore::{Gridstore, Mode};
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -61,11 +61,12 @@ impl MmapSparseVectorStorage {
 
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Gridstore::open(MmapFs, storage_dir, populate).map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to open mmap sparse vector storage: {err}"
-            ))
-        })?;
+        let storage =
+            Gridstore::open(MmapFs, storage_dir, populate, Mode::default()).map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to open mmap sparse vector storage: {err}"
+                ))
+            })?;
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
@@ -101,11 +102,12 @@ impl MmapSparseVectorStorage {
             ..Default::default()
         };
 
-        let storage = Gridstore::new(MmapFs, storage_dir, storage_config).map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to create storage for mmap sparse vectors: {err}"
-            ))
-        })?;
+        let storage = Gridstore::new(MmapFs, storage_dir, storage_config, Mode::default())
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to create storage for mmap sparse vectors: {err}"
+                ))
+            })?;
 
         // Payload storage does not need to be populated
         // as it is not required in the index search step
