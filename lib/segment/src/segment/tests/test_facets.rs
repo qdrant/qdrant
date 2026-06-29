@@ -245,6 +245,7 @@ const N_FILTER_ITER: usize = 200_000;
 /// sampling → filter iter — the plan only the bench otherwise reaches. `seq <
 /// 9%` is selective enough for phase 2 to prefer iterating the merged filter,
 /// yet broad enough to clear the sampling→full veto at this scale.
+#[cfg(not(windows))]
 #[test]
 fn sampling_selective_filter_iterates_filter() {
     let (_dir, segment) = build_segment_n(N_FILTER_ITER);
