@@ -213,7 +213,7 @@ fn test_files() -> HashMap<(String, String), Vec<u8>> {
 async fn list_files() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
-    let mut paths = client.list_files("test-col", "data/").await.unwrap();
+    let mut paths = client.list_files("test-col", 0, "data/").await.unwrap();
     paths.sort();
     assert_eq!(
         paths,
@@ -225,8 +225,13 @@ async fn list_files() {
 async fn file_exists() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
-    assert!(client.file_exists("test-col", "data/a.bin").await.unwrap());
-    assert!(!client.file_exists("test-col", "nope.bin").await.unwrap());
+    assert!(
+        client
+            .file_exists("test-col", 0, "data/a.bin")
+            .await
+            .unwrap()
+    );
+    assert!(!client.file_exists("test-col", 0, "nope.bin").await.unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -234,7 +239,10 @@ async fn file_length() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
     assert_eq!(
-        client.file_length("test-col", "data/a.bin").await.unwrap(),
+        client
+            .file_length("test-col", 0, "data/a.bin")
+            .await
+            .unwrap(),
         10
     );
 }
@@ -244,7 +252,7 @@ async fn read_bytes() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
     let data = client
-        .read_bytes("test-col", "data/a.bin", 3, 4)
+        .read_bytes("test-col", 0, "data/a.bin", 3, 4)
         .await
         .unwrap();
     assert_eq!(&data, b"defg");
@@ -255,7 +263,7 @@ async fn read_bytes_stream() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
     let data = client
-        .read_bytes_stream("test-col", "data/a.bin", 0, 10)
+        .read_bytes_stream("test-col", 0, "data/a.bin", 0, 10)
         .await
         .unwrap();
     assert_eq!(&data, b"abcdefghij");
@@ -266,7 +274,7 @@ async fn read_bytes_stream_reassembles_chunks() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
     let data = client
-        .read_bytes_stream("test-col", "index/chunk_0.bin", 0, 100)
+        .read_bytes_stream("test-col", 0, "index/chunk_0.bin", 0, 100)
         .await
         .unwrap();
     assert_eq!(data.len(), 100);
@@ -277,7 +285,10 @@ async fn read_bytes_stream_reassembles_chunks() {
 async fn read_whole() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
-    let data = client.read_whole("test-col", "data/a.bin").await.unwrap();
+    let data = client
+        .read_whole("test-col", 0, "data/a.bin")
+        .await
+        .unwrap();
     assert_eq!(&data, b"abcdefghij");
 }
 
@@ -296,7 +307,7 @@ async fn read_batch() {
         },
     ];
     let data = client
-        .read_batch("test-col", "data/a.bin", &ranges)
+        .read_batch("test-col", 0, "data/a.bin", &ranges)
         .await
         .unwrap();
     assert_eq!(data.len(), 2);
@@ -324,7 +335,7 @@ async fn read_multi() {
             },
         ),
     ];
-    let data = client.read_multi("test-col", &reads).await.unwrap();
+    let data = client.read_multi("test-col", 0, &reads).await.unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(&data[0], b"bcd");
     assert_eq!(&data[1], b"klmn");
@@ -334,7 +345,7 @@ async fn read_multi() {
 async fn file_length_not_found() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
-    assert!(client.file_length("test-col", "nope.bin").await.is_err());
+    assert!(client.file_length("test-col", 0, "nope.bin").await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -343,7 +354,7 @@ async fn read_bytes_not_found() {
     let client = Client::connect(url).await.unwrap();
     assert!(
         client
-            .read_bytes("test-col", "nope.bin", 0, 1)
+            .read_bytes("test-col", 0, "nope.bin", 0, 1)
             .await
             .is_err()
     );
@@ -355,7 +366,7 @@ async fn read_bytes_stream_not_found() {
     let client = Client::connect(url).await.unwrap();
     assert!(
         client
-            .read_bytes_stream("test-col", "nope.bin", 0, 1)
+            .read_bytes_stream("test-col", 0, "nope.bin", 0, 1)
             .await
             .is_err()
     );
@@ -365,7 +376,7 @@ async fn read_bytes_stream_not_found() {
 async fn read_whole_not_found() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
-    assert!(client.read_whole("test-col", "nope.bin").await.is_err());
+    assert!(client.read_whole("test-col", 0, "nope.bin").await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -378,7 +389,7 @@ async fn read_batch_not_found() {
     }];
     assert!(
         client
-            .read_batch("test-col", "nope.bin", &ranges)
+            .read_batch("test-col", 0, "nope.bin", &ranges)
             .await
             .is_err()
     );
@@ -395,14 +406,17 @@ async fn read_multi_not_found() {
             length: 1,
         },
     )];
-    assert!(client.read_multi("test-col", &reads).await.is_err());
+    assert!(client.read_multi("test-col", 0, &reads).await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn list_files_empty_result() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
-    let paths = client.list_files("test-col", "nonexistent/").await.unwrap();
+    let paths = client
+        .list_files("test-col", 0, "nonexistent/")
+        .await
+        .unwrap();
     assert!(paths.is_empty());
 }
 
@@ -411,7 +425,7 @@ async fn read_bytes_stream_partial_range() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
     let data = client
-        .read_bytes_stream("test-col", "data/a.bin", 3, 4)
+        .read_bytes_stream("test-col", 0, "data/a.bin", 3, 4)
         .await
         .unwrap();
     assert_eq!(&data, b"defg");

@@ -36,6 +36,7 @@ impl Client {
     pub async fn list_files(
         &self,
         collection_name: &str,
+        shard_id: u32,
         prefix_path: &str,
     ) -> Result<Vec<PathBuf>> {
         let response = self
@@ -43,6 +44,7 @@ impl Client {
             .clone()
             .list_files(qdrant::ListFilesRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 prefix_path: prefix_path.to_string(),
             })
             .await
@@ -57,12 +59,18 @@ impl Client {
     }
 
     /// `FileExists` RPC.
-    pub async fn file_exists(&self, collection_name: &str, path: &str) -> Result<bool> {
+    pub async fn file_exists(
+        &self,
+        collection_name: &str,
+        shard_id: u32,
+        path: &str,
+    ) -> Result<bool> {
         let response = self
             .inner
             .clone()
             .file_exists(qdrant::FileExistsRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 path: path.to_string(),
             })
             .await
@@ -72,12 +80,18 @@ impl Client {
     }
 
     /// `FileLength` RPC.
-    pub async fn file_length(&self, collection_name: &str, path: &str) -> Result<u64> {
+    pub async fn file_length(
+        &self,
+        collection_name: &str,
+        shard_id: u32,
+        path: &str,
+    ) -> Result<u64> {
         let response = self
             .inner
             .clone()
             .file_length(qdrant::FileLengthRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 path: path.to_string(),
             })
             .await
@@ -90,6 +104,7 @@ impl Client {
     pub async fn read_bytes(
         &self,
         collection_name: &str,
+        shard_id: u32,
         path: &str,
         byte_offset: u64,
         length: u64,
@@ -99,6 +114,7 @@ impl Client {
             .clone()
             .read_bytes(qdrant::ReadBytesRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 path: path.to_string(),
                 byte_offset,
                 length,
@@ -113,6 +129,7 @@ impl Client {
     pub async fn read_bytes_stream(
         &self,
         collection_name: &str,
+        shard_id: u32,
         path: &str,
         byte_offset: u64,
         length: u64,
@@ -122,6 +139,7 @@ impl Client {
             .clone()
             .read_bytes_stream(qdrant::ReadBytesStreamRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 path: path.to_string(),
                 byte_offset,
                 length,
@@ -138,12 +156,18 @@ impl Client {
     }
 
     /// `ReadWhole` RPC — read an entire file.
-    pub async fn read_whole(&self, collection_name: &str, path: &str) -> Result<Vec<u8>> {
+    pub async fn read_whole(
+        &self,
+        collection_name: &str,
+        shard_id: u32,
+        path: &str,
+    ) -> Result<Vec<u8>> {
         let response = self
             .inner
             .clone()
             .read_whole(qdrant::ReadWholeRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 path: path.to_string(),
             })
             .await
@@ -156,6 +180,7 @@ impl Client {
     pub async fn read_batch(
         &self,
         collection_name: &str,
+        shard_id: u32,
         path: &str,
         ranges: &[ReadRange],
     ) -> Result<Vec<Vec<u8>>> {
@@ -172,6 +197,7 @@ impl Client {
             .clone()
             .read_batch(qdrant::ReadBatchRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 path: path.to_string(),
                 ranges: proto_ranges,
             })
@@ -185,6 +211,7 @@ impl Client {
     pub async fn read_multi(
         &self,
         collection_name: &str,
+        shard_id: u32,
         reads: &[(impl AsRef<str>, ReadRange)],
     ) -> Result<Vec<Vec<u8>>> {
         let proto_reads: Vec<_> = reads
@@ -201,6 +228,7 @@ impl Client {
             .clone()
             .read_multi(qdrant::ReadMultiRequest {
                 collection_name: collection_name.to_string(),
+                shard_id,
                 reads: proto_reads,
             })
             .await

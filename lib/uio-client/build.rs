@@ -14,9 +14,9 @@ fn main() -> std::io::Result<()> {
         fs_err::copy(source, local)?;
     }
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir("src/generated/")
-        .compile(&[local], &["proto"])?;
+        .compile_protos(&[local], &["proto"])?;
 
     Ok(())
 }

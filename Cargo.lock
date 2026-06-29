@@ -8466,10 +8466,11 @@ dependencies = [
  "common",
  "fs-err",
  "futures",
- "prost 0.12.6",
+ "prost 0.14.4",
  "tokio",
- "tonic 0.11.0",
- "tonic-build",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
 ]
 
 [[package]]
