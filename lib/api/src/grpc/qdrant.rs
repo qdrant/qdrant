@@ -336,31 +336,38 @@ pub struct DatetimeRange {
     #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
     pub lte: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
     /// north-west corner
     #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
     pub top_left: ::core::option::Option<GeoPoint>,
     /// south-east corner
     #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
     pub bottom_right: ::core::option::Option<GeoPoint>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GeoRadius {
     /// Center of the circle
     #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
     pub center: ::core::option::Option<GeoPoint>,
     /// In meters
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoLineString {
     /// Ordered sequence of GeoPoints representing the line
     #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
     pub points: ::prost::alloc::vec::Vec<GeoPoint>,
 }
 /// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must
@@ -373,13 +380,15 @@ pub struct GeoPolygon {
     /// The exterior line bounds the surface
     #[prost(message, optional, tag = "1")]
     #[validate(
-        custom(function = "crate::grpc::validate::validate_geo_polygon_exterior")
+        custom(function = "crate::grpc::validate::validate_geo_polygon_exterior"),
+        nested
     )]
     pub exterior: ::core::option::Option<GeoLineString>,
     /// Interior lines (if present) bound holes within the surface
     #[prost(message, repeated, tag = "2")]
     #[validate(
-        custom(function = "crate::grpc::validate::validate_geo_polygon_interiors")
+        custom(function = "crate::grpc::validate::validate_geo_polygon_interiors"),
+        nested
     )]
     pub interiors: ::prost::alloc::vec::Vec<GeoLineString>,
 }
