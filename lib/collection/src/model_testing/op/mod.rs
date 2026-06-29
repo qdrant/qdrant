@@ -7,9 +7,9 @@ use api::rest::RecommendStrategy;
 use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
     random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
-    random_point, random_query_for_name, random_recommend_strategy, random_scroll_filter,
-    random_tag, random_update_mode, random_vector_name, random_vector_name_subset,
-    random_with_payload, random_with_vector, upsert_fallback,
+    random_point, random_prefetch, random_query_for_name, random_recommend_strategy,
+    random_scroll_filter, random_tag, random_update_mode, random_vector_name,
+    random_vector_name_subset, random_with_payload, random_with_vector, upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
@@ -187,6 +187,37 @@ pub(super) enum Op {
         limit: usize,
         filter: ScrollFilter,
     },
+    /// Verification op: a fused multi-source Query (`prefetch` + RRF/DBSF fusion) — the query-API
+    /// shape the plain `Query` op never reaches. Each prefetch is an independent Nearest source
+    /// (its own vector name, limit and optional `num` filter); the outer query fuses their union
+    /// and an optional outer `num` filter applies on top. Fusion ranking is score-based and
+    /// approximate, so — like `Search`/`Query` — we check only id membership (every result is some
+    /// prefetch's candidate and passes the outer filter) and a result-size upper bound, never
+    /// scores or order. One prefetch level only (no nesting).
+    QueryFusion {
+        prefetches: Vec<Prefetch>,
+        fusion: FusionKind,
+        limit: usize,
+        filter_num: Option<i64>,
+    },
+}
+
+/// A single prefetch source for `QueryFusion`: a Nearest sub-query over one vector name, with its
+/// own limit and optional `num` filter.
+#[derive(Debug, Clone)]
+pub(super) struct Prefetch {
+    pub(super) vector_name: VectorNameBuf,
+    pub(super) query: VectorValue,
+    pub(super) limit: usize,
+    pub(super) filter_num: Option<i64>,
+}
+
+/// Fusion method for `QueryFusion` (the engine's `api::rest::Fusion` isn't `Clone`, which `Op`
+/// requires). Maps to `FusionInternal` at apply time.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum FusionKind {
+    Rrf,
+    Dbsf,
 }
 
 /// Filter selector for `ScrollPaged`. Beyond the payload filters the other scroll verifiers
@@ -221,7 +252,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 34;
+    const N: usize = 35;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -259,6 +290,7 @@ impl Swarm {
         "RetrieveSelective",
         "ScrollPaged",
         "Query",
+        "QueryFusion",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -309,6 +341,7 @@ impl Swarm {
         4,  // RetrieveSelective
         4,  // ScrollPaged
         6,  // Query
+        5,  // QueryFusion
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -591,6 +624,26 @@ impl Op {
                     filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
                 }
             }
+            34 => {
+                // 1-3 independent Nearest prefetch sources, fused by RRF or DBSF. Vector names are
+                // drawn per prefetch so sources can mix metrics/kinds; an optional outer filter
+                // applies on top of the fused union.
+                let n_prefetch = rng.random_range(1..=3);
+                let prefetches = (0..n_prefetch)
+                    .map(|_| random_prefetch(rng, active))
+                    .collect();
+                let fusion = if rng.random_bool(0.5) {
+                    FusionKind::Rrf
+                } else {
+                    FusionKind::Dbsf
+                };
+                Op::QueryFusion {
+                    prefetches,
+                    fusion,
+                    limit: rng.random_range(1..=10),
+                    filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -633,6 +686,7 @@ impl Op {
             Op::SetPayloadByKey { .. } => "SetPayloadByKey",
             Op::RetrieveSelective { .. } => "RetrieveSelective",
             Op::ScrollPaged { .. } => "ScrollPaged",
+            Op::QueryFusion { .. } => "QueryFusion",
         }
     }
 }

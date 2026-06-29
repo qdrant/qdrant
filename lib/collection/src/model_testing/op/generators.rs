@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::super::{Model, VectorKind, VectorValue, kind_of};
-use super::{NamedVectors, Op, ScrollFilter, canonical_sparse};
+use super::{NamedVectors, Op, Prefetch, ScrollFilter, canonical_sparse};
 use crate::operations::point_ops::UpdateMode;
 
 // ───── payload value pools ────────────────────────────────────────────────
@@ -271,6 +271,19 @@ pub(super) fn random_vector_name(
 /// Build a search query appropriate for the chosen vector name.
 pub(super) fn random_query_for_name(rng: &mut impl Rng, name: &str) -> VectorValue {
     random_vector_for_name(rng, name)
+}
+
+/// A single prefetch source for `QueryFusion`: a Nearest sub-query over a random active vector
+/// name, with its own limit and optional `num` filter.
+pub(super) fn random_prefetch(rng: &mut impl Rng, active: &BTreeSet<VectorNameBuf>) -> Prefetch {
+    let vector_name = random_vector_name(rng, active);
+    let query = random_query_for_name(rng, &vector_name);
+    Prefetch {
+        vector_name,
+        query,
+        limit: rng.random_range(1..=10),
+        filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+    }
 }
 
 pub(super) fn random_payload(rng: &mut impl Rng) -> Payload {
