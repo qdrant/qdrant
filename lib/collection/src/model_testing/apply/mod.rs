@@ -200,6 +200,11 @@ pub(super) async fn apply(
             )
             .await
         }
+        // CreateSnapshot needs run-loop context (it spawns a background task against shared
+        // collection state), so the loop intercepts it before dispatching here.
+        Op::CreateSnapshot => {
+            unreachable!("CreateSnapshot is handled in the run loop, not apply()")
+        }
     }
 }
 

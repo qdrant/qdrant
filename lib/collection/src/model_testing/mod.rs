@@ -15,7 +15,11 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use segment::types::{Payload, PointIdType, VectorNameBuf};
 use sparse::common::sparse_vector::SparseVector;
+use tokio::task::JoinHandle;
 
+use crate::collection::Collection;
+use crate::operations::snapshot_ops::SnapshotDescription;
+use crate::operations::types::CollectionResult;
 use crate::shards::shard::PeerId;
 
 const PEER_ID: PeerId = 1;
@@ -138,10 +142,11 @@ pub async fn run(
     on_disk: bool,
     pre_restart_check: bool,
     enable_force_off: bool,
+    disable_snapshots: bool,
     duration: Option<Duration>,
     shutdown: Arc<AtomicBool>,
 ) {
-    let (collection_dir, snapshots_dir, mut collection) = fixture::fixture(
+    let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
         disable_optimizer,
@@ -151,6 +156,9 @@ pub async fn run(
         on_disk,
     )
     .await;
+    // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
+    // keeps writing to it. Reassigned (restart / final reload) by replacing the `Arc`.
+    let mut collection = Arc::new(collection);
 
     // Trace lives at the storage-path root (next to `collection/` and `snapshots/`) so the
     // fixture's per-run wipe of those subdirs leaves it alone; `File::create` truncates so each
@@ -170,12 +178,17 @@ pub async fn run(
         restart_probability,
         swarm_interval,
         enable_force_off,
+        disable_snapshots,
         duration,
     );
 
     let mut model: Model = Model::new();
     let mut active_names: BTreeSet<VectorNameBuf> =
         INITIAL_ACTIVE.iter().map(|s| s.to_string()).collect();
+    // In-flight background snapshot task, if any (at most one at a time). A `CreateSnapshot` op
+    // spawns it; the loop reaps it on completion each iteration and drains it before any
+    // close+reopen. `None` when no snapshot is running. See [`drain_snapshot`].
+    let mut pending_snapshot: Option<JoinHandle<CollectionResult<SnapshotDescription>>> = None;
     let rng = &mut SmallRng::seed_from_u64(seed);
 
     // Swarm-testing config (Groce et al., ISSTA 2012): disable a random subset of ops. Recomputed
@@ -184,7 +197,7 @@ pub async fn run(
     // reproducible; each redraw is logged with its op tick so a failure is attributable to the
     // config that was live. (This consumes rng draws, so the op stream differs from a non-swarm
     // build for the same seed.)
-    let mut swarm = op::Swarm::random(rng, enable_force_off);
+    let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
     let initial_enabled = swarm.enabled_ops();
     trace.swarm(0, &initial_enabled);
     println!("model_testing: op:0 swarm -> {initial_enabled:?}");
@@ -256,7 +269,7 @@ pub async fn run(
         // Recompute the swarm config at each interval boundary (op 0 was drawn before the loop).
         if i > 0 && i.is_multiple_of(swarm_interval) {
             let prev = swarm.enabled_ops();
-            swarm = op::Swarm::random(rng, enable_force_off);
+            swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
             let next = swarm.enabled_ops();
             // Trace keeps the full enabled set (for reproducibility); the console shows only the
             // delta vs. the previous config — that's what changed.
@@ -272,10 +285,11 @@ pub async fn run(
                 println!("model_testing: op:{i} regen swarm Δ\n  +{enabled:?}\n  -{disabled:?}\n  ={kept:?}");
             });
         }
-        // Roll for a mid-run restart BEFORE generating an op so an iteration is either
-        // a restart OR an apply (not both). The `> 0.0` short-circuits the rng draw at
-        // the default value, so workload determinism is preserved for `--restart-probability 0`
-        // (which matches the previous no-restart default exactly).
+        // Roll for a mid-run restart BEFORE generating an op so an iteration is exactly one of
+        // restart / apply (never both). The `> 0.0` short-circuits the rng draw at the default
+        // value, so workload determinism is preserved for `--restart-probability 0` (which matches
+        // the previous no-restart default exactly). (Snapshots are an ordinary `CreateSnapshot`
+        // swarm op dispatched below — not a separate roll.)
         let do_restart = restart_probability > 0.0 && rng.random::<f64>() < restart_probability;
         if do_restart {
             log::debug!("op:{i} Restart");
@@ -319,9 +333,21 @@ pub async fn run(
             // of letting the op loop's next tick `\r`-overwrite it.
             bar.set_draw_target(ProgressDrawTarget::hidden());
             eprintln!();
+            // Finish any background snapshot first: it holds an `Arc` clone of this collection, so
+            // the `drop` below wouldn't actually close the collection (releasing its files) until
+            // the task ends — and reopening the same dir with the old collection still open is
+            // unsafe.
+            drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, i).await;
             collection.stop_gracefully().await;
-            drop(collection);
-            collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
+            // `into_inner` makes the invariant checked, not assumed: if any background task still
+            // holds an `Arc` clone here, panic loudly instead of reopening the same dir while the
+            // old collection is silently kept alive.
+            drop(
+                Arc::into_inner(collection)
+                    .expect("collection still referenced at restart (undrained background task?)"),
+            );
+            collection =
+                Arc::new(fixture::reopen_collection(&collection_dir, &snapshots_dir).await);
             // `Collection::load` returns before tail-of-WAL ops queued to the
             // update worker have been applied — that's an intentional fast-start
             // feature. Wait for the queue to drain so the scroll below observes
@@ -337,7 +363,39 @@ pub async fn run(
             bar.set_message(op.kind());
             // Log BEFORE apply so a panic preserves the offending op in the trace.
             trace.op(i, &op);
-            apply::apply(&collection, &mut model, &mut active_names, &op).await;
+            // CreateSnapshot needs run-loop context (it spawns a background task against shared
+            // collection state), so it's dispatched here; everything else goes through `apply`.
+            if matches!(op, op::Op::CreateSnapshot) {
+                // Spawn a snapshot that runs *concurrently with the ongoing workload* (the loop
+                // keeps applying ops below while it runs on a `spawn_blocking` thread). The archive
+                // is discarded — we only assert the create succeeds and doesn't corrupt the live
+                // collection (the verification ops + final reload catch that). At most one in
+                // flight; a CreateSnapshot drawn while one is running is a no-op. The op draws no
+                // rng, so the op stream stays reproducible even with snapshots enabled.
+                if pending_snapshot.is_none() {
+                    let temp_dir = tempfile::tempdir().expect("failed to create snapshot temp dir");
+                    let snapshot_collection = Arc::clone(&collection);
+                    pending_snapshot = Some(tokio::spawn(async move {
+                        let res = snapshot_collection
+                            .create_snapshot(temp_dir.path(), PEER_ID)
+                            .await;
+                        drop(temp_dir); // keep the staging dir alive until the archive is written
+                        res
+                    }));
+                    log::debug!("op:{i} CreateSnapshot spawned");
+                } else {
+                    log::debug!("op:{i} CreateSnapshot skipped (one already in flight)");
+                }
+            } else {
+                apply::apply(&collection, &mut model, &mut active_names, &op).await;
+            }
+        }
+        // Reap a finished background snapshot (non-blocking check); panics if it errored.
+        if pending_snapshot
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished)
+        {
+            drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, i).await;
         }
         i += 1;
         applied += 1;
@@ -393,9 +451,15 @@ pub async fn run(
     if interrupted {
         eprintln!("model_testing: reopening to verify reload...");
     }
-    // Close and reopen, then re-verify — mirrors gridstore tests.rs:488-516.
+    // Finish any background snapshot before closing (it holds an `Arc` clone — see the restart
+    // path), then close and reopen and re-verify — mirrors gridstore tests.rs:488-516.
+    drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, applied).await;
     collection.stop_gracefully().await;
-    drop(collection);
+    // Checked close-before-reopen, same as the mid-run restart path.
+    drop(
+        Arc::into_inner(collection)
+            .expect("collection still referenced at final reload (undrained background task?)"),
+    );
     let collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
     // Same reason as the mid-run restart above — drain deferred WAL ops before scrolling.
     verify::wait_for_pending_updates(&collection).await;
@@ -412,6 +476,45 @@ pub async fn run(
     verify::assert_matches_model(&reloaded, &model, "reloaded");
 }
 
+/// Upper bound on how long we wait for a background snapshot to finish when draining it, so a hung
+/// `create_snapshot` fails loudly instead of stalling the run forever.
+const SNAPSHOT_HANG_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Finish the in-flight background snapshot (if any): await the task, panic if `create_snapshot`
+/// errored or the task panicked, then delete the archive (we don't recover it). Called per-iteration
+/// once the task reports finished, and unconditionally before any close+reopen — the task holds an
+/// `Arc` clone of the collection, so it must end before the collection is dropped and reopened.
+async fn drain_snapshot(
+    collection: &Collection,
+    snapshots_dir: &Path,
+    pending: &mut Option<JoinHandle<CollectionResult<SnapshotDescription>>>,
+    tick: usize,
+) {
+    let Some(handle) = pending.take() else {
+        return;
+    };
+    let description = tokio::time::timeout(SNAPSHOT_HANG_TIMEOUT, handle)
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "background snapshot did not finish within {SNAPSHOT_HANG_TIMEOUT:?} (op:{tick})"
+            )
+        })
+        // Re-raise the task's own panic payload so the original assertion message (not an opaque
+        // `JoinError`) reaches the log; `run` never cancels the task, so a join error is a panic.
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
+        .unwrap_or_else(|e| panic!("concurrent create_snapshot (op:{tick}) failed: {e:?}"));
+
+    // The archive isn't recovered, so drop it to keep a long soak from accumulating full-collection
+    // copies on disk.
+    let path = snapshots_dir.join(&description.name);
+    if let Ok(manager) = collection.get_snapshots_storage_manager()
+        && let Err(e) = manager.delete_snapshot(&path).await
+    {
+        log::warn!("failed to delete snapshot {path:?} (op:{tick}): {e}");
+    }
+}
+
 /// Skipped on Windows because it is too slow
 #[cfg(not(target_os = "windows"))]
 #[cfg(test)]
@@ -420,6 +523,13 @@ mod tests {
 
     const OP_NUM: usize = 8_000;
     const ID_POOL: u64 = 500;
+    // The non-snapshot gates run with snapshots off so they stay fast, deterministic baselines for
+    // their own concern. `CreateSnapshot` does background snapshot IO that only adds wall-clock time
+    // without testing what those gates target; the snapshot path has its own test
+    // ([`harness_no_optimizer_snapshots`]). Passing `true` here also exercises the
+    // `--disable-snapshots` masking path.
+    const SNAPSHOTS_OFF: bool = true;
+    const SNAPSHOTS_ON: bool = false;
 
     /// Owns a run's storage dir. On a clean drop the dir is deleted (normal `TempDir`
     /// behaviour); if the test is unwinding from a panic the dir is leaked instead and its
@@ -457,7 +567,8 @@ mod tests {
 
     /// Drives one seeded smoke run end to end with the boilerplate shared by every harness
     /// test: single shard, fixed segment/indexing/flush knobs, no swarm force-off, op-bounded.
-    /// Only `disable_optimizer`, `restart_probability`, and `op_num` vary between tests.
+    /// Only `disable_optimizer`, `restart_probability`, `disable_snapshots`, and `op_num` vary
+    /// between tests.
     ///
     /// `name` is the calling test's name, echoed in both the seed line and the failure message
     /// so a failure in this shared helper is attributable to the right test.
@@ -469,6 +580,7 @@ mod tests {
         name: &'static str,
         disable_optimizer: bool,
         restart_probability: f64,
+        disable_snapshots: bool,
         op_num: usize,
     ) {
         let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -494,7 +606,8 @@ mod tests {
             false, // on_disk
             false, // pre_restart_check
             false, // enable_force_off
-            None,  // duration: bounded by op_num
+            disable_snapshots,
+            None, // duration: bounded by op_num
             Arc::new(AtomicBool::new(false)),
         )
         .await;
@@ -506,12 +619,20 @@ mod tests {
     /// `cargo test` run.
     ///
     /// Single shard, optimizer disabled, no mid-run restarts: keeps the run fast and
-    /// deterministic (no background segment churn) and steers clear of the known-unfixed
-    /// multi-shard reload bug class, so this stays green as a regression gate for the
-    /// harness itself rather than a bug-finder (that's the binary's job).
+    /// steers clear of the known-unfixed multi-shard reload bug class, so this stays green as a
+    /// regression gate for the harness itself rather than a bug-finder (that's the binary's job).
+    /// Snapshot ops are disabled here (`SNAPSHOTS_OFF`); the snapshot path has its own test
+    /// ([`harness_no_optimizer_snapshots`]).
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer_no_restarts() {
-        smoke("harness_no_optimizer_no_restarts", true, 0.0, OP_NUM).await;
+        smoke(
+            "harness_no_optimizer_no_restarts",
+            true,
+            0.0,
+            SNAPSHOTS_OFF,
+            OP_NUM,
+        )
+        .await;
     }
 
     /// Same configuration as [`harness_no_optimizer_no_restarts`], but with the optimizer
@@ -531,7 +652,7 @@ mod tests {
     async fn harness_no_restarts() {
         // op_num halved: optimizer churn makes this the slowest no-restart variant; trim it so
         // it isn't marked SLOW by nextest (coverage is recovered across many seeded CI runs).
-        smoke("harness_no_restarts", false, 0.0, OP_NUM / 2).await;
+        smoke("harness_no_restarts", false, 0.0, SNAPSHOTS_OFF, OP_NUM / 2).await;
     }
 
     /// Same configuration as [`harness_no_optimizer_no_restarts`], plus seeded mid-run
@@ -543,7 +664,7 @@ mod tests {
     /// seed the op stream differs from a no-restart run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer() {
-        smoke("harness_no_optimizer", true, 0.002, OP_NUM).await;
+        smoke("harness_no_optimizer", true, 0.002, SNAPSHOTS_OFF, OP_NUM).await;
     }
 
     /// Same configuration as [`harness_no_optimizer`], but with the optimizer enabled:
@@ -562,6 +683,29 @@ mod tests {
     async fn harness() {
         // op_num quartered: optimizer churn + restarts make this the slowest variant; trim it so
         // it isn't the suite's long pole (coverage is recovered across many seeded CI runs).
-        smoke("harness", false, 0.002, OP_NUM / 4).await;
+        smoke("harness", false, 0.002, SNAPSHOTS_OFF, OP_NUM / 4).await;
+    }
+
+    /// Snapshot-focused gate: snapshots enabled (`SNAPSHOTS_ON`) plus seeded restarts. Each
+    /// `CreateSnapshot` op spawns a `create_snapshot` that runs in the background, concurrently with
+    /// the ongoing workload; the loop reaps it on completion (panicking if it errored). The restarts
+    /// exercise the drain-before-close path (a restart must finish any in-flight snapshot before it
+    /// can close+reopen), and the end-of-run reload exercises drain-at-end. The implicit assertion
+    /// is that concurrent snapshotting neither errors nor corrupts the live collection — caught by
+    /// the ongoing verification ops, the per-restart checks, and the final reload.
+    ///
+    /// `CreateSnapshot` draws no rng, so (unlike `--restart`) snapshots don't perturb the op stream;
+    /// a fixed seed is fully reproducible.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness_no_optimizer_snapshots() {
+        // restart_probability 0.001: exercise drain-before-restart
+        smoke(
+            "harness_no_optimizer_snapshots",
+            true,
+            0.001,
+            SNAPSHOTS_ON,
+            OP_NUM,
+        )
+        .await;
     }
 }

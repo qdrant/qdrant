@@ -210,6 +210,13 @@ pub(super) enum Op {
         filter_num: Option<i64>,
         filter_url_prefix: Option<String>,
     },
+    /// Take a snapshot of the collection *in the background, concurrently with the ongoing workload*:
+    /// the run loop spawns `create_snapshot` on a task and keeps applying ops while it runs, then
+    /// discards the archive (no recovery). Exercises the snapshot-creation path under concurrent
+    /// writes — the check is that it succeeds and doesn't corrupt the live collection (the ongoing
+    /// verification ops + final reload catch that). Handled in the run loop (not `apply`) because it
+    /// spawns a task against shared collection state.
+    CreateSnapshot,
 }
 
 /// A single prefetch source for `QueryFusion`: a Nearest sub-query over one vector name, with its
@@ -264,7 +271,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 37;
+    const N: usize = 38;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -305,6 +312,7 @@ impl Swarm {
         "QueryFusion",
         "CountByUrlPrefix",
         "ScrollFilteredByUrlPrefix",
+        "CreateSnapshot",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -358,6 +366,9 @@ impl Swarm {
         5,  // QueryFusion
         4,  // CountByUrlPrefix
         4,  // ScrollFilteredByUrlPrefix
+        // Background snapshot: cheap to *start* (the loop just spawns it), but it does real IO on a
+        // blocking thread, so keep the weight modest.
+        2, // CreateSnapshot
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -367,6 +378,10 @@ impl Swarm {
     /// Indices kept disabled in every swarm config: known-broken ops (see `BASE`).
     const FORCE_OFF: [usize; 3] = [3, 22, 23]; // DeleteByFilter, CreateVectorName, DeleteVectorName
 
+    /// Index of the snapshot op (`CreateSnapshot`), masked off when `disable_snapshots` is set.
+    /// Must stay aligned with `NAMES`/`BASE`.
+    const SNAPSHOT_OPS: [usize; 1] = [37];
+
     /// Draw a per-run config: each non-forced op is included with probability 0.5 (keeping its
     /// base weight); omitted ops get weight 0.
     ///
@@ -375,7 +390,15 @@ impl Swarm {
     /// same name. They never draw `random_bool` either way (forced-off or forced-on), so the
     /// rng-draw count is identical regardless of the flag and a given seed reproduces the same op
     /// stream for the non-broken ops.
-    pub(super) fn random(rng: &mut impl Rng, enable_force_off: bool) -> Self {
+    ///
+    /// With `disable_snapshots`, the snapshot ops are forced to weight 0. The masking is applied
+    /// *after* the draw loop so each op (snapshots included) still draws its `random_bool` — the
+    /// rng-draw count is unchanged, so toggling the flag doesn't shift the other ops' swarm draws.
+    pub(super) fn random(
+        rng: &mut impl Rng,
+        enable_force_off: bool,
+        disable_snapshots: bool,
+    ) -> Self {
         let mut weights = Self::BASE;
         for (i, w) in weights.iter_mut().enumerate() {
             let forced_off = Self::FORCE_OFF.contains(&i);
@@ -387,6 +410,11 @@ impl Swarm {
                 (forced_off && !enable_force_off) || (!forced_on && !rng.random_bool(0.5));
             if disable {
                 *w = 0;
+            }
+        }
+        if disable_snapshots {
+            for i in Self::SNAPSHOT_OPS {
+                weights[i] = 0;
             }
         }
         Self { weights }
@@ -688,6 +716,7 @@ impl Op {
             }
             35 => Op::CountByUrlPrefix(random_url_prefix_probe(rng).to_string()),
             36 => Op::ScrollFilteredByUrlPrefix(random_url_prefix_probe(rng).to_string()),
+            37 => Op::CreateSnapshot,
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -733,6 +762,7 @@ impl Op {
             Op::RetrieveSelective { .. } => "RetrieveSelective",
             Op::ScrollPaged { .. } => "ScrollPaged",
             Op::QueryFusion { .. } => "QueryFusion",
+            Op::CreateSnapshot => "CreateSnapshot",
         }
     }
 }
