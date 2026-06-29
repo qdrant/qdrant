@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package qdrant;
+
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+// Shard-scoped raw I/O over on-disk collection storage.
+//
+// All requests are routed to a single shard directory
+// (`<storage>/collections/<collection>/<shard_id>`). Replicas of the same
+// shard on different peers are not binary-compatible (segment IDs, WAL
+// positions, optimizer state all diverge), so the caller is responsible for
+// targeting the peer that owns the desired replica.
+//
+// This service is intended for tooling that builds synchronization on top of
+// Qdrant (e.g. replica bootstrap) rather than typical user queries. It is
+// considered internal: the request/response shape may change between
+// releases.
+service StorageRead {
+  // List files in the shard.
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse) {}
+  // Check if a file exists in the shard.
+  rpc FileExists(FileExistsRequest) returns (FileExistsResponse) {}
+  // Get the length of a file in the shard.
+  rpc FileLength(FileLengthRequest) returns (FileLengthResponse) {}
+  // Maps to UniversalRead::read() — single range from a single file.
+  rpc ReadBytes(ReadBytesRequest) returns (ReadBytesResponse) {}
+  // Streaming variant of ReadBytes for large files, sends ~1MB chunks.
+  rpc ReadBytesStream(ReadBytesStreamRequest) returns (stream ReadBytesStreamResponse) {}
+  // Maps to UniversalRead::read_whole() — read an entire file.
+  rpc ReadWhole(ReadWholeRequest) returns (ReadWholeResponse) {}
+  // Maps to UniversalRead::read_batch() — multiple ranges from a single file.
+  rpc ReadBatch(ReadBatchRequest) returns (ReadBatchResponse) {}
+  // Maps to UniversalRead::read_multi() — ranges across multiple files.
+  rpc ReadMulti(ReadMultiRequest) returns (ReadMultiResponse) {}
+}
+
+message ListFilesRequest {
+  // Separated from `path` so that existing collection name validation can be applied at the proto level.
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string prefix_path = 3;
+}
+
+message FileExistsRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+}
+
+message FileExistsResponse {
+  bool exists = 1;
+}
+
+message ListFilesResponse {
+  repeated string paths = 1;
+}
+
+message FileLengthRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+}
+
+message FileLengthResponse {
+  uint64 length = 1;
+}
+
+message ReadBytesRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+  uint64 byte_offset = 4;
+  uint64 length = 5;
+}
+
+message ReadBytesResponse {
+  bytes data = 1;
+}
+
+message ReadBytesStreamRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+  uint64 byte_offset = 4;
+  uint64 length = 5;
+}
+
+message ReadBytesStreamResponse {
+  bytes data = 1;
+}
+
+message ReadWholeRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+}
+
+message ReadWholeResponse {
+  bytes data = 1;
+}
+
+// ReadBatch: multiple ranges from a single file (maps to UniversalRead::read_batch).
+message ReadBatchRange {
+  uint64 byte_offset = 1;
+  uint64 length = 2;
+}
+
+message ReadBatchRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+  repeated ReadBatchRange ranges = 4;
+}
+
+message ReadBatchResponse {
+  repeated bytes data = 1;
+}
+
+// ReadMulti: ranges across multiple files (maps to UniversalRead::read_multi).
+message ReadMultiEntry {
+  string path = 1;
+  uint64 byte_offset = 2;
+  uint64 length = 3;
+}
+
+message ReadMultiRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  repeated ReadMultiEntry reads = 3;
+}
+
+message ReadMultiResponse {
+  repeated bytes data = 1;
+}

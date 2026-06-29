@@ -8460,6 +8460,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "uio-client"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "fs-err",
+ "futures",
+ "prost 0.14.4",
+ "tokio",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
 name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
