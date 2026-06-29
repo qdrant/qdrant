@@ -6,7 +6,7 @@ use std::ops::Bound;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 use gridstore::Blob;
 
 use super::super::numeric_index_read::NumericIndexRead;
@@ -36,6 +36,23 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         self.inner.check_values_any(idx, check_fn, hw_counter)
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&T) -> bool,
+        M: FnMut(U, bool),
+    {
+        self.inner
+            .for_each_matching_value(items, hw_counter, check_fn, on_match)
     }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {

@@ -2,6 +2,7 @@ use std::ops::Bound;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 
 use super::Encodable;
 use crate::common::operation_error::OperationResult;
@@ -33,6 +34,26 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
     ) -> bool;
+
+    /// Batched counterpart of [`Self::check_values_any`].
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        mut on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&T) -> bool,
+        M: FnMut(U, bool),
+    {
+        for (tag, idx) in items {
+            on_match(tag, self.check_values_any(idx, &check_fn, hw_counter));
+        }
+        Ok(())
+    }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
 
