@@ -240,6 +240,7 @@ fn sampling_broad_filter_walks_facet_index() {
 /// needs N well above the sampling budget; an `f = 9%` filter lands in the
 /// [√(1000/N), 10%) window with margin (boundary ≈ 7.1% here). Verified
 /// empirically: the crossover first appears around N = 150k.
+#[cfg(not(windows))]
 const N_FILTER_ITER: usize = 200_000;
 
 /// sampling → filter iter — the plan only the bench otherwise reaches. `seq <
