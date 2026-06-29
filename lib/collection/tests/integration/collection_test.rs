@@ -26,6 +26,7 @@ use segment::types::{
     PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
 };
 use serde_json::Map;
+use shard::query::{SampleInternal, ScoringQuery, ShardQueryRequest};
 use tempfile::Builder;
 
 use crate::common::{N_SHARDS, load_local_collection, simple_collection_fixture};
@@ -953,4 +954,72 @@ async fn test_collection_local_load_initializing_not_stuck() {
             assert_eq!(replica_state, &ReplicaState::Active);
         }
     }
+}
+
+/// Regression test for an unauthenticated allocator-abort (SIGABRT) in
+/// `LocalShard::scroll_randomly`. The random-sample path pre-allocated
+/// `HashSet::with_capacity(limit)` directly from the client-supplied `limit`,
+/// which is unbounded by default. A huge `limit` made the up-front allocation
+/// fail and abort the whole process. The pre-allocation is now bounded by the
+/// number of points actually available, so the query returns those points.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_random_sample_huge_limit_does_not_abort() {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+
+    // Single shard: avoids cross-shard undersampling, so the raw `limit` reaches
+    // `scroll_randomly` unchanged.
+    let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+    let batch = BatchPersisted {
+        ids: vec![0, 1, 2].into_iter().map(u64::into).collect_vec(),
+        vectors: BatchVectorStructPersisted::Single(vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.0, 1.0, 0.0],
+        ]),
+        payloads: None,
+    };
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(batch),
+    ));
+    collection
+        .update_from_client_simple(
+            insert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    // Unbounded client limit: before the fix this aborted the process in
+    // `HashSet::with_capacity(limit)`.
+    let request = ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Sample(SampleInternal::Random)),
+        filter: None,
+        score_threshold: None,
+        limit: 1_000_000_000_000,
+        offset: 0,
+        params: None,
+        with_vector: false.into(),
+        with_payload: false.into(),
+    };
+
+    let result = collection
+        .query(
+            request,
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    // Bounded by the points actually available; the request completes instead of
+    // aborting.
+    assert_eq!(result.len(), 3);
 }
