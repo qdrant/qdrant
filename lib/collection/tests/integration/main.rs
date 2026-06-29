@@ -8,3 +8,4 @@ mod lookup_test;
 mod multi_vec_test;
 mod pagination_test;
 mod snapshot_recovery_test;
+mod wal_less_snapshot_clocks_test;

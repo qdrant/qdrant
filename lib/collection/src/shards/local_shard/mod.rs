@@ -1537,6 +1537,32 @@ impl LocalShardClocks {
         Ok(())
     }
 
+    /// Put the given clock maps into an archive.
+    ///
+    /// Unlike [`Self::archive_data`], which copies the persisted clock files from disk, this
+    /// serializes the provided clock maps directly into the archive. It is used for snapshots that
+    /// exclude the WAL (such as shard transfer): the persisted clocks track the WAL write position
+    /// and may be ahead of the snapshotted segment data, and without a WAL the recovered shard
+    /// cannot replay operations to catch up. The caller is responsible for providing clock maps that
+    /// the snapshot's segment data is guaranteed to include.
+    pub fn archive_data_from(
+        newest_clocks: &ClockMap,
+        oldest_clocks: &ClockMap,
+        tar: &tar_ext::BuilderExt,
+    ) -> CollectionResult<()> {
+        let newest_clocks_data = serde_json::to_vec(newest_clocks).map_err(|err| {
+            CollectionError::service_error(format!("Failed to serialize newest clock map: {err}"))
+        })?;
+        tar.blocking_append_data(&newest_clocks_data, Path::new(NEWEST_CLOCKS_PATH))?;
+
+        let oldest_clocks_data = serde_json::to_vec(oldest_clocks).map_err(|err| {
+            CollectionError::service_error(format!("Failed to serialize oldest clock map: {err}"))
+        })?;
+        tar.blocking_append_data(&oldest_clocks_data, Path::new(OLDEST_CLOCKS_PATH))?;
+
+        Ok(())
+    }
+
     fn newest_clocks_path(shard_path: &Path) -> PathBuf {
         shard::files::newest_clocks_path(shard_path)
     }
