@@ -49,6 +49,7 @@ fn test_config() -> EdgeConfig {
         quantization_config: None,
         optimizers: Default::default(),
         wal_options: None,
+        max_search_threads: None,
     }
 }
 

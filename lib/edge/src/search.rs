@@ -44,8 +44,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             return Ok(vec![]);
         };
 
-        let segments = &self.segments;
-
         let CoreSearchRequest {
             query,
             filter,
@@ -62,9 +60,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let with_payload = WithPayload::from(with_payload.unwrap_or_default());
         let with_vector = with_vector.unwrap_or_default();
 
-        let mut points_by_segment = Vec::with_capacity(segments.len());
-
-        for segment in segments {
+        // Search every segment in parallel on the shard's search pool. Each task derives its own
+        // per-segment query context from the shared `context`.
+        let points_by_segment = self.par_map_segments(|segment| {
             let batched_points = segment.read_segment().search_batch(
                 &vector_name,
                 &[&query_vector],
@@ -82,8 +80,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 .try_into()
                 .expect("single batched search result");
 
-            points_by_segment.push(points);
-        }
+            Ok(points)
+        })?;
 
         let mut aggregator = BatchResultAggregator::new([offset + limit]);
         aggregator.update_point_versions(points_by_segment.iter().flatten());

@@ -45,6 +45,12 @@ pub struct EdgeConfig {
     /// where the default segment size is too large.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wal_options: Option<WalOptions>,
+    /// Number of threads in the shard's search thread pool. The pool executes per-segment reads
+    /// (search, scroll, count, facet, ...) in parallel and loads segments in parallel. `None` (the
+    /// default) derives the count from the number of CPUs, matching the core search runtime — see
+    /// [`EdgeConfig::search_thread_count`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_search_threads: Option<usize>,
 }
 
 fn default_on_disk_payload() -> bool {
@@ -61,6 +67,7 @@ impl Default for EdgeConfig {
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
             wal_options: None,
+            max_search_threads: None,
         }
     }
 }
@@ -123,7 +130,15 @@ impl EdgeConfig {
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
             wal_options: None,
+            max_search_threads: None,
         }
+    }
+
+    /// Resolve the configured [`max_search_threads`](Self::max_search_threads) into a concrete
+    /// thread count. `None` derives the count from the number of CPUs, matching the core search
+    /// runtime (`common::defaults::search_thread_count`).
+    pub fn search_thread_count(&self) -> usize {
+        common::defaults::search_thread_count(self.max_search_threads.unwrap_or(0))
     }
 
     /// Check compatibility with a segment config (e.g. loaded segment).

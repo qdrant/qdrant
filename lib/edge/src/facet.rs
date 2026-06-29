@@ -22,7 +22,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             exact,
         } = request;
 
-        let hw_counter = HwMeasurementAcc::disposable_edge().get_counter_cell();
+        let hw_acc = HwMeasurementAcc::disposable_edge();
         let is_stopped = AtomicBool::new(false);
 
         let facet_params = FacetParams {
@@ -32,14 +32,15 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             exact,
         };
 
-        // Collect and merge facet results from all segments
-        let mut merged_counts = HashMap::new();
-        for segment in &self.segments {
-            let segment_result =
-                segment
-                    .read_segment()
-                    .facet(&facet_params, &is_stopped, &hw_counter)?;
+        // Facet every segment in parallel, then merge the per-segment counts sequentially.
+        let per_segment = self.par_map_segments(|segment| {
+            segment
+                .read_segment()
+                .facet(&facet_params, &is_stopped, &hw_acc.get_counter_cell())
+        })?;
 
+        let mut merged_counts = HashMap::new();
+        for segment_result in per_segment {
             for (value, count) in segment_result {
                 *merged_counts.entry(value).or_insert(0) += count;
             }

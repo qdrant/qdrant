@@ -320,17 +320,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         };
 
         let ctx = Arc::new(ctx);
-        let hw_counter = hw_measurement_acc.get_counter_cell();
 
-        let mut rescored_results = Vec::new();
-
-        for segment in &self.segments {
-            let rescored_result = segment
+        let rescored_results = self.par_map_segments(|segment| {
+            segment
                 .read_segment()
-                .rescore_with_formula(ctx.clone(), &hw_counter)?;
-
-            rescored_results.push(rescored_result);
-        }
+                .rescore_with_formula(ctx.clone(), &hw_measurement_acc.get_counter_cell())
+        })?;
 
         // use aggregator with only one "batch"
         let mut aggregator = BatchResultAggregator::new(std::iter::once(limit));

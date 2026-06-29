@@ -15,6 +15,7 @@
 mod enumerate;
 mod holder;
 mod lifecycle;
+mod load;
 mod refresh;
 #[cfg(test)]
 mod tests;
@@ -50,6 +51,10 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// Discovers the current segment directories. Injected because segment discovery is
     /// backend-specific (see [`SegmentEnumerator`]) until an on-disk manifest exists.
     enumerator: Box<dyn SegmentEnumerator>,
+    /// Fixed-size pool used to open segments in parallel on open/refresh and to run per-segment
+    /// reads in parallel. A follower has no `edge_config.json`, so it is always sized from the
+    /// CPU-derived default (see [`EdgeConfig::search_thread_count`]).
+    search_pool: Arc<rayon::ThreadPool>,
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
@@ -65,7 +70,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
 /// The follower's segments are homogeneous, so its handle is the concrete
 /// `Arc<RwLock<ReadOnlySegment<S>>>` — the read path is fully monomorphized, no dynamic dispatch.
-impl<S: UniversalReadExt + 'static> EdgeShardRead for ReadOnlyEdgeShard<S> {
+impl<S: UniversalReadExt + 'static> EdgeShardRead for ReadOnlyEdgeShard<S>
+where
+    S::Fs: Send + Sync,
+{
     type Handle = Arc<RwLock<ReadOnlySegment<S>>>;
 
     fn read_segments(&self) -> Vec<Arc<RwLock<ReadOnlySegment<S>>>> {
@@ -74,6 +82,10 @@ impl<S: UniversalReadExt + 'static> EdgeShardRead for ReadOnlyEdgeShard<S> {
 
     fn config_snapshot(&self) -> Arc<EdgeConfig> {
         self.config.read().clone()
+    }
+
+    fn search_pool(&self) -> Arc<rayon::ThreadPool> {
+        self.search_pool.clone()
     }
 
     fn path(&self) -> &Path {

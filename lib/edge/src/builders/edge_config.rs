@@ -27,6 +27,7 @@ pub struct EdgeConfigBuilder {
     quantization_config: Option<QuantizationConfig>,
     optimizers: Option<EdgeOptimizersConfig>,
     wal_options: Option<WalOptions>,
+    max_search_threads: Option<usize>,
 }
 
 impl EdgeConfigBuilder {
@@ -92,6 +93,13 @@ impl EdgeConfigBuilder {
         self
     }
 
+    /// Number of threads in the shard's search thread pool. `0` derives the count from the number
+    /// of CPUs (matching the core search runtime). See [`EdgeConfig::max_search_threads`].
+    pub fn max_search_threads(mut self, max_search_threads: usize) -> Self {
+        self.max_search_threads = Some(max_search_threads);
+        self
+    }
+
     pub fn build(self) -> EdgeConfig {
         // Exhaustively destructure Self and construct EdgeConfig: adding a
         // field to either type forces a compile error here.
@@ -103,6 +111,7 @@ impl EdgeConfigBuilder {
             quantization_config,
             optimizers,
             wal_options,
+            max_search_threads,
         } = self;
         let defaults = EdgeConfig::default();
         EdgeConfig {
@@ -113,6 +122,7 @@ impl EdgeConfigBuilder {
             quantization_config: quantization_config.or(defaults.quantization_config),
             optimizers: optimizers.unwrap_or(defaults.optimizers),
             wal_options: wal_options.or(defaults.wal_options),
+            max_search_threads: max_search_threads.or(defaults.max_search_threads),
         }
     }
 }

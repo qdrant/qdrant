@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -9,6 +10,7 @@ use uuid::Uuid;
 
 use crate::EdgeConfig;
 use crate::read_only::ReadOnlyEdgeShard;
+use crate::read_only::load::load_segments_parallel;
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Refresh the follower to the leader's current on-disk state.
@@ -17,19 +19,36 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// owns the cadence (a timer, an explicit call after a known leader flush, or an FS watch).
     /// Eventually consistent — a point becomes visible once the leader has flushed it to the
     /// segment files and a subsequent `refresh` has run.
-    pub fn refresh(&self) -> OperationResult<()> {
+    pub fn refresh(&self) -> OperationResult<()>
+    where
+        S::Fs: Send + Sync + Clone + 'static,
+    {
         let hw_counter = HardwareCounterCell::disposable();
         self.refresh_with(&hw_counter)
     }
 
     /// [`refresh`](Self::refresh) with a caller-supplied hardware counter.
-    pub fn refresh_with(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    pub fn refresh_with(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    where
+        S::Fs: Send + Sync + Clone + 'static,
+    {
         // 1. Snapshot the current on-disk segment set (backend-specific; see `SegmentEnumerator`).
         let on_disk = self.enumerator.list_segments()?;
 
-        // 2. Under the holder lock, add newly-appeared segments and drop removed ones, then collect
-        //    the survivors to live_reload *after* releasing the lock — so reads only block during
-        //    the cheap add/drop, not during the reload.
+        // 2. Load newly-appeared segments in parallel (outside the holder lock), then under the lock
+        //    add them and drop removed ones, and collect the survivors to live_reload *after*
+        //    releasing the lock — so reads only block during the cheap add/drop, not during load
+        //    or reload.
+        let new_segments: Vec<(Uuid, PathBuf)> = {
+            let holder = self.segments.read();
+            on_disk
+                .iter()
+                .filter(|(uuid, _)| !holder.contains(uuid))
+                .map(|(uuid, segment_path)| (*uuid, segment_path.clone()))
+                .collect()
+        };
+        let loaded = load_segments_parallel::<S>(&self.search_pool, &self.fs, new_segments)?;
+
         let survivors: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)> = {
             let mut holder = self.segments.write();
 
@@ -42,13 +61,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
             // Add before drop: when an optimization migrates points from old to new segments, both
             // must be momentarily visible so migrated points never disappear.
-            for (uuid, segment_path) in &on_disk {
-                if holder.contains(uuid) {
-                    continue;
-                }
-                let segment = ReadOnlySegment::<S>::open(&self.fs, segment_path, *uuid, None)?;
+            for (uuid, segment) in loaded {
                 let appendable = segment.segment_config.is_appendable();
-                holder.insert(*uuid, appendable, Arc::new(RwLock::new(segment)));
+                holder.insert(uuid, appendable, Arc::new(RwLock::new(segment)));
             }
 
             holder.remove_missing(&on_disk);

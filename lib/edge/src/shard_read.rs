@@ -36,6 +36,10 @@ impl EdgeShardRead for EdgeShard {
         Arc::new(self.config.read().clone())
     }
 
+    fn search_pool(&self) -> Arc<rayon::ThreadPool> {
+        self.search_pool.clone()
+    }
+
     fn path(&self) -> &Path {
         &self.path
     }

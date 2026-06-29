@@ -137,22 +137,24 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
-        let hw_counter = hw_measurement_acc.get_counter_cell();
+        let per_segment = self.par_map_segments(|segment| {
+            segment.read_segment().read_filtered(
+                offset,
+                Some(limit),
+                filter,
+                &AtomicBool::new(false),
+                &hw_measurement_acc.get_counter_cell(),
+                DeferredBehavior::VisibleOnly,
+            )
+        })?;
 
-        let point_ids: Vec<_> = self
-            .segments
-            .iter()
-            .map(|segment| {
-                segment.read_segment().read_filtered(
-                    offset,
-                    Some(limit),
-                    filter,
-                    &AtomicBool::new(false),
-                    &hw_counter,
-                    DeferredBehavior::VisibleOnly,
-                )
-            })
-            .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
+        let point_ids: Vec<_> = per_segment
+            .into_iter()
+            .flatten()
+            .sorted()
+            .dedup()
+            .take(limit)
+            .collect();
 
         let mut points = retrieve_over(
             self.segment_arcs(),
@@ -181,22 +183,16 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         order_by: &OrderBy,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
-        let hw_counter = hw_measurement_acc.get_counter_cell();
-
-        let read_results: Vec<_> = self
-            .segments
-            .iter()
-            .map(|segment| {
-                segment.read_segment().read_ordered_filtered(
-                    Some(limit),
-                    filter,
-                    order_by,
-                    &AtomicBool::new(false),
-                    &hw_counter,
-                    DeferredBehavior::VisibleOnly,
-                )
-            })
-            .collect::<Result<_, _>>()?;
+        let read_results = self.par_map_segments(|segment| {
+            segment.read_segment().read_ordered_filtered(
+                Some(limit),
+                filter,
+                order_by,
+                &AtomicBool::new(false),
+                &hw_measurement_acc.get_counter_cell(),
+                DeferredBehavior::VisibleOnly,
+            )
+        })?;
 
         let (order_values, point_ids): (Vec<_>, Vec<_>) = read_results
             .into_iter()
@@ -239,25 +235,21 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
-        let hw_counter = hw_measurement_acc.get_counter_cell();
+        let per_segment = self.par_map_segments(|segment| {
+            let segment = segment.read_segment();
 
-        let (point_count, mut point_ids): (Vec<_>, Vec<_>) = self
-            .segments
-            .iter()
-            .map(|segment| {
-                let segment = segment.read_segment();
+            let point_count = segment.available_point_count_without_deferred();
+            let point_ids = segment.read_random_filtered(
+                limit,
+                filter,
+                &AtomicBool::new(false),
+                &hw_measurement_acc.get_counter_cell(),
+            )?;
 
-                let point_count = segment.available_point_count_without_deferred();
-                let point_ids = segment.read_random_filtered(
-                    limit,
-                    filter,
-                    &AtomicBool::new(false),
-                    &hw_counter,
-                )?;
+            OperationResult::Ok((point_count, point_ids))
+        })?;
 
-                OperationResult::Ok((point_count, point_ids))
-            })
-            .process_results(|iter| iter.unzip())?;
+        let (point_count, mut point_ids): (Vec<_>, Vec<_>) = per_segment.into_iter().unzip();
 
         // Shortcut if all segments are empty
         if point_count.iter().all(|&count| count == 0) {
