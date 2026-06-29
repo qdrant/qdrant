@@ -2152,6 +2152,7 @@ dependencies = [
  "ordered-float 5.3.0",
  "parking_lot",
  "rand 0.10.1",
+ "rayon",
  "segment",
  "serde",
  "serde_json",
