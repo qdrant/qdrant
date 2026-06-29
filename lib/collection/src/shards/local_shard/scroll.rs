@@ -420,6 +420,10 @@ impl LocalShard {
         if availability.iter().all(|&count| count == 0) {
             return Ok(Vec::new());
         }
+        // Cap HashSet capacity at filter-aware candidates in `segments_reads` (not segment sizes).
+        // Unbounded client `limit` would otherwise abort via `handle_alloc_error`.
+        let candidate_count: usize = segments_reads.iter().map(|points| points.len()).sum();
+
         // Select points in a weighted fashion from each segment, depending on how many points each segment has.
         let distribution = WeightedIndex::new(availability).map_err(|err| {
             CollectionError::service_error(format!(
@@ -428,7 +432,7 @@ impl LocalShard {
         })?;
 
         let mut rng = rand::make_rng::<StdRng>();
-        let mut random_points = HashSet::with_capacity(limit);
+        let mut random_points = HashSet::with_capacity(limit.min(candidate_count));
 
         // Randomly sample points in two stages
         //
