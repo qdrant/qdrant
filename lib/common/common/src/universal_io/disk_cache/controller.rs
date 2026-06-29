@@ -306,42 +306,48 @@ impl BlocksLifecycle {
     }
 }
 
+/// Per-request accumulator for evicted blocks.
+///
+/// quick_cache 0.7 finalizes evictions when this type is dropped, after the
+/// shard lock is released.
+#[derive(Default)]
+pub(super) struct BlocksRequestState {
+    evicted: Option<BlockOffset>,
+    unused_blocks: Option<Arc<Mutex<Vec<BlockOffset>>>>,
+    blocks_available: Option<Arc<Condvar>>,
+}
+
+impl Drop for BlocksRequestState {
+    fn drop(&mut self) {
+        if let Some(offset) = self.evicted.take()
+            && let Some(unused_blocks) = &self.unused_blocks
+        {
+            let mut pool = unused_blocks.lock();
+            pool.push(offset);
+            if let Some(blocks_available) = &self.blocks_available {
+                blocks_available.notify_one();
+            }
+        }
+    }
+}
+
 impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
     // With `UnitWeighter` every item weighs 1, so inserting one item
     // evicts at most one item. `Option` is sufficient.
-    type RequestState = Option<BlockOffset>;
-
-    fn begin_request(&self) -> Self::RequestState {
-        None
-    }
+    type RequestState = BlocksRequestState;
 
     fn on_evict(&self, state: &mut Self::RequestState, _key: BlockId, val: BlockOffset) {
         debug_assert!(
-            state.is_none(),
+            state.evicted.is_none(),
             "multiple evictions per request with UnitWeighter"
         );
-        *state = Some(val);
+        state.evicted = Some(val);
+        state.unused_blocks = Some(self.unused_blocks.clone());
+        state.blocks_available = Some(self.blocks_available.clone());
     }
 
     fn is_pinned(&self, _key: &BlockId, _val: &BlockOffset) -> bool {
         // TODO: pin blocks that are being read
         false
-    }
-
-    fn before_evict(
-        &self,
-        _state: &mut Self::RequestState,
-        _key: &BlockId,
-        _val: &mut BlockOffset,
-    ) {
-        // do nothing
-    }
-
-    fn end_request(&self, state: Self::RequestState) {
-        if let Some(offset) = state {
-            let mut pool = self.unused_blocks.lock();
-            pool.push(offset);
-            self.blocks_available.notify_one();
-        }
     }
 }
