@@ -3,6 +3,7 @@ use std::cmp::max;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use common::bitvec::{BitVec, DeletedBitVec};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
@@ -10,6 +11,7 @@ use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
     self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
+    UserData,
 };
 use zerocopy::IntoBytes;
 
@@ -268,14 +270,15 @@ where
         Ok(Some(iter))
     }
 
-    /// Batched counterpart of [`values_iter`](Self::values_iter).
+    /// Batched counterpart of [`Self::values_iter`].
     ///
-    /// Non-existing points, or points without values will be skipped.
-    pub fn values_iter_batch(
+    /// Calls `f` exactly once per input item, even for deleted/missing points.
+    pub fn values_iter_batch<U: UserData>(
         &self,
-        points: impl Iterator<Item = PointOffsetType>,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        deleted: &DeletedBitVec,
         hw_counter: ConditionedCounter,
-        mut callback: impl FnMut(PointOffsetType, ValuesIter<'_, T>),
+        mut f: impl FnMut(U, ValuesIter<'_, T>),
     ) -> OperationResult<()> {
         let hw_cell = hw_counter.payload_index_io_read_counter();
 
@@ -284,9 +287,10 @@ where
         let file_len = self.store.len::<u8>()?;
 
         // Batch 1: Resolve each values' range and count
-        let mut value_reads = Vec::with_capacity(points.size_hint().0.min(10_000));
-        let range_reads = points.filter_map(|point_id| {
-            if point_id >= points_count {
+        let mut value_reads = Vec::with_capacity(items.size_hint().0.min(10_000));
+        let range_reads = items.filter_map(|(user_data, point_id)| {
+            if point_id >= points_count || !deleted.is_active(point_id) {
+                f(user_data, ValuesIter::empty());
                 return None;
             }
 
@@ -295,10 +299,10 @@ where
             // Fetch 2 `MmapRange` entries per id, so we can get range start..end.
             // In case of being the last entry, we will do start..file_len
             let length = if point_id + 1 < points_count { 2 } else { 1 };
-            Some((point_id, ReadRange::new(byte_offset, length)))
+            Some((user_data, ReadRange::new(byte_offset, length)))
         });
         self.store
-            .read_batch::<Random, MmapRange, _>(range_reads, |point_id, ranges| {
+            .read_batch::<Random, MmapRange, _>(range_reads, |user_data, ranges| {
                 let MmapRange { start, count } = ranges[0];
 
                 // Use next point's start as end offset for this one.
@@ -309,19 +313,23 @@ where
                 // plus the length of the values.
                 hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + length as usize);
 
-                if count > 0 {
-                    value_reads.push((point_id, count as usize, ReadRange::new(start, length)));
-                }
+                // Note: if `count == 0`, we'd better call `f` right away, but
+                // `f` is already mut-borrowed in the iterator above. So,
+                // instead we schedule redundant 0-length read. These 0-length
+                // reads are unlikely to happen in hot loops since empty points
+                // usually marked in `deleted`.
+                value_reads.push((user_data, count as usize, ReadRange::new(start, length)));
+
                 Ok(())
             })?;
 
         // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
         let value_reads = value_reads
             .into_iter()
-            .map(|(point_id, count, range)| ((point_id, count), range));
+            .map(|(user_data, count, range)| ((user_data, count), range));
         self.store
-            .read_batch::<Random, u8, _>(value_reads, |(point_id, count), bytes| {
-                callback(point_id, ValuesIter::new(Cow::Borrowed(bytes), count));
+            .read_batch::<Random, u8, _>(value_reads, |(user_data, count), bytes| {
+                f(user_data, ValuesIter::new(Cow::Borrowed(bytes), count));
                 Ok(())
             })?;
 
@@ -400,18 +408,22 @@ where
 
     /// Read every point's values in batches, invoking `f` once per point that
     /// has at least one value.
-    ///
-    /// The callback may be invoked in any order, since batched reads can
-    /// complete out of order. Points without values are not reported.
     pub fn for_all_points_values(
         &self,
-        callback: impl FnMut(PointOffsetType, ValuesIter<'_, T>),
+        mut f: impl FnMut(PointOffsetType, ValuesIter<'_, T>),
     ) -> OperationResult<()> {
+        // Report deleted points with values too.
+        let blank_bitmask = DeletedBitVec::new(BitVec::repeat(false, self.len()));
         // TODO: Propagate counter upwards
         self.values_iter_batch(
-            0..self.len() as PointOffsetType,
+            (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
+            &blank_bitmask,
             ConditionedCounter::never(),
-            callback,
+            |point_id, values| {
+                if values.count > 0 {
+                    f(point_id, values);
+                }
+            },
         )
     }
 }
@@ -424,6 +436,15 @@ pub struct ValuesIter<'a, T: ?Sized> {
 }
 
 impl<'a, T: StoredValue + ?Sized + 'a> ValuesIter<'a, T> {
+    fn empty() -> Self {
+        Self {
+            bytes: Cow::Borrowed(&[]),
+            start: 0,
+            count: 0,
+            _type: std::marker::PhantomData,
+        }
+    }
+
     fn new(bytes: Cow<'a, [u8]>, count: usize) -> Self {
         Self {
             bytes,
@@ -548,6 +569,42 @@ mod tests {
                 .map(Cow::into_owned)
                 .collect_vec();
             assert_eq!(&v, values, "roundtrip check");
+        }
+
+        // `values_iter_batch` check
+        {
+            // The callback should be called with an empty iterator even in
+            // these edge cases:
+            // 1. Point deleted via bitvec.
+            let deleted_id = values.iter().position(|vals| !vals.is_empty()).unwrap();
+            // 2. Non-deleted point with no values. (just assert that it exists in the input)
+            let _empty_id = values.iter().position(|vals| vals.is_empty()).unwrap();
+            // 3. Large ID. (out-of-range)
+            let large_id = values.len() + 100;
+
+            let mut deleted = DeletedBitVec::new(BitVec::repeat(false, values.len()));
+            deleted.mark_deleted(deleted_id as PointOffsetType);
+
+            // Run `values_iter_batch` and store its results into
+            let mut reported = Vec::new();
+            ppv.values_iter_batch(
+                (0..values.len()).chain([large_id]).map(|id| (id, id as _)),
+                &deleted,
+                ConditionedCounter::never(),
+                |id, vals| reported.push((id, vals.map(Cow::into_owned).collect_vec())),
+            )
+            .unwrap();
+            reported.sort_unstable_by_key(|&(id, _)| id);
+
+            // Compare with expected
+            let mut expected = Vec::new();
+            for (id, vals) in values.iter().enumerate() {
+                let vals = vals.iter().map(|v| v.borrow().to_owned()).collect_vec();
+                expected.push((id, vals));
+            }
+            expected[deleted_id].1.clear();
+            expected.push((large_id, vec![]));
+            assert_eq!(reported, expected);
         }
     }
 }
