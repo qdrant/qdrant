@@ -15,7 +15,7 @@ use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
-    UniversalRead, UniversalReadFs, read_json_via,
+    UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -282,6 +282,28 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         } else {
             Ok(false)
         }
+    }
+
+    /// Batched counterpart of [`Self::check_values_any`].
+    pub fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        mut on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&GeoPoint) -> bool,
+        M: FnMut(U, bool),
+    {
+        self.storage.point_to_values.values_iter_batch(
+            items,
+            &self.storage.deleted,
+            ConditionedCounter::always(hw_counter),
+            |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
+        )
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
