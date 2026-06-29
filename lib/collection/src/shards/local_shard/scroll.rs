@@ -420,15 +420,8 @@ impl LocalShard {
         if availability.iter().all(|&count| count == 0) {
             return Ok(Vec::new());
         }
-        // The random sample can only ever contain the candidate points actually
-        // read into `segments_reads` (the loop below pops/iterates exclusively
-        // from it), so bound the pre-allocation by that filter-aware candidate
-        // count rather than the raw, filter-unaware segment sizes. `limit` is a
-        // client-controlled request field that is unbounded by default
-        // (`StrictModeConfig::max_query_limit` is `None` unless an operator sets
-        // it), so a plain `HashSet::with_capacity(limit)` would otherwise reserve
-        // an enormous buffer and abort the process (`handle_alloc_error`) on a
-        // single request.
+        // Cap HashSet capacity at filter-aware candidates in `segments_reads` (not segment sizes).
+        // Unbounded client `limit` would otherwise abort via `handle_alloc_error`.
         let candidate_count: usize = segments_reads.iter().map(|points| points.len()).sum();
 
         // Select points in a weighted fashion from each segment, depending on how many points each segment has.
