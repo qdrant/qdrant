@@ -67,7 +67,7 @@ use edge::{
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
-use io_bridge_object_store::{AsyncRead, BlobFile};
+use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
 
@@ -514,9 +514,10 @@ fn run_search<S: EdgeShardRead>(shard: &S, args: &SearchArgs) -> Result<()> {
 
 /// Open the read-only shard over backend `A` and dispatch the requested command.
 ///
-/// Generic over the object-storage backend handle `A` (e.g. `Arc<AmazonS3>` or
-/// `Arc<GoogleCloudStorage>`) so the whole read path stays monomorphic per
-/// backend. `remote_config` is that backend's connection config.
+/// Generic over the object-storage backend handle `A` (e.g.
+/// `ObjectStoreSource<AmazonS3>` or `ObjectStoreSource<GoogleCloudStorage>`) so
+/// the whole read path stays monomorphic per backend. `remote_config` is that
+/// backend's connection config.
 fn run<A>(cli: &Cli, prefix: &Path, cache_dir: &Path, remote_config: A::Config) -> Result<()>
 where
     A: AsyncRead + Clone,
@@ -557,9 +558,14 @@ fn main() -> Result<()> {
     );
 
     match conn.backend {
-        Backend::Aws => run::<Arc<AmazonS3>>(&cli, &prefix, &cache_dir, build_aws_config(conn)?),
-        Backend::Gcs => {
-            run::<Arc<GoogleCloudStorage>>(&cli, &prefix, &cache_dir, build_gcs_config(conn))
+        Backend::Aws => {
+            run::<ObjectStoreSource<AmazonS3>>(&cli, &prefix, &cache_dir, build_aws_config(conn)?)
         }
+        Backend::Gcs => run::<ObjectStoreSource<GoogleCloudStorage>>(
+            &cli,
+            &prefix,
+            &cache_dir,
+            build_gcs_config(conn),
+        ),
     }
 }

@@ -3768,7 +3768,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "io_bridge_object_store"
+name = "io_bridge"
 version = "0.0.0"
 dependencies = [
  "ahash",
@@ -3776,10 +3776,32 @@ dependencies = [
  "bytes",
  "common",
  "futures",
- "object_store",
  "slab",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "io_bridge_object_store"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "common",
+ "futures",
+ "io_bridge",
+ "object_store",
+]
+
+[[package]]
+name = "io_bridge_uio"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "common",
+ "futures",
+ "io_bridge",
+ "tokio",
+ "uio-client",
 ]
 
 [[package]]
@@ -8469,6 +8491,7 @@ dependencies = [
 name = "uio-client"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "common",
  "fs-err",
  "futures",
