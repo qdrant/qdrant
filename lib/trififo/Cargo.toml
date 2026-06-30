@@ -26,7 +26,7 @@ rayon = { workspace = true }
 static_assertions = { version = "1.1.0" }
 
 # Compare against these caches
-quick_cache = "0.6"
+quick_cache = "0.7"
 schnellru = "0.2"
 foyer = "0.22"
 
