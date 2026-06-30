@@ -36,8 +36,6 @@ pub struct Metadata {
     pub bits: TQBits,
     pub mode: TQMode,
     pub error_correction: Option<ErrorCorrectionMetadata>,
-    /// Rotation applied when encoding. Defaults to [`TQRotation::Padded`] so
-    /// metadata predating this field loads unchanged.
     #[serde(default = "default_rotation")]
     pub rotation: TQRotation,
 }

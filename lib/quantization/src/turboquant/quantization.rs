@@ -12,8 +12,6 @@ use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode, TQRo
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
-    /// Spans `padded_dim` coordinates for [`TQRotation::Padded`] and the
-    /// original `dim` for [`TQRotation::Unpadded`].
     rotation: HadamardRotation,
     pub(super) bits: TQBits,
     pub(super) mode: TQMode,
