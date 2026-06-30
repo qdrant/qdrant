@@ -73,11 +73,15 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
         self.offsets[idx as usize]
     }
 
-    fn iter_offsets(
+    fn for_each_offset(
         &self,
         ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
-        ids.iter().map(|&id| self.get_offset(id)).enumerate()
+        mut callback: impl FnMut(usize, MultivectorOffset),
+    ) -> common::universal_io::Result<()> {
+        for (index, &id) in ids.iter().enumerate() {
+            callback(index, self.get_offset(id));
+        }
+        Ok(())
     }
 
     fn len(&self) -> usize {
@@ -186,27 +190,25 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
         *offset
     }
 
-    fn iter_offsets(
+    fn for_each_offset(
         &self,
         ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        mut callback: impl FnMut(usize, MultivectorOffset),
+    ) -> common::universal_io::Result<()> {
         let ranges = ids.iter().copied().enumerate().map(|(idx, id)| {
             let offset = u64::from(id) * size_of::<MultivectorOffset>() as u64;
-            let range = ReadRange::one(offset);
-            (idx, range)
+            (idx, ReadRange::one(offset))
         });
 
         self.offsets
-            .read_iter::<Random, _>(ranges)
-            .expect("multi-vector offsets iterator initialized")
-            .map(|result| {
-                let (idx, offset) = result.expect("multi-vector offset read");
-                let [offset] = offset.as_ref() else {
+            .read_batch::<Random, _>(ranges, |idx, offset| {
+                let [offset] = offset else {
                     unreachable!("multi-vector offsets are stored as a single-element slice");
                 };
-
-                (idx, *offset)
-            })
+                callback(idx, *offset);
+                Ok(())
+            })?;
+        Ok(())
     }
 
     fn len(&self) -> usize {
@@ -303,24 +305,24 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
             .unwrap_or_default()
     }
 
-    fn iter_offsets(
+    fn for_each_offset(
         &self,
         ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        mut callback: impl FnMut(usize, MultivectorOffset),
+    ) -> common::universal_io::Result<()> {
         let point_offsets = ids
             .iter()
             .enumerate()
             .map(|(idx, &point_offset)| (idx, point_offset, 1));
 
-        self.data
-            .iter_vectors::<Random, _>(point_offsets)
-            .map(|(idx, multi_offset)| {
-                let &[multi_offset] = multi_offset.as_ref() else {
-                    unreachable!("multi-vector offsets are stored as vectors of length 1");
-                };
+        for (idx, multi_offset) in self.data.iter_vectors::<Random, _>(point_offsets) {
+            let &[multi_offset] = multi_offset.as_ref() else {
+                unreachable!("multi-vector offsets are stored as vectors of length 1");
+            };
 
-                (idx, multi_offset)
-            })
+            callback(idx, multi_offset);
+        }
+        Ok(())
     }
 
     fn len(&self) -> usize {
@@ -397,24 +399,24 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageCh
             .unwrap_or_default()
     }
 
-    fn iter_offsets(
+    fn for_each_offset(
         &self,
         ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        mut callback: impl FnMut(usize, MultivectorOffset),
+    ) -> common::universal_io::Result<()> {
         let point_offsets = ids
             .iter()
             .enumerate()
             .map(|(idx, &point_offset)| (idx, point_offset, 1));
 
-        self.data
-            .iter_vectors::<Random, _>(point_offsets)
-            .map(|(idx, multi_offset)| {
-                let &[multi_offset] = multi_offset.as_ref() else {
-                    unreachable!("multi-vector offsets are stored as vectors of length 1");
-                };
+        for (idx, multi_offset) in self.data.iter_vectors::<Random, _>(point_offsets) {
+            let &[multi_offset] = multi_offset.as_ref() else {
+                unreachable!("multi-vector offsets are stored as vectors of length 1");
+            };
 
-                (idx, multi_offset)
-            })
+            callback(idx, multi_offset);
+        }
+        Ok(())
     }
 
     fn len(&self) -> usize {

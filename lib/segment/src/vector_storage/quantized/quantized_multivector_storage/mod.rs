@@ -47,10 +47,12 @@ pub trait MultivectorOffsets {
 pub trait MultivectorOffsetsStorage: Sized {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
 
-    fn iter_offsets(
+    /// Invoke `callback(index, offset)` for each `ids[index]`, in order.
+    fn for_each_offset(
         &self,
         ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
+        callback: impl FnMut(usize, MultivectorOffset),
+    ) -> common::universal_io::Result<()>;
 
     fn len(&self) -> usize;
 
@@ -205,16 +207,18 @@ where
         let mut state = Vec::with_capacity(point_ids.len());
         let mut chunks = Vec::with_capacity(point_ids.len());
 
-        for (index, offset) in self.offsets.iter_offsets(point_ids) {
-            for _ in 0..offset.count {
-                state.push(State {
-                    index: index as u32,
-                    count: offset.count,
-                });
-            }
+        self.offsets
+            .for_each_offset(point_ids, |index, offset| {
+                for _ in 0..offset.count {
+                    state.push(State {
+                        index: index as u32,
+                        count: offset.count,
+                    });
+                }
 
-            chunks.extend(offset.start..offset.start + offset.count);
-        }
+                chunks.extend(offset.start..offset.start + offset.count);
+            })
+            .expect("multi-vector offsets read");
 
         hw_counter
             .vector_io_read()
