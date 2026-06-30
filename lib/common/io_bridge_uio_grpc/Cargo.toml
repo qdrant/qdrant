@@ -1,5 +1,5 @@
 [package]
-name = "io_bridge_uio"
+name = "io_bridge_uio_grpc"
 version = "0.0.0"
 edition = "2024"
 publish = false
@@ -10,7 +10,7 @@ workspace = true
 [dependencies]
 common = { path = "../common" }
 io_bridge = { path = "../io_bridge" }
-uio-client = { path = "../../uio-client" }
+uio-grpc-client = { path = "../../uio-grpc-client" }
 bytes = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }

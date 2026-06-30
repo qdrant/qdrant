@@ -3793,7 +3793,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "io_bridge_uio"
+name = "io_bridge_uio_grpc"
 version = "0.0.0"
 dependencies = [
  "bytes",
@@ -3801,7 +3801,7 @@ dependencies = [
  "futures",
  "io_bridge",
  "tokio",
- "uio-client",
+ "uio-grpc-client",
 ]
 
 [[package]]
@@ -8488,7 +8488,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "uio-client"
+name = "uio-grpc-client"
 version = "0.1.0"
 dependencies = [
  "bytes",

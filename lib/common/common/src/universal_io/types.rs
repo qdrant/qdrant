@@ -19,8 +19,8 @@ pub enum UniversalKind {
     Gcs,
     Azure,
     /// Direct gRPC connection to a Qdrant peer's `StorageRead` service
-    /// (see the `uio-client` / `io_bridge_uio` crates).
-    Uio,
+    /// (see the `uio-grpc-client` / `io_bridge_uio_grpc` crates).
+    UioGrpc,
 }
 
 impl UniversalKind {
@@ -35,7 +35,7 @@ impl UniversalKind {
             | UniversalKind::S3
             | UniversalKind::Gcs
             | UniversalKind::Azure
-            | UniversalKind::Uio => false,
+            | UniversalKind::UioGrpc => false,
         }
     }
 }

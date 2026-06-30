@@ -11,7 +11,7 @@
 //! Concrete backends live in sibling crates, each implementing [`AsyncRead`] for
 //! its own handle type:
 //! - `io_bridge_object_store` — AWS S3, GCS, Azure (via the `object_store` crate).
-//! - `io_bridge_uio` — a direct gRPC connection to a Qdrant peer (via `uio-client`).
+//! - `io_bridge_uio_grpc` — a direct gRPC connection to a Qdrant peer (via `uio-grpc-client`).
 //!
 //! # Components
 //!

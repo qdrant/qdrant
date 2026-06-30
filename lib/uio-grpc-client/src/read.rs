@@ -109,7 +109,7 @@ impl Client {
     /// Unlike [`connect`](Self::connect), this is synchronous and does not need a
     /// Tokio runtime: the underlying HTTP/2 connection is opened lazily on the
     /// first request (driven by whatever runtime executes that request). This is
-    /// what lets the `io_bridge_uio` backend satisfy the synchronous,
+    /// what lets the `io_bridge_uio_grpc` backend satisfy the synchronous,
     /// runtime-free `AsyncRead::open` contract.
     pub fn connect_lazy(endpoint: impl Into<String>, api_key: Option<String>) -> Result<Self> {
         let interceptor = AuthInterceptor::new(api_key)?;
@@ -251,7 +251,7 @@ impl Client {
     /// The returned stream yields the server's ~1 MB chunks as [`Bytes`] in
     /// order. This lets a consumer fold the chunks straight into a destination
     /// buffer without the intermediate `Vec` that [`read_bytes_stream`] builds —
-    /// it is the entry point the `io_bridge_uio` backend uses to satisfy
+    /// it is the entry point the `io_bridge_uio_grpc` backend uses to satisfy
     /// `AsyncRead::read_range`.
     pub async fn read_bytes_stream_raw(
         &self,

@@ -1,18 +1,18 @@
-//! `uio-client` backend for the [`io_bridge`] sync ↔ async bridge.
+//! `uio-grpc-client` backend for the [`io_bridge`] sync ↔ async bridge.
 //!
-//! [`UioSource`] is an [`AsyncRead`] handle that talks to a Qdrant peer's
-//! `StorageRead` gRPC service (via [`uio_client::Client`]) instead of an object
+//! [`UioGrpcSource`] is an [`AsyncRead`] handle that talks to a Qdrant peer's
+//! `StorageRead` gRPC service (via [`uio_grpc_client::Client`]) instead of an object
 //! store. Plugging it into [`io_bridge`] yields a synchronous
 //! [`UniversalRead`](common::universal_io::UniversalRead) over the remote shard,
-//! exactly like the object-store backends — see [`UioFile`] / [`UioFs`].
+//! exactly like the object-store backends — see [`UioGrpcFile`] / [`UioGrpcFs`].
 //!
 //! # Addressing
 //!
 //! The `StorageRead` service is addressed by `(collection, shard_id, path)`,
 //! where `path` is a file path relative to the shard directory. The
-//! [`AsyncRead`] surface is path-only, so a [`UioSource`] is pinned to a single
+//! [`AsyncRead`] surface is path-only, so a [`UioGrpcSource`] is pinned to a single
 //! `(collection, shard_id)` — i.e. one shard replica on one peer — carried in
-//! its [`UioConfig`]. The per-call `path` maps to the in-shard file path. This
+//! its [`UioGrpcConfig`]. The per-call `path` maps to the in-shard file path. This
 //! matches the service's contract that the caller must target the peer that owns
 //! the desired replica.
 //!
@@ -24,7 +24,7 @@
 //! reactor handle on construction). So `open` only records the connection
 //! parameters; the actual (lazy) client is built once, on first use, inside the
 //! bridge runtime via a shared [`OnceCell`](tokio::sync::OnceCell). Every clone
-//! of a `UioSource` shares that one client, hence one multiplexed HTTP/2
+//! of a `UioGrpcSource` shares that one client, hence one multiplexed HTTP/2
 //! connection.
 //!
 //! # Read-only
@@ -32,7 +32,7 @@
 //! `StorageRead` is a read-only service. The mutating [`AsyncRead`] methods
 //! ([`create`](AsyncRead::create), [`remove`](AsyncRead::remove),
 //! [`remove_dir`](AsyncRead::remove_dir), [`atomic_save`](AsyncRead::atomic_save))
-//! therefore return an `Unsupported` IO error; wrap a [`UioFile`] in
+//! therefore return an `Unsupported` IO error; wrap a [`UioGrpcFile`] in
 //! [`ReadOnly`](common::universal_io::ReadOnly) when a read-only handle is what
 //! the caller expects.
 
@@ -47,12 +47,12 @@ use common::universal_io::{Result, UniversalIoError, UniversalKind};
 use futures::stream::{self, BoxStream, StreamExt as _};
 use io_bridge::{AsyncRead, BlobFile, BlobFs};
 use tokio::sync::OnceCell;
-use uio_client::Client;
+use uio_grpc_client::Client;
 
-/// Connection parameters for a [`UioSource`]: the peer endpoint plus the shard
+/// Connection parameters for a [`UioGrpcSource`]: the peer endpoint plus the shard
 /// replica `(collection, shard_id)` this handle is pinned to.
 #[derive(Clone, Debug)]
-pub struct UioConfig {
+pub struct UioGrpcConfig {
     /// gRPC endpoint of the Qdrant peer owning the replica, e.g.
     /// `http://peer-1:6335`.
     pub endpoint: String,
@@ -65,7 +65,7 @@ pub struct UioConfig {
     pub api_key: Option<String>,
 }
 
-/// Shared state behind a [`UioSource`]. Holds the lazily-built client so that
+/// Shared state behind a [`UioGrpcSource`]. Holds the lazily-built client so that
 /// all clones of a source share one connection.
 struct Inner {
     endpoint: String,
@@ -94,11 +94,11 @@ impl Inner {
 /// Cheap to clone: clones share one lazily-built [`Client`] (a single
 /// multiplexed HTTP/2 connection) and the `Arc`-shared connection parameters.
 #[derive(Clone)]
-pub struct UioSource {
+pub struct UioGrpcSource {
     inner: Arc<Inner>,
 }
 
-impl UioSource {
+impl UioGrpcSource {
     /// Record the connection parameters for a shard replica. Performs no IO and
     /// does not touch any runtime — the client is built on first read.
     pub fn new(
@@ -126,12 +126,12 @@ fn path_to_string(path: &Path) -> String {
 fn read_only_error(op: &str) -> UniversalIoError {
     UniversalIoError::Io(io::Error::new(
         io::ErrorKind::Unsupported,
-        format!("uio StorageRead backend is read-only: {op} is not supported"),
+        format!("uio-grpc StorageRead backend is read-only: {op} is not supported"),
     ))
 }
 
-impl AsyncRead for UioSource {
-    type Config = UioConfig;
+impl AsyncRead for UioGrpcSource {
+    type Config = UioGrpcConfig;
 
     fn open(config: &Self::Config) -> Result<Self> {
         Ok(Self::new(
@@ -251,15 +251,15 @@ impl AsyncRead for UioSource {
     }
 
     fn kind() -> UniversalKind {
-        UniversalKind::Uio
+        UniversalKind::UioGrpc
     }
 }
 
 /// Sync `UniversalRead` handle over a remote shard file.
-pub type UioFile = BlobFile<UioSource>;
+pub type UioGrpcFile = BlobFile<UioGrpcSource>;
 
 /// Sync `UniversalReadFs` over a remote shard.
-pub type UioFs = BlobFs<UioSource>;
+pub type UioGrpcFs = BlobFs<UioGrpcSource>;
 
 #[cfg(test)]
 mod tests {
@@ -268,8 +268,8 @@ mod tests {
 
     use super::*;
 
-    fn offline_source() -> UioSource {
-        UioSource::open(&UioConfig {
+    fn offline_source() -> UioGrpcSource {
+        UioGrpcSource::open(&UioGrpcConfig {
             endpoint: "http://127.0.0.1:1".into(),
             collection: "test-col".into(),
             shard_id: 0,
@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn kind_is_uio() {
-        assert_eq!(<UioSource as AsyncRead>::kind(), UniversalKind::Uio);
+        assert_eq!(<UioGrpcSource as AsyncRead>::kind(), UniversalKind::UioGrpc);
     }
 
     #[test]
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn writes_are_unsupported() {
-        let fs = UioFs::new(offline_source(), BridgeRuntime::global());
+        let fs = UioGrpcFs::new(offline_source(), BridgeRuntime::global());
 
         // Mutating ops resolve to a ready `Unsupported` error without any IO, so
         // they can be checked offline.
