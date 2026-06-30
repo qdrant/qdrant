@@ -41,11 +41,6 @@ pub struct MultivectorOffset {
 
 pub trait MultivectorOffsets {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
-
-    fn iter_offsets(
-        &self,
-        ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -530,12 +525,5 @@ where
 {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets.get_offset(idx)
-    }
-
-    fn iter_offsets(
-        &self,
-        ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
-        self.offsets.iter_offsets(ids)
     }
 }
