@@ -66,7 +66,7 @@ where
     }
 
     fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
-        self.ensure_whole_local()?;
+        self.prefill_if_uninit()?;
         let length = self.len::<T>()?;
         self.read::<Sequential, T>(ReadRange {
             byte_offset: 0,
