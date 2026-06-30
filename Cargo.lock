@@ -5940,13 +5940,13 @@ dependencies = [
 
 [[package]]
 name = "quick_cache"
-version = "0.6.23"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a3db184a8b66cfe87f0263a1de147a6b554c864d1767c6f7fa4eb0e5497b565"
+checksum = "403c1a912fec895cafb223201e368234842acb9220aaf08ab042ae89ba5f135c"
 dependencies = [
- "ahash",
  "equivalent",
- "hashbrown 0.16.1",
+ "foldhash 0.2.0",
+ "hashbrown 0.17.0",
  "parking_lot",
 ]
 
