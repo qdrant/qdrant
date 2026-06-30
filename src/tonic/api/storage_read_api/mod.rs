@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -7,13 +5,12 @@ use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesRequest,
     ListFilesResponse, ReadBatchRequest, ReadBatchResponse, ReadBytesRequest, ReadBytesResponse,
-    ReadBytesStreamRequest, ReadBytesStreamResponse, ReadMultiRequest, ReadMultiResponse,
-    ReadWholeRequest, ReadWholeResponse,
+    ReadBytesStreamRequest, ReadBytesStreamResponse, ReadWholeRequest, ReadWholeResponse,
 };
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
+    MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
     UniversalReadFileOps, UniversalReadFs,
 };
 use futures::Stream;
@@ -350,71 +347,5 @@ where
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
 
         Ok(Response::new(ReadBatchResponse { data }))
-    }
-
-    // Maps to UniversalRead::read_multi() — ranges across multiple files.
-    // Deduplicate paths into a file index, open each unique file once, then call read_multi.
-    async fn read_multi(
-        &self,
-        mut request: Request<ReadMultiRequest>,
-    ) -> Result<Response<ReadMultiResponse>, Status> {
-        validate(request.get_ref())?;
-        let auth = extract_auth(&mut request);
-        let ReadMultiRequest {
-            collection_name,
-            shard_id,
-            reads,
-        } = request.into_inner();
-        let (base, collections_root) = self
-            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_multi")
-            .await?;
-        let open_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-        };
-
-        // Resolve all paths and deduplicate into a file index.
-        let mut path_to_index = HashMap::<PathBuf, FileIndex>::new();
-        let mut unique_paths = Vec::<PathBuf>::new();
-        let mut reads_ = Vec::<(FileIndex, _)>::with_capacity(reads.len());
-
-        for entry in &reads {
-            let resolved = Self::resolve_path(&base, &collections_root, &entry.path)?;
-            let file_index = *path_to_index.entry(resolved.clone()).or_insert_with(|| {
-                let idx = unique_paths.len();
-                unique_paths.push(resolved);
-                idx
-            });
-            reads_.push((file_index, ReadRange::new(entry.byte_offset, entry.length)));
-        }
-
-        let fs = Arc::clone(&self.fs);
-        let data = tokio::task::spawn_blocking(move || {
-            let files = unique_paths
-                .iter()
-                .map(|p| fs.open(p, open_options, Default::default()))
-                .collect::<common::universal_io::Result<Vec<_>>>()
-                .map_err(io_error_to_status)?;
-
-            let mut results = vec![Vec::new(); reads_.len()];
-
-            let reads = reads_
-                .into_iter()
-                .enumerate()
-                .map(|(op_idx, (file_idx, range))| (op_idx, &files[file_idx], range));
-
-            S::read_multi::<Random, u8, _>(reads, |op_idx, chunk| {
-                results[op_idx].extend_from_slice(chunk);
-                Ok(())
-            })
-            .map_err(io_error_to_status)?;
-            Ok::<Vec<Vec<u8>>, Status>(results)
-        })
-        .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
-
-        Ok(Response::new(ReadMultiResponse { data }))
     }
 }
