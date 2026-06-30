@@ -1,6 +1,5 @@
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::SimpleCow;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 
 use super::HNSWIndexReadView;
@@ -107,11 +106,7 @@ where
                 self.vector_storage,
                 Some(quantized_vectors),
                 filter
-                    .map(|f| {
-                        self.payload_index
-                            .filter_context(f, &hw_counter)
-                            .map(SimpleCow::Owned)
-                    })
+                    .map(|f| self.payload_index.filter_context(f, &hw_counter))
                     .transpose()?,
                 deleted_points,
                 vector_query_context.hardware_counter(),
@@ -372,7 +367,7 @@ where
         vector.to_owned(),
         vector_storage,
         quantization_enabled.then_some(quantized_storage).flatten(),
-        filter_context.map(SimpleCow::Owned),
+        filter_context,
         deleted_points,
         hardware_counter,
     )
@@ -398,7 +393,7 @@ where
         vectors,
         vector_storage,
         quantization_enabled.then_some(quantized_storage).flatten(),
-        filter_context.map(SimpleCow::Owned),
+        filter_context,
         top,
         deleted_points,
         hardware_counter,

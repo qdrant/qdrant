@@ -20,7 +20,7 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::TransformInto;
-use crate::vector_storage::{RawScorerBuilder, VectorStorageRead, check_deleted_condition};
+use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
 impl<I, V, P, TInvertedIndex> SparseVectorIndexReadView<'_, I, V, P, TInvertedIndex>
 where
@@ -160,10 +160,10 @@ where
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let is_stopped = vector_query_context.is_stopped();
 
-        let deleted_point_bitslice = vector_query_context
+        let point_deleted = vector_query_context
             .deleted_points()
             .unwrap_or(self.id_tracker.deleted_point_bitslice());
-        let deleted_vectors = self.vector_storage.deleted_vector_bitslice();
+        let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
 
         let hw_counter = vector_query_context.hardware_counter();
 
@@ -181,7 +181,7 @@ where
             }
         }
         .copied()
-        .filter(|&idx| check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice))
+        .filter(|&idx| not_deleted.check_infallible(idx))
         .collect_vec();
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
@@ -214,14 +214,13 @@ where
         top: usize,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let deleted_point_bitslice = vector_query_context
+        let point_deleted = vector_query_context
             .deleted_points()
             .unwrap_or(self.id_tracker.deleted_point_bitslice());
-        let deleted_vectors = self.vector_storage.deleted_vector_bitslice();
+        let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
 
-        let not_deleted_condition = |idx: PointOffsetType| -> bool {
-            check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice)
-        };
+        let not_deleted_condition =
+            |idx: PointOffsetType| -> bool { not_deleted.check_infallible(idx) };
 
         let is_stopped = vector_query_context.is_stopped();
 
