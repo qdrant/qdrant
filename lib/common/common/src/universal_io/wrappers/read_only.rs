@@ -214,23 +214,6 @@ where
         self.0.clear_ram_cache()
     }
 
-    #[inline]
-    fn read_multi_iter<'a, P, T, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-        Self: 'a,
-    {
-        let it = reads
-            .into_iter()
-            .map(|(user_data, file, range)| (user_data, &file.0, range));
-
-        S::read_multi_iter::<P, T, _>(it)
-    }
-
     fn kind() -> UniversalKind {
         S::kind()
     }

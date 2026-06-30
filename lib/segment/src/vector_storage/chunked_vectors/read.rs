@@ -231,32 +231,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         Ok(())
     }
 
-    /// Iterate over flattened multi-vectors
-    pub fn iter_vectors<P, U>(
-        &self,
-        offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
-    ) -> impl Iterator<Item = (U, Cow<'_, [T]>)>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
-        let reads = offsets.map(|(user_data, offset, count)| {
-            let (chunk_idx, range) = self
-                .read_range(offset as _, count as _)
-                .expect("vectors exist");
-
-            let chunk = &self.chunks[chunk_idx];
-            (user_data, chunk, range)
-        });
-
-        // access pattern does not matter for io_uring
-        TypedStorage::read_multi_iter::<P, _>(reads)
-            .expect("iterator initialized")
-            .map(|result| result.expect("vector read"))
-    }
-
-    /// Like [`iter_vectors`](Self::iter_vectors), but invokes `callback` for each
-    /// flattened multi-vector instead of returning an iterator.
+    /// Invoke `callback` for each flattened multi-vector at the given offsets.
     ///
     /// Drives the read pipeline directly across chunk files: refills it from the
     /// offsets, then drains completed reads.

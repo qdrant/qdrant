@@ -179,37 +179,6 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
     fn clear_ram_cache(&self) -> Result<()>;
 
-    /// Read ranges across multiple files in a single operation, returning a
-    /// fallible iterator.
-    fn read_multi_iter<'a, P, T, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-        Self: 'a,
-    {
-        let mut pipeline = Self::ReadPipeline::<'a, U>::new()?;
-        let mut reads = reads.into_iter();
-
-        let iter = std::iter::from_fn(move || {
-            while pipeline.can_schedule()
-                && let Some(read) = reads.next()
-            {
-                let (user_data, file, range) = read;
-                let range = range.into_byte_range::<T>();
-                if let Err(err) = pipeline.schedule::<P>(user_data, file, range, align_of::<T>()) {
-                    return Some(Err(err));
-                }
-            }
-
-            pipeline.wait_bytemuck().transpose()
-        });
-
-        Ok(iter)
-    }
-
     fn kind() -> UniversalKind;
 
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.

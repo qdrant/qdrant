@@ -251,20 +251,6 @@ impl UniversalRead for MmapFile {
         }))
     }
 
-    /// Override the default pipeline-based for better performance.
-    fn read_multi_iter<'a, P: AccessPattern, T: Item, U: UserData>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
-    where
-        Self: 'a,
-    {
-        Ok(reads.into_iter().map(|(user_data, file, range)| {
-            let bytes = file.as_bytes::<P>();
-            let items = read_bytemuck::<T>(bytes, range)?;
-            Ok((user_data, Cow::Borrowed(items)))
-        }))
-    }
-
     fn len<T>(&self) -> Result<u64> {
         let len = self.len / size_of::<T>();
         Ok(len as u64)
