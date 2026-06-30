@@ -11,6 +11,7 @@ use quantization::EncodedVectors;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
@@ -52,7 +53,7 @@ pub trait MultivectorOffsetsStorage: Sized {
         &self,
         ids: &[PointOffsetType],
         callback: impl FnMut(usize, MultivectorOffset),
-    ) -> common::universal_io::Result<()>;
+    ) -> OperationResult<()>;
 
     fn len(&self) -> usize;
 
