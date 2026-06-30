@@ -68,7 +68,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
             .for_each_in_batch(&point_offsets, |idx, vector| {
                 let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
-            });
+            })
+            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

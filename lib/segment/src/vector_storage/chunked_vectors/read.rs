@@ -183,7 +183,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
     }
 
-    pub fn for_each_in_batch<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    pub fn for_each_in_batch<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, &[T]),
     {
@@ -195,11 +199,10 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
                 .enumerate()
                 .map(|(index, point_offset)| (index, point_offset, 1));
 
-            for (idx, vectors) in self.iter_vectors::<Random, _>(point_offsets) {
-                callback(idx, &vectors);
-            }
-
-            return;
+            return self.for_each_vector::<Random, _>(point_offsets, |idx, vectors| {
+                callback(idx, vectors);
+                Ok(())
+            });
         }
 
         // The `f` is most likely a scorer function. Fetching all vectors first, and then scoring
@@ -224,6 +227,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
                 callback(batch_offset + vector_idx, vec.as_ref());
             }
         }
+
+        Ok(())
     }
 
     /// Iterate over flattened multi-vectors

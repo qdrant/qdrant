@@ -87,7 +87,8 @@ impl<
         self.vector_storage
             .for_each_in_dense_batch(ids, |idx, vector| {
                 scores[idx] = TMetric::similarity(&self.query, vector);
-            });
+            })
+            .expect("read vectors");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
