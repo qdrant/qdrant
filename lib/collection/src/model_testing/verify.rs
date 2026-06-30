@@ -173,6 +173,7 @@ pub(super) async fn wait_for_optimizer(collection: &Collection) {
     };
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
+        collection.trigger_optimizers().await;
         let telemetry = collection
             .get_telemetry_data(detail, Duration::from_secs(5))
             .await

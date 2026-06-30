@@ -229,6 +229,11 @@ pub async fn run(
 
     let mut applied = 0usize;
     let mut i = 0usize;
+    // `total_optimized_points` lives on the local shard and resets to 0 on every
+    // close+reopen. Track whether we ever saw optimization during this run so a
+    // restart on the last iteration doesn't send us back to `wait_for_optimizer`
+    // with a zero counter even though the optimizer already ran earlier.
+    let mut optimizer_ran_during_run = false;
     loop {
         if shutdown.load(Ordering::Relaxed) {
             log::info!("shutdown received at op:{i}, exiting loop");
@@ -275,7 +280,10 @@ pub async fn run(
         if do_restart {
             log::debug!("op:{i} Restart");
             bar.set_message("Restart");
-            let (pre_segments, _) = verify::run_summary(&collection).await;
+            let (pre_segments, pre_optimized) = verify::run_summary(&collection).await;
+            if pre_optimized > 0 {
+                optimizer_ran_during_run = true;
+            }
             trace.restart(i, model.len(), pre_segments);
             // Verify the LIVE collection against the model *before* closing. This splits a
             // restart failure into its two possible causes: if this assert fires, the engine
@@ -353,7 +361,10 @@ pub async fn run(
     log::debug!("all ops applied, verifying live collection against model");
     let live = verify::collect_model_from_collection(&collection).await;
     let (live_extra, live_missing) = verify::id_diff(&live, &model);
-    let (segments, optimized) = verify::run_summary(&collection).await;
+    let (mut segments, mut optimized) = verify::run_summary(&collection).await;
+    if optimized > 0 {
+        optimizer_ran_during_run = true;
+    }
     trace.live_verify(
         applied,
         model.len(),
@@ -366,9 +377,11 @@ pub async fn run(
     verify::assert_matches_model(&live, &model, "live");
 
     // Confirm the segment optimizer actually fired — but skip on shutdown (short run may
-    // not have triggered) or when the optimizer is intentionally disabled.
-    if !interrupted && !disable_optimizer {
+    // not have triggered), when the optimizer is intentionally disabled, or when we
+    // already observed optimization earlier in the run (counter resets on restart).
+    if !interrupted && !disable_optimizer && !optimizer_ran_during_run {
         verify::wait_for_optimizer(&collection).await;
+        (segments, optimized) = verify::run_summary(&collection).await;
     }
 
     println!(
