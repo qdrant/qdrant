@@ -490,6 +490,7 @@ impl LocalShard {
         clear_temp_segments(shard_path);
         let optimizers = build_optimizers(
             shard_path,
+            collection_config.clone(),
             &collection_config_read.params,
             &effective_optimizers_config,
             &collection_config_read.hnsw_config,
@@ -677,6 +678,7 @@ impl LocalShard {
 
         let optimizers = build_optimizers(
             shard_path,
+            collection_config.clone(),
             &config.params,
             &effective_optimizers_config,
             &config.hnsw_config,

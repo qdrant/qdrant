@@ -214,6 +214,7 @@ impl EdgeConfig {
             plain_sparse_vector_config,
             dense_vector,
             sparse_vector,
+            live_vector_names: None,
         }
     }
 

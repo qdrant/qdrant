@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -16,7 +16,7 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{HnswGlobalConfig, Indexes, VectorStorageType};
+use segment::types::{HnswGlobalConfig, Indexes, VectorNameBuf, VectorStorageType};
 use uuid::Uuid;
 
 use super::config::SegmentOptimizerConfig;
@@ -61,6 +61,10 @@ impl<O: SegmentOptimizer + ?Sized> OptimizationStrategy for ShardOptimizationStr
     fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)> {
         self.optimizer.temp_segment(false)
     }
+
+    fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>> {
+        self.optimizer.live_vector_names()
+    }
 }
 
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
@@ -83,6 +87,13 @@ pub trait SegmentOptimizer: Sync {
 
     /// Get configuration for desired segment after optimization.
     fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig;
+
+    /// Vector names currently present in the live collection schema, if a live source is wired into
+    /// the optimizer config. Used during merge to tell a deleted vector (prune) from the
+    /// CreateVectorName race (cancel); `None` means unknown and cancels conservatively.
+    fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>> {
+        self.segment_optimizer_config().live_vector_names()
+    }
 
     /// Estimates how many indexing threads should be used for the optimization
     /// based on the configuration and available CPU cores.
