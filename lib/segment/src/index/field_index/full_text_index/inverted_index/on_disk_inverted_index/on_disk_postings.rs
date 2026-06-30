@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
 use common::universal_io::{
-    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+    OkNotFound, OpenOptions, ReadPipeline, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFs,
 };
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
@@ -189,7 +190,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
     ) -> OperationResult<T> {
         let header_err: Cell<Option<UniversalIoError>> = Cell::new(None);
 
-        let range_iter = header_iter.filter_map(|header_res| match header_res {
+        let mut range_iter = header_iter.filter_map(|header_res| match header_res {
             Ok((token_id, header)) => {
                 let range = ReadRange {
                     byte_offset: header.offset,
@@ -206,8 +207,27 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         let mut raw_postings: Vec<(TokenId, RawPostingList<'_>)> =
             Vec::with_capacity(expected_capacity);
 
-        for entry in self.storage.read_iter::<Sequential, u8, _>(range_iter)? {
-            let ((token_id, header), bytes) = entry?;
+        // Drive the read pipeline directly (instead of read_iter): refill it from
+        // the header ranges, then drain completed reads. `wait_bytemuck` yields a
+        // `Cow` borrowed from the file, so postings are stored zero-copy on mmap.
+        let mut pipeline = S::ReadPipeline::<'_, (TokenId, PostingListHeader)>::new()?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((user_data, range)) = range_iter.next()
+            {
+                let range = range.into_byte_range::<u8>();
+                pipeline.schedule::<Sequential>(
+                    user_data,
+                    &self.storage,
+                    range,
+                    align_of::<u8>(),
+                )?;
+            }
+
+            let Some(((token_id, header), bytes)) = pipeline.wait_bytemuck::<u8>()? else {
+                break;
+            };
             raw_postings.push((token_id, RawPostingList::new(bytes, header)));
         }
 
