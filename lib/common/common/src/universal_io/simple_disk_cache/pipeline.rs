@@ -121,7 +121,7 @@ where
     if range.is_empty() {
         return Ok(&[]);
     }
-    let local = &file.state()?.local;
+    let local = file.state()?.local;
     if is_sequential {
         unsafe { local.read_mmap_bytes::<Sequential>(range) }
     } else {
@@ -146,19 +146,13 @@ where
         read_range,
     } = scheduled_read;
 
-    let state = if let Some(state) = file.state.get() {
-        state
-    } else {
-        let mut init_guard = file.init_lock.lock();
-        if file.state.get().is_none() {
-            file.init_state(&mut init_guard, true)?;
-        }
-        file.state.get().expect("just initialized")
-    };
+    // The mirror is already materialized: scheduling this remote read went
+    // through `file.state()` (see `schedule`), which forces initialization.
+    let local = file.state()?.local;
 
     unsafe {
-        state.local.write_mmap_bytes(bytes, blocks_range);
-        state.local.read_mmap_bytes::<Random>(read_range)
+        local.write_mmap_bytes(bytes, blocks_range);
+        local.read_mmap_bytes::<Random>(read_range)
     }
 }
 
@@ -223,7 +217,7 @@ where
         _align: usize,
     ) -> universal_io::Result<()> {
         let state = file.state()?;
-        match pick_source::<P>(&state.local, range.clone())? {
+        match pick_source::<P>(state.local, range.clone())? {
             Source::Local {
                 range,
                 is_sequential,
@@ -247,7 +241,7 @@ where
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
                 remote_pipeline.schedule::<P>(
                     remote_meta,
-                    &state.remote,
+                    state.remote,
                     blocks_byte_range,
                     REMOTE_READ_ALIGNMENT,
                 )?;

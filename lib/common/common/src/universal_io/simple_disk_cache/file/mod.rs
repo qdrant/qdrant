@@ -1,31 +1,20 @@
 //! [`DiskCache`]: a lazily-populated local mirror of an immutable remote file.
-//!
-//! The implementation is split across this module's submodules:
-//!
-//! - this file — the [`DiskCache`] type, its backing [`State`], and the cheap
-//!   constructors ([`DiskCache::new`], [`DiskCache::open_remote`]).
-//! - [`init`] — how the mirror is brought to life on first use: the
-//!   [`InitSource`] state machine and [`DiskCache::init_state`]. **Start here**
-//!   to understand cold-start vs. eager-prefill behavior.
-//! - [`reopen`] — refreshing the mirror after the (append-only) remote grew.
-//! - [`read`] — the [`UniversalRead`] implementation (the public read surface).
 
-use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::AtomicBool;
 
 use parking_lot::Mutex;
 
 use super::DiskCacheRemote;
 use super::local_state::LocalState;
 use crate::mmap::AdviceSetting;
-use crate::universal_io::{OpenOptions, Populate, Result, UniversalRead, UniversalReadFs};
+use crate::universal_io::{
+    OpenOptions, OwnedPipeline, Populate, Result, UniversalRead, UniversalReadFs,
+};
 
 mod init;
 mod read;
 mod reopen;
-
-pub(crate) use init::InitSource;
 
 /// A lazily-populated local mirror of an immutable remote file.
 ///
@@ -38,6 +27,7 @@ pub(crate) use init::InitSource;
 ///
 /// WARN: There should be only a single instance of DiskCache per path.
 /// Initializing multiple instances will try to re-read from remote.
+#[derive(Debug)]
 pub struct DiskCache<R>
 where
     R: UniversalRead + 'static,
@@ -52,43 +42,31 @@ where
     pub(super) open_options: OpenOptions,
     /// Path to the local mmap file.
     pub(super) local_path: PathBuf,
-    /// Lazily-initialized mirror.
-    // We could switch to LazyLock, but there is no fallible initialization
-    pub(super) state: OnceLock<State<R>>,
-    /// Guards initialization of `local` and carries the source of init.
-    pub(super) init_lock: Arc<Mutex<InitSource<R>>>,
+    /// The cache's lifecycle state, initialized lazily on first use.
+    pub(super) state: Mutex<State<R>>,
+    /// Fast-path gate: `true` when `state` is [`State::Ready`].
+    pub(super) is_ready: AtomicBool,
 }
 
-/// The materialized mirror: the opened `remote` handle paired with its local
-/// mmap mirror. Created exactly once, lazily, by [`DiskCache::init_state`].
+/// The lifecycle of a [`DiskCache`]'s local mirror, from "not yet materialized"
+/// through to the live [`Ready`](Self::Ready) mirror.
 #[derive(Debug)]
-pub(crate) struct State<R> {
-    pub remote: R,
-    pub local: LocalState,
-}
-
-impl<R> Debug for DiskCache<R>
-where
-    R: UniversalRead,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            remote_fs,
-            remote_path,
-            open_options,
-            local_path,
-            state,
-            remote_extra: _,
-            init_lock: _,
-        } = self;
-        f.debug_struct("DiskCache")
-            .field("remote_fs", remote_fs)
-            .field("remote_path", remote_path)
-            .field("open_options", open_options)
-            .field("local_path", local_path)
-            .field("state", state)
-            .finish_non_exhaustive()
-    }
+pub(crate) enum State<R: UniversalRead + 'static> {
+    /// Uninitialized start. Chosen for `Populate::No` / `Auto`.
+    Uninit,
+    /// The live mirror: the opened `remote` handle paired with its local mmap.
+    Ready { remote: R, local: LocalState },
+    /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
+    /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
+    /// `PreferBackground`.
+    OpenPrefill { pipeline: OwnedPipeline<R, ()> },
+    /// The reopen-time counterpart of [`OpenPrefill`](Self::OpenPrefill): an
+    /// in-flight read of just the appended tail (block-aligned old length → new
+    /// EOF). Init resizes the mirror and writes only that suffix. See [`reopen`].
+    ReopenPrefill {
+        pipeline: OwnedPipeline<R, u64>,
+        local: LocalState,
+    },
 }
 
 impl<R> DiskCache<R>
@@ -101,16 +79,17 @@ where
         remote_path: impl AsRef<Path>,
         local_path: PathBuf,
         options: OpenOptions,
-        init_source: InitSource<R>,
+        state: State<R>,
     ) -> Self {
+        let is_ready = matches!(state, State::Ready { .. });
         Self {
             remote_fs,
             remote_extra,
             remote_path: remote_path.as_ref().to_owned(),
             open_options: options,
             local_path,
-            state: OnceLock::new(),
-            init_lock: Arc::new(Mutex::new(init_source)),
+            state: Mutex::new(state),
+            is_ready: AtomicBool::new(is_ready),
         }
     }
 
