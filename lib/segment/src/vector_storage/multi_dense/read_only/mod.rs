@@ -1,11 +1,10 @@
-use std::borrow::Cow;
-
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
 use super::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
@@ -24,11 +23,12 @@ pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: 
     multi_vector_config: MultiVectorConfig,
 }
 
-pub fn iter_vectors<'a, P, T, U, S>(
-    offsets: &'a ChunkedVectorsRead<MultivectorMmapOffset, S>,
-    vectors: &'a ChunkedVectorsRead<T, S>,
+pub fn for_each_vector<P, T, U, S>(
+    offsets: &ChunkedVectorsRead<MultivectorMmapOffset, S>,
+    vectors: &ChunkedVectorsRead<T, S>,
     keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-) -> impl Iterator<Item = (U, Cow<'a, [T]>)>
+    callback: impl FnMut(U, &[T]) -> OperationResult<()>,
+) -> OperationResult<()>
 where
     P: AccessPattern,
     T: PrimitiveVectorElement,
@@ -39,24 +39,25 @@ where
         .into_iter()
         .map(|(user_data, point_offset)| (user_data, point_offset as _, 1));
 
-    let vector_offsets =
-        offsets
-            .iter_vectors::<P, _>(point_offsets)
-            .map(|(user_data, multi_offset)| {
-                let &[multi_offset] = multi_offset.as_ref() else {
-                    unreachable!("multi-vector offsets are stored as vectors of length 1");
-                };
+    // Resolve the per-point multi-vector offsets first, then read the flattened
+    // vectors in a single batched pass over `vectors`.
+    let mut vector_offsets = Vec::new();
+    offsets.for_each_vector::<P, _>(point_offsets, |user_data, multi_offset| {
+        let &[multi_offset] = multi_offset else {
+            unreachable!("multi-vector offsets are stored as vectors of length 1");
+        };
 
-                let MultivectorMmapOffset {
-                    offset,
-                    count,
-                    capacity: _,
-                } = multi_offset;
+        let MultivectorMmapOffset {
+            offset,
+            count,
+            capacity: _,
+        } = multi_offset;
 
-                (user_data, offset, count)
-            });
+        vector_offsets.push((user_data, offset, count));
+        Ok(())
+    })?;
 
-    vectors.iter_vectors::<P, _>(vector_offsets)
+    vectors.for_each_vector::<P, _>(vector_offsets.into_iter(), callback)
 }
 
 #[cfg(test)]

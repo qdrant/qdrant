@@ -242,19 +242,18 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
         // Resolve offsets through the buffer first (so unflushed writes are seen),
-        // then reuse the row-side prefetch iterator over `vectors`.
+        // then reuse the row-side prefetch reader over `vectors`.
         let row_offsets = self
             .offsets
             .resolve_rows::<Sequential, _, _>(keys.iter().copied().enumerate());
 
-        let vectors = self
-            .vectors
-            .iter_vectors::<Sequential, _>(row_offsets.into_iter());
-
-        for (index, flattened) in vectors {
-            let vector = TypedMultiDenseVectorRef::new(&flattened, self.vector_dim());
-            callback(index, vector)
-        }
+        self.vectors
+            .for_each_vector::<Sequential, _>(row_offsets.into_iter(), |index, flattened| {
+                let vector = TypedMultiDenseVectorRef::new(flattened, self.vector_dim());
+                callback(index, vector);
+                Ok(())
+            })
+            .expect("read vectors");
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
@@ -334,21 +333,25 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) {
         // Resolve offsets through the buffer first (so unflushed writes are seen),
-        // then reuse the row-side prefetch iterator over `vectors`.
+        // then reuse the row-side prefetch reader over `vectors`.
         let row_offsets = self.offsets.resolve_rows::<P, _, _>(
             keys.into_iter()
                 .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset)),
         );
 
-        let vectors = self.vectors.iter_vectors::<P, _>(row_offsets.into_iter());
+        self.vectors
+            .for_each_vector::<P, _>(
+                row_offsets.into_iter(),
+                |(user_data, point_offset), flattened| {
+                    let vector = CowVector::MultiDense(T::into_float_multivector(
+                        flattened_to_multi_vector(Cow::Borrowed(flattened), self.vectors.dim()),
+                    ));
 
-        for ((user_data, point_offset), flattened) in vectors {
-            let vector = CowVector::MultiDense(T::into_float_multivector(
-                flattened_to_multi_vector(flattened, self.vectors.dim()),
-            ));
-
-            callback(user_data, point_offset, vector);
-        }
+                    callback(user_data, point_offset, vector);
+                    Ok(())
+                },
+            )
+            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
