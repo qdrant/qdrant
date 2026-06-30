@@ -239,7 +239,8 @@ where
 
     fn create_page_file(&self, path: &std::path::Path) -> Result<()> {
         // Serverless pages are created empty and grown as data is appended, so
-        // their byte length reflects actual data (see `next_append_block`).
+        // their byte length reflects the appended data, block-aligned (see
+        // `write_into_pages` and `next_append_block`).
         // Dynamic pages are pre-sized to the full page so the bitmask can use
         // any block within them.
         let expected_length = if self.mode.is_serverless() {
@@ -297,11 +298,11 @@ where
     /// Find the next block to write to if we're only appending to storage.
     ///
     /// Append-only storage has no bitmask, so the cursor is derived from the
-    /// byte length of the last page: because values are packed from the front
-    /// and occupy whole blocks starting on a block boundary, the number of used
-    /// blocks in the last page is `ceil(byte_len / block_size)`. The last page's
-    /// byte length captures exactly the bytes spilled into it, for both
-    /// single-page and page-spanning values.
+    /// byte length of the last page: because every value is padded to whole
+    /// blocks on write (see [`Self::write_into_pages`]), each page's byte length
+    /// is a block multiple and the number of used blocks in the last page is
+    /// `last_page_len / block_size` (computed as `ceil` to stay robust). This
+    /// holds for both single-page and page-spanning values.
     ///
     /// This only computes the position; it must never create new pages. Use
     /// [`Self::ensure_append_pages`] to materialize the page files the value
@@ -334,9 +335,9 @@ where
     ///
     /// Serverless storage is append-only and does not pre-size pages: the
     /// page files are created empty here, and the write itself grows each one
-    /// by exactly the bytes it appends (see [`Self::write_into_pages`] /
-    /// [`Pages::write_to_pages_grow`]). This only materializes the files; it
-    /// must not size them.
+    /// by the appended bytes, padded to a whole number of blocks (see
+    /// [`Self::write_into_pages`] / [`Pages::write_to_pages_grow`]). This only
+    /// materializes the files; it must not size them.
     fn ensure_append_pages(
         &mut self,
         start_page_id: PageId,
@@ -356,10 +357,16 @@ where
     /// Write a value into a cell, considering that it can span more than one
     /// page.
     ///
-    /// In serverless (append-only) mode the write grows each page file by
-    /// exactly the appended bytes as a single operation, so the pages must not
-    /// be pre-sized. In dynamic mode the pages are already allocated to their
-    /// full size and are written in place.
+    /// In serverless (append-only) mode the write grows each page file as a
+    /// single operation, so the pages must not be pre-sized. The appended bytes
+    /// are padded with zeroes up to a whole number of blocks, so every value
+    /// occupies whole blocks and the next append starts on a block boundary —
+    /// matching the block-aligned, pre-sized pages of dynamic mode. In dynamic
+    /// mode the pages are already allocated to their full size and are written
+    /// in place.
+    ///
+    /// The padding is physical only: the tracker still stores the value's exact
+    /// (unpadded) length, so reads return just the value bytes.
     #[allow(clippy::needless_pass_by_ref_mut)]
     fn write_into_pages(
         &mut self,
@@ -367,11 +374,22 @@ where
         start_page_id: PageId,
         block_offset: BlockOffset,
     ) -> Result<()> {
-        let pointer = ValuePointer::new(start_page_id, block_offset, value.len() as u32);
         let mut pages = self.pages.write();
         if self.mode.is_serverless() {
-            pages.write_to_pages_grow(pointer, value, &self.config)
+            // Append-only pages grow per write, so pad with zeroes up to the
+            // block boundary to keep every value block-aligned.
+            let padded_len = value.len().next_multiple_of(self.config.block_size_bytes);
+            let pointer = ValuePointer::new(start_page_id, block_offset, padded_len as u32);
+            if padded_len == value.len() {
+                pages.write_to_pages_grow(pointer, value, &self.config)
+            } else {
+                let mut padded = Vec::with_capacity(padded_len);
+                padded.extend_from_slice(value);
+                padded.resize(padded_len, 0);
+                pages.write_to_pages_grow(pointer, &padded, &self.config)
+            }
         } else {
+            let pointer = ValuePointer::new(start_page_id, block_offset, value.len() as u32);
             pages.write_to_pages(pointer, value, &self.config)
         }
     }

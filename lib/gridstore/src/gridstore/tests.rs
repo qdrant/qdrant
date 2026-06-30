@@ -164,7 +164,8 @@ fn test_put_payload(
 
 #[rstest]
 fn test_delete_single_payload(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // Dynamic mode: asserts block-rounded storage size and block reuse.
+    // Both modes store block-rounded sizes. They differ on delete: dynamic mode
+    // frees the block, while serverless is append-only and keeps it on disk.
     let (_dir, mut storage) = empty_storage(mode);
 
     let mut payload = Payload::default();
@@ -198,7 +199,15 @@ fn test_delete_single_payload(#[values(Mode::Regular, Mode::Serverless)] mode: M
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_none());
     storage.flusher()().unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+
+    // Dynamic mode frees the block on delete; serverless is append-only and keeps
+    // the block-aligned bytes on disk.
+    let expected_size = if mode.is_serverless() {
+        DEFAULT_BLOCK_SIZE_BYTES
+    } else {
+        0
+    };
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), expected_size);
 }
 
 #[rstest]
@@ -286,9 +295,10 @@ fn test_write_across_pages(#[values(Mode::Regular, Mode::Serverless)] mode: Mode
 }
 
 /// Serverless storage is append-only: writing a value grows the page file by
-/// exactly the value's byte length, with no block- or page-rounding.
+/// the value's byte length padded up to a whole number of blocks, so every
+/// value stays block-aligned (like the pre-sized pages in dynamic mode).
 #[test]
-fn test_serverless_append_grows_page_by_exact_bytes() {
+fn test_serverless_append_grows_page_block_aligned() {
     let (_dir, mut storage) = empty_storage(Mode::Serverless);
 
     let mut payload = Payload::default();
@@ -301,16 +311,28 @@ fn test_serverless_append_grows_page_by_exact_bytes() {
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
 
-    // The page file holds exactly the bytes written (the pointer length), unlike
-    // dynamic mode where the page is pre-sized to a full page.
+    // The tracker keeps the exact (unpadded) value length; this small value
+    // fits within a single block.
     let pointer = storage.get_pointer(0).unwrap();
+    assert!(
+        u64::from(pointer.length) < DEFAULT_BLOCK_SIZE_BYTES as u64,
+        "test assumes the value is smaller than a single block",
+    );
+
+    // But the page file (and storage size) grows by the block-aligned length:
+    // the value bytes followed by zero padding up to the block boundary.
+    let block_aligned = (pointer.length as usize).next_multiple_of(DEFAULT_BLOCK_SIZE_BYTES);
+    assert_eq!(block_aligned, DEFAULT_BLOCK_SIZE_BYTES);
     assert_eq!(
         storage.pages.read().last_page_len().unwrap(),
-        u64::from(pointer.length),
+        block_aligned as u64,
     );
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), block_aligned);
+
+    // The padding is physical only: the value still reads back intact.
     assert_eq!(
-        storage.get_storage_size_bytes().unwrap(),
-        pointer.length as usize,
+        storage.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(payload),
     );
 }
 
