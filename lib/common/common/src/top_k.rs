@@ -4,6 +4,9 @@ use ordered_float::Float;
 
 use crate::types::{ScoreType, ScoredPointOffset};
 
+/// Avoid excessive memory allocation and allocation failures on huge limits
+const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
+
 /// TopK implementation following the median algorithm described in
 /// <https://quickwit.io/blog/top-k-complexity>.
 ///
@@ -19,7 +22,9 @@ impl TopK {
     pub fn new(k: usize) -> Self {
         TopK {
             k,
-            elements: Vec::with_capacity(2 * k),
+            elements: Vec::with_capacity(
+                k.saturating_mul(2).min(LARGEST_REASONABLE_ALLOCATION_SIZE),
+            ),
             threshold: ScoreType::min_value(),
         }
     }
@@ -69,6 +74,21 @@ mod test {
         assert_eq!(top_k.len(), 0);
         assert_eq!(top_k.elements.capacity(), 2 * 3);
         assert_eq!(top_k.threshold(), ScoreType::MIN);
+    }
+
+    #[test]
+    fn huge_k_does_not_allocate_unbounded() {
+        // `k` is the client-supplied search limit and flows straight into the
+        // initial reservation. Without a bound, a huge value reserves a buffer
+        // large enough to abort the process on allocation failure before any
+        // point is scored. The reservation is capped; a legitimate result set
+        // larger than the cap still grows the buffer on demand.
+        let top_k = TopK::new(usize::MAX);
+        assert_eq!(top_k.len(), 0);
+        assert_eq!(
+            top_k.elements.capacity(),
+            LARGEST_REASONABLE_ALLOCATION_SIZE
+        );
     }
 
     #[test]
