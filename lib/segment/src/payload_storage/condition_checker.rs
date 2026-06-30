@@ -3,13 +3,33 @@
 use std::str::FromStr;
 
 use ordered_float::OrderedFloat;
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
     GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
     MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
 };
+
+/// Convert a JSON Number to i64, handling float values that represent whole integers
+/// (e.g., 42.0 → 42). Mirrors `value_to_integer` in `index/field_index/utils.rs`
+/// so the non-indexed exact-match fallback and integer payload indexes agree.
+fn number_to_integer(number: &Number) -> Option<i64> {
+    number.as_i64().or_else(|| {
+        number.as_f64().and_then(|v| {
+            // Reject NaN, infinity, and values outside i64 range.
+            // Without the range check, out-of-range f64 values saturate during
+            // the `v as i64` cast and then pass the round-trip equality test
+            // (e.g. 9223372036854775808.0 → i64::MAX → 9223372036854775808.0).
+            if v.is_finite() && v >= (i64::MIN as f64) && v < (i64::MAX as f64) {
+                let int = v as i64;
+                (int as f64 == v).then_some(int)
+            } else {
+                None
+            }
+        })
+    })
+}
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
 ///
@@ -166,7 +186,7 @@ impl ValueChecker for Match {
                 (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,
                 (Value::String(stored), ValueVariants::String(val)) => stored == val,
                 (Value::Number(stored), ValueVariants::Integer(val)) => {
-                    stored.as_i64().is_some_and(|num| num == *val)
+                    number_to_integer(stored).is_some_and(|num| num == *val)
                 }
                 _ => false,
             },
@@ -198,8 +218,7 @@ impl ValueChecker for Match {
                         list.contains(stored.as_str())
                     }
                 }
-                (Value::Number(stored), AnyVariants::Integers(list)) => stored
-                    .as_i64()
+                (Value::Number(stored), AnyVariants::Integers(list)) => number_to_integer(stored)
                     .map(|num| {
                         if list.len() < INDEXSET_ITER_THRESHOLD {
                             list.iter().any(|i| *i == num)
@@ -218,8 +237,7 @@ impl ValueChecker for Match {
                         !list.contains(stored.as_str())
                     }
                 }
-                (Value::Number(stored), AnyVariants::Integers(list)) => stored
-                    .as_i64()
+                (Value::Number(stored), AnyVariants::Integers(list)) => number_to_integer(stored)
                     .map(|num| {
                         if list.len() < INDEXSET_ITER_THRESHOLD {
                             !list.iter().any(|i| *i == num)
