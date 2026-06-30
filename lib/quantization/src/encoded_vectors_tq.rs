@@ -360,11 +360,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.quantizer.precompute_query(query)
     }
 
-    fn iter_batch(
-        &self,
-        offsets: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
-        self.encoded_vectors.iter_batch(offsets)
+    fn for_each_batch(&self, offsets: &[PointOffsetType], callback: impl FnMut(usize, &[u8])) {
+        self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
     fn score(

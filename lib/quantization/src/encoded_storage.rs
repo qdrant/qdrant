@@ -22,14 +22,10 @@ pub trait EncodedStorage {
 
     fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>>;
 
-    fn iter_batch(
-        &self,
-        offsets: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
-        offsets
-            .iter()
-            .map(move |&offset| self.get_vector_data(offset))
-            .enumerate()
+    fn for_each_batch(&self, offsets: &[PointOffsetType], mut callback: impl FnMut(usize, &[u8])) {
+        for (index, &offset) in offsets.iter().enumerate() {
+            callback(index, &self.get_vector_data(offset));
+        }
     }
 
     fn is_in_ram_or_mmap() -> bool;

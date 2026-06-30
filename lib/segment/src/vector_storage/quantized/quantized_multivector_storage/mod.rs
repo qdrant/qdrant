@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::{iter, slice};
+use std::slice;
 
 use ahash::HashMapExt as _;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -227,25 +227,26 @@ where
 
         let mut multi_vectors = ahash::HashMap::new();
 
-        for (chunk_index, vector) in self.quantized_storage.iter_batch(&chunks) {
-            let State { index, count } = state[chunk_index];
+        self.quantized_storage
+            .for_each_batch(&chunks, |chunk_index, vector| {
+                let State { index, count } = state[chunk_index];
 
-            if count == 1 {
-                callback(index as _, slice::from_ref(&vector));
-                continue;
-            }
+                if count == 1 {
+                    callback(index as _, slice::from_ref(&Cow::Borrowed(vector)));
+                    return;
+                }
 
-            let multi_vector = multi_vectors
-                .entry(index)
-                .or_insert_with(SmallVec::<[_; 4]>::new);
+                let multi_vector = multi_vectors
+                    .entry(index)
+                    .or_insert_with(SmallVec::<[_; 4]>::new);
 
-            multi_vector.push(vector);
+                multi_vector.push(Cow::Owned(vector.to_vec()));
 
-            if multi_vector.len() == count as usize {
-                let multi_vector = multi_vectors.remove(&index).expect("multi-vector exists");
-                callback(index as _, &multi_vector);
-            }
-        }
+                if multi_vector.len() == count as usize {
+                    let multi_vector = multi_vectors.remove(&index).expect("multi-vector exists");
+                    callback(index as _, &multi_vector);
+                }
+            });
 
         debug_assert!(multi_vectors.is_empty());
     }
@@ -295,15 +296,16 @@ where
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
         max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
 
-        for (_, vector) in self.quantized_storage.iter_batch(&offsets) {
-            for (query_idx, query) in query.iter().enumerate() {
-                let sim = self.quantized_storage.score(query, &vector, hw_counter);
+        self.quantized_storage
+            .for_each_batch(&offsets, |_, vector| {
+                for (query_idx, query) in query.iter().enumerate() {
+                    let sim = self.quantized_storage.score(query, vector, hw_counter);
 
-                if max_sim[query_idx] < sim {
-                    max_sim[query_idx] = sim;
+                    if max_sim[query_idx] < sim {
+                        max_sim[query_idx] = sim;
+                    }
                 }
-            }
-        }
+            });
 
         max_sim.into_iter().sum()
     }
@@ -378,11 +380,8 @@ where
             .collect()
     }
 
-    fn iter_batch(&self, _: &[PointOffsetType]) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
-        unimplemented!("quantized multi-vector storage does not support `iter_batch`");
-
-        #[allow(unreachable_code)]
-        iter::empty()
+    fn for_each_batch(&self, _: &[PointOffsetType], _: impl FnMut(usize, &[u8])) {
+        unimplemented!("quantized multi-vector storage does not support `for_each_batch`");
     }
 
     fn score(&self, _: &Self::EncodedQuery, _: &[u8], _: &HardwareCounterCell) -> f32 {
