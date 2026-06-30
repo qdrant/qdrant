@@ -14,8 +14,8 @@ use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 /// This trait lets the [`serialize_graph_links`] to access vector values.
 ///
