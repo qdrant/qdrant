@@ -295,57 +295,6 @@ fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
     Ok(())
 }
 
-/// Verify that `read_multi` (callback API) and `read_multi_iter` produce identical
-/// results, confirming the callback version correctly delegates to the iterator.
-#[test]
-fn test_io_uring_read_multi_read_multi_iter() -> Result<()> {
-    let dir = tempfile::tempdir().unwrap();
-
-    let data_a: Vec<u64> = (0..200).collect();
-    let file_a = test_file(&dir.path().join("a.bin"), &data_a, false)?;
-
-    let data_b: Vec<u64> = (5000..5200).collect();
-    let file_b = test_file(&dir.path().join("b.bin"), &data_b, false)?;
-
-    let reads = vec![
-        (0, &file_a, read_range::<u64>(0, 50)),
-        (1, &file_b, read_range::<u64>(10, 30)),
-        (2, &file_a, read_range::<u64>(100, 50)),
-        (3, &file_b, read_range::<u64>(0, 100)),
-        (4, &file_a, read_range::<u64>(150, 50)),
-    ];
-
-    // Collect via callback.
-    let mut callback_results = Vec::new();
-
-    IoUringFile::read_multi::<Sequential, u64, _>(reads.clone(), |idx, items| {
-        callback_results.push((idx, items.to_vec()));
-        Ok(())
-    })?;
-
-    callback_results.sort_by_key(|&(idx, _)| idx);
-
-    // Collect via iterator.
-    let iter = IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)?;
-
-    let mut iter_results: Vec<_> = iter.collect::<Result<_>>()?;
-    iter_results.sort_by_key(|&(idx, _)| idx);
-
-    // Compare results
-    assert_eq!(callback_results.len(), iter_results.len());
-    for ((cb_idx, cb_items), (it_idx, it_items)) in callback_results.into_iter().zip(iter_results) {
-        assert_eq!(cb_idx, it_idx, "operation index mismatch");
-
-        assert_eq!(
-            cb_items.as_slice(),
-            it_items.as_ref(),
-            "data mismatch at op {cb_idx}"
-        );
-    }
-
-    Ok(())
-}
-
 extern "C" fn noop_signal_handler(_sig: libc::c_int) {}
 
 /// Asserts that `read_iter` handles `EINTR` transparently by retrying

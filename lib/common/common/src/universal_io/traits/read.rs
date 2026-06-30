@@ -169,27 +169,8 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
     fn clear_ram_cache(&self) -> Result<()>;
 
-    /// Read from multiple files in a single operation.
-    fn read_multi<'a, P, T, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-        mut callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-        Self: 'a,
-    {
-        for record in Self::read_multi_iter::<P, T, U>(reads)? {
-            let (user_data, items) = record?;
-            callback(user_data, &items)?;
-        }
-
-        Ok(())
-    }
-
-    /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator
-    /// instead of accepting a callback.
+    /// Read ranges across multiple files in a single operation, returning a
+    /// fallible iterator.
     fn read_multi_iter<'a, P, T, U>(
         reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>

@@ -215,24 +215,6 @@ where
     }
 
     #[inline]
-    fn read_multi<'a, P, T, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-        Self: 'a,
-    {
-        let reads = reads
-            .into_iter()
-            .map(|(user_data, file, range)| (user_data, &file.0, range));
-
-        S::read_multi::<P, T, _>(reads, callback)
-    }
-
-    #[inline]
     fn read_multi_iter<'a, P, T, U>(
         reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
