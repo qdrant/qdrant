@@ -138,11 +138,14 @@ impl ValueChecker for FieldCondition {
             geo_radius: _,
             geo_bounding_box: _,
             geo_polygon: _,
-            values_count: _,
+            values_count,
             key: _,
             is_empty,
             is_null,
         } = self;
+        if let Some(values_count) = values_count {
+            return values_count.check_empty();
+        }
         if let Some(is_empty) = is_empty {
             return *is_empty;
         }
@@ -405,6 +408,42 @@ mod tests {
             lte: None,
         };
         assert!(gte_two_countries_query.check(&countries));
+
+        // Test check_empty() for values_count conditions (Fixes #9586)
+        // A missing field should be treated as having 0 values
+        let empty_value = json!(null);
+        let lt_one = ValuesCount {
+            lt: Some(1),
+            gt: None,
+            gte: None,
+            lte: None,
+        };
+        assert!(lt_one.check_empty()); // 0 < 1 → true
+        assert!(lt_one.check(&empty_value)); // null → 0 values, 0 < 1 → true
+
+        let gte_zero = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(0),
+            lte: None,
+        };
+        assert!(gte_zero.check_empty()); // 0 >= 0 → true
+
+        let lte_zero = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(0),
+        };
+        assert!(lte_zero.check_empty()); // 0 <= 0 → true
+
+        let gt_zero = ValuesCount {
+            lt: None,
+            gt: Some(0),
+            gte: None,
+            lte: None,
+        };
+        assert!(!gt_zero.check_empty()); // 0 > 0 → false
     }
 
     #[test]
