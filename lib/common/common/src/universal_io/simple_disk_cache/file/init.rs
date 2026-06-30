@@ -163,43 +163,21 @@ where
         Ok(State { remote, local })
     }
 
-    /// Fill the local mirror from one whole-object read when the cache is cold
-    /// (`InitSource::FromScratch`); other init sources fall back to the normal
-    /// initialization.
-    pub(super) fn ensure_whole_local(&self) -> Result<()> {
-        if self.state.get().is_some() {
-            return Ok(());
+    /// Set up [`InitSource::Prefiller`] when the cache is cold
+    /// (not initialized and `InitSource::FromScratch`)
+    pub(super) fn prefill_if_uninit(&self) -> Result<()> {
+        if self.state.get().is_none() {
+            let mut init_guard = self.init_lock.lock();
+            if self.state.get().is_none() {
+                // Cold cache: use the remote's `schedule_whole` to prevent an
+                // additional `len` call to remote.
+                if matches!(&*init_guard, InitSource::FromScratch) {
+                    let mut pipeline = OwnedPipeline::new(self.open_remote()?)?;
+                    pipeline.schedule_whole((), 0)?;
+                    *init_guard = InitSource::Prefiller(pipeline);
+                }
+            }
         }
-
-        let mut init_guard = self.init_lock.lock();
-        if self.state.get().is_some() {
-            return Ok(());
-        }
-
-        // Only a cold cache (`FromScratch`) gets the dedicated whole-object fill
-        // below. If a prefill is already in flight (eager populate, or a reopen
-        // tail read), resolve it through the normal initialization path instead.
-        let from_scratch = match &*init_guard {
-            InitSource::FromScratch => true,
-            InitSource::Prefiller(_) => false,
-            InitSource::PartialPrefiller { .. } => false,
-        };
-        if !from_scratch {
-            return self.init_state(&mut init_guard, true);
-        }
-
-        let remote = self.open_remote()?;
-        let bytes = remote.read_whole::<u8>()?;
-        let len = bytes.len() as u64;
-        let local = LocalState::new(&self.local_path, len, self.open_options)?;
-        if len > 0 {
-            // SAFETY: `bytes` covers the whole file `0..len` and the remote is
-            // immutable, so the mmap is filled exactly once with correct data.
-            unsafe { local.write_mmap_bytes(&bytes, to_block_range(0..len)) };
-        }
-        self.state
-            .set(State { remote, local })
-            .expect("OnceLock::set must succeed while holding init_lock");
 
         Ok(())
     }
