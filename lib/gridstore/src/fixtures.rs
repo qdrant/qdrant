@@ -28,32 +28,19 @@ impl Blob for Payload {
     }
 }
 
-/// Create an empty storage with the default configuration
-pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
-    empty_storage_in_mode(Mode::default())
-}
-
 /// Create an empty storage with the default configuration in a specific mode.
 ///
 /// Tests that assert dynamic-mode invariants (bitmask, block reuse,
 /// block-rounded sizes) should use [`Mode::Regular`].
-pub fn empty_storage_in_mode(mode: Mode) -> (TempDir, Gridstore<Payload>) {
+pub fn empty_storage(mode: Mode) -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let storage =
         Gridstore::new(MmapFs, dir.path().to_path_buf(), Default::default(), mode).unwrap();
     (dir, storage)
 }
 
-/// Create an empty storage with a specific page size
-pub fn empty_storage_sized(
-    page_size: usize,
-    compression: Compression,
-) -> (TempDir, Gridstore<Payload>) {
-    empty_storage_sized_in_mode(page_size, compression, Mode::default())
-}
-
 /// Create an empty storage with a specific page size in a specific mode.
-pub fn empty_storage_sized_in_mode(
+pub fn empty_storage_sized(
     page_size: usize,
     compression: Compression,
     mode: Mode,
