@@ -8,8 +8,8 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWrite, UserData,
+    FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
 
@@ -211,7 +211,7 @@ impl<S: UniversalRead> Pages<S> {
         pointer: ValuePointer,
         config: &StorageConfig,
     ) -> Result<Cow<'_, [u8]>> {
-        let reads = Self::get_page_value_ranges(pointer, config)
+        let mut reads = Self::get_page_value_ranges(pointer, config)
             .map(|(buf_offset, page, range)| (buf_offset, &self.pages[page as usize], range));
 
         let pages = Self::value_len_pages(pointer, config);
@@ -224,8 +224,22 @@ impl<S: UniversalRead> Pages<S> {
             vec![MaybeUninit::uninit(); pointer.length as _]
         };
 
-        for result in S::read_multi_iter::<P, u8, _>(reads)? {
-            let (offset, bytes) = result?;
+        // Drive the read pipeline directly: refill it from `reads` whenever it can
+        // accept more, then drain one completed read at a time. Reads span multiple
+        // page files, so each is scheduled on its own file handle.
+        let mut pipeline = S::ReadPipeline::<'_, usize>::new()?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((offset, page, range)) = reads.next()
+            {
+                let range = range.into_byte_range::<u8>();
+                pipeline.schedule::<P>(offset, page, range, align_of::<u8>())?;
+            }
+
+            let Some((offset, bytes)) = pipeline.wait_bytemuck::<u8>()? else {
+                break;
+            };
 
             if pages == 1 {
                 return Ok(bytes);
