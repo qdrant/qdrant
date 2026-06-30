@@ -284,6 +284,7 @@ where
         let file_len = self.store.len::<u8>()?;
 
         // Batch 1: Resolve each values' range and count
+        let mut value_reads = Vec::with_capacity(points.size_hint().0.min(10_000));
         let range_reads = points.filter_map(|point_id| {
             if point_id >= points_count {
                 return None;
@@ -296,7 +297,6 @@ where
             let length = if point_id + 1 < points_count { 2 } else { 1 };
             Some((point_id, ReadRange::new(byte_offset, length)))
         });
-        let mut value_reads = Vec::new();
         self.store
             .read_batch::<Random, MmapRange, _>(range_reads, |point_id, ranges| {
                 let MmapRange { start, count } = ranges[0];
