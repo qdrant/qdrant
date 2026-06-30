@@ -283,7 +283,7 @@ impl<S: UniversalRead> Pages<S> {
         // Single-page reads (common case) bypass this map entirely.
         let pending = RefCell::new(AHashMap::new());
 
-        let reads = pointers
+        let mut reads = pointers
             .enumerate()
             .flat_map(|(value_idx, (user_data, pointer))| {
                 let ranges = Self::get_page_value_ranges(pointer, config);
@@ -319,8 +319,28 @@ impl<S: UniversalRead> Pages<S> {
                 })
             });
 
-        for result in S::read_multi_iter::<P, _, _>(reads).map_err(GridstoreError::from)? {
-            let (meta, bytes) = result.map_err(GridstoreError::from)?;
+        // Drive the read pipeline directly: refill it from `reads` whenever it can
+        // accept more, then drain one completed read at a time. Each read targets
+        // its own page file, and chunks for multi-page values may arrive in any order.
+        let mut pipeline =
+            S::ReadPipeline::<'_, ReadMeta<U>>::new().map_err(GridstoreError::from)?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((meta, page, range)) = reads.next()
+            {
+                let range = range.into_byte_range::<u8>();
+                pipeline
+                    .schedule::<P>(meta, page, range, align_of::<u8>())
+                    .map_err(GridstoreError::from)?;
+            }
+
+            let Some((meta, bytes)) = pipeline
+                .wait_bytemuck::<u8>()
+                .map_err(GridstoreError::from)?
+            else {
+                break;
+            };
 
             let ReadMeta {
                 value_idx,
