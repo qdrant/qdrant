@@ -374,22 +374,18 @@ impl VectorQuery<VectorInputInternal> {
             .positives
             .into_iter()
             .map(|vector_input| {
-                ids_to_vectors.resolve_reference(
-                    lookup_collection,
-                    lookup_vector_name,
-                    vector_input,
-                ).ok_or_else(|| vector_not_found_error(lookup_vector_name))
+                ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
             .collect::<CollectionResult<_>>()?;
         let negatives: Vec<VectorInternal> = reco_query
             .negatives
             .into_iter()
             .map(|vector_input| {
-                ids_to_vectors.resolve_reference(
-                    lookup_collection,
-                    lookup_vector_name,
-                    vector_input,
-                ).ok_or_else(|| vector_not_found_error(lookup_vector_name))
+                ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
             .collect::<CollectionResult<_>>()?;
         Ok((positives, negatives))
