@@ -33,9 +33,9 @@ where
             .step_by(BLOCK_SIZE)
             .map(|byte_offset| ((), ReadRange::one(byte_offset)));
 
-        for result in self.read_iter::<Sequential, u8, ()>(one_byte_per_block)? {
-            result?;
-        }
+        // Read one byte per block purely to fault each block into the local
+        // cache; the bytes themselves are discarded.
+        self.read_batch::<Sequential, u8, ()>(one_byte_per_block, |(), _bytes| Ok(()))?;
 
         Ok(())
     }
