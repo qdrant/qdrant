@@ -67,7 +67,7 @@ jobs:
         with:
           target: x86_64-unknown-linux-musl
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@1583d6b38d7be47f593cb472781bbb21cab4321e # v0.0.10
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           # Namespace cache per target/profile so musl perf doesn't collide with gnu/release caches
