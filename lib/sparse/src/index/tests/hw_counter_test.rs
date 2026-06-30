@@ -26,7 +26,7 @@ fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> HwMeas
     )
     .unwrap();
 
-    let result = search_context.search(&match_all);
+    let result = search_context.search(&match_all());
     // there might be less than `top` result
     // happens if index contains less than `top` sparse vectors with indices overlapping the query indices
     assert!(result.len() <= top);

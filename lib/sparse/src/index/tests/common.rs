@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use common::condition_checker::ConstantConditionChecker;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use rand::{RngExt, SeedableRng};
@@ -102,6 +103,6 @@ where
     generate_sparse_index::<W, _>(&mut rnd_gen, count, density, vocab1, vocab2)
 }
 
-pub fn match_all(_p: PointOffsetType) -> bool {
-    true
+pub fn match_all() -> ConstantConditionChecker<std::convert::Infallible> {
+    ConstantConditionChecker::MATCH_ALL
 }

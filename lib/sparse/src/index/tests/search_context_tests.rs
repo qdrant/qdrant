@@ -2,9 +2,10 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
+use common::condition_checker::ConstantConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::ScoredPointOffset;
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
 use common::universal_io::{MmapFile, MmapFs};
@@ -22,8 +23,8 @@ use crate::index::posting_list_common::PostingListIter;
 use crate::index::search_context::SearchContext;
 
 /// Match all filter condition for testing
-fn match_all(_p: PointOffsetType) -> bool {
-    true
+fn match_all() -> ConstantConditionChecker<std::convert::Infallible> {
+    ConstantConditionChecker::MATCH_ALL
 }
 
 #[duplicate::duplicate_item(
@@ -103,7 +104,7 @@ mod test_mod {
             &hw_counter,
         )
         .unwrap();
-        assert_eq!(search_context.search(&match_all), Vec::new());
+        assert_eq!(search_context.search(&match_all()), Vec::new());
     }
 
     #[test]
@@ -134,7 +135,7 @@ mod test_mod {
         .unwrap();
 
         assert_eq!(
-            round_scores(search_context.search(&match_all)),
+            round_scores(search_context.search(&match_all())),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -194,7 +195,7 @@ mod test_mod {
         .unwrap();
 
         assert_eq!(
-            round_scores(search_context.search(&match_all)),
+            round_scores(search_context.search(&match_all())),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -238,7 +239,7 @@ mod test_mod {
         .unwrap();
 
         assert_eq!(
-            search_context.search(&match_all),
+            search_context.search(&match_all()),
             vec![
                 ScoredPointOffset {
                     score: 120.0,
@@ -294,7 +295,7 @@ mod test_mod {
         .unwrap();
 
         assert_eq!(
-            round_scores(search_context.search(&match_all)),
+            round_scores(search_context.search(&match_all())),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -337,7 +338,7 @@ mod test_mod {
         .unwrap();
 
         assert_eq!(
-            round_scores(search_context.search(&match_all)),
+            round_scores(search_context.search(&match_all())),
             vec![
                 ScoredPointOffset {
                     score: 90.0,

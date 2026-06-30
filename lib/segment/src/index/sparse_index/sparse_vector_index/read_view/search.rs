@@ -14,7 +14,7 @@ use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
-use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
+use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, ScorerFilters};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter};
@@ -219,9 +219,6 @@ where
             .unwrap_or(self.id_tracker.deleted_point_bitslice());
         let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
 
-        let not_deleted_condition =
-            |idx: PointOffsetType| -> bool { not_deleted.check_infallible(idx) };
-
         let is_stopped = vector_query_context.is_stopped();
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
@@ -243,16 +240,11 @@ where
             &hw_counter,
         )?;
 
-        match filter {
-            Some(filter) => {
-                let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
-                let matches_filter_condition = |idx: PointOffsetType| -> bool {
-                    not_deleted_condition(idx) && filter_context.check_infallible(idx)
-                };
-                Ok(search_context.search(&matches_filter_condition))
-            }
-            None => Ok(search_context.search(&not_deleted_condition)),
-        }
+        let filter_context = filter
+            .map(|filter| self.payload_index.filter_context(filter, &hw_counter))
+            .transpose()?;
+        let filter_condition = ScorerFilters::new(filter_context, not_deleted);
+        Ok(search_context.search(&filter_condition))
     }
 
     fn search_nearest_query(

@@ -24,7 +24,7 @@ fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
     )
     .unwrap();
 
-    let result = search_context.search(&match_all);
+    let result = search_context.search(&match_all());
     let docs: Vec<_> = result.iter().map(|x| x.idx).collect();
     drop(search_context);
 

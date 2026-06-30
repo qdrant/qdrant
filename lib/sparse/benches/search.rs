@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::condition_checker::ConstantConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
@@ -190,6 +191,7 @@ fn run_bench2(
     let mut it = query_vectors.iter().cycle();
 
     let hardware_counter = HardwareCounterCell::new();
+    let checker = ConstantConditionChecker::<()>::MATCH_ALL;
 
     group.bench_function("basic", |b| {
         b.iter_batched(
@@ -198,7 +200,7 @@ fn run_bench2(
                 let mut scratch = pool.get();
                 SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
                     .unwrap()
-                    .search(&|_| true)
+                    .search(&checker)
             },
             criterion::BatchSize::SmallInput,
         )
@@ -214,7 +216,7 @@ fn run_bench2(
                 let mut scratch = pool.get();
                 SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
                     .unwrap()
-                    .search(&|_| true)
+                    .search(&checker)
             },
             criterion::BatchSize::SmallInput,
         )
