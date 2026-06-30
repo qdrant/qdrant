@@ -118,11 +118,21 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         T: Item,
         U: UserData,
     {
-        let reads = ranges
-            .into_iter()
-            .map(move |(user_data, range)| (user_data, self, range));
+        let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
+        let mut ranges = ranges.into_iter();
 
-        Self::read_multi_iter::<P, T, U>(reads)
+        Ok(std::iter::from_fn(move || {
+            while pipeline.can_schedule()
+                && let Some((user_data, range)) = ranges.next()
+            {
+                let range = range.into_byte_range::<T>();
+                if let Err(err) = pipeline.schedule::<P>(user_data, self, range, align_of::<T>()) {
+                    return Some(Err(err));
+                }
+            }
+
+            pipeline.wait_bytemuck().transpose()
+        }))
     }
 
     fn read_bytes_iter<P, U>(
