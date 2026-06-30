@@ -12,6 +12,7 @@ use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
+use common::bitvec::BitSlice;
 
 /// Read-only view over a sparse vector index.
 ///
@@ -30,6 +31,7 @@ where
     pub(crate) vector_storage: &'a V,
     pub(crate) payload_index: P,
     pub(crate) inverted_index: &'a TInvertedIndex,
+    pub(crate) indexed_vector_ids: &'a BitSlice,
     pub(crate) searches_telemetry: &'a SparseSearchesTelemetry,
     pub(crate) indices_tracker: &'a IndicesTracker,
     pub(crate) search_scratch_pool: &'a SearchScratchPool,

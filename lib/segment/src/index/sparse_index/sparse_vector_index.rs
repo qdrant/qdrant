@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-#[cfg(feature = "testing")]
+use common::bitvec::{BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::StorageVersion as _;
@@ -12,9 +12,11 @@ use common::universal_io::{MmapFile, MmapFs, UniversalReadFs};
 use fs_err as fs;
 use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::SparseVector;
+use sparse::common::types::DimOffset;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadWrite};
+use sparse::index::posting_list_common::PostingListIter as _;
 
 use self::read_view::{SparseVectorIndexReadView, SparseVectorIndexReadViewEnum};
 use super::indices_tracker::IndicesTracker;
@@ -30,6 +32,24 @@ mod vector_index_impl;
 
 pub mod read_only;
 
+pub(super) fn collect_indexed_vector_ids<TInvertedIndex: InvertedIndex>(
+    inverted_index: &TInvertedIndex,
+) -> OperationResult<BitVec> {
+    let mut indexed_vector_ids = BitVec::new();
+    let arena = blink_alloc::Blink::new();
+    let hw_counter = HardwareCounterCell::disposable();
+    let iter = (0..inverted_index.len()).map(|dim_id| ((), dim_id as DimOffset));
+
+    inverted_index.get_batch(iter, &arena, &hw_counter, |(), posting_list_iter| {
+        for element in posting_list_iter.into_std_iter() {
+            bitvec_set_deleted(&mut indexed_vector_ids, element.record_id, true);
+        }
+        Ok(())
+    })?;
+
+    Ok(indexed_vector_ids)
+}
+
 #[derive(Debug)]
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     config: SparseIndexConfig,
@@ -38,6 +58,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     path: PathBuf,
     inverted_index: TInvertedIndex,
+    indexed_vector_ids: BitVec,
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
     search_scratch_pool: SearchScratchPool,
@@ -155,6 +176,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             TInvertedIndex::Version::save(path)?;
         }
 
+        let indexed_vector_ids = collect_indexed_vector_ids(&inverted_index)?;
+
         Ok(Self {
             config,
             id_tracker,
@@ -162,6 +185,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             payload_index,
             path: path.to_path_buf(),
             inverted_index,
+            indexed_vector_ids,
             searches_telemetry: SparseSearchesTelemetry::new(),
             indices_tracker,
             search_scratch_pool: SearchScratchPool::new(),
@@ -300,6 +324,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 vector_storage: &*vector_storage,
                 payload_index: payload_index_view,
                 inverted_index: &self.inverted_index,
+                indexed_vector_ids: self.indexed_vector_ids.as_bitslice(),
                 searches_telemetry: &self.searches_telemetry,
                 indices_tracker: &self.indices_tracker,
                 search_scratch_pool: &self.search_scratch_pool,

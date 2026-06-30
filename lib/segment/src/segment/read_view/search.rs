@@ -8,7 +8,6 @@ use common::types::{DeferredBehavior, ScoredPointOffset};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
-use crate::data_types::named_vectors::CowVector;
 use crate::data_types::query_context::{IdfStatsKey, QueryContext, SegmentQueryContext};
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
@@ -21,7 +20,6 @@ use crate::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SearchParams, VectorName, VectorNameBuf,
     WithPayload, WithVector,
 };
-use crate::vector_storage::VectorStorageRead;
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
 where
@@ -281,34 +279,17 @@ where
                         vector_index.fill_idf_statistics(&mut stats.idf, &hw_counter)?;
                     }
                     Some(filter) => {
-                        let vector_storage = vector_data.vector_storage();
+                        let vector_index = vector_data.vector_index();
                         let filtered_points =
                             self.payload_index
                                 .query_points(filter, &hw_counter, &is_stopped)?;
 
-                        vector_storage.read_vectors::<Random, _>(
-                            filtered_points
-                                .into_iter()
-                                .map(|idx| (idx, idx))
-                                .stop_if(is_stopped.as_ref()),
-                            |_, _, vector| {
-                                let CowVector::Sparse(sparse) = vector else {
-                                    return;
-                                };
-
-                                if sparse.indices.is_empty() {
-                                    return;
-                                }
-
-                                stats.indexed_vectors += 1;
-                                for dim_id in &sparse.indices {
-                                    if let Some(count) = stats.idf.get_mut(dim_id) {
-                                        *count += 1;
-                                    }
-                                }
-                            },
-                        );
-                        check_stopped(is_stopped.as_ref())?;
+                        stats.indexed_vectors += vector_index.fill_idf_statistics_filtered(
+                            &mut stats.idf,
+                            &filtered_points,
+                            &hw_counter,
+                            is_stopped.as_ref(),
+                        )?;
                     }
                 }
             }
