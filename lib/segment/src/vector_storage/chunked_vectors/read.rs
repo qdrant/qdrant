@@ -7,8 +7,8 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    Populate, ReadRange, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
-    read_json_via, read_whole_via,
+    Populate, ReadPipeline, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalReadFs, UserData, read_json_via, read_whole_via,
 };
 use num_traits::AsPrimitive;
 
@@ -248,6 +248,48 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         TypedStorage::read_multi_iter::<P, _>(reads)
             .expect("iterator initialized")
             .map(|result| result.expect("vector read"))
+    }
+
+    /// Like [`iter_vectors`](Self::iter_vectors), but invokes `callback` for each
+    /// flattened multi-vector instead of returning an iterator.
+    ///
+    /// Drives the read pipeline directly across chunk files: refills it from the
+    /// offsets, then drains completed reads.
+    pub fn for_each_vector<P, U>(
+        &self,
+        mut offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
+        mut callback: impl FnMut(U, &[T]) -> OperationResult<()>,
+    ) -> OperationResult<()>
+    where
+        P: AccessPattern,
+        U: UserData,
+    {
+        // access pattern does not matter for io_uring
+        let mut pipeline = S::ReadPipeline::<'_, U>::new()?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((user_data, offset, count)) = offsets.next()
+            {
+                let (chunk_idx, range) = self
+                    .read_range(offset as _, count as _)
+                    .ok_or_else(|| OperationError::service_error("vector offset out of bounds"))?;
+                let range = range.into_byte_range::<T>();
+                pipeline.schedule::<P>(
+                    user_data,
+                    &self.chunks[chunk_idx].inner,
+                    range,
+                    align_of::<T>(),
+                )?;
+            }
+
+            let Some((user_data, vector)) = pipeline.wait_bytemuck::<T>()? else {
+                break;
+            };
+            callback(user_data, &vector)?;
+        }
+
+        Ok(())
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
