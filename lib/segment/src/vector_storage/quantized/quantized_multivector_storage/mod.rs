@@ -274,9 +274,7 @@ where
                 // directly when the backend already returned an owned buffer (as the
                 // io_uring-like backends this path targets do) — only a borrowed Cow
                 // (e.g. mmap) would copy here, and that case doesn't reach this path.
-                let buffer = partial_multi_vectors
-                    .entry(point_index)
-                    .or_insert_with(SmallVec::new);
+                let buffer = partial_multi_vectors.entry(point_index).or_default();
                 buffer.push(Cow::Owned(sub_vector.into_owned()));
 
                 if buffer.len() == multi_vector_len as usize {
