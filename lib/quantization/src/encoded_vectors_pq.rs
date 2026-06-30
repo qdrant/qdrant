@@ -540,7 +540,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         EncodedQueryPQ { lut }
     }
 
-    fn for_each_batch(&self, offsets: &[PointOffsetType], callback: impl FnMut(usize, &[u8])) {
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 

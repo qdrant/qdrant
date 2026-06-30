@@ -191,6 +191,19 @@ where
         );
     }
 
+    /// Read the quantized sub-vectors for a batch of multi-vector points and hand
+    /// each point's complete multi-vector to `callback`.
+    ///
+    /// Every point is a multi-vector: a run of `count` quantized sub-vectors stored
+    /// contiguously in `quantized_storage`, starting at `MultivectorOffset::start`.
+    /// To read them in one batched pass we:
+    ///
+    /// 1. resolve each point's offset and flatten every sub-vector into
+    ///    `sub_vector_offsets` (one storage offset per sub-vector), keeping the
+    ///    index-aligned `owners` array that records, per sub-vector, which point it
+    ///    belongs to and how long that point's multi-vector is;
+    /// 2. read all sub-vectors in a single batched pass and regroup them back into
+    ///    per-point multi-vectors before invoking `callback(point_index, &[..])`.
     fn for_each_in_multi_batch(
         &self,
         point_ids: &[PointOffsetType],
@@ -199,56 +212,86 @@ where
     ) {
         debug_assert!(point_ids.len() <= u32::MAX as usize);
 
+        /// Identifies, for a single sub-vector read, the multi-vector it is part of.
         #[derive(Copy, Clone)]
-        struct State {
-            index: u32,
-            count: u32,
+        struct SubVectorOwner {
+            /// Position within `point_ids` of the point this sub-vector belongs to
+            /// (also the slot `callback` reports this point's result to).
+            point_index: u32,
+            /// Number of sub-vectors that make up this point's multi-vector, i.e. how
+            /// many reads must be regrouped before the multi-vector is complete.
+            multi_vector_len: u32,
         }
 
-        let mut state = Vec::with_capacity(point_ids.len());
-        let mut chunks = Vec::with_capacity(point_ids.len());
+        // Flattened reads: `sub_vector_offsets[i]` is the storage offset of the i-th
+        // sub-vector to read, and `owners[i]` says which point owns it. The two arrays
+        // grow together and stay index-aligned.
+        let mut owners = Vec::with_capacity(point_ids.len());
+        let mut sub_vector_offsets = Vec::with_capacity(point_ids.len());
 
         self.offsets
-            .for_each_offset(point_ids, |index, offset| {
+            .for_each_offset(point_ids, |point_index, offset| {
                 for _ in 0..offset.count {
-                    state.push(State {
-                        index: index as u32,
-                        count: offset.count,
+                    owners.push(SubVectorOwner {
+                        point_index: point_index as u32,
+                        multi_vector_len: offset.count,
                     });
                 }
 
-                chunks.extend(offset.start..offset.start + offset.count);
+                sub_vector_offsets.extend(offset.start..offset.start + offset.count);
             })
             .expect("multi-vector offsets read");
 
         hw_counter
             .vector_io_read()
-            .incr_delta(chunks.len() * self.quantized_vector_size());
+            .incr_delta(sub_vector_offsets.len() * self.quantized_vector_size());
 
-        let mut multi_vectors = ahash::HashMap::new();
+        // Reads may complete in any order, so we buffer each point's sub-vectors
+        // (keyed by `point_index`) and emit the multi-vector once all of them have
+        // arrived — `owners[sub_vector_index]` maps every read back to its point
+        // regardless of completion order. Single-sub-vector points skip the buffer
+        // (and the owning copy it would require) and are emitted directly.
+        let mut partial_multi_vectors: ahash::HashMap<u32, SmallVec<[Cow<'_, [u8]>; 4]>> =
+            ahash::HashMap::new();
 
-        self.quantized_storage
-            .for_each_batch(&chunks, |chunk_index, vector| {
-                let State { index, count } = state[chunk_index];
+        self.quantized_storage.for_each_batch(
+            &sub_vector_offsets,
+            |sub_vector_index, sub_vector| {
+                let SubVectorOwner {
+                    point_index,
+                    multi_vector_len,
+                } = owners[sub_vector_index];
 
-                if count == 1 {
-                    callback(index as _, slice::from_ref(&Cow::Borrowed(vector)));
+                if multi_vector_len == 1 {
+                    // The whole multi-vector is this one sub-vector: hand it directly
+                    // without buffering, no copy.
+                    callback(point_index as _, slice::from_ref(&sub_vector));
                     return;
                 }
 
-                let multi_vector = multi_vectors
-                    .entry(index)
-                    .or_insert_with(SmallVec::<[_; 4]>::new);
+                // This sub-vector must outlive the reads of the point's remaining
+                // sub-vectors, so it has to be owned. `into_owned` takes the Vec
+                // directly when the backend already returned an owned buffer (as the
+                // io_uring-like backends this path targets do) — only a borrowed Cow
+                // (e.g. mmap) would copy here, and that case doesn't reach this path.
+                let buffer = partial_multi_vectors
+                    .entry(point_index)
+                    .or_insert_with(SmallVec::new);
+                buffer.push(Cow::Owned(sub_vector.into_owned()));
 
-                multi_vector.push(Cow::Owned(vector.to_vec()));
-
-                if multi_vector.len() == count as usize {
-                    let multi_vector = multi_vectors.remove(&index).expect("multi-vector exists");
-                    callback(index as _, &multi_vector);
+                if buffer.len() == multi_vector_len as usize {
+                    // Last sub-vector of this point arrived. Remove the buffer to take
+                    // ownership of the completed multi-vector (and keep the map empty
+                    // once every point is emitted), then hand it to the callback.
+                    let multi_vector = partial_multi_vectors
+                        .remove(&point_index)
+                        .expect("multi-vector buffered");
+                    callback(point_index as _, &multi_vector);
                 }
-            });
+            },
+        );
 
-        debug_assert!(multi_vectors.is_empty());
+        debug_assert!(partial_multi_vectors.is_empty());
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors.
@@ -299,7 +342,7 @@ where
         self.quantized_storage
             .for_each_batch(&offsets, |_, vector| {
                 for (query_idx, query) in query.iter().enumerate() {
-                    let sim = self.quantized_storage.score(query, vector, hw_counter);
+                    let sim = self.quantized_storage.score(query, &vector, hw_counter);
 
                     if max_sim[query_idx] < sim {
                         max_sim[query_idx] = sim;
@@ -380,7 +423,7 @@ where
             .collect()
     }
 
-    fn for_each_batch(&self, _: &[PointOffsetType], _: impl FnMut(usize, &[u8])) {
+    fn for_each_batch(&self, _: &[PointOffsetType], _: impl FnMut(usize, Cow<'_, [u8]>)) {
         unimplemented!("quantized multi-vector storage does not support `for_each_batch`");
     }
 

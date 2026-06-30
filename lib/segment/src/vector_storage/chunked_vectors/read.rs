@@ -200,7 +200,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
                 .map(|(index, point_offset)| (index, point_offset, 1));
 
             return self.for_each_vector::<Random, _>(point_offsets, |idx, vectors| {
-                callback(idx, vectors);
+                callback(idx, vectors.as_ref());
                 Ok(())
             });
         }
@@ -238,7 +238,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     pub fn for_each_vector<P, U>(
         &self,
         mut offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
-        mut callback: impl FnMut(U, &[T]) -> OperationResult<()>,
+        mut callback: impl FnMut(U, Cow<'_, [T]>) -> OperationResult<()>,
     ) -> OperationResult<()>
     where
         P: AccessPattern,
@@ -266,7 +266,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             let Some((user_data, vector)) = pipeline.wait_bytemuck::<T>()? else {
                 break;
             };
-            callback(user_data, &vector)?;
+            callback(user_data, vector)?;
         }
 
         Ok(())

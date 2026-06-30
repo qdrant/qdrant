@@ -317,7 +317,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
 
         self.data
             .for_each_vector::<Random, _>(point_offsets, |idx, multi_offset| {
-                let &[multi_offset] = multi_offset else {
+                let &[multi_offset] = multi_offset.as_ref() else {
                     unreachable!("multi-vector offsets are stored as vectors of length 1");
                 };
 
@@ -413,7 +413,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageCh
 
         self.data
             .for_each_vector::<Random, _>(point_offsets, |idx, multi_offset| {
-                let &[multi_offset] = multi_offset else {
+                let &[multi_offset] = multi_offset.as_ref() else {
                     unreachable!("multi-vector offsets are stored as vectors of length 1");
                 };
 

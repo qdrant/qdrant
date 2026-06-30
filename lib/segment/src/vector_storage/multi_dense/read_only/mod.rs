@@ -27,7 +27,7 @@ pub fn for_each_vector<P, T, U, S>(
     offsets: &ChunkedVectorsRead<MultivectorMmapOffset, S>,
     vectors: &ChunkedVectorsRead<T, S>,
     keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-    callback: impl FnMut(U, &[T]) -> OperationResult<()>,
+    mut callback: impl FnMut(U, &[T]) -> OperationResult<()>,
 ) -> OperationResult<()>
 where
     P: AccessPattern,
@@ -43,7 +43,7 @@ where
     // vectors in a single batched pass over `vectors`.
     let mut vector_offsets = Vec::new();
     offsets.for_each_vector::<P, _>(point_offsets, |user_data, multi_offset| {
-        let &[multi_offset] = multi_offset else {
+        let &[multi_offset] = multi_offset.as_ref() else {
             unreachable!("multi-vector offsets are stored as vectors of length 1");
         };
 
@@ -57,7 +57,9 @@ where
         Ok(())
     })?;
 
-    vectors.for_each_vector::<P, _>(vector_offsets.into_iter(), callback)
+    vectors.for_each_vector::<P, _>(vector_offsets.into_iter(), |user_data, vector| {
+        callback(user_data, vector.as_ref())
+    })
 }
 
 #[cfg(test)]

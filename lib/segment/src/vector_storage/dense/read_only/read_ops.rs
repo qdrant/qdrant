@@ -66,7 +66,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
 
         self.vectors
             .for_each_vector::<P, _>(keys, |(user_data, point_offset), vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+                let vector = CowVector::from(T::slice_to_float_cow(vector));
                 callback(user_data, point_offset, vector);
                 Ok(())
             })

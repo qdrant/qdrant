@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -48,7 +49,11 @@ pub trait EncodedVectors: Sized {
     /// This function is expected to:
     /// - be implemented by non-multivector storages
     /// - be used by multivector storages
-    fn for_each_batch(&self, offsets: &[PointOffsetType], callback: impl FnMut(usize, &[u8]));
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    );
 
     fn score(
         &self,

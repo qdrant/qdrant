@@ -249,7 +249,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
 
         self.vectors
             .for_each_vector::<Sequential, _>(row_offsets.into_iter(), |index, flattened| {
-                let vector = TypedMultiDenseVectorRef::new(flattened, self.vector_dim());
+                let vector = TypedMultiDenseVectorRef::new(flattened.as_ref(), self.vector_dim());
                 callback(index, vector);
                 Ok(())
             })
@@ -344,7 +344,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
                 row_offsets.into_iter(),
                 |(user_data, point_offset), flattened| {
                     let vector = CowVector::MultiDense(T::into_float_multivector(
-                        flattened_to_multi_vector(Cow::Borrowed(flattened), self.vectors.dim()),
+                        flattened_to_multi_vector(flattened, self.vectors.dim()),
                     ));
 
                     callback(user_data, point_offset, vector);

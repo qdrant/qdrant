@@ -99,7 +99,7 @@ where
 
         storage.for_each_batch(ids, |idx, vector| {
             scores[idx] = self.query.score_by(|query| {
-                storage.score(query, vector, &self.hardware_counter) // inhibit `rustfmt`
+                storage.score(query, &vector, &self.hardware_counter) // inhibit `rustfmt`
             });
         });
     }
