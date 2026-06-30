@@ -4,6 +4,9 @@ use ordered_float::Float;
 
 use crate::types::{ScoreType, ScoredPointOffset};
 
+/// Avoid excessive memory allocation and allocation failures on huge limits
+const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
+
 /// TopK implementation following the median algorithm described in
 /// <https://quickwit.io/blog/top-k-complexity>.
 ///
@@ -19,7 +22,9 @@ impl TopK {
     pub fn new(k: usize) -> Self {
         TopK {
             k,
-            elements: Vec::with_capacity(2 * k),
+            elements: Vec::with_capacity(
+                k.saturating_mul(2).min(LARGEST_REASONABLE_ALLOCATION_SIZE),
+            ),
             threshold: ScoreType::min_value(),
         }
     }
@@ -44,7 +49,7 @@ impl TopK {
         if element.score > self.threshold {
             self.elements.push(Reverse(element));
             // check if full
-            if self.elements.len() == self.k * 2 {
+            if self.elements.len() == self.k.saturating_mul(2) {
                 let (_, median_el, _) = self.elements.select_nth_unstable(self.k - 1);
                 self.threshold = median_el.0.score;
                 self.elements.truncate(self.k);
@@ -69,6 +74,28 @@ mod test {
         assert_eq!(top_k.len(), 0);
         assert_eq!(top_k.elements.capacity(), 2 * 3);
         assert_eq!(top_k.threshold(), ScoreType::MIN);
+    }
+
+    #[test]
+    fn huge_k_does_not_panic() {
+        // `k` is the client-supplied search limit. A huge value must not abort
+        // on the initial reservation (capped below), and must not overflow the
+        // `2 * k` push threshold once scoring starts.
+        let mut top_k = TopK::new(usize::MAX);
+        assert_eq!(top_k.len(), 0);
+        assert_eq!(
+            top_k.elements.capacity(),
+            LARGEST_REASONABLE_ALLOCATION_SIZE
+        );
+
+        top_k.push(ScoredPointOffset { score: 1.0, idx: 1 });
+        top_k.push(ScoredPointOffset { score: 2.0, idx: 2 });
+        assert_eq!(top_k.len(), 2);
+
+        let res = top_k.into_vec();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].score, 2.0);
+        assert_eq!(res[1].score, 1.0);
     }
 
     #[test]
