@@ -170,7 +170,7 @@ impl QuickCacheWrapper {
             cache: QuickCache::with_options(
                 options,
                 quick_cache::UnitWeighter,
-                ahash::RandomState::new(),
+                quick_cache::DefaultHashBuilder::default(),
                 Default::default(),
             ),
         }
