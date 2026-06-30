@@ -49,7 +49,7 @@ impl TopK {
         if element.score > self.threshold {
             self.elements.push(Reverse(element));
             // check if full
-            if self.elements.len() == self.k * 2 {
+            if self.elements.len() == self.k.saturating_mul(2) {
                 let (_, median_el, _) = self.elements.select_nth_unstable(self.k - 1);
                 self.threshold = median_el.0.score;
                 self.elements.truncate(self.k);
@@ -77,18 +77,25 @@ mod test {
     }
 
     #[test]
-    fn huge_k_does_not_allocate_unbounded() {
-        // `k` is the client-supplied search limit and flows straight into the
-        // initial reservation. Without a bound, a huge value reserves a buffer
-        // large enough to abort the process on allocation failure before any
-        // point is scored. The reservation is capped; a legitimate result set
-        // larger than the cap still grows the buffer on demand.
-        let top_k = TopK::new(usize::MAX);
+    fn huge_k_does_not_panic() {
+        // `k` is the client-supplied search limit. A huge value must not abort
+        // on the initial reservation (capped below), and must not overflow the
+        // `2 * k` push threshold once scoring starts.
+        let mut top_k = TopK::new(usize::MAX);
         assert_eq!(top_k.len(), 0);
         assert_eq!(
             top_k.elements.capacity(),
             LARGEST_REASONABLE_ALLOCATION_SIZE
         );
+
+        top_k.push(ScoredPointOffset { score: 1.0, idx: 1 });
+        top_k.push(ScoredPointOffset { score: 2.0, idx: 2 });
+        assert_eq!(top_k.len(), 2);
+
+        let res = top_k.into_vec();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].score, 2.0);
+        assert_eq!(res[1].score, 1.0);
     }
 
     #[test]
