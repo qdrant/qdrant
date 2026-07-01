@@ -2009,3 +2009,260 @@ fn test_open_dynamic_storage_in_serverless_mode() {
         );
     }
 }
+
+/// A serverless-created storage reopens in dynamic mode, reconstructing
+/// `bitmask.dat` / `gaps.dat` with every block marked used.
+#[test]
+fn test_open_serverless_storage_in_dynamic_mode() {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    let payloads: Vec<Payload> = (0..40).map(|_| random_payload(rng, 3)).collect();
+
+    // Create and populate in serverless mode.
+    {
+        let mut storage =
+            Gridstore::<Payload>::new(MmapFs, path.clone(), Default::default(), Mode::Serverless)
+                .unwrap();
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            storage
+                .put_value(point_offset as u32, payload, hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        // Serverless storage has no block-flag files.
+        assert!(!dir.path().join("bitmask.dat").exists());
+        assert!(!dir.path().join("gaps.dat").exists());
+    }
+
+    // Reopen in dynamic mode: this must reconstruct the bitmask.
+    let mut storage =
+        Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
+
+    // All data still reads back unchanged.
+    for (point_offset, payload) in payloads.iter().enumerate() {
+        let got = storage
+            .get_value::<Random>(point_offset as u32, &hw_counter)
+            .unwrap();
+        assert_eq!(got.as_ref(), Some(payload), "point {point_offset} mismatch");
+    }
+
+    // The block-flag files now exist...
+    assert!(
+        dir.path().join("bitmask.dat").exists(),
+        "bitmask.dat must be created when opening in dynamic mode",
+    );
+    assert!(
+        dir.path().join("gaps.dat").exists(),
+        "gaps.dat must be created when opening in dynamic mode",
+    );
+
+    // ...and every block is marked used (used size == full page capacity).
+    let num_pages = storage.pages.read().num_pages();
+    let used_bytes = storage.get_storage_size_bytes().unwrap();
+    assert_eq!(
+        used_bytes,
+        num_pages * DEFAULT_PAGE_SIZE_BYTES,
+        "the reconstructed bitmask must mark every block of every page as used",
+    );
+
+    // Reconstructed store is usable: a new write lands in fresh space, old data intact.
+    let extra = random_payload(rng, 3);
+    storage.put_value(40, &extra, hw_counter_ref).unwrap();
+    assert_eq!(
+        storage
+            .get_value::<Random>(40, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&extra),
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(0, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&payloads[0]),
+    );
+}
+
+/// Reopening back and forth between dynamic and serverless preserves all data,
+/// including data written in each mode.
+#[test]
+fn test_open_back_and_forth_between_modes() {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    // The latest expected value for every point written so far.
+    let mut expected: std::collections::HashMap<u32, Payload> = std::collections::HashMap::new();
+    let mut next_point = 0u32;
+
+    // Start in dynamic mode with an initial batch.
+    let mut mode = Mode::Regular;
+    {
+        let mut storage =
+            Gridstore::<Payload>::new(MmapFs, path.clone(), Default::default(), mode).unwrap();
+        for _ in 0..20 {
+            let payload = random_payload(rng, 2);
+            storage
+                .put_value(next_point, &payload, hw_counter_ref)
+                .unwrap();
+            expected.insert(next_point, payload);
+            next_point += 1;
+        }
+        storage.flusher()().unwrap();
+    }
+
+    // Flip modes each round: read all back, then write more and update a point.
+    for round in 0..4 {
+        mode = if mode.is_serverless() {
+            Mode::Regular
+        } else {
+            Mode::Serverless
+        };
+        let mut storage =
+            Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, mode).unwrap();
+
+        for (point_offset, payload) in &expected {
+            let got = storage
+                .get_value::<Random>(*point_offset, &hw_counter)
+                .unwrap();
+            assert_eq!(
+                got.as_ref(),
+                Some(payload),
+                "point {point_offset} corrupted in round {round} (mode {mode:?})",
+            );
+        }
+
+        for _ in 0..10 {
+            let payload = random_payload(rng, 2);
+            storage
+                .put_value(next_point, &payload, hw_counter_ref)
+                .unwrap();
+            expected.insert(next_point, payload);
+            next_point += 1;
+        }
+        // Update an existing point too.
+        let updated = random_payload(rng, 2);
+        storage.put_value(0, &updated, hw_counter_ref).unwrap();
+        expected.insert(0, updated);
+
+        storage.flusher()().unwrap();
+    }
+
+    // Final verification, back in dynamic mode.
+    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::Regular).unwrap();
+    for (point_offset, payload) in &expected {
+        let got = storage
+            .get_value::<Random>(*point_offset, &hw_counter)
+            .unwrap();
+        assert_eq!(
+            got.as_ref(),
+            Some(payload),
+            "point {point_offset} corrupted at final check",
+        );
+    }
+}
+
+/// Reopening in dynamic mode after serverless appends grew the pages rebuilds the
+/// stale bitmask (it now covers too few blocks), marking the new blocks used.
+#[test]
+fn test_dynamic_reopen_after_serverless_appends_blocks() {
+    // Small pages (and no compression) so a few large values create extra pages.
+    let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let make_big = |c: char| -> Payload {
+        let mut payload = Payload::default();
+        payload.0.insert(
+            "key".to_string(),
+            serde_json::Value::String(std::iter::repeat_n(c, page_size / 3).collect::<String>()),
+        );
+        payload
+    };
+
+    let mut expected: Vec<Payload> = Vec::new();
+
+    // 1. Dynamic mode, one value: bitmask covers one page.
+    {
+        let options = StorageOptions {
+            page_size_bytes: Some(page_size),
+            compression: Some(Compression::None),
+            ..Default::default()
+        };
+        let mut storage =
+            Gridstore::<Payload>::new(MmapFs, path.clone(), options, Mode::Regular).unwrap();
+        let payload = make_big('a');
+        storage.put_value(0, &payload, hw_counter_ref).unwrap();
+        expected.push(payload);
+        storage.flusher()().unwrap();
+        assert_eq!(storage.pages.read().num_pages(), 1);
+        assert!(dir.path().join("bitmask.dat").exists());
+    }
+
+    // 2. Serverless: append until the pages grow; the bitmask is left stale.
+    {
+        let mut storage =
+            Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Serverless)
+                .unwrap();
+        for (i, c) in ['b', 'c', 'd'].into_iter().enumerate() {
+            let payload = make_big(c);
+            storage
+                .put_value(1 + i as u32, &payload, hw_counter_ref)
+                .unwrap();
+            expected.push(payload);
+        }
+        storage.flusher()().unwrap();
+        assert!(
+            storage.pages.read().num_pages() >= 2,
+            "serverless appends must have grown the pages",
+        );
+    }
+
+    // 3. Dynamic: the stale bitmask covers too few blocks, so it's rebuilt all-used.
+    let mut storage =
+        Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
+
+    // All data survives the reconstruction.
+    for (point_offset, payload) in expected.iter().enumerate() {
+        let got = storage
+            .get_value::<Random>(point_offset as u32, &hw_counter)
+            .unwrap();
+        assert_eq!(got.as_ref(), Some(payload), "point {point_offset} lost");
+    }
+
+    // Every block of every page is now marked used.
+    let num_pages = storage.pages.read().num_pages();
+    assert_eq!(
+        storage.get_storage_size_bytes().unwrap(),
+        num_pages * page_size,
+        "reconstructed bitmask must mark every block used",
+    );
+
+    // Reconstructed store is usable: a new write lands in fresh space, old data intact.
+    let extra = make_big('e');
+    storage.put_value(99, &extra, hw_counter_ref).unwrap();
+    assert_eq!(
+        storage
+            .get_value::<Random>(99, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&extra),
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(0, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&expected[0]),
+    );
+}

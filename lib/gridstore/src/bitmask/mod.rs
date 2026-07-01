@@ -111,6 +111,38 @@ impl<S: UniversalWrite> Bitmask<S> {
         })
     }
 
+    /// Create a bitmask covering `num_pages` pages with every block marked used,
+    /// resetting any stale bitmask/gaps files.
+    ///
+    /// Used when opening in dynamic mode a storage whose bitmask is missing or
+    /// stale (e.g. created/extended in serverless mode). Over-marking is fully
+    /// crash-safe; the cost is unreclaimed spare capacity until a rebuild.
+    pub(crate) fn create_all_used(
+        fs: &S::Fs,
+        dir: &Path,
+        config: StorageConfig,
+        num_pages: usize,
+    ) -> Result<Self> {
+        debug_assert!(num_pages >= 1, "storage always has at least one page");
+
+        // Fresh single-page bitmask, then grow it to cover every page.
+        let mut bitmask = Self::create(fs, dir, config.clone())?;
+        for _ in 1..num_pages {
+            bitmask.cover_new_page()?;
+        }
+
+        // Mark every block used; `mark_blocks` recomputes the region gaps too.
+        let blocks_per_page = (config.page_size_bytes / config.block_size_bytes) as u32;
+        for page_id in 0..num_pages as PageId {
+            bitmask.mark_blocks(page_id, 0, blocks_per_page, true)?;
+        }
+
+        // Persist so a later open doesn't reconstruct from a half-written file.
+        bitmask.flusher()()?;
+
+        Ok(bitmask)
+    }
+
     pub(crate) fn open(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
         debug_assert!(
             config
@@ -150,6 +182,11 @@ impl<S: UniversalWrite> Bitmask<S> {
 
     fn bitmask_path(dir: &Path) -> PathBuf {
         dir.join(BITMASK_NAME)
+    }
+
+    /// Whether a bitmask file exists in `dir` (false for serverless storage).
+    pub(crate) fn exists(dir: &Path) -> bool {
+        Self::bitmask_path(dir).exists()
     }
 
     pub fn flusher(&self) -> impl FnOnce() -> Result<()> + Send + use<S> {
@@ -194,6 +231,12 @@ impl<S: UniversalWrite> Bitmask<S> {
         let bits = self.bitslice.bit_len() as usize;
         let covered_bytes = bits * self.config.block_size_bytes;
         covered_bytes.div_euclid(self.config.page_size_bytes)
+    }
+
+    /// Number of blocks the bitmask covers (one bit per block). Exact, unlike
+    /// [`Self::infer_num_pages`] which rounds down to whole pages.
+    pub(crate) fn covered_blocks(&self) -> usize {
+        self.bitslice.bit_len() as usize
     }
 
     /// Extend the bitslice to cover another page

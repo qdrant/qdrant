@@ -190,13 +190,32 @@ where
 
         let storage_engine = match mode {
             Mode::Regular => {
-                let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
-                let num_pages = bitmask.infer_num_pages();
-                if loaded_pages != num_pages {
-                    return Err(GridstoreError::service_error(format!(
-                        "Inconsistent number of gridstore pages at {base_path:?}: expected {num_pages}, but found {loaded_pages}",
-                    )));
-                }
+                // The bitmask needs one flag per block, `pages * blocks_per_page`
+                // bits. Compare that to what it covers: a storage created or
+                // extended in serverless mode has no bitmask, or a stale one
+                // covering too few blocks. Either way, reconstruct all-used.
+                let blocks_per_page = config.page_size_bytes / config.block_size_bytes;
+                let expected_blocks = loaded_pages * blocks_per_page;
+                let bitmask = if Bitmask::<S>::exists(&base_path) {
+                    let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
+                    let covered_blocks = bitmask.covered_blocks();
+                    if covered_blocks == expected_blocks {
+                        bitmask
+                    } else if covered_blocks < expected_blocks {
+                        // Missing flags for serverless-appended blocks; rebuild.
+                        drop(bitmask);
+                        Bitmask::create_all_used(&fs, &base_path, config.clone(), loaded_pages)?
+                    } else {
+                        // More blocks than pages hold: corruption, not a mode switch.
+                        return Err(GridstoreError::service_error(format!(
+                            "Inconsistent gridstore blocks at {base_path:?}: bitmask covers {covered_blocks}, but pages hold {expected_blocks}",
+                        )));
+                    }
+                } else {
+                    // No bitmask: created in serverless mode.
+                    Bitmask::create_all_used(&fs, &base_path, config.clone(), loaded_pages)?
+                };
+                debug_assert_eq!(bitmask.covered_blocks(), expected_blocks);
                 StorageEngine::Dynamic {
                     bitmask: Arc::new(RwLock::new(bitmask)),
                 }
