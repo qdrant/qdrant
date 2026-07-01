@@ -46,13 +46,22 @@ pub struct VolatileMultiDenseVectorStorage<T: PrimitiveVectorElement> {
 
 impl<T: fmt::Debug + PrimitiveVectorElement> fmt::Debug for VolatileMultiDenseVectorStorage<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            dim,
+            distance,
+            multi_vector_config,
+            vectors,
+            vectors_metadata,
+            deleted_count,
+            deleted: _,
+        } = self;
         f.debug_struct("VolatileMultiDenseVectorStorage")
-            .field("dim", &self.dim)
-            .field("distance", &self.distance)
-            .field("multi_vector_config", &self.multi_vector_config)
-            .field("vectors", &self.vectors)
-            .field("vectors_metadata", &self.vectors_metadata)
-            .field("deleted_count", &self.deleted_count)
+            .field("dim", dim)
+            .field("distance", distance)
+            .field("multi_vector_config", multi_vector_config)
+            .field("vectors", vectors)
+            .field("vectors_metadata", vectors_metadata)
+            .field("deleted_count", deleted_count)
             .finish_non_exhaustive()
     }
 }

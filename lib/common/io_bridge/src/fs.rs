@@ -17,8 +17,9 @@ pub struct BlobFs<A: AsyncRead> {
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFs<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { runtime, inner: _ } = self;
         f.debug_struct("BlobFs")
-            .field("runtime", &self.runtime)
+            .field("runtime", runtime)
             .finish_non_exhaustive()
     }
 }

@@ -187,11 +187,20 @@ impl TurboVectorStorage {
 
 impl std::fmt::Debug for TurboVectorStorage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            dim,
+            distance,
+            storage,
+            deleted_count,
+            quantizer: _,
+            deleted: _,
+            quantization_buffer: _,
+        } = self;
         f.debug_struct("TurboVectorStorage")
-            .field("dim", &self.dim)
-            .field("distance", &self.distance)
-            .field("total_vector_count", &self.storage.vectors_count())
-            .field("deleted_count", &self.deleted_count)
+            .field("dim", dim)
+            .field("distance", distance)
+            .field("total_vector_count", &storage.vectors_count())
+            .field("deleted_count", deleted_count)
             .finish_non_exhaustive()
     }
 }

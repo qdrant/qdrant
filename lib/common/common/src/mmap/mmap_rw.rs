@@ -78,8 +78,9 @@ where
 
 impl<T: ?Sized> fmt::Debug for MmapType<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { mmap, r#type: _ } = self;
         f.debug_struct("MmapType")
-            .field("mmap", &self.mmap)
+            .field("mmap", mmap)
             .finish_non_exhaustive()
     }
 }
@@ -236,9 +237,8 @@ where
 
 impl<T> fmt::Debug for MmapSlice<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MmapSlice")
-            .field("mmap", &self.mmap)
-            .finish_non_exhaustive()
+        let Self { mmap } = self;
+        f.debug_struct("MmapSlice").field("mmap", mmap).finish()
     }
 }
 

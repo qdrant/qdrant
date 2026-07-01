@@ -26,9 +26,14 @@ pub struct BlobFile<A: AsyncRead> {
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            runtime,
+            path,
+            inner: _,
+        } = self;
         f.debug_struct("BlobFile")
-            .field("runtime", &self.runtime)
-            .field("path", &self.path)
+            .field("runtime", runtime)
+            .field("path", path)
             .finish_non_exhaustive()
     }
 }
