@@ -52,23 +52,26 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set pre-release version
-        # Bump the patch component and append a `.dev<run_number>` suffix so
-        # the dev version sorts strictly ABOVE the latest published stable
-        # (e.g. Cargo.toml `0.7.2` -> wheel `0.7.3.dev137`). Combined with
-        # `pip install --pre`, this lets consumers pull "the current dev"
-        # without knowing the run number, and prevents pip from silently
-        # preferring the older stable release when both are visible.
+        # Bump the patch component and append a `-dev<run_number>` SemVer
+        # pre-release suffix so the dev version sorts strictly ABOVE the
+        # latest published stable (e.g. Cargo.toml `0.7.2` -> Cargo.toml
+        # `0.7.3-dev137` -> wheel `0.7.3.dev137`). Cargo rejects PEP 440
+        # syntax `.dev` because it isn't valid SemVer, so we write SemVer
+        # here and let maturin translate to PEP 440 when building the wheel.
+        # Combined with `pip install --pre`, this lets consumers pull "the
+        # current dev" without knowing the run number, and prevents pip
+        # from silently preferring the older stable release.
         if: github.event_name == 'push'
         shell: bash
         working-directory: lib/edge/python
         run: |
           awk -v run="${GITHUB_RUN_NUMBER}" '
             !patched && /^version = "/ {
-              # Assumes SemVer X.Y.Z inside the quotes; bump patch, append .devN.
+              # Assumes SemVer X.Y.Z inside the quotes; bump patch, append -devN.
               split($0, quoted, "\"")
               split(quoted[2], parts, ".")
               parts[3] = parts[3] + 1
-              print "version = \"" parts[1] "." parts[2] "." parts[3] ".dev" run "\""
+              print "version = \"" parts[1] "." parts[2] "." parts[3] "-dev" run "\""
               patched = 1
               next
             }
