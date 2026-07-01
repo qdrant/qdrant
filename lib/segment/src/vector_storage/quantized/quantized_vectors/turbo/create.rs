@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use quantization::encoded_vectors_tq;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
-use quantization::turboquant::TQMode;
+use quantization::turboquant::{TQMode, TQRotation};
 
 use super::super::{
     QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsStorageType, READ_FS, ReadFile,
@@ -26,6 +26,8 @@ impl QuantizedVectors {
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         turbo_config: &TurboQuantQuantizationConfig,
+        rotation: TQRotation,
+        input_already_rotated: bool,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         on_disk_vector_storage: bool,
@@ -56,6 +58,8 @@ impl QuantizedVectors {
                         vectors_count,
                         bits,
                         mode,
+                        rotation,
+                        input_already_rotated,
                         max_threads,
                         Some(meta_path.as_path()),
                         stopped,
@@ -75,6 +79,8 @@ impl QuantizedVectors {
                     vectors_count,
                     bits,
                     mode,
+                    rotation,
+                    input_already_rotated,
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
@@ -93,6 +99,8 @@ impl QuantizedVectors {
                     vectors_count,
                     bits,
                     mode,
+                    rotation,
+                    input_already_rotated,
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
@@ -109,6 +117,8 @@ impl QuantizedVectors {
         vectors_count: usize,
         inner_vectors_count: usize,
         turbo_config: &TurboQuantQuantizationConfig,
+        rotation: TQRotation,
+        input_already_rotated: bool,
         storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
@@ -140,6 +150,8 @@ impl QuantizedVectors {
                     inner_vectors_count,
                     bits,
                     mode,
+                    rotation,
+                    input_already_rotated,
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
@@ -172,6 +184,8 @@ impl QuantizedVectors {
                     inner_vectors_count,
                     bits,
                     mode,
+                    rotation,
+                    input_already_rotated,
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
@@ -199,6 +213,8 @@ impl QuantizedVectors {
                     inner_vectors_count,
                     bits,
                     mode,
+                    rotation,
+                    input_already_rotated,
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,

@@ -309,6 +309,28 @@ impl QuantizedVectorsRead for QuantizedVectors {
     }
 }
 
+/// Whether to keep a TurboQuant-datatype source in its rotated space when
+/// re-quantizing (vectors stay rotated, the secondary TurboQuant reuses the same
+/// `Unpadded` rotation to rotate queries) rather than rotating the vectors back.
+///
+/// True only for a Turbo4 source re-quantized with TurboQuant, excluding:
+/// - Manhattan — the Hadamard rotation does not preserve L1;
+/// - `Bits1_5` targets — they encode extra precision by rotating into the x1.5
+///   padding, so they require a `Padded` rotation and can't reuse the source's
+///   `Unpadded` one (`TurboQuantizer::new` asserts `Bits1_5 requires Padded`).
+pub fn should_keep_source_rotated(
+    source_datatype: VectorStorageDatatype,
+    quantization_config: &QuantizationConfig,
+    distance: Distance,
+) -> bool {
+    let QuantizationConfig::Turbo(turbo) = quantization_config else {
+        return false;
+    };
+    source_datatype == VectorStorageDatatype::Turbo4
+        && turbo.turbo.bits.unwrap_or_default() != TurboQuantBitSize::Bits1_5
+        && distance != Distance::Manhattan
+}
+
 impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
     fn memory_usage(&self) -> crate::common::memory_usage::ComponentMemoryUsage {
         use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};

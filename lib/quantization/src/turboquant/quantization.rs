@@ -17,10 +17,6 @@ pub struct TurboQuantizer {
     pub(super) mode: TQMode,
     pub(super) distance: DistanceType,
     pub(crate) padded_dim: usize,
-    /// Number of leading coordinates the rotation spans: `padded_dim` for
-    /// [`TQRotation::Padded`], the original `dim` for [`TQRotation::Unpadded`]
-    /// (the zero padding then stays exactly zero through rotation).
-    rotation_dim: usize,
     pub(super) error_correction: Option<ErrorCorrection>,
 }
 
@@ -110,7 +106,6 @@ impl TurboQuantizer {
             mode: _,
             distance: _,
             padded_dim: _,
-            rotation_dim: _,
             error_correction,
         } = self;
 
@@ -156,7 +151,6 @@ impl TurboQuantizer {
             mode,
             distance,
             padded_dim,
-            rotation_dim,
             error_correction,
         }
     }
@@ -170,7 +164,12 @@ impl TurboQuantizer {
     /// Used both by [`Self::quantize`] and by the TQ+ first pass in
     /// `EncodedVectorsTQ::encode` (in the `quantization` crate) when computing
     /// per-coordinate stats over rescaled rotated samples.
-    pub(crate) fn preprocess_into(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
+    pub(crate) fn preprocess_into(
+        &self,
+        vec: &[f32],
+        buf: &mut [f64],
+        rotate: bool,
+    ) -> Option<f32> {
         debug_assert!(vec.len() <= self.padded_dim);
         debug_assert_eq!(buf.len(), self.padded_dim);
 
@@ -183,9 +182,12 @@ impl TurboQuantizer {
             *b = v;
         }
 
-        // Rotate the vector. For an unpadded rotation only the original
+        // Rotate the vector, unless the input is already rotated (re-quantizing a
+        // TQ-as-datatype storage). For an unpadded rotation only the original
         // coordinates are touched — the zero padding stays exactly zero.
-        self.rotation.apply(&mut buf[..self.rotation_dim]);
+        if rotate {
+            self.rotation.apply(&mut buf[..self.rotation.dim()]);
+        }
 
         let l2_length = self.compute_l2_length(buf);
 
@@ -207,7 +209,18 @@ impl TurboQuantizer {
 
     /// Quantize a given vector with TurboQuant.
     pub fn quantize(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
-        let l2_length = self.preprocess_into(vec, buf);
+        self.quantize_impl(vec, buf, true)
+    }
+
+    /// Quantize a vector that is already in this quantizer's rotated space, so
+    /// the rotation step is skipped. Used when re-quantizing a TQ-as-datatype
+    /// storage whose vectors are stored pre-rotated.
+    pub(crate) fn quantize_prerotated(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
+        self.quantize_impl(vec, buf, false)
+    }
+
+    fn quantize_impl(&self, vec: &[f32], buf: &mut [f64], rotate: bool) -> Vec<u8> {
+        let l2_length = self.preprocess_into(vec, buf, rotate);
         // After `preprocess_into` the rescale is already in `buf`; from here on
         // we treat `buf` as the rescaled vector and don't re-multiply by
         // `scale`. Centroid-norm and packing operate on `buf` directly.
@@ -370,7 +383,7 @@ impl TurboQuantizer {
     /// [`TQRotation::Unpadded`] the padding tail is left as-is (it carries
     /// nothing but quantized zeros and is dropped by the caller).
     pub fn apply_inverse_rotation(&self, buf: &mut [f64]) {
-        self.rotation.apply_inverse(&mut buf[..self.rotation_dim]);
+        self.rotation.apply_inverse(&mut buf[..self.rotation.dim()]);
     }
 
     /// Similarity score between two vectors that were both encoded with this
@@ -489,7 +502,7 @@ impl TurboQuantizer {
             .chain(std::iter::repeat(0.0))
             .take(self.padded_dim)
             .collect();
-        self.rotation.apply(&mut rotated[..self.rotation_dim]);
+        self.rotation.apply(&mut rotated[..self.rotation.dim()]);
 
         let l2_norm = match self.distance {
             DistanceType::L1 | DistanceType::L2 | DistanceType::Dot => {
@@ -1267,7 +1280,7 @@ mod tests {
                     let v = random_vector(dim, &mut rng);
                     // Poison the scratch tail to prove it is overwritten with zeros.
                     let mut buf = vec![f64::NAN; tq.padded_dim];
-                    tq.preprocess_into(&v, &mut buf);
+                    tq.preprocess_into(&v, &mut buf, true);
 
                     for (i, &x) in buf[dim..].iter().enumerate() {
                         assert!(

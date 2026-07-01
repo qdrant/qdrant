@@ -167,6 +167,22 @@ impl TurboVectorStorage {
                 .collect::<Vec<_>>(),
         ))
     }
+
+    pub fn get_dense_for_requantization(
+        &self,
+        key: PointOffsetType,
+        keep_rotated: bool,
+    ) -> DenseVector {
+        let quantized = self.storage.get_quantized_vector(key);
+        let mut dequantized = self.quantizer.dequantize::<f64>(&quantized);
+        if !keep_rotated {
+            self.quantizer.apply_inverse_rotation(&mut dequantized);
+        }
+        dequantized[..self.dim]
+            .iter()
+            .map(|&x| x as VectorElementType)
+            .collect()
+    }
 }
 
 impl std::fmt::Debug for TurboVectorStorage {

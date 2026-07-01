@@ -26,6 +26,11 @@ impl HadamardRotation {
         Self { permutations, dim }
     }
 
+    /// Number of coordinates this rotation spans.
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
+
     pub fn apply(&self, x: &mut [f64]) {
         debug_assert_eq!(x.len(), self.dim);
         apply_rotation_with_permutations(x, &self.permutations);
