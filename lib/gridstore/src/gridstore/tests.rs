@@ -254,8 +254,6 @@ fn test_update_single_payload(#[values(Mode::Regular, Mode::Serverless)] mode: M
 #[rstest]
 fn test_write_across_pages(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-    // Dynamic mode: writes directly to a pre-sized page via the low-level
-    // `write_to_pages`, bypassing the append/grow path.
     let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None, mode);
     let config = StorageConfig {
         page_size_bytes: page_size,
@@ -278,11 +276,18 @@ fn test_write_across_pages(#[values(Mode::Regular, Mode::Serverless)] mode: Mode
     let block_offset = (DEFAULT_REGION_SIZE_BLOCKS - 10) as u32;
     let pointer = ValuePointer::new(0, block_offset, value_len as u32);
 
-    storage
-        .pages
-        .write()
-        .write_to_pages(pointer, &value, &config)
-        .unwrap();
+    // Write via the mode's low-level page-write path (as `write_into_pages`
+    // does): dynamic pages are pre-sized and written in place, while serverless
+    // pages are created empty and grown by the write itself (the skipped gap
+    // reads back as zeros).
+    {
+        let mut pages = storage.pages.write();
+        if mode.is_serverless() {
+            pages.write_to_pages_grow(pointer, &value, &config).unwrap();
+        } else {
+            pages.write_to_pages(pointer, &value, &config).unwrap();
+        }
+    }
 
     let read_value = storage
         .with_view(|view| {
