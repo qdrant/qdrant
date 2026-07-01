@@ -123,12 +123,21 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set pre-release version
+        # See the identical step on the Linux job for the rationale (SemVer
+        # `-dev<N>` + patch bump so maturin emits PEP 440 `X.Y.(Z+1).dev<N>`).
         if: github.event_name == 'push'
         shell: bash
         working-directory: lib/edge/python
         run: |
           awk -v run="${GITHUB_RUN_NUMBER}" '
-            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            !patched && /^version = "/ {
+              split($0, quoted, "\"")
+              split(quoted[2], parts, ".")
+              parts[3] = parts[3] + 1
+              print "version = \"" parts[1] "." parts[2] "." parts[3] "-dev" run "\""
+              patched = 1
+              next
+            }
             { print }
           ' Cargo.toml > Cargo.toml.new
           mv Cargo.toml.new Cargo.toml
@@ -176,12 +185,21 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set pre-release version
+        # See the identical step on the Linux job for the rationale (SemVer
+        # `-dev<N>` + patch bump so maturin emits PEP 440 `X.Y.(Z+1).dev<N>`).
         if: github.event_name == 'push'
         shell: bash
         working-directory: lib/edge/python
         run: |
           awk -v run="${GITHUB_RUN_NUMBER}" '
-            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            !patched && /^version = "/ {
+              split($0, quoted, "\"")
+              split(quoted[2], parts, ".")
+              parts[3] = parts[3] + 1
+              print "version = \"" parts[1] "." parts[2] "." parts[3] "-dev" run "\""
+              patched = 1
+              next
+            }
             { print }
           ' Cargo.toml > Cargo.toml.new
           mv Cargo.toml.new Cargo.toml
