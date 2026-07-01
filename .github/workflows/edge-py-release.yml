@@ -8,9 +8,15 @@ on:
         type: boolean
         default: false
         required: true
+  push:
+    branches: [ dev ]
 
 permissions:
   contents: read
+
+concurrency:
+  group: edge-py-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   edge-py-linux:
@@ -44,6 +50,20 @@ jobs:
     steps:
       - name: Checkout Qdrant
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set pre-release version
+        # PEP 440 `.devN` suffix makes pip skip this wheel by default; users must
+        # opt in with `--pre` or pin `qdrant-edge-py==X.Y.Z.devN` explicitly.
+        if: github.event_name == 'push'
+        shell: bash
+        working-directory: lib/edge/python
+        run: |
+          awk -v run="${GITHUB_RUN_NUMBER}" '
+            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            { print }
+          ' Cargo.toml > Cargo.toml.new
+          mv Cargo.toml.new Cargo.toml
+          grep '^version' Cargo.toml
 
       - name: Build Python wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -87,6 +107,18 @@ jobs:
       - name: Checkout Qdrant
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Set pre-release version
+        if: github.event_name == 'push'
+        shell: bash
+        working-directory: lib/edge/python
+        run: |
+          awk -v run="${GITHUB_RUN_NUMBER}" '
+            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            { print }
+          ' Cargo.toml > Cargo.toml.new
+          mv Cargo.toml.new Cargo.toml
+          grep '^version' Cargo.toml
+
       - name: Build Python wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
@@ -127,6 +159,18 @@ jobs:
 
       - name: Checkout Qdrant
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set pre-release version
+        if: github.event_name == 'push'
+        shell: bash
+        working-directory: lib/edge/python
+        run: |
+          awk -v run="${GITHUB_RUN_NUMBER}" '
+            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            { print }
+          ' Cargo.toml > Cargo.toml.new
+          mv Cargo.toml.new Cargo.toml
+          grep '^version' Cargo.toml
 
       - name: Build Python wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -208,7 +252,7 @@ jobs:
       - edge-py-windows
       - edge-py-test
 
-    if: inputs.publish
+    if: inputs.publish || github.event_name == 'push'
 
     steps:
       - name: Merge release artifacts
@@ -226,7 +270,7 @@ jobs:
     needs:
       - merge-artifacts
 
-    if: inputs.publish
+    if: inputs.publish || github.event_name == 'push'
 
     steps:
       - name: Install Python
