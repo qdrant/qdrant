@@ -15,20 +15,26 @@ use crate::types::{
 /// (e.g., 42.0 → 42). Mirrors `value_to_integer` in `index/field_index/utils.rs`
 /// so the non-indexed exact-match fallback and integer payload indexes agree.
 fn number_to_integer(number: &Number) -> Option<i64> {
-    number.as_i64().or_else(|| {
-        number.as_f64().and_then(|v| {
-            // Reject NaN, infinity, and values outside i64 range.
-            // Without the range check, out-of-range f64 values saturate during
-            // the `v as i64` cast and then pass the round-trip equality test
-            // (e.g. 9223372036854775808.0 → i64::MAX → 9223372036854775808.0).
-            if v.is_finite() && v >= (i64::MIN as f64) && v < (i64::MAX as f64) {
-                let int = v as i64;
-                (int as f64 == v).then_some(int)
-            } else {
-                None
-            }
-        })
-    })
+    if let Some(n) = number.as_i64() {
+        return Some(n);
+    }
+
+    // Accept floats but reject NaN, infinity, and values outside i64 range.
+    // Without the range check, out-of-range f64 values saturate during
+    // the `v as i64` cast and then pass the round-trip equality test
+    // (e.g. 9223372036854775808.0 → i64::MAX → 9223372036854775808.0).
+    if let Some(n) = number.as_f64()
+        && n.is_finite()
+        && n >= (i64::MIN as f64)
+        && n < (i64::MAX as f64)
+    {
+        let int = n as i64;
+        if (int as f64) == n {
+            return Some(int);
+        }
+    }
+
+    None
 }
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
