@@ -729,7 +729,6 @@ fn test_behave_like_hashmap(
 
 #[rstest]
 fn test_handle_huge_payload(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // Dynamic mode: inspects the bitmask and asserts block-level free space.
     let (_dir, mut storage) = empty_storage(mode);
     assert_eq!(storage.pages.read().num_pages(), 1);
 
@@ -757,7 +756,8 @@ fn test_handle_huge_payload(#[values(Mode::Regular, Mode::Serverless)] mode: Mod
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
 
-    {
+    // Finding free blocks is only done in dynamic mode
+    if !mode.is_serverless() {
         // the fitting page should be 64MB, so we should still have about 14MB of free space
         let free_blocks = storage
             .bitmask_for_test()
