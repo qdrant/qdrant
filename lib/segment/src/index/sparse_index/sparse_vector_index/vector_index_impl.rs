@@ -187,4 +187,19 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
 
         Ok(())
     }
+
+    fn update_vector_bytes(
+        &mut self,
+        id: PointOffsetType,
+        bytes: Option<&[u8]>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // Sparse storage is not quantized, so decoding is lossless — just reuse
+        // the normal update path with the decoded vector.
+        let decoded = match bytes {
+            Some(bytes) => Some(self.vector_storage.borrow().decode_vector_bytes(bytes)?),
+            None => None,
+        };
+        self.update_vector(id, decoded.as_ref().map(VectorRef::from), hw_counter)
+    }
 }

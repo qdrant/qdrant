@@ -553,6 +553,141 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 6);
 }
 
+/// Read a point's raw vectors, re-insert them at a new id via `upsert_point_raw`,
+/// and assert the round-trip is byte-identical and decodes to the same vector.
+fn assert_raw_roundtrip(
+    segment: &mut Segment,
+    src: PointIdType,
+    dst: PointIdType,
+    vector_name: &str,
+) {
+    let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
+
+    let read_raw = |segment: &Segment, id: PointIdType| {
+        segment
+            .retrieve_raw(
+                &[id],
+                &WithPayload::default(),
+                &true.into(),
+                &hw_counter,
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap()
+    };
+
+    let src_raw = read_raw(segment, src);
+    let src_vectors = src_raw
+        .get(&src)
+        .and_then(|r| r.vectors.clone())
+        .expect("source vectors");
+
+    segment
+        .upsert_point_raw(1000, dst, src_vectors.clone(), &hw_counter)
+        .unwrap();
+
+    let dst_raw = read_raw(segment, dst);
+    let dst_vectors = dst_raw
+        .get(&dst)
+        .and_then(|r| r.vectors.as_ref())
+        .expect("dest vectors");
+
+    let src_bytes = &src_vectors.iter().find(|(n, _)| n == vector_name).unwrap().1;
+    let dst_bytes = &dst_vectors.iter().find(|(n, _)| n == vector_name).unwrap().1;
+    assert_eq!(dst_bytes, src_bytes, "raw bytes must round-trip verbatim");
+}
+
+/// `upsert_point_raw` round-trips a plain dense vector byte-for-byte.
+#[test]
+fn test_upsert_point_raw_dense_roundtrip() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    segment
+        .upsert_point(1, 1.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+
+    assert_raw_roundtrip(&mut segment, 1.into(), 2.into(), DEFAULT_VECTOR_NAME);
+
+    // The re-inserted point decodes back to the original vector.
+    let decoded = segment
+        .vector(DEFAULT_VECTOR_NAME, 2.into(), &hw_counter)
+        .unwrap()
+        .unwrap();
+    assert_eq!(decoded, VectorInternal::Dense(vec));
+}
+
+/// `upsert_point_raw` round-trips each named multi-dense vector byte-for-byte.
+#[test]
+fn test_upsert_point_raw_multivec_roundtrip() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_multivec_segment(dir.path(), 1, 1, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    segment
+        .upsert_point(
+            1,
+            1.into(),
+            NamedVectors::from_pairs([
+                (VECTOR1_NAME.into(), vec![0.4]),
+                (VECTOR2_NAME.into(), vec![0.5]),
+            ]),
+            &hw_counter,
+        )
+        .unwrap();
+
+    assert_raw_roundtrip(&mut segment, 1.into(), 2.into(), VECTOR1_NAME);
+    assert_raw_roundtrip(&mut segment, 1.into(), 3.into(), VECTOR2_NAME);
+}
+
+/// `upsert_point_raw` round-trips a sparse vector (bincode form) losslessly.
+#[test]
+fn test_upsert_point_raw_sparse_roundtrip() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let sparse_name = "sparse";
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::new(),
+            sparse_vector_data: HashMap::from_iter([(
+                sparse_name.to_string(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
+                    storage_type: SparseVectorStorageType::Mmap,
+                    modifier: None,
+                },
+            )]),
+            payload_storage_type: Default::default(),
+        },
+        None,
+        true,
+    )
+    .unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(sparse_name.to_string(), VectorInternal::Sparse(sparse.clone()));
+    segment
+        .upsert_point(1, 1.into(), vectors, &hw_counter)
+        .unwrap();
+
+    assert_raw_roundtrip(&mut segment, 1.into(), 2.into(), sparse_name);
+
+    let decoded = segment
+        .vector(sparse_name, 2.into(), &hw_counter)
+        .unwrap()
+        .unwrap();
+    assert_eq!(decoded, VectorInternal::Sparse(sparse));
+}
+
 /// `retrieve_raw` on a plain dense segment must return the verbatim f32 bytes
 /// of the stored vector (zero-copy `bytemuck` cast), with payload untouched.
 #[test]

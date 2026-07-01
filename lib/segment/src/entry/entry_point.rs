@@ -120,8 +120,6 @@ pub trait ReadSegmentEntry {
     /// when relocating points (copy-on-write moves, shard transfer).
     ///
     /// Like `retrieve`, may return fewer records than requested and in any order.
-    // TODO(tq-roundtrip): declaration only — implement natively in `Segment`,
-    // decide delegate/fallback behavior in `ProxySegment`.
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],
@@ -130,17 +128,7 @@ pub trait ReadSegmentEntry {
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
-        let _ = (
-            point_ids,
-            with_payload,
-            with_vector,
-            hw_counter,
-            is_stopped,
-            deferred_behavior,
-        );
-        unimplemented!("retrieve_raw is not yet implemented")
-    }
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
@@ -475,18 +463,13 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
     /// storage-native bytes (as produced by [`ReadSegmentEntry::retrieve_raw`]),
     /// avoiding the lossy round-trip of going through `upsert_point`. The latter
     /// remains the entry point for user-facing requests.
-    // TODO(tq-roundtrip): declaration only — implement natively in `Segment`,
-    // decide delegate/fallback behavior in `ProxySegment`.
     fn upsert_point_raw(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectorsOwnedRaw,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let _ = (op_num, point_id, vectors, hw_counter);
-        unimplemented!("upsert_point_raw is not yet implemented")
-    }
+    ) -> OperationResult<bool>;
 
     fn update_vectors(
         &mut self,

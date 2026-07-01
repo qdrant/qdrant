@@ -17,7 +17,7 @@ use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
+use crate::data_types::segment_record::{NamedVectorsOwnedRaw, SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{
@@ -763,6 +763,53 @@ impl SegmentEntry for Segment {
             None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
                 let new_index =
                     segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
+                Ok((false, Some(new_index)))
+            }),
+        }
+    }
+
+    fn upsert_point_raw(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: NamedVectorsOwnedRaw,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        debug_assert!(self.is_appendable());
+        // Unlike `upsert_point`, no `preprocess`: the bytes are already the
+        // stored, preprocessed form read out of a segment.
+        let stored_internal_point = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        match stored_internal_point {
+            Some(existing_internal_id) => {
+                // The append-only snapshot path cannot stay native yet (design
+                // §1.3), so it needs decoded vectors; the in-place path writes
+                // the bytes verbatim.
+                let snapshot = self
+                    .is_append_only()
+                    .then(|| self.decode_raw_vectors(&vectors))
+                    .transpose()?;
+                self.handle_point_mutate(
+                    op_num,
+                    point_id,
+                    existing_internal_id,
+                    hw_counter,
+                    |segment, internal_id| {
+                        segment.replace_all_vectors_raw(internal_id, op_num, &vectors, hw_counter)?;
+                        Ok(true)
+                    },
+                    move |snapshot_vectors, _payload| {
+                        *snapshot_vectors =
+                            snapshot.expect("append-only path pre-decodes the snapshot");
+                        Ok(true)
+                    },
+                )
+            }
+            None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
+                let new_index =
+                    segment.insert_new_vectors_raw(point_id, op_num, &vectors, hw_counter)?;
                 Ok((false, Some(new_index)))
             }),
         }

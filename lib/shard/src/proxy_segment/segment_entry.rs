@@ -14,7 +14,7 @@ use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use segment::data_types::segment_record::SegmentRecord;
+use segment::data_types::segment_record::{NamedVectorsOwnedRaw, SegmentRecord, SegmentRecordRaw};
 use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::StorageSegmentEntry;
@@ -292,6 +292,37 @@ impl ReadSegmentEntry for ProxySegment {
             .filter(|id| !self.deleted_points.contains_key(id))
             .collect();
         self.wrapped_segment.get().read().retrieve(
+            &filtered_point_ids,
+            with_payload,
+            with_vector,
+            hw_counter,
+            is_stopped,
+            deferred_behavior,
+        )
+    }
+
+    fn retrieve_raw(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
+        // Mirrors `retrieve`: strip redacted vector names, drop proxy-deleted
+        // points, then delegate to the wrapped segment.
+        let with_vector = self
+            .changed_vector_names
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let with_vector = with_vector.as_ref();
+
+        let filtered_point_ids: Vec<PointIdType> = point_ids
+            .iter()
+            .copied()
+            .filter(|id| !self.deleted_points.contains_key(id))
+            .collect();
+        self.wrapped_segment.get().read().retrieve_raw(
             &filtered_point_ids,
             with_payload,
             with_vector,
@@ -794,6 +825,18 @@ impl SegmentEntry for ProxySegment {
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
+    fn upsert_point_raw(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _vectors: NamedVectorsOwnedRaw,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Raw upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 

@@ -31,11 +31,32 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
-    VectorElementTypeHalf, VectorInternal, VectorRef,
+    MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType,
+    VectorElementTypeByte, VectorElementTypeHalf, VectorInternal, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
+
+/// Decode storage-native element bytes into a float dense vector.
+///
+/// Uses `pod_collect_to_vec` (a copying reinterpret) rather than `cast_slice`
+/// because the input is a byte buffer with alignment 1, which cannot be
+/// borrow-cast up to a wider element type.
+fn decode_dense<T: PrimitiveVectorElement + bytemuck::AnyBitPattern>(
+    bytes: &[u8],
+) -> Vec<VectorElementType> {
+    let elements: Vec<T> = bytemuck::pod_collect_to_vec(bytes);
+    T::slice_to_float_cow(Cow::Owned(elements)).into_owned()
+}
+
+/// Decode storage-native element bytes into a multi-dense vector of inner
+/// dimension `dim` (inner-vector count = `bytes.len() / (dim * size_of::<T>())`).
+fn decode_multi<T: PrimitiveVectorElement + bytemuck::AnyBitPattern>(
+    bytes: &[u8],
+    dim: usize,
+) -> VectorInternal {
+    VectorInternal::MultiDense(TypedMultiDenseVector::new(decode_dense::<T>(bytes), dim))
+}
 
 /// In case of simple vector storage, vector offset is the same as [`PointOffsetType`].
 /// But in case of multivectors, it requires an additional lookup.
@@ -354,6 +375,19 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
     /// Get the quantized vector by the given key
     fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]>;
 
+    /// Insert a pre-encoded quantized vector verbatim, without re-quantization.
+    /// This is the write half of the round-trip-free transfer path.
+    fn insert_dense_tq(
+        &mut self,
+        key: PointOffsetType,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+
+    /// Dequantize encoded bytes back to a float vector — the lossy inverse of the
+    /// encoding, used only on fallback paths that cannot stay native.
+    fn decode_dense_tq(&self, bytes: &[u8]) -> VectorInternal;
+
     /// Add the given dense TQ vectors to the storage.
     ///
     /// # Returns
@@ -663,6 +697,108 @@ impl VectorStorageEnum {
             VectorStorageEnum::EmptySparse(_) => {}
         }
         Ok(())
+    }
+
+    /// Insert a vector from its storage-native serialized bytes (the write half
+    /// of [`VectorStorageEnum::vector_bytes_opt`]).
+    ///
+    /// TurboQuant bytes are written verbatim — no re-quantization, which is the
+    /// whole point. Every other storage decodes the bytes and goes through the
+    /// normal [`VectorStorage::insert_vector`], which is lossless for them.
+    pub fn insert_vector_bytes(
+        &mut self,
+        key: PointOffsetType,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::DenseTurbo(v) => return v.insert_dense_tq(key, bytes, hw_counter),
+            VectorStorageEnum::MultiDenseTurbo(_) => {
+                return Err(OperationError::service_error(
+                    "Raw byte upsert is not yet supported for multi-vector TurboQuant storage",
+                ));
+            }
+            _ => {}
+        }
+        let decoded = self.decode_vector_bytes(bytes)?;
+        self.insert_vector(key, VectorRef::from(&decoded), hw_counter)
+    }
+
+    /// Decode storage-native bytes back into a [`VectorInternal`] — the inverse
+    /// of [`VectorStorageEnum::vector_bytes_opt`]. For TurboQuant this
+    /// dequantizes (lossy); it is only used on fallback paths that cannot stay
+    /// native (native inserts go through [`Self::insert_vector_bytes`]).
+    pub fn decode_vector_bytes(&self, bytes: &[u8]) -> OperationResult<VectorInternal> {
+        let dense = |floats| Ok(VectorInternal::Dense(floats));
+        match self {
+            VectorStorageEnum::DenseVolatile(_) => dense(decode_dense::<VectorElementType>(bytes)),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_) => {
+                dense(decode_dense::<VectorElementTypeByte>(bytes))
+            }
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(_) => {
+                dense(decode_dense::<VectorElementTypeHalf>(bytes))
+            }
+            VectorStorageEnum::DenseMemmap(_) => dense(decode_dense::<VectorElementType>(bytes)),
+            VectorStorageEnum::DenseMemmapByte(_) => {
+                dense(decode_dense::<VectorElementTypeByte>(bytes))
+            }
+            VectorStorageEnum::DenseMemmapHalf(_) => {
+                dense(decode_dense::<VectorElementTypeHalf>(bytes))
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_) => dense(decode_dense::<VectorElementType>(bytes)),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(_) => {
+                dense(decode_dense::<VectorElementTypeByte>(bytes))
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(_) => {
+                dense(decode_dense::<VectorElementTypeHalf>(bytes))
+            }
+            VectorStorageEnum::DenseAppendableMemmap(_) => {
+                dense(decode_dense::<VectorElementType>(bytes))
+            }
+            VectorStorageEnum::DenseAppendableMemmapByte(_) => {
+                dense(decode_dense::<VectorElementTypeByte>(bytes))
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(_) => {
+                dense(decode_dense::<VectorElementTypeHalf>(bytes))
+            }
+            VectorStorageEnum::DenseTurbo(v) => Ok(v.decode_dense_tq(bytes)),
+            VectorStorageEnum::SparseVolatile(_) | VectorStorageEnum::SparseMmap(_) => Ok(
+                VectorInternal::Sparse(SparseVector::try_from(StoredSparseVector::from_bytes(
+                    bytes,
+                ))?),
+            ),
+            VectorStorageEnum::MultiDenseVolatile(v) => {
+                Ok(decode_multi::<VectorElementType>(bytes, v.vector_dim()))
+            }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => {
+                Ok(decode_multi::<VectorElementTypeByte>(bytes, v.vector_dim()))
+            }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
+                Ok(decode_multi::<VectorElementTypeHalf>(bytes, v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                Ok(decode_multi::<VectorElementType>(bytes, v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                Ok(decode_multi::<VectorElementTypeByte>(bytes, v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                Ok(decode_multi::<VectorElementTypeHalf>(bytes, v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseTurbo(_) => Err(OperationError::service_error(
+                "Raw byte decode is not yet supported for multi-vector TurboQuant storage",
+            )),
+            VectorStorageEnum::EmptyDense(_) | VectorStorageEnum::EmptySparse(_) => Err(
+                OperationError::service_error("Cannot decode a vector for an empty storage"),
+            ),
+        }
     }
 
     /// Get layout for a single vector

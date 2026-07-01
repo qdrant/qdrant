@@ -14,7 +14,7 @@ use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
@@ -84,6 +84,25 @@ pub trait VectorIndex: VectorIndexRead {
         vector: Option<VectorRef>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
+
+    /// Byte-blob analogue of [`VectorIndex::update_vector`]: writes a vector from
+    /// its storage-native serialized bytes (avoiding a lossy round-trip), or
+    /// deletes it when `bytes` is `None`.
+    ///
+    /// Only appendable segments (backed by [`PlainVectorIndex`]) support this;
+    /// the default errors, since runtime mutations never reach an HNSW/sparse
+    /// index.
+    fn update_vector_bytes(
+        &mut self,
+        id: PointOffsetType,
+        bytes: Option<&[u8]>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let _ = (id, bytes, hw_counter);
+        Err(OperationError::service_error(
+            "Raw byte vector upsert is only supported on appendable (plain) vector indices",
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -346,6 +365,37 @@ impl VectorIndex for VectorIndexEnum {
             Self::SparseCompressedMmapF32(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseCompressedMmapF16(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseCompressedMmapU8(index) => index.update_vector(id, vector, hw_counter),
+        }
+    }
+
+    fn update_vector_bytes(
+        &mut self,
+        id: PointOffsetType,
+        bytes: Option<&[u8]>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Plain(index) => index.update_vector_bytes(id, bytes, hw_counter),
+            Self::Hnsw(index) => index.update_vector_bytes(id, bytes, hw_counter),
+            Self::SparseRam(index) => index.update_vector_bytes(id, bytes, hw_counter),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.update_vector_bytes(id, bytes, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.update_vector_bytes(id, bytes, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.update_vector_bytes(id, bytes, hw_counter)
+            }
+            Self::SparseCompressedMmapF32(index) => {
+                index.update_vector_bytes(id, bytes, hw_counter)
+            }
+            Self::SparseCompressedMmapF16(index) => {
+                index.update_vector_bytes(id, bytes, hw_counter)
+            }
+            Self::SparseCompressedMmapU8(index) => {
+                index.update_vector_bytes(id, bytes, hw_counter)
+            }
         }
     }
 }

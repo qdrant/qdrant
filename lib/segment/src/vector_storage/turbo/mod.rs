@@ -30,9 +30,9 @@ use self::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorInternal, VectorRef};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, VectorStorageDatatype};
@@ -366,6 +366,28 @@ impl DenseTQVectorStorage for TurboVectorStorage {
         self.storage.get_quantized_vector(key)
     }
 
+    fn insert_dense_tq(
+        &mut self,
+        key: PointOffsetType,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let expected = self.quantizer.quantized_size();
+        if bytes.len() != expected {
+            return Err(OperationError::service_error(format!(
+                "Encoded TurboQuant vector size mismatch: got {} bytes, expected {expected}",
+                bytes.len(),
+            )));
+        }
+        self.storage.upsert_vector(key, bytes, hw_counter)?;
+        self.set_deleted(key, false);
+        Ok(())
+    }
+
+    fn decode_dense_tq(&self, bytes: &[u8]) -> VectorInternal {
+        self.dequantize_vector(Cow::Borrowed(bytes)).to_owned()
+    }
+
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
@@ -433,6 +455,35 @@ mod tests {
     /// Seeds swept by the data-dependent tests below, so each runs over several
     /// independent random inputs instead of a single fixed one.
     const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E];
+
+    /// The round-trip-free write half: `insert_dense_tq` must store encoded
+    /// bytes verbatim — no dequantize/re-quantize — and reject wrong sizes.
+    #[test]
+    fn insert_dense_tq_writes_bytes_verbatim() {
+        let dim = 128;
+        let distance = Distance::Dot;
+        let dir = Builder::new().prefix("turbo_storage").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut storage =
+            open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+
+        // A normal insert quantizes; capture the encoded bytes it produced.
+        let vector = make_vectors(dim, 1, 7).pop().unwrap();
+        storage
+            .insert_vector(0, vector.as_slice().into(), &hw_counter)
+            .unwrap();
+        let encoded = storage.get_quantized_vector(0).to_vec();
+
+        // A native insert of those bytes must store them unchanged.
+        storage.insert_dense_tq(1, &encoded, &hw_counter).unwrap();
+        assert_eq!(storage.get_quantized_vector(1).as_ref(), encoded.as_slice());
+        assert!(!storage.is_deleted_vector(1));
+
+        // Wrong-size bytes are rejected instead of silently corrupting.
+        let bad = vec![0u8; encoded.len() + 1];
+        assert!(storage.insert_dense_tq(2, &bad, &hw_counter).is_err());
+    }
 
     #[test]
     fn upsert_flush_reload_in_ram_matches_independent_oracle() {

@@ -19,6 +19,7 @@ use crate::common::operation_error::{
 };
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::segment_record::NamedVectorsOwnedRaw;
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
 use crate::id_tracker::{IdTracker, IdTrackerRead};
@@ -29,6 +30,14 @@ use crate::types::{
 };
 use crate::utils;
 use crate::vector_storage::VectorStorageRead;
+
+/// Look up the storage-native bytes for a named vector in a raw vector set.
+fn raw_vector_bytes<'a>(vectors: &'a NamedVectorsOwnedRaw, name: &str) -> Option<&'a [u8]> {
+    vectors
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, bytes)| bytes.as_slice())
+}
 
 impl Segment {
     /// Replace vectors in-place
@@ -116,6 +125,67 @@ impl Segment {
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
+    }
+
+    /// Byte-blob analogue of [`Segment::replace_all_vectors`]: writes each
+    /// configured vector from its storage-native bytes (missing names are
+    /// cleared, matching the non-raw variant).
+    pub(super) fn replace_all_vectors_raw(
+        &mut self,
+        internal_id: PointOffsetType,
+        op_num: SeqNumberType,
+        vectors: &NamedVectorsOwnedRaw,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        debug_assert!(self.is_appendable());
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let bytes = raw_vector_bytes(vectors, vector_name);
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector_bytes(internal_id, bytes, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+        Ok(())
+    }
+
+    /// Byte-blob analogue of [`Segment::insert_new_vectors`].
+    pub(super) fn insert_new_vectors_raw(
+        &mut self,
+        point_id: PointIdType,
+        op_num: SeqNumberType,
+        vectors: &NamedVectorsOwnedRaw,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PointOffsetType> {
+        debug_assert!(self.is_appendable());
+        let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let bytes = raw_vector_bytes(vectors, vector_name);
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector_bytes(new_index, bytes, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+        self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
+        Ok(new_index)
+    }
+
+    /// Decode raw byte vectors into owned [`NamedVectors`], for fallback paths
+    /// that cannot stay native (the append-only snapshot; see design §1.3).
+    pub(super) fn decode_raw_vectors(
+        &self,
+        vectors: &NamedVectorsOwnedRaw,
+    ) -> OperationResult<NamedVectors<'static>> {
+        let mut named = NamedVectors::default();
+        for (vector_name, bytes) in vectors {
+            let vector_data = self
+                .vector_data
+                .get(vector_name.as_str())
+                .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+            let decoded = vector_data
+                .vector_storage
+                .borrow()
+                .decode_vector_bytes(bytes)?;
+            named.insert(vector_name.clone(), decoded);
+        }
+        Ok(named)
     }
 
     /// Append-only update: snapshot the point at `old_id` into owned vectors
