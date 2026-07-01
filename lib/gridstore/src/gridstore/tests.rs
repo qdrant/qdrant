@@ -1741,3 +1741,271 @@ fn read_only_reader_over_write_enforced_backend(
     let stored = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(stored, Some(payload));
 }
+/// Serverless storage must only ever append to its page files: writing new data grows the page,
+/// but never rewrites bytes that were already persisted.
+#[test]
+fn test_serverless_writes_only_append() {
+    let (dir, mut storage) = empty_storage(Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let put = |storage: &mut Gridstore<Payload>, point_offset: u32, value: &str| {
+        let mut payload = Payload::default();
+        payload.0.insert(
+            "key".to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
+        storage
+            .put_value(point_offset, &payload, hw_counter_ref)
+            .unwrap();
+    };
+
+    let page_path = dir.path().join("page_0.dat");
+
+    // Write, flush, and snapshot the raw page bytes.
+    put(&mut storage, 0, "first value");
+    storage.flusher()().unwrap();
+    let snapshot = fs::read(&page_path).unwrap();
+    assert!(!snapshot.is_empty(), "page must hold the first value");
+
+    // Appending more values (including an update of point 0) must only extend
+    // the page; the previously written prefix must stay byte-for-byte identical.
+    put(&mut storage, 1, "second value");
+    put(&mut storage, 0, "updated first value");
+    storage.flusher()().unwrap();
+    let grown = fs::read(&page_path).unwrap();
+
+    assert!(
+        grown.len() > snapshot.len(),
+        "append-only writes must grow the page ({} -> {})",
+        snapshot.len(),
+        grown.len(),
+    );
+    assert_eq!(
+        &grown[..snapshot.len()],
+        &snapshot[..],
+        "previously written bytes must be untouched (append-only)",
+    );
+}
+
+/// A freshly created serverless storage must have a single, empty page.
+#[test]
+fn test_serverless_initial_page_is_empty() {
+    let (dir, storage) = empty_storage(Mode::Serverless);
+
+    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(
+        storage.pages.read().last_page_len().unwrap(),
+        0,
+        "the initial serverless page must be empty",
+    );
+    let page_path = dir.path().join("page_0.dat");
+    assert_eq!(
+        fs::metadata(&page_path).unwrap().len(),
+        0,
+        "the initial serverless page file must be zero-length on disk",
+    );
+}
+
+/// When a serverless write crosses a page border, the first page must be filled to exactly the
+/// page size, and the new page must hold only the blocks that spilled over (partial,
+/// block-aligned).
+#[test]
+fn test_serverless_write_across_page_border_fills_page() {
+    // Use a small page so we don't allocate huge files.
+    let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    let (dir, mut storage) = empty_storage_sized(page_size, Compression::None, Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // A value whose (uncompressed) size exceeds one page, so it fills page 0 and
+    // spills into page 1. Compression is disabled so the stored size is
+    // predictable.
+    let big = "x".repeat(page_size + page_size / 2);
+    let mut payload = Payload::default();
+    payload
+        .0
+        .insert("key".to_string(), serde_json::Value::String(big));
+    storage.put_value(0, &payload, hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+
+    assert_eq!(
+        storage.pages.read().num_pages(),
+        2,
+        "the value must span two pages",
+    );
+
+    let length = storage.get_pointer(0).unwrap().length as usize;
+    let padded_total = length.next_multiple_of(DEFAULT_BLOCK_SIZE_BYTES);
+    assert!(
+        padded_total > page_size,
+        "the value must actually cross the page border",
+    );
+
+    let page0_len = fs::metadata(dir.path().join("page_0.dat")).unwrap().len() as usize;
+    let page1_len = fs::metadata(dir.path().join("page_1.dat")).unwrap().len() as usize;
+
+    // First page is complete and exactly the page size.
+    assert_eq!(
+        page0_len, page_size,
+        "the crossed page must be exactly full",
+    );
+    // Second page is partial: only the spilled-over blocks, block-aligned.
+    assert_eq!(
+        page1_len,
+        padded_total - page_size,
+        "the new page must hold only the spilled-over blocks",
+    );
+    assert!(
+        page1_len > 0 && page1_len < page_size,
+        "the new page must be partial",
+    );
+    assert_eq!(
+        page1_len % DEFAULT_BLOCK_SIZE_BYTES,
+        0,
+        "the new page must be block-aligned",
+    );
+
+    // And the value round-trips across the border.
+    let read = storage
+        .get_value::<Random>(0, &hw_counter)
+        .unwrap()
+        .unwrap();
+    assert_eq!(read, payload);
+}
+
+/// Every serverless write is block-aligned: page files stay a whole multiple of the block size,
+/// and each value occupies exactly its padded whole-block span (no sub-block packing).
+#[test]
+fn test_serverless_writes_are_block_aligned() {
+    let (dir, mut storage) = empty_storage(Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    let num_values = 64u32;
+    for point_offset in 0..num_values {
+        let payload = random_payload(rng, (point_offset % 4) as usize + 1);
+        storage
+            .put_value(point_offset, &payload, hw_counter_ref)
+            .unwrap();
+
+        // After every write, all page files must be block-aligned in length,
+        // i.e. every append ended exactly on a block boundary.
+        let num_pages = storage.pages.read().num_pages();
+        for page_id in 0..num_pages {
+            let len = fs::metadata(dir.path().join(format!("page_{page_id}.dat")))
+                .unwrap()
+                .len();
+            assert_eq!(
+                len % DEFAULT_BLOCK_SIZE_BYTES as u64,
+                0,
+                "page {page_id} length {len} is not block-aligned",
+            );
+        }
+    }
+    storage.flusher()().unwrap();
+
+    // The total bytes on disk must equal the sum of every value padded up to a
+    // whole number of blocks: append-only + block-aligned means no gaps and no
+    // packing.
+    let num_pages = storage.pages.read().num_pages();
+    let total_page_bytes: u64 = (0..num_pages)
+        .map(|page_id| {
+            fs::metadata(dir.path().join(format!("page_{page_id}.dat")))
+                .unwrap()
+                .len()
+        })
+        .sum();
+    let expected_bytes: u64 = (0..num_values)
+        .map(|point_offset| {
+            let length = storage.get_pointer(point_offset).unwrap().length as usize;
+            length.next_multiple_of(DEFAULT_BLOCK_SIZE_BYTES) as u64
+        })
+        .sum();
+    assert_eq!(
+        total_page_bytes, expected_bytes,
+        "each value must occupy exactly its padded whole-block span",
+    );
+}
+
+/// Serverless mode has no block-usage bitmask: the `bitmask.dat` / `gaps.dat` files must never be
+/// created, nor reported by `files()`.
+#[test]
+fn test_serverless_has_no_block_flag_files() {
+    let (dir, mut storage) = empty_storage(Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    for point_offset in 0..32u32 {
+        storage
+            .put_value(point_offset, &random_payload(rng, 2), hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    // Not on disk...
+    let on_disk: Vec<String> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        !on_disk
+            .iter()
+            .any(|name| name == "bitmask.dat" || name == "gaps.dat"),
+        "serverless mode must not create block-flag files, found {on_disk:?}",
+    );
+
+    // ...and not reported by files().
+    let reported: Vec<String> = storage
+        .files()
+        .into_iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        !reported
+            .iter()
+            .any(|name| name == "bitmask.dat" || name == "gaps.dat"),
+        "files() must not report block-flag files, got {reported:?}",
+    );
+}
+
+/// A storage created in dynamic mode can be reopened in serverless mode and all of its data read
+/// back.
+#[test]
+fn test_open_dynamic_storage_in_serverless_mode() {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    let payloads: Vec<Payload> = (0..40).map(|_| random_payload(rng, 3)).collect();
+
+    // Create and populate in dynamic mode.
+    {
+        let mut storage =
+            Gridstore::<Payload>::new(MmapFs, path.clone(), Default::default(), Mode::Regular)
+                .unwrap();
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            storage
+                .put_value(point_offset as u32, payload, hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+    }
+
+    // Reopen in serverless mode and read everything back.
+    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::Serverless).unwrap();
+    for (point_offset, payload) in payloads.iter().enumerate() {
+        let got = storage
+            .get_value::<Random>(point_offset as u32, &hw_counter)
+            .unwrap();
+        assert_eq!(
+            got.as_ref(),
+            Some(payload),
+            "point {point_offset} mismatch after opening dynamic storage in serverless mode",
+        );
+    }
+}
