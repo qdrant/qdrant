@@ -737,7 +737,12 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         return Ok(OptimizationResult { points_count: 0 });
     }
 
-    check_segments_size(optimizer_name, &input_segments, &paths.temp_path)?;
+    // Check disk space before starting optimization.
+    // If not enough space, skip optimization gracefully instead of failing.
+    if let Err(err) = check_segments_size(optimizer_name, &input_segments, &paths.temp_path) {
+        log::warn!("Skipping optimization due to insufficient disk space: {err}");
+        return Ok(OptimizationResult { points_count: 0 });
+    }
 
     check_process_stopped(stopped)?;
 
