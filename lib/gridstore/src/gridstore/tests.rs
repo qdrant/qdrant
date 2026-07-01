@@ -1001,9 +1001,8 @@ fn test_different_block_sizes(
 /// - data is only written to disk when closure is invoked
 #[rstest]
 fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // The deferred-flush read semantics are identical in both modes. The block
-    // offsets differ: dynamic mode reuses blocks freed by earlier flushes, while
-    // serverless mode is append-only and keeps assigning the next block.
+    // Read semantics match in both modes; only block offsets differ: dynamic
+    // reuses freed blocks, serverless appends the next.
     let (dir, mut storage) = empty_storage(mode);
     let path = dir.path().to_path_buf();
 
@@ -1084,10 +1083,8 @@ fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
     // On reopen, we expect to read the data at the time the flusher was created
     assert_eq!(get_payload(&storage), "value 3");
 
-    // Dynamic mode: the bitslice is not buffered and can be flushed by the kernel, so we
-    // expect to reuse block 1. It means that we might lose unoccupied storage, but it can
-    // only happen on crash and the optimizer will eventually take care of this when building
-    // a fresh segment. Serverless mode keeps appending monotonically (blocks 5, 6, 7).
+    // Dynamic reuses block 1 (kernel may flush the bitslice; a crash can lose
+    // unoccupied storage, which the optimizer later rebuilds). Serverless appends.
     put_payload(
         &mut storage,
         "value 6",
@@ -1113,11 +1110,9 @@ fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
 /// Similar to [`test_deferred_flush`] but more complex, including multiple flushers and deletes
 #[rstest]
 fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // The deferred-flush read semantics (including deletes) are identical in both
-    // modes. The block offsets differ: dynamic mode reuses blocks freed after a
-    // delete or flush, while serverless mode is append-only and keeps assigning
-    // the next block. Deletes only touch the tracker, so they don't consume a
-    // block in serverless mode.
+    // Read semantics (incl. deletes) match in both modes; only block offsets
+    // differ: dynamic reuses freed blocks, serverless appends. Deletes touch only
+    // the tracker, so consume no block in serverless.
     let (dir, mut storage) = empty_storage(mode);
     let path = dir.path().to_path_buf();
 
@@ -1503,9 +1498,7 @@ fn test_skip_deferred_flush_after_clear(#[values(Mode::Regular, Mode::Serverless
     // call the flusher. This allows us to trigger broken flush behavior in old versions.
     // The same is possible without cloning these arcs, but it would require specific timing
     // conditions. Cloning arcs here is much more reliable for this test case.
-    // Serverless mode has no bitmask, so only its pages and tracker arcs are kept alive; those
-    // are exactly the arcs its flusher upgrades, so the flush can only be cancelled by the
-    // is-alive lock that `clear` marks dead.
+    // Serverless keeps only pages+tracker arcs (its flusher upgrades no bitmask).
     let storage_arcs = (
         Arc::clone(&storage.pages),
         Arc::clone(&storage.tracker),
@@ -1741,8 +1734,8 @@ fn read_only_reader_over_write_enforced_backend(
     let stored = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(stored, Some(payload));
 }
-/// Serverless storage must only ever append to its page files: writing new data grows the page,
-/// but never rewrites bytes that were already persisted.
+
+/// Serverless writes only append: they grow page files, never rewriting existing bytes.
 #[test]
 fn test_serverless_writes_only_append() {
     let (dir, mut storage) = empty_storage(Mode::Serverless);
@@ -1768,8 +1761,7 @@ fn test_serverless_writes_only_append() {
     let snapshot = fs::read(&page_path).unwrap();
     assert!(!snapshot.is_empty(), "page must hold the first value");
 
-    // Appending more values (including an update of point 0) must only extend
-    // the page; the previously written prefix must stay byte-for-byte identical.
+    // Appending more (incl. an update of point 0) must only extend the page.
     put(&mut storage, 1, "second value");
     put(&mut storage, 0, "updated first value");
     storage.flusher()().unwrap();
@@ -1807,20 +1799,17 @@ fn test_serverless_initial_page_is_empty() {
     );
 }
 
-/// When a serverless write crosses a page border, the first page must be filled to exactly the
-/// page size, and the new page must hold only the blocks that spilled over (partial,
-/// block-aligned).
+/// A write crossing a page border fills the first page exactly and puts only the
+/// spilled blocks in the next.
 #[test]
 fn test_serverless_write_across_page_border_fills_page() {
-    // Use a small page so we don't allocate huge files.
+    // Small page (and no compression) so the value predictably crosses the border.
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
     let (dir, mut storage) = empty_storage_sized(page_size, Compression::None, Mode::Serverless);
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
-    // A value whose (uncompressed) size exceeds one page, so it fills page 0 and
-    // spills into page 1. Compression is disabled so the stored size is
-    // predictable.
+    // Larger than one page, so it fills page 0 and spills into page 1.
     let big = "x".repeat(page_size + page_size / 2);
     let mut payload = Payload::default();
     payload
@@ -1874,8 +1863,8 @@ fn test_serverless_write_across_page_border_fills_page() {
     assert_eq!(read, payload);
 }
 
-/// Every serverless write is block-aligned: page files stay a whole multiple of the block size,
-/// and each value occupies exactly its padded whole-block span (no sub-block packing).
+/// Serverless writes are block-aligned: page files stay block multiples and each
+/// value occupies exactly its padded whole-block span.
 #[test]
 fn test_serverless_writes_are_block_aligned() {
     let (dir, mut storage) = empty_storage(Mode::Serverless);
@@ -1890,8 +1879,7 @@ fn test_serverless_writes_are_block_aligned() {
             .put_value(point_offset, &payload, hw_counter_ref)
             .unwrap();
 
-        // After every write, all page files must be block-aligned in length,
-        // i.e. every append ended exactly on a block boundary.
+        // Every append must end on a block boundary.
         let num_pages = storage.pages.read().num_pages();
         for page_id in 0..num_pages {
             let len = fs::metadata(dir.path().join(format!("page_{page_id}.dat")))
@@ -1906,9 +1894,7 @@ fn test_serverless_writes_are_block_aligned() {
     }
     storage.flusher()().unwrap();
 
-    // The total bytes on disk must equal the sum of every value padded up to a
-    // whole number of blocks: append-only + block-aligned means no gaps and no
-    // packing.
+    // Total bytes on disk == sum of each value padded to whole blocks (no gaps).
     let num_pages = storage.pages.read().num_pages();
     let total_page_bytes: u64 = (0..num_pages)
         .map(|page_id| {
@@ -1929,8 +1915,7 @@ fn test_serverless_writes_are_block_aligned() {
     );
 }
 
-/// Serverless mode has no block-usage bitmask: the `bitmask.dat` / `gaps.dat` files must never be
-/// created, nor reported by `files()`.
+/// Serverless mode never creates or reports `bitmask.dat` / `gaps.dat`.
 #[test]
 fn test_serverless_has_no_block_flag_files() {
     let (dir, mut storage) = empty_storage(Mode::Serverless);
@@ -1971,8 +1956,7 @@ fn test_serverless_has_no_block_flag_files() {
     );
 }
 
-/// A storage created in dynamic mode can be reopened in serverless mode and all of its data read
-/// back.
+/// A dynamic-created storage reopens in serverless mode with all data intact.
 #[test]
 fn test_open_dynamic_storage_in_serverless_mode() {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
