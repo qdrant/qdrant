@@ -2,12 +2,12 @@ use std::env;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use io_bridge::BridgeRuntime;
 use object_store::ObjectStoreExt as _;
 use object_store::aws::AmazonS3;
 
 use crate::backend::BlobBackend;
 use crate::backends::aws::{AwsConfig, AwsCredentials};
-use crate::runtime::BridgeRuntime;
 
 pub fn rustfs_enabled() -> bool {
     env::var("S3_INTEGRATION_TEST").as_deref() == Ok("1")

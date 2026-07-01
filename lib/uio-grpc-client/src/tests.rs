@@ -191,7 +191,7 @@ fn test_files() -> HashMap<(String, String), Vec<u8>> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn list_files() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let mut paths = client.list_files("test-col", 0, "data/").await.unwrap();
     paths.sort();
     assert_eq!(
@@ -203,7 +203,7 @@ async fn list_files() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_exists() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     assert!(
         client
             .file_exists("test-col", 0, "data/a.bin")
@@ -216,7 +216,7 @@ async fn file_exists() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_length() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     assert_eq!(
         client
             .file_length("test-col", 0, "data/a.bin")
@@ -229,7 +229,7 @@ async fn file_length() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_bytes() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let data = client
         .read_bytes("test-col", 0, "data/a.bin", 3, 4)
         .await
@@ -240,7 +240,7 @@ async fn read_bytes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_bytes_stream() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let data = client
         .read_bytes_stream("test-col", 0, "data/a.bin", 0, 10)
         .await
@@ -251,7 +251,7 @@ async fn read_bytes_stream() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_bytes_stream_reassembles_chunks() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let data = client
         .read_bytes_stream("test-col", 0, "index/chunk_0.bin", 0, 100)
         .await
@@ -263,7 +263,7 @@ async fn read_bytes_stream_reassembles_chunks() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_whole() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let data = client
         .read_whole("test-col", 0, "data/a.bin")
         .await
@@ -274,7 +274,7 @@ async fn read_whole() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_batch() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let ranges = [
         ReadRange {
             byte_offset: 0,
@@ -297,14 +297,14 @@ async fn read_batch() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_length_not_found() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     assert!(client.file_length("test-col", 0, "nope.bin").await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_bytes_not_found() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     assert!(
         client
             .read_bytes("test-col", 0, "nope.bin", 0, 1)
@@ -316,7 +316,7 @@ async fn read_bytes_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_bytes_stream_not_found() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     assert!(
         client
             .read_bytes_stream("test-col", 0, "nope.bin", 0, 1)
@@ -328,14 +328,14 @@ async fn read_bytes_stream_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_whole_not_found() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     assert!(client.read_whole("test-col", 0, "nope.bin").await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_batch_not_found() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let ranges = [ReadRange {
         byte_offset: 0,
         length: 1,
@@ -351,7 +351,7 @@ async fn read_batch_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn list_files_empty_result() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let paths = client
         .list_files("test-col", 0, "nonexistent/")
         .await
@@ -362,7 +362,7 @@ async fn list_files_empty_result() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_bytes_stream_partial_range() {
     let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
+    let client = Client::connect(url, None).await.unwrap();
     let data = client
         .read_bytes_stream("test-col", 0, "data/a.bin", 3, 4)
         .await
@@ -372,6 +372,6 @@ async fn read_bytes_stream_partial_range() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn connect_invalid_endpoint() {
-    let result = Client::connect("http://127.0.0.1:1").await;
+    let result = Client::connect("http://127.0.0.1:1", None).await;
     assert!(result.is_err());
 }
