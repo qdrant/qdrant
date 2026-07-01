@@ -885,6 +885,33 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.wal.lock().clear()
     }
 
+    /// Discard committed-but-unapplied Raft log entries inherited from a previous
+    /// cluster during first-peer consensus re-initialization (`--reinit`).
+    ///
+    /// `--reinit` resets this peer's `conf_state` to a single voter (itself) but
+    /// leaves the Raft log untouched. If this peer had been removed from consensus
+    /// before reinit, its log still holds a committed `RemoveNode(self)` conf-change
+    /// (and possibly other topology changes from the old cluster). Replaying those on
+    /// top of the reset single-voter config makes Raft abort with "removed all voters".
+    ///
+    /// Drop that tail: physically truncate the WAL to the last applied index, pin
+    /// `commit` to it and clear the apply-progress queue, so a fresh single-node
+    /// leader has nothing stale left to re-commit and re-apply.
+    pub fn clear_unapplied_entries_on_reinit(&self) -> Result<(), StorageError> {
+        let last_applied = self.persistent.read().last_applied_entry().unwrap_or(0);
+
+        // Physically drop entries beyond the applied index
+        self.wal.lock().truncate_after(last_applied)?;
+
+        // Align persisted commit index and apply-progress queue with the truncated log
+        let mut persistent = self.persistent.write();
+        persistent.apply_state_update(|state| state.hard_state.commit = last_applied)?;
+        // Empty queue that still reports `last_applied` as the last applied entry
+        persistent.set_unapplied_entries(last_applied + 1, last_applied)?;
+
+        Ok(())
+    }
+
     pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
         if min_entries_to_compact == 0 {
             return Ok(false);
