@@ -52,14 +52,26 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set pre-release version
-        # PEP 440 `.devN` suffix makes pip skip this wheel by default; users must
-        # opt in with `--pre` or pin `qdrant-edge-py==X.Y.Z.devN` explicitly.
+        # Bump the patch component and append a `.dev<run_number>` suffix so
+        # the dev version sorts strictly ABOVE the latest published stable
+        # (e.g. Cargo.toml `0.7.2` -> wheel `0.7.3.dev137`). Combined with
+        # `pip install --pre`, this lets consumers pull "the current dev"
+        # without knowing the run number, and prevents pip from silently
+        # preferring the older stable release when both are visible.
         if: github.event_name == 'push'
         shell: bash
         working-directory: lib/edge/python
         run: |
           awk -v run="${GITHUB_RUN_NUMBER}" '
-            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            !patched && /^version = "/ {
+              # Assumes SemVer X.Y.Z inside the quotes; bump patch, append .devN.
+              split($0, quoted, "\"")
+              split(quoted[2], parts, ".")
+              parts[3] = parts[3] + 1
+              print "version = \"" parts[1] "." parts[2] "." parts[3] ".dev" run "\""
+              patched = 1
+              next
+            }
             { print }
           ' Cargo.toml > Cargo.toml.new
           mv Cargo.toml.new Cargo.toml
@@ -384,10 +396,17 @@ jobs:
           {
             echo "## qdrant-edge-py dev wheels uploaded"
             echo ""
+            echo "Published version: ${current_version}"
+            echo ""
             echo "Index: <${index_url}>"
             echo ""
-            echo "Install a specific dev version:"
+            echo "Install the current dev build (no version pin needed):"
             echo '```'
-            echo "pip install --find-links ${index_url} qdrant-edge-py==<X.Y.Z.devN>"
+            echo "pip install --find-links ${index_url} qdrant-edge-py --pre"
+            echo '```'
+            echo ""
+            echo "Pin a specific dev version:"
+            echo '```'
+            echo "pip install --find-links ${index_url} qdrant-edge-py==${current_version}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
