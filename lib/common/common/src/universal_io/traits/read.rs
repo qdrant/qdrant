@@ -87,8 +87,20 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         T: Item,
         U: UserData,
     {
-        for record in self.read_iter::<P, T, U>(ranges)? {
-            let (user_data, data) = record?;
+        let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
+        let mut ranges = ranges.into_iter();
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((user_data, range)) = ranges.next()
+            {
+                let range = range.into_byte_range::<T>();
+                pipeline.schedule::<P>(user_data, self, range, align_of::<T>())?;
+            }
+
+            let Some((user_data, data)) = pipeline.wait_bytemuck()? else {
+                break;
+            };
             callback(user_data, &data)?;
         }
 
@@ -106,11 +118,21 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         T: Item,
         U: UserData,
     {
-        let reads = ranges
-            .into_iter()
-            .map(move |(user_data, range)| (user_data, self, range));
+        let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
+        let mut ranges = ranges.into_iter();
 
-        Self::read_multi_iter::<P, T, U>(reads)
+        Ok(std::iter::from_fn(move || {
+            while pipeline.can_schedule()
+                && let Some((user_data, range)) = ranges.next()
+            {
+                let range = range.into_byte_range::<T>();
+                if let Err(err) = pipeline.schedule::<P>(user_data, self, range, align_of::<T>()) {
+                    return Some(Err(err));
+                }
+            }
+
+            pipeline.wait_bytemuck().transpose()
+        }))
     }
 
     fn read_bytes_iter<P, U>(
@@ -156,56 +178,6 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
     fn clear_ram_cache(&self) -> Result<()>;
-
-    /// Read from multiple files in a single operation.
-    fn read_multi<'a, P, T, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-        mut callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-        Self: 'a,
-    {
-        for record in Self::read_multi_iter::<P, T, U>(reads)? {
-            let (user_data, items) = record?;
-            callback(user_data, &items)?;
-        }
-
-        Ok(())
-    }
-
-    /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator
-    /// instead of accepting a callback.
-    fn read_multi_iter<'a, P, T, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-        Self: 'a,
-    {
-        let mut pipeline = Self::ReadPipeline::<'a, U>::new()?;
-        let mut reads = reads.into_iter();
-
-        let iter = std::iter::from_fn(move || {
-            while pipeline.can_schedule()
-                && let Some(read) = reads.next()
-            {
-                let (user_data, file, range) = read;
-                let range = range.into_byte_range::<T>();
-                if let Err(err) = pipeline.schedule::<P>(user_data, file, range, align_of::<T>()) {
-                    return Some(Err(err));
-                }
-            }
-
-            pipeline.wait_bytemuck().transpose()
-        });
-
-        Ok(iter)
-    }
 
     fn kind() -> UniversalKind;
 

@@ -64,10 +64,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
 
-        for ((user_data, point_offset), vector) in self.vectors.iter_vectors::<P, _>(keys) {
-            let vector = CowVector::from(T::slice_to_float_cow(vector));
-            callback(user_data, point_offset, vector);
-        }
+        self.vectors
+            .for_each_vector::<P, _>(keys, |(user_data, point_offset), vector| {
+                let vector = CowVector::from(T::slice_to_float_cow(vector));
+                callback(user_data, point_offset, vector);
+                Ok(())
+            })
+            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

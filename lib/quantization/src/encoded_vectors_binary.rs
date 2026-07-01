@@ -861,11 +861,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         )
     }
 
-    fn iter_batch(
+    fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
-        self.encoded_vectors.iter_batch(offsets)
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
     fn score(

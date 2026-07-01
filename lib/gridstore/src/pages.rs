@@ -8,8 +8,8 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWrite, UserData,
+    FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
 
@@ -211,7 +211,7 @@ impl<S: UniversalRead> Pages<S> {
         pointer: ValuePointer,
         config: &StorageConfig,
     ) -> Result<Cow<'_, [u8]>> {
-        let reads = Self::get_page_value_ranges(pointer, config)
+        let mut reads = Self::get_page_value_ranges(pointer, config)
             .map(|(buf_offset, page, range)| (buf_offset, &self.pages[page as usize], range));
 
         let pages = Self::value_len_pages(pointer, config);
@@ -224,8 +224,22 @@ impl<S: UniversalRead> Pages<S> {
             vec![MaybeUninit::uninit(); pointer.length as _]
         };
 
-        for result in S::read_multi_iter::<P, u8, _>(reads)? {
-            let (offset, bytes) = result?;
+        // Drive the read pipeline directly: refill it from `reads` whenever it can
+        // accept more, then drain one completed read at a time. Reads span multiple
+        // page files, so each is scheduled on its own file handle.
+        let mut pipeline = S::ReadPipeline::<'_, usize>::new()?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((offset, page, range)) = reads.next()
+            {
+                let range = range.into_byte_range::<u8>();
+                pipeline.schedule::<P>(offset, page, range, align_of::<u8>())?;
+            }
+
+            let Some((offset, bytes)) = pipeline.wait_bytemuck::<u8>()? else {
+                break;
+            };
 
             if pages == 1 {
                 return Ok(bytes);
@@ -269,7 +283,7 @@ impl<S: UniversalRead> Pages<S> {
         // Single-page reads (common case) bypass this map entirely.
         let pending = RefCell::new(AHashMap::new());
 
-        let reads = pointers
+        let mut reads = pointers
             .enumerate()
             .flat_map(|(value_idx, (user_data, pointer))| {
                 let ranges = Self::get_page_value_ranges(pointer, config);
@@ -305,8 +319,28 @@ impl<S: UniversalRead> Pages<S> {
                 })
             });
 
-        for result in S::read_multi_iter::<P, _, _>(reads).map_err(GridstoreError::from)? {
-            let (meta, bytes) = result.map_err(GridstoreError::from)?;
+        // Drive the read pipeline directly: refill it from `reads` whenever it can
+        // accept more, then drain one completed read at a time. Each read targets
+        // its own page file, and chunks for multi-page values may arrive in any order.
+        let mut pipeline =
+            S::ReadPipeline::<'_, ReadMeta<U>>::new().map_err(GridstoreError::from)?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((meta, page, range)) = reads.next()
+            {
+                let range = range.into_byte_range::<u8>();
+                pipeline
+                    .schedule::<P>(meta, page, range, align_of::<u8>())
+                    .map_err(GridstoreError::from)?;
+            }
+
+            let Some((meta, bytes)) = pipeline
+                .wait_bytemuck::<u8>()
+                .map_err(GridstoreError::from)?
+            else {
+                break;
+            };
 
             let ReadMeta {
                 value_idx,

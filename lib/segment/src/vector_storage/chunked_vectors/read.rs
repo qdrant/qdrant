@@ -7,8 +7,8 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    Populate, ReadRange, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
-    read_json_via, read_whole_via,
+    Populate, ReadPipeline, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalReadFs, UserData, read_json_via, read_whole_via,
 };
 use num_traits::AsPrimitive;
 
@@ -183,7 +183,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
     }
 
-    pub fn for_each_in_batch<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    pub fn for_each_in_batch<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, &[T]),
     {
@@ -195,11 +199,10 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
                 .enumerate()
                 .map(|(index, point_offset)| (index, point_offset, 1));
 
-            for (idx, vectors) in self.iter_vectors::<Random, _>(point_offsets) {
-                callback(idx, &vectors);
-            }
-
-            return;
+            return self.for_each_vector::<Random, _>(point_offsets, |idx, vectors| {
+                callback(idx, vectors.as_ref());
+                Ok(())
+            });
         }
 
         // The `f` is most likely a scorer function. Fetching all vectors first, and then scoring
@@ -224,30 +227,49 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
                 callback(batch_offset + vector_idx, vec.as_ref());
             }
         }
+
+        Ok(())
     }
 
-    /// Iterate over flattened multi-vectors
-    pub fn iter_vectors<P, U>(
+    /// Invoke `callback` for each flattened multi-vector at the given offsets.
+    ///
+    /// Drives the read pipeline directly across chunk files: refills it from the
+    /// offsets, then drains completed reads.
+    pub fn for_each_vector<P, U>(
         &self,
-        offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
-    ) -> impl Iterator<Item = (U, Cow<'_, [T]>)>
+        mut offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
+        mut callback: impl FnMut(U, Cow<'_, [T]>) -> OperationResult<()>,
+    ) -> OperationResult<()>
     where
         P: AccessPattern,
         U: UserData,
     {
-        let reads = offsets.map(|(user_data, offset, count)| {
-            let (chunk_idx, range) = self
-                .read_range(offset as _, count as _)
-                .expect("vectors exist");
-
-            let chunk = &self.chunks[chunk_idx];
-            (user_data, chunk, range)
-        });
-
         // access pattern does not matter for io_uring
-        TypedStorage::read_multi_iter::<P, _>(reads)
-            .expect("iterator initialized")
-            .map(|result| result.expect("vector read"))
+        let mut pipeline = S::ReadPipeline::<'_, U>::new()?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((user_data, offset, count)) = offsets.next()
+            {
+                let (chunk_idx, range) = self
+                    .read_range(offset as _, count as _)
+                    .ok_or_else(|| OperationError::service_error("vector offset out of bounds"))?;
+                let range = range.into_byte_range::<T>();
+                pipeline.schedule::<P>(
+                    user_data,
+                    &self.chunks[chunk_idx].inner,
+                    range,
+                    align_of::<T>(),
+                )?;
+            }
+
+            let Some((user_data, vector)) = pipeline.wait_bytemuck::<T>()? else {
+                break;
+            };
+            callback(user_data, vector)?;
+        }
+
+        Ok(())
     }
 
     pub fn files(&self) -> Vec<PathBuf> {

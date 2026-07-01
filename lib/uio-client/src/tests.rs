@@ -141,27 +141,6 @@ impl StorageReadTrait for MockServer {
             .collect();
         Ok(Response::new(ReadBatchResponse { data }))
     }
-
-    async fn read_multi(
-        &self,
-        request: Request<ReadMultiRequest>,
-    ) -> std::result::Result<Response<ReadMultiResponse>, Status> {
-        let req = request.into_inner();
-        let data: std::result::Result<Vec<Vec<u8>>, Status> = req
-            .reads
-            .iter()
-            .map(|entry| {
-                let file_data = self
-                    .files
-                    .get(&(req.collection_name.clone(), entry.path.clone()))
-                    .ok_or_else(|| Status::not_found(format!("file not found: {}", entry.path)))?;
-                let start = entry.byte_offset as usize;
-                let end = start + entry.length as usize;
-                Ok(file_data[start..end].to_vec())
-            })
-            .collect();
-        Ok(Response::new(ReadMultiResponse { data: data? }))
-    }
 }
 
 async fn start_mock(files: HashMap<(String, String), Vec<u8>>) -> String {
@@ -316,32 +295,6 @@ async fn read_batch() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_multi() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
-    let reads = vec![
-        (
-            "data/a.bin",
-            ReadRange {
-                byte_offset: 1,
-                length: 3,
-            },
-        ),
-        (
-            "data/b.bin",
-            ReadRange {
-                byte_offset: 0,
-                length: 4,
-            },
-        ),
-    ];
-    let data = client.read_multi("test-col", 0, &reads).await.unwrap();
-    assert_eq!(data.len(), 2);
-    assert_eq!(&data[0], b"bcd");
-    assert_eq!(&data[1], b"klmn");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_length_not_found() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url).await.unwrap();
@@ -393,20 +346,6 @@ async fn read_batch_not_found() {
             .await
             .is_err()
     );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_multi_not_found() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url).await.unwrap();
-    let reads = vec![(
-        "nope.bin",
-        ReadRange {
-            byte_offset: 0,
-            length: 1,
-        },
-    )];
-    assert!(client.read_multi("test-col", 0, &reads).await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

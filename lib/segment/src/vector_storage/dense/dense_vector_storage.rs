@@ -233,9 +233,13 @@ where
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
-    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
         let mmap_store = self.vectors.as_ref().unwrap();
-        mmap_store.for_each_in_batch(keys, f);
+        mmap_store.for_each_in_batch(keys, f)
     }
 }
 
@@ -352,7 +356,8 @@ where
             .for_each_in_batch(&point_offsets, |idx, vector| {
                 let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
-            });
+            })
+            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

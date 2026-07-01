@@ -201,10 +201,15 @@ pub trait DenseVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
     /// Run given function for each vector in the dense batch.
     ///
     /// Implementation can assume that the keys are consecutive
-    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) -> OperationResult<()> {
         for (idx, &key) in keys.iter().enumerate() {
             f(idx, &self.get_dense::<Random>(key));
         }
+        Ok(())
     }
 }
 
