@@ -270,7 +270,9 @@ jobs:
     needs:
       - merge-artifacts
 
-    if: inputs.publish || github.event_name == 'push'
+    # Stable releases go to PyPI via manual workflow_dispatch.
+    # Dev pre-releases from `push` to `dev` go to GCS instead (see publish-gcs).
+    if: inputs.publish
 
     steps:
       - name: Install Python
@@ -288,3 +290,84 @@ jobs:
         run: |
           pip install --upgrade twine
           twine upload --skip-existing *
+
+
+  publish-gcs:
+    name: Publish dev wheels to GCS
+
+    runs-on: ubuntu-latest
+    needs:
+      - merge-artifacts
+
+    # Only publish dev pre-releases (from push to `dev`) to the GCS bucket.
+    # Manual workflow_dispatch runs target PyPI via the `publish` job above.
+    if: github.event_name == 'push'
+
+    env:
+      GCS_BUCKET: qdrant-debug
+      GCS_ENDPOINT: https://storage.googleapis.com
+      # Sub-folder inside the same bucket used by debug-tools.yml
+      GCS_PREFIX: edge-py-dev
+      # GCS interop ignores the region, but the AWS CLI requires one to be set.
+      AWS_REGION: auto
+
+    steps:
+      - name: Download release wheels
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: qdrant-edge
+          path: dist
+
+      - name: Upload wheels and regenerate index
+        env:
+          # GCS HMAC interoperability keys (AWS-style), stored as repo secrets.
+          AWS_ACCESS_KEY_ID: ${{ secrets.GCS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.GCS_SECRET_ACCESS_KEY }}
+          # Recent AWS CLI adds default CRC32 integrity checksums that GCS's
+          # S3-compatible UploadPart rejects (SignatureDoesNotMatch). Opt out so
+          # multipart uploads of the larger wheels work.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          # Upload the freshly built wheels. Object overwrite is a no-op for the
+          # same content; different content would replace (unlike PyPI's immutable
+          # filenames), but our `.dev<run_number>` versioning gives every push a
+          # unique filename so collisions shouldn't happen.
+          aws s3 cp dist/ "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/" \
+            --recursive --exclude '*' --include '*.whl' \
+            --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
+
+          # Regenerate the pip-compatible HTML index over ALL wheels currently
+          # in the bucket (not just the ones we just uploaded), so past dev
+          # versions remain installable via `pip install --find-links`.
+          base_url="${GCS_ENDPOINT}/${GCS_BUCKET}/${GCS_PREFIX}/wheels"
+          {
+            echo '<!DOCTYPE html>'
+            echo '<html><body>'
+            aws s3 ls "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/" \
+              --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION" \
+              | awk '{print $NF}' \
+              | grep '\.whl$' \
+              | sort \
+              | while read -r wheel; do
+                  echo "<a href=\"${base_url}/${wheel}\">${wheel}</a><br>"
+                done
+            echo '</body></html>'
+          } > qdrant-edge-py.html
+
+          aws s3 cp qdrant-edge-py.html "s3://${GCS_BUCKET}/${GCS_PREFIX}/qdrant-edge-py.html" \
+            --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION" \
+            --content-type text/html
+
+          # Surface the install command in the job summary
+          index_url="${GCS_ENDPOINT}/${GCS_BUCKET}/${GCS_PREFIX}/qdrant-edge-py.html"
+          {
+            echo "## qdrant-edge-py dev wheels uploaded"
+            echo ""
+            echo "Index: <${index_url}>"
+            echo ""
+            echo "Install a specific dev version:"
+            echo '```'
+            echo "pip install --find-links ${index_url} qdrant-edge-py==<X.Y.Z.devN>"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
