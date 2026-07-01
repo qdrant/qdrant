@@ -393,9 +393,7 @@ impl VectorIndex for VectorIndexEnum {
             Self::SparseCompressedMmapF16(index) => {
                 index.update_vector_bytes(id, bytes, hw_counter)
             }
-            Self::SparseCompressedMmapU8(index) => {
-                index.update_vector_bytes(id, bytes, hw_counter)
-            }
+            Self::SparseCompressedMmapU8(index) => index.update_vector_bytes(id, bytes, hw_counter),
         }
     }
 }

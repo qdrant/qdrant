@@ -593,8 +593,16 @@ fn assert_raw_roundtrip(
         .and_then(|r| r.vectors.as_ref())
         .expect("dest vectors");
 
-    let src_bytes = &src_vectors.iter().find(|(n, _)| n == vector_name).unwrap().1;
-    let dst_bytes = &dst_vectors.iter().find(|(n, _)| n == vector_name).unwrap().1;
+    let src_bytes = &src_vectors
+        .iter()
+        .find(|(n, _)| n == vector_name)
+        .unwrap()
+        .1;
+    let dst_bytes = &dst_vectors
+        .iter()
+        .find(|(n, _)| n == vector_name)
+        .unwrap()
+        .1;
     assert_eq!(dst_bytes, src_bytes, "raw bytes must round-trip verbatim");
 }
 
@@ -674,7 +682,10 @@ fn test_upsert_point_raw_sparse_roundtrip() {
     let hw_counter = HardwareCounterCell::new();
     let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
     let mut vectors = NamedVectors::default();
-    vectors.insert(sparse_name.to_string(), VectorInternal::Sparse(sparse.clone()));
+    vectors.insert(
+        sparse_name.to_string(),
+        VectorInternal::Sparse(sparse.clone()),
+    );
     segment
         .upsert_point(1, 1.into(), vectors, &hw_counter)
         .unwrap();

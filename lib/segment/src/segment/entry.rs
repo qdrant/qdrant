@@ -797,7 +797,12 @@ impl SegmentEntry for Segment {
                     existing_internal_id,
                     hw_counter,
                     |segment, internal_id| {
-                        segment.replace_all_vectors_raw(internal_id, op_num, &vectors, hw_counter)?;
+                        segment.replace_all_vectors_raw(
+                            internal_id,
+                            op_num,
+                            &vectors,
+                            hw_counter,
+                        )?;
                         Ok(true)
                     },
                     move |snapshot_vectors, _payload| {

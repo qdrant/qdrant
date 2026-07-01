@@ -767,11 +767,11 @@ impl VectorStorageEnum {
                 dense(decode_dense::<VectorElementTypeHalf>(bytes))
             }
             VectorStorageEnum::DenseTurbo(v) => Ok(v.decode_dense_tq(bytes)),
-            VectorStorageEnum::SparseVolatile(_) | VectorStorageEnum::SparseMmap(_) => Ok(
-                VectorInternal::Sparse(SparseVector::try_from(StoredSparseVector::from_bytes(
-                    bytes,
-                ))?),
-            ),
+            VectorStorageEnum::SparseVolatile(_) | VectorStorageEnum::SparseMmap(_) => {
+                Ok(VectorInternal::Sparse(SparseVector::try_from(
+                    StoredSparseVector::from_bytes(bytes),
+                )?))
+            }
             VectorStorageEnum::MultiDenseVolatile(v) => {
                 Ok(decode_multi::<VectorElementType>(bytes, v.vector_dim()))
             }
