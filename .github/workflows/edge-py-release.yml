@@ -8,9 +8,15 @@ on:
         type: boolean
         default: false
         required: true
+  push:
+    branches: [ dev ]
 
 permissions:
   contents: read
+
+concurrency:
+  group: edge-py-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   edge-py-linux:
@@ -44,6 +50,32 @@ jobs:
     steps:
       - name: Checkout Qdrant
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set pre-release version
+        # Bump the patch component and append a `.dev<run_number>` suffix so
+        # the dev version sorts strictly ABOVE the latest published stable
+        # (e.g. Cargo.toml `0.7.2` -> wheel `0.7.3.dev137`). Combined with
+        # `pip install --pre`, this lets consumers pull "the current dev"
+        # without knowing the run number, and prevents pip from silently
+        # preferring the older stable release when both are visible.
+        if: github.event_name == 'push'
+        shell: bash
+        working-directory: lib/edge/python
+        run: |
+          awk -v run="${GITHUB_RUN_NUMBER}" '
+            !patched && /^version = "/ {
+              # Assumes SemVer X.Y.Z inside the quotes; bump patch, append .devN.
+              split($0, quoted, "\"")
+              split(quoted[2], parts, ".")
+              parts[3] = parts[3] + 1
+              print "version = \"" parts[1] "." parts[2] "." parts[3] ".dev" run "\""
+              patched = 1
+              next
+            }
+            { print }
+          ' Cargo.toml > Cargo.toml.new
+          mv Cargo.toml.new Cargo.toml
+          grep '^version' Cargo.toml
 
       - name: Build Python wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -87,6 +119,18 @@ jobs:
       - name: Checkout Qdrant
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Set pre-release version
+        if: github.event_name == 'push'
+        shell: bash
+        working-directory: lib/edge/python
+        run: |
+          awk -v run="${GITHUB_RUN_NUMBER}" '
+            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            { print }
+          ' Cargo.toml > Cargo.toml.new
+          mv Cargo.toml.new Cargo.toml
+          grep '^version' Cargo.toml
+
       - name: Build Python wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
@@ -127,6 +171,18 @@ jobs:
 
       - name: Checkout Qdrant
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set pre-release version
+        if: github.event_name == 'push'
+        shell: bash
+        working-directory: lib/edge/python
+        run: |
+          awk -v run="${GITHUB_RUN_NUMBER}" '
+            !patched && /^version = "/ { sub(/"$/, ".dev" run "\""); patched = 1 }
+            { print }
+          ' Cargo.toml > Cargo.toml.new
+          mv Cargo.toml.new Cargo.toml
+          grep '^version' Cargo.toml
 
       - name: Build Python wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -208,7 +264,7 @@ jobs:
       - edge-py-windows
       - edge-py-test
 
-    if: inputs.publish
+    if: inputs.publish || github.event_name == 'push'
 
     steps:
       - name: Merge release artifacts
@@ -226,6 +282,8 @@ jobs:
     needs:
       - merge-artifacts
 
+    # Stable releases go to PyPI via manual workflow_dispatch.
+    # Dev pre-releases from `push` to `dev` go to GCS instead (see publish-gcs).
     if: inputs.publish
 
     steps:
@@ -244,3 +302,111 @@ jobs:
         run: |
           pip install --upgrade twine
           twine upload --skip-existing *
+
+
+  publish-gcs:
+    name: Publish dev wheels to GCS
+
+    runs-on: ubuntu-latest
+    needs:
+      - merge-artifacts
+
+    # Only publish dev pre-releases (from push to `dev`) to the GCS bucket.
+    # Manual workflow_dispatch runs target PyPI via the `publish` job above.
+    if: github.event_name == 'push'
+
+    env:
+      GCS_BUCKET: qdrant-debug
+      GCS_ENDPOINT: https://storage.googleapis.com
+      # Sub-folder inside the same bucket used by debug-tools.yml
+      GCS_PREFIX: edge-py-dev
+      # GCS interop ignores the region, but the AWS CLI requires one to be set.
+      AWS_REGION: auto
+
+    steps:
+      - name: Download release wheels
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: qdrant-edge
+          path: dist
+
+      - name: Upload wheels and regenerate index
+        env:
+          # GCS HMAC interoperability keys (AWS-style), stored as repo secrets.
+          AWS_ACCESS_KEY_ID: ${{ secrets.GCS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.GCS_SECRET_ACCESS_KEY }}
+          # Recent AWS CLI adds default CRC32 integrity checksums that GCS's
+          # S3-compatible UploadPart rejects (SignatureDoesNotMatch). Opt out so
+          # multipart uploads of the larger wheels work.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          # Extract the current version from a freshly built wheel filename.
+          # Wheel filename format (PEP 427):
+          #   {distribution}-{version}-{python-tag}-{abi-tag}-{platform-tag}.whl
+          # PEP 440 versions never contain `-`, so a simple field split is safe.
+          current_version=$(ls dist/*.whl | head -1 | sed 's|.*/qdrant_edge_py-\([^-]*\)-.*|\1|')
+          echo "Publishing qdrant-edge-py ${current_version}"
+
+          # Upload the freshly built wheels. Object overwrite is a no-op for the
+          # same content; different content would replace (unlike PyPI's immutable
+          # filenames), but our `.dev<run_number>` versioning gives every push a
+          # unique filename so collisions shouldn't happen.
+          aws s3 cp dist/ "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/" \
+            --recursive --exclude '*' --include '*.whl' \
+            --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
+
+          # Delete every wheel that doesn't belong to the current version, so
+          # only the latest dev release is kept in the bucket. Done AFTER upload
+          # so there's never a window with zero wheels available.
+          aws s3 ls "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/" \
+            --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION" \
+            | awk '{print $NF}' \
+            | grep '\.whl$' \
+            | grep -vF "qdrant_edge_py-${current_version}-" \
+            | while read -r stale; do
+                echo "Removing stale wheel: ${stale}"
+                aws s3 rm "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/${stale}" \
+                  --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
+              done
+
+          # Regenerate the pip-compatible HTML index. After the cleanup above,
+          # only the current version's wheels remain in the bucket.
+          base_url="${GCS_ENDPOINT}/${GCS_BUCKET}/${GCS_PREFIX}/wheels"
+          {
+            echo '<!DOCTYPE html>'
+            echo '<html><body>'
+            aws s3 ls "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/" \
+              --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION" \
+              | awk '{print $NF}' \
+              | grep '\.whl$' \
+              | sort \
+              | while read -r wheel; do
+                  echo "<a href=\"${base_url}/${wheel}\">${wheel}</a><br>"
+                done
+            echo '</body></html>'
+          } > qdrant-edge-py.html
+
+          aws s3 cp qdrant-edge-py.html "s3://${GCS_BUCKET}/${GCS_PREFIX}/qdrant-edge-py.html" \
+            --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION" \
+            --content-type text/html
+
+          # Surface the install command in the job summary
+          index_url="${GCS_ENDPOINT}/${GCS_BUCKET}/${GCS_PREFIX}/qdrant-edge-py.html"
+          {
+            echo "## qdrant-edge-py dev wheels uploaded"
+            echo ""
+            echo "Published version: ${current_version}"
+            echo ""
+            echo "Index: <${index_url}>"
+            echo ""
+            echo "Install the current dev build (no version pin needed):"
+            echo '```'
+            echo "pip install --find-links ${index_url} qdrant-edge-py --pre"
+            echo '```'
+            echo ""
+            echo "Pin a specific dev version:"
+            echo '```'
+            echo "pip install --find-links ${index_url} qdrant-edge-py==${current_version}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
