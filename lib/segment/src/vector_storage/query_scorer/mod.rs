@@ -29,6 +29,12 @@ pub trait QueryScorer {
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 
+    /// Best-effort prefetch of the stored vectors for `ids` (experimental).
+    ///
+    /// Default is a no-op; storages that can cheaply address their vectors
+    /// override this to warm the CPU cache ahead of scoring.
+    fn prefetch_stored(&self, _ids: &[PointOffsetType]) {}
+
     type SupportsBytes: TBool;
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType;
 }

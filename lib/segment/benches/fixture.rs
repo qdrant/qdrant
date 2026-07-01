@@ -6,13 +6,17 @@ use fs_err as fs;
 use rand::SeedableRng as _;
 use rand::rngs::SmallRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
-use segment::fixtures::index_fixtures::TestRawScorerProducer;
+use segment::data_types::vectors::VectorElementType;
+use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
 use segment::index::hnsw_index::HnswM;
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::{GraphLinksFormatParam, GraphLinksResidency};
 use segment::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use segment::spaces::metric::Metric;
+use segment::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
+use segment::vector_storage::{DEFAULT_STOPPED, DenseVectorStorage, VectorStorageEnum};
+use tempfile::TempDir;
 
 /// Generate vectors and HNSW graph to be used in benchmarks.
 ///
@@ -87,6 +91,50 @@ where
     };
 
     (vector_holder, graph_layers)
+}
+
+/// Build an mmap-backed dense vector storage holding the same seed-42 vectors
+/// as [`make_cached_graph`], so the cached graph is valid against it.
+///
+/// Returns the [`TempDir`] (which must be kept alive for the mmap to stay open)
+/// and a [`TestRawScorerProducer`] whose `scorer` reads from the mmap storage.
+// Shared bench module: not every bench that includes `fixture` uses this.
+#[allow(dead_code)]
+pub fn make_memmap_producer<METRIC>(
+    num_vectors: usize,
+    dim: usize,
+) -> (TempDir, TestRawScorerProducer)
+where
+    METRIC: Metric<f32>,
+{
+    let distance = METRIC::distance();
+
+    // Force the plain mmap variant (not io_uring), so prefetch is exercised.
+    #[cfg(target_os = "linux")]
+    segment::vector_storage::common::set_async_scorer(false);
+
+    let tmp = tempfile::Builder::new()
+        .prefix("hnsw-mmap-bench")
+        .tempdir()
+        .unwrap();
+    let mut storage = open_dense_vector_storage(tmp.path(), dim, distance, false).unwrap();
+
+    // Regenerate the exact vectors from `make_cached_graph` (same seed + preprocess).
+    let mut rng = SmallRng::seed_from_u64(42);
+    let mut vectors = (0..num_vectors).map(|_| {
+        let v = random_vector(&mut rng, dim);
+        let v = distance.preprocess_vector::<VectorElementType>(v);
+        (std::borrow::Cow::Owned(v), false)
+    });
+    let VectorStorageEnum::DenseMemmap(mmap_storage) = &mut storage else {
+        panic!("expected DenseMemmap storage");
+    };
+    mmap_storage
+        .update_from(&mut vectors, &DEFAULT_STOPPED)
+        .unwrap();
+
+    let producer = TestRawScorerProducer::from_storage(storage, num_vectors);
+    (tmp, producer)
 }
 
 fn updated_ago(path: &Path) -> Result<String, Box<dyn std::error::Error>> {

@@ -91,6 +91,13 @@ impl<
             .expect("read vectors");
     }
 
+    #[inline]
+    fn prefetch_stored(&self, ids: &[PointOffsetType]) {
+        for &id in ids {
+            self.vector_storage.prefetch_dense(id);
+        }
+    }
+
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
         let v1 = self.vector_storage.get_dense::<Random>(point_a);

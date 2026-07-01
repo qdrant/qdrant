@@ -279,6 +279,14 @@ impl<'a> FilteredScorer<'a> {
         self.score_points_unfiltered(point_ids)
     }
 
+    /// Best-effort prefetch of the stored vectors for `point_ids` (experimental).
+    ///
+    /// Used to overlap the scattered-load latency of the subsequent
+    /// `score_points` pass with the rest of the neighbor collection.
+    pub fn prefetch_points(&self, point_ids: &[PointOffsetType]) {
+        self.raw_scorer.prefetch_points(point_ids);
+    }
+
     pub fn score_points_unfiltered(
         &mut self,
         point_ids: &[PointOffsetType],

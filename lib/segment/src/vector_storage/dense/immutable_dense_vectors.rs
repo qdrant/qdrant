@@ -114,6 +114,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         Some(offset)
     }
 
+    /// Whether the backing storage reads via io_uring, which copies into an
+    /// owned buffer rather than borrowing from an mmap.
+    pub fn is_io_uring(&self) -> bool {
+        TypedStorage::<ReadOnly<S>, T>::kind() == common::universal_io::UniversalKind::IoUring
+    }
+
     /// Read one vector from storage at the given byte offset.
     fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
         let range = ReadRange {
@@ -297,6 +303,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         f: F,
     ) -> OperationResult<()> {
         self.data.for_each_in_batch(keys, f)
+    }
+
+    pub fn is_io_uring(&self) -> bool {
+        self.data.is_io_uring()
     }
 
     /// Marks the key as deleted.

@@ -77,6 +77,16 @@ impl TestRawScorerProducer {
         }
     }
 
+    /// Wrap a pre-constructed storage (e.g. an mmap-backed one) with
+    /// `num_vectors` live points and no quantization. For tests and benchmarks.
+    pub fn from_storage(storage: VectorStorageEnum, num_vectors: usize) -> Self {
+        TestRawScorerProducer {
+            storage,
+            deleted_points: BitVec::repeat(false, num_vectors),
+            quantized_vectors: None,
+        }
+    }
+
     pub fn storage(&self) -> &VectorStorageEnum {
         &self.storage
     }
