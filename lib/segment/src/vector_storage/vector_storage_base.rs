@@ -250,6 +250,32 @@ pub trait VectorStorage: VectorStorageRead {
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool>;
 }
 
+/// Best-effort software prefetch (temporal, all cache levels) of every cache
+/// line spanning `bytes`.
+///
+/// Experimental: used to overlap the scattered-load latency of HNSW batch
+/// scoring. A prefetch is only a hint and never faults, so this is always safe.
+/// No-op on non-x86_64 targets (aarch64 has no stable prefetch intrinsic).
+#[inline(always)]
+fn prefetch_slice(bytes: &[u8]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+
+        const CACHE_LINE: usize = 64;
+        let ptr = bytes.as_ptr();
+        let mut offset = 0;
+        while offset < bytes.len() {
+            // SAFETY: `_mm_prefetch` is a non-faulting hint; the computed address
+            // lies within (or one cache line past) a valid borrowed slice.
+            unsafe { _mm_prefetch::<_MM_HINT_T0>(ptr.add(offset).cast::<i8>()) };
+            offset += CACHE_LINE;
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = bytes;
+}
+
 /// Read-only access to a dense vector storage.
 ///
 /// Everything needed to read and score dense vectors, without the ability to
@@ -259,6 +285,29 @@ pub trait DenseVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
     fn vector_dim(&self) -> usize;
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]>;
+
+    /// Whether [`Self::get_dense`] returns a cheap borrow (in-RAM or mmap)
+    /// rather than performing I/O and allocating an owned buffer.
+    ///
+    /// Gates [`Self::prefetch_dense`]: prefetching only makes sense when the
+    /// vector data can be addressed without reading it. Storages that copy on
+    /// read (e.g. io_uring) return `false` so prefetch stays a no-op and does
+    /// not trigger a redundant read.
+    fn get_dense_is_borrowed(&self) -> bool {
+        true
+    }
+
+    /// Best-effort software prefetch of a single vector's data into cache.
+    ///
+    /// Issued while collecting HNSW neighbors so the scattered load latency is
+    /// hidden behind the rest of the collection pass. No-op for storages whose
+    /// reads copy (see [`Self::get_dense_is_borrowed`]).
+    fn prefetch_dense(&self, key: PointOffsetType) {
+        if self.get_dense_is_borrowed() && (key as usize) < self.total_vector_count() {
+            let dense = self.get_dense::<Random>(key);
+            prefetch_slice(bytemuck::cast_slice::<T, u8>(&dense));
+        }
+    }
 
     /// Call `f` with the raw bytes of the vector if it exists.
     ///
