@@ -989,7 +989,9 @@ fn test_different_block_sizes(
 /// - data is only written to disk when closure is invoked
 #[rstest]
 fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // Dynamic mode: asserts block reuse / storage size across flushes.
+    // The deferred-flush read semantics are identical in both modes. The block
+    // offsets differ: dynamic mode reuses blocks freed by earlier flushes, while
+    // serverless mode is append-only and keeps assigning the next block.
     let (dir, mut storage) = empty_storage(mode);
     let path = dir.path().to_path_buf();
 
@@ -1053,8 +1055,13 @@ fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
     flusher().unwrap();
     assert_eq!(get_payload(&storage), "value 4");
 
-    // We flushed and freed blocks 0 and 1, we expect to reuse block 0
-    put_payload(&mut storage, "value 5", 0);
+    // Dynamic mode: flush and free block 0 and 1, reuse block 0
+    // Serverless mode: append-only and use next block
+    put_payload(
+        &mut storage,
+        "value 5",
+        if mode.is_serverless() { 4 } else { 0 },
+    );
     assert_eq!(get_payload(&mut storage), "value 5");
 
     // Reopen gridstore
@@ -1065,16 +1072,29 @@ fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
     // On reopen, we expect to read the data at the time the flusher was created
     assert_eq!(get_payload(&storage), "value 3");
 
-    // Bitslice is not buffered and can be flushed by the kernel, expect to reuse block 1
-    // It means that we might lose unoccupied storage, but it can only happen on crash and the
-    // optimizer will eventually take care of this when building a fresh segment
-    put_payload(&mut storage, "value 6", 1);
+    // Dynamic mode: the bitslice is not buffered and can be flushed by the kernel, so we
+    // expect to reuse block 1. It means that we might lose unoccupied storage, but it can
+    // only happen on crash and the optimizer will eventually take care of this when building
+    // a fresh segment. Serverless mode keeps appending monotonically (blocks 5, 6, 7).
+    put_payload(
+        &mut storage,
+        "value 6",
+        if mode.is_serverless() { 5 } else { 1 },
+    );
     assert_eq!(get_payload(&storage), "value 6");
 
-    put_payload(&mut storage, "value 7", 4);
+    put_payload(
+        &mut storage,
+        "value 7",
+        if mode.is_serverless() { 6 } else { 4 },
+    );
     assert_eq!(get_payload(&storage), "value 7");
 
-    put_payload(&mut storage, "value 8", 5);
+    put_payload(
+        &mut storage,
+        "value 8",
+        if mode.is_serverless() { 7 } else { 5 },
+    );
     assert_eq!(get_payload(&storage), "value 8");
 }
 
