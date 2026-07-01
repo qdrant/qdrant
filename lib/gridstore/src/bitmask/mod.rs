@@ -14,7 +14,7 @@ use itertools::Itertools;
 use crate::Result;
 use crate::config::StorageConfig;
 use crate::error::GridstoreError;
-use crate::tracker::{BlockOffset, PageId};
+use crate::tracker::{BlockOffset, PageId, ValuePointer};
 
 const BITMASK_NAME: &str = "bitmask.dat";
 
@@ -111,30 +111,31 @@ impl<S: UniversalWrite> Bitmask<S> {
         })
     }
 
-    /// Create a bitmask covering `num_pages` pages with every block marked used,
-    /// resetting any stale bitmask/gaps files.
-    ///
-    /// Used when opening in dynamic mode a storage whose bitmask is missing or
-    /// stale (e.g. created/extended in serverless mode). Over-marking is fully
-    /// crash-safe; the cost is unreclaimed spare capacity until a rebuild.
-    pub(crate) fn create_all_used(
+    /// Rebuild the bitmask over `num_pages` from the live `mappings`: blocks a
+    /// mapping occupies are used, the rest free. Resets stale bitmask/gaps files.
+    /// Callers must pad the pages to full size first, so free blocks are writable.
+    pub(crate) fn create_from_mappings(
         fs: &S::Fs,
         dir: &Path,
         config: StorageConfig,
         num_pages: usize,
+        mappings: impl Iterator<Item = ValuePointer>,
     ) -> Result<Self> {
         debug_assert!(num_pages >= 1, "storage always has at least one page");
 
-        // Fresh single-page bitmask, then grow it to cover every page.
+        // Fresh all-free bitmask covering every page.
         let mut bitmask = Self::create(fs, dir, config.clone())?;
         for _ in 1..num_pages {
             bitmask.cover_new_page()?;
         }
 
-        // Mark every block used; `mark_blocks` recomputes the region gaps too.
-        let blocks_per_page = (config.page_size_bytes / config.block_size_bytes) as u32;
-        for page_id in 0..num_pages as PageId {
-            bitmask.mark_blocks(page_id, 0, blocks_per_page, true)?;
+        // Mark each mapping's blocks used (also recomputes region gaps).
+        let block_size = config.block_size_bytes;
+        for pointer in mappings {
+            let num_blocks = (pointer.length as usize).div_ceil(block_size) as u32;
+            if num_blocks > 0 {
+                bitmask.mark_blocks(pointer.page_id, pointer.block_offset, num_blocks, true)?;
+            }
         }
 
         // Persist so a later open doesn't reconstruct from a half-written file.

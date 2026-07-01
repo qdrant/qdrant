@@ -14,6 +14,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
+use common::mmap::create_and_ensure_length;
 use common::universal_io::{MmapFile, Populate, UniversalReadFileOps, UniversalWrite, UserData};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -185,26 +186,24 @@ where
         // Writable store: open pages and tracker writable so it can append.
         let (config, tracker) = reader::read_config_and_tracker(&fs, &base_path, true)?;
 
-        let pages = Pages::open(&fs, &base_path, true, populate)?;
+        let mut pages = Pages::open(&fs, &base_path, true, populate)?;
         let loaded_pages = pages.num_pages();
 
         let storage_engine = match mode {
             Mode::Regular => {
-                // The bitmask needs one flag per block, `pages * blocks_per_page`
-                // bits. Compare that to what it covers: a storage created or
-                // extended in serverless mode has no bitmask, or a stale one
-                // covering too few blocks. Either way, reconstruct all-used.
+                // Reuse the bitmask only if it exists and is the right length
+                // (`pages * blocks_per_page` bits); serverless keeps none, or a
+                // shorter one.
                 let blocks_per_page = config.page_size_bytes / config.block_size_bytes;
                 let expected_blocks = loaded_pages * blocks_per_page;
-                let bitmask = if Bitmask::<S>::exists(&base_path) {
+                let reuse = if Bitmask::<S>::exists(&base_path) {
                     let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
                     let covered_blocks = bitmask.covered_blocks();
                     if covered_blocks == expected_blocks {
-                        bitmask
+                        Some(bitmask)
                     } else if covered_blocks < expected_blocks {
-                        // Missing flags for serverless-appended blocks; rebuild.
-                        drop(bitmask);
-                        Bitmask::create_all_used(&fs, &base_path, config.clone(), loaded_pages)?
+                        drop(bitmask); // stale, reconstruct below
+                        None
                     } else {
                         // More blocks than pages hold: corruption, not a mode switch.
                         return Err(GridstoreError::service_error(format!(
@@ -212,8 +211,37 @@ where
                         )));
                     }
                 } else {
-                    // No bitmask: created in serverless mode.
-                    Bitmask::create_all_used(&fs, &base_path, config.clone(), loaded_pages)?
+                    None
+                };
+                let bitmask = match reuse {
+                    Some(bitmask) => bitmask,
+                    None => {
+                        // Pad pages to full size (dynamic writes don't grow pages,
+                        // so reclaimed free blocks must be writable), then rebuild
+                        // the flags from the live mappings.
+                        drop(pages);
+                        for page_id in 0..loaded_pages as PageId {
+                            create_and_ensure_length(
+                                &page_path(&base_path, page_id),
+                                config.page_size_bytes,
+                            )?;
+                        }
+                        pages = Pages::open(&fs, &base_path, true, populate)?;
+
+                        let mut mappings = Vec::with_capacity(tracker.pointer_count() as usize);
+                        for point_offset in 0..tracker.pointer_count() {
+                            if let Some(pointer) = tracker.get(point_offset)? {
+                                mappings.push(pointer);
+                            }
+                        }
+                        Bitmask::create_from_mappings(
+                            &fs,
+                            &base_path,
+                            config.clone(),
+                            loaded_pages,
+                            mappings.into_iter(),
+                        )?
+                    }
                 };
                 debug_assert_eq!(bitmask.covered_blocks(), expected_blocks);
                 StorageEngine::Dynamic {

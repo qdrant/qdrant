@@ -2045,13 +2045,17 @@ fn test_open_serverless_storage_in_dynamic_mode() {
         "gaps.dat must be created when opening in dynamic mode",
     );
 
-    // ...and every block is marked used (used size == full page capacity).
-    let num_pages = storage.pages.read().num_pages();
-    let used_bytes = storage.get_storage_size_bytes().unwrap();
+    // ...and the flags mark exactly the live blocks (all points are live here).
+    let expected_used: usize = (0..40u32)
+        .map(|point_offset| {
+            let length = storage.get_pointer(point_offset).unwrap().length as usize;
+            length.div_ceil(DEFAULT_BLOCK_SIZE_BYTES) * DEFAULT_BLOCK_SIZE_BYTES
+        })
+        .sum();
     assert_eq!(
-        used_bytes,
-        num_pages * DEFAULT_PAGE_SIZE_BYTES,
-        "the reconstructed bitmask must mark every block of every page as used",
+        storage.get_storage_size_bytes().unwrap(),
+        expected_used,
+        "the reconstructed bitmask must mark exactly the live mapping blocks used",
     );
 
     // Reconstructed store is usable: a new write lands in fresh space, old data intact.
@@ -2224,12 +2228,17 @@ fn test_dynamic_reopen_after_serverless_appends_blocks() {
         assert_eq!(got.as_ref(), Some(payload), "point {point_offset} lost");
     }
 
-    // Every block of every page is now marked used.
-    let num_pages = storage.pages.read().num_pages();
+    // Only the live mapping blocks are marked used (all values here are live).
+    let expected_used: usize = (0..expected.len() as u32)
+        .map(|point_offset| {
+            let length = storage.get_pointer(point_offset).unwrap().length as usize;
+            length.div_ceil(DEFAULT_BLOCK_SIZE_BYTES) * DEFAULT_BLOCK_SIZE_BYTES
+        })
+        .sum();
     assert_eq!(
         storage.get_storage_size_bytes().unwrap(),
-        num_pages * page_size,
-        "reconstructed bitmask must mark every block used",
+        expected_used,
+        "reconstructed bitmask must mark exactly the live mapping blocks used",
     );
 
     // Reconstructed store is usable: a new write lands in fresh space, old data intact.
@@ -2248,5 +2257,93 @@ fn test_dynamic_reopen_after_serverless_appends_blocks() {
             .unwrap()
             .as_ref(),
         Some(&expected[0]),
+    );
+}
+
+/// Rebuilding flags from mappings reclaims serverless dead space: blocks left
+/// stale by overwrites/deletes are freed, so used size reflects only live values.
+#[test]
+fn test_reconstruct_flags_reclaims_stale_serverless_blocks() {
+    let block_size = DEFAULT_BLOCK_SIZE_BYTES;
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // Distinct multi-block values (no compression, so sizes are predictable).
+    let make = |c: char| -> Payload {
+        let mut payload = Payload::default();
+        payload.0.insert(
+            "key".to_string(),
+            serde_json::Value::String(std::iter::repeat_n(c, block_size * 3).collect::<String>()),
+        );
+        payload
+    };
+    let c = make('c');
+    let d = make('d');
+
+    // Serverless: overwrite point 0 and delete point 1, leaving stale blocks.
+    let total_written_bytes = {
+        let options = StorageOptions {
+            compression: Some(Compression::None),
+            ..Default::default()
+        };
+        let mut storage =
+            Gridstore::<Payload>::new(MmapFs, path.clone(), options, Mode::Serverless).unwrap();
+        storage.put_value(0, &make('a'), hw_counter_ref).unwrap();
+        storage.put_value(1, &make('b'), hw_counter_ref).unwrap();
+        storage.put_value(2, &c, hw_counter_ref).unwrap();
+        storage.put_value(0, &d, hw_counter_ref).unwrap(); // overwrite -> 'a' stale
+        storage.delete_value(1).unwrap(); // -> 'b' stale
+        storage.flusher()().unwrap();
+
+        let num_pages = storage.pages.read().num_pages();
+        (0..num_pages)
+            .map(|id| {
+                fs::metadata(dir.path().join(format!("page_{id}.dat")))
+                    .unwrap()
+                    .len() as usize
+            })
+            .sum::<usize>()
+    };
+
+    // Reopen in dynamic mode: flags reconstructed from the live mappings only.
+    let storage =
+        Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No, Mode::Regular).unwrap();
+
+    // Live data is correct; the deleted point is gone.
+    assert_eq!(
+        storage
+            .get_value::<Random>(0, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&d),
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(2, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&c),
+    );
+    assert!(
+        storage
+            .get_value::<Random>(1, &hw_counter)
+            .unwrap()
+            .is_none()
+    );
+
+    // Used size covers only the two live values; the stale blocks were reclaimed.
+    let live_used: usize = [0u32, 2]
+        .iter()
+        .map(|&point_offset| {
+            let length = storage.get_pointer(point_offset).unwrap().length as usize;
+            length.div_ceil(block_size) * block_size
+        })
+        .sum();
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), live_used);
+    assert!(
+        live_used < total_written_bytes,
+        "stale blocks must be reclaimed: live {live_used} vs written {total_written_bytes}",
     );
 }
