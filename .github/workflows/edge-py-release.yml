@@ -329,6 +329,13 @@ jobs:
           AWS_REQUEST_CHECKSUM_CALCULATION: when_required
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
+          # Extract the current version from a freshly built wheel filename.
+          # Wheel filename format (PEP 427):
+          #   {distribution}-{version}-{python-tag}-{abi-tag}-{platform-tag}.whl
+          # PEP 440 versions never contain `-`, so a simple field split is safe.
+          current_version=$(ls dist/*.whl | head -1 | sed 's|.*/qdrant_edge_py-\([^-]*\)-.*|\1|')
+          echo "Publishing qdrant-edge-py ${current_version}"
+
           # Upload the freshly built wheels. Object overwrite is a no-op for the
           # same content; different content would replace (unlike PyPI's immutable
           # filenames), but our `.dev<run_number>` versioning gives every push a
@@ -337,9 +344,22 @@ jobs:
             --recursive --exclude '*' --include '*.whl' \
             --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
 
-          # Regenerate the pip-compatible HTML index over ALL wheels currently
-          # in the bucket (not just the ones we just uploaded), so past dev
-          # versions remain installable via `pip install --find-links`.
+          # Delete every wheel that doesn't belong to the current version, so
+          # only the latest dev release is kept in the bucket. Done AFTER upload
+          # so there's never a window with zero wheels available.
+          aws s3 ls "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/" \
+            --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION" \
+            | awk '{print $NF}' \
+            | grep '\.whl$' \
+            | grep -vF "qdrant_edge_py-${current_version}-" \
+            | while read -r stale; do
+                echo "Removing stale wheel: ${stale}"
+                aws s3 rm "s3://${GCS_BUCKET}/${GCS_PREFIX}/wheels/${stale}" \
+                  --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
+              done
+
+          # Regenerate the pip-compatible HTML index. After the cleanup above,
+          # only the current version's wheels remain in the bucket.
           base_url="${GCS_ENDPOINT}/${GCS_BUCKET}/${GCS_PREFIX}/wheels"
           {
             echo '<!DOCTYPE html>'
