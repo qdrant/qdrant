@@ -113,12 +113,20 @@ fn test_storage_files(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
         actual_files.len(),
         files.len()
     );
-    assert_eq!(files.len(), 5, "Expected 5 files, got {files:?}");
-    assert_eq!(files[0].file_name().unwrap(), "tracker.dat");
-    assert_eq!(files[1].file_name().unwrap(), "page_0.dat");
-    assert_eq!(files[2].file_name().unwrap(), "config.json");
-    assert_eq!(files[3].file_name().unwrap(), "bitmask.dat");
-    assert_eq!(files[4].file_name().unwrap(), "gaps.dat");
+
+    let mut expected_files = vec!["tracker.dat", "page_0.dat", "config.json"];
+    if !mode.is_serverless() {
+        expected_files.extend(["bitmask.dat", "gaps.dat"]);
+    }
+    assert_eq!(
+        files.len(),
+        expected_files.len(),
+        "Expected {} files, got {files:?}",
+        expected_files.len(),
+    );
+    for (file, &expected) in files.iter().zip(expected_files.iter()) {
+        assert_eq!(file.file_name().unwrap(), expected);
+    }
 }
 
 #[rstest]
