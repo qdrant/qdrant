@@ -206,34 +206,4 @@ impl Client {
 
         Ok(response.into_inner().data)
     }
-
-    /// `ReadMulti` RPC — ranges across multiple files.
-    pub async fn read_multi(
-        &self,
-        collection_name: &str,
-        shard_id: u32,
-        reads: &[(impl AsRef<str>, ReadRange)],
-    ) -> Result<Vec<Vec<u8>>> {
-        let proto_reads: Vec<_> = reads
-            .iter()
-            .map(|(path, range)| qdrant::ReadMultiEntry {
-                path: path.as_ref().to_string(),
-                byte_offset: range.byte_offset,
-                length: range.length,
-            })
-            .collect();
-
-        let response = self
-            .inner
-            .clone()
-            .read_multi(qdrant::ReadMultiRequest {
-                collection_name: collection_name.to_string(),
-                shard_id,
-                reads: proto_reads,
-            })
-            .await
-            .map_err(tonic_err)?;
-
-        Ok(response.into_inner().data)
-    }
 }

@@ -49,10 +49,11 @@ pub trait EncodedVectors: Sized {
     /// This function is expected to:
     /// - be implemented by non-multivector storages
     /// - be used by multivector storages
-    fn iter_batch(
+    fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)>;
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    );
 
     fn score(
         &self,

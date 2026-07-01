@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use api::grpc::qdrant::{ReadBatchRange, ReadMultiEntry};
+use api::grpc::qdrant::ReadBatchRange;
 use collection::common::snapshots_manager::SnapshotsConfig;
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
@@ -523,67 +523,6 @@ async fn read_batch_returns_each_requested_slice() {
         vec![b"01".to_vec(), b"456".to_vec(), b"9".to_vec()]
     );
 
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
-async fn read_multi_reads_ranges_in_request_order() {
-    let (service, storage_dir, shard_dir) = create_service_async().await;
-    write_shard_file(&shard_dir, "segments/a.bin", b"abcdefghij");
-    write_shard_file(&shard_dir, "segments/b.bin", b"klmnopqrst");
-
-    let response = service
-        .read_multi(Request::new(ReadMultiRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            reads: vec![
-                ReadMultiEntry {
-                    path: "segments/a.bin".to_string(),
-                    byte_offset: 1,
-                    length: 3,
-                },
-                ReadMultiEntry {
-                    path: "segments/b.bin".to_string(),
-                    byte_offset: 2,
-                    length: 4,
-                },
-                ReadMultiEntry {
-                    path: "segments/a.bin".to_string(),
-                    byte_offset: 6,
-                    length: 2,
-                },
-            ],
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    assert_eq!(
-        response.data,
-        vec![b"bcd".to_vec(), b"mnop".to_vec(), b"gh".to_vec()]
-    );
-
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
-async fn read_multi_rejects_empty_entry_path() {
-    let (service, storage_dir, _shard_dir) = create_service_async().await;
-
-    let err = service
-        .read_multi(Request::new(ReadMultiRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            reads: vec![ReadMultiEntry {
-                path: "".to_string(),
-                byte_offset: 0,
-                length: 1,
-            }],
-        }))
-        .await
-        .unwrap_err();
-
-    assert_eq!(err.code(), Code::InvalidArgument);
     drop_service(service, storage_dir).await;
 }
 

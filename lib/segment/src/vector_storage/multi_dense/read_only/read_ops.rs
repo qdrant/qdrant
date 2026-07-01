@@ -39,13 +39,17 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> MultiVectorStorageRead<T>
     {
         let point_offsets = keys.iter().copied().enumerate();
 
-        let vectors =
-            super::iter_vectors::<Sequential, _, _, _>(&self.offsets, &self.vectors, point_offsets);
-
-        for (index, flattened) in vectors {
-            let vector = TypedMultiDenseVectorRef::new(&flattened, self.vector_dim());
-            callback(index, vector)
-        }
+        super::for_each_vector::<Sequential, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+            |index, flattened| {
+                let vector = TypedMultiDenseVectorRef::new(flattened, self.vector_dim());
+                callback(index, vector);
+                Ok(())
+            },
+        )
+        .expect("read vectors");
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
@@ -107,16 +111,20 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
-        let vectors =
-            super::iter_vectors::<P, _, _, _>(&self.offsets, &self.vectors, point_offsets);
+        super::for_each_vector::<P, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+            |(user_data, point_offset), flattened| {
+                let vector = CowVector::MultiDense(T::into_float_multivector(
+                    flattened_to_multi_vector(Cow::Borrowed(flattened), self.vectors.dim()),
+                ));
 
-        for ((user_data, point_offset), flattened) in vectors {
-            let vector = CowVector::MultiDense(T::into_float_multivector(
-                flattened_to_multi_vector(flattened, self.vectors.dim()),
-            ));
-
-            callback(user_data, point_offset, vector);
-        }
+                callback(user_data, point_offset, vector);
+                Ok(())
+            },
+        )
+        .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

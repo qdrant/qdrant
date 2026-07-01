@@ -642,9 +642,6 @@ ACTION_ACCESS = {
     "storage_read_read_batch": EndpointAccess(
         True, True, True, None, "qdrant.StorageRead/ReadBatch"
     ),
-    "storage_read_read_multi": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadMulti"
-    ),
 }
 
 
@@ -2088,16 +2085,5 @@ def test_storage_read_read_batch():
             "shard_id": STORAGE_READ_SHARD_ID,
             "path": STORAGE_READ_TEST_PATH,
             "ranges": [{"byteOffset": 0, "length": 1}],
-        },
-    )
-
-
-def test_storage_read_read_multi():
-    check_access(
-        "storage_read_read_multi",
-        grpc_request={
-            "collection_name": COLL_NAME,
-            "shard_id": STORAGE_READ_SHARD_ID,
-            "reads": [{"path": STORAGE_READ_TEST_PATH, "byteOffset": 0, "length": 1}],
         },
     )

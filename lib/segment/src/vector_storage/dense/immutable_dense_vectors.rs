@@ -121,7 +121,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
             .map(|offset| self.raw_vector_offset::<P>(offset))
     }
 
-    pub fn for_each_in_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
+    pub fn for_each_in_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) -> OperationResult<()> {
         #[cfg(target_os = "linux")]
         if TypedStorage::<ReadOnly<S>, T>::kind() == common::universal_io::UniversalKind::IoUring {
             return self.for_each_in_batch_async(keys, f);
@@ -153,10 +157,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
                 f(batch_offset + vector_idx, vec);
             }
         }
+
+        Ok(())
     }
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    fn for_each_in_batch_async<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_async<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, &[T]),
     {
@@ -175,9 +185,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         };
 
         // access pattern does not matter for io_uring
-        self.storage
-            .read_batch::<Random, _>(ranges, callback)
-            .expect("vectors read");
+        self.storage.read_batch::<Random, _>(ranges, callback)?;
+        Ok(())
     }
 
     pub fn populate(&self) {
@@ -267,8 +276,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         self.data.get_vector_opt::<P>(key)
     }
 
-    pub fn for_each_in_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
-        self.data.for_each_in_batch(keys, f);
+    pub fn for_each_in_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        self.data.for_each_in_batch(keys, f)
     }
 
     /// Marks the key as deleted.

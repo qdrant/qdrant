@@ -51,16 +51,22 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
         self.data.get::<Random>(index as VectorOffsetType)
     }
 
-    fn iter_batch(
+    fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
         let offsets = offsets
             .iter()
             .enumerate()
             .map(|(index, &offset)| (index, offset, 1));
 
-        self.data.iter_vectors::<Random, _>(offsets)
+        self.data
+            .for_each_vector::<Random, _>(offsets, |index, vector| {
+                callback(index, vector);
+                Ok(())
+            })
+            .expect("vectors read");
     }
 
     fn upsert_vector(

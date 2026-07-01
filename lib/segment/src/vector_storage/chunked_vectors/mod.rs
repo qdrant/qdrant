@@ -56,10 +56,12 @@ mod tests {
             let batch_ids = (random_offset as u32..random_offset as u32 + batch_size as u32)
                 .collect::<Vec<_>>();
             let mut vectors_buffer = Vec::with_capacity(batch_size);
-            chunked_mmap.for_each_in_batch(&batch_ids, |i, vec| {
-                assert_eq!(i, vectors_buffer.len());
-                vectors_buffer.push(vec.to_vec());
-            });
+            chunked_mmap
+                .for_each_in_batch(&batch_ids, |i, vec| {
+                    assert_eq!(i, vectors_buffer.len());
+                    vectors_buffer.push(vec.to_vec());
+                })
+                .unwrap();
 
             for (i, (vec, loaded_vec)) in zip(
                 &vectors[random_offset..random_offset + batch_size],

@@ -108,7 +108,8 @@ impl<
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
         self.vector_storage
-            .for_each_in_dense_batch(ids, |idx, vector| scores[idx] = self.score(vector));
+            .for_each_in_dense_batch(ids, |idx, vector| scores[idx] = self.score(vector))
+            .expect("read vectors");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
