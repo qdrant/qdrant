@@ -1101,7 +1101,11 @@ fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
 /// Similar to [`test_deferred_flush`] but more complex, including multiple flushers and deletes
 #[rstest]
 fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // Dynamic mode: asserts block reuse (reused offsets after delete).
+    // The deferred-flush read semantics (including deletes) are identical in both
+    // modes. The block offsets differ: dynamic mode reuses blocks freed after a
+    // delete or flush, while serverless mode is append-only and keeps assigning
+    // the next block. Deletes only touch the tracker, so they don't consume a
+    // block in serverless mode.
     let (dir, mut storage) = empty_storage(mode);
     let path = dir.path().to_path_buf();
 
@@ -1187,7 +1191,13 @@ fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mo
     // On reopen, delete was flushed this time, expect point to be missing
     assert!(get_payload(&storage).is_none());
 
-    put_payload(&mut storage, "value 4", 0);
+    // Dynamic mode: reuse block 0
+    // Serverless mode: append
+    put_payload(
+        &mut storage,
+        "value 4",
+        if mode.is_serverless() { 3 } else { 0 },
+    );
     assert_eq!(get_payload(&storage).unwrap(), "value 4");
 
     assert_eq!(
@@ -1212,7 +1222,11 @@ fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mo
     // On reopen, value 4 was flushed, expect to read it
     assert_eq!(get_payload(&storage).unwrap(), "value 4");
 
-    put_payload(&mut storage, "value 5", 1);
+    put_payload(
+        &mut storage,
+        "value 5",
+        if mode.is_serverless() { 4 } else { 1 },
+    );
     assert_eq!(get_payload(&storage).unwrap(), "value 5");
 
     let flusher_1_value_5 = storage.flusher();
@@ -1222,12 +1236,20 @@ fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mo
 
     let flusher_2_delete = storage.flusher();
 
-    put_payload(&mut storage, "value 6", 3);
+    put_payload(
+        &mut storage,
+        "value 6",
+        if mode.is_serverless() { 5 } else { 3 },
+    );
     assert_eq!(get_payload(&storage).unwrap(), "value 6");
 
     let flusher_3_value_6 = storage.flusher();
 
-    put_payload(&mut storage, "value 7", 4);
+    put_payload(
+        &mut storage,
+        "value 7",
+        if mode.is_serverless() { 6 } else { 4 },
+    );
     assert_eq!(get_payload(&storage).unwrap(), "value 7");
 
     // Not flushed, still expect to read value 4
