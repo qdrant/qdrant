@@ -77,7 +77,9 @@ impl LocalShard {
             .unwrap_or(false)
         {
             return Err(CollectionError::service_error(
-                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
+                "No space left on device: WAL buffer size exceeds available disk space. \
+                 Free up disk space or increase storage capacity to continue updating. \
+                 Search queries are still available.".to_string(),
             ));
         }
 
