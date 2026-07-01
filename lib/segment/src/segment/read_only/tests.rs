@@ -234,12 +234,10 @@ fn read_only_segment_matches_mutable() {
 #[test]
 #[ignore = "requires a running S3-compatible server (set S3_INTEGRATION_TEST=1)"]
 fn read_only_segment_over_s3() {
-    use std::sync::Arc;
-
     use bytes::Bytes;
     use common::universal_io::UniversalReadFileOps;
     use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
-    use io_bridge_object_store::{BlobBackend, BlobFile, BlobFs};
+    use io_bridge_object_store::{BlobBackend, BlobFile, BlobFs, ObjectStoreSource};
     use object_store::ObjectStoreExt;
     use object_store::aws::AmazonS3;
     use object_store::path::Path as ObjectPath;
@@ -292,8 +290,8 @@ fn read_only_segment_over_s3() {
     });
 
     // Open the segment straight from S3 and compare to the local reference.
-    let blob_fs = BlobFs::<Arc<AmazonS3>>::from_context(aws_config).expect("blob fs");
-    let read_only = ReadOnlySegment::<BlobFile<Arc<AmazonS3>>>::open(
+    let blob_fs = BlobFs::<ObjectStoreSource<AmazonS3>>::from_context(aws_config).expect("blob fs");
+    let read_only = ReadOnlySegment::<BlobFile<ObjectStoreSource<AmazonS3>>>::open(
         &blob_fs,
         Path::new(&key_prefix),
         segment_uuid,

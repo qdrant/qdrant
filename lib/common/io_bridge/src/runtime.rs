@@ -69,7 +69,7 @@ impl BridgeRuntime {
     /// Drive `fut` to completion on the calling thread, using this runtime as
     /// the reactor/executor. Used for the synchronous single-read and metadata
     /// paths. Must not be called from within the runtime's own worker threads.
-    pub(crate) fn block_on<F: Future>(&self, fut: F) -> F::Output {
+    pub fn block_on<F: Future>(&self, fut: F) -> F::Output {
         self.0.0.block_on(fut)
     }
 

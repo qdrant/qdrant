@@ -1,5 +1,5 @@
 [package]
-name = "io_bridge_object_store"
+name = "io_bridge_uio_grpc"
 version = "0.0.0"
 edition = "2024"
 publish = false
@@ -10,9 +10,10 @@ workspace = true
 [dependencies]
 common = { path = "../common" }
 io_bridge = { path = "../io_bridge" }
+uio-grpc-client = { path = "../../uio-grpc-client" }
 bytes = { workspace = true }
 futures = { workspace = true }
-object_store = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 common = { path = "../common", features = ["testing"] }

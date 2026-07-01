@@ -1,6 +1,11 @@
-//! [`AsyncRead`] implementation over any [`ObjectStore`] backend. The store
-//! itself (held as `Arc<S>`) is the read handle; the object key is supplied per
-//! call. Sync access lands through [`BlobFile<Arc<S>>`](crate::BlobFile).
+//! [`AsyncRead`] implementation over any [`ObjectStore`] backend.
+//!
+//! [`ObjectStoreSource<S>`] is the read handle: a local newtype around `Arc<S>`
+//! for any [`BlobBackend`] `S`. The newtype is what lets this crate implement the
+//! foreign [`AsyncRead`] trait without falling foul of the orphan rule (a blanket
+//! impl on the foreign `Arc<S>` is not allowed from here). The object key is
+//! supplied per call. Sync access lands through
+//! [`BlobFile<ObjectStoreSource<S>>`](io_bridge::BlobFile).
 
 // We map `object_store::Error::NotFound` specifically and intentionally bucket
 // every other variant into `UniversalIoError::s3(other)`. Enumerating every
@@ -16,23 +21,50 @@ use std::sync::Arc;
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalIoError, UniversalKind};
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
+use io_bridge::AsyncRead;
 use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt};
 
 use crate::backend::BlobBackend;
-use crate::read::AsyncRead;
 
-impl<S: BlobBackend> AsyncRead for Arc<S> {
+/// [`AsyncRead`] handle over an object store. Holds the store as `Arc<S>` so it
+/// is cheap to clone; the object key is supplied per call.
+///
+/// This is a thin local newtype: it exists so the crate can implement the
+/// foreign [`AsyncRead`] trait for an object-store backend (the orphan rule
+/// forbids a blanket impl on `Arc<S>` from a crate that owns neither `Arc` nor
+/// `AsyncRead`).
+pub struct ObjectStoreSource<S>(Arc<S>);
+
+impl<S> Clone for ObjectStoreSource<S> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<S> ObjectStoreSource<S> {
+    /// Wrap an already-built object store as an [`AsyncRead`] handle.
+    pub fn new(store: Arc<S>) -> Self {
+        Self(store)
+    }
+
+    /// Borrow the underlying object store.
+    pub fn store(&self) -> &Arc<S> {
+        &self.0
+    }
+}
+
+impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     type Config = S::Config;
 
     fn open(config: &Self::Config) -> Result<Self> {
-        Ok(Arc::new(S::build_store(config)?))
+        Ok(Self(Arc::new(S::build_store(config)?)))
     }
 
     fn list_files(
         &self,
         prefix: &Path,
     ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let prefix_path = prefix.to_path_buf();
         // object_store lists by whole path segment; emulate the byte-prefix
         // contract (list the parent dir, then filter) — see `local_list_files`.
@@ -65,7 +97,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
     }
 
     fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let key = build_key(path);
 
         async move {
@@ -78,7 +110,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
     }
 
     fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let key = build_key(path);
 
         async move {
@@ -91,7 +123,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
     }
 
     fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let key = build_key(path);
 
         async move {
@@ -105,7 +137,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
     }
 
     fn remove_dir(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let prefix_path = path.to_path_buf();
         let prefix = build_dir_prefix(path);
 
@@ -132,7 +164,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         path: &Path,
         bytes: Bytes,
     ) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let key = build_key(path);
 
         async move {
@@ -149,7 +181,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         path: &Path,
         range: Range<u64>,
     ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let key = build_key(path);
         async move {
             let opts = GetOptions {
@@ -172,7 +204,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         from: u64,
     ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
     {
-        let store = self.clone();
+        let store = self.0.clone();
         let key = build_key(path);
         async move {
             // `from == 0` is a plain whole-object GET; a positive offset asks the
@@ -196,7 +228,7 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
     }
 
     fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
-        let store = self.clone();
+        let store = self.0.clone();
         let key = build_key(path);
         async move {
             store
@@ -235,15 +267,14 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 mod tests {
     use bytes::Bytes;
     use common::universal_io::{ReadRange, UniversalRead, UniversalReadFileOps};
+    use io_bridge::{BlobFile, BlobFs, BridgeRuntime};
     use object_store::memory::InMemory;
 
     use super::*;
-    use crate::file::BlobFile;
-    use crate::runtime::BridgeRuntime;
 
     /// Test-only backend: an in-memory store with a no-op config so that
-    /// unit tests exercise the full `Arc<S>` → `BlobFile` → pipeline stack
-    /// without needing a network mock.
+    /// unit tests exercise the full `ObjectStoreSource<S>` → `BlobFile` → pipeline
+    /// stack without needing a network mock.
     #[derive(Clone, Debug, Default)]
     pub struct InMemoryConfig;
 
@@ -259,12 +290,14 @@ mod tests {
         }
     }
 
+    type InMemorySource = ObjectStoreSource<InMemory>;
+
     fn make_file(
         runtime: BridgeRuntime,
         store: Arc<InMemory>,
         key: &str,
-    ) -> BlobFile<Arc<InMemory>> {
-        BlobFile::new(store, runtime, PathBuf::from(key))
+    ) -> BlobFile<InMemorySource> {
+        BlobFile::new(ObjectStoreSource::new(store), runtime, PathBuf::from(key))
     }
 
     fn inmemory_with(runtime: &BridgeRuntime, objects: &[(&str, &'static [u8])]) -> Arc<InMemory> {
@@ -329,7 +362,7 @@ mod tests {
 
     #[test]
     fn kind_is_inmemory_tagged_as_s3() {
-        assert_eq!(<Arc<InMemory> as AsyncRead>::kind(), UniversalKind::S3);
+        assert_eq!(<InMemorySource as AsyncRead>::kind(), UniversalKind::S3);
     }
 
     #[test]
@@ -345,8 +378,9 @@ mod tests {
                 ("other/page_0.dat", b"e"),
             ],
         );
+        let source = ObjectStoreSource::new(store);
         let mut files: Vec<String> = runtime
-            .block_on(store.list_files(Path::new("dir/page_")))
+            .block_on(source.list_files(Path::new("dir/page_")))
             .expect("list_files")
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
@@ -369,7 +403,7 @@ mod tests {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"\x01\x00\x02\x00")]);
         let file = make_file(runtime, store, "obj");
-        let len: u64 = <BlobFile<Arc<InMemory>> as UniversalRead>::len::<u16>(&file).unwrap();
+        let len: u64 = <BlobFile<InMemorySource> as UniversalRead>::len::<u16>(&file).unwrap();
         assert_eq!(len, 2);
     }
 
@@ -377,7 +411,7 @@ mod tests {
     fn fs_create_writes_empty_object_and_create_dir_is_noop() {
         let runtime = BridgeRuntime::global();
         let store = Arc::new(InMemory::new());
-        let fs = crate::BlobFs::new(store.clone(), runtime.clone());
+        let fs = BlobFs::new(ObjectStoreSource::new(store.clone()), runtime.clone());
 
         fs.create_dir(Path::new("prefix")).unwrap();
         fs.create(Path::new("prefix/empty"), 1024).unwrap();
@@ -403,6 +437,6 @@ mod tests {
     fn read_only_wrapper_compiles_with_blob_file() {
         use common::universal_io::ReadOnly;
         fn assert_universal_read<R: UniversalRead>() {}
-        assert_universal_read::<ReadOnly<BlobFile<Arc<InMemory>>>>();
+        assert_universal_read::<ReadOnly<BlobFile<InMemorySource>>>();
     }
 }
