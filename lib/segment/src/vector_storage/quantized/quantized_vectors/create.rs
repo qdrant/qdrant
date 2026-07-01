@@ -1,4 +1,4 @@
-﻿use std::path::Path;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::fs::atomic_save_json;
@@ -267,8 +267,7 @@ impl QuantizedVectors {
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let datatype = vector_storage.datatype();
-        let keep_rotated =
-            should_keep_source_rotated(vector_storage.datatype(), quantization_config, distance);
+        let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
 
         let vectors = (0..count as PointOffsetType)
             .map(move |i| vector_storage.get_dense_for_requantization(i, keep_rotated));
@@ -312,15 +311,7 @@ impl QuantizedVectors {
             storage_type,
         );
 
-        // When the source rotation is kept, a TurboQuant target lives in the
-        // source's unpadded rotated space and the input is already rotated (so
-        // encoding must not rotate it again). Otherwise it rotates into padding
-        // as usual.
-        let (tq_rotation, input_already_rotated) = if keep_rotated {
-            (TQRotation::Unpadded, true)
-        } else {
-            (TQRotation::Padded, false)
-        };
+        let (tq_rotation, input_already_rotated) = turbo_target_rotation(keep_rotated);
 
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
@@ -461,8 +452,7 @@ impl QuantizedVectors {
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let datatype = vector_storage.datatype();
-        let keep_rotated =
-            should_keep_source_rotated(vector_storage.datatype(), quantization_config, distance);
+        let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
 
         let vectors = (0..vectors_count as PointOffsetType).flat_map(move |key| {
             vector_storage.get_inner_dense_for_requantization(key, keep_rotated)
@@ -521,12 +511,7 @@ impl QuantizedVectors {
             storage_type,
         );
 
-        // See `quantize_dense`.
-        let (tq_rotation, input_already_rotated) = if keep_rotated {
-            (TQRotation::Unpadded, true)
-        } else {
-            (TQRotation::Padded, false)
-        };
+        let (tq_rotation, input_already_rotated) = turbo_target_rotation(keep_rotated);
 
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
@@ -611,6 +596,19 @@ impl QuantizedVectors {
 
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
         Ok(quantized_vectors)
+    }
+}
+
+/// Resolve the TurboQuant target's rotation and encode-time skip flag from
+/// whether the source rotation is kept (see [`should_keep_source_rotated`]). A
+/// kept rotation means the input is already in the source's unpadded rotated
+/// space, so encoding must not rotate it again; otherwise it rotates into the
+/// padding as usual.
+fn turbo_target_rotation(keep_rotated: bool) -> (TQRotation, bool) {
+    if keep_rotated {
+        (TQRotation::Unpadded, true)
+    } else {
+        (TQRotation::Padded, false)
     }
 }
 

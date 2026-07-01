@@ -25,8 +25,8 @@ use segment::types::{
     BinaryQuantizationConfig, CompressionRatio, Condition, Distance, FieldCondition, Filter,
     HnswConfig, HnswGlobalConfig, Indexes, PayloadSchemaType, ProductQuantizationConfig,
     QuantizationConfig, QuantizationSearchParams, Range, ScalarQuantizationConfig, SearchParams,
-    SegmentConfig, SeqNumberType, TurboQuantQuantizationConfig, TurboQuantization,
-    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    SegmentConfig, SeqNumberType, TurboQuantBitSize, TurboQuantQuantizationConfig,
+    TurboQuantization, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::VectorStorageEnum;
 use segment::vector_storage::quantized::quantized_vectors::{
@@ -39,6 +39,7 @@ enum QuantizationVariant {
     PQ,
     Binary,
     Turbo,
+    TurboBits1_5,
 }
 
 fn random_vector<R>(rnd_gen: &mut R, dim: usize, data_type: VectorStorageDatatype) -> DenseVector
@@ -235,6 +236,18 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     32, // ef
     70., // min_acc out of 100
 )]
+// Bits1_5 target requires a Padded rotation, so the source rotation cannot be
+// kept: the vectors must be rotated back and re-rotated. Must not panic
+// (`Bits1_5 requires Padded` assert) or silently degrade to 1-bit.
+#[case::nearest_turbo_turbo_bits1_5_dot(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Turbo4,
+    QuantizationVariant::TurboBits1_5,
+    Distance::Dot,
+    32, // dim
+    32, // ef
+    50., // min_acc out of 100
+)]
 fn test_quantization_over_typed_storage_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] storage_data_type: VectorStorageDatatype,
@@ -355,6 +368,12 @@ fn test_quantization_over_typed_storage_hnsw(
             turbo: TurboQuantQuantizationConfig {
                 always_ram: None,
                 bits: None,
+            },
+        }),
+        QuantizationVariant::TurboBits1_5 => QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: None,
+                bits: Some(TurboQuantBitSize::Bits1_5),
             },
         }),
     };
