@@ -220,7 +220,6 @@ fn test_delete_single_payload(#[values(Mode::Regular, Mode::Serverless)] mode: M
 
 #[rstest]
 fn test_update_single_payload(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // Dynamic mode: asserts block reuse on update.
     let (_dir, mut storage) = empty_storage(mode);
 
     let hw_counter = HardwareCounterCell::new();
@@ -255,8 +254,13 @@ fn test_update_single_payload(#[values(Mode::Regular, Mode::Serverless)] mode: M
 
     storage.flusher()().unwrap();
 
-    // First block offset should be available again, so we can reuse it
-    put_payload(&mut storage, "updated after flush", 0);
+    // Dynamic mode: reuse blocks freed by flush
+    // Serverless: append
+    put_payload(
+        &mut storage,
+        "updated after flush",
+        if mode.is_serverless() { 3 } else { 0 },
+    );
 }
 
 #[rstest]
