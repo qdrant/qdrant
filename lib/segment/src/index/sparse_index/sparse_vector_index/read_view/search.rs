@@ -136,26 +136,38 @@ where
         });
         let arena = blink_alloc::Blink::new();
 
-        self.inverted_index
-            .get_batch(iter, &arena, hw_counter, |count, posting_list_iter| {
-                let mut filtered_posting_len = 0;
+        let batch_result =
+            self.inverted_index
+                .get_batch(iter, &arena, hw_counter, |count, posting_list_iter| {
+                    let mut filtered_posting_len = 0;
 
-                for element in posting_list_iter.into_std_iter() {
-                    if is_stopped.load(Ordering::Relaxed) {
-                        break;
+                    for element in posting_list_iter.into_std_iter() {
+                        if is_stopped.load(Ordering::Relaxed) {
+                            return Err(common::universal_io::UniversalIoError::Io(
+                                std::io::Error::new(
+                                    std::io::ErrorKind::Interrupted,
+                                    "operation stopped",
+                                ),
+                            ));
+                        }
+
+                        if filtered_indexed_vector_ids
+                            .get_bit(element.record_id as usize)
+                            .unwrap_or(false)
+                        {
+                            filtered_posting_len += 1;
+                        }
                     }
 
-                    if filtered_indexed_vector_ids
-                        .get_bit(element.record_id as usize)
-                        .unwrap_or(false)
-                    {
-                        filtered_posting_len += 1;
-                    }
-                }
+                    *count += filtered_posting_len;
+                    Ok(())
+                });
 
-                *count += filtered_posting_len;
-                Ok(())
-            })?;
+        if is_stopped.load(Ordering::Relaxed) {
+            check_process_stopped(is_stopped)?;
+        }
+
+        batch_result?;
 
         check_process_stopped(is_stopped)?;
 

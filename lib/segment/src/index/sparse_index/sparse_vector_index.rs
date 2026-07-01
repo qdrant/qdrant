@@ -20,7 +20,7 @@ use sparse::index::posting_list_common::PostingListIter as _;
 
 use self::read_view::{SparseVectorIndexReadView, SparseVectorIndexReadViewEnum};
 use super::indices_tracker::IndicesTracker;
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
@@ -38,7 +38,13 @@ pub(super) fn collect_indexed_vector_ids<TInvertedIndex: InvertedIndex>(
     let mut indexed_vector_ids = BitVec::new();
     let arena = blink_alloc::Blink::new();
     let hw_counter = HardwareCounterCell::disposable();
-    let iter = (0..inverted_index.len()).map(|dim_id| ((), dim_id as DimOffset));
+    let posting_count = DimOffset::try_from(inverted_index.len()).map_err(|_| {
+        OperationError::service_error(format!(
+            "Sparse inverted index contains too many posting lists: {}",
+            inverted_index.len(),
+        ))
+    })?;
+    let iter = (0..posting_count).map(|dim_id| ((), dim_id));
 
     inverted_index.get_batch(iter, &arena, &hw_counter, |(), posting_list_iter| {
         for element in posting_list_iter.into_std_iter() {
