@@ -1450,7 +1450,6 @@ fn test_live_reload_across_pages(#[values(Mode::Regular, Mode::Serverless)] mode
 ///   something else
 #[rstest]
 fn test_skip_deferred_flush_after_clear(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // Dynamic mode: inspects the bitmask via `bitmask_for_test`.
     let (dir, mut storage) = empty_storage(mode);
     let path = dir.path().to_path_buf();
 
@@ -1492,10 +1491,13 @@ fn test_skip_deferred_flush_after_clear(#[values(Mode::Regular, Mode::Serverless
     // call the flusher. This allows us to trigger broken flush behavior in old versions.
     // The same is possible without cloning these arcs, but it would require specific timing
     // conditions. Cloning arcs here is much more reliable for this test case.
+    // Serverless mode has no bitmask, so only its pages and tracker arcs are kept alive; those
+    // are exactly the arcs its flusher upgrades, so the flush can only be cancelled by the
+    // is-alive lock that `clear` marks dead.
     let storage_arcs = (
         Arc::clone(&storage.pages),
         Arc::clone(&storage.tracker),
-        Arc::clone(storage.bitmask_for_test()),
+        (!mode.is_serverless()).then(|| Arc::clone(storage.bitmask_for_test())),
     );
 
     // We clear the storage, pending flusher must not write anything anymore
