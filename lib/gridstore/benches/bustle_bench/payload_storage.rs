@@ -3,6 +3,7 @@ use std::sync::Arc;
 use bustle::Collection;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
+use gridstore::Mode;
 use gridstore::fixtures::{Payload, empty_storage};
 use parking_lot::RwLock;
 
@@ -13,7 +14,7 @@ impl Collection for ArcStorage<PayloadStorage> {
     type Handle = Self;
 
     fn with_capacity(_capacity: usize) -> Self {
-        let (dir, storage) = empty_storage();
+        let (dir, storage) = empty_storage(Mode::default());
 
         let proxy = StorageProxy::new(storage);
         ArcStorage {

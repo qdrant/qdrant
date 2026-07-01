@@ -7,6 +7,7 @@ use common::generic_consts::Random;
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use fs_err::File;
+use gridstore::Mode;
 use gridstore::fixtures::{HM_FIELDS, Payload, empty_storage};
 use rand::RngExt;
 use serde_json::Value;
@@ -52,7 +53,7 @@ fn compute_folder_size_mb<P: AsRef<Path>>(path: P) -> u64 {
 }
 
 pub fn real_data_data_bench(c: &mut Criterion) {
-    let (dir, mut storage) = empty_storage();
+    let (dir, mut storage) = empty_storage(Mode::default());
     let csv_path = dataset::Dataset::HMArticles
         .download()
         .expect("download should succeed");

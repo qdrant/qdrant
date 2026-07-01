@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
+use gridstore::Mode;
 use gridstore::fixtures::{empty_storage, random_payload};
 use rand::RngExt;
 
@@ -14,7 +15,7 @@ pub fn flush_bench(c: &mut Criterion) {
 
         c.bench_function(&bench_name, |b| {
             // Setup: Create a storage with a specified number of records
-            let (_dir, mut storage) = empty_storage();
+            let (_dir, mut storage) = empty_storage(Mode::default());
             let mut rng = rand::rng();
             let hw_counter = HardwareCounterCell::new();
             let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -52,7 +53,7 @@ pub fn flush_bench(c: &mut Criterion) {
 
         c.bench_function(&bench_name, |b| {
             // Setup: Create a storage with a specified number of records
-            let (_dir, mut storage) = empty_storage();
+            let (_dir, mut storage) = empty_storage(Mode::default());
             let mut rng = rand::rng();
             let hw_counter = HardwareCounterCell::new();
             let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
