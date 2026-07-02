@@ -803,10 +803,7 @@ mod tests {
     fn test_resolve_reco_reference_missing_point_id() {
         let referenced = create_referenced_vectors(1u64.into());
 
-        let query = RecoQuery::new(
-            vec![VectorInputInternal::Id(999u64.into())],
-            vec![],
-        );
+        let query = RecoQuery::new(vec![VectorInputInternal::Id(999u64.into())], vec![]);
 
         let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
             query,
@@ -826,10 +823,7 @@ mod tests {
         let point_id: PointIdType = 1u64.into();
         let referenced = create_referenced_vectors(point_id);
 
-        let query = RecoQuery::new(
-            vec![VectorInputInternal::Id(point_id)],
-            vec![],
-        );
+        let query = RecoQuery::new(vec![VectorInputInternal::Id(point_id)], vec![]);
 
         let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
             query,
