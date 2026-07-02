@@ -12692,6 +12692,11 @@
             "description": "Build new segments in append-only mode: in-place point mutations become clone-and-tombstone appends instead. Intended for testing the append-only storage path.",
             "default": false,
             "type": "boolean"
+          },
+          "serverless_compatible": {
+            "description": "Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`] and [`Self::append_only_mutations`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
