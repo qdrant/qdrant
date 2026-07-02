@@ -8,13 +8,13 @@ use api::rest::models::{
     CollectionDescription, CollectionsResponse, ShardKeyDescription, ShardKeysResponse,
 };
 use collection::config::ShardingMethod;
-#[cfg(feature = "staging")]
-use collection::operations::cluster_ops::{TestSlowDownOperation, TestTransientErrorOperation};
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
     RestartTransfer, RestartTransferOperation, StartResharding,
 };
+#[cfg(feature = "staging")]
+use collection::operations::cluster_ops::{TestSlowDownOperation, TestTransientErrorOperation};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -32,12 +32,12 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
-#[cfg(feature = "staging")]
-use storage::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
     SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
 };
+#[cfg(feature = "staging")]
+use storage::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
