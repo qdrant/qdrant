@@ -493,10 +493,10 @@ impl GpuVectorStorage {
             // back to float (or half-float, when the device supports it) and
             // upload it as a regular dense storage.
             VectorStorageEnum::DenseTurbo(vector_storage) => {
-                Self::new_dense_tq(device, vector_storage, force_half_precision, stopped)
+                Self::new_dense_tq(device, vector_storage, stopped)
             }
             VectorStorageEnum::MultiDenseTurbo(vector_storage) => {
-                Self::new_multi_tq(device, vector_storage, force_half_precision, stopped)
+                Self::new_multi_tq(device, vector_storage, stopped)
             }
             VectorStorageEnum::EmptyDense(_) | VectorStorageEnum::EmptySparse(_) => {
                 Err(OperationError::service_error(
@@ -584,7 +584,6 @@ impl GpuVectorStorage {
     fn new_dense_tq(
         device: Arc<gpu::Device>,
         vector_storage: &TurboVectorStorage,
-        force_half_precision: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let count = vector_storage.total_vector_count();
@@ -598,7 +597,7 @@ impl GpuVectorStorage {
         // not rotation-invariant, so it must be rotated back.
         let keep_rotated = distance != Distance::Manhattan;
 
-        if force_half_precision && device.has_half_precision() {
+        if device.has_half_precision() {
             Self::new_typed::<VectorElementTypeHalf>(
                 device,
                 distance,
@@ -641,7 +640,6 @@ impl GpuVectorStorage {
     fn new_multi_tq(
         device: Arc<gpu::Device>,
         vector_storage: &TurboMultiVectorStorage,
-        force_half_precision: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let point_count = vector_storage.total_vector_count();
@@ -657,7 +655,7 @@ impl GpuVectorStorage {
         // inverse rotation; only Manhattan (L1) must be rotated back.
         let keep_rotated = distance != Distance::Manhattan;
 
-        if force_half_precision && device.has_half_precision() {
+        if device.has_half_precision() {
             Self::new_typed::<VectorElementTypeHalf>(
                 device,
                 distance,
