@@ -207,10 +207,10 @@ fn sparse_idf_statistics_corpus_strategies() {
     // Every point: dim 0; every even point: dim 1; every 10th point: dim 2.
     let dims_of = |point_id: u64| {
         let mut dims = vec![0];
-        if point_id % 2 == 0 {
+        if point_id.is_multiple_of(2) {
             dims.push(1);
         }
-        if point_id % 10 == 0 {
+        if point_id.is_multiple_of(10) {
             dims.push(2);
         }
         dims
