@@ -346,12 +346,12 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         // Mutating path: propagate lookup/deletion-check errors instead of swallowing.
-        if let Some(internal_id) = self.reader.lookup(external_id)? {
-            if !self.point_deleted(internal_id)? {
-                self.deleted.set(internal_id as usize, true);
-                self.deleted_wrapper.set(internal_id as usize, true);
-                self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
-            }
+        if let Some(internal_id) = self.reader.lookup(external_id)?
+            && !self.point_deleted(internal_id)?
+        {
+            self.deleted.set(internal_id as usize, true);
+            self.deleted_wrapper.set(internal_id as usize, true);
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
     }
