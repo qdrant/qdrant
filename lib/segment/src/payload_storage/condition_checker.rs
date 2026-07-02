@@ -590,4 +590,132 @@ mod tests {
         assert!(is_not_null.check(&number));
         assert!(is_not_null.check(&bool));
     }
+
+    #[test]
+    fn test_number_to_integer_valid() {
+        // Integer JSON values
+        assert_eq!(number_to_integer(&serde_json::Number::from(0)), Some(0));
+        assert_eq!(number_to_integer(&serde_json::Number::from(42)), Some(42));
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from(i64::MAX)),
+            Some(i64::MAX)
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from(i64::MIN)),
+            Some(i64::MIN)
+        );
+        assert_eq!(number_to_integer(&serde_json::Number::from(-1)), Some(-1));
+    }
+
+    #[test]
+    fn test_number_to_integer_float_whole() {
+        // Float values that represent whole integers
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(42.0).unwrap()),
+            Some(42)
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(0.0).unwrap()),
+            Some(0)
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(-1.0).unwrap()),
+            Some(-1)
+        );
+    }
+
+    #[test]
+    fn test_number_to_integer_float_non_whole() {
+        // Non-whole float values should return None
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(42.5).unwrap()),
+            None
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(3.14).unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn test_number_to_integer_out_of_range() {
+        // Out-of-range f64 values should return None (not saturate to i64::MAX)
+        let above_max = 9223372036854775808.0_f64; // just above i64::MAX
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(above_max).unwrap()),
+            None,
+            "Out-of-range above i64::MAX should return None"
+        );
+
+        let below_min = -9223372036854775809.0_f64; // just below i64::MIN
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(below_min).unwrap()),
+            None,
+            "Out-of-range below i64::MIN should return None"
+        );
+    }
+
+    #[test]
+    fn test_number_to_integer_nan_and_inf() {
+        // NaN and infinity should return None
+        assert_eq!(
+            number_to_integer(
+                &serde_json::Number::from_f64(f64::NAN).unwrap()
+            ),
+            None
+        );
+        assert_eq!(
+            number_to_integer(
+                &serde_json::Number::from_f64(f64::INFINITY).unwrap()
+            ),
+            None
+        );
+        assert_eq!(
+            number_to_integer(
+                &serde_json::Number::from_f64(f64::NEG_INFINITY).unwrap()
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_match_float_out_of_range() {
+        // Match should NOT match an out-of-range float payload
+        let out_of_range = serde_json::Number::from_f64(9223372036854775808.0).unwrap();
+        let payload = json!(out_of_range);
+
+        let condition = Match::Value(MatchValue {
+            value: ValueVariants::Integer(i64::MAX),
+        });
+        assert!(
+            !condition.check_match(&payload),
+            "Out-of-range float should not match i64::MAX"
+        );
+
+        // Normal integer match should still work
+        let normal_payload = json!(42);
+        let condition = Match::Value(MatchValue {
+            value: ValueVariants::Integer(42),
+        });
+        assert!(condition.check_match(&normal_payload));
+    }
+
+    #[test]
+    fn test_match_any_float_out_of_range() {
+        // MatchAny should NOT match an out-of-range float payload in the integer list
+        let out_of_range = serde_json::Number::from_f64(9223372036854775808.0).unwrap();
+        let payload = json!(out_of_range);
+
+        let condition = Match::Any(MatchAny {
+            any: AnyVariants::Integers(vec![0, 1, 2]),
+        });
+        assert!(
+            !condition.check_match(&payload),
+            "Out-of-range float should not match small integers"
+        );
+
+        // Normal MatchAny should still work
+        let normal_payload = json!(2);
+        assert!(condition.check_match(&normal_payload));
+    }
 }
