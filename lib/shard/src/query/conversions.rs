@@ -79,7 +79,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
             score_threshold: score_threshold.map(OrderedFloat),
             limit: limit as usize,
             offset: offset as usize,
-            params: params.map(SearchParams::from),
+            params: params.map(SearchParams::try_from).transpose()?,
             with_vector: with_vectors
                 .map(WithVector::from)
                 .unwrap_or(WithVector::Bool(false)),
@@ -174,7 +174,7 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
                 .map(|query| ScoringQuery::try_from_grpc_query(query, using))
                 .transpose()?,
             limit: limit as usize,
-            params: params.map(SearchParams::from),
+            params: params.map(SearchParams::try_from).transpose()?,
             filter: filter.map(Filter::try_from).transpose()?,
             score_threshold: score_threshold.map(OrderedFloat),
         };

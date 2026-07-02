@@ -500,6 +500,15 @@ message AcornSearchParams {
   optional double max_selectivity = 2;
 }
 
+// Population over which sparse vector IDF statistics are computed for scoring - the IDF corpus.
+// Only applicable to sparse vectors with the IDF modifier enabled.
+message IdfParams {
+  // Filter defining the corpus: IDF statistics are computed over the points matching this filter.
+  // Restricted to a conjunction (`must`) of `match` conditions on payload fields.
+  // If unset, statistics are collection-wide (global) - same as omitting `idf` entirely.
+  optional Filter corpus = 1;
+}
+
 message SearchParams {
   // Params relevant to HNSW index. Size of the beam in a beam-search.
   // Larger the value - more accurate the result, more time required for search.
@@ -517,6 +526,10 @@ message SearchParams {
 
   // ACORN search params
   optional AcornSearchParams acorn = 5;
+
+  // Which population sparse vector IDF statistics are computed over.
+  // If unset, statistics are collection-wide (global).
+  optional IdfParams idf = 6;
 }
 
 message SearchPoints {

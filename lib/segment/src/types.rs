@@ -603,9 +603,7 @@ pub struct AcornSearchParams {
 }
 
 /// Additional parameters of the search
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -635,6 +633,142 @@ pub struct SearchParams {
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acorn: Option<AcornSearchParams>,
+
+    /// Which population sparse vector IDF statistics are computed over.
+    /// By default (or with explicit `"global"`) statistics are collection-wide.
+    /// Only applicable to sparse vectors with the IDF modifier enabled.
+    #[serde(default)]
+    #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idf: Option<IdfParams>,
+}
+
+/// Population over which sparse vector IDF statistics are computed for scoring —
+/// the *IDF corpus*.
+///
+/// - `"global"` — collection-wide statistics, same as omitting the parameter.
+/// - `{ "corpus": <filter> }` — document count and per-term document frequencies
+///   are computed over the points matching the corpus filter only. The corpus is
+///   independent of the retrieval filter and is usually broader than it.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum IdfParams {
+    Scope(IdfScope),
+    Corpus(IdfCorpusParams),
+}
+
+/// Named IDF scope without a corpus filter.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum IdfScope {
+    /// Collection-wide statistics. This is the default behavior.
+    Global,
+}
+
+/// IDF statistics computed over the points matching a corpus filter.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct IdfCorpusParams {
+    /// Filter defining the corpus: IDF statistics are computed over the points
+    /// matching this filter. Restricted to a conjunction (`must`) of `match`
+    /// conditions on payload fields.
+    pub corpus: Filter,
+}
+
+impl IdfParams {
+    /// Corpus filter defining the IDF population, `None` for global statistics.
+    pub fn corpus(&self) -> Option<&Filter> {
+        match self {
+            IdfParams::Scope(IdfScope::Global) => None,
+            IdfParams::Corpus(IdfCorpusParams { corpus }) => Some(corpus),
+        }
+    }
+}
+
+impl Validate for IdfParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            IdfParams::Scope(IdfScope::Global) => Ok(()),
+            IdfParams::Corpus(corpus_params) => corpus_params.validate(),
+        }
+    }
+}
+
+impl Validate for IdfCorpusParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let IdfCorpusParams { corpus } = self;
+
+        let error = |message: &'static str| {
+            let mut errors = ValidationErrors::new();
+            errors.add("corpus", ValidationError::new(message));
+            Err(errors)
+        };
+
+        // The corpus grammar is deliberately narrower than a general search
+        // filter: a conjunction of `match` conditions on payload fields.
+        // Loosening it later is backward compatible, tightening is not.
+        let Filter {
+            should,
+            min_should,
+            must,
+            must_not,
+        } = corpus;
+
+        if should.is_some() || min_should.is_some() || must_not.is_some() {
+            return error("IDF corpus filter supports only `must` conditions");
+        }
+
+        let must = must.as_deref().unwrap_or_default();
+        if must.is_empty() {
+            return error("IDF corpus filter must contain at least one condition");
+        }
+
+        for condition in must {
+            let field_condition = match condition {
+                Condition::Field(field_condition) => field_condition,
+                Condition::IsEmpty(_)
+                | Condition::IsNull(_)
+                | Condition::HasId(_)
+                | Condition::HasVector(_)
+                | Condition::Nested(_)
+                | Condition::Filter(_)
+                | Condition::CustomIdChecker(_) => {
+                    return error(
+                        "IDF corpus filter supports only `match` conditions on payload fields",
+                    );
+                }
+            };
+
+            let FieldCondition {
+                key: _,
+                r#match,
+                range,
+                geo_bounding_box,
+                geo_radius,
+                geo_polygon,
+                values_count,
+                is_empty,
+                is_null,
+            } = field_condition;
+
+            let only_match = r#match.is_some()
+                && range.is_none()
+                && geo_bounding_box.is_none()
+                && geo_radius.is_none()
+                && geo_polygon.is_none()
+                && values_count.is_none()
+                && is_empty.is_none()
+                && is_null.is_none();
+
+            if !only_match {
+                return error(
+                    "IDF corpus filter supports only `match` conditions on payload fields",
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Configuration for vectors.
@@ -4671,6 +4805,109 @@ mod tests {
             ..Default::default()
         };
         params.validate().unwrap();
+    }
+
+    fn match_condition(key: &str, value: &str) -> Condition {
+        Condition::Field(FieldCondition::new_match(
+            JsonPath::new(key),
+            value.to_string().into(),
+        ))
+    }
+
+    #[test]
+    fn test_idf_params_json_shapes() {
+        // Explicit global shorthand.
+        let params: IdfParams = serde_json::from_str(r#""global""#).unwrap();
+        assert_eq!(params, IdfParams::Scope(IdfScope::Global));
+        assert_eq!(params.corpus(), None);
+        params.validate().unwrap();
+
+        // Corpus object form.
+        let params: IdfParams = serde_json::from_str(
+            r#"{"corpus": {"must": [{"key": "tenant", "match": {"value": "acme"}}]}}"#,
+        )
+        .unwrap();
+        let expected_corpus = Filter::new_must(match_condition("tenant", "acme"));
+        assert_eq!(params.corpus(), Some(&expected_corpus));
+        params.validate().unwrap();
+
+        // Round-trip both shapes.
+        for params in [
+            IdfParams::Scope(IdfScope::Global),
+            IdfParams::Corpus(IdfCorpusParams {
+                corpus: expected_corpus,
+            }),
+        ] {
+            let json = serde_json::to_string(&params).unwrap();
+            let restored: IdfParams = serde_json::from_str(&json).unwrap();
+            assert_eq!(params, restored);
+        }
+    }
+
+    #[test]
+    fn test_idf_corpus_grammar_validation() {
+        let corpus_params = |corpus: Filter| IdfParams::Corpus(IdfCorpusParams { corpus });
+
+        // Conjunction of `match` conditions is allowed.
+        corpus_params(Filter::new_must(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap();
+        corpus_params(Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![
+                match_condition("tenant", "acme"),
+                match_condition("lang", "en"),
+            ]),
+            must_not: None,
+        })
+        .validate()
+        .unwrap();
+
+        // Anything except `must` clauses is rejected.
+        corpus_params(Filter::new_should(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap_err();
+        corpus_params(Filter::new_must_not(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap_err();
+
+        // An empty corpus filter is rejected.
+        corpus_params(Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![]),
+            must_not: None,
+        })
+        .validate()
+        .unwrap_err();
+
+        // Non-`match` field conditions are rejected.
+        corpus_params(Filter::new_must(Condition::Field(FieldCondition::new_range(
+            JsonPath::new("year"),
+            Range {
+                lt: None,
+                gt: None,
+                gte: Some(OrderedFloat(2024.0)),
+                lte: None,
+            },
+        ))))
+        .validate()
+        .unwrap_err();
+
+        // Non-field conditions are rejected.
+        corpus_params(Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: JsonPath::new("tenant"),
+            },
+        })))
+        .validate()
+        .unwrap_err();
+        corpus_params(Filter::new_must(Condition::Filter(Filter::new_must(
+            match_condition("tenant", "acme"),
+        ))))
+        .validate()
+        .unwrap_err();
     }
 
     #[test]

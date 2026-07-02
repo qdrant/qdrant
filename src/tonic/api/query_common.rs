@@ -97,7 +97,7 @@ pub async fn search(
     let search_request = CoreSearchRequest {
         query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
         filter: filter.map(|f| f.try_into()).transpose()?,
-        params: params.map(SearchParams::into),
+        params: params.map(SearchParams::try_into).transpose()?,
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,

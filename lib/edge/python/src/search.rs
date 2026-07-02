@@ -61,7 +61,7 @@ impl PySearchRequest {
 
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
-        self.0.params.map(PySearchParams)
+        self.0.params.clone().map(PySearchParams)
     }
 
     #[getter]
@@ -111,7 +111,7 @@ impl PySearchRequest {
 }
 
 #[pyclass(name = "SearchParams", from_py_object)]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Clone, Debug, Into)]
 pub struct PySearchParams(pub SearchParams);
 
 #[pyclass_repr]
@@ -124,6 +124,7 @@ impl PySearchParams {
         quantization = None,
         indexed_only = false,
         acorn = None,
+        idf = None,
     ))]
     pub fn new(
         hnsw_ef: Option<usize>,
@@ -131,6 +132,7 @@ impl PySearchParams {
         quantization: Option<PyQuantizationSearchParams>,
         indexed_only: bool,
         acorn: Option<PyAcornSearchParams>,
+        idf: Option<PyIdfParams>,
     ) -> Self {
         Self(SearchParams {
             hnsw_ef,
@@ -138,6 +140,7 @@ impl PySearchParams {
             quantization: quantization.map(QuantizationSearchParams::from),
             indexed_only,
             acorn: acorn.map(AcornSearchParams::from),
+            idf: idf.map(IdfParams::from),
         })
     }
 
@@ -166,6 +169,11 @@ impl PySearchParams {
         self.0.acorn.map(PyAcornSearchParams)
     }
 
+    #[getter]
+    pub fn idf(&self) -> Option<PyIdfParams> {
+        self.0.idf.clone().map(PyIdfParams)
+    }
+
     pub fn __repr__(&self) -> String {
         self.repr()
     }
@@ -180,7 +188,37 @@ impl PySearchParams {
             quantization: _,
             indexed_only: _,
             acorn: _,
+            idf: _,
         } = self.0;
+    }
+}
+
+#[pyclass(name = "IdfParams", from_py_object)]
+#[derive(Clone, Debug, Into)]
+pub struct PyIdfParams(pub IdfParams);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyIdfParams {
+    #[new]
+    #[pyo3(signature = (corpus = None))]
+    pub fn new(corpus: Option<PyFilter>) -> Self {
+        Self(match corpus {
+            // No corpus filter: collection-wide (global) statistics.
+            None => IdfParams::Scope(IdfScope::Global),
+            Some(corpus) => IdfParams::Corpus(IdfCorpusParams {
+                corpus: Filter::from(corpus),
+            }),
+        })
+    }
+
+    #[getter]
+    pub fn corpus(&self) -> Option<&PyFilter> {
+        self.0.corpus().map(PyFilter::wrap_ref)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
     }
 }
 

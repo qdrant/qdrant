@@ -5841,9 +5841,22 @@ pub struct AcornSearchParams {
     #[validate(range(min = 0.0, max = 1.0))]
     pub max_selectivity: ::core::option::Option<f64>,
 }
+/// Population over which sparse vector IDF statistics are computed for scoring - the IDF corpus.
+/// Only applicable to sparse vectors with the IDF modifier enabled.
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IdfParams {
+    /// Filter defining the corpus: IDF statistics are computed over the points matching this filter.
+    /// Restricted to a conjunction (`must`) of `match` conditions on payload fields.
+    /// If unset, statistics are collection-wide (global) - same as omitting `idf` entirely.
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub corpus: ::core::option::Option<Filter>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
     /// Larger the value - more accurate the result, more time required for search.
@@ -5866,6 +5879,11 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "5")]
     #[validate(nested)]
     pub acorn: ::core::option::Option<AcornSearchParams>,
+    /// Which population sparse vector IDF statistics are computed over.
+    /// If unset, statistics are collection-wide (global).
+    #[prost(message, optional, tag = "6")]
+    #[validate(nested)]
+    pub idf: ::core::option::Option<IdfParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
