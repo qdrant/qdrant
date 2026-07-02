@@ -25,12 +25,10 @@ pub(crate) fn create_segment_id_tracker(
     deferred_internal_id: Option<PointOffsetType>,
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     let id_tracker = match format {
-        IdTrackerFormat::Mutable => {
-            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
-                segment_path,
-                deferred_internal_id,
-            )?)
-        }
+        IdTrackerFormat::Mutable => IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+            segment_path,
+            deferred_internal_id,
+        )?),
         IdTrackerFormat::Immutable => {
             IdTrackerEnum::ImmutableIdTracker(ImmutableIdTracker::open(&MmapFs, segment_path)?)
         }

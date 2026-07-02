@@ -164,7 +164,6 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     pub(crate) fn deleted_full_materialized(&self) -> bool {
         self.deleted_full.get().is_some()
     }
-
 }
 
 impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
@@ -178,7 +177,10 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
     /// read-by-id stays lazy. Out-of-range offsets are treated as deleted; storage
     /// errors propagate.
     fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.deleted_file.get_bit(u64::from(offset))?.unwrap_or(true))
+        Ok(self
+            .deleted_file
+            .get_bit(u64::from(offset))?
+            .unwrap_or(true))
     }
 
     fn deleted_bitslice(&self) -> OperationResult<&BitSlice> {

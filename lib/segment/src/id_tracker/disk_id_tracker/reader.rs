@@ -128,10 +128,12 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         let bs = u64::from(self.e2i_header.num_block_size);
         let start = block * bs;
         let count = (self.e2i_header.num_count - start).min(bs);
-        let bytes = self.e2i.read::<common::generic_consts::Random, u8>(ReadRange {
-            byte_offset: self.e2i_header.num_run_offset + start * NUM_ENTRY_SIZE,
-            length: count * NUM_ENTRY_SIZE,
-        })?;
+        let bytes = self
+            .e2i
+            .read::<common::generic_consts::Random, u8>(ReadRange {
+                byte_offset: self.e2i_header.num_run_offset + start * NUM_ENTRY_SIZE,
+                length: count * NUM_ENTRY_SIZE,
+            })?;
         Ok(decode_num_block(bytes.as_ref()))
     }
 
@@ -139,10 +141,12 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         let bs = u64::from(self.e2i_header.uuid_block_size);
         let start = block * bs;
         let count = (self.e2i_header.uuid_count - start).min(bs);
-        let bytes = self.e2i.read::<common::generic_consts::Random, u8>(ReadRange {
-            byte_offset: self.e2i_header.uuid_run_offset + start * UUID_ENTRY_SIZE,
-            length: count * UUID_ENTRY_SIZE,
-        })?;
+        let bytes = self
+            .e2i
+            .read::<common::generic_consts::Random, u8>(ReadRange {
+                byte_offset: self.e2i_header.uuid_run_offset + start * UUID_ENTRY_SIZE,
+                length: count * UUID_ENTRY_SIZE,
+            })?;
         Ok(decode_uuid_block(bytes.as_ref()))
     }
 
@@ -196,14 +200,18 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 
     fn read_external_id(&self, offset: PointOffsetType) -> OperationResult<PointIdType> {
         let data_offset = self.i2e_header.data_offset + u64::from(offset) * 16;
-        let data = self.i2e.read::<common::generic_consts::Random, u8>(ReadRange {
-            byte_offset: data_offset,
-            length: 16,
-        })?;
-        let is_uuid_byte = self.i2e.read::<common::generic_consts::Random, u8>(ReadRange {
-            byte_offset: self.i2e_header.is_uuid_offset + u64::from(offset) / 8,
-            length: 1,
-        })?;
+        let data = self
+            .i2e
+            .read::<common::generic_consts::Random, u8>(ReadRange {
+                byte_offset: data_offset,
+                length: 16,
+            })?;
+        let is_uuid_byte = self
+            .i2e
+            .read::<common::generic_consts::Random, u8>(ReadRange {
+                byte_offset: self.i2e_header.is_uuid_offset + u64::from(offset) / 8,
+                length: 1,
+            })?;
         Ok(I2eHeader::decode_slot(
             offset,
             data.as_ref(),

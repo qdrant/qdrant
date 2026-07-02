@@ -38,7 +38,11 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
             advice: AdviceSetting::Global,
         };
         if fs
-            .open(mappings_path(segment_path), probe_options, Default::default())
+            .open(
+                mappings_path(segment_path),
+                probe_options,
+                Default::default(),
+            )
             .ok_not_found()?
             .is_none()
         {

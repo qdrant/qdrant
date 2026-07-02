@@ -20,7 +20,10 @@ fn make_data(seed: u64) -> (Vec<SeqNumberType>, CompressedPointMappings) {
     (versions, CompressedPointMappings::from_mappings(mappings))
 }
 
-fn build_immutable(versions: &[SeqNumberType], mappings: CompressedPointMappings) -> ImmutableIdTracker<MmapFile> {
+fn build_immutable(
+    versions: &[SeqNumberType],
+    mappings: CompressedPointMappings,
+) -> ImmutableIdTracker<MmapFile> {
     let dir = Builder::new().prefix("imm").tempdir().unwrap();
     let tracker = ImmutableIdTracker::new(&MmapFs, dir.path(), versions, mappings).unwrap();
     // Keep the dir alive for the tracker's lifetime by leaking it (test-only).
@@ -32,7 +35,10 @@ fn build_immutable(versions: &[SeqNumberType], mappings: CompressedPointMappings
 /// same data.
 fn assert_read_parity<A: IdTrackerRead, B: IdTrackerRead>(reference: &A, candidate: &B) {
     assert_eq!(reference.total_point_count(), candidate.total_point_count());
-    assert_eq!(reference.deleted_point_count(), candidate.deleted_point_count());
+    assert_eq!(
+        reference.deleted_point_count(),
+        candidate.deleted_point_count()
+    );
     assert_eq!(
         reference.available_point_count(),
         candidate.available_point_count()
@@ -123,9 +129,10 @@ fn detect_and_load_selects_disk_format() {
 
     // A disk-format segment.
     let disk_dir = Builder::new().prefix("disk").tempdir().unwrap();
-    let _disk = DiskIdTracker::<MmapFile>::new(&MmapFs, disk_dir.path(), &versions, mappings).unwrap();
-    let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, disk_dir.path(), None)
-        .unwrap();
+    let _disk =
+        DiskIdTracker::<MmapFile>::new(&MmapFs, disk_dir.path(), &versions, mappings).unwrap();
+    let loaded =
+        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, disk_dir.path(), None).unwrap();
     assert_eq!(loaded.name(), "read-only disk id tracker");
     assert_read_parity(&immutable, &loaded);
 
@@ -134,14 +141,15 @@ fn detect_and_load_selects_disk_format() {
     let imm_dir = Builder::new().prefix("imm").tempdir().unwrap();
     let _imm = ImmutableIdTracker::<MmapFile>::new(&MmapFs, imm_dir.path(), &versions2, mappings2)
         .unwrap();
-    let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, imm_dir.path(), None)
-        .unwrap();
+    let loaded =
+        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, imm_dir.path(), None).unwrap();
     assert_eq!(loaded.name(), "read-only immutable id tracker");
 
     // An empty segment (no mapping files) falls back to the appendable reader.
     let empty_dir = Builder::new().prefix("empty").tempdir().unwrap();
     let loaded =
-        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, empty_dir.path(), None).unwrap();
+        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, empty_dir.path(), None)
+            .unwrap();
     assert_eq!(loaded.name(), "read-only appendable id tracker");
 }
 
@@ -160,7 +168,11 @@ fn iter_random_yields_all_live_points() {
     // A random-order full drain must cover exactly the live set, once each.
     let random: Vec<(PointIdType, u32)> = disk.point_mappings().iter_random_visible().collect();
     let random_set: HashSet<(PointIdType, u32)> = random.iter().copied().collect();
-    assert_eq!(random.len(), random_set.len(), "iter_random yielded duplicates");
+    assert_eq!(
+        random.len(),
+        random_set.len(),
+        "iter_random yielded duplicates"
+    );
     assert_eq!(random_set, expected, "iter_random must cover the live set");
     // It should genuinely be reordered, not the sorted iter_from sequence.
     let ordered: Vec<(PointIdType, u32)> = disk.point_mappings().iter_from(None).collect();
@@ -172,7 +184,8 @@ fn read_by_id_does_not_materialize_deleted_set() {
     let (versions, mappings) = make_data(4);
     let dir = Builder::new().prefix("disk").tempdir().unwrap();
     let live: Vec<_> = {
-        let disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+        let disk =
+            DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
         disk.point_mappings().iter_from(None).collect()
     };
 

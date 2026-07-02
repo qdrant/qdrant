@@ -32,9 +32,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.internal_version(internal_id)
             }
-            IdTrackerEnum::DiskIdTracker(id_tracker) => {
-                id_tracker.internal_version(internal_id)
-            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
         }
     }
 
@@ -115,9 +113,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.is_deleted_point(internal_id)
             }
-            IdTrackerEnum::DiskIdTracker(id_tracker) => {
-                id_tracker.is_deleted_point(internal_id)
-            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.is_deleted_point(internal_id),
         }
     }
 

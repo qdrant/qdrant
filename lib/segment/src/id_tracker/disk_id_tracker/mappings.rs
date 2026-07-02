@@ -48,7 +48,10 @@ pub trait DiskMappingsSource {
     /// A borrowed `(reader, deleted)` view for ordered/random iteration. Fails if
     /// the deleted set cannot be materialized.
     fn mappings_ref(&self) -> OperationResult<DiskMappingsRef<'_, Self::Backend>> {
-        Ok(DiskMappingsRef::new(self.mapping_reader(), self.deleted_bitslice()?))
+        Ok(DiskMappingsRef::new(
+            self.mapping_reader(),
+            self.deleted_bitslice()?,
+        ))
     }
 
     /// A `(reader, deleted)` view for the infallible `IdTrackerRead` boundary: on
@@ -62,7 +65,10 @@ pub trait DiskMappingsSource {
     }
 
     /// External→internal, excluding deleted points. Storage errors propagate.
-    fn resolve_internal(&self, external_id: PointIdType) -> OperationResult<Option<PointOffsetType>> {
+    fn resolve_internal(
+        &self,
+        external_id: PointIdType,
+    ) -> OperationResult<Option<PointOffsetType>> {
         let Some(offset) = self.mapping_reader().lookup(external_id)? else {
             return Ok(None);
         };
@@ -129,7 +135,11 @@ impl<'a, S: UniversalRead> DiskMappingsRef<'a, S> {
         self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        Box::new(self.reader.iter_from(external_id).filter(live_filter(self.deleted)))
+        Box::new(
+            self.reader
+                .iter_from(external_id)
+                .filter(live_filter(self.deleted)),
+        )
     }
 
     pub fn iter_random(self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {

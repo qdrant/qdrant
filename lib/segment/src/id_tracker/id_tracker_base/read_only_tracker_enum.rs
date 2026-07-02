@@ -141,9 +141,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.deleted_point_bitslice(),
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.deleted_point_bitslice(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                id_tracker.deleted_point_bitslice()
-            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.deleted_point_bitslice(),
         }
     }
 
@@ -175,9 +173,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.iter_internal_versions(),
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.iter_internal_versions(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                id_tracker.iter_internal_versions()
-            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.iter_internal_versions(),
         }
     }
 
@@ -193,9 +189,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.deferred_deleted_count(),
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.deferred_deleted_count(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                id_tracker.deferred_deleted_count()
-            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.deferred_deleted_count(),
         }
     }
 }

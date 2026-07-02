@@ -103,7 +103,10 @@ fn pack_bits(bits: &BitSlice) -> Vec<u8> {
 ///
 /// Layout: header, then `total` little-endian `u128` values in offset order,
 /// then the packed `is_uuid` bit array (`ceil(total / 8)` bytes).
-pub fn store_i2e<W: Write>(mappings: &CompressedPointMappings, mut writer: W) -> OperationResult<()> {
+pub fn store_i2e<W: Write>(
+    mappings: &CompressedPointMappings,
+    mut writer: W,
+) -> OperationResult<()> {
     let total = mappings.total_point_count();
 
     writer.write_u64::<Endian>(I2E_MAGIC)?;
@@ -128,7 +131,10 @@ pub fn store_i2e<W: Write>(mappings: &CompressedPointMappings, mut writer: W) ->
 /// Runs are taken from `mappings.iter_from(None)`, which yields live points in
 /// numeric-then-UUID order, each run internally sorted ascending — exactly the
 /// on-disk run order. Deleted-at-build points are already excluded there.
-pub fn store_e2i<W: Write>(mappings: &CompressedPointMappings, mut writer: W) -> OperationResult<()> {
+pub fn store_e2i<W: Write>(
+    mappings: &CompressedPointMappings,
+    mut writer: W,
+) -> OperationResult<()> {
     let mut num: Vec<(u64, PointOffsetType)> = Vec::new();
     let mut uuid: Vec<(u128, PointOffsetType)> = Vec::new();
     for (external_id, offset) in mappings.iter_from(None) {
@@ -240,7 +246,8 @@ pub struct E2iHeader {
 
 impl E2iHeader {
     pub fn num_blocks(&self) -> u64 {
-        self.num_count.div_ceil(u64::from(self.num_block_size).max(1))
+        self.num_count
+            .div_ceil(u64::from(self.num_block_size).max(1))
     }
 
     pub fn uuid_blocks(&self) -> u64 {

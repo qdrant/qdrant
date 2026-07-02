@@ -38,8 +38,8 @@ use fs_err::File;
 
 pub use self::mappings::DiskMappingsSource;
 use self::mappings::log_lookup_err;
-pub use self::read_only::ReadOnlyDiskIdTracker;
 use self::on_disk_format::{e2i_path, i2e_path, store_e2i, store_i2e};
+pub use self::read_only::ReadOnlyDiskIdTracker;
 use self::reader::DiskMappingReader;
 use crate::common::Flusher;
 use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
@@ -161,7 +161,9 @@ where
         let deleted_filepath = deleted_path(path);
         create_and_ensure_length(
             &deleted_filepath,
-            total.div_ceil(u8::BITS as usize).next_multiple_of(size_of::<u64>()),
+            total
+                .div_ceil(u8::BITS as usize)
+                .next_multiple_of(size_of::<u64>()),
         )?;
         let mut deleted_storage = StoredBitSlice::open(
             fs,
@@ -191,7 +193,10 @@ where
         // Versions file: one `u64` per point.
         let version_filepath = version_mapping_path(path);
         let versions_count = internal_to_version.len().max(total);
-        create_and_ensure_length(&version_filepath, versions_count * size_of::<SeqNumberType>())?;
+        create_and_ensure_length(
+            &version_filepath,
+            versions_count * size_of::<SeqNumberType>(),
+        )?;
         let mut internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             fs,
             &version_filepath,
@@ -381,7 +386,7 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
     fn clear_cache(&self) -> OperationResult<()> {
         let Self {
             path,
-            reader: _, // i2e/e2i mmap pages dropped via `mapping_files` below
+            reader: _,  // i2e/e2i mmap pages dropped via `mapping_files` below
             deleted: _, // kept in RAM
             deleted_wrapper,
             internal_to_version: _, // kept in RAM
