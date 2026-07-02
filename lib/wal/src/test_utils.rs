@@ -79,11 +79,16 @@ impl Iterator for EntryGenerator {
 
 impl fmt::Debug for EntryGenerator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "EntryGenerator {{ seed: {}, remaining_size: {} }}",
-            self.seed, self.remaining_size
-        )
+        let Self {
+            seed,
+            remaining_size,
+            rng: _,
+            dist: _,
+        } = self;
+        f.debug_struct("EntryGenerator")
+            .field("seed", seed)
+            .field("remaining_size", remaining_size)
+            .finish_non_exhaustive()
     }
 }
 

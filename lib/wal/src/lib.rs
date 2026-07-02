@@ -557,19 +557,24 @@ impl Wal {
 
 impl fmt::Debug for Wal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let start_index = self
-            .closed_segments
+        let Self {
+            open_segment,
+            closed_segments,
+            path,
+            creator: _,
+            retain_closed: _,
+            dir: _,
+            flush: _,
+        } = self;
+        let start_index = closed_segments
             .first()
             .map_or(0, |segment| segment.start_index);
-        let end_index = self.open_segment_start_index() + self.open_segment.segment.len() as u64;
-        write!(
-            f,
-            "Wal {{ path: {:?}, segment-count: {}, entries: [{}, {})  }}",
-            &self.path,
-            self.closed_segments.len() + 1,
-            start_index,
-            end_index
-        )
+        let end_index = self.open_segment_start_index() + open_segment.segment.len() as u64;
+        f.debug_struct("Wal")
+            .field("path", path)
+            .field("segment-count", &(closed_segments.len() + 1))
+            .field("entries", &format_args!("[{start_index}, {end_index})"))
+            .finish_non_exhaustive()
     }
 }
 

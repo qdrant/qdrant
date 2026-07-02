@@ -70,11 +70,16 @@ pub struct DynamicStoredFlags<S> {
 
 impl<S: fmt::Debug> fmt::Debug for DynamicStoredFlags<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DynamicMmapFlags")
-            .field("flags", &self.flags)
-            .field("status", &self.status)
-            .field("directory", &self.directory)
-            .finish_non_exhaustive()
+        let Self {
+            flags,
+            status,
+            directory,
+        } = self;
+        f.debug_struct("DynamicStoredFlags")
+            .field("flags", flags)
+            .field("status", status)
+            .field("directory", directory)
+            .finish()
     }
 }
 

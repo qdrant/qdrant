@@ -51,9 +51,8 @@ impl<S: UniversalRead> Deref for OneshotFile<S> {
 
 impl<S: UniversalRead> fmt::Debug for OneshotFile<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OneshotFile")
-            .field("inner", &self.inner)
-            .finish()
+        let Self { inner } = self;
+        f.debug_struct("OneshotFile").field("inner", inner).finish()
     }
 }
 

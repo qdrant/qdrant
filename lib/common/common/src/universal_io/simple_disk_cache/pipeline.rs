@@ -26,9 +26,14 @@ struct RemoteMeta<File, U> {
 
 impl<File, U: fmt::Debug> fmt::Debug for RemoteMeta<File, U> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            scheduled_read,
+            user_data,
+            file: _,
+        } = self;
         f.debug_struct("RemoteMeta")
-            .field("scheduled_read", &self.scheduled_read)
-            .field("user_data", &self.user_data)
+            .field("scheduled_read", scheduled_read)
+            .field("user_data", user_data)
             .finish_non_exhaustive()
     }
 }

@@ -65,9 +65,14 @@ struct DeferredAction {
 
 impl std::fmt::Debug for DeferredAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            ready_at,
+            ack_pin,
+            action: _,
+        } = self;
         f.debug_struct("DeferredAction")
-            .field("ready_at", &self.ready_at)
-            .field("ack_pin", &self.ack_pin)
+            .field("ready_at", ready_at)
+            .field("ack_pin", ack_pin)
             .finish_non_exhaustive()
     }
 }

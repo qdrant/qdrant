@@ -72,12 +72,21 @@ where
     R: UniversalRead,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            remote_fs,
+            remote_path,
+            open_options,
+            local_path,
+            state,
+            remote_extra: _,
+            init_lock: _,
+        } = self;
         f.debug_struct("DiskCache")
-            .field("remote_fs", &self.remote_fs)
-            .field("remote_path", &self.remote_path)
-            .field("open_options", &self.open_options)
-            .field("local_path", &self.local_path)
-            .field("state", &self.state)
+            .field("remote_fs", remote_fs)
+            .field("remote_path", remote_path)
+            .field("open_options", open_options)
+            .field("local_path", local_path)
+            .field("state", state)
             .finish_non_exhaustive()
     }
 }

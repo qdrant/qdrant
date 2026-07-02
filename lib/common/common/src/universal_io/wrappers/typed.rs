@@ -27,8 +27,9 @@ pub struct TypedStorage<S, T> {
 
 impl<S: fmt::Debug, T> fmt::Debug for TypedStorage<S, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { inner, _phantom: _ } = self;
         f.debug_struct("TypedStorage")
-            .field("inner", &self.inner)
+            .field("inner", inner)
             .finish()
     }
 }

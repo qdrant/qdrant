@@ -31,7 +31,8 @@ pub struct ReadOnlyFs<F>(F);
 
 impl<F: fmt::Debug> fmt::Debug for ReadOnlyFs<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ReadOnlyFs").field(&self.0).finish()
+        let Self(inner) = self;
+        f.debug_tuple("ReadOnlyFs").field(inner).finish()
     }
 }
 

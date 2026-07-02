@@ -41,8 +41,12 @@ struct Entry<'a, U: UserData, K: Key + ?Sized> {
 // buffers and key references that are not `Debug`.
 impl<U: std::fmt::Debug + UserData, K: Key + ?Sized> std::fmt::Debug for Entry<'_, U, K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            user_data,
+            state: _,
+        } = self;
         f.debug_struct("Entry")
-            .field("user_data", &self.user_data)
+            .field("user_data", user_data)
             .finish_non_exhaustive()
     }
 }
