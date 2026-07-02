@@ -15,6 +15,7 @@ use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilderParameters;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
     MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
+use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
 use crate::vector_storage::{MultiVectorStorage, VectorStorageRead};
 
 // Multivector shader binding is after vectot data and quantization data bindings.
@@ -114,7 +115,7 @@ impl GpuMultivectors {
     /// offsets here.
     pub fn new_turbo_multi(
         device: Arc<gpu::Device>,
-        vector_storage: &crate::vector_storage::turbo::multi::TurboMultiVectorStorage,
+        vector_storage: &TurboMultiVectorStorage,
     ) -> OperationResult<GpuMultivectors> {
         Self::new_impl(
             device,

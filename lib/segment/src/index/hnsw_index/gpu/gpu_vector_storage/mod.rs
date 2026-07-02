@@ -591,6 +591,13 @@ impl GpuVectorStorage {
         let distance = vector_storage.distance();
         let dim = vector_storage.vector_dim();
 
+        // The TurboQuant rotation is orthogonal, so it preserves Dot/Cosine/L2
+        // pairwise distances — the only distances the GPU graph builder computes.
+        // Keeping the vectors rotated therefore yields an equivalent graph while
+        // skipping the per-vector inverse rotation on the CPU. Manhattan (L1) is
+        // not rotation-invariant, so it must be rotated back.
+        let keep_rotated = distance != Distance::Manhattan;
+
         if force_half_precision && device.has_half_precision() {
             Self::new_typed::<VectorElementTypeHalf>(
                 device,
@@ -600,7 +607,8 @@ impl GpuVectorStorage {
                 dim,
                 (0..count).map(|id| {
                     VectorElementTypeHalf::slice_from_float_cow(Cow::Owned(
-                        vector_storage.get_dense_for_requantization(id as PointOffsetType, false),
+                        vector_storage
+                            .get_dense_for_requantization(id as PointOffsetType, keep_rotated),
                     ))
                 }),
                 None,
@@ -616,7 +624,8 @@ impl GpuVectorStorage {
                 dim,
                 (0..count).map(|id| {
                     Cow::Owned(
-                        vector_storage.get_dense_for_requantization(id as PointOffsetType, false),
+                        vector_storage
+                            .get_dense_for_requantization(id as PointOffsetType, keep_rotated),
                     )
                 }),
                 None,
@@ -643,6 +652,11 @@ impl GpuVectorStorage {
             .sum();
         let multivectors = GpuMultivectors::new_turbo_multi(device.clone(), vector_storage)?;
 
+        // See [`Self::new_dense_tq`]: the rotation is orthogonal, so keeping the
+        // inner vectors rotated preserves Dot/Cosine/L2 and skips the CPU-side
+        // inverse rotation; only Manhattan (L1) must be rotated back.
+        let keep_rotated = distance != Distance::Manhattan;
+
         if force_half_precision && device.has_half_precision() {
             Self::new_typed::<VectorElementTypeHalf>(
                 device,
@@ -652,7 +666,7 @@ impl GpuVectorStorage {
                 dim,
                 (0..point_count).flat_map(|id| {
                     vector_storage
-                        .get_inner_dense_for_requantization(id as PointOffsetType, false)
+                        .get_inner_dense_for_requantization(id as PointOffsetType, keep_rotated)
                         .into_iter()
                         .map(|inner| VectorElementTypeHalf::slice_from_float_cow(Cow::Owned(inner)))
                 }),
@@ -669,7 +683,7 @@ impl GpuVectorStorage {
                 dim,
                 (0..point_count).flat_map(|id| {
                     vector_storage
-                        .get_inner_dense_for_requantization(id as PointOffsetType, false)
+                        .get_inner_dense_for_requantization(id as PointOffsetType, keep_rotated)
                         .into_iter()
                         .map(Cow::Owned)
                 }),

@@ -634,7 +634,12 @@ fn test_gpu_vector_storage_turbo_dense(
             .unwrap();
     }
 
-    // Reference plain-`f32` storage with the dequantized vectors the GPU uploads.
+    // Reference plain-`f32` storage holding the vectors in *original* (rotated-back)
+    // space. The production path keeps them rotated for the rotation-invariant
+    // metrics (everything but Manhattan), but the source's Unpadded rotation is
+    // orthogonal and leaves the padding at zero — so the truncated read-back is
+    // lossless and pairwise Dot/Cosine/L2 scores are identical. Comparing against
+    // original space here is what actually verifies that invariance.
     let mut reference = new_volatile_dense_vector_storage(dim, distance);
     for i in 0..num_vectors {
         let dequantized = turbo.get_dense_for_requantization(i as PointOffsetType, false);
@@ -720,7 +725,9 @@ fn test_gpu_vector_storage_turbo_multi(
             .unwrap();
     }
 
-    // Reference multivector storage with the dequantized inner vectors.
+    // Reference multivector storage with the inner vectors in original space (see
+    // the dense test): the Unpadded rotation is lossless on truncation, so keeping
+    // the production vectors rotated yields identical Dot/Cosine/L2 scores.
     let mut reference = new_volatile_multi_dense_vector_storage(dim, distance, multi_config);
     for i in 0..num_points {
         let inner = turbo.get_inner_dense_for_requantization(i as PointOffsetType, false);
