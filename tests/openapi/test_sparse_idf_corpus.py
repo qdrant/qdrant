@@ -87,7 +87,7 @@ def corpus_collection_setup(collection_name):
                             "values": [1.0] * len(dims),
                         },
                     },
-                    "payload": {"tenant": tenant},
+                    "payload": {"tenant": tenant, "idx": idx},
                 }
                 for idx, (tenant, dims) in enumerate(POINTS)
             ]
@@ -209,35 +209,42 @@ def search_expecting_error(collection_name, vector, params, expected_status):
     return response.json()['status']['error']
 
 
-def test_corpus_grammar_is_restricted(collection_name):
-    sparse_query = {"name": SPARSE_VECTOR_NAME, "vector": QUERY}
+def test_corpus_accepts_any_filter(collection_name):
+    # The corpus is a regular filter: any filter shape the search API accepts
+    # works, not just `match` conjunctions.
 
-    # Only `must` clauses are allowed.
-    error = search_expecting_error(
+    # `should` over both tenants matches every point — same statistics as
+    # global.
+    global_scores = search(collection_name)
+    should_scores = search(
         collection_name,
-        sparse_query,
-        {"idf": {"corpus": {"should": [{"key": "tenant", "match": {"value": "a"}}]}}},
-        expected_status=422,
+        params={
+            "idf": {
+                "corpus": {
+                    "should": [
+                        {"key": "tenant", "match": {"value": "a"}},
+                        {"key": "tenant", "match": {"value": "b"}},
+                    ]
+                }
+            }
+        },
     )
-    assert "must" in error
+    assert should_scores == global_scores
 
-    # Only `match` conditions are allowed.
-    error = search_expecting_error(
+    # A range corpus over `idx < 2` selects points {0, 1} — the same
+    # population as tenant a, so the same statistics: N = 2, df = [2, 1, 0].
+    range_scores = search(
         collection_name,
-        sparse_query,
-        {"idf": {"corpus": {"must": [{"key": "dim", "range": {"gte": 0}}]}}},
-        expected_status=422,
+        params={"idf": {"corpus": {"must": [{"key": "idx", "range": {"lt": 2}}]}}},
     )
-    assert "match" in error
+    tenant_a_scores = search(
+        collection_name,
+        params={"idf": {"corpus": tenant_filter("a")}},
+    )
+    assert range_scores == tenant_a_scores
 
-    # An empty corpus filter is rejected.
-    error = search_expecting_error(
-        collection_name,
-        sparse_query,
-        {"idf": {"corpus": {"must": []}}},
-        expected_status=422,
-    )
-    assert "at least one condition" in error
+    idf = [expected_idf(2, 2), expected_idf(2, 1), expected_idf(2, 0)]
+    assert range_scores[2] == pytest.approx(idf[0] + idf[1] + idf[2])
 
 
 def test_idf_params_require_idf_modifier(collection_name):
