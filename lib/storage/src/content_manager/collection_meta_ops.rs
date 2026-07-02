@@ -25,7 +25,7 @@ use validator::Validate;
 
 // Re-export staging types when the feature is enabled
 #[cfg(feature = "staging")]
-pub use super::staging::TestSlowDown;
+pub use super::staging::{TestSlowDown, TestTransientError};
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
@@ -472,6 +472,9 @@ pub enum CollectionMetaOperations {
     /// Introduce artificial delay to a specific peer node
     #[cfg(feature = "staging")]
     TestSlowDown(TestSlowDown),
+    /// Simulate a transient consensus failure on a specific peer node
+    #[cfg(feature = "staging")]
+    TestTransientError(TestTransientError),
 }
 
 /// Use config of the existing collection to generate a create collection operation

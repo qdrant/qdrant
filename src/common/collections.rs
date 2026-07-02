@@ -9,7 +9,7 @@ use api::rest::models::{
 };
 use collection::config::ShardingMethod;
 #[cfg(feature = "staging")]
-use collection::operations::cluster_ops::TestSlowDownOperation;
+use collection::operations::cluster_ops::{TestSlowDownOperation, TestTransientErrorOperation};
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
@@ -33,7 +33,7 @@ use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 #[cfg(feature = "staging")]
-use storage::content_manager::collection_meta_ops::TestSlowDown;
+use storage::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
     SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
@@ -966,6 +966,30 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::TestSlowDown(TestSlowDown {
                         peer_id: test_slow_down.peer_id,
                         duration_ms,
+                    }),
+                    auth,
+                    wait_timeout,
+                )
+                .await
+        }
+
+        #[cfg(feature = "staging")]
+        ClusterOperations::TestTransientError(TestTransientErrorOperation {
+            test_transient_error,
+        }) => {
+            if let Some(peer_id) = test_transient_error.peer_id {
+                validate_peer_exists(peer_id)?;
+            }
+
+            // Convert probability (f64, 0.0-1.0) to percent (u8, 0-100)
+            let failure_probability_percent =
+                (test_transient_error.failure_probability * 100.0) as u8;
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TestTransientError(TestTransientError {
+                        peer_id: test_transient_error.peer_id,
+                        failure_probability_percent,
                     }),
                     auth,
                     wait_timeout,
