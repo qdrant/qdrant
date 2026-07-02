@@ -579,8 +579,10 @@ impl GpuVectorStorage {
     }
 
     /// Build a GPU storage from a TurboQuant dense storage by dequantizing each
-    /// encoded vector back to float. Uses half precision when forced and the
-    /// device supports it, full `f32` otherwise.
+    /// encoded vector back to float. Always uses half precision when the device
+    /// supports it, regardless of `force_half_precision`: the 4-bit TQ
+    /// quantization error dwarfs f16 rounding, so `f32` would only waste GPU
+    /// memory and bandwidth. Falls back to `f32` on devices without f16.
     fn new_dense_tq(
         device: Arc<gpu::Device>,
         vector_storage: &TurboVectorStorage,

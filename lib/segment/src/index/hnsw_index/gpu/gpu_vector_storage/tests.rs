@@ -655,12 +655,15 @@ fn test_gpu_vector_storage_turbo_dense(
     let turbo_storage = VectorStorageEnum::DenseTurbo(Box::new(turbo));
 
     let instance = gpu::GPU_TEST_INSTANCE.clone();
+    // `skip_half_precision = true`: the TQ path always picks f16 when the
+    // device supports it, so disable f16 to keep both storages on `f32` — the
+    // only difference under test is the dequantize-and-upload path, not f16
+    // rounding. The f16 datatype selection itself is covered by
+    // `test_gpu_vector_storage_tq_falls_back_to_half_precision`.
     let device =
-        gpu::Device::new_with_params(instance.clone(), &instance.physical_devices()[0], 0, false)
+        gpu::Device::new_with_params(instance.clone(), &instance.physical_devices()[0], 0, true)
             .unwrap();
 
-    // `force_half_precision = false` keeps both storages on `f32` so the only
-    // difference under test is the dequantize-and-upload path, not f16 rounding.
     let gpu_turbo = GpuVectorStorage::new(
         device.clone(),
         &turbo_storage,
@@ -745,8 +748,10 @@ fn test_gpu_vector_storage_turbo_multi(
     let turbo_storage = VectorStorageEnum::MultiDenseTurbo(Box::new(turbo));
 
     let instance = gpu::GPU_TEST_INSTANCE.clone();
+    // `skip_half_precision = true` — see the dense test: keep both storages on
+    // `f32` so the scores compare exactly, without f16 rounding.
     let device =
-        gpu::Device::new_with_params(instance.clone(), &instance.physical_devices()[0], 0, false)
+        gpu::Device::new_with_params(instance.clone(), &instance.physical_devices()[0], 0, true)
             .unwrap();
 
     let gpu_turbo = GpuVectorStorage::new(

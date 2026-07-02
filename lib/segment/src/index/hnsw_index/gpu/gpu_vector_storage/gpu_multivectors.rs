@@ -87,23 +87,16 @@ impl GpuMultivectors {
     ) -> OperationResult<GpuMultivectors> {
         Self::new_impl(
             device,
-            (0..vector_storage.total_vector_count())
-                // map ID to count of vectors in multivector
-                .map(|id| {
-                    vector_storage
-                        .get_multi::<Random>(id as PointOffsetType)
-                        .as_ref()
-                        .vectors_count()
-                })
-                // Map count of vectors to start and count of vectors in multivector.
-                .scan(0, |acc, count| {
-                    let start = *acc;
-                    *acc += count;
-                    Some(GpuMultivectorOffset {
-                        start: start as u32,
-                        count: count as u32,
-                    })
-                }),
+            Self::counts_to_offsets(
+                (0..vector_storage.total_vector_count())
+                    // map ID to count of vectors in multivector
+                    .map(|id| {
+                        vector_storage
+                            .get_multi::<Random>(id as PointOffsetType)
+                            .as_ref()
+                            .vectors_count()
+                    }),
+            ),
         )
     }
 
@@ -119,17 +112,26 @@ impl GpuMultivectors {
     ) -> OperationResult<GpuMultivectors> {
         Self::new_impl(
             device,
-            (0..vector_storage.total_vector_count())
-                .map(|id| vector_storage.point_inner_vectors_count(id as PointOffsetType))
-                .scan(0, |acc, count| {
-                    let start = *acc;
-                    *acc += count;
-                    Some(GpuMultivectorOffset {
-                        start: start as u32,
-                        count: count as u32,
-                    })
-                }),
+            Self::counts_to_offsets(
+                (0..vector_storage.total_vector_count())
+                    .map(|id| vector_storage.point_inner_vectors_count(id as PointOffsetType)),
+            ),
         )
+    }
+
+    /// Map per-point inner vector counts to start/count offsets into the
+    /// flattened dense vectors buffer.
+    fn counts_to_offsets(
+        counts: impl Iterator<Item = usize> + Clone,
+    ) -> impl Iterator<Item = GpuMultivectorOffset> + Clone {
+        counts.scan(0, |acc, count| {
+            let start = *acc;
+            *acc += count;
+            Some(GpuMultivectorOffset {
+                start: start as u32,
+                count: count as u32,
+            })
+        })
     }
 
     /// Adds multivector data to the descriptor set builder.
