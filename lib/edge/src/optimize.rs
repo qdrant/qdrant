@@ -6,7 +6,8 @@ use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::HnswGlobalConfig;
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, TEMP_SEGMENTS_PATH,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, LiveVectorNamesProvider,
+    TEMP_SEGMENTS_PATH,
 };
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -85,7 +86,20 @@ impl EdgeShard {
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
 
         let cfg = self.config();
-        let segment_optimizer_config = cfg.segment_optimizer_config();
+        // Live read of the vector names so the merge can prune a vector deleted from the config
+        // (whose data still lingers in older segment files) instead of cancelling forever, while
+        // still cancelling on the CreateVectorName race. Safe here for the same reason as the
+        // server wiring: `update` holds the segments read guard across both the segment
+        // application and the config update, so any name a proxy-frozen source segment carries is
+        // already visible in this read. The provider uses a synchronous `parking_lot` read, fine
+        // on this blocking path.
+        let live_vector_names = {
+            let config = Arc::clone(&self.config);
+            LiveVectorNamesProvider::new(move || config.read().vector_names())
+        };
+        let segment_optimizer_config = cfg
+            .segment_optimizer_config()
+            .with_live_vector_names(live_vector_names);
         let global_hnsw_config = cfg.hnsw_config;
         let hnsw_global_config = HnswGlobalConfig::default();
         let num_indexing_threads = max_num_indexing_threads(&segment_optimizer_config);
@@ -149,10 +163,12 @@ mod tests {
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
     use shard::count::CountRequestInternal;
-    use shard::operations::CollectionUpdateOperations::PointOperation;
+    use shard::operations::CollectionUpdateOperations::{PointOperation, VectorNameOperation};
+    use shard::operations::VectorNameOperations;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
     use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+    use shard::operations::vector_name_ops::DeleteVectorName;
     use shard::optimizers::config::default_segment_number;
     use uuid::Uuid;
 
@@ -686,6 +702,130 @@ mod tests {
         assert_points_retrievable_with_vectors(&reopened, &[251, 500, 750, 1000]);
     }
 
+    /// Regression test for the deleted-vector optimizer deadlock on edge.
+    ///
+    /// A vector name deleted from the config can still linger in older segment files: a
+    /// `DeleteVectorName` landing while a segment is proxy-frozen mid-optimization updates the
+    /// config and the proxy, but not the frozen source. This test recreates that persisted state
+    /// directly (config lacks the vector, segments still carry its data) and checks `optimize()`
+    /// prunes the stale data instead of cancelling every merge attempt (and, since edge propagates
+    /// the cancellation, erroring out of `optimize()` forever).
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+    #[test]
+    fn optimize_prunes_vector_deleted_from_config() {
+        let target_count = default_segment_number() + 6;
+
+        let dir = tempfile::Builder::new()
+            .prefix("edge-opt-prune-deleted-vector")
+            .tempdir()
+            .unwrap();
+
+        let shard = EdgeShard::new(dir.path(), two_vector_config()).unwrap();
+        shard
+            .update(PointOperation(UpsertPoints(PointsList(vec![
+                two_vector_point(1),
+            ]))))
+            .unwrap();
+        drop(shard);
+
+        // Create excess segments so the merge optimizer has to rebuild them.
+        multiply_segments(dir.path(), target_count);
+
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+
+        // Emulate the raced deletion: remove the vector from the config only, leaving its data in
+        // the on-disk segments, exactly what a mid-optimization `DeleteVectorName` leaves behind.
+        reopened
+            .config
+            .write(|cfg| {
+                cfg.vectors.remove(DROP_VECTOR_NAME);
+            })
+            .unwrap();
+
+        let optimized = reopened
+            .optimize()
+            .expect("optimize must prune the deleted vector data, not cancel the merge");
+        assert!(optimized, "excess segments should have been merged");
+
+        let info = reopened.info();
+        assert!(
+            info.segments_count <= default_segment_number() + 1,
+            "segments should be reduced after merge: got {} segments",
+            info.segments_count,
+        );
+
+        // No data loss on the surviving vector.
+        let results = reopened
+            .retrieve(
+                &[ExtendedPointId::NumId(1)],
+                Some(WithPayloadInterface::Bool(false)),
+                Some(WithVector::Bool(true)),
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1, "point should survive the merge");
+        let vectors = match results[0]
+            .vector
+            .as_ref()
+            .expect("vector should be present")
+        {
+            VectorStructInternal::Named(named) => named,
+            other => panic!("expected Named vectors, got {other:?}"),
+        };
+        let keep = match vectors
+            .get(KEEP_VECTOR_NAME)
+            .expect("surviving vector should be present")
+        {
+            VectorInternal::Dense(v) => v,
+            other => panic!("expected Dense vector, got {other:?}"),
+        };
+        assert_eq!(keep, &vec![1.0], "surviving vector value mismatch");
+    }
+
+    /// The optimizers must observe vector-name deletions that land after they were built: the
+    /// live provider re-reads the config on every call rather than snapshotting it at build time.
+    /// A snapshot would wrongly prune a vector created between the snapshot and the merge.
+    #[test]
+    fn optimizers_read_live_vector_names() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-opt-live-vector-names")
+            .tempdir()
+            .unwrap();
+
+        let shard = EdgeShard::new(dir.path(), two_vector_config()).unwrap();
+        let optimizers = shard.build_blocking_optimizers();
+
+        for optimizer in &optimizers {
+            let names = optimizer
+                .segment_optimizer_config()
+                .live_vector_names()
+                .expect("live vector names must be wired into edge optimizers");
+            assert!(
+                names.contains(KEEP_VECTOR_NAME) && names.contains(DROP_VECTOR_NAME),
+                "both vector names should be live before the delete: {names:?}",
+            );
+        }
+
+        shard
+            .update(VectorNameOperation(VectorNameOperations::DeleteVectorName(
+                DeleteVectorName {
+                    vector_name: DROP_VECTOR_NAME.to_string(),
+                },
+            )))
+            .unwrap();
+
+        for optimizer in &optimizers {
+            let names = optimizer
+                .segment_optimizer_config()
+                .live_vector_names()
+                .expect("live vector names must be wired into edge optimizers");
+            assert!(names.contains(KEEP_VECTOR_NAME));
+            assert!(
+                !names.contains(DROP_VECTOR_NAME),
+                "a deletion after optimizer build must be visible to the live provider",
+            );
+        }
+    }
+
     /// Retrieve points by ID and verify each one is present with the correct
     /// vector value. Every test point was created with vector `[id as f32]`.
     fn assert_points_retrievable_with_vectors(shard: &EdgeShard, ids: &[u64]) {
@@ -746,6 +886,47 @@ mod tests {
             optimizers: Default::default(),
             wal_options: None,
             max_search_threads: None,
+        }
+    }
+
+    const KEEP_VECTOR_NAME: &str = "edge-keep-vector";
+    const DROP_VECTOR_NAME: &str = "edge-drop-vector";
+
+    /// Like [`test_config`], but with two dense vectors so one can be deleted.
+    fn two_vector_config() -> EdgeConfig {
+        let params = EdgeVectorParams {
+            size: 1,
+            distance: Distance::Dot,
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+            on_disk: None,
+            hnsw_config: None,
+        };
+        EdgeConfig {
+            vectors: HashMap::from([
+                (KEEP_VECTOR_NAME.to_string(), params.clone()),
+                (DROP_VECTOR_NAME.to_string(), params),
+            ]),
+            ..test_config()
+        }
+    }
+
+    /// A point populating both vectors of [`two_vector_config`]: keep = `[id]`, drop = `[-id]`.
+    fn two_vector_point(id: u64) -> PointStructPersisted {
+        PointStructPersisted {
+            id: ExtendedPointId::NumId(id),
+            vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([
+                (
+                    KEEP_VECTOR_NAME.to_string(),
+                    VectorInternal::from(vec![id as f32]),
+                ),
+                (
+                    DROP_VECTOR_NAME.to_string(),
+                    VectorInternal::from(vec![-(id as f32)]),
+                ),
+            ]))),
+            payload: None,
         }
     }
 
