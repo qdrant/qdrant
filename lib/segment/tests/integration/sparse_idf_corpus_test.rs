@@ -164,8 +164,7 @@ fn sparse_idf_statistics_per_corpus() {
     let segment_query_context = query_context.get_segment_query_context();
 
     let assert_remapped = |corpus: Option<&Filter>, n: usize, df: [usize; 3]| {
-        let vector_context =
-            segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, corpus);
+        let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, corpus);
         assert!(vector_context.is_require_idf());
 
         let mut weights = [1.0, 1.0, 1.0];
@@ -187,7 +186,8 @@ fn sparse_idf_statistics_per_corpus() {
     // A corpus that was not initialized has no statistics at all — IDF
     // remapping must not apply.
     let tenant_b = tenant_filter("b");
-    let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, Some(&tenant_b));
+    let vector_context =
+        segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, Some(&tenant_b));
     assert!(!vector_context.is_require_idf());
 }
 
@@ -293,7 +293,12 @@ fn sparse_idf_statistics_corpus_strategies() {
         (n, df)
     };
 
-    for (corpus, tenant) in [(None, None), (Some(&corpora[0]), Some("a")), (Some(&corpora[1]), Some("b")), (Some(&corpora[2]), Some("c"))] {
+    for (corpus, tenant) in [
+        (None, None),
+        (Some(&corpora[0]), Some("a")),
+        (Some(&corpora[1]), Some("b")),
+        (Some(&corpora[2]), Some("c")),
+    ] {
         let (expected_n, expected_df) = expected(tenant);
         let scope = query_context.idf_stats().scope(corpus).unwrap();
         assert_eq!(
