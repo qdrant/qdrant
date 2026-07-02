@@ -7,7 +7,9 @@ use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalRead> IdTrackerRead for ReadOnlyImmutableIdTracker<S> {
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+    type Backend = S;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Compressed(&self.mappings)
     }
 

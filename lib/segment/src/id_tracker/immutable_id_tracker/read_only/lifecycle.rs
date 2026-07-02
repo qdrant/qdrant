@@ -6,7 +6,7 @@ use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
+    OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
 };
 
 use super::ReadOnlyImmutableIdTracker;
@@ -25,6 +25,28 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     /// mappings are immutable and read once into memory.
     ///
     /// [`ImmutableIdTracker::open`]: crate::id_tracker::immutable_id_tracker::ImmutableIdTracker::open
+    ///
+    /// Returns `Ok(None)` when the defining `id_tracker.mappings` file is absent
+    /// (i.e. the segment is not in the immutable format). The probe reuses the
+    /// existing `open` flow, so no separate existence check is issued.
+    pub fn try_open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Option<Self>> {
+        // Probe the defining mappings file without a separate `exists` call.
+        let probe_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        if fs
+            .open(mappings_path(segment_path), probe_options, Default::default())
+            .ok_not_found()?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(Self::open(fs, segment_path)?))
+    }
+
     pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
         let options = OpenOptions {
             writeable: false,

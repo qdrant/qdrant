@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::types::{DeferredBehavior, PointOffsetType};
+use common::universal_io::UniversalRead;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -124,8 +125,14 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
 }
 
 pub trait IdTrackerRead {
+    /// Read backend of the disk-resident mapping, if any. Trackers that keep
+    /// their mapping in RAM (all but the disk-resident ones) set this to a
+    /// placeholder [`MmapFile`](common::universal_io::MmapFile) — the
+    /// `Plain`/`Compressed` mapping variants do not use it.
+    type Backend: UniversalRead;
+
     /// Get a reference to the point mappings, which provides iteration methods.
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_>;
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend>;
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 

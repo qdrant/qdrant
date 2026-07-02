@@ -24,11 +24,12 @@ use common::universal_io::{
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
-use self::deleted_storage::deleted_path;
+pub(crate) use self::deleted_storage::deleted_path;
 pub use self::mappings_storage::{MAPPINGS_FILE_NAME, mappings_path};
 use self::mappings_storage::{load_mapping, store_mapping};
 pub use self::versions_storage::VERSION_MAPPING_FILE_NAME;
-use self::versions_storage::{mmap_size, version_mapping_path};
+use self::versions_storage::mmap_size;
+pub(crate) use self::versions_storage::version_mapping_path;
 use crate::common::Flusher;
 use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -251,7 +252,9 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
         self.mappings.external_id(internal_id)
     }
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+    type Backend = S;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Compressed(&self.mappings)
     }
 

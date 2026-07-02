@@ -947,7 +947,8 @@ mod set_link_shadow_tests {
         m.set_link(ext(8), 3);
         m.set_link(ext(9), 8);
 
-        let r = PointMappingsRefEnum::Plain(&m);
+        // Backend is irrelevant for the Plain variant; pick a concrete one.
+        let r = PointMappingsRefEnum::<common::universal_io::MmapFile>::Plain(&m);
         let candidates: Vec<PointOffsetType> = vec![2, 3, 7, 8];
 
         // VisibleOnly: visible-only path — drops everything above cutoff.

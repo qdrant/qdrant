@@ -20,7 +20,7 @@ use super::sparse_vector_index::open_or_create_sparse_vector_index;
 use super::vector_index::{VectorIndexOpenArgs, open_vector_index};
 use super::vector_storage::{create_sparse_vector_storage, open_vector_storage};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, immutable_id_tracker};
+use crate::id_tracker::{IdTrackerEnum, IdTrackerFormat, IdTrackerRead};
 use crate::index::VectorIndexEnum;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -57,11 +57,10 @@ pub(super) fn create_segment(
     // Limit deferred segment feature to appendable segments.
     let deferred_internal_id = deferred_internal_id.filter(|_| appendable_flag);
 
-    let use_mutable_id_tracker =
-        appendable_flag || !immutable_id_tracker::mappings_path(segment_path).is_file();
+    let id_tracker_format = IdTrackerFormat::detect_local(segment_path, appendable_flag);
     let started = Instant::now();
     let id_tracker =
-        create_segment_id_tracker(use_mutable_id_tracker, segment_path, deferred_internal_id)?;
+        create_segment_id_tracker(id_tracker_format, segment_path, deferred_internal_id)?;
     log_load_timing(segment_path, "id_tracker", started);
 
     let mut vector_storages = HashMap::new();

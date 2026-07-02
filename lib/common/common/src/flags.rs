@@ -69,6 +69,12 @@ impl FeatureFlags {
         self == FeatureFlags::default()
     }
 
+    /// Whether segments should be produced in a serverless-compatible way (e.g.
+    /// the disk-resident id-tracker format). See the field docs for implications.
+    pub fn serverless_compatible(self) -> bool {
+        self.serverless_compatible
+    }
+
     fn all() -> Self {
         Self {
             all: true,
