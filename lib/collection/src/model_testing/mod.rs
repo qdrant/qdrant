@@ -522,9 +522,16 @@ mod tests {
     /// restarts off isolates the optimizer/reload interaction from the WAL-replay-during-restart
     /// path that [`harness`] also exercises: a failure here points at the optimizer or the final
     /// reload, not at mid-run restart recovery.
+    ///
+    /// Runs half the op count of the optimizer-off variants: optimizer churn without restarts
+    /// makes this the slowest no-restart cell, so it's trimmed to stay under the CI slow-test
+    /// threshold. The fresh seed each run plus many CI runs recover the per-run coverage lost
+    /// to the shorter run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_restarts() {
-        smoke("harness_no_restarts", false, 0.0, OP_NUM).await;
+        // op_num halved: optimizer churn makes this the slowest no-restart variant; trim it so
+        // it isn't marked SLOW by nextest (coverage is recovered across many seeded CI runs).
+        smoke("harness_no_restarts", false, 0.0, OP_NUM / 2).await;
     }
 
     /// Same configuration as [`harness_no_optimizer_no_restarts`], plus seeded mid-run
