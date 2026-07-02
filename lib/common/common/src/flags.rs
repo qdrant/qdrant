@@ -40,6 +40,12 @@ pub struct FeatureFlags {
     /// Build new segments in append-only mode: in-place point mutations become clone-and-tombstone
     /// appends instead. Intended for testing the append-only storage path.
     pub append_only_mutations: bool,
+
+    /// Serverless deployment mode. Automatically enables [`Self::write_segment_manifest`] and
+    /// [`Self::append_only_mutations`].
+    ///
+    /// Note that this will only be applied when passed into [`init_feature_flags`].
+    serverless: bool,
 }
 
 impl Default for FeatureFlags {
@@ -52,6 +58,7 @@ impl Default for FeatureFlags {
             async_payload_storage: false,
             write_segment_manifest: false,
             append_only_mutations: false,
+            serverless: false,
         }
     }
 }
@@ -73,17 +80,31 @@ impl FeatureFlags {
             // Deliberately not enabled by `all`: this is a test-only escape hatch that changes
             // mutation semantics, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
+            serverless: false,
         }
+    }
+
+    fn normalize(mut self) -> Self {
+        let serverless = self.serverless;
+
+        if self.all {
+            self = Self::all();
+        }
+
+        if serverless {
+            self.serverless = true;
+            self.write_segment_manifest = true;
+            self.append_only_mutations = true;
+        }
+
+        self
     }
 }
 
 /// Initializes the global feature flags with `flags`. Must only be called once at
 /// startup or otherwise throws a warning and discards the values.
-pub fn init_feature_flags(mut flags: FeatureFlags) {
-    // If all is set, explicitly set all feature flags
-    if flags.all {
-        flags = FeatureFlags::all();
-    }
+pub fn init_feature_flags(flags: FeatureFlags) {
+    let flags = flags.normalize();
 
     let res = FEATURE_FLAGS.set(flags);
     if res.is_err() {
@@ -114,5 +135,26 @@ mod tests {
 
         assert!(feature_flags().is_default());
         assert!(FeatureFlags::default().is_default());
+    }
+
+    #[test]
+    fn test_serverless_enables_sub_flags() {
+        let mut flags = FeatureFlags::default();
+        flags.serverless = true;
+        let flags = flags.normalize();
+
+        assert!(flags.write_segment_manifest);
+        assert!(flags.append_only_mutations);
+    }
+
+    #[test]
+    fn test_serverless_after_all() {
+        let mut flags = FeatureFlags::default();
+        flags.all = true;
+        flags.serverless = true;
+        let flags = flags.normalize();
+
+        assert!(flags.write_segment_manifest);
+        assert!(flags.append_only_mutations);
     }
 }
