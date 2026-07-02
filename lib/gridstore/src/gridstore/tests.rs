@@ -521,8 +521,21 @@ fn test_behave_like_hashmap(
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
 
     let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
+    let mut monotonic_offsets = 0..;
+    let operations = (0..operation_count).map(|_| {
+        let mut op = Operation::random(rng, max_point_offset);
 
-    let operations = (0..operation_count).map(|_| Operation::random(rng, max_point_offset));
+        // Serverless flushes are append-only, remap puts and deletes to use monotonic offsets
+        if mode.is_serverless() {
+            if let Operation::Put(offset, _) = &mut op {
+                *offset = monotonic_offsets.next().unwrap();
+            } else if let Operation::Delete(offset) = op {
+                op = Operation::Get(offset);
+            }
+        }
+
+        op
+    });
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -1108,11 +1121,10 @@ fn test_deferred_flush(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
 }
 
 /// Similar to [`test_deferred_flush`] but more complex, including multiple flushers and deletes
-#[rstest]
-fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mode: Mode) {
-    // Read semantics (incl. deletes) match in both modes; only block offsets
-    // differ: dynamic reuses freed blocks, serverless appends. Deletes touch only
-    // the tracker, so consume no block in serverless.
+#[test]
+fn test_deferred_flush_with_delete() {
+    // Dynamic-only: flush deletes/updates of persisted points, which serverless mode rejects
+    let mode = Mode::Regular;
     let (dir, mut storage) = empty_storage(mode);
     let path = dir.path().to_path_buf();
 
@@ -1198,13 +1210,8 @@ fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mo
     // On reopen, delete was flushed this time, expect point to be missing
     assert!(get_payload(&storage).is_none());
 
-    // Dynamic mode: reuse block 0
-    // Serverless mode: append
-    put_payload(
-        &mut storage,
-        "value 4",
-        if mode.is_serverless() { 3 } else { 0 },
-    );
+    // Block 0 was freed by the flushed delete, so it is reused
+    put_payload(&mut storage, "value 4", 0);
     assert_eq!(get_payload(&storage).unwrap(), "value 4");
 
     assert_eq!(
@@ -1229,11 +1236,7 @@ fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mo
     // On reopen, value 4 was flushed, expect to read it
     assert_eq!(get_payload(&storage).unwrap(), "value 4");
 
-    put_payload(
-        &mut storage,
-        "value 5",
-        if mode.is_serverless() { 4 } else { 1 },
-    );
+    put_payload(&mut storage, "value 5", 1);
     assert_eq!(get_payload(&storage).unwrap(), "value 5");
 
     let flusher_1_value_5 = storage.flusher();
@@ -1243,20 +1246,12 @@ fn test_deferred_flush_with_delete(#[values(Mode::Regular, Mode::Serverless)] mo
 
     let flusher_2_delete = storage.flusher();
 
-    put_payload(
-        &mut storage,
-        "value 6",
-        if mode.is_serverless() { 5 } else { 3 },
-    );
+    put_payload(&mut storage, "value 6", 3);
     assert_eq!(get_payload(&storage).unwrap(), "value 6");
 
     let flusher_3_value_6 = storage.flusher();
 
-    put_payload(
-        &mut storage,
-        "value 7",
-        if mode.is_serverless() { 6 } else { 4 },
-    );
+    put_payload(&mut storage, "value 7", 4);
     assert_eq!(get_payload(&storage).unwrap(), "value 7");
 
     // Not flushed, still expect to read value 4
@@ -1761,9 +1756,9 @@ fn test_serverless_writes_only_append() {
     let snapshot = fs::read(&page_path).unwrap();
     assert!(!snapshot.is_empty(), "page must hold the first value");
 
-    // Appending more (incl. an update of point 0) must only extend the page.
+    // Appending more values must only extend the page.
     put(&mut storage, 1, "second value");
-    put(&mut storage, 0, "updated first value");
+    put(&mut storage, 2, "third value");
     storage.flusher()().unwrap();
     let grown = fs::read(&page_path).unwrap();
 
@@ -2136,10 +2131,19 @@ fn test_open_back_and_forth_between_modes() {
             expected.insert(next_point, payload);
             next_point += 1;
         }
-        // Update an existing point too.
+
+        // Dynamic mode: update any point offset
+        // Serverless mode: only append new point offset
+        let point_offset = if mode.is_serverless() {
+            next_point
+        } else {
+            rng.random_range(0..next_point)
+        };
         let updated = random_payload(rng, 2);
-        storage.put_value(0, &updated, hw_counter_ref).unwrap();
-        expected.insert(0, updated);
+        storage
+            .put_value(point_offset, &updated, hw_counter_ref)
+            .unwrap();
+        expected.insert(point_offset, updated);
 
         storage.flusher()().unwrap();
     }
