@@ -6,7 +6,7 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
-use common::generic_consts::Random;
+use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
     OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
@@ -279,14 +279,43 @@ impl<S: UniversalRead> Tracker<S> {
         let path = Self::tracker_file_name(path);
         let storage = Self::open_storage(fs, &path, writeable)?;
         let header: TrackerHeader = Self::read_header(&storage)?;
+        let next_pointer_offset = Self::scan_pointer_count(&storage, header.next_pointer_offset)?;
         let pending_updates = AHashMap::new();
         Ok(Self {
-            next_pointer_offset: header.next_pointer_offset,
             path,
             header,
             storage,
             pending_updates,
+            next_pointer_offset,
         })
+    }
+
+    /// Derive the pointer count: the last mapped slot + 1, or the header count if
+    /// that is higher (trailing deleted points in dynamic mode).
+    ///
+    /// Append-only (serverless) flushes never rewrite the header, so mappings may
+    /// exist beyond its count; scan for them from there.
+    fn scan_pointer_count(storage: &S, header_count: PointOffset) -> Result<PointOffset> {
+        const HEADER_SIZE: u64 = size_of::<TrackerHeader>() as u64;
+        const SLOT_SIZE: u64 = size_of::<OptionalPointer>() as u64;
+
+        let slots_in_file = storage.len::<u8>()?.saturating_sub(HEADER_SIZE) / SLOT_SIZE;
+        let scan_range = ReadRange::new(
+            HEADER_SIZE + u64::from(header_count) * SLOT_SIZE,
+            slots_in_file.saturating_sub(u64::from(header_count)),
+        );
+
+        let mut count = header_count;
+        for chunk in scan_range.iter_autochunks::<OptionalPointer>() {
+            let first_slot = (chunk.byte_offset - HEADER_SIZE) / SLOT_SIZE;
+            let slots = storage.read::<Sequential, OptionalPointer>(chunk)?;
+            for (index, slot) in slots.iter().enumerate() {
+                if slot.to_option().is_some() {
+                    count = (first_slot + index as u64 + 1) as PointOffset;
+                }
+            }
+        }
+        Ok(count)
     }
 
     fn read_header(storage: &S) -> Result<TrackerHeader> {
@@ -316,10 +345,23 @@ impl<S: UniversalRead> Tracker<S> {
     ///
     /// - Should only be called on read-only instances of the tracker.
     /// - Only appending new pointers is supported, not modifications of existing pointers.
-    /// - Partial writes are possible, but ignored. Header is a source of truth.
+    /// - Partial writes are possible, but ignored. Header is a source of truth,
+    ///   except in append-only (serverless) mode where the slots themselves are.
     ///
     /// Returns `true` if there are new changes, `false` if the tracker is already up to date.
-    pub fn live_reload(&mut self) -> Result<bool> {
+    pub fn live_reload(&mut self, append_only: bool) -> Result<bool> {
+        // Append-only flushes never rewrite the header; reopen (the file may have
+        // grown) and rescan for appended mappings instead.
+        if append_only {
+            self.storage.reopen()?;
+            let new_count = Self::scan_pointer_count(&self.storage, self.next_pointer_offset)?;
+            if new_count == self.next_pointer_offset {
+                return Ok(false);
+            }
+            self.next_pointer_offset = new_count;
+            return Ok(true);
+        }
+
         let new_header = Self::read_header(&self.storage)?;
 
         if new_header.next_pointer_offset < self.next_pointer_offset {
@@ -402,13 +444,26 @@ where
 
     /// Create a new PageTracker at the given dir path
     /// The file is created with the default size if no size hint is given
-    pub fn new(fs: &S::Fs, path: &Path, size_hint: Option<usize>) -> Result<Self> {
+    ///
+    /// `append_only` (serverless): the file holds just the header and grows per
+    /// appended mapping, rather than being pre-allocated.
+    pub fn new(
+        fs: &S::Fs,
+        path: &Path,
+        size_hint: Option<usize>,
+        append_only: bool,
+    ) -> Result<Self> {
         let path = Self::tracker_file_name(path);
-        let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
-        assert!(
-            size > std::mem::size_of::<TrackerHeader>(),
-            "Size hint is too small"
-        );
+        let size = if append_only {
+            std::mem::size_of::<TrackerHeader>()
+        } else {
+            let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
+            assert!(
+                size > std::mem::size_of::<TrackerHeader>(),
+                "Size hint is too small"
+            );
+            size
+        };
         create_and_ensure_length(&path, size)?;
         let storage = fs.open(&path, tracker_open_options(true), Default::default())?;
         let header = TrackerHeader::default();
@@ -434,7 +489,9 @@ where
     ///
     /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
     ///
-    /// `append_only` (serverless): debug-asserts that no existing mapping is changed.
+    /// `append_only` (serverless): only appends new mappings — unmapped points
+    /// stay in place on disk (the unset stays pending) and the header is not
+    /// rewritten; the count is rescanned on open.
     #[must_use = "The old pointers need to be freed in the bitmask"]
     pub fn write_pending(
         &mut self,
@@ -443,21 +500,40 @@ where
     ) -> Result<Vec<ValuePointer>> {
         let mut old_pointers = Vec::new();
 
+        // Append-only: persist in ascending order so the file only grows at the end
+        let mut pending_updates: Vec<_> = pending_updates.into_iter().collect();
+        if append_only {
+            pending_updates.sort_unstable_by_key(|(point_offset, _)| *point_offset);
+        }
+
         for (point_offset, updates) in pending_updates {
-            debug_assert!(
-                !append_only || self.get_raw(point_offset)?.is_none(),
-                "append-only tracker flush must not change persisted mapping for point {point_offset}",
-            );
             match updates.current {
                 // Write to store a new pointer
                 Some(new_pointer) => {
                     // Mark any existing pointer for removal to free its blocks
-                    if let Some(old_pointer) = self.get_raw(point_offset)? {
+                    let existing = self.get_raw(point_offset)?;
+                    debug_assert_ne!(
+                        existing,
+                        Some(new_pointer),
+                        "pointer is always expected to change"
+                    );
+                    debug_assert!(
+                        !append_only || existing.is_none(),
+                        "append-only tracker flush must not change persisted mapping for point {point_offset}",
+                    );
+                    if let Some(old_pointer) = existing {
                         old_pointers.push(old_pointer);
                     }
 
-                    self.persist_pointer(point_offset, Some(new_pointer))?;
+                    if append_only {
+                        self.persist_pointer_append(point_offset, new_pointer)?;
+                    } else {
+                        self.persist_pointer(point_offset, Some(new_pointer))?;
+                    }
                 }
+                // Append-only leaves unmapped points in place. Keep the unset
+                // pending so reads keep seeing the delete; it resurrects on reopen.
+                None if append_only => continue,
                 // Write to empty the pointer
                 None => self.persist_pointer(point_offset, None)?,
             }
@@ -473,15 +549,18 @@ where
                     if let Some(prev) = prev {
                         debug_assert!(
                             prev.is_empty(),
-                            "remove pending element should be empty but got {prev:?}"
+                            "remove pending element should be empty but got {prev:?}",
                         );
                     }
                 }
             }
         }
 
-        // Increment header count if necessary
-        self.write_pointer_count()?;
+        // Increment header count if necessary. Append-only never rewrites the
+        // header; the count is rescanned on open.
+        if !append_only {
+            self.write_pointer_count()?;
+        }
 
         Ok(old_pointers)
     }
@@ -523,6 +602,20 @@ where
 
         let pointer = OptionalPointer::from(pointer);
         self.storage.write(start_offset as u64, &[pointer])?;
+        Ok(())
+    }
+
+    /// Append a mapping at the given offset, growing the file by exactly the
+    /// written slot (no pre-allocation). Gaps read back as zeros (None).
+    fn persist_pointer_append(
+        &mut self,
+        point_offset: PointOffset,
+        pointer: ValuePointer,
+    ) -> Result<()> {
+        let start_offset =
+            size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
+        self.storage
+            .write_grow(start_offset as u64, &[OptionalPointer::some(pointer)])?;
         Ok(())
     }
 

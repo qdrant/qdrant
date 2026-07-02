@@ -2379,9 +2379,10 @@ fn test_serverless_tracker_appends_new_mappings_at_end() {
 
     let before = fs::read(&tracker_path).unwrap();
     let first_end = HEADER_SIZE + first_batch as usize * SLOT_SIZE;
-    assert!(
-        before[first_end..].iter().all(|&b| b == 0),
-        "no data may exist past the last mapping",
+    assert_eq!(
+        before.len(),
+        first_end,
+        "file must grow to exactly the appended mappings",
     );
 
     for point_offset in first_batch..second_batch {
@@ -2393,23 +2394,23 @@ fn test_serverless_tracker_appends_new_mappings_at_end() {
 
     let after = fs::read(&tracker_path).unwrap();
     let second_end = HEADER_SIZE + second_batch as usize * SLOT_SIZE;
-
-    assert!(after.len() >= before.len(), "tracker file must not shrink");
-    // Header is excluded: it tracks the mapping count.
     assert_eq!(
-        after[HEADER_SIZE..first_end],
-        before[HEADER_SIZE..first_end],
-        "persisted mappings must stay untouched",
+        after.len(),
+        second_end,
+        "file must grow to exactly the appended mappings",
+    );
+
+    // The full prefix, header included, must be byte-for-byte untouched.
+    assert_eq!(
+        after[..first_end],
+        before[..first_end],
+        "existing bytes must stay untouched",
     );
     assert!(
-        after[first_end..second_end]
+        after[first_end..]
             .chunks(SLOT_SIZE)
             .all(|slot| slot.iter().any(|&b| b != 0)),
         "new mappings must fill the slots right after the existing ones",
-    );
-    assert!(
-        after[second_end..].iter().all(|&b| b == 0),
-        "no data may exist past the last mapping",
     );
 }
 
@@ -2433,4 +2434,67 @@ fn test_serverless_flush_rejects_changing_persisted_mapping() {
         .put_value(0, &random_payload(rng, 1), hw_counter_ref)
         .unwrap();
     storage.flusher()().unwrap();
+}
+
+/// Serverless unmaps leave the persisted mapping in place: the tracker file is
+/// not touched, in-session reads see the delete, and the value resurrects on
+/// reopen (accepted trade-off of append-only storage).
+#[test]
+fn test_serverless_unmap_leaves_mapping_in_place() {
+    let (dir, mut storage) = empty_storage(Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    let tracker_path = dir.path().join("tracker.dat");
+
+    let payload_0 = random_payload(rng, 1);
+    let payload_1 = random_payload(rng, 1);
+    storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
+    storage.put_value(1, &payload_1, hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+    let before = fs::read(&tracker_path).unwrap();
+
+    // Unmap a persisted point and flush: the tracker file must be untouched.
+    let deleted = storage.delete_value(0).unwrap();
+    assert_eq!(deleted, Some(payload_0.clone()));
+    storage.flusher()().unwrap();
+    assert_eq!(
+        fs::read(&tracker_path).unwrap(),
+        before,
+        "unmapping must not write to the tracker file",
+    );
+
+    // In-session reads keep seeing the delete.
+    assert!(
+        storage
+            .get_value::<Random>(0, &hw_counter)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(1, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&payload_1),
+    );
+
+    // On reopen the mapping is still in place, so the value resurrects.
+    let path = dir.path().to_path_buf();
+    drop(storage);
+    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::Serverless).unwrap();
+    assert_eq!(
+        storage
+            .get_value::<Random>(0, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&payload_0),
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(1, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&payload_1),
+    );
 }

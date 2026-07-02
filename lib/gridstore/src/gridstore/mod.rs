@@ -153,7 +153,12 @@ where
 
         let storage = Self {
             mode,
-            tracker: Arc::new(RwLock::new(Tracker::new(&fs, &base_path, None)?)),
+            tracker: Arc::new(RwLock::new(Tracker::new(
+                &fs,
+                &base_path,
+                None,
+                mode.is_serverless(),
+            )?)),
             pages: Arc::new(RwLock::new(Pages::new(base_path.clone(), true))),
             storage_engine,
             base_path,

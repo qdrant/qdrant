@@ -54,7 +54,7 @@ fn test_file_name() {
 fn test_page_tracker_files() {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let tracker = TestTracker::new(&MmapFs, path, None).unwrap();
+    let tracker = TestTracker::new(&MmapFs, path, None, false).unwrap();
     let files = tracker.files();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0], path.join(TestTracker::FILE_NAME));
@@ -64,7 +64,7 @@ fn test_page_tracker_files() {
 fn test_new_tracker() {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let tracker = TestTracker::new(&MmapFs, path, None).unwrap();
+    let tracker = TestTracker::new(&MmapFs, path, None, false).unwrap();
     assert!(tracker.is_empty());
     assert_eq!(tracker.mapping_len().unwrap(), 0);
     assert_eq!(tracker.pointer_count(), 0);
@@ -77,7 +77,7 @@ fn test_new_tracker() {
 fn test_mapping_len_tracker(#[case] initial_tracker_size: usize) {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size), false).unwrap();
     assert!(tracker.is_empty());
     tracker.set(0, ValuePointer::new(1, 1, 1));
 
@@ -101,7 +101,7 @@ fn test_mapping_len_tracker(#[case] initial_tracker_size: usize) {
 fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size), false).unwrap();
     tracker.set(0, ValuePointer::new(1, 1, 1));
     tracker.set(1, ValuePointer::new(2, 2, 2));
     tracker.set(2, ValuePointer::new(3, 3, 3));
@@ -162,7 +162,7 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
 
     let value_count: usize = 1000;
 
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size), false).unwrap();
 
     for i in 0..value_count {
         // save only half of the values
@@ -208,7 +208,7 @@ fn test_page_tracker_resize(
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
 
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(desired_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(&MmapFs, path, Some(desired_tracker_size), false).unwrap();
     assert_eq!(tracker.mapping_len().unwrap(), 0);
     assert_eq!(tracker.mmap_file_size().unwrap(), actual_tracker_size);
 
@@ -227,7 +227,7 @@ fn test_track_non_sequential_large_offset() {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
 
-    let mut tracker = TestTracker::new(&MmapFs, path, None).unwrap();
+    let mut tracker = TestTracker::new(&MmapFs, path, None, false).unwrap();
     assert_eq!(tracker.mapping_len().unwrap(), 0);
 
     let page_pointer = ValuePointer::new(1, 1, 1);
