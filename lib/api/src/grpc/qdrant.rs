@@ -5848,7 +5848,6 @@ pub struct AcornSearchParams {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IdfParams {
     /// Filter defining the corpus: IDF statistics are computed over the points matching this filter.
-    /// Restricted to a conjunction (`must`) of `match` conditions on payload fields.
     /// If unset, statistics are collection-wide (global) - same as omitting `idf` entirely.
     #[prost(message, optional, tag = "1")]
     #[validate(nested)]

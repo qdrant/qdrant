@@ -1049,17 +1049,12 @@ impl TryFrom<IdfParams> for segment::types::IdfParams {
 
     fn try_from(params: IdfParams) -> Result<Self, Self::Error> {
         let IdfParams { corpus } = params;
-        let params = match corpus {
+        Ok(match corpus {
             None => segment::types::IdfParams::Scope(segment::types::IdfScope::Global),
             Some(corpus) => segment::types::IdfParams::Corpus(segment::types::IdfCorpusParams {
                 corpus: corpus.try_into()?,
             }),
-        };
-        // The corpus grammar restriction cannot be expressed on the proto
-        // message, so enforce it during conversion.
-        validator::Validate::validate(&params)
-            .map_err(|err| Status::invalid_argument(format!("Invalid idf params: {err}")))?;
-        Ok(params)
+        })
     }
 }
 

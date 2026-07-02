@@ -504,7 +504,6 @@ message AcornSearchParams {
 // Only applicable to sparse vectors with the IDF modifier enabled.
 message IdfParams {
   // Filter defining the corpus: IDF statistics are computed over the points matching this filter.
-  // Restricted to a conjunction (`must`) of `match` conditions on payload fields.
   // If unset, statistics are collection-wide (global) - same as omitting `idf` entirely.
   optional Filter corpus = 1;
 }

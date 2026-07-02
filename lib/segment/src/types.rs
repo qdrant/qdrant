@@ -670,8 +670,7 @@ pub enum IdfScope {
 #[serde(rename_all = "snake_case")]
 pub struct IdfCorpusParams {
     /// Filter defining the corpus: IDF statistics are computed over the points
-    /// matching this filter. Restricted to a conjunction (`must`) of `match`
-    /// conditions on payload fields.
+    /// matching this filter.
     pub corpus: Filter,
 }
 
@@ -697,77 +696,7 @@ impl Validate for IdfParams {
 impl Validate for IdfCorpusParams {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let IdfCorpusParams { corpus } = self;
-
-        let error = |message: &'static str| {
-            let mut errors = ValidationErrors::new();
-            errors.add("corpus", ValidationError::new(message));
-            Err(errors)
-        };
-
-        // The corpus grammar is deliberately narrower than a general search
-        // filter: a conjunction of `match` conditions on payload fields.
-        // Loosening it later is backward compatible, tightening is not.
-        let Filter {
-            should,
-            min_should,
-            must,
-            must_not,
-        } = corpus;
-
-        if should.is_some() || min_should.is_some() || must_not.is_some() {
-            return error("IDF corpus filter supports only `must` conditions");
-        }
-
-        let must = must.as_deref().unwrap_or_default();
-        if must.is_empty() {
-            return error("IDF corpus filter must contain at least one condition");
-        }
-
-        for condition in must {
-            let field_condition = match condition {
-                Condition::Field(field_condition) => field_condition,
-                Condition::IsEmpty(_)
-                | Condition::IsNull(_)
-                | Condition::HasId(_)
-                | Condition::HasVector(_)
-                | Condition::Nested(_)
-                | Condition::Filter(_)
-                | Condition::CustomIdChecker(_) => {
-                    return error(
-                        "IDF corpus filter supports only `match` conditions on payload fields",
-                    );
-                }
-            };
-
-            let FieldCondition {
-                key: _,
-                r#match,
-                range,
-                geo_bounding_box,
-                geo_radius,
-                geo_polygon,
-                values_count,
-                is_empty,
-                is_null,
-            } = field_condition;
-
-            let only_match = r#match.is_some()
-                && range.is_none()
-                && geo_bounding_box.is_none()
-                && geo_radius.is_none()
-                && geo_polygon.is_none()
-                && values_count.is_none()
-                && is_empty.is_none()
-                && is_null.is_none();
-
-            if !only_match {
-                return error(
-                    "IDF corpus filter supports only `match` conditions on payload fields",
-                );
-            }
-        }
-
-        Ok(())
+        corpus.validate()
     }
 }
 
@@ -4845,44 +4774,19 @@ mod tests {
     }
 
     #[test]
-    fn test_idf_corpus_grammar_validation() {
+    fn test_idf_corpus_accepts_any_filter() {
         let corpus_params = |corpus: Filter| IdfParams::Corpus(IdfCorpusParams { corpus });
 
-        // Conjunction of `match` conditions is allowed.
+        // The corpus is a regular filter — any valid filter shape is accepted.
         corpus_params(Filter::new_must(match_condition("tenant", "acme")))
             .validate()
             .unwrap();
-        corpus_params(Filter {
-            should: None,
-            min_should: None,
-            must: Some(vec![
-                match_condition("tenant", "acme"),
-                match_condition("lang", "en"),
-            ]),
-            must_not: None,
-        })
-        .validate()
-        .unwrap();
-
-        // Anything except `must` clauses is rejected.
         corpus_params(Filter::new_should(match_condition("tenant", "acme")))
             .validate()
-            .unwrap_err();
+            .unwrap();
         corpus_params(Filter::new_must_not(match_condition("tenant", "acme")))
             .validate()
-            .unwrap_err();
-
-        // An empty corpus filter is rejected.
-        corpus_params(Filter {
-            should: None,
-            min_should: None,
-            must: Some(vec![]),
-            must_not: None,
-        })
-        .validate()
-        .unwrap_err();
-
-        // Non-`match` field conditions are rejected.
+            .unwrap();
         corpus_params(Filter::new_must(Condition::Field(
             FieldCondition::new_range(
                 JsonPath::new("year"),
@@ -4895,21 +4799,7 @@ mod tests {
             ),
         )))
         .validate()
-        .unwrap_err();
-
-        // Non-field conditions are rejected.
-        corpus_params(Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
-            is_empty: PayloadField {
-                key: JsonPath::new("tenant"),
-            },
-        })))
-        .validate()
-        .unwrap_err();
-        corpus_params(Filter::new_must(Condition::Filter(Filter::new_must(
-            match_condition("tenant", "acme"),
-        ))))
-        .validate()
-        .unwrap_err();
+        .unwrap();
     }
 
     #[test]
