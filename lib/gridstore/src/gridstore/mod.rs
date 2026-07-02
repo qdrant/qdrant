@@ -189,7 +189,13 @@ where
     /// the page count purely from the page files (like [`GridstoreReader`]).
     pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate, mode: Mode) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
-        let (config, tracker) = reader::read_config_and_tracker(&fs, &base_path, true)?;
+        let (config, mut tracker) = reader::read_config_and_tracker(&fs, &base_path, true)?;
+
+        // Serverless strictly appends at the end of the tracker file: drop any
+        // zero padding a dynamic-mode pre-allocation left after the mappings.
+        if mode.is_serverless() {
+            tracker = tracker.truncate_padding(&fs)?;
+        }
 
         let mut pages = Pages::open(&fs, &base_path, true, populate)?;
         let loaded_pages = pages.num_pages();

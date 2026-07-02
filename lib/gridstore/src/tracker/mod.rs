@@ -605,6 +605,48 @@ where
         Ok(())
     }
 
+    /// Truncate zero padding after the last mapping, e.g. from a dynamic-mode
+    /// pre-allocation, so append-only writes land at the very end of the file.
+    ///
+    /// Call when opening in serverless mode. Only ever removes zero bytes: every
+    /// slot past the scanned pointer count is unmapped. Consumes and reopens the
+    /// tracker, since a mapped file cannot shrink in place.
+    pub fn truncate_padding(self, fs: &S::Fs) -> Result<Self> {
+        let Self {
+            path,
+            header,
+            storage,
+            pending_updates,
+            next_pointer_offset,
+        } = self;
+
+        let expected_len = (size_of::<TrackerHeader>()
+            + next_pointer_offset as usize * size_of::<OptionalPointer>())
+            as u64;
+        if storage.len::<u8>()? <= expected_len {
+            return Ok(Self {
+                path,
+                header,
+                storage,
+                pending_updates,
+                next_pointer_offset,
+            });
+        }
+
+        storage.flusher()()?;
+        drop(storage);
+        create_and_ensure_length(&path, expected_len as usize)?;
+        let storage = Self::open_storage(fs, &path, true)?;
+
+        Ok(Self {
+            path,
+            header,
+            storage,
+            pending_updates,
+            next_pointer_offset,
+        })
+    }
+
     /// Append a mapping at the given offset, growing the file by exactly the
     /// written slot (no pre-allocation). Gaps read back as zeros (None).
     fn persist_pointer_append(
