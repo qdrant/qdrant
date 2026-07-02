@@ -63,7 +63,9 @@ impl<O: SegmentOptimizer + ?Sized> OptimizationStrategy for ShardOptimizationStr
     }
 
     fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>> {
-        self.optimizer.live_vector_names()
+        self.optimizer
+            .segment_optimizer_config()
+            .live_vector_names()
     }
 }
 
@@ -87,13 +89,6 @@ pub trait SegmentOptimizer: Sync {
 
     /// Get configuration for desired segment after optimization.
     fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig;
-
-    /// Vector names currently present in the live collection schema, if a live source is wired into
-    /// the optimizer config. Used during merge to tell a deleted vector (prune) from the
-    /// CreateVectorName race (cancel); `None` means unknown and cancels conservatively.
-    fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>> {
-        self.segment_optimizer_config().live_vector_names()
-    }
 
     /// Estimates how many indexing threads should be used for the optimization
     /// based on the configuration and available CPU cores.
