@@ -614,6 +614,14 @@ where
     ) -> Result<()> {
         let start_offset =
             size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
+
+        // Strictly append: the slot must be at the very end of the file, never
+        // replacing existing bytes - not even zero padding.
+        debug_assert!(
+            start_offset as u64 >= self.storage.len::<u8>()?,
+            "append-only tracker flush must write at the very end of the file, point {point_offset} lands within it",
+        );
+
         self.storage
             .write_grow(start_offset as u64, &[OptionalPointer::some(pointer)])?;
         Ok(())
