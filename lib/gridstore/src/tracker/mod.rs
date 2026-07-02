@@ -433,14 +433,21 @@ where
     /// processed.
     ///
     /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
+    ///
+    /// `append_only` (serverless): debug-asserts that no existing mapping is changed.
     #[must_use = "The old pointers need to be freed in the bitmask"]
     pub fn write_pending(
         &mut self,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
+        append_only: bool,
     ) -> Result<Vec<ValuePointer>> {
         let mut old_pointers = Vec::new();
 
         for (point_offset, updates) in pending_updates {
+            debug_assert!(
+                !append_only || self.get_raw(point_offset)?.is_none(),
+                "append-only tracker flush must not change persisted mapping for point {point_offset}",
+            );
             match updates.current {
                 // Write to store a new pointer
                 Some(new_pointer) => {

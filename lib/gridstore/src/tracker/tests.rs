@@ -37,7 +37,7 @@ impl TestTracker {
 
     pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
-        let res = self.write_pending(pending_updates)?;
+        let res = self.write_pending(pending_updates, false)?;
         self.storage.flusher()()?;
         Ok(res)
     }

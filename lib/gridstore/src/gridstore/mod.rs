@@ -777,7 +777,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
             let pages_flusher = pages.read().flusher();
             pages_flusher()?;
 
-            let old_pointers = Self::flush_tracker(&tracker, pending_updates)?;
+            let old_pointers = Self::flush_tracker(&tracker, pending_updates, false)?;
 
             if old_pointers.is_empty() {
                 return Ok(());
@@ -820,7 +820,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
             pages_flusher()?;
 
             // In serverless we don't clean up old points
-            let _old_pointers = Self::flush_tracker(&tracker, pending_updates)?;
+            let _old_pointers = Self::flush_tracker(&tracker, pending_updates, true)?;
 
             drop(is_alive_flush_guard);
 
@@ -832,10 +832,11 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn flush_tracker(
         tracker: &Arc<RwLock<Tracker<S>>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
+        append_only: bool,
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
-            let old_pointers = guard.write_pending(pending_updates)?;
+            let old_pointers = guard.write_pending(pending_updates, append_only)?;
             let flusher = guard.flusher();
             (old_pointers, flusher)
         };
