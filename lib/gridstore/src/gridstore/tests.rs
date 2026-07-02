@@ -2351,3 +2351,86 @@ fn test_reconstruct_flags_reclaims_stale_serverless_blocks() {
         "stale blocks must be reclaimed: live {live_used} vs written {total_written_bytes}",
     );
 }
+
+/// Serverless flushes append new mappings at the very end of the tracker file;
+/// persisted mapping bytes stay untouched.
+#[test]
+fn test_serverless_tracker_appends_new_mappings_at_end() {
+    // Tracker layout: u32 header, then a (u32 tag + ValuePointer) slot per point;
+    // unwritten slots are zeros.
+    const HEADER_SIZE: usize = size_of::<u32>();
+    const SLOT_SIZE: usize = size_of::<u32>() + size_of::<ValuePointer>();
+
+    let (dir, mut storage) = empty_storage(Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    let tracker_path = dir.path().join("tracker.dat");
+
+    let first_batch = 10u32;
+    let second_batch = 25u32;
+
+    for point_offset in 0..first_batch {
+        storage
+            .put_value(point_offset, &random_payload(rng, 1), hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    let before = fs::read(&tracker_path).unwrap();
+    let first_end = HEADER_SIZE + first_batch as usize * SLOT_SIZE;
+    assert!(
+        before[first_end..].iter().all(|&b| b == 0),
+        "no data may exist past the last mapping",
+    );
+
+    for point_offset in first_batch..second_batch {
+        storage
+            .put_value(point_offset, &random_payload(rng, 1), hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    let after = fs::read(&tracker_path).unwrap();
+    let second_end = HEADER_SIZE + second_batch as usize * SLOT_SIZE;
+
+    assert!(after.len() >= before.len(), "tracker file must not shrink");
+    // Header is excluded: it tracks the mapping count.
+    assert_eq!(
+        after[HEADER_SIZE..first_end],
+        before[HEADER_SIZE..first_end],
+        "persisted mappings must stay untouched",
+    );
+    assert!(
+        after[first_end..second_end]
+            .chunks(SLOT_SIZE)
+            .all(|slot| slot.iter().any(|&b| b != 0)),
+        "new mappings must fill the slots right after the existing ones",
+    );
+    assert!(
+        after[second_end..].iter().all(|&b| b == 0),
+        "no data may exist past the last mapping",
+    );
+}
+
+/// The serverless flush path rejects changing a persisted mapping.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "append-only tracker flush")]
+fn test_serverless_flush_rejects_changing_persisted_mapping() {
+    let (_dir, mut storage) = empty_storage(Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    storage
+        .put_value(0, &random_payload(rng, 1), hw_counter_ref)
+        .unwrap();
+    storage.flusher()().unwrap();
+
+    // Updating a persisted point and flushing must trip the debug assertion.
+    storage
+        .put_value(0, &random_payload(rng, 1), hw_counter_ref)
+        .unwrap();
+    storage.flusher()().unwrap();
+}
