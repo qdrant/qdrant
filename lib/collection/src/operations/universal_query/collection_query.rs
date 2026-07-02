@@ -778,3 +778,99 @@ impl CollectionQueryRequest {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use segment::data_types::vectors::VectorStructInternal;
+    use shard::retrieve::record_internal::RecordInternal;
+
+    fn create_referenced_vectors(point_id: PointIdType) -> ReferencedVectors {
+        let mut referenced = ReferencedVectors::default();
+        let vector = VectorStructInternal::Single(vec![1.0, 2.0, 3.0]);
+        let record = RecordInternal {
+            id: point_id,
+            payload: None,
+            vector: Some(vector),
+            shard_key: None,
+            order_value: None,
+        };
+        referenced.extend(None, vec![(point_id, record)]);
+        referenced
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_missing_point_id() {
+        let referenced = create_referenced_vectors(1u64.into());
+
+        let query = RecoQuery::new(
+            vec![VectorInputInternal::Id(999u64.into())],
+            vec![],
+        );
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_err(),
+            "Expected error when point ID does not exist in ReferencedVectors"
+        );
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_valid_point_id() {
+        let point_id: PointIdType = 1u64.into();
+        let referenced = create_referenced_vectors(point_id);
+
+        let query = RecoQuery::new(
+            vec![VectorInputInternal::Id(point_id)],
+            vec![],
+        );
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_ok(),
+            "Expected success when point ID exists in ReferencedVectors"
+        );
+        let (positives, negatives) = result.unwrap();
+        assert_eq!(positives.len(), 1);
+        assert_eq!(negatives.len(), 0);
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_mixed_point_ids() {
+        let point_id: PointIdType = 1u64.into();
+        let referenced = create_referenced_vectors(point_id);
+
+        // Mix of valid and invalid IDs — should fail on first invalid
+        let query = RecoQuery::new(
+            vec![
+                VectorInputInternal::Id(point_id),
+                VectorInputInternal::Id(999u64.into()),
+            ],
+            vec![],
+        );
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_err(),
+            "Expected error when at least one point ID is missing"
+        );
+    }
+}
