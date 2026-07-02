@@ -139,9 +139,11 @@ mod tests {
 
     #[test]
     fn test_serverless_compatible_enables_sub_flags() {
-        let mut flags = FeatureFlags::default();
-        flags.serverless_compatible = true;
-        let flags = flags.normalize();
+        let flags = FeatureFlags {
+            serverless_compatible: true,
+            ..Default::default()
+        }
+        .normalize();
 
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
@@ -149,10 +151,12 @@ mod tests {
 
     #[test]
     fn test_serverless_compatible_after_all() {
-        let mut flags = FeatureFlags::default();
-        flags.all = true;
-        flags.serverless_compatible = true;
-        let flags = flags.normalize();
+        let flags = FeatureFlags {
+            all: true,
+            serverless_compatible: true,
+            ..Default::default()
+        }
+        .normalize();
 
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
