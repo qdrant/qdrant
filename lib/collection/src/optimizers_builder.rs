@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
@@ -7,9 +6,7 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{
-    HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorNameBuf, VectorStorageDatatype,
-};
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
 use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
@@ -255,24 +252,6 @@ pub fn build_segment_optimizer_config(
     )
 }
 
-/// All vector names (dense and sparse) currently present in the collection schema.
-///
-/// Must cover both kinds: a segment's `vector_data` holds dense and sparse vectors together, so the
-/// optimizer merge consults this set for both. Dense-only here would make a freshly-created sparse
-/// vector look deleted and get wrongly pruned.
-fn collection_vector_names(params: &CollectionParams) -> HashSet<VectorNameBuf> {
-    let dense = params
-        .vectors
-        .params_iter()
-        .map(|(name, _)| name.to_owned());
-    let sparse = params
-        .sparse_vectors
-        .iter()
-        .flatten()
-        .map(|(name, _)| name.to_owned());
-    dense.chain(sparse).collect()
-}
-
 /// Build a [`LiveVectorNamesProvider`] that reads the collection's current vector names.
 ///
 /// The provider is invoked from the optimization worker (a `spawn_blocking` thread), so the
@@ -281,9 +260,7 @@ fn collection_vector_names(params: &CollectionParams) -> HashSet<VectorNameBuf> 
 fn live_vector_names_provider(
     collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
 ) -> LiveVectorNamesProvider {
-    LiveVectorNamesProvider::new(move || {
-        collection_vector_names(&collection_config.blocking_read().params)
-    })
+    LiveVectorNamesProvider::new(move || collection_config.blocking_read().params.vector_names())
 }
 
 pub fn build_optimizers(
@@ -357,7 +334,7 @@ mod tests {
     use crate::operations::vector_params_builder::VectorParamsBuilder;
 
     #[test]
-    fn collection_vector_names_includes_dense_and_sparse() {
+    fn live_vector_names_include_dense_and_sparse() {
         // A segment's `vector_data` holds dense and sparse vectors together, so the live set the
         // optimizer consults must enumerate both. A dense-only set would make a freshly-created
         // sparse vector look deleted and get wrongly pruned during the optimizer race.
@@ -376,7 +353,7 @@ mod tests {
             ..CollectionParams::empty()
         };
 
-        let names = collection_vector_names(&params);
+        let names = params.vector_names();
 
         assert!(
             names.contains("dense"),
