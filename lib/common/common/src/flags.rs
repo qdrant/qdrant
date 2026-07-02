@@ -41,11 +41,11 @@ pub struct FeatureFlags {
     /// appends instead. Intended for testing the append-only storage path.
     pub append_only_mutations: bool,
 
-    /// Serverless deployment mode. Automatically enables [`Self::write_segment_manifest`] and
+    /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`] and
     /// [`Self::append_only_mutations`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
-    serverless: bool,
+    serverless_compatible: bool,
 }
 
 impl Default for FeatureFlags {
@@ -58,7 +58,7 @@ impl Default for FeatureFlags {
             async_payload_storage: false,
             write_segment_manifest: false,
             append_only_mutations: false,
-            serverless: false,
+            serverless_compatible: false,
         }
     }
 }
@@ -80,19 +80,19 @@ impl FeatureFlags {
             // Deliberately not enabled by `all`: this is a test-only escape hatch that changes
             // mutation semantics, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
-            serverless: false,
+            serverless_compatible: false,
         }
     }
 
     fn normalize(mut self) -> Self {
-        let serverless = self.serverless;
+        let serverless_compatible = self.serverless_compatible;
 
         if self.all {
             self = Self::all();
         }
 
-        if serverless {
-            self.serverless = true;
+        if serverless_compatible {
+            self.serverless_compatible = true;
             self.write_segment_manifest = true;
             self.append_only_mutations = true;
         }
@@ -138,9 +138,9 @@ mod tests {
     }
 
     #[test]
-    fn test_serverless_enables_sub_flags() {
+    fn test_serverless_compatible_enables_sub_flags() {
         let mut flags = FeatureFlags::default();
-        flags.serverless = true;
+        flags.serverless_compatible = true;
         let flags = flags.normalize();
 
         assert!(flags.write_segment_manifest);
@@ -148,10 +148,10 @@ mod tests {
     }
 
     #[test]
-    fn test_serverless_after_all() {
+    fn test_serverless_compatible_after_all() {
         let mut flags = FeatureFlags::default();
         flags.all = true;
-        flags.serverless = true;
+        flags.serverless_compatible = true;
         let flags = flags.normalize();
 
         assert!(flags.write_segment_manifest);

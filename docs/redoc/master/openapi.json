@@ -12693,8 +12693,8 @@
             "default": false,
             "type": "boolean"
           },
-          "serverless": {
-            "description": "Serverless deployment mode. Automatically enables [`Self::write_segment_manifest`] and [`Self::append_only_mutations`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
+          "serverless_compatible": {
+            "description": "Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`] and [`Self::append_only_mutations`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
             "type": "boolean"
           }
