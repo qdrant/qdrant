@@ -73,8 +73,9 @@ where
 
 impl<T: ?Sized> fmt::Debug for MmapTypeReadOnly<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { mmap, r#type: _ } = self;
         f.debug_struct("MmapTypeReadOnly")
-            .field("mmap", &self.mmap)
+            .field("mmap", mmap)
             .finish_non_exhaustive()
     }
 }
@@ -299,9 +300,10 @@ where
 
 impl<T> fmt::Debug for MmapSliceReadOnly<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { mmap } = self;
         f.debug_struct("MmapSliceReadOnly")
-            .field("mmap", &self.mmap)
-            .finish_non_exhaustive()
+            .field("mmap", mmap)
+            .finish()
     }
 }
 

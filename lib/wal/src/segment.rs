@@ -38,7 +38,8 @@ impl Deref for Entry {
 
 impl fmt::Debug for Entry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Entry {{ len: {} }}", self.view.len())
+        let Self { view } = self;
+        f.debug_struct("Entry").field("len", &view.len()).finish()
     }
 }
 
@@ -680,15 +681,22 @@ impl Segment {
 
 impl fmt::Debug for Segment {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Segment {{ path: {:?}, flush_offset: {}, entries: {}, space: ({}/{}) }}",
-            &self.path,
-            self.flush_offset,
-            self.len(),
-            self.size(),
-            self.capacity()
-        )
+        let Self {
+            path,
+            flush_offset,
+            mmap: _,
+            index: _,
+            crc: _,
+        } = self;
+        f.debug_struct("Segment")
+            .field("path", path)
+            .field("flush_offset", flush_offset)
+            .field("entries", &self.len())
+            .field(
+                "space",
+                &format_args!("({}/{})", self.size(), self.capacity()),
+            )
+            .finish_non_exhaustive()
     }
 }
 

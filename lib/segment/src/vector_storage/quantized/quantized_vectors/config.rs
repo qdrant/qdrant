@@ -27,8 +27,13 @@ pub struct QuantizedVectorsConfig {
 
 impl fmt::Debug for QuantizedVectorsConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            quantization_config,
+            vector_parameters: _,
+            storage_type: _,
+        } = self;
         f.debug_struct("QuantizedVectorsConfig")
-            .field("quantization_config", &self.quantization_config)
+            .field("quantization_config", quantization_config)
             .finish_non_exhaustive()
     }
 }

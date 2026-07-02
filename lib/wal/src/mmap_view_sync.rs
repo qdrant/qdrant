@@ -174,11 +174,15 @@ impl From<MmapMut> for MmapViewSync {
 
 impl fmt::Debug for MmapViewSync {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "MmapViewSync {{ offset: {}, len: {} }}",
-            self.offset, self.len
-        )
+        let Self {
+            offset,
+            len,
+            inner: _,
+        } = self;
+        f.debug_struct("MmapViewSync")
+            .field("offset", offset)
+            .field("len", len)
+            .finish_non_exhaustive()
     }
 }
 

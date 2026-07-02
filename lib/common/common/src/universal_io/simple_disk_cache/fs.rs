@@ -56,9 +56,10 @@ where
     R: UniversalRead,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { config, remote_fs } = self;
         f.debug_struct("DiskCacheFs")
-            .field("config", &self.config)
-            .field("remote_fs", &self.remote_fs)
+            .field("config", config)
+            .field("remote_fs", remote_fs)
             .finish()
     }
 }

@@ -172,7 +172,8 @@ impl QuantizedVectorStorage {
 
 impl fmt::Debug for QuantizedVectorStorage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("QuantizedVectorStorage").finish()
+        f.debug_tuple("QuantizedVectorStorage")
+            .finish_non_exhaustive()
     }
 }
 
