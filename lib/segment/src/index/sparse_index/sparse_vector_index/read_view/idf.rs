@@ -98,15 +98,19 @@ where
         });
         match corpus_points {
             CorpusPoints::Mask(mask) => {
-                self.inverted_index
-                    .get_batch(ids, &arena, hw_counter, |count, posting_list_iter| {
+                self.inverted_index.get_batch(
+                    ids,
+                    &arena,
+                    hw_counter,
+                    |count, posting_list_iter| {
                         for element in posting_list_iter.into_std_iter() {
                             if mask.get_bit(element.record_id as usize).unwrap_or(false) {
                                 *count += 1;
                             }
                         }
                         Ok(())
-                    })?;
+                    },
+                )?;
             }
             CorpusPoints::SortedIds(corpus_ids) => {
                 self.inverted_index.get_batch(
@@ -161,8 +165,8 @@ where
 
         let mut document_count: usize = 0;
         let mut corpus_ids: Vec<PointOffsetType> = Vec::new();
-        let mut corpus_mask: Option<BitVec> = (cardinality.exp > id_list_threshold)
-            .then(|| BitVec::repeat(false, total_points));
+        let mut corpus_mask: Option<BitVec> =
+            (cardinality.exp > id_list_threshold).then(|| BitVec::repeat(false, total_points));
 
         let points_iter = self.payload_index.iter_filtered_points(
             corpus,

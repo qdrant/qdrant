@@ -118,7 +118,12 @@ impl QueryContext {
     /// `corpus` defines the population the statistics are computed over,
     /// `None` for the whole collection. Requests sharing a corpus share
     /// a statistics scope.
-    pub fn init_idf(&mut self, vector_name: &VectorName, corpus: Option<&Filter>, indices: &[DimId]) {
+    pub fn init_idf(
+        &mut self,
+        vector_name: &VectorName,
+        corpus: Option<&Filter>,
+        indices: &[DimId],
+    ) {
         let scope_index = self
             .idf_stats
             .scopes

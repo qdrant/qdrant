@@ -17,8 +17,8 @@ use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::NamedSparseVector;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, IdfCorpusParams, IdfParams, IdfScope,
-    ScoredPoint, SearchParams,
+    Condition, Distance, FieldCondition, Filter, IdfCorpusParams, IdfParams, IdfScope, ScoredPoint,
+    SearchParams,
 };
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
@@ -87,16 +87,12 @@ async fn sparse_idf_collection_fixture(path: &std::path::Path) -> Collection {
     };
 
     let snapshot_path = path.join("snapshots");
-    let collection = new_local_collection("test".to_string(), path, &snapshot_path, &collection_config)
-        .await
-        .unwrap();
+    let collection =
+        new_local_collection("test".to_string(), path, &snapshot_path, &collection_config)
+            .await
+            .unwrap();
 
-    let points: &[(&str, &[u32])] = &[
-        ("a", &[0, 1]),
-        ("a", &[0]),
-        ("b", &[0, 1, 2]),
-        ("b", &[1]),
-    ];
+    let points: &[(&str, &[u32])] = &[("a", &[0, 1]), ("a", &[0]), ("b", &[0, 1, 2]), ("b", &[1])];
 
     let points = points
         .iter()
@@ -217,7 +213,12 @@ async fn sparse_idf_corpus_search() {
     // Corpus = tenant a: N = 2, df = [2, 1, 0] — while retrieval stays
     // unfiltered. Scoring changes for every point, including tenant b's.
     let corpus_a = |df: usize| expected_idf(2, df);
-    let decoupled = search(&collection, None, Some(idf_corpus_params(tenant_filter("a")))).await;
+    let decoupled = search(
+        &collection,
+        None,
+        Some(idf_corpus_params(tenant_filter("a"))),
+    )
+    .await;
     let scores = scores_by_id(&decoupled);
     assert_score(&scores, 0, corpus_a(2) + corpus_a(1));
     assert_score(&scores, 1, corpus_a(2));
@@ -240,7 +241,12 @@ async fn sparse_idf_corpus_search() {
     // Tightening the retrieval filter must NOT move the scores when the
     // corpus stays fixed — the score scale is defined by the corpus alone.
     let corpus_b = |df: usize| expected_idf(2, df);
-    let broad = search(&collection, None, Some(idf_corpus_params(tenant_filter("b")))).await;
+    let broad = search(
+        &collection,
+        None,
+        Some(idf_corpus_params(tenant_filter("b"))),
+    )
+    .await;
     let narrow = search(
         &collection,
         Some(tenant_filter("b")),

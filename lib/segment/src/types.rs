@@ -4398,15 +4398,17 @@ mod tests {
         .unwrap_err();
 
         // Non-`match` field conditions are rejected.
-        corpus_params(Filter::new_must(Condition::Field(FieldCondition::new_range(
-            JsonPath::new("year"),
-            Range {
-                lt: None,
-                gt: None,
-                gte: Some(OrderedFloat(2024.0)),
-                lte: None,
-            },
-        ))))
+        corpus_params(Filter::new_must(Condition::Field(
+            FieldCondition::new_range(
+                JsonPath::new("year"),
+                Range {
+                    lt: None,
+                    gt: None,
+                    gte: Some(OrderedFloat(2024.0)),
+                    lte: None,
+                },
+            ),
+        )))
         .validate()
         .unwrap_err();
 
