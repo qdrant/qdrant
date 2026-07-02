@@ -1,5 +1,6 @@
 mod search;
 
+use common::bitvec::BitSlice;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::InvertedIndex;
 
@@ -12,7 +13,6 @@ use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
-use common::bitvec::BitSlice;
 
 /// Read-only view over a sparse vector index.
 ///
