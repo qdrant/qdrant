@@ -309,23 +309,31 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
     fn fill_idf_statistics(
         &self,
         idf: &mut HashMap<DimId, usize>,
+        corpus: Option<&Filter>,
+        is_stopped: &std::sync::atomic::AtomicBool,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<usize> {
         match self {
-            Self::Plain(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::Hnsw(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::Plain(index) => index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter),
+            Self::Hnsw(index) => index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
-                index.fill_idf_statistics(idf, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
             }
             Self::SparseCompressedImmutableRamF16(index) => {
-                index.fill_idf_statistics(idf, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
             }
             Self::SparseCompressedImmutableRamU8(index) => {
-                index.fill_idf_statistics(idf, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
             }
-            Self::SparseCompressedStoredF32(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseCompressedStoredF16(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseCompressedStoredU8(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedStoredF32(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+            }
+            Self::SparseCompressedStoredF16(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+            }
+            Self::SparseCompressedStoredU8(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+            }
         }
     }
 

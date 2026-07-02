@@ -1905,6 +1905,7 @@ class SearchParams:
         quantization: Optional["QuantizationSearchParams"] = None,
         indexed_only: bool = False,
         acorn: Optional["AcornSearchParams"] = None,
+        idf: Optional["IdfParams"] = None,
     ) -> None:
         """
         Create SearchParams.
@@ -1915,6 +1916,7 @@ class SearchParams:
             quantization: Quantization search parameters.
             indexed_only: Whether to search only indexed vectors.
             acorn: Acorn search parameters.
+            idf: Population sparse IDF statistics are computed over.
         """
         ...
 
@@ -1941,6 +1943,37 @@ class SearchParams:
     @property
     def acorn(self) -> Optional["AcornSearchParams"]:
         """Acorn parameters."""
+        ...
+
+    @property
+    def idf(self) -> Optional["IdfParams"]:
+        """IDF scope parameters."""
+        ...
+
+class IdfParams:
+    """Population over which sparse vector IDF statistics are computed - the IDF corpus.
+
+    Only applicable to sparse vectors with the IDF modifier enabled.
+    """
+
+    def __init__(
+        self,
+        corpus: Optional["Filter"] = None,
+    ) -> None:
+        """
+        Create IdfParams.
+
+        Args:
+            corpus: Filter defining the corpus: IDF statistics are computed over
+                the points matching this filter. Restricted to a conjunction
+                (`must`) of `match` conditions on payload fields. If None,
+                statistics are collection-wide (global).
+        """
+        ...
+
+    @property
+    def corpus(self) -> Optional["Filter"]:
+        """Corpus filter, None for global statistics."""
         ...
 
 class QuantizationSearchParams:

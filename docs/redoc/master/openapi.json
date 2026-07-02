@@ -9961,6 +9961,17 @@
                 "nullable": true
               }
             ]
+          },
+          "idf": {
+            "description": "Which population sparse vector IDF statistics are computed over. By default (or with explicit `\"global\"`) statistics are collection-wide. Only applicable to sparse vectors with the IDF modifier enabled.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdfParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -10003,6 +10014,41 @@
             "maximum": 1,
             "minimum": 0,
             "nullable": true
+          }
+        }
+      },
+      "IdfParams": {
+        "description": "Population over which sparse vector IDF statistics are computed for scoring — the *IDF corpus*.\n\n- `\"global\"` — collection-wide statistics, same as omitting the parameter. - `{ \"corpus\": <filter> }` — document count and per-term document frequencies are computed over the points matching the corpus filter only. The corpus is independent of the retrieval filter and is usually broader than it.",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/IdfScope"
+          },
+          {
+            "$ref": "#/components/schemas/IdfCorpusParams"
+          }
+        ]
+      },
+      "IdfScope": {
+        "description": "Named IDF scope without a corpus filter.",
+        "oneOf": [
+          {
+            "description": "Collection-wide statistics. This is the default behavior.",
+            "type": "string",
+            "enum": [
+              "global"
+            ]
+          }
+        ]
+      },
+      "IdfCorpusParams": {
+        "description": "IDF statistics computed over the points matching a corpus filter.",
+        "type": "object",
+        "required": [
+          "corpus"
+        ],
+        "properties": {
+          "corpus": {
+            "$ref": "#/components/schemas/Filter"
           }
         }
       },

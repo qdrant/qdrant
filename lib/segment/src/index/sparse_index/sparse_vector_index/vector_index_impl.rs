@@ -76,9 +76,11 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
     fn fill_idf_statistics(
         &self,
         idf: &mut HashMap<DimId, usize>,
+        corpus: Option<&Filter>,
+        is_stopped: &std::sync::atomic::AtomicBool,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.with_view(|view| view.fill_idf_statistics(idf, hw_counter))
+    ) -> OperationResult<usize> {
+        self.with_view(|view| view.fill_idf_statistics(idf, corpus, is_stopped, hw_counter))
     }
 
     fn is_index(&self) -> bool {
