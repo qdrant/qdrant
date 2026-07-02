@@ -276,9 +276,9 @@ fn test_write_across_pages(#[values(Mode::Regular, Mode::Serverless)] mode: Mode
 
     storage.create_new_page().unwrap();
 
-    let value_len = 1000;
+    let value_len = DEFAULT_BLOCK_SIZE_BYTES * 12;
 
-    // Value should span 8 blocks
+    // Value should span 12 blocks, crossing from the last 10 blocks into the next page.
     let value = (0..)
         .map(|i| (i % 24) as u8)
         .take(value_len)
