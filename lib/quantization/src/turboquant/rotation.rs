@@ -10,9 +10,20 @@ const N_PERMUTATIONS: usize = 3;
 const PERMUTATION_SEEDS: [u64; 3] = [654605292835415893, 8636605637963351413, 1775280196666917949];
 
 /// Hadamard rotation implementation customized for TurboQuant.
+///
+/// Materializes the shared random permutations as index maps at construction
+/// time, so `apply`/`apply_inverse` replace the serial Fisher-Yates swap
+/// replay (one LCG step plus a 64-bit `%` per element) with a flat gather
+/// pass. Output stays bit-identical to the replay-based test-only oracle
+/// (`random_vector_rotation` / `random_vector_rotation_inverse`): the
+/// maps move the exact same values to the exact same positions.
 pub struct HadamardRotation {
-    /// Random (but shared) permutations.
-    permutations: [Permutation; N_PERMUTATIONS],
+    /// `forward_maps[p][k]` is the source index whose value lands at `k`
+    /// when applying permutation `p` (same shuffle as [`Permutation::permute`]).
+    forward_maps: [Vec<u32>; N_PERMUTATIONS],
+
+    /// Inverse of `forward_maps`, matching [`Permutation::unpermute`].
+    backward_maps: [Vec<u32>; N_PERMUTATIONS],
 
     /// Original dimension.
     dim: usize,
@@ -20,10 +31,34 @@ pub struct HadamardRotation {
 
 impl HadamardRotation {
     pub fn new(dim: usize) -> Self {
-        let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|index| Permutation::new_reversible(PERMUTATION_SEEDS[index], dim));
+        // The index maps store u32; larger dims would silently wrap.
+        assert!(
+            u32::try_from(dim).is_ok(),
+            "HadamardRotation dim {dim} must fit in u32",
+        );
 
-        Self { permutations, dim }
+        let forward_maps: [_; N_PERMUTATIONS] = std::array::from_fn(|index| {
+            // `new_one_way` is enough: the backward map is derived by
+            // inverting the forward one, no reverse LCG replay needed.
+            let permutation = Permutation::new_one_way(PERMUTATION_SEEDS[index], dim);
+            let mut map: Vec<u32> = (0..dim as u32).collect();
+            permutation.permute(&mut map);
+            map
+        });
+
+        let backward_maps = std::array::from_fn(|index| {
+            let mut inverse = vec![0u32; dim];
+            for (position, &source) in forward_maps[index].iter().enumerate() {
+                inverse[source as usize] = position as u32;
+            }
+            inverse
+        });
+
+        Self {
+            forward_maps,
+            backward_maps,
+            dim,
+        }
     }
 
     /// Number of coordinates this rotation spans.
@@ -33,12 +68,69 @@ impl HadamardRotation {
 
     pub fn apply(&self, x: &mut [f64]) {
         debug_assert_eq!(x.len(), self.dim);
-        apply_rotation_with_permutations(x, &self.permutations);
+        wht_and_gather_rounds(x, self.forward_maps.iter());
     }
 
     pub fn apply_inverse(&self, y: &mut [f64]) {
         debug_assert_eq!(y.len(), self.dim);
-        apply_inverse_rotation_with_permutations(y, &self.permutations);
+        wht_and_gather_rounds(y, self.backward_maps.iter().rev());
+    }
+}
+
+thread_local! {
+    /// Reusable buffer for the gather ping-pong in [`wht_and_gather_rounds`],
+    /// avoiding a heap allocation per `apply`/`apply_inverse` call on the
+    /// encode/decode hot paths.
+    static GATHER_SCRATCH: std::cell::RefCell<Vec<f64>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// WHT+normalize `x`, then for each map apply the permutation and
+/// WHT+normalize again.
+///
+/// Each permutation is one out-of-place gather that ping-pongs the live data
+/// between `x` and a scratch buffer instead of an in-place pass, avoiding a
+/// full copy per permutation; after an odd number of rounds a single copy
+/// moves the result from the scratch buffer back into `x`.
+fn wht_and_gather_rounds<'a>(x: &mut [f64], maps: impl Iterator<Item = &'a Vec<u32>>) {
+    GATHER_SCRATCH.with(|cell| {
+        let mut scratch = cell.borrow_mut();
+        scratch.resize(x.len(), 0.0);
+
+        wht_normalized_chunks(x);
+
+        let mut src: &mut [f64] = x;
+        let mut dst: &mut [f64] = scratch.as_mut_slice();
+        let mut rounds = 0;
+        for map in maps {
+            gather_permuted(dst, src, map);
+            wht_normalized_chunks(dst);
+            std::mem::swap(&mut src, &mut dst);
+            rounds += 1;
+        }
+
+        // After an odd number of rounds (`src` and `dst` swapped an odd
+        // number of times) the live data sits in the scratch buffer, now
+        // `src`, while `dst` is `x` again.
+        if rounds % 2 == 1 {
+            dst.copy_from_slice(src);
+        }
+    });
+}
+
+/// Out-of-place gather `dst[k] = src[map[k]]`: the materialized form of one
+/// permutation pass.
+fn gather_permuted(dst: &mut [f64], src: &[f64], map: &[u32]) {
+    // Hard asserts: the unchecked gather below would otherwise turn a
+    // length-mismatched call into an out-of-bounds read.
+    assert_eq!(dst.len(), src.len());
+    assert_eq!(dst.len(), map.len());
+    for (d, &s) in dst.iter_mut().zip(map) {
+        debug_assert!((s as usize) < src.len());
+        // SAFETY: `map` is a permutation of `0..map.len()` built in
+        // `HadamardRotation::new`, and `src.len() == map.len()` is asserted
+        // above, so every index is in bounds.
+        *d = unsafe { *src.get_unchecked(s as usize) };
     }
 }
 
@@ -67,6 +159,11 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
 
 /// Randomly rotates `x` in place. Produces bit-identical output to
 /// [`HadamardRotation::apply`]; invert with [`HadamardRotation::apply_inverse`].
+///
+/// Test-only: replays the Fisher-Yates shuffle instead of materializing index
+/// maps, serving as the independent parity oracle that pins
+/// [`HadamardRotation`]'s output to the historical replay behavior.
+#[cfg(test)]
 pub fn random_vector_rotation(x: &mut [f64]) {
     let dim = x.len();
 
@@ -79,6 +176,9 @@ pub fn random_vector_rotation(x: &mut [f64]) {
 
 /// Inverts the rotated `y` back. Produces bit-identical output to
 /// [`HadamardRotation::apply_inverse`].
+///
+/// Test-only parity oracle; see [`random_vector_rotation`].
+#[cfg(test)]
 pub fn random_vector_rotation_inverse(y: &mut [f64]) {
     let dim = y.len();
 
@@ -120,6 +220,7 @@ fn compute_chunk_sizes(dim: usize) -> impl Iterator<Item = usize> {
 }
 
 /// Apply a Hadamard rotation to `x` using the given `permutations`.
+#[cfg(test)]
 fn apply_rotation_with_permutations(x: &mut [f64], permutations: &[Permutation; N_PERMUTATIONS]) {
     // Apply WHT + normalize to each variable-size chunk.
     wht_normalized_chunks(x);
@@ -132,6 +233,7 @@ fn apply_rotation_with_permutations(x: &mut [f64], permutations: &[Permutation; 
 }
 
 /// Apply the inverse of a Hadamard rotation to `y` using the given `permutations`.
+#[cfg(test)]
 fn apply_inverse_rotation_with_permutations(
     y: &mut [f64],
     permutations: &[Permutation; N_PERMUTATIONS],
@@ -146,19 +248,17 @@ fn apply_inverse_rotation_with_permutations(
     }
 }
 
-/// Apply WHT + normalization to variable-size chunks.
+/// Apply WHT + normalization to variable-size chunks. The normalization
+/// multiply is fused into the transform's final stage where a SIMD path
+/// exists (bit-equal to a separate multiply pass).
 fn wht_normalized_chunks(buf: &mut [f64]) {
     let mut offset = 0;
 
     for size in compute_chunk_sizes(buf.len()) {
         let chunk = &mut buf[offset..offset + size];
 
-        simd::hadamard::wht_dispatch(chunk);
-
         let norm = 1.0 / (size as f64).sqrt();
-        for v in chunk.iter_mut() {
-            *v *= norm;
-        }
+        simd::hadamard::wht_dispatch_scaled(chunk, norm);
 
         offset += size;
     }
