@@ -648,7 +648,10 @@ where
     }
 
     /// Append a mapping at the given offset, growing the file by exactly the
-    /// written slot (no pre-allocation). Gaps read back as zeros (None).
+    /// written slot (no pre-allocation).
+    ///
+    /// If the slot lands past the end of the file, the write is padded with
+    /// zeroes (unmapped slots) so it is one contiguous append.
     fn persist_pointer_append(
         &mut self,
         point_offset: PointOffset,
@@ -656,16 +659,26 @@ where
     ) -> Result<()> {
         let start_offset =
             size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
+        let file_len = self.storage.len::<u8>()? as usize;
 
         // Strictly append: the slot must be at the very end of the file, never
         // replacing existing bytes - not even zero padding.
         debug_assert!(
-            start_offset as u64 >= self.storage.len::<u8>()?,
+            start_offset >= file_len,
             "append-only tracker flush must write at the very end of the file, point {point_offset} lands within it",
         );
 
-        self.storage
-            .write_grow(start_offset as u64, &[OptionalPointer::some(pointer)])?;
+        let slot = OptionalPointer::some(pointer);
+        let gap_bytes = start_offset.saturating_sub(file_len);
+        if gap_bytes == 0 {
+            self.storage.write_grow(start_offset as u64, &[slot])?;
+        } else {
+            // Pad the write with zeroes so the mapping lands in the correct
+            // place, appended at the end of the file as one write.
+            let mut buffer = vec![0u8; gap_bytes + size_of::<OptionalPointer>()];
+            buffer[gap_bytes..].copy_from_slice(bytemuck::bytes_of(&slot));
+            self.storage.write_grow(file_len as u64, &buffer)?;
+        }
         Ok(())
     }
 

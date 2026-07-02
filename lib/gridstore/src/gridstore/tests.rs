@@ -2498,3 +2498,80 @@ fn test_serverless_unmap_leaves_mapping_in_place() {
         Some(&payload_1),
     );
 }
+
+/// A serverless append past the end of the file pads the write with zeroed
+/// (unmapped) slots so the mapping lands at its correct place.
+#[test]
+fn test_serverless_tracker_pads_mapping_gap_with_zeroes() {
+    const HEADER_SIZE: usize = size_of::<u32>();
+    const SLOT_SIZE: usize = size_of::<u32>() + size_of::<ValuePointer>();
+
+    let (dir, mut storage) = empty_storage(Mode::Serverless);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    // Write points 0 and 3, skipping 1 and 2.
+    let payload_0 = random_payload(rng, 1);
+    let payload_3 = random_payload(rng, 1);
+    storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
+    storage.put_value(3, &payload_3, hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+
+    // The file covers slots 0..=3 exactly; the skipped slots are zero.
+    let bytes = fs::read(dir.path().join("tracker.dat")).unwrap();
+    assert_eq!(bytes.len(), HEADER_SIZE + 4 * SLOT_SIZE);
+    assert!(
+        bytes[HEADER_SIZE + SLOT_SIZE..HEADER_SIZE + 3 * SLOT_SIZE]
+            .iter()
+            .all(|&b| b == 0),
+        "skipped slots must be zero-padded",
+    );
+
+    // The skipped points read as missing; the mapped ones round-trip.
+    assert!(
+        storage
+            .get_value::<Random>(1, &hw_counter)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        storage
+            .get_value::<Random>(2, &hw_counter)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(0, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&payload_0),
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(3, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&payload_3),
+    );
+
+    // Same after reopen; the count is derived from the last mapping.
+    let path = dir.path().to_path_buf();
+    drop(storage);
+    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No, Mode::Serverless).unwrap();
+    assert_eq!(storage.max_point_offset(), 4);
+    assert!(
+        storage
+            .get_value::<Random>(1, &hw_counter)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        storage
+            .get_value::<Random>(3, &hw_counter)
+            .unwrap()
+            .as_ref(),
+        Some(&payload_3),
+    );
+}
