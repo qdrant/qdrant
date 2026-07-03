@@ -1,5 +1,6 @@
 mod dynamic;
 mod reader;
+mod serverless;
 pub(crate) mod view;
 
 #[cfg(test)]
@@ -15,6 +16,7 @@ use common::universal_io::{MmapFile, Populate, UniversalWrite, UniversalWriteFil
 use dynamic::DynamicGridstore;
 use reader::CONFIG_FILENAME;
 pub use reader::GridstoreReader;
+use serverless::ServerlessGridstore;
 pub use view::GridstoreView;
 
 use crate::Result;
@@ -51,6 +53,7 @@ where
     S: UniversalWrite + 'static,
 {
     Dynamic(DynamicGridstore<V, S>),
+    Serverless(ServerlessGridstore<V, S>),
 }
 
 impl<V, S> Gridstore<V, S>
@@ -62,12 +65,14 @@ where
     pub fn files(&self) -> Vec<PathBuf> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.files(),
+            GridstoreVariant::Serverless(storage) => storage.files(),
         }
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.immutable_files(),
+            GridstoreVariant::Serverless(storage) => storage.immutable_files(),
         }
     }
 
@@ -102,12 +107,13 @@ where
                     variant: GridstoreVariant::Dynamic(storage),
                 })
             }
+            // The serverless mode does not use the universal io backend, it reads and writes
+            // files directly
             Mode::Serverless => {
-                // TODO: dispatch to the serverless variant once it is implemented
-                Err(GridstoreError::service_error(format!(
-                    "Serverless mode is not supported yet: {}",
-                    base_path.display(),
-                )))
+                let storage = ServerlessGridstore::new(base_path, options)?;
+                Ok(Self {
+                    variant: GridstoreVariant::Serverless(storage),
+                })
             }
         }
     }
@@ -124,12 +130,13 @@ where
                     variant: GridstoreVariant::Dynamic(storage),
                 })
             }
+            // The serverless mode does not use the universal io backend, it reads and writes
+            // files directly
             Mode::Serverless => {
-                // TODO: dispatch to the serverless variant once it is implemented
-                Err(GridstoreError::service_error(format!(
-                    "Serverless mode is not supported yet: {}",
-                    base_path.display(),
-                )))
+                let storage = ServerlessGridstore::open(base_path, config)?;
+                Ok(Self {
+                    variant: GridstoreVariant::Serverless(storage),
+                })
             }
         }
     }
@@ -137,6 +144,9 @@ where
     /// Put a value in the storage.
     ///
     /// Returns true if the value existed previously and was updated, false if it was newly inserted.
+    ///
+    /// In serverless mode values must be put at monotonically increasing point offsets, and
+    /// cannot be overwritten.
     pub fn put_value(
         &mut self,
         point_offset: PointOffset,
@@ -147,6 +157,9 @@ where
             GridstoreVariant::Dynamic(storage) => {
                 storage.put_value(point_offset, value, hw_counter)
             }
+            GridstoreVariant::Serverless(storage) => {
+                storage.put_value(point_offset, value, hw_counter)
+            }
         }
     }
 
@@ -154,9 +167,12 @@ where
     ///
     /// Returns None if the point_offset, page, or value was not found.
     /// Returns the deleted value otherwise.
+    ///
+    /// Not supported in serverless mode, returns an error.
     pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
         match &mut self.variant {
             GridstoreVariant::Dynamic(storage) => storage.delete_value(point_offset),
+            GridstoreVariant::Serverless(storage) => storage.delete_value(point_offset),
         }
     }
 
@@ -166,6 +182,7 @@ where
     pub fn clear(&mut self) -> Result<()> {
         match &mut self.variant {
             GridstoreVariant::Dynamic(storage) => storage.clear(),
+            GridstoreVariant::Serverless(storage) => storage.clear(),
         }
     }
 
@@ -176,6 +193,7 @@ where
     pub fn wipe(self) -> Result<()> {
         match self.variant {
             GridstoreVariant::Dynamic(storage) => storage.wipe(),
+            GridstoreVariant::Serverless(storage) => storage.wipe(),
         }
     }
 
@@ -183,6 +201,7 @@ where
     pub fn get_storage_size_bytes(&self) -> Result<usize> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.get_storage_size_bytes(),
+            GridstoreVariant::Serverless(storage) => storage.get_storage_size_bytes(),
         }
     }
 
@@ -193,6 +212,9 @@ where
     ) -> Result<Option<V>> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.get_value::<P>(point_offset, hw_counter),
+            GridstoreVariant::Serverless(storage) => {
+                storage.get_value::<P>(point_offset, hw_counter)
+            }
         }
     }
 
@@ -214,6 +236,9 @@ where
             GridstoreVariant::Dynamic(storage) => {
                 storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
+            GridstoreVariant::Serverless(storage) => {
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+            }
         }
     }
 
@@ -221,12 +246,14 @@ where
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.get_pointer(point_offset),
+            GridstoreVariant::Serverless(storage) => storage.get_pointer(point_offset),
         }
     }
 
     pub fn max_point_offset(&self) -> PointOffset {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.max_point_offset(),
+            GridstoreVariant::Serverless(storage) => storage.max_point_offset(),
         }
     }
 
@@ -240,6 +267,7 @@ where
     {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.iter(callback, hw_counter),
+            GridstoreVariant::Serverless(storage) => storage.iter(callback, hw_counter),
         }
     }
 }
@@ -249,20 +277,27 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     pub fn flusher(&self) -> Flusher {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.flusher(),
+            GridstoreVariant::Serverless(storage) => storage.flusher(),
         }
     }
 
     /// Populate all parts of the storage in the mmap.
+    ///
+    /// No-op in serverless mode, which does not memory map its files.
     pub fn populate(&self) -> Result<()> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.populate(),
+            GridstoreVariant::Serverless(storage) => storage.populate(),
         }
     }
 
     /// Drop disk cache.
+    ///
+    /// No-op in serverless mode, which does not memory map its files.
     pub fn clear_cache(&self) -> crate::Result<()> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.clear_cache(),
+            GridstoreVariant::Serverless(storage) => storage.clear_cache(),
         }
     }
 }
@@ -273,6 +308,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn as_dynamic(&self) -> &DynamicGridstore<V, S> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage,
+            GridstoreVariant::Serverless(_) => panic!("storage is not in dynamic mode"),
         }
     }
 
@@ -280,6 +316,15 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn as_dynamic_mut(&mut self) -> &mut DynamicGridstore<V, S> {
         match &mut self.variant {
             GridstoreVariant::Dynamic(storage) => storage,
+            GridstoreVariant::Serverless(_) => panic!("storage is not in dynamic mode"),
+        }
+    }
+
+    /// Get the inner serverless storage, panics if the storage is in another mode.
+    fn as_serverless(&self) -> &ServerlessGridstore<V, S> {
+        match &self.variant {
+            GridstoreVariant::Dynamic(_) => panic!("storage is not in serverless mode"),
+            GridstoreVariant::Serverless(storage) => storage,
         }
     }
 }
