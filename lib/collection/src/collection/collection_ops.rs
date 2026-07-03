@@ -357,7 +357,27 @@ impl Collection {
         let updates = shard_holder
             .all_shards()
             .map(|replica_set| replica_set.on_optimizer_config_update());
-        future::try_join_all(updates).await?;
+
+        // `on_optimizer_config_update` is *not* cancel safe: once a shard has stopped its update
+        // workers it must reach `run_workers` before the future is dropped. `try_join_all` cancels
+        // sibling futures on the first error, so use `join_all` and aggregate errors instead.
+        let results = future::join_all(updates).await;
+
+        let mut first_err = None;
+        for result in results {
+            if let Err(err) = result {
+                if first_err.is_none() {
+                    first_err = Some(err);
+                } else {
+                    log::error!("Additional shard optimizer recreation failure: {err}");
+                }
+            }
+        }
+
+        if let Some(err) = first_err {
+            return Err(err);
+        }
+
         Ok(())
     }
 
