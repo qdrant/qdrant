@@ -69,11 +69,11 @@ impl ServerlessPage {
     /// Open an existing page in the given directory.
     ///
     /// If the file does not exist, return an error.
-    fn open(dir: &Path) -> Result<Self> {
+    fn open(dir: &Path, writeable: bool) -> Result<Self> {
         let path = Self::page_file_name(dir);
         let file = fs::OpenOptions::new()
             .read(true)
-            .write(true)
+            .write(writeable)
             .open(&path)
             .map_err(|err| {
                 if err.kind() == std::io::ErrorKind::NotFound {
@@ -134,6 +134,15 @@ impl ServerlessPage {
         Ok(buf)
     }
 
+    /// Reload the length from the file, making newly appended value data visible in the reported
+    /// storage size.
+    ///
+    /// Reads themselves always go directly to the file and need no reload.
+    fn refresh_len(&mut self) -> Result<()> {
+        self.len = self.file.metadata()?.len();
+        Ok(())
+    }
+
     /// Create a closure that syncs all written value data in the page file to disk.
     fn flusher(&self) -> Result<Flusher> {
         let file = self.file.try_clone()?;
@@ -141,6 +150,161 @@ impl ServerlessPage {
             file.sync_data()?;
             Ok(())
         }))
+    }
+}
+
+fn compress(compression: Compression, value: Vec<u8>) -> Vec<u8> {
+    match compression {
+        Compression::None => value,
+        Compression::LZ4 => compress_lz4(&value),
+    }
+}
+
+fn decompress(compression: Compression, value: Vec<u8>) -> Vec<u8> {
+    match compression {
+        Compression::None => value,
+        Compression::LZ4 => decompress_lz4(&value),
+    }
+}
+
+/// A non-owning view into gridstore data in serverless mode.
+///
+/// Holds borrowed references to the tracker and page, and contains all reading logic.
+///
+/// The serverless mode does not use the universal io backend `S`, it reads files directly. The
+/// parameter is kept so this view fits in the generic [`super::GridstoreView`].
+pub(super) struct ServerlessGridstoreView<'a, V, S> {
+    config: &'a StorageConfig,
+    tracker: &'a ServerlessTracker,
+    page: &'a ServerlessPage,
+    _phantom: PhantomData<(V, S)>,
+}
+
+impl<'a, V, S> ServerlessGridstoreView<'a, V, S> {
+    fn new(
+        config: &'a StorageConfig,
+        tracker: &'a ServerlessTracker,
+        page: &'a ServerlessPage,
+    ) -> Self {
+        Self {
+            config,
+            tracker,
+            page,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub(super) fn max_point_offset(&self) -> PointOffset {
+        self.tracker.pointer_count()
+    }
+
+    /// Return the storage size in bytes (precise, the exact amount of appended value data).
+    pub(super) fn get_storage_size_bytes(&self) -> usize {
+        self.page.len() as usize
+    }
+
+    /// Read the raw value bytes at the given pointer.
+    pub(super) fn read_from_page(&self, pointer: ValuePointer) -> Result<Vec<u8>> {
+        self.page
+            .read_value(pointer, self.config.block_size_bytes as u64)
+    }
+}
+
+impl<'a, V: Blob, S> ServerlessGridstoreView<'a, V, S> {
+    /// Get the value for a given point offset.
+    ///
+    /// The access pattern `P` is ignored, the serverless mode always reads the file directly.
+    #[allow(clippy::extra_unused_type_parameters)]
+    pub(super) fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<V>> {
+        let Some(pointer) = self.tracker.get(point_offset)? else {
+            return Ok(None);
+        };
+
+        let raw = self.read_from_page(pointer)?;
+        hw_counter.payload_io_read_counter().incr_delta(raw.len());
+
+        let decompressed = decompress(self.config.compression, raw);
+        Ok(Some(V::from_bytes(&decompressed)))
+    }
+
+    /// Iterate over all given values and execute callback for each one.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    ///
+    /// The access pattern `P` is ignored, the serverless mode always reads the file directly.
+    #[allow(clippy::extra_unused_type_parameters)]
+    pub(super) fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<GridstoreError>,
+    {
+        for (user_data, point_offset) in point_offsets {
+            let value = match self.tracker.get(point_offset).map_err(E::from)? {
+                None => None,
+                Some(pointer) => {
+                    let raw = self.read_from_page(pointer).map_err(E::from)?;
+                    hw_counter_cell.incr_delta(raw.len());
+
+                    let decompressed = decompress(self.config.compression, raw);
+                    Some(V::from_bytes(&decompressed))
+                }
+            };
+
+            if !callback(user_data, point_offset, value)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Iterate over a contiguous range of point offsets and execute callback for each existing
+    /// value. Missing values are skipped.
+    ///
+    /// The mappings for the whole range are fetched with a single batched read.
+    ///
+    /// Return `false` from the callback to stop iteration early. Returns whether iteration should
+    /// continue.
+    pub(super) fn iter_range<F, E>(
+        &self,
+        point_offsets: std::ops::Range<PointOffset>,
+        mut callback: F,
+        hw_counter: HwMetricRefCounter,
+    ) -> Result<bool, E>
+    where
+        F: FnMut(PointOffset, V) -> Result<bool, E>,
+        E: From<GridstoreError>,
+    {
+        let start = point_offsets.start;
+        let pointers = self.tracker.get_range(point_offsets).map_err(E::from)?;
+
+        for (index, pointer) in pointers.into_iter().enumerate() {
+            let Some(pointer) = pointer else {
+                continue;
+            };
+
+            let raw = self.read_from_page(pointer).map_err(E::from)?;
+            hw_counter.incr_delta(raw.len());
+
+            let decompressed = decompress(self.config.compression, raw);
+            let value = V::from_bytes(&decompressed);
+
+            if !callback(start + index as PointOffset, value)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 }
 
@@ -213,7 +377,7 @@ where
     /// Open an existing storage at the given path, with the already read config.
     pub(super) fn open(base_path: PathBuf, config: StorageConfig) -> Result<Self> {
         let tracker = ServerlessTracker::open(&base_path, true)?;
-        let page = ServerlessPage::open(&base_path)?;
+        let page = ServerlessPage::open(&base_path, true)?;
 
         Ok(Self {
             config,
@@ -225,18 +389,12 @@ where
         })
     }
 
-    fn compress(&self, value: Vec<u8>) -> Vec<u8> {
-        match self.config.compression {
-            Compression::None => value,
-            Compression::LZ4 => compress_lz4(&value),
-        }
-    }
-
-    fn decompress(&self, value: Vec<u8>) -> Vec<u8> {
-        match self.config.compression {
-            Compression::None => value,
-            Compression::LZ4 => decompress_lz4(&value),
-        }
+    /// Create a [`ServerlessGridstoreView`] by locking tracker and page, then call `f` with the
+    /// view.
+    pub(super) fn with_view<R>(&self, f: impl FnOnce(ServerlessGridstoreView<'_, V, S>) -> R) -> R {
+        let tracker = self.tracker.read();
+        let page = self.page.read();
+        f(ServerlessGridstoreView::new(&self.config, &tracker, &page))
     }
 
     /// Put a value in the storage.
@@ -268,7 +426,7 @@ where
         }
 
         let value_bytes = value.to_bytes();
-        let comp_value = self.compress(value_bytes);
+        let comp_value = compress(self.config.compression, value_bytes);
         let value_size = comp_value.len();
 
         hw_counter.incr_delta(value_size);
@@ -336,36 +494,19 @@ where
     // Wrapped in Result for signature parity with the dynamic variant
     #[allow(clippy::unnecessary_wraps)]
     pub(super) fn get_storage_size_bytes(&self) -> Result<usize> {
-        Ok(self.page.read().len() as usize)
+        Ok(self.with_view(|view| view.get_storage_size_bytes()))
     }
 
     /// Get the value for a given point offset.
-    ///
-    /// The access pattern `P` is ignored, the serverless mode always reads the file directly.
-    #[allow(clippy::extra_unused_type_parameters)]
     pub(super) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        let Some(pointer) = self.tracker.read().get(point_offset)? else {
-            return Ok(None);
-        };
-
-        let raw = self
-            .page
-            .read()
-            .read_value(pointer, self.config.block_size_bytes as u64)?;
-        hw_counter.payload_io_read_counter().incr_delta(raw.len());
-
-        let decompressed = self.decompress(raw);
-        Ok(Some(V::from_bytes(&decompressed)))
+        self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
     }
 
     /// Iterate over all given values and execute callback for each one.
-    ///
-    /// The access pattern `P` is ignored, the serverless mode always reads the file directly.
-    #[allow(clippy::extra_unused_type_parameters)]
     pub(super) fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
@@ -377,26 +518,16 @@ where
         U: UserData,
         E: From<GridstoreError>,
     {
-        let block_size_bytes = self.config.block_size_bytes as u64;
-        let tracker = self.tracker.read();
-        let page = self.page.read();
-
-        for (user_data, point_offset) in point_offsets {
-            let value = match tracker.get(point_offset).map_err(E::from)? {
-                None => None,
-                Some(pointer) => {
-                    let raw = page
-                        .read_value(pointer, block_size_bytes)
-                        .map_err(E::from)?;
-                    hw_counter_cell.incr_delta(raw.len());
-
-                    let decompressed = self.decompress(raw);
-                    Some(V::from_bytes(&decompressed))
-                }
-            };
-
-            callback(user_data, point_offset, value)?;
-        }
+        self.with_view(|view| {
+            view.read_values::<P, _, _>(
+                point_offsets,
+                move |user_data, point_offset, value| -> Result<_, E> {
+                    callback(user_data, point_offset, value)?;
+                    Ok(true)
+                },
+                hw_counter_cell,
+            )
+        })?;
 
         Ok(())
     }
@@ -422,46 +553,36 @@ where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let block_size_bytes = self.config.block_size_bytes as u64;
         let mut current_offset = 0;
+        let mut max_offset = PointOffset::MAX;
 
-        loop {
+        let mut should_continue = true;
+
+        while current_offset < max_offset && should_continue {
             // Iterate in batches to allow releasing read locks
             const BATCH_SIZE: PointOffset = 256;
 
-            let tracker = self.tracker.read();
-            let page = self.page.read();
+            self.with_view(|view| -> Result<_, E> {
+                max_offset = view.max_point_offset();
 
-            let max_offset = tracker.pointer_count();
-            if current_offset >= max_offset {
-                return Ok(());
-            }
-
-            let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_offset);
-            let pointers = tracker
-                .get_range(current_offset..end_offset)
-                .map_err(E::from)?;
-
-            for (index, pointer) in pointers.into_iter().enumerate() {
-                let Some(pointer) = pointer else {
-                    continue;
-                };
-
-                let raw = page
-                    .read_value(pointer, block_size_bytes)
-                    .map_err(E::from)?;
-                hw_counter.incr_delta(raw.len());
-
-                let decompressed = self.decompress(raw);
-                let value = V::from_bytes(&decompressed);
-
-                if !callback(current_offset + index as PointOffset, value)? {
+                if current_offset >= max_offset {
                     return Ok(());
                 }
-            }
 
-            current_offset = end_offset;
+                let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_offset);
+
+                should_continue =
+                    view.iter_range(current_offset..end_offset, &mut callback, hw_counter)?;
+
+                if should_continue {
+                    current_offset = end_offset;
+                }
+
+                Ok(())
+            })?;
         }
+
+        Ok(())
     }
 }
 
@@ -525,17 +646,161 @@ impl<V, S: UniversalWrite + 'static> ServerlessGridstore<V, S> {
     }
 }
 
+/// Read-only storage for values of type `V`, operating in serverless mode.
+///
+/// Holds the tracker and page directly (no locks) since it provides only read access.
+/// For read-write access, use [`ServerlessGridstore`].
+///
+/// The serverless mode does not use the universal io backend `S`, it reads files directly. The
+/// parameter is kept so this reader fits in the generic [`super::GridstoreReader`].
+#[derive(Debug)]
+pub(super) struct ServerlessGridstoreReader<V, S> {
+    config: StorageConfig,
+    tracker: ServerlessTracker,
+    page: ServerlessPage,
+    base_path: PathBuf,
+    _phantom: PhantomData<(V, S)>,
+}
+
+impl<V: Blob, S> ServerlessGridstoreReader<V, S> {
+    /// Open an existing read-only storage at the given path, with the already read config.
+    pub(super) fn open(base_path: PathBuf, config: StorageConfig) -> Result<Self> {
+        let tracker = ServerlessTracker::open(&base_path, false)?;
+        let page = ServerlessPage::open(&base_path, false)?;
+
+        Ok(Self {
+            config,
+            tracker,
+            page,
+            base_path,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Create a [`ServerlessGridstoreView`] borrowing this reader's data.
+    pub(super) fn view(&self) -> ServerlessGridstoreView<'_, V, S> {
+        ServerlessGridstoreView::new(&self.config, &self.tracker, &self.page)
+    }
+
+    /// List all files belonging to this reader (tracker, page, config).
+    pub(super) fn files(&self) -> Vec<PathBuf> {
+        let mut paths = self.tracker.files();
+        paths.extend(self.page.files());
+        paths.push(self.base_path.join(CONFIG_FILENAME));
+        paths
+    }
+
+    pub(super) fn max_point_offset(&self) -> PointOffset {
+        self.tracker.pointer_count()
+    }
+
+    pub(super) fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<V>> {
+        self.view().get_value::<P>(point_offset, hw_counter)
+    }
+
+    /// Iterate over all values with point offsets below `max_id` and execute callback for each
+    /// one. Missing values are skipped.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    pub(super) fn iter<F, E>(
+        &self,
+        max_id: PointOffset,
+        callback: F,
+        hw_counter: HwMetricRefCounter,
+    ) -> Result<(), E>
+    where
+        F: FnMut(PointOffset, V) -> Result<bool, E>,
+        E: From<GridstoreError>,
+    {
+        let max_id = max_id.min(self.max_point_offset());
+        self.view().iter_range(0..max_id, callback, hw_counter)?;
+        Ok(())
+    }
+
+    pub(super) fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<GridstoreError>,
+    {
+        self.view().read_values::<P, _, _>(
+            point_offsets,
+            move |user_data, point_offset, value| -> Result<_, E> {
+                callback(user_data, point_offset, value)?;
+                Ok(true)
+            },
+            hw_counter_cell,
+        )?;
+
+        Ok(())
+    }
+
+    /// Return the storage size in bytes (precise, the exact amount of appended value data).
+    pub(super) fn get_storage_size_bytes(&self) -> usize {
+        self.view().get_storage_size_bytes()
+    }
+
+    /// This method reloads the storage from "disk", so that it makes newly appended data
+    /// readable.
+    ///
+    /// Important assumptions:
+    ///
+    /// - Data is append-only, existing mappings and value data never change.
+    /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
+    ///   counted.
+    pub(super) fn live_reload(&mut self) -> Result<()> {
+        let has_new_data = self.tracker.live_reload()?;
+
+        if !has_new_data {
+            return Ok(());
+        }
+
+        // Value reads always go directly to the file; refreshing the page length only updates
+        // the reported storage size
+        self.page.refresh_len()?;
+
+        Ok(())
+    }
+}
+
+impl<V, S> ServerlessGridstoreReader<V, S> {
+    /// Returns `true`: serverless storage always reads from disk, it is never memory mapped or
+    /// populated into RAM.
+    #[allow(clippy::unused_self)]
+    pub(super) fn is_on_disk(&self) -> bool {
+        true
+    }
+
+    /// Dropping disk cache is a no-op in serverless mode.
+    ///
+    /// Files are read directly without memory mapping, the OS page cache manages caching.
+    // Signature parity with the dynamic variant
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    pub(super) fn clear_cache(&self) -> crate::Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
-    use common::universal_io::{MmapFs, Populate};
+    use common::universal_io::{MmapFile, MmapFs, Populate};
     use tempfile::TempDir;
 
     use super::*;
-    use crate::Gridstore;
     use crate::config::Mode;
     use crate::fixtures::{Payload, empty_storage_serverless, random_payload};
+    use crate::{Gridstore, GridstoreReader};
 
     /// Size in bytes of a single mapping entry in the tracker file
     const TRACKER_ENTRY_SIZE: u64 = 16;
@@ -1011,5 +1276,141 @@ mod tests {
         )
         .unwrap();
         storage.as_serverless();
+    }
+
+    #[test]
+    fn test_reader_on_serverless_storage() {
+        let dir = TempDir::new().unwrap();
+        let options = StorageOptions {
+            compression: Some(Compression::None),
+            mode: Some(Mode::Serverless),
+            ..Default::default()
+        };
+        let mut storage =
+            Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        for point_offset in [0, 1, 4] {
+            storage
+                .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        // The reader selects the serverless mode automatically
+        let reader = GridstoreReader::<Vec<u8>, MmapFile>::open(
+            &MmapFs,
+            dir.path().to_path_buf(),
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.max_point_offset().unwrap(), 5);
+        assert!(reader.is_on_disk());
+        // Three values, packed at consecutive blocks: point offset gaps take no page space
+        assert_eq!(reader.get_storage_size_bytes(), 2 * 128 + 10);
+        reader.clear_cache().unwrap();
+
+        assert_eq!(
+            reader.get_value::<Random>(0, &hw_counter).unwrap(),
+            Some(vec![0; 10]),
+        );
+        assert_eq!(reader.get_value::<Random>(2, &hw_counter).unwrap(), None);
+
+        // Reader files match the writer files
+        let mut reader_files = reader.files();
+        let mut writer_files = storage.files();
+        reader_files.sort();
+        writer_files.sort();
+        assert_eq!(reader_files, writer_files);
+
+        // Iteration is bounded by the given maximum id and skips gaps
+        let mut collected = Vec::new();
+        reader
+            .iter(
+                4,
+                |point_offset, value: Vec<u8>| {
+                    collected.push((point_offset, value));
+                    Ok::<_, GridstoreError>(true)
+                },
+                hw_counter.ref_payload_io_read_counter(),
+            )
+            .unwrap();
+        assert_eq!(collected, vec![(0, vec![0; 10]), (1, vec![1; 10])]);
+
+        // Batched reads through the reader and its view
+        let mut collected = Vec::new();
+        reader
+            .read_values::<Random, _, GridstoreError>(
+                [(0, 0), (1, 3), (2, 4)].iter().copied(),
+                |user_data, point_offset, value| {
+                    collected.push((user_data, point_offset, value.is_some()));
+                    Ok(())
+                },
+                hw_counter.payload_io_read_counter(),
+            )
+            .unwrap();
+        assert_eq!(collected, vec![(0, 0, true), (1, 3, false), (2, 4, true)]);
+
+        let view = reader.view();
+        assert_eq!(view.max_point_offset().unwrap(), 5);
+        assert_eq!(view.get_storage_size_bytes(), 2 * 128 + 10);
+        assert_eq!(
+            view.get_value::<Random>(4, &hw_counter).unwrap(),
+            Some(vec![4; 10]),
+        );
+    }
+
+    #[test]
+    fn test_reader_live_reload() {
+        let dir = TempDir::new().unwrap();
+        let options = StorageOptions {
+            compression: Some(Compression::None),
+            mode: Some(Mode::Serverless),
+            ..Default::default()
+        };
+        let mut storage =
+            Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        for point_offset in 0..3 {
+            storage
+                .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        let mut reader = GridstoreReader::<Vec<u8>, MmapFile>::open(
+            &MmapFs,
+            dir.path().to_path_buf(),
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.max_point_offset().unwrap(), 3);
+
+        // Without new data, a live reload changes nothing
+        reader.live_reload(&MmapFs).unwrap();
+        assert_eq!(reader.max_point_offset().unwrap(), 3);
+
+        // The writer appends more values, the reader picks them up after a live reload
+        for point_offset in 3..6 {
+            storage
+                .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        reader.live_reload(&MmapFs).unwrap();
+        assert_eq!(reader.max_point_offset().unwrap(), 6);
+        assert_eq!(reader.get_storage_size_bytes(), 5 * 128 + 10);
+        for point_offset in 0..6 {
+            assert_eq!(
+                reader
+                    .get_value::<Random>(point_offset, &hw_counter)
+                    .unwrap(),
+                Some(vec![point_offset as u8; 10]),
+            );
+        }
     }
 }

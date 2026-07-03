@@ -14,7 +14,7 @@ use parking_lot::RwLock;
 
 use super::Flusher;
 use super::reader::CONFIG_FILENAME;
-use super::view::GridstoreView;
+use super::view::DynamicGridstoreView;
 use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
@@ -54,11 +54,14 @@ where
     V: Blob,
     S: UniversalWrite + 'static,
 {
-    /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
-    pub(super) fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, S, Tracker<S>>) -> R) -> R {
+    /// Create a [`DynamicGridstoreView`] by locking pages and tracker, then call `f` with the view.
+    pub(super) fn with_view<R>(
+        &self,
+        f: impl FnOnce(DynamicGridstoreView<'_, V, S, Tracker<S>>) -> R,
+    ) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
-        f(GridstoreView::new(&self.config, &tracker, &pages))
+        f(DynamicGridstoreView::new(&self.config, &tracker, &pages))
     }
 
     /// List all files belonging to this storage (tracker, pages, bitmask, config).
