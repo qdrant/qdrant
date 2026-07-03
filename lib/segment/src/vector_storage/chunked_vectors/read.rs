@@ -183,6 +183,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
     }
 
+    // non-linux implementation never returns Result::Err
+    #[cfg_attr(not(target_os = "linux"), expect(clippy::unnecessary_wraps))]
     pub fn for_each_in_batch<F>(
         &self,
         keys: &[PointOffsetType],
