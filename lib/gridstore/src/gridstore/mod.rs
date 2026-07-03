@@ -806,7 +806,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn flusher_serverless(&self) -> Flusher {
         debug_assert!(
             self.mode.is_serverless(),
-            "flusher_dynamic may only be called in serverless mode",
+            "flusher_serverless may only be called in serverless mode",
         );
 
         let pending_updates = self.tracker.read().pending_updates.clone();

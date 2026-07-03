@@ -661,13 +661,14 @@ where
             size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
         let file_len = self.storage.len::<u8>()? as usize;
 
-        // Strictly append: the slot must be at the very end of the file, never
-        // replacing existing bytes - not even zero padding.
-        debug_assert!(
-            start_offset >= file_len,
-            "append-only tracker flush must write at the very end of the file, point {point_offset} lands within it",
-        );
-
+        // Strictly append: the slot must be at or past the current end of the file.
+        // If it lands within the existing file, we'd overwrite bytes, which is not allowed
+        // for append-only (serverless) storage.
+        if start_offset < file_len {
+            return Err(GridstoreError::service_error(format!(
+                "append-only tracker flush must not overwrite existing bytes for point {point_offset}"
+            )));
+        }
         let slot = OptionalPointer::some(pointer);
         let gap_bytes = start_offset.saturating_sub(file_len);
         if gap_bytes == 0 {
