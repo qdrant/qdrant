@@ -28,7 +28,7 @@ impl UniversalReadFileOps for MmapFs {
         Ok(MmapFs)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<(PathBuf, u64)>> {
         local_file_ops::local_list_files(prefix_path)
     }
 

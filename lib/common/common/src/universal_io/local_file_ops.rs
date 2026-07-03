@@ -29,7 +29,7 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Resu
     })
 }
 
-pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>> {
+pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<(PathBuf, u64)>> {
     let dir = prefix_path.parent().unwrap_or(Path::new("."));
     let file_prefix = prefix_path
         .file_name()
@@ -46,7 +46,10 @@ pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<P
             && name.starts_with(&file_prefix)
             && entry.file_type()?.is_file()
         {
-            results.push(dir.join(name));
+            let path = dir.join(name);
+            let size = entry.metadata()?.len();
+
+            results.push((path, size));
         }
     }
 

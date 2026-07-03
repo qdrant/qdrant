@@ -26,13 +26,14 @@ pub trait UniversalReadFileOps: Clone + Debug + Sized {
     /// Build a filesystem handle from its context.
     fn from_context(context: Self::ContextConfig) -> Result<Self>;
 
-    /// List files in the filesystem matching the given prefix.
+    /// List files in the filesystem matching the given prefix, alongside
+    /// their sizes in bytes.
     ///
     /// Example: `./gridstore/page_` should return
-    /// - `./gridstore/page_1.dat`
-    /// - `./gridstore/page_2.dat`
-    /// - `./gridstore/page_3.dat`
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>>;
+    /// - `./gridstore/page_1.dat` (size in bytes)
+    /// - `./gridstore/page_2.dat` (size in bytes)
+    /// - `./gridstore/page_3.dat` (size in bytes)
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<(PathBuf, u64)>>;
 
     /// Check whether a file exists at the given path.
     fn exists(&self, path: &Path) -> Result<bool>;

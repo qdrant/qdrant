@@ -32,7 +32,7 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static;
+    ) -> impl Future<Output = Result<Vec<(PathBuf, u64)>>> + Send + 'static;
 
     fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static;
 

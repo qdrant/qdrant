@@ -73,7 +73,7 @@ impl AsyncRead for CountingSource {
     fn list_files(
         &self,
         _prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static {
+    ) -> impl Future<Output = Result<Vec<(PathBuf, u64)>>> + Send + 'static {
         std::future::ready(Ok(vec![]))
     }
 

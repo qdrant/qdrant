@@ -63,7 +63,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static {
+    ) -> impl Future<Output = Result<Vec<(PathBuf, u64)>>> + Send + 'static {
         let store = self.0.clone();
         let prefix_path = prefix.to_path_buf();
         // object_store lists by whole path segment; emulate the byte-prefix
@@ -84,9 +84,12 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
             {
                 Ok(entries) => Ok(entries
                     .into_iter()
-                    .map(|e| e.location.to_string())
-                    .filter(|key| key.starts_with(&prefix_str))
-                    .map(PathBuf::from)
+                    .filter_map(|e| {
+                        let location = e.location.to_string();
+                        location
+                            .starts_with(&prefix_str)
+                            .then(|| (PathBuf::from(location), e.size))
+                    })
                     .collect()),
                 Err(object_store::Error::NotFound { .. }) => {
                     Err(UniversalIoError::NotFound { path: prefix_path })
@@ -379,14 +382,20 @@ mod tests {
             ],
         );
         let source = ObjectStoreSource::new(store);
-        let mut files: Vec<String> = runtime
+        let mut files: Vec<(String, u64)> = runtime
             .block_on(source.list_files(Path::new("dir/page_")))
             .expect("list_files")
-            .iter()
-            .map(|p| p.to_string_lossy().into_owned())
+            .into_iter()
+            .map(|(p, size)| (p.to_string_lossy().into_owned(), size))
             .collect();
         files.sort();
-        assert_eq!(files, ["dir/page_0.dat", "dir/page_1.dat"]);
+        assert_eq!(
+            files,
+            [
+                ("dir/page_0.dat".to_string(), 1),
+                ("dir/page_1.dat".to_string(), 1),
+            ]
+        );
     }
 
     #[test]

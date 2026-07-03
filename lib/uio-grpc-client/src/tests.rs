@@ -36,14 +36,20 @@ impl StorageReadTrait for MockServer {
         request: Request<ListFilesRequest>,
     ) -> std::result::Result<Response<ListFilesResponse>, Status> {
         let req = request.into_inner();
-        let mut paths: Vec<String> = self
+        let mut files: Vec<ListFilesEntry> = self
             .files
-            .keys()
-            .filter(|(col, path)| col == &req.collection_name && path.starts_with(&req.prefix_path))
-            .map(|(_, path)| path.clone())
+            .iter()
+            .filter_map(|((col, path), data)| {
+                (col == &req.collection_name && path.starts_with(&req.prefix_path)).then(|| {
+                    ListFilesEntry {
+                        path: path.clone(),
+                        size: data.len() as u64,
+                    }
+                })
+            })
             .collect();
-        paths.sort();
-        Ok(Response::new(ListFilesResponse { paths }))
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(Response::new(ListFilesResponse { files }))
     }
 
     async fn file_exists(
@@ -192,11 +198,14 @@ fn test_files() -> HashMap<(String, String), Vec<u8>> {
 async fn list_files() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url, None).await.unwrap();
-    let mut paths = client.list_files("test-col", 0, "data/").await.unwrap();
-    paths.sort();
+    let mut files = client.list_files("test-col", 0, "data/").await.unwrap();
+    files.sort();
     assert_eq!(
-        paths,
-        vec![PathBuf::from("data/a.bin"), PathBuf::from("data/b.bin")]
+        files,
+        vec![
+            (PathBuf::from("data/a.bin"), 10),
+            (PathBuf::from("data/b.bin"), 10),
+        ]
     );
 }
 

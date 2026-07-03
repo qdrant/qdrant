@@ -160,7 +160,7 @@ mod tests {
         fn list_files(
             &self,
             _prefix: &Path,
-        ) -> impl Future<Output = Result<Vec<std::path::PathBuf>>> + Send + 'static {
+        ) -> impl Future<Output = Result<Vec<(std::path::PathBuf, u64)>>> + Send + 'static {
             std::future::ready(Ok(vec![]))
         }
 

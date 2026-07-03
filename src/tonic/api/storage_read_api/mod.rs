@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
-    FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesRequest,
-    ListFilesResponse, ReadBatchRequest, ReadBatchResponse, ReadBytesRequest, ReadBytesResponse,
-    ReadBytesStreamRequest, ReadBytesStreamResponse, ReadWholeRequest, ReadWholeResponse,
+    FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesEntry,
+    ListFilesRequest, ListFilesResponse, ReadBatchRequest, ReadBatchResponse, ReadBytesRequest,
+    ReadBytesResponse, ReadBytesStreamRequest, ReadBytesStreamResponse, ReadWholeRequest,
+    ReadWholeResponse,
 };
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
@@ -87,28 +88,29 @@ where
         let prefix_path = Self::resolve_path(&base, &collections_root, &prefix_path)?;
 
         let fs = Arc::clone(&self.fs);
-        let paths = tokio::task::spawn_blocking(move || fs.list_files(&prefix_path))
+        let files = tokio::task::spawn_blocking(move || fs.list_files(&prefix_path))
             .await
             .map_err(|e| Status::internal(format!("Task join error: {e}")))?
             .map_err(io_error_to_status)?;
 
-        let relative_paths = paths
+        let files = files
             .into_iter()
-            .filter_map(|p| {
+            .filter_map(|(p, size)| {
                 p.strip_prefix(&base).ok().map(|rel| {
                     // Always use forward slashes in gRPC responses regardless of OS.
                     let components = rel
                         .components()
                         .filter_map(|c| c.as_os_str().to_str())
                         .collect::<Vec<_>>();
-                    components.join("/")
+                    ListFilesEntry {
+                        path: components.join("/"),
+                        size,
+                    }
                 })
             })
             .collect::<Vec<_>>();
 
-        Ok(Response::new(ListFilesResponse {
-            paths: relative_paths,
-        }))
+        Ok(Response::new(ListFilesResponse { files }))
     }
 
     // Get file length via UniversalRead::open() → .len().

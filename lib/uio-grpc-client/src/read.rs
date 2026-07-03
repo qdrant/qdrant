@@ -128,7 +128,7 @@ impl Client {
         collection_name: &str,
         shard_id: u32,
         prefix_path: &str,
-    ) -> Result<Vec<PathBuf>> {
+    ) -> Result<Vec<(PathBuf, u64)>> {
         let response = self
             .inner
             .clone()
@@ -142,9 +142,9 @@ impl Client {
 
         Ok(response
             .into_inner()
-            .paths
+            .files
             .into_iter()
-            .map(PathBuf::from)
+            .map(|entry| (PathBuf::from(entry.path), entry.size))
             .collect())
     }
 

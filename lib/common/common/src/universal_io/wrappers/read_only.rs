@@ -43,7 +43,7 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
         Ok(ReadOnlyFs(F::from_context(ctx.0)?))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<(PathBuf, u64)>> {
         self.0.list_files(prefix_path)
     }
 

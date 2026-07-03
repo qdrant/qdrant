@@ -145,7 +145,7 @@ impl AsyncRead for UioGrpcSource {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static {
+    ) -> impl Future<Output = Result<Vec<(PathBuf, u64)>>> + Send + 'static {
         let inner = self.inner.clone();
         let prefix = path_to_string(prefix);
         async move {

@@ -78,7 +78,7 @@ where
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<(PathBuf, u64)>> {
         self.remote_fs.list_files(prefix_path)
     }
 

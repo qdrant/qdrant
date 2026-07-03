@@ -39,7 +39,7 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
         Ok(Self::new(A::open(&config)?, BridgeRuntime::global()))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<(PathBuf, u64)>> {
         self.runtime.block_on(self.inner.list_files(prefix_path))
     }
 
