@@ -19,6 +19,8 @@ pub enum GridstoreError {
     FlushCancelled,
     #[error("Validation error: {message}")]
     ValidationError { message: String },
+    #[error("Operation not supported in serverless mode: {operation}")]
+    UnsupportedOperation { operation: String },
     #[error("Page {page_id} not found")]
     PageNotFound { page_id: PageId },
     #[error("value {point_offset} not found")]
@@ -37,6 +39,12 @@ impl GridstoreError {
             message: message.into(),
         }
     }
+
+    pub fn unsupported_operation(operation: impl Into<String>) -> Self {
+        GridstoreError::UnsupportedOperation {
+            operation: operation.into(),
+        }
+    }
 }
 
 impl IsNotFound for GridstoreError {
@@ -49,6 +57,7 @@ impl IsNotFound for GridstoreError {
             | GridstoreError::ServiceError { .. }
             | GridstoreError::FlushCancelled
             | GridstoreError::ValidationError { .. }
+            | GridstoreError::UnsupportedOperation { .. }
             | GridstoreError::PageNotFound { .. }
             | GridstoreError::ValueNotFound { .. } => false,
         }

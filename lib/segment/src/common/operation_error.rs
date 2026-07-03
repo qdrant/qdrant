@@ -369,6 +369,7 @@ impl From<GridstoreError> for OperationError {
                 Self::service_error(err.to_string())
             }
             GridstoreError::ValidationError { message } => Self::validation_error(message),
+            GridstoreError::UnsupportedOperation { .. } => Self::service_error(err.to_string()),
             GridstoreError::UniversalIo(err) => match err {
                 UniversalIoError::NotFound { path } => Self::FileNotFound { path },
                 err @ (UniversalIoError::Io(_)

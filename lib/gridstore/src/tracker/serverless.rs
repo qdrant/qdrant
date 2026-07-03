@@ -252,6 +252,8 @@ impl ServerlessTracker {
     /// - Partial writes are possible, but ignored: a trailing partial entry is not counted.
     ///
     /// Returns `true` if there are new mappings, `false` if the tracker is already up to date.
+    // TODO: remove allow once used by the serverless gridstore reader
+    #[allow(dead_code)]
     pub fn live_reload(&mut self) -> Result<bool> {
         let len = self.file.metadata()?.len();
         let new_count = count_from_len(len)?;

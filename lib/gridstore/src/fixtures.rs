@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
-use crate::config::{Compression, StorageOptions};
+use crate::config::{Compression, Mode, StorageOptions};
 use crate::{Blob, Gridstore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -31,6 +31,17 @@ impl Blob for Payload {
 pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), Default::default()).unwrap();
+    (dir, storage)
+}
+
+/// Create an empty storage in serverless mode with the default configuration
+pub fn empty_storage_serverless() -> (TempDir, Gridstore<Payload>) {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let options = StorageOptions {
+        mode: Some(Mode::Serverless),
+        ..Default::default()
+    };
+    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }
 

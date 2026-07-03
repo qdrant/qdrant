@@ -1,7 +1,5 @@
 pub mod iter;
 pub mod read_only;
-// TODO: remove allow once used by the serverless gridstore variant
-#[allow(dead_code)]
 pub(crate) mod serverless;
 
 #[cfg(test)]
