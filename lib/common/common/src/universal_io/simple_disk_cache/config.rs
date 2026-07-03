@@ -35,6 +35,10 @@ impl DiskCacheConfig {
         &self.local_dir
     }
 
+    pub fn remote_dir(&self) -> &Path {
+        &self.remote_dir
+    }
+
     /// Maps a remote path to its local mirror (`<local_dir>/<rel>` + `.partial`);
     /// `NotFound` if `remote_path` isn't under `remote_dir`.
     pub fn local_path_for(&self, remote_path: &Path) -> Result<PathBuf> {

@@ -6,6 +6,7 @@ mod local_state;
 pub mod pipeline;
 #[cfg(test)]
 mod tests;
+mod remote_manifest;
 
 use std::ops::Range;
 

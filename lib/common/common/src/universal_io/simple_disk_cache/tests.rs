@@ -65,7 +65,7 @@ impl Scenario {
 
         let fs = DiskCacheFs::<R>::from_context(DiskCacheFsContext {
             config: self.config.clone(),
-            remote: Default::default(),
+            remote_ctx: Default::default(),
         })
         .unwrap();
         fs.open(

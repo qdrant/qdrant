@@ -12,11 +12,11 @@ use crate::universal_io::{self, ReadPipeline, Result, UniversalIoError, Universa
 
 #[cfg(target_os = "linux")]
 /// Required alignment when using io_uring with `O_DIRECT` on Linux
-const REMOTE_READ_ALIGNMENT: usize = universal_io::io_uring::KERNEL_PAGE_SIZE;
+pub const REMOTE_READ_ALIGNMENT: usize = universal_io::io_uring::KERNEL_PAGE_SIZE;
 
 #[cfg(not(target_os = "linux"))]
 /// Default alignment on non-Linux platforms
-const REMOTE_READ_ALIGNMENT: usize = 1;
+pub const REMOTE_READ_ALIGNMENT: usize = 1;
 
 struct RemoteMeta<File, U> {
     file: File,

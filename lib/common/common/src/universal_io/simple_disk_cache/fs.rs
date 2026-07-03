@@ -6,6 +6,7 @@ use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
 use crate::mmap::AdviceSetting;
+use crate::universal_io::simple_disk_cache::remote_manifest::RemoteManifest;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
     UniversalRead, UniversalReadFileOps, UniversalReadFs,
@@ -17,7 +18,7 @@ use crate::universal_io::{
 /// global / default lookup.
 pub struct DiskCacheFsContext<C> {
     pub config: Arc<DiskCacheConfig>,
-    pub remote: C,
+    pub remote_ctx: C,
 }
 
 /// Filesystem handle for the simple disk cache. Carries the remote-side
@@ -29,11 +30,13 @@ pub struct DiskCacheFsContext<C> {
 /// `UniversalRead::Fs = DiskCacheFs<R>` constraint on
 /// [`DiskCache<R>`] line up without an extra generic parameter on the
 /// file type.
+#[derive(Debug)]
 pub struct DiskCacheFs<R>
 where
     R: UniversalRead,
 {
     config: Arc<DiskCacheConfig>,
+    manifest: Arc<RemoteManifest>,
     remote_fs: R::Fs,
 }
 
@@ -43,24 +46,16 @@ where
     R::Fs: Clone,
 {
     fn clone(&self) -> Self {
-        let Self { config, remote_fs } = self;
+        let Self {
+            config,
+            manifest,
+            remote_fs,
+        } = self;
         Self {
             config: config.clone(),
+            manifest: manifest.clone(),
             remote_fs: remote_fs.clone(),
         }
-    }
-}
-
-impl<R> Debug for DiskCacheFs<R>
-where
-    R: UniversalRead,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self { config, remote_fs } = self;
-        f.debug_struct("DiskCacheFs")
-            .field("config", config)
-            .field("remote_fs", remote_fs)
-            .finish()
     }
 }
 
@@ -71,10 +66,13 @@ where
     type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFileOps>::ContextConfig>;
 
     fn from_context(ctx: Self::ContextConfig) -> Result<Self> {
-        let DiskCacheFsContext { config, remote } = ctx;
+        let DiskCacheFsContext { config, remote_ctx } = ctx;
+        let remote_fs = R::Fs::from_context(remote_ctx)?;
+        let manifest = Arc::new(RemoteManifest::new(&remote_fs, config.remote_dir())?);
         Ok(Self {
             config,
-            remote_fs: R::Fs::from_context(remote)?,
+            manifest,
+            remote_fs,
         })
     }
 

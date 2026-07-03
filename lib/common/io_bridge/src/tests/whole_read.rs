@@ -236,7 +236,7 @@ fn disk_cache_read_whole_skips_remote_len() {
     let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir).unwrap();
     let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
         config: Arc::new(config),
-        remote: source.config(),
+        remote_ctx: source.config(),
     })
     .unwrap();
 
@@ -288,7 +288,7 @@ fn disk_cache_prefill_open_uses_whole_get_without_head() {
     let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir).unwrap();
     let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
         config: Arc::new(config),
-        remote: source.config(),
+        remote_ctx: source.config(),
     })
     .unwrap();
 

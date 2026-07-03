@@ -386,7 +386,7 @@ where
 
     DiskCacheFs::<BlobFile<A>>::from_context(DiskCacheFsContext {
         config: Arc::new(config),
-        remote: remote_config,
+        remote_ctx: remote_config,
     })
     .context("failed to build disk-cache filesystem")
 }
