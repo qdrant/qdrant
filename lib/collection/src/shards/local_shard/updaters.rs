@@ -339,10 +339,7 @@ mod tests {
             .prefix("pause-workers-stop")
             .tempdir()
             .unwrap();
-        let fail_collection_dir = Builder::new()
-            .prefix("fail-after-pause")
-            .tempdir()
-            .unwrap();
+        let fail_collection_dir = Builder::new().prefix("fail-after-pause").tempdir().unwrap();
         let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
         let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
         let payload_index_schema =
@@ -386,12 +383,7 @@ mod tests {
 
         let (paused_tx, paused_rx) = oneshot::channel();
         let (release_tx, release_rx) = oneshot::channel();
-        install_worker_restart_hook(
-            pause_collection,
-            fail_collection,
-            paused_tx,
-            release_rx,
-        );
+        install_worker_restart_hook(pause_collection, fail_collection, paused_tx, release_rx);
 
         let release_task = tokio::spawn(async move {
             paused_rx
