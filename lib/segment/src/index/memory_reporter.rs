@@ -7,14 +7,28 @@ impl MemoryReporter for VectorIndexEnum {
             // Plain index: no files, no extra memory (searches storage directly)
             VectorIndexEnum::Plain(_) => ComponentMemoryUsage::empty(),
 
-            // HNSW: graph files, intent depends on on_disk config
+            // HNSW: graph files, intent depends on how the links are actually held
             VectorIndexEnum::Hnsw(index) => {
-                let intent = if index.is_on_disk() {
-                    FileStorageIntent::OnDisk
+                let links_heap_bytes = index.links_heap_size_bytes() as u64;
+                if links_heap_bytes > 0 {
+                    // Links are materialized in heap RAM (freshly built index,
+                    // or a non-borrowable universal-IO backend): files are
+                    // persistence only, not expected to be in page cache.
+                    ComponentMemoryUsage::from_files_and_ram(
+                        index.files(),
+                        FileStorageIntent::OnDisk,
+                        links_heap_bytes,
+                    )
                 } else {
-                    FileStorageIntent::Cached
-                };
-                ComponentMemoryUsage::from_files(index.files(), intent)
+                    // Links are backed by a live mmap handle: residency is
+                    // tracked via the page cache, intent depends on on_disk config.
+                    let intent = if index.is_on_disk() {
+                        FileStorageIntent::OnDisk
+                    } else {
+                        FileStorageIntent::Cached
+                    };
+                    ComponentMemoryUsage::from_files(index.files(), intent)
+                }
             }
 
             // Sparse RAM variants: inverted index is deserialized into heap.
