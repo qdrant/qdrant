@@ -174,14 +174,20 @@ impl TurboVectorStorage {
         keep_rotated: bool,
     ) -> DenseVector {
         let quantized = self.storage.get_quantized_vector(key);
-        let mut dequantized = self.quantizer.dequantize::<f64>(&quantized);
-        if !keep_rotated {
+        if keep_rotated {
+            // No inverse rotation — dequantize straight into `f32`, skipping
+            // the intermediate `Vec<f64>` (rotation needs an `f64` buffer).
+            let mut dequantized = self.quantizer.dequantize::<VectorElementType>(&quantized);
+            dequantized.truncate(self.dim);
+            dequantized
+        } else {
+            let mut dequantized = self.quantizer.dequantize::<f64>(&quantized);
             self.quantizer.apply_inverse_rotation(&mut dequantized);
+            dequantized[..self.dim]
+                .iter()
+                .map(|&x| x as VectorElementType)
+                .collect()
         }
-        dequantized[..self.dim]
-            .iter()
-            .map(|&x| x as VectorElementType)
-            .collect()
     }
 }
 
