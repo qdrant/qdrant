@@ -197,14 +197,21 @@ impl TurboMultiVectorStorage {
         (offset.offset..offset.offset + offset.count)
             .map(|inner_id| {
                 let encoded = self.storage.get_vector_data(inner_id);
-                let mut dequantized = self.quantizer.dequantize::<f64>(&encoded);
-                if !keep_rotated {
+                if keep_rotated {
+                    // No inverse rotation — dequantize straight into `f32`,
+                    // skipping the intermediate `Vec<f64>` (rotation needs an
+                    // `f64` buffer).
+                    let mut dequantized = self.quantizer.dequantize::<VectorElementType>(&encoded);
+                    dequantized.truncate(self.dim);
+                    dequantized
+                } else {
+                    let mut dequantized = self.quantizer.dequantize::<f64>(&encoded);
                     self.quantizer.apply_inverse_rotation(&mut dequantized);
+                    dequantized[..self.dim]
+                        .iter()
+                        .map(|&x| x as VectorElementType)
+                        .collect()
                 }
-                dequantized[..self.dim]
-                    .iter()
-                    .map(|&x| x as VectorElementType)
-                    .collect()
             })
             .collect()
     }

@@ -599,6 +599,13 @@ impl GpuVectorStorage {
         // not rotation-invariant, so it must be rotated back.
         let keep_rotated = distance != Distance::Manhattan;
 
+        // Known inefficiency: `new_typed` re-iterates the vectors iterator once
+        // per GPU buffer (`STORAGES_COUNT` passes), and `skip`/`step_by` still
+        // evaluate the `map` closure for the skipped elements — so every vector
+        // is dequantized `STORAGES_COUNT` times instead of once. Accepted as a
+        // one-time index-build cost, dominated by the GPU graph build itself; a
+        // single-pass round-robin upload in `new_typed` would remove it if
+        // profiling ever shows it matters. Same applies to `new_multi_tq`.
         if device.has_half_precision() {
             Self::new_typed::<VectorElementTypeHalf>(
                 device,
