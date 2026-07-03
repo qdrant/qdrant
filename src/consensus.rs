@@ -285,7 +285,8 @@ impl Consensus {
         // from re-playing consensus WAL operations, as they should already have them applied.
         // Do ensure that we are forcing compacting WAL on the first re-initialized peer,
         // which should trigger snapshot transferring instead of replaying WAL.
-        let force_compact_wal = reinit && bootstrap_peer.is_none();
+        let reinit_first_peer = reinit && bootstrap_peer.is_none();
+        let force_compact_wal = reinit_first_peer;
 
         // On the bootstrap-ed peers during reinit of the consensus
         // we want to make sure only the bootstrap peer will hold the true state
@@ -295,6 +296,16 @@ impl Consensus {
         if clear_wal {
             log::debug!("Clearing WAL on the bootstrap peer to force snapshot transfer");
             state_ref.clear_wal()?;
+        }
+
+        // On the first peer during reinit, `conf_state` has been reset to a single voter
+        // (this peer), but the Raft log still holds committed-but-unapplied entries from the
+        // previous cluster. Replaying them - most notably a `RemoveNode` for this very peer,
+        // if it was removed from consensus before reinit - would abort with "removed all
+        // voters". Drop that tail before the log is replayed below.
+        if reinit_first_peer {
+            log::debug!("Discarding unapplied consensus entries from the previous cluster");
+            state_ref.clear_unapplied_entries_on_reinit()?;
         }
 
         // raft will not return entries to the application smaller or equal to `applied`

@@ -309,6 +309,40 @@ impl ConsensusOpWal {
         Ok(())
     }
 
+    /// Drop all entries with a Raft index strictly greater than `raft_index`.
+    ///
+    /// Used during consensus re-initialization to discard committed-but-unapplied
+    /// entries inherited from the previous cluster (e.g. a `RemoveNode` conf-change
+    /// for this very peer, if it was removed from consensus before reinit).
+    pub fn truncate_after(&mut self, raft_index: u64) -> Result<(), StorageError> {
+        // Empty WAL - nothing to drop
+        let Some(offset) = self.index_offset_impl()? else {
+            return Ok(());
+        };
+
+        // First Raft index we want to drop, mapped to a WAL index. If it's below the
+        // first physical entry, the whole (remaining) WAL is beyond the cut point.
+        let from_wal_index = offset
+            .try_raft_to_wal(raft_index + 1)
+            .unwrap_or(offset.wal_index);
+
+        // Exclusive upper bound of physical WAL indices
+        let end_wal_index = offset.wal_index + self.wal.num_entries();
+        if from_wal_index >= end_wal_index {
+            // Nothing past the cut point
+            return Ok(());
+        }
+
+        log::debug!(
+            "Truncating consensus WAL after Raft index {raft_index} (from WAL index {from_wal_index})",
+        );
+
+        self.wal.truncate(from_wal_index)?;
+        self.wal.flush_open_segment()?;
+
+        Ok(())
+    }
+
     pub fn index_offset(&self) -> raft::Result<IndexOffset> {
         let res = self.index_offset_impl();
         into_raft_result(res)
