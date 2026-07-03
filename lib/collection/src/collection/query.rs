@@ -16,7 +16,7 @@ use tokio::time::Instant;
 use super::Collection;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
-use crate::common::batching::batch_requests;
+use crate::common::batching::{batch_requests, empty_batch_results};
 use crate::common::fetch_vectors::{
     build_vector_resolver_queries, resolve_referenced_vectors_batch,
 };
@@ -217,7 +217,7 @@ impl Collection {
 
         // shortcuts batch if all requests with limit=0
         if requests_batch.iter().all(|s| s.limit == 0) {
-            return Ok(vec![]);
+            return Ok(empty_batch_results(requests_batch.len()));
         }
 
         let is_payload_required = requests_batch.iter().all(|s| s.with_payload.is_required());

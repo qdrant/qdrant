@@ -14,6 +14,7 @@ use shard::search::CoreSearchRequestBatch;
 use tokio::time::Instant;
 
 use super::Collection;
+use crate::common::batching::empty_batch_results;
 use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::routing::RoutingToken;
@@ -63,7 +64,7 @@ impl Collection {
         let start = Instant::now();
         // shortcuts batch if all requests with limit=0
         if request.searches.iter().all(|s| s.limit == 0) {
-            return Ok(vec![]);
+            return Ok(empty_batch_results(request.searches.len()));
         }
 
         let is_payload_required = request
