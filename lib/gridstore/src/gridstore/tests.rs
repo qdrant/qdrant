@@ -1,4 +1,5 @@
 use std::io::BufReader;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -20,7 +21,7 @@ use super::*;
 use crate::blob::Blob;
 use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    Mode,
+    Mode, StorageConfig,
 };
 use crate::fixtures::{HM_FIELDS, Payload, empty_storage, empty_storage_sized, random_payload};
 
@@ -43,8 +44,11 @@ fn test_put_single_empty_value() {
     // TODO: should we actually use the pages for empty values?
     let payload = Payload::default();
     storage.put_value(0, &payload, hw_counter).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
-    assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+    assert_eq!(
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+        1
+    );
 
     let hw_counter = HardwareCounterCell::new();
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -70,8 +74,11 @@ fn test_put_single_payload() {
     let hw_counter = hw_counter.ref_payload_io_write_counter();
 
     storage.put_value(0, &payload, hw_counter).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
-    assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+    assert_eq!(
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+        1
+    );
 
     let page_mapping = storage.get_pointer(0).unwrap();
     assert_eq!(page_mapping.page_id, 0); // first page
@@ -100,8 +107,11 @@ fn test_storage_files() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
-    assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+    assert_eq!(
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+        1
+    );
     let files = storage.files();
     let actual_files: Vec<_> = fs::read_dir(dir.path()).unwrap().try_collect().unwrap();
     assert_eq!(
@@ -169,7 +179,7 @@ fn test_delete_single_payload() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     let page_mapping = storage.get_pointer(0).unwrap();
     assert_eq!(page_mapping.page_id, 0); // first page
@@ -185,7 +195,7 @@ fn test_delete_single_payload() {
     // delete payload
     let deleted = storage.delete_value(0).unwrap();
     assert_eq!(deleted, stored_payload);
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     // get payload again
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -209,8 +219,11 @@ fn test_update_single_payload() {
             );
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
-            assert_eq!(storage.pages.read().num_pages(), 1);
-            assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
+            assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+            assert_eq!(
+                storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+                1
+            );
 
             let page_mapping = storage.get_pointer(0).unwrap();
             assert_eq!(page_mapping.page_id, 0); // first page
@@ -246,7 +259,7 @@ fn test_write_across_pages() {
         mode: Mode::Dynamic,
     };
 
-    storage.create_new_page().unwrap();
+    storage.as_dynamic_mut().create_new_page().unwrap();
 
     let value_len = 1000;
 
@@ -261,12 +274,14 @@ fn test_write_across_pages() {
     let pointer = ValuePointer::new(0, block_offset, value_len as u32);
 
     storage
+        .as_dynamic()
         .pages
         .write()
         .write_to_pages(pointer, &value, &config)
         .unwrap();
 
     let read_value = storage
+        .as_dynamic()
         .with_view(|view| {
             view.read_from_pages::<Random>(pointer)
                 .map(|val| val.into_owned())
@@ -519,7 +534,7 @@ fn test_behave_like_hashmap(
 
     // asset same length
     assert_eq!(
-        storage.tracker.read().mapping_len().unwrap(),
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
         model_hashmap.len(),
         "different number of points"
     );
@@ -551,7 +566,7 @@ fn test_behave_like_hashmap(
     assert_eq!(storage.get_storage_size_bytes().unwrap(), before_size);
     // assert same length
     assert_eq!(
-        storage.tracker.read().mapping_len().unwrap(),
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
         model_hashmap.len()
     );
 
@@ -581,7 +596,7 @@ fn test_behave_like_hashmap(
 #[test]
 fn test_handle_huge_payload() {
     let (_dir, mut storage) = empty_storage();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     let mut payload = Payload::default();
 
@@ -597,7 +612,7 @@ fn test_handle_huge_payload() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 2);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 2);
 
     let page_mapping = storage.get_pointer(0).unwrap();
     assert_eq!(page_mapping.page_id, 0); // first page
@@ -609,7 +624,12 @@ fn test_handle_huge_payload() {
 
     {
         // the fitting page should be 64MB, so we should still have about 14MB of free space
-        let free_blocks = storage.bitmask.read().free_blocks_for_page(1).unwrap();
+        let free_blocks = storage
+            .as_dynamic()
+            .bitmask
+            .read()
+            .free_blocks_for_page(1)
+            .unwrap();
         let min_expected = 1024 * 1024 * 13 / DEFAULT_BLOCK_SIZE_BYTES;
         let max_expected = 1024 * 1024 * 15 / DEFAULT_BLOCK_SIZE_BYTES;
         assert!((min_expected..max_expected).contains(&free_blocks));
@@ -619,7 +639,7 @@ fn test_handle_huge_payload() {
         // delete payload
         let deleted = storage.delete_value(0).unwrap();
         assert!(deleted.is_some());
-        assert_eq!(storage.pages.read().num_pages(), 2);
+        assert_eq!(storage.as_dynamic().pages.read().num_pages(), 2);
 
         assert!(
             storage
@@ -646,7 +666,7 @@ fn test_storage_persistence_basic() {
     {
         let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
-        assert_eq!(storage.pages.read().num_pages(), 1);
+        assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
         let page_mapping = storage.get_pointer(0).unwrap();
         assert_eq!(page_mapping.page_id, 0); // first page
@@ -662,7 +682,7 @@ fn test_storage_persistence_basic() {
 
     // reopen storage
     let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
@@ -738,16 +758,19 @@ fn test_with_real_hm_data() {
     let (dir, mut storage) = empty_storage();
     let point_offset = write_data(&mut storage, 0);
     assert_eq!(point_offset, EXPECTED_LEN as u32);
-    assert_eq!(storage.tracker.read().mapping_len().unwrap(), EXPECTED_LEN);
-    assert_eq!(storage.pages.read().num_pages(), 2);
+    assert_eq!(
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+        EXPECTED_LEN
+    );
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 2);
 
     let point_offset = write_data(&mut storage, point_offset);
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
     assert_eq!(
-        storage.tracker.read().mapping_len().unwrap(),
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
         EXPECTED_LEN * 2
     );
-    assert_eq!(storage.pages.read().num_pages(), 4);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 4);
 
     storage_double_pass_is_consistent(&storage, 0);
 
@@ -756,9 +779,9 @@ fn test_with_real_hm_data() {
 
     let mut storage = Gridstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
-    assert_eq!(storage.pages.read().num_pages(), 4);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 4);
     assert_eq!(
-        storage.tracker.read().mapping_len().unwrap(),
+        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
         EXPECTED_LEN * 2
     );
 
@@ -829,7 +852,7 @@ fn test_different_block_sizes(#[case] block_size_bytes: usize) {
     storage.flusher()().unwrap();
     println!("{last_point_id}");
 
-    assert_eq!(storage.pages.read().num_pages(), 4);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 4);
     let last_pointer = storage.get_pointer(last_point_id).unwrap();
     assert_eq!(last_pointer.block_offset, 0);
     assert_eq!(last_pointer.page_id, 3);
@@ -868,8 +891,11 @@ fn test_deferred_flush() {
             );
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
-            assert_eq!(storage.pages.read().num_pages(), 1);
-            assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
+            assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+            assert_eq!(
+                storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+                1
+            );
 
             let page_mapping = storage.get_pointer(0).unwrap();
             assert_eq!(page_mapping.page_id, 0); // first page
@@ -912,7 +938,7 @@ fn test_deferred_flush() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     // On reopen, we expect to read the data at the time the flusher was created
     assert_eq!(get_payload(&storage), "value 3");
@@ -960,8 +986,11 @@ fn test_deferred_flush_with_delete() {
             );
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
-            assert_eq!(storage.pages.read().num_pages(), 1);
-            assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
+            assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+            assert_eq!(
+                storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+                1
+            );
 
             let page_mapping = storage.get_pointer(0).unwrap();
             assert_eq!(page_mapping.page_id, 0); // first page
@@ -994,7 +1023,7 @@ fn test_deferred_flush_with_delete() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     let flusher = storage.flusher();
 
@@ -1013,7 +1042,7 @@ fn test_deferred_flush_with_delete() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     // On reopen, delete was flushed this time, expect point to be missing
     assert!(get_payload(&storage).is_none());
@@ -1022,7 +1051,7 @@ fn test_deferred_flush_with_delete() {
     assert_eq!(get_payload(&storage).unwrap(), "value 4");
 
     assert_eq!(
-        storage.tracker.read().pending_updates.len(),
+        storage.as_dynamic().tracker.read().pending_updates.len(),
         1,
         "expect 1 pending update",
     );
@@ -1030,7 +1059,7 @@ fn test_deferred_flush_with_delete() {
     storage.flusher()().unwrap();
 
     assert_eq!(
-        storage.tracker.read().pending_updates.len(),
+        storage.as_dynamic().tracker.read().pending_updates.len(),
         0,
         "expect 0 pending updates",
     );
@@ -1038,7 +1067,7 @@ fn test_deferred_flush_with_delete() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
     // On reopen, value 4 was flushed, expect to read it
     assert_eq!(get_payload(&storage).unwrap(), "value 4");
@@ -1091,7 +1120,7 @@ fn test_deferred_flush_with_delete() {
     // Main storage still isn't flushed, but has value 7
     assert_eq!(get_payload(&storage).unwrap(), "value 7");
     assert_eq!(
-        storage.tracker.read().pending_updates.len(),
+        storage.as_dynamic().tracker.read().pending_updates.len(),
         1,
         "expect 1 pending update",
     );
@@ -1282,7 +1311,7 @@ fn test_live_reload_across_pages() {
     }
     storage.flusher()().unwrap();
 
-    let initial_pages = storage.pages.read().num_pages();
+    let initial_pages = storage.as_dynamic().pages.read().num_pages();
 
     // Open reader
     let mut reader =
@@ -1302,7 +1331,7 @@ fn test_live_reload_across_pages() {
     }
     storage.flusher()().unwrap();
 
-    let new_pages = storage.pages.read().num_pages();
+    let new_pages = storage.as_dynamic().pages.read().num_pages();
     assert!(
         new_pages > initial_pages,
         "expected more pages after second batch: {new_pages} vs {initial_pages}"
@@ -1349,7 +1378,7 @@ fn test_skip_deferred_flush_after_clear() {
         storage
             .put_value(point_offset, &payload, hw_counter_ref)
             .unwrap();
-        assert_eq!(storage.pages.read().num_pages(), 1);
+        assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
         let hw_counter = HardwareCounterCell::new();
         let stored_payload = storage
@@ -1361,7 +1390,12 @@ fn test_skip_deferred_flush_after_clear() {
 
     // Write enough new pointers so that they don't fit in the default tracker file size
     // On flush, the tracker file will be resized and reopened, significant for this test
-    let file_size = storage.tracker.read().mmap_file_size().unwrap();
+    let file_size = storage
+        .as_dynamic()
+        .tracker
+        .read()
+        .mmap_file_size()
+        .unwrap();
     const POINTER_SIZE: usize = size_of::<Option<ValuePointer>>();
     let last_point_offset = (file_size / POINTER_SIZE) as u32;
     for i in 0..=last_point_offset {
@@ -1376,9 +1410,9 @@ fn test_skip_deferred_flush_after_clear() {
     // The same is possible without cloning these arcs, but it would require specific timing
     // conditions. Cloning arcs here is much more reliable for this test case.
     let storage_arcs = (
-        Arc::clone(&storage.pages),
-        Arc::clone(&storage.tracker),
-        Arc::clone(&storage.bitmask),
+        Arc::clone(&storage.as_dynamic().pages),
+        Arc::clone(&storage.as_dynamic().tracker),
+        Arc::clone(&storage.as_dynamic().bitmask),
     );
 
     // We clear the storage, pending flusher must not write anything anymore
@@ -1396,7 +1430,7 @@ fn test_skip_deferred_flush_after_clear() {
     // If we reopen the storage it must still be empty
     drop(storage);
     let storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-    assert_eq!(storage.pages.read().num_pages(), 1);
+    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
     assert!(storage.get_pointer(0).is_none(), "point must not exist");
     assert_eq!(storage.max_point_offset(), 0, "must have zero points");
 }
@@ -1434,13 +1468,13 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
 
     pointers.shuffle(rng);
 
-    let pages = storage.pages.read();
+    let pages = storage.as_dynamic().pages.read();
 
     let single_results: Vec<Vec<u8>> = pointers
         .iter()
         .map(|ptr| {
             pages
-                .read_from_pages::<Random>(*ptr, &storage.config)
+                .read_from_pages::<Random>(*ptr, &storage.as_dynamic().config)
                 .unwrap()
                 .into_owned()
         })
@@ -1450,7 +1484,7 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
 
     pages
         .read_batch_from_pages::<Random, _, GridstoreError>(
-            &storage.config,
+            &storage.as_dynamic().config,
             pointers.into_iter().enumerate(),
             |idx, bytes| {
                 batch_results[idx] = Some(bytes.into_owned());
