@@ -30,24 +30,42 @@ self_cell::self_cell! {
     impl {Debug}
 }
 
+/// How the serialized links should reside in memory after loading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphLinksResidency {
+    /// Mmap without populating: pages are faulted in on demand and remain
+    /// evictable by the OS. For graphs expected to stay on disk.
+    Cold,
+    /// Mmap with a blocking populate: the OS page cache is primed on load,
+    /// but the pages remain evictable under memory pressure.
+    Cached,
+    /// Materialize the links into an anonymous heap allocation, evicting
+    /// whatever the read left in the OS page cache. Not evictable by the OS.
+    Pinned,
+}
+
 impl GraphLinks {
-    /// Load the links through universal IO.
+    /// Load the links through universal IO with the requested [`GraphLinksResidency`].
     ///
-    /// `populate` controls how the OS page cache is primed on open (e.g.
-    /// [`Populate::Blocking`] to fill it eagerly, [`Populate::No`] to open
-    /// lazily). Borrowable (mmap-backed) backends keep their handle alive,
-    /// others are materialized into RAM; see
+    /// `Cold`/`Cached` require a borrowable (mmap-backed) backend to keep the
+    /// handle alive; non-borrowable backends (io_uring, remote object stores, …)
+    /// fall back to `Pinned`-like materialization into RAM; see
     /// [`GraphLinksEnum::from_storage`](super::storage).
     pub fn load_universal<Fs>(
         fs: &Fs,
         path: &Path,
         format: GraphLinksFormat,
-        populate: Populate,
+        residency: GraphLinksResidency,
     ) -> OperationResult<Self>
     where
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
+        let populate = match residency {
+            // Pin does not populate because we load into heap later
+            GraphLinksResidency::Cold | GraphLinksResidency::Pinned => Populate::No,
+            GraphLinksResidency::Cached => Populate::Blocking,
+        };
         let options = OpenOptions {
             writeable: false,
             need_sequential: false,
@@ -55,9 +73,13 @@ impl GraphLinks {
             advice: AdviceSetting::Advice(Advice::Random),
         };
         let storage = fs.open(path, options, Default::default())?;
-        Self::try_new(GraphLinksEnum::from_storage(storage)?, |x| {
-            GraphLinksView::load(x.as_bytes()?, format)
-        })
+        let owner = match residency {
+            GraphLinksResidency::Cold | GraphLinksResidency::Cached => {
+                GraphLinksEnum::from_storage(storage)?
+            }
+            GraphLinksResidency::Pinned => GraphLinksEnum::pinned_from_storage(storage)?,
+        };
+        Self::try_new(owner, |x| GraphLinksView::load(x.as_bytes()?, format))
     }
 
     pub fn new_from_edges(
@@ -80,6 +102,13 @@ impl GraphLinks {
 
     pub fn as_bytes(&self) -> OperationResult<&[u8]> {
         self.borrow_owner().as_bytes()
+    }
+
+    /// Heap RAM held by the serialized links, in bytes.
+    /// Zero when the links are backed by a live (mmap-backed) file handle;
+    /// see [`GraphLinksEnum::heap_size_bytes`].
+    pub fn heap_size_bytes(&self) -> usize {
+        self.borrow_owner().heap_size_bytes()
     }
 
     pub fn format(&self) -> GraphLinksFormat {
