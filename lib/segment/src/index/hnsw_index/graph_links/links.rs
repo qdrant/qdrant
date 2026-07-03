@@ -62,6 +62,7 @@ impl GraphLinks {
         Fs::File: 'static,
     {
         let populate = match residency {
+            // Pin does not populate because we load into heap later
             GraphLinksResidency::Cold | GraphLinksResidency::Pinned => Populate::No,
             GraphLinksResidency::Cached => Populate::Blocking,
         };
