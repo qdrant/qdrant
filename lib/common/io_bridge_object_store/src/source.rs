@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use common::universal_io::{Result, UniversalIoError, UniversalKind};
+use common::universal_io::{ListedFile, Result, UniversalIoError, UniversalKind};
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use io_bridge::AsyncRead;
 use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt};
@@ -63,7 +63,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<(PathBuf, u64)>>> + Send + 'static {
+    ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
         let store = self.0.clone();
         let prefix_path = prefix.to_path_buf();
         // object_store lists by whole path segment; emulate the byte-prefix
@@ -86,9 +86,10 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
                     .into_iter()
                     .filter_map(|e| {
                         let location = e.location.to_string();
-                        location
-                            .starts_with(&prefix_str)
-                            .then(|| (PathBuf::from(location), e.size))
+                        location.starts_with(&prefix_str).then(|| ListedFile {
+                            path: PathBuf::from(location),
+                            size: e.size,
+                        })
                     })
                     .collect()),
                 Err(object_store::Error::NotFound { .. }) => {
@@ -269,7 +270,7 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use common::universal_io::{ReadRange, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{ListedFile, ReadRange, UniversalRead, UniversalReadFileOps};
     use io_bridge::{BlobFile, BlobFs, BridgeRuntime};
     use object_store::memory::InMemory;
 
@@ -386,7 +387,7 @@ mod tests {
             .block_on(source.list_files(Path::new("dir/page_")))
             .expect("list_files")
             .into_iter()
-            .map(|(p, size)| (p.to_string_lossy().into_owned(), size))
+            .map(|ListedFile { path, size }| (path.to_string_lossy().into_owned(), size))
             .collect();
         files.sort();
         assert_eq!(

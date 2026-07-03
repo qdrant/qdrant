@@ -9,7 +9,7 @@ mod tests;
 use std::io::{self, Read as _, Seek as _};
 use std::ops::Range;
 use std::os::fd::AsRawFd as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
@@ -62,7 +62,7 @@ impl UniversalReadFileOps for IoUringFs {
         Ok(Self)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<(PathBuf, u64)>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
         local_file_ops::local_list_files(prefix_path)
     }
 

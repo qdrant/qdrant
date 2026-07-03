@@ -58,7 +58,7 @@ impl<S: UniversalRead> Pages<S> {
         let page_files: HashSet<_> = fs
             .list_files(&dir.join("page_"))?
             .into_iter()
-            .map(|(path, _size)| path)
+            .map(|listed| listed.path)
             .collect();
 
         for page_id in 0.. {

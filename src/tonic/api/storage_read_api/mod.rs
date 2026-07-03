@@ -11,7 +11,7 @@ use api::grpc::qdrant::{
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
+    ListedFile, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
     UniversalReadFileOps, UniversalReadFs,
 };
 use futures::Stream;
@@ -95,8 +95,8 @@ where
 
         let files = files
             .into_iter()
-            .filter_map(|(p, size)| {
-                p.strip_prefix(&base).ok().map(|rel| {
+            .filter_map(|ListedFile { path, size }| {
+                path.strip_prefix(&base).ok().map(|rel| {
                     // Always use forward slashes in gRPC responses regardless of OS.
                     let components = rel
                         .components()

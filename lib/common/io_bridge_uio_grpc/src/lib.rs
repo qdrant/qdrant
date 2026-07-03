@@ -39,11 +39,11 @@
 use std::future::Future;
 use std::io;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use common::universal_io::{Result, UniversalIoError, UniversalKind};
+use common::universal_io::{ListedFile, Result, UniversalIoError, UniversalKind};
 use futures::stream::{self, BoxStream, StreamExt as _};
 use io_bridge::{AsyncRead, BlobFile, BlobFs};
 use tokio::sync::OnceCell;
@@ -145,7 +145,7 @@ impl AsyncRead for UioGrpcSource {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<(PathBuf, u64)>>> + Send + 'static {
+    ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
         let inner = self.inner.clone();
         let prefix = path_to_string(prefix);
         async move {

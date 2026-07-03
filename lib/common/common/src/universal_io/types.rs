@@ -178,6 +178,16 @@ pub struct ReadBytesItem<U: UserData> {
     pub align: usize,
 }
 
+/// A single file matched by [`UniversalReadFileOps::list_files`]: its path
+/// and size in bytes.
+///
+/// [`UniversalReadFileOps::list_files`]: super::UniversalReadFileOps::list_files
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ListedFile {
+    pub path: std::path::PathBuf,
+    pub size: u64,
+}
+
 pub type ByteOffset = u64;
 
 pub type FileIndex = usize;

@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
 use common::generic_consts::Sequential;
 use common::universal_io::{
-    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, OpenOptions, OwnedPipeline, Populate,
-    ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs,
+    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, OwnedPipeline,
+    Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
 };
 use futures::stream::{BoxStream, StreamExt};
 
@@ -73,7 +73,7 @@ impl AsyncRead for CountingSource {
     fn list_files(
         &self,
         _prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<(PathBuf, u64)>>> + Send + 'static {
+    ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
         std::future::ready(Ok(vec![]))
     }
 

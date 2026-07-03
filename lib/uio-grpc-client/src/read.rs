@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use common::universal_io::{ReadRange, Result, UniversalIoError};
+use common::universal_io::{ListedFile, ReadRange, Result, UniversalIoError};
 use futures::StreamExt as _;
 use futures::stream::BoxStream;
 use tonic::codegen::InterceptedService;
@@ -128,7 +128,7 @@ impl Client {
         collection_name: &str,
         shard_id: u32,
         prefix_path: &str,
-    ) -> Result<Vec<(PathBuf, u64)>> {
+    ) -> Result<Vec<ListedFile>> {
         let response = self
             .inner
             .clone()
@@ -144,7 +144,10 @@ impl Client {
             .into_inner()
             .files
             .into_iter()
-            .map(|entry| (PathBuf::from(entry.path), entry.size))
+            .map(|entry| ListedFile {
+                path: PathBuf::from(entry.path),
+                size: entry.size,
+            })
             .collect())
     }
 

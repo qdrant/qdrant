@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::universal_io::ReadRange;
+use common::universal_io::{ListedFile, ReadRange};
 use tokio::net::TcpListener;
 use tonic::{Request, Response, Status};
 
@@ -203,8 +203,14 @@ async fn list_files() {
     assert_eq!(
         files,
         vec![
-            (PathBuf::from("data/a.bin"), 10),
-            (PathBuf::from("data/b.bin"), 10),
+            ListedFile {
+                path: PathBuf::from("data/a.bin"),
+                size: 10,
+            },
+            ListedFile {
+                path: PathBuf::from("data/b.bin"),
+                size: 10,
+            },
         ]
     );
 }

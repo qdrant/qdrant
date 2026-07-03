@@ -41,7 +41,8 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
     // directory are never enumerated.
     let chunks_prefix = directory.join(MMAP_CHUNKS_PATTERN_START);
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
-    for (path, _size) in fs.list_files(&chunks_prefix)? {
+    for listed in fs.list_files(&chunks_prefix)? {
+        let path = listed.path;
         let chunk_id = path
             .file_name()
             .and_then(|file_name| file_name.to_str())
