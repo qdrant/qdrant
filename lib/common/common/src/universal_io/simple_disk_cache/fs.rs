@@ -6,9 +6,9 @@ use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
 use crate::mmap::AdviceSetting;
-use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, to_block_range};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::remote_manifest::{FileInfo, RemoteManifest};
+use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, to_block_range};
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
     UniversalRead, UniversalReadFileOps, UniversalReadFs,
@@ -101,11 +101,11 @@ where
     }
 
     fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
-        self.remote_fs.list_files(prefix_path)
+        Ok(self.manifest.list_files(prefix_path))
     }
 
     fn exists(&self, path: &Path) -> Result<bool> {
-        self.remote_fs.exists(path)
+        Ok(self.manifest.exists(path))
     }
 
     fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
@@ -169,7 +169,7 @@ where
                 let local = LocalState::new(&local_path, *size, options)?;
                 let blocks_range = to_block_range(0..first_block.len() as u64);
                 // SAFETY: We just created the localstate
-                unsafe { local.write_mmap_bytes(&first_block, blocks_range) };
+                unsafe { local.write_mmap_bytes(first_block, blocks_range) };
 
                 let remote = self.open_remote(path.as_ref(), extra.clone())?;
 
@@ -181,7 +181,7 @@ where
                 let local = LocalState::new(&local_path, *size, options)?;
                 let blocks_range = to_block_range(0..first_block.len() as u64);
                 // SAFETY: We just created the localstate
-                unsafe { local.write_mmap_bytes(&first_block, blocks_range) };
+                unsafe { local.write_mmap_bytes(first_block, blocks_range) };
 
                 let remote = self.open_remote(path.as_ref(), extra.clone())?;
 

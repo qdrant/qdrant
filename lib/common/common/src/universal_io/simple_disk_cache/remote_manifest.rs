@@ -9,7 +9,8 @@ use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::simple_disk_cache::pipeline::REMOTE_READ_ALIGNMENT;
 use crate::universal_io::{
-    OpenExtra, OpenOptions, Populate, ReadPipeline, Result, UniversalRead, UniversalReadFs,
+    ListedFile, OpenExtra, OpenOptions, Populate, ReadPipeline, Result, UniversalRead,
+    UniversalReadFs,
 };
 
 #[derive(Debug)]
@@ -35,9 +36,9 @@ impl RemoteManifest {
         let extra = Fs::OpenExtra::default().with_prevent_caching(true);
         let files = list
             .iter()
-            .map(|(path, _)| {
+            .map(|listed_file| {
                 fs.open(
-                    path,
+                    &listed_file.path,
                     OpenOptions {
                         writeable: false,
                         need_sequential: false,
@@ -65,17 +66,15 @@ impl RemoteManifest {
         let mut pipeline = <Fs::File as UniversalRead>::ReadPipeline::new()?;
         loop {
             while pipeline.can_schedule()
-                && let Some((file, (path, size))) = reads.next()
+                && let Some((file, ListedFile { path, size })) = reads.next()
             {
                 let range_end = size.min(BLOCK_SIZE as u64);
-                if let Err(err) = pipeline.schedule::<Random>(
+                pipeline.schedule::<Random>(
                     (path, size),
                     file,
                     0..range_end,
                     REMOTE_READ_ALIGNMENT,
-                ) {
-                    return Err(err);
-                }
+                )?;
             }
 
             let Some((user_data, read)) = pipeline.wait()? else {
@@ -90,5 +89,22 @@ impl RemoteManifest {
 
     pub fn get(&self, path: &Path) -> Option<&FileInfo> {
         self.files.get(path)
+    }
+
+    pub fn list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
+        let prefix_string = prefix_path.to_string_lossy();
+
+        self.files
+            .iter()
+            .filter(|(path, _)| path.to_string_lossy().starts_with(prefix_string.as_ref()))
+            .map(|(path, info)| ListedFile {
+                path: path.clone(),
+                size: info.size,
+            })
+            .collect()
+    }
+
+    pub fn exists(&self, path: &Path) -> bool {
+        self.files.contains_key(path)
     }
 }
