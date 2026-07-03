@@ -1,4 +1,6 @@
-use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
+use common::condition_checker::{
+    CheckItem, ConditionChecker, ConstantConditionChecker, Partitioner, Rest, Select,
+};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -106,6 +108,19 @@ impl FullTextIndexRead for FullTextIndex {
             Self::Mutable(index) => index.check_match(query, point_id),
             Self::Immutable(index) => index.check_match(query, point_id),
             Self::OnDisk(index) => index.check_match(query, point_id),
+        }
+    }
+
+    fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.check_match_batch(query, items, on_match),
+            Self::Immutable(index) => index.check_match_batch(query, items, on_match),
+            Self::OnDisk(index) => index.check_match_batch(query, items, on_match),
         }
     }
 
@@ -352,6 +367,21 @@ impl<T: FullTextIndexRead> ConditionChecker for FullTextConditionChecker<'_, T> 
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         self.index.check_match(&self.parsed_query, point_id)
+    }
+
+    fn check_batched<K: CheckItem>(
+        &mut self,
+        ids: &mut [K],
+        select: Select,
+        _rest: Rest,
+    ) -> OperationResult<usize> {
+        let p = Partitioner::new(ids);
+        self.index.check_match_batch(
+            &self.parsed_query,
+            p.iter().map(|item| (item, item.point_id())),
+            |item, matched| p.write(item, matched == select.is_match()),
+        )?;
+        Ok(p.finish())
     }
 }
 

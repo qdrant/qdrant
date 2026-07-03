@@ -80,6 +80,18 @@ pub trait FullTextIndexRead {
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool>;
 
+    fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        for (tag, point_id) in items {
+            on_match(tag, self.check_match(query, point_id)?);
+        }
+        Ok(())
+    }
+
     /// Walk the inverted-index vocab and emit one [`PayloadBlockCondition`] per
     /// token with at least `threshold` postings. Used to seed payload-block
     /// scans for full-text indexes.
