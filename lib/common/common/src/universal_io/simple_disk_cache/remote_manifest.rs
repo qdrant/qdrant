@@ -13,15 +13,16 @@ use crate::universal_io::{
 };
 
 #[derive(Debug)]
-struct FileInfo {
+pub struct FileInfo {
     /// Length in bytes of the entire file
-    size: u64,
+    pub size: u64,
     /// First `BLOCK_SIZE` of the file, (or `size` if `size` < `BLOCK_SIZE`)
-    first_block: AVec<u8, RuntimeAlign>,
+    pub first_block: AVec<u8, RuntimeAlign>,
 }
 
 #[derive(Debug)]
 pub struct RemoteManifest {
+    /// A preloaded view of the remote files, which include filepaths, sizes, and even partial reads.
     files: HashMap<PathBuf, FileInfo>,
 }
 
@@ -85,5 +86,9 @@ impl RemoteManifest {
         }
 
         Ok(Self { files: acc })
+    }
+
+    pub fn get(&self, path: &Path) -> Option<&FileInfo> {
+        self.files.get(path)
     }
 }

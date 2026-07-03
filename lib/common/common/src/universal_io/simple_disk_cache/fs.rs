@@ -6,7 +6,9 @@ use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
 use crate::mmap::AdviceSetting;
-use crate::universal_io::simple_disk_cache::remote_manifest::RemoteManifest;
+use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, to_block_range};
+use crate::universal_io::simple_disk_cache::local_state::LocalState;
+use crate::universal_io::simple_disk_cache::remote_manifest::{FileInfo, RemoteManifest};
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
     UniversalRead, UniversalReadFileOps, UniversalReadFs,
@@ -38,6 +40,28 @@ where
     config: Arc<DiskCacheConfig>,
     manifest: Arc<RemoteManifest>,
     remote_fs: R::Fs,
+}
+
+impl<R> DiskCacheFs<R>
+where
+    R: UniversalRead,
+{
+    fn open_remote(
+        &self,
+        path: impl AsRef<Path>,
+        extra: <<R as UniversalRead>::Fs as UniversalReadFs>::OpenExtra,
+    ) -> Result<R> {
+        self.remote_fs.open(
+            path.as_ref(),
+            OpenOptions {
+                writeable: false,
+                need_sequential: true,
+                populate: Populate::No,
+                advice: AdviceSetting::Global,
+            },
+            extra,
+        )
+    }
 }
 
 impl<R> Clone for DiskCacheFs<R>
@@ -135,9 +159,52 @@ where
             options.populate
         };
 
-        let state = match populate {
-            Populate::Auto | Populate::No => State::Uninit,
-            Populate::Blocking | Populate::PreferBackground => {
+        // TODO: try to reuse the `remote` used to fetch `first_block` if openoptions is the same?
+        let file_info = self.manifest.get(path.as_ref());
+
+        let state = match (file_info, populate) {
+            // Initialize with known info
+            (Some(file_info), Populate::Auto | Populate::No) => {
+                let FileInfo { size, first_block } = file_info;
+                let local = LocalState::new(&local_path, *size, options)?;
+                let blocks_range = to_block_range(0..first_block.len() as u64);
+                // SAFETY: We just created the localstate
+                unsafe { local.write_mmap_bytes(&first_block, blocks_range) };
+
+                let remote = self.open_remote(path.as_ref(), extra.clone())?;
+
+                State::Ready { local, remote }
+            }
+            // Initialize with known info, but finish populating.
+            (Some(file_info), Populate::Blocking | Populate::PreferBackground) => {
+                let FileInfo { size, first_block } = file_info;
+                let local = LocalState::new(&local_path, *size, options)?;
+                let blocks_range = to_block_range(0..first_block.len() as u64);
+                // SAFETY: We just created the localstate
+                unsafe { local.write_mmap_bytes(&first_block, blocks_range) };
+
+                let remote = self.open_remote(path.as_ref(), extra.clone())?;
+
+                let fetched_len = first_block.len() as u64;
+                if fetched_len == *size {
+                    // In case the first block covers the entire file, local state is fully populated
+                    State::Ready { local, remote }
+                } else {
+                    // Align read start to BLOCK_SIZE
+                    let from = fetched_len.saturating_sub(fetched_len % BLOCK_SIZE as u64);
+
+                    let mut pipeline = OwnedPipeline::new(remote)?;
+
+                    // FIXME: check `can_schedule` in a loop first
+                    pipeline.schedule_whole(from, from)?;
+
+                    State::ReopenPrefill { pipeline, local }
+                }
+            }
+            // No prefetched info, keep uninitialized.
+            (None, Populate::Auto | Populate::No) => State::Uninit,
+            // Schedule population.
+            (None, Populate::Blocking | Populate::PreferBackground) => {
                 let remote = self.remote_fs.open(
                     path.as_ref(),
                     OpenOptions {
