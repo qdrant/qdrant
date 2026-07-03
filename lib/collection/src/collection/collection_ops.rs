@@ -200,7 +200,24 @@ impl Collection {
             let updates = shard_holder.all_shards().map(|replica_set| {
                 replica_set.on_strict_mode_config_update(&new_strict_mode_config)
             });
-            future::try_join_all(updates).await?;
+            // Drive every shard update to completion even if a sibling fails, so a single
+            // shard error does not skip rate-limiter updates on the remaining shards.
+            let results = future::join_all(updates).await;
+
+            let mut first_err = None;
+            for result in results {
+                if let Err(err) = result {
+                    if first_err.is_none() {
+                        first_err = Some(err);
+                    } else {
+                        log::error!("Additional shard strict mode update failure: {err}");
+                    }
+                }
+            }
+
+            if let Some(err) = first_err {
+                return Err(err);
+            }
         }
 
         // Publish the new config and persist it.
