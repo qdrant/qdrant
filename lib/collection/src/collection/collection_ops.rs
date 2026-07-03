@@ -352,6 +352,10 @@ impl Collection {
     ///
     /// Implementation behind [`Collection::recreate_optimizers_background`]. Takes an owned
     /// [`SharedShardHolder`] so the returned future is `'static` and can be spawned as a task.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is not cancel safe and must be run to completion. Early cancellation may result in dead workers.
     async fn recreate_optimizers(shards_holder: SharedShardHolder) -> CollectionResult<()> {
         let shard_holder = shards_holder.read().await;
         let updates = shard_holder
