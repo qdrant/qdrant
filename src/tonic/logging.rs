@@ -77,6 +77,18 @@ where
                                     elapsed_sec,
                                 );
                             }
+                            // A client dropping a unary call between HEADERS and DATA
+                            // surfaces as this internal error rather than `Cancelled`,
+                            // because hyper 1.x hides stream resets during request body
+                            // read (hyperium/hyper#3681). Cluster mode generates these
+                            // routinely by cancelling fanned-out read requests.
+                            Code::Internal
+                                if grpc_status.message() == "Missing request message." =>
+                            {
+                                log::trace!(
+                                    "gRPC cancelled before request message {method_name} {elapsed_sec:.6}"
+                                );
+                            }
                             Code::Internal
                             | Code::Unimplemented
                             | Code::Unavailable
