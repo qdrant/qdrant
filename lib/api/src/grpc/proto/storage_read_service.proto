@@ -50,8 +50,13 @@ message FileExistsResponse {
   bool exists = 1;
 }
 
+message ListFilesEntry {
+  string path = 1;
+  uint64 size = 2;
+}
+
 message ListFilesResponse {
-  repeated string paths = 1;
+  repeated ListFilesEntry files = 1;
 }
 
 message FileLengthRequest {

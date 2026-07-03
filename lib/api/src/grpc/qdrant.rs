@@ -16083,9 +16083,17 @@ pub struct FileExistsResponse {
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListFilesEntry {
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub size: u64,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFilesResponse {
-    #[prost(string, repeated, tag = "1")]
-    pub paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "1")]
+    pub files: ::prost::alloc::vec::Vec<ListFilesEntry>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]

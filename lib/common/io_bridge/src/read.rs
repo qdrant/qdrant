@@ -1,9 +1,9 @@
 use std::future::Future;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bytes::Bytes;
-use common::universal_io::{Result, UniversalKind};
+use common::universal_io::{ListedFile, Result, UniversalKind};
 use futures::stream::BoxStream;
 
 /// Read-capable blob backend (S3, GCS, …). One impl per backend.
@@ -32,7 +32,7 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static;
+    ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static;
 
     fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static;
 

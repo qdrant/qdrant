@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
@@ -7,8 +7,8 @@ use fs_err as fs;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs,
-    UserData, local_file_ops,
+    ListedFile, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs, UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -91,7 +91,7 @@ impl UniversalReadFileOps for BlockCacheFs {
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
         local_file_ops::local_list_files(prefix_path)
     }
 

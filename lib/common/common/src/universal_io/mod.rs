@@ -25,7 +25,7 @@ pub use self::traits::{
     UniversalReadFs, UniversalWrite, UserData,
 };
 pub use self::types::{
-    ByteOffset, FileIndex, Flusher, OpenOptions, Populate, ReadBytesItem, ReadRange, Result,
-    UniversalKind, read_bin_via, read_json_via, read_whole_via,
+    ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, ReadBytesItem, ReadRange,
+    Result, UniversalKind, read_bin_via, read_json_via, read_whole_via,
 };
 pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};

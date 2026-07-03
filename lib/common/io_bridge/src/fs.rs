@@ -1,7 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bytes::Bytes;
-use common::universal_io::{OpenOptions, Result, UniversalReadFileOps, UniversalReadFs};
+use common::universal_io::{
+    ListedFile, OpenOptions, Result, UniversalReadFileOps, UniversalReadFs,
+};
 
 use crate::{AsyncRead, BlobFile, BridgeRuntime};
 
@@ -39,7 +41,7 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
         Ok(Self::new(A::open(&config)?, BridgeRuntime::global()))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
         self.runtime.block_on(self.inner.list_files(prefix_path))
     }
 

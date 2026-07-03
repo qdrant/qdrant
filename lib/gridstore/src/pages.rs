@@ -55,7 +55,11 @@ impl<S: UniversalRead> Pages<S> {
     pub fn open(fs: &S::Fs, dir: &Path, writeable: bool, populate: Populate) -> Result<Self> {
         let mut pages = Self::new(dir.to_path_buf(), writeable);
 
-        let page_files: HashSet<_> = fs.list_files(&dir.join("page_"))?.into_iter().collect();
+        let page_files: HashSet<_> = fs
+            .list_files(&dir.join("page_"))?
+            .into_iter()
+            .map(|listed| listed.path)
+            .collect();
 
         for page_id in 0.. {
             let page_path = pages.page_path(page_id);

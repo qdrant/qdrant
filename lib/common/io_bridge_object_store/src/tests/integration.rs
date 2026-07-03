@@ -3,7 +3,7 @@
 use std::assert_matches;
 use std::path::Path;
 
-use common::universal_io::{ReadRange, UniversalIoError, UniversalRead};
+use common::universal_io::{ListedFile, ReadRange, UniversalIoError, UniversalRead};
 use io_bridge::{AsyncRead, BridgeRuntime};
 use object_store::aws::AmazonS3;
 
@@ -130,7 +130,8 @@ fn test_list_files() {
         .block_on(store.list_files(Path::new("listed")))
         .expect("list_files");
     assert_eq!(files.len(), 3);
-    for f in &files {
-        assert!(f.to_string_lossy().starts_with("listed/"));
+    for ListedFile { path, size } in &files {
+        assert!(path.to_string_lossy().starts_with("listed/"));
+        assert_eq!(*size, 1);
     }
 }
