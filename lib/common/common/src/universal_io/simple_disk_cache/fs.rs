@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
-use super::file::{DiskCache, InitSource};
+use super::file::{DiskCache, State};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
@@ -137,8 +137,8 @@ where
             options.populate
         };
 
-        let init_source = match populate {
-            Populate::Auto | Populate::No => InitSource::FromScratch,
+        let state = match populate {
+            Populate::Auto | Populate::No => State::Uninit,
             Populate::Blocking | Populate::PreferBackground => {
                 let remote = self.remote_fs.open(
                     path.as_ref(),
@@ -156,7 +156,7 @@ where
                 // FIXME: check `can_schedule` in a loop first
                 pipeline.schedule_whole((), 0)?;
 
-                InitSource::Prefiller(pipeline)
+                State::OpenPrefill { pipeline }
             }
         };
 
@@ -166,7 +166,7 @@ where
             path.as_ref(),
             local_path,
             options,
-            init_source,
+            state,
         );
 
         if matches!(populate, Populate::Blocking) {
