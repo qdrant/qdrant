@@ -29,12 +29,10 @@ where
         }
 
         // SAFETY: self.ready tracks whether `state` is `State::Ready`, to make reads "lock-free".
-        match unsafe { &*self.state.data_ptr() } {
-            State::Ready { remote, local } => Ok(ReadyRef { remote, local }),
-            State::Uninit | State::OpenPrefill { .. } | State::ReopenPrefill { .. } => {
-                unreachable!("the `ready` flag guarantees the `Ready` variant")
-            }
-        }
+        let State::Ready { remote, local } = (unsafe { &*self.state.data_ptr() }) else {
+            unreachable!("the `ready` flag guarantees the `Ready` variant")
+        };
+        Ok(ReadyRef { remote, local })
     }
 
     /// Whether the local mirror has been materialized. Cheap, lock-free; lets
@@ -60,10 +58,8 @@ where
             State::ReopenPrefill { pipeline, local } => {
                 self.init_from_reopen_prefill(pipeline, local)?
             }
-            // `state` and `ready` are published together under this lock, so the
-            // `!ready` we just observed rules out `Ready`.
             State::Ready { .. } => {
-                unreachable!("`!ready` under the lock rules out the `Ready` variant")
+                unreachable!("We just observed `!ready` while holding the mutex lock")
             }
         };
 
