@@ -1976,4 +1976,319 @@ mod tests {
         assert!(Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
         assert!(GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
     }
+
+    /// Replaying puts of already persisted point offsets (e.g. a WAL redo after a crash where
+    /// the flush completed but was never acknowledged) is rejected without writing anything;
+    /// [`Gridstore::max_point_offset`] is the exact offset a replay must resume at.
+    #[test]
+    fn test_serverless_replayed_puts_leave_storage_intact() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_path_buf();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+        let payloads: Vec<_> = (0..3).map(|_| random_payload(rng, 1)).collect();
+        {
+            let options = StorageOptions {
+                mode: Some(Mode::Serverless),
+                ..Default::default()
+            };
+            let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+            for (point_offset, payload) in payloads.iter().enumerate() {
+                storage
+                    .put_value(point_offset as u32, payload, hw_counter_ref)
+                    .unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+
+        // "Crash" and replay all operations against the reopened storage
+        let mut storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+        let tracker_snapshot = fs::read(storage.files()[0].clone()).unwrap();
+        let page_len = storage.get_storage_size_bytes().unwrap();
+
+        let resume_at = storage.max_point_offset();
+        assert_eq!(resume_at, 3);
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            let err = storage
+                .put_value(point_offset as u32, payload, hw_counter_ref)
+                .unwrap_err();
+            assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
+        }
+
+        // The rejected replays must not have appended any value data or mappings
+        assert_eq!(storage.get_storage_size_bytes().unwrap(), page_len);
+        storage.flusher()().unwrap();
+        assert_eq!(
+            fs::read(storage.files()[0].clone()).unwrap(),
+            tracker_snapshot,
+        );
+
+        // The stored values are unaffected, and the replay resumes at the reported offset
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            assert_eq!(
+                storage
+                    .get_value::<Random>(point_offset as u32, &hw_counter)
+                    .unwrap()
+                    .as_ref(),
+                Some(payload),
+            );
+        }
+        storage
+            .put_value(resume_at, &random_payload(rng, 1), hw_counter_ref)
+            .unwrap();
+        assert_eq!(storage.max_point_offset(), 4);
+    }
+
+    /// The accepted crash case: a tracker file extended with zeroed bytes (e.g. the file length
+    /// was persisted before the entry bytes) counts as mappings that permanently read as `None`.
+    /// The storage must stay consistent and writable past them.
+    #[test]
+    fn test_serverless_zero_extended_tracker_reads_none() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_path_buf();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+        let payloads: Vec<_> = (0..3).map(|_| random_payload(rng, 1)).collect();
+        {
+            let options = StorageOptions {
+                mode: Some(Mode::Serverless),
+                ..Default::default()
+            };
+            let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+            for (point_offset, payload) in payloads.iter().enumerate() {
+                storage
+                    .put_value(point_offset as u32, payload, hw_counter_ref)
+                    .unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+
+        // Simulate a crash mid flush that persisted the grown file length as zeroes
+        let tracker_path = path.join("serverless_tracker.dat");
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .open(&tracker_path)
+            .unwrap();
+        file.set_len(5 * TRACKER_ENTRY_SIZE).unwrap();
+        drop(file);
+
+        // The zeroed entries count as mappings without a value
+        let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        assert_eq!(storage.max_point_offset(), 5);
+        assert!(
+            storage
+                .get_value::<Random>(3, &hw_counter)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            storage
+                .get_value::<Random>(4, &hw_counter)
+                .unwrap()
+                .is_none()
+        );
+
+        // They can never be put again, the storage continues past them
+        assert!(
+            storage
+                .put_value(3, &random_payload(rng, 1), hw_counter_ref)
+                .is_err()
+        );
+        storage
+            .put_value(5, &random_payload(rng, 1), hw_counter_ref)
+            .unwrap();
+        assert_eq!(storage.max_point_offset(), 6);
+        storage.flusher()().unwrap();
+
+        // Data before the zeroed entries is unaffected
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            assert_eq!(
+                storage
+                    .get_value::<Random>(point_offset as u32, &hw_counter)
+                    .unwrap()
+                    .as_ref(),
+                Some(payload),
+            );
+        }
+
+        // The reader agrees on the same view
+        drop(storage);
+        let reader =
+            GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
+        assert_eq!(reader.max_point_offset(), 6);
+        assert!(
+            reader
+                .get_value::<Random>(4, &hw_counter)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// The read-only reader must never modify the files: not on open (it must not truncate a
+    /// torn tracker tail), not on reads, and not on live reloads.
+    #[test]
+    fn test_serverless_reader_never_writes() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_path_buf();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+        let payloads: Vec<_> = (0..5).map(|_| random_payload(rng, 1)).collect();
+        {
+            let options = StorageOptions {
+                mode: Some(Mode::Serverless),
+                ..Default::default()
+            };
+            let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+            for (point_offset, payload) in payloads.iter().enumerate() {
+                storage
+                    .put_value(point_offset as u32, payload, hw_counter_ref)
+                    .unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+
+        // Leave a torn trailing entry, as if a writer append was cut short
+        let tracker_path = path.join("serverless_tracker.dat");
+        let page_path = path.join("serverless_page_0.dat");
+        {
+            let file = fs::OpenOptions::new()
+                .write(true)
+                .open(&tracker_path)
+                .unwrap();
+            direct_io::write_all_at(&file, &[0xAA; 7], 5 * TRACKER_ENTRY_SIZE).unwrap();
+        }
+
+        let tracker_snapshot = fs::read(&tracker_path).unwrap();
+        let page_snapshot = fs::read(&page_path).unwrap();
+
+        // Open a reader and exercise every read path
+        let mut reader =
+            GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
+        assert_eq!(reader.max_point_offset(), 5, "torn tail must be ignored");
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            assert_eq!(
+                reader
+                    .get_value::<Random>(point_offset as u32, &hw_counter)
+                    .unwrap()
+                    .as_ref(),
+                Some(payload),
+            );
+        }
+        let mut count = 0;
+        reader
+            .iter(
+                u32::MAX,
+                |_, _: Payload| {
+                    count += 1;
+                    Ok::<_, GridstoreError>(true)
+                },
+                hw_counter.ref_payload_io_read_counter(),
+            )
+            .unwrap();
+        assert_eq!(count, 5);
+        reader.live_reload(&MmapFs).unwrap();
+        reader.get_storage_size_bytes();
+        reader.clear_cache().unwrap();
+        drop(reader);
+
+        // The reader must have left both files byte-for-byte untouched
+        assert_eq!(fs::read(&tracker_path).unwrap(), tracker_snapshot);
+        assert_eq!(fs::read(&page_path).unwrap(), page_snapshot);
+    }
+
+    /// Every reopen must expose exactly the flushed prefix: values flushed before are readable,
+    /// unflushed ones are gone, and the mapping count always matches the exact file length.
+    #[test]
+    fn test_serverless_reopen_always_exposes_flushed_prefix() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_path_buf();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+        let options = StorageOptions {
+            mode: Some(Mode::Serverless),
+            ..Default::default()
+        };
+        let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+
+        // The values that must be visible after a reopen
+        let mut flushed: Vec<Payload> = Vec::new();
+
+        for round in 0..6 {
+            // Put a batch at the next offsets; after a reopen unflushed offsets are reused
+            let batch: Vec<_> = (0..3).map(|_| random_payload(rng, 1)).collect();
+            for (index, payload) in batch.iter().enumerate() {
+                let point_offset = flushed.len() as u32 + index as u32;
+                storage
+                    .put_value(point_offset, payload, hw_counter_ref)
+                    .unwrap();
+            }
+
+            // Only flush every other round
+            if round % 2 == 0 {
+                storage.flusher()().unwrap();
+                flushed.extend(batch);
+            }
+
+            // Every reopen must expose exactly the flushed values
+            drop(storage);
+            storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+
+            assert_eq!(storage.max_point_offset(), flushed.len() as u32);
+            assert_eq!(
+                fs::metadata(path.join("serverless_tracker.dat"))
+                    .unwrap()
+                    .len(),
+                flushed.len() as u64 * TRACKER_ENTRY_SIZE,
+            );
+            for (point_offset, payload) in flushed.iter().enumerate() {
+                assert_eq!(
+                    storage
+                        .get_value::<Random>(point_offset as u32, &hw_counter)
+                        .unwrap()
+                        .as_ref(),
+                    Some(payload),
+                    "flushed value {point_offset} must be readable after reopen",
+                );
+            }
+            assert!(
+                storage
+                    .get_value::<Random>(flushed.len() as u32, &hw_counter)
+                    .unwrap()
+                    .is_none(),
+                "unflushed values must be gone after reopen",
+            );
+        }
+    }
+
+    /// An append beyond the maximum addressable block offset is rejected before writing
+    /// anything, so a retried put does not grow the page file unboundedly.
+    #[test]
+    fn test_serverless_page_append_rejects_beyond_addressable_range() {
+        let dir = TempDir::new().unwrap();
+        let mut page = ServerlessPage::new(dir.path()).unwrap();
+
+        // Pretend the page already holds the maximum addressable amount of data
+        let block_size_bytes = DEFAULT_BLOCK_SIZE_BYTES as u64;
+        page.len = (u64::from(u32::MAX) + 1) * block_size_bytes;
+
+        let err = page.append_value(&[1, 2, 3], block_size_bytes).unwrap_err();
+        assert!(matches!(err, GridstoreError::ServiceError { .. }));
+
+        // Nothing was written, and the tracked length is unchanged
+        assert_eq!(
+            fs::metadata(dir.path().join("serverless_page_0.dat"))
+                .unwrap()
+                .len(),
+            0,
+        );
+        assert_eq!(page.len, (u64::from(u32::MAX) + 1) * block_size_bytes);
+    }
 }
