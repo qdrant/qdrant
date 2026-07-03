@@ -412,7 +412,7 @@ pub trait InvertedIndex {
 #[cfg(test)]
 mod tests {
 
-    use common::bitvec::{BitSliceExt, BitVec};
+    use common::bitvec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::universal_io::{MmapFs, Populate};
     use rand::RngExt;
@@ -615,8 +615,8 @@ mod tests {
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
             // Check same deleted points
             assert_eq!(
-                mmap.storage.deleted_points.get_bit(point_id).unwrap(),
-                *count == 0,
+                mmap.storage.deleted_points.is_active(point_id as u32),
+                *count != 0,
                 "point_id: {point_id}",
             );
 
@@ -626,7 +626,7 @@ mod tests {
         }
 
         // Check same points count
-        assert_eq!(immutable.points_count, mmap.active_points_count);
+        assert_eq!(immutable.points_count, mmap.points_count());
         assert_eq!(immutable.points_count, imm_mmap.points_count);
     }
 

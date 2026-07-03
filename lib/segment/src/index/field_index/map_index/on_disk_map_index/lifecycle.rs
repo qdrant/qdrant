@@ -3,7 +3,7 @@ use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
-use common::bitvec::{BitSlice, BitSliceExt};
+use common::bitvec::{BitSlice, DeletedBitVec};
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
@@ -85,17 +85,14 @@ where
         deleted.resize(point_to_values.len(), false);
         deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
 
-        let deleted_count = deleted.count_ones();
-
         Ok(Some(Self {
             path: path.to_path_buf(),
             storage: Storage {
                 value_to_points,
                 point_to_values,
-                deleted,
+                deleted: DeletedBitVec::new(deleted),
                 prefix_index,
             },
-            deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
         }))
     }
@@ -105,11 +102,7 @@ where
     /// Not persisted: on reopen, deletions must be re-supplied via the
     /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let idx = idx as usize;
-        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
-            self.storage.deleted.set(idx, true);
-            self.deleted_count += 1;
-        }
+        self.storage.deleted.mark_deleted(idx);
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -154,7 +147,6 @@ where
         let Self {
             path,
             storage,
-            deleted_count: _,
             total_key_value_pairs: _,
         } = self;
         let Storage {

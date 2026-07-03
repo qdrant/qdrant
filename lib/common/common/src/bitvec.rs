@@ -38,3 +38,46 @@ impl<T: BitStore, O: BitOrder> BitSliceExt for bitvec::slice::BitSlice<T, O> {
         self.get(index).as_deref().copied()
     }
 }
+
+/// Wrapper around [BitVec] with following assumptions:
+/// - Out-of-range points are considered deleted/not active.
+/// - The bitvec never grows.
+pub struct DeletedBitVec {
+    bits: BitVec,
+    count: usize,
+}
+
+impl DeletedBitVec {
+    pub fn new(deleted: BitVec) -> Self {
+        Self {
+            count: deleted.count_ones(),
+            bits: deleted,
+        }
+    }
+
+    #[inline]
+    pub fn is_active(&self, point_id: PointOffsetType) -> bool {
+        self.bits.get_bit(point_id as usize) == Some(false)
+    }
+
+    pub fn mark_deleted(&mut self, point_id: PointOffsetType) -> bool {
+        let newly_marked = self.is_active(point_id);
+        if newly_marked {
+            self.bits.set(point_id as usize, true);
+            self.count += 1;
+        }
+        newly_marked
+    }
+
+    pub fn deleted_count(&self) -> usize {
+        self.count
+    }
+
+    pub fn active_count(&self) -> usize {
+        self.bits.len() - self.count
+    }
+
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.bits.capacity().div_ceil(u8::BITS as usize)
+    }
+}
