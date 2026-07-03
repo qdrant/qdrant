@@ -23,21 +23,22 @@ use crate::config::{
     Mode, StorageConfig, compress_lz4, decompress_lz4,
 };
 use crate::fixtures::{
-    HM_FIELDS, Payload, empty_storage, empty_storage_sized, minimal_payload, random_payload,
+    HM_FIELDS, Payload, empty_storage, empty_storage_mode, empty_storage_sized, minimal_payload,
+    random_payload,
 };
 
-#[test]
-fn test_empty_payload_storage() {
+#[rstest]
+fn test_empty_payload_storage(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
     let hw_counter = HardwareCounterCell::new();
-    let (_dir, storage) = empty_storage();
+    let (_dir, storage) = empty_storage_mode(mode);
     let payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(payload.is_none());
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 }
 
-#[test]
-fn test_put_single_empty_value() {
-    let (_dir, mut storage) = empty_storage();
+#[rstest]
+fn test_put_single_empty_value(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+    let (_dir, mut storage) = empty_storage_mode(mode);
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter = hw_counter.ref_payload_io_write_counter();
@@ -45,25 +46,32 @@ fn test_put_single_empty_value() {
     // TODO: should we actually use the pages for empty values?
     let payload = Payload::default();
     storage.put_value(0, &payload, hw_counter).unwrap();
-    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
-    assert_eq!(
-        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
-        1
-    );
+    assert_eq!(storage.max_point_offset(), 1);
+    if mode == Mode::Dynamic {
+        assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+        assert_eq!(
+            storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+            1
+        );
+    }
 
     let hw_counter = HardwareCounterCell::new();
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), Payload::default());
-    assert_eq!(
-        storage.get_storage_size_bytes().unwrap(),
-        DEFAULT_BLOCK_SIZE_BYTES
-    );
+
+    let size = storage.get_storage_size_bytes().unwrap();
+    match mode {
+        // Values occupy whole blocks
+        Mode::Dynamic => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
+        // Values are packed exactly, this is the compressed payload size
+        Mode::Serverless => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
+    }
 }
 
-#[test]
-fn test_put_single_payload() {
-    let (_dir, mut storage) = empty_storage();
+#[rstest]
+fn test_put_single_payload(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+    let (_dir, mut storage) = empty_storage_mode(mode);
 
     let mut payload = Payload::default();
     payload.0.insert(
@@ -75,11 +83,14 @@ fn test_put_single_payload() {
     let hw_counter = hw_counter.ref_payload_io_write_counter();
 
     storage.put_value(0, &payload, hw_counter).unwrap();
-    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
-    assert_eq!(
-        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
-        1
-    );
+    assert_eq!(storage.max_point_offset(), 1);
+    if mode == Mode::Dynamic {
+        assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+        assert_eq!(
+            storage.as_dynamic().tracker.read().mapping_len().unwrap(),
+            1
+        );
+    }
 
     let page_mapping = storage.get_pointer(0).unwrap();
     assert_eq!(page_mapping.page_id, 0); // first page
@@ -89,15 +100,19 @@ fn test_put_single_payload() {
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
-    assert_eq!(
-        storage.get_storage_size_bytes().unwrap(),
-        DEFAULT_BLOCK_SIZE_BYTES
-    );
+
+    let size = storage.get_storage_size_bytes().unwrap();
+    match mode {
+        // Values occupy whole blocks
+        Mode::Dynamic => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
+        // Values are packed exactly, this is the compressed payload size
+        Mode::Serverless => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
+    }
 }
 
-#[test]
-fn test_storage_files() {
-    let (dir, mut storage) = empty_storage();
+#[rstest]
+fn test_storage_files(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+    let (dir, mut storage) = empty_storage_mode(mode);
 
     let mut payload = Payload::default();
     payload.0.insert(
@@ -108,11 +123,7 @@ fn test_storage_files() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
-    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
-    assert_eq!(
-        storage.as_dynamic().tracker.read().mapping_len().unwrap(),
-        1
-    );
+
     let files = storage.files();
     let actual_files: Vec<_> = fs::read_dir(dir.path()).unwrap().try_collect().unwrap();
     assert_eq!(
@@ -122,19 +133,41 @@ fn test_storage_files() {
         actual_files.len(),
         files.len()
     );
-    assert_eq!(files.len(), 5, "Expected 5 files, got {files:?}");
-    assert_eq!(files[0].file_name().unwrap(), "tracker.dat");
-    assert_eq!(files[1].file_name().unwrap(), "page_0.dat");
-    assert_eq!(files[2].file_name().unwrap(), "config.json");
-    assert_eq!(files[3].file_name().unwrap(), "bitmask.dat");
-    assert_eq!(files[4].file_name().unwrap(), "gaps.dat");
+
+    let expected_files: &[&str] = match mode {
+        Mode::Dynamic => &[
+            "tracker.dat",
+            "page_0.dat",
+            "config.json",
+            "bitmask.dat",
+            "gaps.dat",
+        ],
+        Mode::Serverless => &[
+            "serverless_tracker.dat",
+            "serverless_page_0.dat",
+            "config.json",
+        ],
+    };
+    assert_eq!(
+        files.len(),
+        expected_files.len(),
+        "Expected {} files, got {files:?}",
+        expected_files.len(),
+    );
+    for (file, expected_name) in files.iter().zip(expected_files) {
+        assert_eq!(file.file_name().unwrap(), *expected_name);
+    }
 }
 
 #[rstest]
 #[case(50000, 2)]
 #[case(100, 2000)]
-fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usize) {
-    let (_dir, mut storage) = empty_storage();
+fn test_put_payload(
+    #[case] num_payloads: u32,
+    #[case] payload_size_factor: usize,
+    #[values(Mode::Dynamic, Mode::Serverless)] mode: Mode,
+) {
+    let (_dir, mut storage) = empty_storage_mode(mode);
 
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
 
@@ -651,8 +684,8 @@ fn test_handle_huge_payload() {
     }
 }
 
-#[test]
-fn test_storage_persistence_basic() {
+#[rstest]
+fn test_storage_persistence_basic(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -665,9 +698,12 @@ fn test_storage_persistence_basic() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     {
-        let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+        let options = StorageOptions {
+            mode: Some(mode),
+            ..Default::default()
+        };
+        let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
-        assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
 
         let page_mapping = storage.get_pointer(0).unwrap();
         assert_eq!(page_mapping.page_id, 0); // first page
@@ -681,9 +717,9 @@ fn test_storage_persistence_basic() {
         storage.flusher()().unwrap();
     }
 
-    // reopen storage
+    // reopen storage, the mode is selected automatically
     let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
-    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 1);
+    assert_eq!(storage.max_point_offset(), 1);
 
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
@@ -734,13 +770,17 @@ fn test_open_config_without_mode_as_dynamic() {
 
 /// A corrupt config with zero sized blocks must be rejected when opening, it would otherwise
 /// break pointer arithmetic.
-#[test]
-fn test_open_rejects_corrupt_config() {
+#[rstest]
+fn test_open_rejects_corrupt_config(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
     {
-        let storage = Gridstore::<Payload>::new(MmapFs, path.clone(), Default::default()).unwrap();
+        let options = StorageOptions {
+            mode: Some(mode),
+            ..Default::default()
+        };
+        let storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         storage.flusher()().unwrap();
     }
 
@@ -895,13 +935,17 @@ fn test_payload_compression() {
 #[case(128)]
 #[case(256)]
 #[case(512)]
-fn test_different_block_sizes(#[case] block_size_bytes: usize) {
+fn test_different_block_sizes(
+    #[case] block_size_bytes: usize,
+    #[values(Mode::Dynamic, Mode::Serverless)] mode: Mode,
+) {
     use crate::fixtures::minimal_payload;
 
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let blocks_per_page = DEFAULT_PAGE_SIZE_BYTES / block_size_bytes;
     let options = StorageOptions {
         block_size_bytes: Some(block_size_bytes),
+        mode: Some(mode),
         ..Default::default()
     };
     let mut storage = Gridstore::<_>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
@@ -919,10 +963,25 @@ fn test_different_block_sizes(#[case] block_size_bytes: usize) {
     storage.flusher()().unwrap();
     println!("{last_point_id}");
 
-    assert_eq!(storage.as_dynamic().pages.read().num_pages(), 4);
     let last_pointer = storage.get_pointer(last_point_id).unwrap();
-    assert_eq!(last_pointer.block_offset, 0);
-    assert_eq!(last_pointer.page_id, 3);
+    match mode {
+        // Each value occupies one block, spilling over into a new page every blocks_per_page
+        Mode::Dynamic => {
+            assert_eq!(storage.as_dynamic().pages.read().num_pages(), 4);
+            assert_eq!(last_pointer.block_offset, 0);
+            assert_eq!(last_pointer.page_id, 3);
+        }
+        // A single ever growing page, values are packed at consecutive blocks
+        Mode::Serverless => {
+            assert_eq!(last_pointer.block_offset, last_point_id);
+            assert_eq!(last_pointer.page_id, 0);
+        }
+    }
+
+    let stored_payload = storage
+        .get_value::<Random>(last_point_id, &hw_counter)
+        .unwrap();
+    assert_eq!(stored_payload, Some(payload));
 }
 
 /// Test that data is only actually flushed when we invoke the flush closure
@@ -1202,8 +1261,8 @@ fn test_deferred_flush_with_delete() {
 /// 4. Write more data via Gridstore, flush.
 /// 5. Call `live_reload` on reader, verify it sees new data.
 /// 6. Also test that live_reload is a no-op when nothing changed.
-#[test]
-fn test_live_reload() {
+#[rstest]
+fn test_live_reload(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -1220,7 +1279,11 @@ fn test_live_reload() {
     };
 
     // Step 1: Write initial data and flush
-    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+    let options = StorageOptions {
+        mode: Some(mode),
+        ..Default::default()
+    };
+    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
     let payload_1 = make_payload("key", "value_1");
@@ -1573,17 +1636,27 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
 /// `GridstoreView::for_each_in_batch` must yield the same values as calling
 /// `get_value` per offset, including missing/out-of-range offsets that should be
 /// silently skipped (matching `get_value`'s `Ok(None)`).
-#[test]
-fn test_for_each_in_batch_congruent_with_get_value() {
-    let (_dir, mut storage) = empty_storage();
+#[rstest]
+fn test_for_each_in_batch_congruent_with_get_value(
+    #[values(Mode::Dynamic, Mode::Serverless)] mode: Mode,
+) {
+    let (_dir, mut storage) = empty_storage_mode(mode);
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
 
+    // A few missing point offsets to create gaps
+    let missing = [3u32, 17, 42, 88];
+
     let num_payloads = 100u32;
     for point_offset in 0..num_payloads {
+        // In serverless mode deletes are unsupported, create the gaps by skipping puts instead
+        if mode == Mode::Serverless && missing.contains(&point_offset) {
+            continue;
+        }
+
         let size_factor = (point_offset % 5) as usize + 1;
         let payload = random_payload(rng, size_factor);
         storage
@@ -1592,8 +1665,10 @@ fn test_for_each_in_batch_congruent_with_get_value() {
     }
 
     // Delete a few values to create gaps.
-    for &id in &[3u32, 17, 42, 88] {
-        storage.delete_value(id).unwrap();
+    if mode == Mode::Dynamic {
+        for &id in &missing {
+            storage.delete_value(id).unwrap();
+        }
     }
 
     // Build offsets including deleted points and out-of-range ones.

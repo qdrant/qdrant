@@ -29,16 +29,19 @@ impl Blob for Payload {
 
 /// Create an empty storage with the default configuration
 pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
-    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), Default::default()).unwrap();
-    (dir, storage)
+    empty_storage_mode(Mode::Dynamic)
 }
 
 /// Create an empty storage in serverless mode with the default configuration
 pub fn empty_storage_serverless() -> (TempDir, Gridstore<Payload>) {
+    empty_storage_mode(Mode::Serverless)
+}
+
+/// Create an empty storage in the given mode with the default configuration
+pub fn empty_storage_mode(mode: Mode) -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let options = StorageOptions {
-        mode: Some(Mode::Serverless),
+        mode: Some(mode),
         ..Default::default()
     };
     let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
