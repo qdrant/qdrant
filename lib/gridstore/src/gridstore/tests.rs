@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
 use fs_err::File;
 use itertools::Itertools;
@@ -23,7 +23,9 @@ use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
     Mode, StorageConfig,
 };
-use crate::fixtures::{HM_FIELDS, Payload, empty_storage, empty_storage_sized, random_payload};
+use crate::fixtures::{
+    HM_FIELDS, Payload, empty_storage, empty_storage_sized, minimal_payload, random_payload,
+};
 
 #[test]
 fn test_empty_payload_storage() {
@@ -687,6 +689,48 @@ fn test_storage_persistence_basic() {
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
+}
+
+/// Configs written before the `mode` field existed must open in dynamic mode.
+#[test]
+fn test_open_config_without_mode_as_dynamic() {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    {
+        let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+        storage
+            .put_value(0, &minimal_payload(), hw_counter_ref)
+            .unwrap();
+        storage.flusher()().unwrap();
+    }
+
+    // Strip the mode field from the config, like configs of older versions
+    let config_path = path.join("config.json");
+    let config_json = fs::read_to_string(&config_path).unwrap();
+    let mut config: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&config_json).unwrap();
+    assert_eq!(
+        config.remove("mode"),
+        Some(serde_json::Value::String("dynamic".into())),
+    );
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+
+    // Both the storage and the reader open it in dynamic mode
+    let storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    storage.as_dynamic();
+    assert_eq!(
+        storage.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(minimal_payload()),
+    );
+
+    let reader = GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
+    assert_eq!(
+        reader.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(minimal_payload()),
+    );
 }
 
 #[test]
