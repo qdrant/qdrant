@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use super::DiskCacheRemote;
@@ -7,8 +7,8 @@ use super::config::DiskCacheConfig;
 use super::file::{DiskCache, InitSource};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
+    UniversalRead, UniversalReadFileOps, UniversalReadFs,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -78,7 +78,7 @@ where
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
         self.remote_fs.list_files(prefix_path)
     }
 

@@ -1,9 +1,9 @@
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::fs::atomic_save;
 use crate::mmap::create_and_ensure_length;
-use crate::universal_io::UniversalIoError;
+use crate::universal_io::{ListedFile, UniversalIoError};
 
 pub fn local_create(path: &Path, expected_length: usize) -> crate::universal_io::Result<()> {
     create_and_ensure_length(path, expected_length)
@@ -29,7 +29,7 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Resu
     })
 }
 
-pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>> {
+pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<ListedFile>> {
     let dir = prefix_path.parent().unwrap_or(Path::new("."));
     let file_prefix = prefix_path
         .file_name()
@@ -46,7 +46,10 @@ pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<P
             && name.starts_with(&file_prefix)
             && entry.file_type()?.is_file()
         {
-            results.push(dir.join(name));
+            let path = dir.join(name);
+            let size = entry.metadata()?.len();
+
+            results.push(ListedFile { path, size });
         }
     }
 

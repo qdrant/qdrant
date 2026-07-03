@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bytemuck::TransparentWrapper;
 
@@ -10,8 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalIoError, UniversalKind,
-    UniversalRead, UniversalReadFs, UserData,
+    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -43,7 +43,7 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
         Ok(ReadOnlyFs(F::from_context(ctx.0)?))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
+    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
         self.0.list_files(prefix_path)
     }
 

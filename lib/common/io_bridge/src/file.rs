@@ -130,7 +130,9 @@ mod tests {
     use std::ops::Range;
 
     use bytes::Bytes;
-    use common::universal_io::{OpenOptions, ReadRange, UniversalIoError, UniversalReadFs};
+    use common::universal_io::{
+        ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs,
+    };
     use futures::stream::{BoxStream, StreamExt};
 
     use super::*;
@@ -160,7 +162,7 @@ mod tests {
         fn list_files(
             &self,
             _prefix: &Path,
-        ) -> impl Future<Output = Result<Vec<std::path::PathBuf>>> + Send + 'static {
+        ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
             std::future::ready(Ok(vec![]))
         }
 

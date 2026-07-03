@@ -254,7 +254,7 @@ async fn list_files_returns_paths_relative_to_shard_dir() {
     write_shard_file(&shard_dir, "index/chunk_2.bin", b"456");
     write_shard_file(&shard_dir, "index/other.bin", b"789");
 
-    let mut paths = service
+    let mut files = service
         .list_files(Request::new(ListFilesRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             shard_id: TEST_SHARD_ID,
@@ -263,15 +263,21 @@ async fn list_files_returns_paths_relative_to_shard_dir() {
         .await
         .unwrap()
         .into_inner()
-        .paths;
+        .files;
 
-    paths.sort();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
 
     assert_eq!(
-        paths,
+        files,
         vec![
-            "index/chunk_1.bin".to_string(),
-            "index/chunk_2.bin".to_string(),
+            ListFilesEntry {
+                path: "index/chunk_1.bin".to_string(),
+                size: 3,
+            },
+            ListFilesEntry {
+                path: "index/chunk_2.bin".to_string(),
+                size: 3,
+            },
         ]
     );
 
