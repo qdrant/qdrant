@@ -38,6 +38,16 @@ type Node = RawNode<ConsensusStateRef>;
 const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
+/// Initial delay before restarting the consensus thread after a failure
+const CONSENSUS_RESTART_INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+
+/// Maximum delay between consensus thread restart attempts
+const CONSENSUS_RESTART_MAX_BACKOFF: Duration = Duration::from_secs(300);
+
+/// If the consensus thread was working for at least this long before failing,
+/// consider the previous failure resolved and start restart backoff from scratch
+const CONSENSUS_RESTART_BACKOFF_RESET_UPTIME: Duration = Duration::from_secs(300);
+
 pub enum Message {
     FromClient(ConsensusOperations),
     FromPeer(Box<RaftMessage>),
@@ -48,8 +58,6 @@ pub enum Message {
 pub struct Consensus {
     /// Raft structure which handles raft-related state
     node: Node,
-    /// Receives proposals from peers and client for applying in consensus
-    receiver: Receiver<Message>,
     /// Runtime for async message sending
     runtime: Handle,
     /// Uri to some other known peer, used to join the consensus
@@ -82,20 +90,35 @@ impl Consensus {
         let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
         let config = settings.cluster.consensus.clone();
 
-        let (mut consensus, message_sender) = Self::new(
+        // Bounded channel for backpressure.
+        //
+        // The channel is created here, outside of `Consensus` itself, so it survives consensus
+        // thread restarts: internal gRPC handlers and the forward-proposals thread keep their
+        // senders across restarts, and messages accumulated while consensus is down are drained
+        // once it is rebuilt.
+        let (message_sender, message_receiver) =
+            tokio::sync::mpsc::channel(config.max_message_queue_size);
+
+        // The first construction is fail-fast: if consensus cannot be initialized on startup
+        // (including bootstrap and `reinit`), Qdrant fails to start. Only failures of an already
+        // running consensus are retried by the restart loop below.
+        let mut consensus = Self::new(
             logger,
             state_ref.clone(),
-            bootstrap_peer,
-            uri,
+            bootstrap_peer.clone(),
+            uri.clone(),
             p2p_port,
-            config,
-            tls_client_config,
-            channel_service,
+            config.clone(),
+            tls_client_config.clone(),
+            channel_service.clone(),
             runtime.clone(),
             reinit,
         )?;
 
+        let logger_clone = logger.clone();
         let state_ref_clone = state_ref.clone();
+        let channel_service_clone = channel_service.clone();
+        let runtime_clone = runtime.clone();
         thread::Builder::new()
             .name("consensus".to_string())
             .spawn(move || {
@@ -108,12 +131,83 @@ impl Consensus {
                     );
                 }
 
-                if let Err(err) = consensus.start() {
+                let mut receiver = message_receiver;
+                let mut backoff = CONSENSUS_RESTART_INITIAL_BACKOFF;
+                let mut restart_attempt = 0u32;
+
+                loop {
+                    let started_at = Instant::now();
+
+                    let err = match consensus.start(&mut receiver) {
+                        Ok(()) => {
+                            log::info!("Consensus stopped");
+                            state_ref_clone.on_consensus_stopped();
+                            return;
+                        }
+                        Err(err) => err,
+                    };
+
                     log::error!("Consensus stopped with error: {err:#}");
-                    state_ref_clone.on_consensus_thread_err(err);
-                } else {
-                    log::info!("Consensus stopped");
-                    state_ref_clone.on_consensus_stopped();
+
+                    // If consensus was working for a while before failing, consider the previous
+                    // failure resolved and start backoff from scratch
+                    if started_at.elapsed() >= CONSENSUS_RESTART_BACKOFF_RESET_UPTIME {
+                        backoff = CONSENSUS_RESTART_INITIAL_BACKOFF;
+                        restart_attempt = 0;
+                    }
+
+                    // After a failure the in-memory Raft state may be ahead of the persisted
+                    // state, so it is not safe to reuse. Drop the failed instance and rebuild
+                    // from persisted state, exactly like a process restart would.
+                    drop(consensus);
+
+                    let mut last_err = err;
+
+                    consensus = loop {
+                        restart_attempt += 1;
+
+                        state_ref_clone.on_consensus_thread_err(format!(
+                            "{last_err:#}; \
+                             restarting consensus thread \
+                             (attempt {restart_attempt}, next attempt in {} sec)",
+                            backoff.as_secs(),
+                        ));
+
+                        log::info!(
+                            "Restarting consensus thread in {} sec (attempt {restart_attempt})",
+                            backoff.as_secs(),
+                        );
+
+                        thread::sleep(backoff);
+                        backoff = cmp::min(backoff * 2, CONSENSUS_RESTART_MAX_BACKOFF);
+
+                        // Rebuilding from persisted state is equivalent to a process restart,
+                        // except `reinit` is never repeated: WAL clearing/compaction on reinit
+                        // must happen at most once per process start.
+                        let rebuilt = Self::new(
+                            &logger_clone,
+                            state_ref_clone.clone(),
+                            bootstrap_peer.clone(),
+                            uri.clone(),
+                            p2p_port,
+                            config.clone(),
+                            tls_client_config.clone(),
+                            channel_service_clone.clone(),
+                            runtime_clone.clone(),
+                            false,
+                        );
+
+                        match rebuilt {
+                            Ok(consensus) => break consensus,
+                            Err(err) => {
+                                log::error!("Failed to restart consensus: {err:#}");
+                                last_err = err;
+                            }
+                        }
+                    };
+
+                    log::info!("Consensus thread restarted after failure");
+                    state_ref_clone.record_consensus_working();
                 }
             })?;
 
@@ -186,7 +280,7 @@ impl Consensus {
         channel_service: ChannelService,
         runtime: Handle,
         reinit: bool,
-    ) -> anyhow::Result<(Self, Sender<Message>)> {
+    ) -> anyhow::Result<Self> {
         // If we want to re-initialize consensus, we need to prevent other peers
         // from re-playing consensus WAL operations, as they should already have them applied.
         // Do ensure that we are forcing compacting WAL on the first re-initialized peer,
@@ -211,8 +305,6 @@ impl Consensus {
             ..Default::default()
         };
         raft_config.validate()?;
-        // bounded channel for backpressure
-        let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
         if state_ref.is_new_deployment() || reinit {
             let leader_established_in_ms =
@@ -273,7 +365,6 @@ impl Consensus {
 
         let consensus = Self {
             node,
-            receiver,
             runtime,
             config,
             broker,
@@ -284,7 +375,7 @@ impl Consensus {
             state_ref.recover_first_voter()?;
         }
 
-        Ok((consensus, sender))
+        Ok(consensus)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -478,7 +569,7 @@ impl Consensus {
         Ok(())
     }
 
-    pub fn start(&mut self) -> anyhow::Result<()> {
+    pub fn start(&mut self, receiver: &mut Receiver<Message>) -> anyhow::Result<()> {
         // If this is the only peer in the cluster, tick Raft node a few times to instantly
         // self-elect itself as Raft leader
         if self.node.store().peer_count() == 1 {
@@ -498,7 +589,7 @@ impl Consensus {
 
         loop {
             // Wait (for up to `tick_period`) for incoming client requests and Raft messages
-            let raft_messages = self.advance_node(tick_period)?;
+            let raft_messages = self.advance_node(receiver, tick_period)?;
 
             // Calculate how many ticks passed since the last one
             let elapsed_ticks = previous_tick.elapsed().div_duration_f32(tick_period) as u32;
@@ -561,7 +652,11 @@ impl Consensus {
         }
     }
 
-    fn advance_node(&mut self, tick_period: Duration) -> anyhow::Result<usize> {
+    fn advance_node(
+        &mut self,
+        receiver: &mut Receiver<Message>,
+        tick_period: Duration,
+    ) -> anyhow::Result<usize> {
         if self
             .try_promote_learner()
             .context("failed to promote learner")?
@@ -590,7 +685,7 @@ impl Consensus {
         let mut raft_messages = 0;
 
         loop {
-            let Ok(message) = self.recv_update(timeout_at) else {
+            let Ok(message) = self.recv_update(receiver, timeout_at) else {
                 break;
             };
 
@@ -630,11 +725,15 @@ impl Consensus {
         Ok(raft_messages)
     }
 
-    fn recv_update(&mut self, timeout_at: Instant) -> Result<Message, TryRecvUpdateError> {
+    fn recv_update(
+        &self,
+        receiver: &mut Receiver<Message>,
+        timeout_at: Instant,
+    ) -> Result<Message, TryRecvUpdateError> {
         self.runtime.block_on(async {
             tokio::select! {
                 biased;
-                message = self.receiver.recv() => message.ok_or(TryRecvUpdateError::Closed),
+                message = receiver.recv() => message.ok_or(TryRecvUpdateError::Closed),
                 _ = tokio::time::sleep_until(timeout_at.into()) => Err(TryRecvUpdateError::Timeout),
             }
         })
@@ -1523,13 +1622,16 @@ mod tests {
         let dispatcher =
             Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone(), true);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-        let (mut consensus, message_sender) = Consensus::new(
+        let consensus_config = ConsensusConfig::default();
+        let (message_sender, mut message_receiver) =
+            tokio::sync::mpsc::channel(consensus_config.max_message_queue_size);
+        let mut consensus = Consensus::new(
             &slog_logger,
             consensus_state.clone(),
             None,
             Some("http://127.0.0.1:6335".parse().unwrap()),
             6335,
-            ConsensusConfig::default(),
+            consensus_config,
             None,
             ChannelService::new(
                 settings.service.http_port,
@@ -1543,7 +1645,7 @@ mod tests {
         .unwrap();
 
         let is_leader_established = consensus_state.is_leader_established.clone();
-        thread::spawn(move || consensus.start().unwrap());
+        thread::spawn(move || consensus.start(&mut message_receiver).unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
                 if message_sender

@@ -31,7 +31,8 @@ impl AuditableOperation for CollectionMetaOperations {
             CollectionMetaOperations::DeleteNamedVector(_) => "delete_named_vector",
             CollectionMetaOperations::Nop { .. } => "nop",
             #[cfg(feature = "staging")]
-            CollectionMetaOperations::TestSlowDown(_) => "debug",
+            CollectionMetaOperations::TestSlowDown(_)
+            | CollectionMetaOperations::TestTransientError(_) => "debug",
         }
     }
 }
