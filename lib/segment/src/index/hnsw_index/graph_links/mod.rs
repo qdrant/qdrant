@@ -86,7 +86,7 @@ mod view;
 mod tests;
 
 pub use format::{GraphLinksFormat, GraphLinksFormatParam};
-pub use links::GraphLinks;
+pub use links::{GraphLinks, GraphLinksResidency};
 pub use serializer::serialize_graph_links;
 pub use vectors::{GraphLinksVectors, GraphLinksVectorsLayout, StorageGraphLinksVectors};
 pub use view::LinksIterator;

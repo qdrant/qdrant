@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use common::fs::atomic_save;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, Populate};
+use common::universal_io::MmapFs;
 use rand::RngExt;
 use rstest::rstest;
 use tempfile::Builder;
@@ -155,7 +155,9 @@ fn test_save_load(
     })
     .unwrap();
 
-    let cmp_links = GraphLinks::load_universal(&MmapFs, &links_file, format, Populate::No).unwrap();
+    let cmp_links =
+        GraphLinks::load_universal(&MmapFs, &links_file, format, GraphLinksResidency::Cold)
+            .unwrap();
     check_links(links, &cmp_links, &vectors);
 }
 

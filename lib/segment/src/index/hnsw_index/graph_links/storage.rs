@@ -79,15 +79,38 @@ impl GraphLinksEnum {
         if S::kind().is_in_ram_or_mmap() {
             Ok(GraphLinksEnum::Universal(Box::new(storage)))
         } else {
-            let bytes = storage.read_whole::<u8>()?.into_owned();
-            Ok(GraphLinksEnum::Ram(bytes))
+            Self::pinned_from_storage(storage)
         }
+    }
+
+    /// Materialize the whole links blob into an anonymous heap allocation
+    /// ([`GraphLinksEnum::Ram`]), regardless of the backend.
+    pub(super) fn pinned_from_storage<S: UniversalRead>(storage: S) -> OperationResult<Self> {
+        let bytes = storage.read_whole::<u8>()?.into_owned();
+        // The heap copy is authoritative from here on: evict whatever the read
+        // left in the OS page cache or backend caches, so the links are not
+        // resident twice.
+        storage.clear_ram_cache()?;
+        Ok(GraphLinksEnum::Ram(bytes))
     }
 
     pub(super) fn as_bytes(&self) -> OperationResult<&[u8]> {
         match self {
             GraphLinksEnum::Ram(data) => Ok(data.as_slice()),
             GraphLinksEnum::Universal(storage) => storage.bytes(),
+        }
+    }
+
+    /// Heap RAM held by the links themselves, in bytes.
+    ///
+    /// Non-zero only for [`GraphLinksEnum::Ram`], i.e. freshly built links or
+    /// links materialized from a non-borrowable universal-IO backend. Storage
+    /// kept behind a live handle ([`GraphLinksEnum::Universal`]) is backed by
+    /// the OS page cache and reported via file residency instead.
+    pub(super) fn heap_size_bytes(&self) -> usize {
+        match self {
+            GraphLinksEnum::Ram(data) => data.len(),
+            GraphLinksEnum::Universal(_) => 0,
         }
     }
 

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::{MmapFs, Populate};
+use common::universal_io::MmapFs;
 
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
@@ -10,6 +10,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::HnswConfig;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -104,15 +105,15 @@ impl HNSWIndex {
 
         let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
 
-        // Keep the links lazily on disk when configured so; otherwise populate
-        // them into RAM on load (blocking).
-        let populate = if is_on_disk {
-            Populate::No
+        // Keep the links cold (lazily on disk) when configured so; otherwise
+        // pre-populate them into the page cache on load.
+        let residency = if is_on_disk {
+            GraphLinksResidency::Cold
         } else {
-            Populate::Blocking
+            GraphLinksResidency::Cached
         };
 
-        let graph = GraphLayers::load(path, populate, do_convert)?;
+        let graph = GraphLayers::load(path, residency, do_convert)?;
 
         Ok(HNSWIndex {
             id_tracker,
@@ -129,6 +130,15 @@ impl HNSWIndex {
 
     pub fn is_on_disk(&self) -> bool {
         self.is_on_disk
+    }
+
+    /// Heap RAM held by the graph links, in bytes.
+    ///
+    /// Non-zero when the links are materialized in RAM rather than backed by
+    /// a live mmap handle (freshly built index, or a non-borrowable universal-IO
+    /// backend); such links are invisible to page-cache residency probes.
+    pub fn links_heap_size_bytes(&self) -> usize {
+        self.graph.links_heap_size_bytes()
     }
 
     #[cfg(test)]

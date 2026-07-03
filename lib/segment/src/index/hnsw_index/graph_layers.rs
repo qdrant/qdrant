@@ -33,14 +33,14 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::atomic_save;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{MmapFs, Populate, UniversalReadFs, read_bin_via};
+use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::HnswM;
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_links::{GraphLinks, GraphLinksFormat};
+use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksResidency};
 use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
@@ -620,16 +620,26 @@ impl GraphLayers {
     pub fn num_points(&self) -> usize {
         self.links.num_points()
     }
+
+    /// Heap RAM held by the graph links, in bytes.
+    /// Zero when the links are backed by a live (mmap-backed) file handle;
+    /// see [`GraphLinks::heap_size_bytes`].
+    pub fn links_heap_size_bytes(&self) -> usize {
+        self.links.heap_size_bytes()
+    }
 }
 
 impl GraphLayers {
     /// Load via local mmap, optionally converting the links to the compressed
     /// format first. Used by the (mutable) on-disk HNSW index.
     ///
-    /// `populate` fills the OS page cache for the links on open (e.g.
-    /// [`Populate::Blocking`] to keep them in RAM, [`Populate::No`] to keep them
-    /// lazily on disk).
-    pub fn load(dir: &Path, populate: Populate, compress: bool) -> OperationResult<Self> {
+    /// `residency` controls how the links reside in memory after loading;
+    /// see [`GraphLinksResidency`].
+    pub fn load(
+        dir: &Path,
+        residency: GraphLinksResidency,
+        compress: bool,
+    ) -> OperationResult<Self> {
         if compress {
             // `convert_to_compressed` writes data, and we don't have a
             // `UniversalWriteFs` yet, so it stays on local mmap IO. It is not
@@ -638,15 +648,19 @@ impl GraphLayers {
             Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0))?;
         }
 
-        Self::load_universal(&MmapFs, dir, populate)
+        Self::load_universal(&MmapFs, dir, residency)
     }
 
     /// Load purely through universal IO, without the format conversion path of
     /// [`Self::load`]. Used by the read-only index.
     ///
-    /// `populate` fills the OS page cache for the links on open; see
-    /// [`Self::load`].
-    pub fn load_universal<Fs>(fs: &Fs, dir: &Path, populate: Populate) -> OperationResult<Self>
+    /// `residency` controls how the links reside in memory after loading;
+    /// see [`GraphLinksResidency`].
+    pub fn load_universal<Fs>(
+        fs: &Fs,
+        dir: &Path,
+        residency: GraphLinksResidency,
+    ) -> OperationResult<Self>
     where
         Fs: UniversalReadFs,
         Fs::File: 'static,
@@ -655,7 +669,7 @@ impl GraphLayers {
 
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: Self::load_links_universal(fs, dir, populate)?,
+            links: Self::load_links_universal(fs, dir, residency)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
@@ -664,7 +678,7 @@ impl GraphLayers {
     fn load_links_universal<Fs>(
         fs: &Fs,
         dir: &Path,
-        populate: Populate,
+        residency: GraphLinksResidency,
     ) -> OperationResult<GraphLinks>
     where
         Fs: UniversalReadFs,
@@ -677,7 +691,7 @@ impl GraphLayers {
         ] {
             let path = GraphLayers::get_links_path(dir, format);
             if fs.exists(&path)? {
-                return GraphLinks::load_universal(fs, &path, format, populate);
+                return GraphLinks::load_universal(fs, &path, format, residency);
             }
         }
         Err(OperationError::service_error("No links file found"))
@@ -704,7 +718,7 @@ impl GraphLayers {
             &MmapFs,
             &plain_path,
             GraphLinksFormat::Plain,
-            Populate::No,
+            GraphLinksResidency::Cold,
         )?;
         let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
@@ -896,18 +910,38 @@ mod tests {
             )
             .unwrap();
         assert_eq!(graph1.links.format(), initial_format);
+        // The built graph must be mmap-backed, not pinned in heap.
+        assert_eq!(graph1.links.heap_size_bytes(), 0);
         let res1 = search_in_graph(&query, top, &vector_holder, &graph1);
         drop(graph1);
 
-        let graph2 = GraphLayers::load(dir.path(), Populate::Blocking, compress).unwrap();
+        let graph2 = GraphLayers::load(dir.path(), GraphLinksResidency::Cached, compress).unwrap();
         if compress {
             assert_eq!(graph2.links.format(), GraphLinksFormat::Compressed);
         } else {
             assert_eq!(graph2.links.format(), initial_format);
         }
+        // `Cached` residency keeps the links in the page cache, not in heap.
+        assert_eq!(graph2.links.heap_size_bytes(), 0);
         let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
 
         assert_eq!(res1, res2)
+    }
+
+    /// A freshly built graph must have the same, single-copy residency as one
+    /// loaded from disk: mmap-backed for both `on_disk` values, never pinned
+    /// in heap.
+    #[rstest]
+    fn test_built_graph_is_not_pinned(#[values(false, true)] on_disk: bool) {
+        let mut rng = StdRng::seed_from_u64(42);
+        let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
+
+        let (_vector_holder, graph_layers_builder) =
+            create_graph_layer_builder_fixture(100, M, 8, false, true, Distance::Cosine, &mut rng);
+        let graph = graph_layers_builder
+            .into_graph_layers(dir.path(), GraphLinksFormatParam::Compressed, on_disk)
+            .unwrap();
+        assert_eq!(graph.links.heap_size_bytes(), 0);
     }
 
     #[rstest]

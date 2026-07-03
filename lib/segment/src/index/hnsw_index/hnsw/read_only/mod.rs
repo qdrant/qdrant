@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::Populate;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
@@ -15,6 +14,7 @@ use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -108,14 +108,15 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
         let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
 
-        // Keep the graph lazily on disk when configured so; otherwise populate
-        // it into RAM on load (blocking).
-        let populate = if is_on_disk {
-            Populate::No
+        // Keep the graph cold (lazily on disk) when configured so; otherwise
+        // pre-populate it into the page cache on load. Note that non-borrowable
+        // backends materialize the links into heap RAM either way.
+        let residency = if is_on_disk {
+            GraphLinksResidency::Cold
         } else {
-            Populate::Blocking
+            GraphLinksResidency::Cached
         };
-        let graph = GraphLayers::load_universal(fs, path, populate)?;
+        let graph = GraphLayers::load_universal(fs, path, residency)?;
 
         Ok(Self {
             id_tracker,
