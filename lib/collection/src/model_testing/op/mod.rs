@@ -299,8 +299,6 @@ impl Swarm {
     /// is just removing it from `FORCE_OFF`.
     //
     // Currently in `FORCE_OFF` (known-broken):
-    // - DeleteByFilter (3): WAL replay can resurrect filter-deleted points — post-reload count
-    //   mismatch. See https://github.com/qdrant/qdrant/issues/9575
     // - CreateVectorName / DeleteVectorName (22, 23): (1) proxy-segment schema race (optimizer-on)
     //   → "missing / Not existing vector name"; (2) DeleteVectorName vs. storage incoherence
     //   (fires without the optimizer too) — `delete_named_vector` updates `CollectionParams` but
@@ -349,7 +347,9 @@ impl Swarm {
     const FORCE_ON: [usize; 1] = [0]; // Upsert
 
     /// Indices kept disabled in every swarm config: known-broken ops (see `BASE`).
-    const FORCE_OFF: [usize; 3] = [3, 22, 23]; // DeleteByFilter, CreateVectorName, DeleteVectorName
+    // DeleteByFilter (3) was here for https://github.com/qdrant/qdrant/issues/9575 — re-enabled
+    // once filter ops are resolved to concrete ids before the WAL append.
+    const FORCE_OFF: [usize; 2] = [22, 23]; // CreateVectorName, DeleteVectorName
 
     /// Draw a per-run config: each non-forced op is included with probability 0.5 (keeping its
     /// base weight); omitted ops get weight 0.

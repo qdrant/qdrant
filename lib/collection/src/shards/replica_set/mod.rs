@@ -4,6 +4,7 @@ mod locally_disabled_peers;
 mod partial_snapshot_meta;
 mod read_ops;
 pub mod replica_set_state;
+mod resolved_update;
 mod shard_transfer;
 pub mod snapshots;
 mod telemetry;

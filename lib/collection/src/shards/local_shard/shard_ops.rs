@@ -50,6 +50,20 @@ pub enum SubmitOutcome {
     },
 }
 
+/// How [`LocalShard::append_and_dispatch`] hands the operation to the update
+/// worker after the WAL append.
+pub(super) enum DispatchMode {
+    /// Move the operation into the worker channel when the queue is short
+    /// enough to keep it in RAM (the regular submit fast path — no clone);
+    /// nothing is returned to the caller.
+    Move,
+    /// Put a clone on the worker channel and return the appended operation —
+    /// with the clock tag as corrected by the WAL write — to the caller.
+    /// Used by the filter-resolving path, which forwards the resolved
+    /// operation to the other replicas.
+    CloneAndReturn,
+}
+
 impl LocalShard {
     /// Submit an update to the worker queue without waiting for completion.
     ///
@@ -59,17 +73,32 @@ impl LocalShard {
     /// read guards on the replica set.
     pub async fn submit_update(
         &self,
-        mut operation: OperationWithClockTag,
+        operation: OperationWithClockTag,
         wait: WaitUntil,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<SubmitOutcome> {
-        let (callback_sender, callback_receiver) = if wait.needs_callback() {
-            let (tx, rx) = oneshot::channel();
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
+        // Filter/condition-resolving operations must never reach the WAL as-is:
+        // resolve them to concrete point ids first (issue #9575). The coordinator
+        // normally resolves before dispatching, so this fallback fires only for
+        // operations forwarded unresolved (e.g. by an old-version peer).
+        if shard::resolve::is_filter_resolving(&operation.operation) {
+            return self
+                .submit_update_filter_resolving(operation, wait, hw_measurement_acc)
+                .await;
+        }
 
+        self.check_wal_disk_space().await?;
+
+        let _update_lock = self.update_lock.read().await;
+
+        let (_operation, outcome) = self
+            .append_and_dispatch(operation, wait, hw_measurement_acc, DispatchMode::Move)
+            .await?;
+        Ok(outcome)
+    }
+
+    /// Fail if the disk is too full to safely grow the WAL.
+    pub(super) async fn check_wal_disk_space(&self) -> CollectionResult<()> {
         if self
             .disk_usage_watcher
             .is_disk_full()
@@ -80,8 +109,31 @@ impl LocalShard {
                 "No space left on device: WAL buffer size exceeds available disk space".to_string(),
             ));
         }
+        Ok(())
+    }
 
-        let _update_lock = self.update_lock.read().await;
+    /// Shared tail of update submission: reserve a worker-channel slot, write
+    /// the operation to the WAL, and dispatch it to the update worker.
+    ///
+    /// The caller must hold `update_lock` (read for regular submits, write
+    /// for the filter-resolving fence) across this call.
+    ///
+    /// Returns the appended operation iff `mode` is
+    /// [`DispatchMode::CloneAndReturn`].
+    pub(super) async fn append_and_dispatch(
+        &self,
+        mut operation: OperationWithClockTag,
+        wait: WaitUntil,
+        hw_measurement_acc: HwMeasurementAcc,
+        mode: DispatchMode,
+    ) -> CollectionResult<(Option<OperationWithClockTag>, SubmitOutcome)> {
+        let (callback_sender, callback_receiver) = if wait.needs_callback() {
+            let (tx, rx) = oneshot::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
         let pending_operations_count = self.update_queue_length();
 
         let update_sender = self.update_sender.load();
@@ -94,10 +146,14 @@ impl LocalShard {
             Ok(id_and_lock) => id_and_lock,
 
             Err(shard::wal::WalError::ClockRejected) => {
-                // Propagate clock rejection to operation sender
-                return Ok(SubmitOutcome::ClockRejected {
-                    clock_tag: operation.clock_tag,
-                });
+                // Propagate clock rejection to operation sender; the tag was
+                // corrected in place.
+                let clock_tag = operation.clock_tag;
+                let returned = match mode {
+                    DispatchMode::Move => None,
+                    DispatchMode::CloneAndReturn => Some(operation),
+                };
+                return Ok((returned, SubmitOutcome::ClockRejected { clock_tag }));
             }
 
             Err(err) => return Err(err.into()),
@@ -107,7 +163,17 @@ impl LocalShard {
         // Instead, read operation data from the WAL when processing the operation.
         let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
         let clock_tag = operation.clock_tag;
-        let operation_in_ram = keep_operation_in_ram.then_some(Box::new(operation.operation));
+
+        let (operation_in_ram, returned) = match mode {
+            DispatchMode::Move => (
+                keep_operation_in_ram.then(|| Box::new(operation.operation)),
+                None,
+            ),
+            DispatchMode::CloneAndReturn => (
+                keep_operation_in_ram.then(|| Box::new(operation.operation.clone())),
+                Some(operation),
+            ),
+        };
 
         channel_permit.send(UpdateSignal::Operation(OperationData {
             op_num: operation_id,
@@ -117,11 +183,14 @@ impl LocalShard {
             hw_measurements: hw_measurement_acc,
         }));
 
-        Ok(SubmitOutcome::Submitted {
-            operation_id,
-            receiver: callback_receiver,
-            clock_tag,
-        })
+        Ok((
+            returned,
+            SubmitOutcome::Submitted {
+                operation_id,
+                receiver: callback_receiver,
+                clock_tag,
+            },
+        ))
     }
 }
 
@@ -208,6 +277,10 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+        //
+        // The filter-resolving fallback inside `submit_update` adds more awaits (fence, drain,
+        // resolution scan), but nothing is appended or dispatched until its single WAL write, so
+        // cancelling before that point leaves no partial state and the property still holds.
         let outcome = self
             .submit_update(operation, wait, hw_measurement_acc)
             .await?;

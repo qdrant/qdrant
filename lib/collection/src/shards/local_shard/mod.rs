@@ -3,6 +3,7 @@ pub mod disk_usage_watcher;
 pub(super) mod facet;
 pub(super) mod formula_rescore;
 pub(super) mod query;
+pub(super) mod resolve_submit;
 pub(super) mod scroll;
 pub(super) mod search;
 pub(super) mod shard_ops;

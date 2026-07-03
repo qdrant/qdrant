@@ -462,6 +462,18 @@ impl UpdateStatus {
             UpdateStatus::ClockRejected => false,
         }
     }
+
+    /// Was the update rejected because its clock tag was not newer than the
+    /// receiver's known clock — i.e. it must be retried with an advanced
+    /// clock rather than treated as applied?
+    pub fn is_clock_rejected(&self) -> bool {
+        match self {
+            UpdateStatus::ClockRejected => true,
+            UpdateStatus::Acknowledged => false,
+            UpdateStatus::Completed => false,
+            UpdateStatus::WaitTimeout => false,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]

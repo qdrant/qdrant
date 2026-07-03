@@ -18,7 +18,8 @@ use segment::types::{
 
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointOperations,
+    PointStructPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 use crate::operations::{
@@ -35,6 +36,11 @@ pub fn process_point_operation(
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
+            if points.is_empty() {
+                // An empty upsert (e.g. an emptied-out resolved conditional upsert)
+                // touches no segment; bump so WAL can acknowledge it.
+                segments.bump_max_segment_version_overwrite(op_num);
+            }
             let res = upsert_points(segments, op_num, points.iter(), hw_counter)?;
             Ok(res)
         }
@@ -255,21 +261,20 @@ where
     Ok(res)
 }
 
-pub fn conditional_upsert(
+/// Drop from `points_op` every point that the conditional-upsert
+/// `update_mode` excludes, judged against current segment state.
+///
+/// This is the state-reading half of a conditional upsert, shared by the
+/// apply path ([`conditional_upsert`]) and the submit-time resolution that
+/// rewrites the operation to a plain upsert before it reaches the WAL
+/// (`resolve::resolve_operation`).
+pub(crate) fn retain_conditional_upsert_points(
     segments: &SegmentHolder,
-    op_num: SeqNumberType,
-    operation: ConditionalInsertOperationInternal,
+    points_op: &mut PointInsertOperationsInternal,
+    condition: Filter,
+    update_mode: Option<UpdateMode>,
     hw_counter: &HardwareCounterCell,
-) -> OperationResult<usize> {
-    // Find points, which do exist, but don't match the condition.
-    // Exclude those points from the upsert operation.
-
-    let ConditionalInsertOperationInternal {
-        mut points_op,
-        condition,
-        update_mode,
-    } = operation;
-
+) -> OperationResult<()> {
     let point_ids = points_op.point_ids();
     let update_mode = update_mode.unwrap_or_default();
 
@@ -296,6 +301,23 @@ pub fn conditional_upsert(
             });
         }
     }
+
+    Ok(())
+}
+
+pub fn conditional_upsert(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    operation: ConditionalInsertOperationInternal,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<usize> {
+    let ConditionalInsertOperationInternal {
+        mut points_op,
+        condition,
+        update_mode,
+    } = operation;
+
+    retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode, hw_counter)?;
 
     let points = points_op.into_point_vec();
     let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
@@ -364,6 +386,12 @@ pub fn delete_points(
                 }
             }
         }
+    }
+
+    if total_deleted_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(total_deleted_points)
@@ -653,6 +681,12 @@ fn update_vectors(
         total_updated_points += updated_points.len();
     }
 
+    if total_updated_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
     Ok(total_updated_points)
 }
 
@@ -686,6 +720,12 @@ pub fn delete_vectors(
         )?;
         check_unprocessed_points(batch, &modified_points)?;
         total_deleted_points += modified_points.len();
+    }
+
+    if total_deleted_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(total_deleted_points)
@@ -739,6 +779,12 @@ pub fn set_payload(
 
         check_unprocessed_points(chunk, &updated_points)?;
         total_updated_points += updated_points.len();
+    }
+
+    if total_updated_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(total_updated_points)
@@ -796,6 +842,12 @@ pub fn delete_payload(
         total_deleted_points += updated_points.len();
     }
 
+    if total_deleted_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
     Ok(total_deleted_points)
 }
 
@@ -836,6 +888,12 @@ pub fn clear_payload(
         )?;
         check_unprocessed_points(batch, &updated_points)?;
         total_updated_points += updated_points.len();
+    }
+
+    if total_updated_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(total_updated_points)
@@ -882,6 +940,12 @@ pub fn overwrite_payload(
 
         total_updated_points += updated_points.len();
         check_unprocessed_points(batch, &updated_points)?;
+    }
+
+    if total_updated_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(total_updated_points)
@@ -987,7 +1051,7 @@ pub fn process_vector_name_operation(
     }
 }
 
-fn select_excluded_by_filter_ids(
+pub(crate) fn select_excluded_by_filter_ids(
     segments: &SegmentHolder,
     point_ids: impl IntoIterator<Item = PointIdType>,
     filter: Filter,
@@ -1002,7 +1066,7 @@ fn select_excluded_by_filter_ids(
         .collect())
 }
 
-fn points_by_filter(
+pub(crate) fn points_by_filter(
     segments: &SegmentHolder,
     filter: &Filter,
     hw_counter: &HardwareCounterCell,

@@ -357,14 +357,52 @@ impl ShardReplicaSet {
             )));
         }
 
-        let current_clock_tick = clock.tick_once();
-        let clock_tag = ClockTag::new(this_peer_id, clock.id() as _, current_clock_tick);
-        let operation = OperationWithClockTag::new(operation, Some(clock_tag));
         let is_listener = self
             .peer_state(this_peer_id)
             .is_some_and(ReplicaState::is_listener);
 
         let local_wait = if is_listener { WaitUntil::Wal } else { wait };
+
+        // Filter-resolving operations must not reach any WAL as-is: resolve
+        // once on this (coordinating) replica and dispatch the id-based
+        // chunks as independent operations (issue #9575). Requires a plain
+        // updatable local shard; otherwise fall through to the regular path,
+        // where the receiving shard's submit fallback resolves per replica.
+        if local_is_updatable
+            && local
+                .deref()
+                .as_ref()
+                .is_some_and(Shard::supports_resolved_update_dispatch)
+            && shard::resolve::is_filter_resolving(&operation)
+        {
+            let (clock_tag, all_res) = self
+                .dispatch_resolved_update(
+                    operation,
+                    local,
+                    updatable_remote_shards,
+                    wait,
+                    local_wait,
+                    timeout,
+                    clock,
+                    hw_measurement_acc,
+                )
+                .await?;
+
+            return self
+                .finalize_update_results(
+                    all_res,
+                    clock_tag,
+                    clock,
+                    wait,
+                    replica_count,
+                    update_only_existing,
+                )
+                .await;
+        }
+
+        let current_clock_tick = clock.tick_once();
+        let clock_tag = ClockTag::new(this_peer_id, clock.id() as _, current_clock_tick);
+        let operation = OperationWithClockTag::new(operation, Some(clock_tag));
 
         // Rate-limit local writes on Active replica, while we still hold the read guard.
         if local_is_updatable
@@ -449,6 +487,31 @@ impl ShardReplicaSet {
                 }
             };
 
+        self.finalize_update_results(
+            all_res,
+            clock_tag,
+            clock,
+            wait,
+            replica_count,
+            update_only_existing,
+        )
+        .await
+    }
+
+    /// Shared tail of [`Self::update_impl`]: clock-echo bookkeeping, write
+    /// consistency accounting, and failed-replica handling.
+    ///
+    /// Returns `Ok(None)` if the operation was clock-rejected by some replica
+    /// and should be retried with an advanced clock.
+    pub(super) async fn finalize_update_results(
+        &self,
+        all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>>,
+        clock_tag: ClockTag,
+        clock: &mut clock_set::ClockGuard,
+        wait: WaitUntil,
+        replica_count: usize,
+        update_only_existing: bool,
+    ) -> CollectionResult<Option<UpdateResult>> {
         let write_consistency_factor = self
             .collection_config
             .read()
@@ -635,7 +698,7 @@ impl ShardReplicaSet {
     /// rate limiter. The limiter lives on `LocalShard`; proxy wrappers forward
     /// writes to that same local shard, so we resolve the wrapped local shard
     /// uniformly via [`Shard::local_shard`]. `Dummy` shards have no limiter.
-    async fn check_operation_write_rate_limiter(
+    pub(super) async fn check_operation_write_rate_limiter(
         &self,
         hw_measurement: &HwMeasurementAcc,
         local: &Shard,
@@ -841,7 +904,7 @@ impl ShardReplicaSet {
 }
 
 /// Drive a batch of update futures, optionally limiting concurrency.
-async fn run_update_futures<F>(
+pub(super) async fn run_update_futures<F>(
     update_futures: Vec<F>,
     update_concurrency: Option<NonZeroUsize>,
 ) -> Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>>
