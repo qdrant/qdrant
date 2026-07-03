@@ -94,7 +94,7 @@ impl LocalState {
 
         mmap.reopen()?;
 
-        self.fully_populated.store(false, Ordering::Release);
+        *self.fully_populated.get_mut() = false;
 
         // The previous tail block may have been only partially populated (its
         // fetch was clamped to the old EOF). `set_len` zero-filled the bytes

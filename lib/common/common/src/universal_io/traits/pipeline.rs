@@ -23,6 +23,7 @@
 //! outlives all in-flight operations.
 
 use std::borrow::Cow;
+use std::fmt::Debug;
 use std::mem::ManuallyDrop;
 use std::ops::Range;
 
@@ -109,6 +110,18 @@ where
     // file must be wrapped in Box, to provide *stable address* for safe
     // self-referential borrows
     file: ManuallyDrop<Box<R>>,
+}
+
+impl<R, U> Debug for OwnedPipeline<R, U>
+where
+    R: UniversalRead,
+    U: UserData,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnedPipeline")
+            .field("file", &self.file)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<R, U> OwnedPipeline<R, U>

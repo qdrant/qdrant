@@ -87,8 +87,10 @@ where
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
-        if let Some(state) = self.state.get() {
-            state.local.mmap().clear_ram_cache()?;
+        // Only touch an already-live mirror; don't force initialization just to
+        // clear a cache that may not exist yet.
+        if self.is_ready() {
+            self.state()?.local.mmap().clear_ram_cache()?;
         }
         Ok(())
     }
