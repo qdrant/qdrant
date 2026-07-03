@@ -1,4 +1,6 @@
-use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
+use common::condition_checker::{
+    CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
+};
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
@@ -119,6 +121,73 @@ pub enum ConditionCheckerEnum<'a> {
 
 impl ConditionChecker for ConditionCheckerEnum<'_> {
     type Error = OperationError;
+
+    fn check_batched<K: CheckItem>(
+        &mut self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        match self {
+            Self::Dyn(c) => default_check_batched(ids, select, rest, |id| c.check(id)),
+            Self::Build(c) => c.check_batched(ids, select, rest),
+            Self::Constant(c) => c.check_batched(ids, select, rest),
+            Self::Filter(c) => c.check_batched(ids, select, rest),
+            Self::Ids(c) => c.check_batched(ids, select, rest),
+            #[cfg(feature = "testing")]
+            Self::Plain(c) => c.check_batched(ids, select, rest),
+            Self::BoolImmutable(c) => c.check_batched(ids, select, rest),
+            Self::BoolMutable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::BoolRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::BoolRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NullImmutable(c) => c.check_batched(ids, select, rest),
+            Self::NullMutable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NullRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::NullRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::GeoRadiusWritable(c) => c.check_batched(ids, select, rest),
+            Self::GeoBoundingBoxWritable(c) => c.check_batched(ids, select, rest),
+            Self::GeoPolygonWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::GeoRadiusRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::GeoBoundingBoxRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::GeoPolygonRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::GeoRadiusRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::GeoBoundingBoxRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::GeoPolygonRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NumericFloatWritable(c) => c.check_batched(ids, select, rest),
+            Self::NumericIntWritable(c) => c.check_batched(ids, select, rest),
+            Self::NumericUuidWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NumericFloatRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NumericIntRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NumericUuidRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::NumericFloatRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NumericIntRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NumericUuidRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::FullTextWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::FullTextRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::FullTextRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::MapIntWritable(c) => c.check_batched(ids, select, rest),
+            Self::MapStrWritable(c) => c.check_batched(ids, select, rest),
+            Self::MapUuidWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::MapIntRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::MapStrRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::MapUuidRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::MapIntRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::MapStrRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::MapUuidRoMmap(c) => c.check_batched(ids, select, rest),
+        }
+    }
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         match self {
