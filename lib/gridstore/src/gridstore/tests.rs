@@ -16,12 +16,11 @@ use rand::{Rng, RngExt};
 use rstest::rstest;
 use tempfile::Builder;
 
-use super::view::{compress_lz4, decompress_lz4};
 use super::*;
 use crate::blob::Blob;
 use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    Mode, StorageConfig,
+    Mode, StorageConfig, compress_lz4, decompress_lz4,
 };
 use crate::fixtures::{
     HM_FIELDS, Payload, empty_storage, empty_storage_sized, minimal_payload, random_payload,
@@ -731,6 +730,30 @@ fn test_open_config_without_mode_as_dynamic() {
         reader.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(minimal_payload()),
     );
+}
+
+/// A corrupt config with zero sized blocks must be rejected when opening, it would otherwise
+/// break pointer arithmetic.
+#[test]
+fn test_open_rejects_corrupt_config() {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+
+    {
+        let storage = Gridstore::<Payload>::new(MmapFs, path.clone(), Default::default()).unwrap();
+        storage.flusher()().unwrap();
+    }
+
+    // Corrupt the config by zeroing the block size
+    let config_path = path.join("config.json");
+    let config_json = fs::read_to_string(&config_path).unwrap();
+    let mut config: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&config_json).unwrap();
+    config.insert("block_size_bytes".to_string(), 0.into());
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+
+    assert!(Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
+    assert!(GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
 }
 
 #[test]

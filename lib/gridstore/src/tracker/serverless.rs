@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use fs_err as fs;
 use fs_err::File;
 
 use crate::error::GridstoreError;
@@ -58,12 +57,7 @@ impl ServerlessTracker {
     /// The directory must exist already.
     pub fn new(dir: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&path)?;
+        let file = direct_io::create_new(&path)?;
         Ok(Self {
             path,
             file,
@@ -80,22 +74,7 @@ impl ServerlessTracker {
     /// truncated away, so that appends always start at a whole entry offset.
     pub fn open(dir: &Path, writeable: bool) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(writeable)
-            .open(&path)
-            .map_err(|err| {
-                if err.kind() == std::io::ErrorKind::NotFound {
-                    // If config exists and the tracker doesn't,
-                    // it should be treated as inconsistent storage rather than a missing one
-                    GridstoreError::service_error(format!(
-                        "Serverless tracker file does not exist: {}",
-                        path.display(),
-                    ))
-                } else {
-                    GridstoreError::from(err)
-                }
-            })?;
+        let file = direct_io::open_existing(&path, writeable, "Serverless tracker")?;
 
         let len = file.metadata()?.len();
         let aligned_len = len - (len % ENTRY_SIZE);
@@ -147,6 +126,9 @@ impl ServerlessTracker {
     ///
     /// The persisted part of the range is read with a single read. Point offsets that were
     /// skipped or that are past the highest set mapping yield `None`.
+    ///
+    /// The result holds one entry per requested point offset, so callers should bound the range
+    /// they ask for.
     pub fn get_range(
         &self,
         point_offsets: Range<PointOffset>,
@@ -185,12 +167,14 @@ impl ServerlessTracker {
     /// Point offsets must be set in monotonically increasing order: each offset must be larger
     /// than every offset set before it. Skipped offsets are backfilled as `None` entries.
     pub fn set(&mut self, point_offset: PointOffset, pointer: ValuePointer) -> Result<()> {
+        // Defensive re-check: the storage validates this before appending any value data, see
+        // ServerlessGridstore::put_value
         let next = self.pointer_count();
         if point_offset < next {
-            return Err(GridstoreError::validation_error(format!(
-                "cannot set mapping for point offset {point_offset}, the serverless tracker is \
-                 append-only and requires monotonically increasing point offsets, the next \
-                 allowed point offset is {next}",
+            return Err(GridstoreError::unsupported_operation(format!(
+                "cannot set mapping for point offset {point_offset}, the tracker is append-only \
+                 and requires monotonically increasing point offsets, the next allowed point \
+                 offset is {next}",
             )));
         }
 
@@ -226,7 +210,13 @@ impl ServerlessTracker {
 
         let entries = &self.pending[..count];
         let offset = u64::from(self.persisted_count) * ENTRY_SIZE;
-        direct_io::write_all_at(&self.file, bytemuck::cast_slice(entries), offset)?;
+        if let Err(err) = direct_io::write_all_at(&self.file, bytemuck::cast_slice(entries), offset)
+        {
+            // Best effort: drop partially appended entries, so that the file stays consistent
+            // with the persisted count and a retried flush never rewrites existing bytes
+            let _ = self.file.set_len(offset);
+            return Err(err.into());
+        }
 
         self.pending.drain(..count);
         self.persisted_count += count as PointOffset;
@@ -284,6 +274,7 @@ fn count_from_len(len: u64) -> Result<PointOffset> {
 
 #[cfg(test)]
 mod tests {
+    use fs_err as fs;
     use tempfile::TempDir;
 
     use super::*;

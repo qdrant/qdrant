@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use lz4_flex::compress_prepend_size;
 use serde::{Deserialize, Serialize};
 
 /// Expect JSON values to have roughly 3–5 fields with mostly small values.
@@ -16,6 +19,32 @@ pub enum Compression {
     LZ4,
 }
 
+impl Compression {
+    pub(crate) fn compress(self, value: Vec<u8>) -> Vec<u8> {
+        match self {
+            Compression::None => value,
+            Compression::LZ4 => compress_lz4(&value),
+        }
+    }
+
+    pub(crate) fn decompress(self, value: Cow<'_, [u8]>) -> Cow<'_, [u8]> {
+        match self {
+            Compression::None => value,
+            Compression::LZ4 => decompress_lz4(&value).into(),
+        }
+    }
+}
+
+#[inline]
+pub(crate) fn compress_lz4(value: &[u8]) -> Vec<u8> {
+    compress_prepend_size(value)
+}
+
+#[inline]
+pub(crate) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
+    lz4_flex::decompress_size_prepended(value).unwrap()
+}
+
 /// Operating mode of the storage
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,6 +56,9 @@ pub enum Mode {
     /// Append-only storage for serverless deployments. Files are only ever appended to, existing
     /// bytes are never rewritten. Values cannot be updated or deleted, and must be put in
     /// monotonically increasing point offset order.
+    ///
+    /// Always reads and writes its files directly on the local filesystem, the configured
+    /// universal IO backend is not used in this mode.
     Serverless,
 }
 
@@ -87,6 +119,23 @@ pub(crate) struct StorageConfig {
     /// Configs written before this field existed default to dynamic
     #[serde(default)]
     pub mode: Mode,
+}
+
+impl StorageConfig {
+    /// Validate a config read from disk, guarding against corrupt values that would break
+    /// pointer arithmetic.
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        if self.block_size_bytes == 0 {
+            return Err("block size must be greater than 0".to_string());
+        }
+        if self.page_size_bytes == 0 {
+            return Err("page size must be greater than 0".to_string());
+        }
+        if self.region_size_blocks == 0 {
+            return Err("region size must be greater than 0".to_string());
+        }
+        Ok(())
+    }
 }
 
 impl TryFrom<StorageOptions> for StorageConfig {

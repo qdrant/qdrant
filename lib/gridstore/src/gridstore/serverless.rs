@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,9 +15,8 @@ use parking_lot::RwLock;
 
 use super::Flusher;
 use super::reader::CONFIG_FILENAME;
-use super::view::{compress_lz4, decompress_lz4};
 use crate::blob::Blob;
-use crate::config::{Compression, StorageConfig, StorageOptions};
+use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::tracker::serverless::ServerlessTracker;
 use crate::tracker::{BlockOffset, PointOffset, ValuePointer};
@@ -57,12 +57,7 @@ impl ServerlessPage {
     /// The directory must exist already.
     fn new(dir: &Path) -> Result<Self> {
         let path = Self::page_file_name(dir);
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&path)?;
+        let file = direct_io::create_new(&path)?;
         Ok(Self { path, file, len: 0 })
     }
 
@@ -71,22 +66,7 @@ impl ServerlessPage {
     /// If the file does not exist, return an error.
     fn open(dir: &Path, writeable: bool) -> Result<Self> {
         let path = Self::page_file_name(dir);
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(writeable)
-            .open(&path)
-            .map_err(|err| {
-                if err.kind() == std::io::ErrorKind::NotFound {
-                    // If config exists and the page doesn't,
-                    // it should be treated as inconsistent storage rather than a missing one
-                    GridstoreError::service_error(format!(
-                        "Serverless page file does not exist: {}",
-                        path.display(),
-                    ))
-                } else {
-                    GridstoreError::from(err)
-                }
-            })?;
+        let file = direct_io::open_existing(&path, writeable, "Serverless page")?;
         let len = file.metadata()?.len();
         Ok(Self { path, file, len })
     }
@@ -106,28 +86,45 @@ impl ServerlessPage {
     /// to the next block boundary, so that it is a pure append.
     fn append_value(&mut self, value: &[u8], block_size_bytes: u64) -> Result<BlockOffset> {
         let start = self.len.next_multiple_of(block_size_bytes);
-        let pad = (start - self.len) as usize;
 
-        if pad == 0 {
-            direct_io::write_all_at(&self.file, value, self.len)?;
-        } else {
-            // Prefix the write with the padding, so that it lands at the end of the file
-            let mut buf = vec![0; pad + value.len()];
-            buf[pad..].copy_from_slice(value);
-            direct_io::write_all_at(&self.file, &buf, self.len)?;
-        }
-        self.len = start + value.len() as u64;
-
-        BlockOffset::try_from(start / block_size_bytes).map_err(|_| {
+        // Validate addressability before writing anything, a rejected append must not grow the
+        // file
+        let block_offset = BlockOffset::try_from(start / block_size_bytes).map_err(|_| {
             GridstoreError::service_error(format!(
                 "serverless page file {} exceeds the maximum addressable size",
                 self.path.display(),
             ))
-        })
+        })?;
+
+        let pad = (start - self.len) as usize;
+        let result = if pad == 0 {
+            direct_io::write_all_at(&self.file, value, self.len)
+        } else {
+            // Prefix the write with the padding, so that it lands at the end of the file
+            let mut buf = vec![0; pad + value.len()];
+            buf[pad..].copy_from_slice(value);
+            direct_io::write_all_at(&self.file, &buf, self.len)
+        };
+        if let Err(err) = result {
+            // Best effort: drop partially appended bytes, so that the file stays consistent
+            // with the tracked length and a retried append never rewrites existing bytes
+            let _ = self.file.set_len(self.len);
+            return Err(err.into());
+        }
+        self.len = start + value.len() as u64;
+
+        Ok(block_offset)
     }
 
     /// Read the raw value bytes at the given pointer.
     fn read_value(&self, pointer: ValuePointer, block_size_bytes: u64) -> Result<Vec<u8>> {
+        // The serverless mode stores all values in a single page
+        if pointer.page_id != 0 {
+            return Err(GridstoreError::PageNotFound {
+                page_id: pointer.page_id,
+            });
+        }
+
         let start = u64::from(pointer.block_offset) * block_size_bytes;
         let mut buf = vec![0; pointer.length as usize];
         direct_io::read_exact_at(&self.file, &mut buf, start)?;
@@ -153,18 +150,42 @@ impl ServerlessPage {
     }
 }
 
-fn compress(compression: Compression, value: Vec<u8>) -> Vec<u8> {
-    match compression {
-        Compression::None => value,
-        Compression::LZ4 => compress_lz4(&value),
-    }
-}
+/// Number of most recent mappings validated against the page file length when opening
+const OPEN_CHECK_MAPPINGS: PointOffset = 256;
 
-fn decompress(compression: Compression, value: Vec<u8>) -> Vec<u8> {
-    match compression {
-        Compression::None => value,
-        Compression::LZ4 => decompress_lz4(&value),
+/// Check that the most recently persisted mappings point at value data within the page file.
+///
+/// Guards against a page file that is shorter than what the tracker references, for example
+/// after a partial copy or restore of the storage directory. Only the most recent mappings are
+/// checked to keep opening cheap.
+fn validate_consistency(
+    tracker: &ServerlessTracker,
+    page: &ServerlessPage,
+    config: &StorageConfig,
+) -> Result<()> {
+    let count = tracker.pointer_count();
+    let start = count.saturating_sub(OPEN_CHECK_MAPPINGS);
+    let max_extent = tracker
+        .get_range(start..count)?
+        .into_iter()
+        .flatten()
+        .map(|pointer| {
+            u64::from(pointer.block_offset) * config.block_size_bytes as u64
+                + u64::from(pointer.length)
+        })
+        .max();
+
+    if let Some(max_extent) = max_extent
+        && max_extent > page.len()
+    {
+        return Err(GridstoreError::service_error(format!(
+            "Inconsistent serverless gridstore: mappings reference value data up to byte \
+             {max_extent}, but the page file only holds {} bytes",
+            page.len(),
+        )));
     }
+
+    Ok(())
 }
 
 /// A non-owning view into gridstore data in serverless mode.
@@ -227,7 +248,7 @@ impl<'a, V: Blob, S> ServerlessGridstoreView<'a, V, S> {
         let raw = self.read_from_page(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
-        let decompressed = decompress(self.config.compression, raw);
+        let decompressed = self.config.compression.decompress(Cow::Owned(raw));
         Ok(Some(V::from_bytes(&decompressed)))
     }
 
@@ -255,7 +276,7 @@ impl<'a, V: Blob, S> ServerlessGridstoreView<'a, V, S> {
                     let raw = self.read_from_page(pointer).map_err(E::from)?;
                     hw_counter_cell.incr_delta(raw.len());
 
-                    let decompressed = decompress(self.config.compression, raw);
+                    let decompressed = self.config.compression.decompress(Cow::Owned(raw));
                     Some(V::from_bytes(&decompressed))
                 }
             };
@@ -296,7 +317,7 @@ impl<'a, V: Blob, S> ServerlessGridstoreView<'a, V, S> {
             let raw = self.read_from_page(pointer).map_err(E::from)?;
             hw_counter.incr_delta(raw.len());
 
-            let decompressed = decompress(self.config.compression, raw);
+            let decompressed = self.config.compression.decompress(Cow::Owned(raw));
             let value = V::from_bytes(&decompressed);
 
             if !callback(start + index as PointOffset, value)? {
@@ -378,6 +399,7 @@ where
     pub(super) fn open(base_path: PathBuf, config: StorageConfig) -> Result<Self> {
         let tracker = ServerlessTracker::open(&base_path, true)?;
         let page = ServerlessPage::open(&base_path, true)?;
+        validate_consistency(&tracker, &page, &config)?;
 
         Ok(Self {
             config,
@@ -418,15 +440,15 @@ where
         // Validate before writing anything, a rejected put must not leave data behind
         let next = self.tracker.read().pointer_count();
         if point_offset < next {
-            return Err(GridstoreError::validation_error(format!(
-                "cannot put value at point offset {point_offset}: the serverless gridstore is \
-                 append-only, values cannot be overwritten and must be put at monotonically \
-                 increasing point offsets, the next allowed point offset is {next}",
+            return Err(GridstoreError::unsupported_operation(format!(
+                "cannot put value at point offset {point_offset}, the storage is append-only: \
+                 values cannot be overwritten and must be put at monotonically increasing point \
+                 offsets, the next allowed point offset is {next}",
             )));
         }
 
         let value_bytes = value.to_bytes();
-        let comp_value = compress(self.config.compression, value_bytes);
+        let comp_value = self.config.compression.compress(value_bytes);
         let value_size = comp_value.len();
 
         hw_counter.incr_delta(value_size);
@@ -560,6 +582,10 @@ where
 
         while current_offset < max_offset && should_continue {
             // Iterate in batches to allow releasing read locks
+            //
+            // See:
+            // - https://github.com/qdrant/qdrant/pull/7983
+            // - https://github.com/qdrant/qdrant/pull/8248
             const BATCH_SIZE: PointOffset = 256;
 
             self.with_view(|view| -> Result<_, E> {
@@ -667,6 +693,7 @@ impl<V: Blob, S> ServerlessGridstoreReader<V, S> {
     pub(super) fn open(base_path: PathBuf, config: StorageConfig) -> Result<Self> {
         let tracker = ServerlessTracker::open(&base_path, false)?;
         let page = ServerlessPage::open(&base_path, false)?;
+        validate_consistency(&tracker, &page, &config)?;
 
         Ok(Self {
             config,
@@ -709,7 +736,7 @@ impl<V: Blob, S> ServerlessGridstoreReader<V, S> {
     pub(super) fn iter<F, E>(
         &self,
         max_id: PointOffset,
-        callback: F,
+        mut callback: F,
         hw_counter: HwMetricRefCounter,
     ) -> Result<(), E>
     where
@@ -717,7 +744,22 @@ impl<V: Blob, S> ServerlessGridstoreReader<V, S> {
         E: From<GridstoreError>,
     {
         let max_id = max_id.min(self.max_point_offset());
-        self.view().iter_range(0..max_id, callback, hw_counter)?;
+        let view = self.view();
+
+        // Iterate in batches to bound the size of the tracker reads
+        const BATCH_SIZE: PointOffset = 256;
+
+        let mut current_offset = 0;
+        while current_offset < max_id {
+            let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_id);
+
+            if !view.iter_range(current_offset..end_offset, &mut callback, hw_counter)? {
+                return Ok(());
+            }
+
+            current_offset = end_offset;
+        }
+
         Ok(())
     }
 
@@ -758,14 +800,11 @@ impl<V: Blob, S> ServerlessGridstoreReader<V, S> {
     /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
     ///   counted.
     pub(super) fn live_reload(&mut self) -> Result<()> {
-        let has_new_data = self.tracker.live_reload()?;
-
-        if !has_new_data {
-            return Ok(());
-        }
+        self.tracker.live_reload()?;
 
         // Value reads always go directly to the file; refreshing the page length only updates
-        // the reported storage size
+        // the reported storage size. Refresh it even without new mappings, unflushed value data
+        // may have been appended already.
         self.page.refresh_len()?;
 
         Ok(())
@@ -798,7 +837,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::config::Mode;
+    use crate::config::{Compression, Mode};
     use crate::fixtures::{Payload, empty_storage_serverless, random_payload};
     use crate::{Gridstore, GridstoreReader};
 
@@ -924,7 +963,7 @@ mod tests {
         let err = storage
             .put_value(0, &vec![2; 100], hw_counter_ref)
             .unwrap_err();
-        assert!(matches!(err, GridstoreError::ValidationError { .. }));
+        assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
 
         storage.put_value(2, &vec![3; 100], hw_counter_ref).unwrap();
 
@@ -932,7 +971,7 @@ mod tests {
         let err = storage
             .put_value(1, &vec![4; 100], hw_counter_ref)
             .unwrap_err();
-        assert!(matches!(err, GridstoreError::ValidationError { .. }));
+        assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
 
         // Rejected puts must not append any value data
         assert_eq!(storage.get_storage_size_bytes().unwrap(), 128 + 100);
@@ -1412,5 +1451,141 @@ mod tests {
                 Some(vec![point_offset as u8; 10]),
             );
         }
+
+        // Value data appended without a flush is not readable yet (no mappings), but a live
+        // reload still refreshes the reported storage size
+        storage.put_value(6, &vec![6; 10], hw_counter_ref).unwrap();
+        reader.live_reload(&MmapFs).unwrap();
+        assert_eq!(reader.max_point_offset(), 6);
+        assert_eq!(reader.get_storage_size_bytes(), 6 * 128 + 10);
+    }
+
+    #[test]
+    fn test_reader_iter_many_values() {
+        let dir = TempDir::new().unwrap();
+        let options = StorageOptions {
+            compression: Some(Compression::None),
+            mode: Some(Mode::Serverless),
+            ..Default::default()
+        };
+        let mut storage =
+            Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+        // More values than a single iteration batch (256)
+        const COUNT: u32 = 1000;
+        for point_offset in 0..COUNT {
+            storage
+                .put_value(
+                    point_offset,
+                    &point_offset.to_le_bytes().to_vec(),
+                    hw_counter_ref,
+                )
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        let reader = GridstoreReader::<Vec<u8>, MmapFile>::open(
+            &MmapFs,
+            dir.path().to_path_buf(),
+            Populate::No,
+        )
+        .unwrap();
+
+        let mut expected = 0;
+        reader
+            .iter(
+                COUNT,
+                |point_offset, value: Vec<u8>| {
+                    assert_eq!(point_offset, expected);
+                    assert_eq!(value, point_offset.to_le_bytes().to_vec());
+                    expected += 1;
+                    Ok::<_, GridstoreError>(true)
+                },
+                hw_counter.ref_payload_io_read_counter(),
+            )
+            .unwrap();
+        assert_eq!(expected, COUNT);
+
+        // Early stop works across batches
+        let mut count = 0;
+        reader
+            .iter(
+                COUNT,
+                |_, _: Vec<u8>| {
+                    count += 1;
+                    Ok::<_, GridstoreError>(count < 300)
+                },
+                hw_counter.ref_payload_io_read_counter(),
+            )
+            .unwrap();
+        assert_eq!(count, 300);
+    }
+
+    #[test]
+    fn test_open_rejects_truncated_page_file() {
+        let dir = TempDir::new().unwrap();
+        let options = StorageOptions {
+            compression: Some(Compression::None),
+            mode: Some(Mode::Serverless),
+            ..Default::default()
+        };
+        let mut storage =
+            Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        for point_offset in 0..3 {
+            storage
+                .put_value(point_offset, &vec![7; 100], hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+        drop(storage);
+
+        // Truncate the page file below what the tracker references, like a partial copy would
+        let page_path = dir.path().join("serverless_page_0.dat");
+        let file = fs::OpenOptions::new().write(true).open(&page_path).unwrap();
+        file.set_len(100).unwrap();
+        drop(file);
+
+        assert!(
+            Gridstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err()
+        );
+        assert!(
+            GridstoreReader::<Vec<u8>, MmapFile>::open(
+                &MmapFs,
+                dir.path().to_path_buf(),
+                Populate::No,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_read_from_pages_rejects_unknown_page() {
+        let (dir, mut storage) = empty_storage_serverless();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        storage
+            .put_value(0, &Payload::default(), hw_counter_ref)
+            .unwrap();
+        storage.flusher()().unwrap();
+
+        let reader = GridstoreReader::<Payload, MmapFile>::open(
+            &MmapFs,
+            dir.path().to_path_buf(),
+            Populate::No,
+        )
+        .unwrap();
+
+        // All values live in page 0, a pointer to any other page must not read anything
+        let view = reader.view();
+        let pointer = ValuePointer::new(1, 0, 8);
+        let err = view.read_from_pages::<Random>(pointer).unwrap_err();
+        assert!(matches!(err, GridstoreError::PageNotFound { page_id: 1 },));
     }
 }
