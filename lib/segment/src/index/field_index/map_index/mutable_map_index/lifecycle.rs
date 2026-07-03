@@ -21,6 +21,7 @@ const fn default_gridstore_options(block_size: usize) -> StorageOptions {
         compression: Some(gridstore::config::Compression::None),
         page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
         region_size_blocks: None,
+        mode: None,
     }
 }
 

@@ -12,7 +12,7 @@ use common::universal_io::{
 use super::view::GridstoreView;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::StorageConfig;
+use crate::config::{Mode, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
 use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
@@ -94,9 +94,14 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         base_path: PathBuf,
         populate: Populate,
     ) -> Result<Self> {
-        let config_path = base_path.join(CONFIG_FILENAME);
-        let config: StorageConfig =
-            read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
+        let config = read_config(fs, &base_path)?;
+        if config.mode == Mode::Serverless {
+            // TODO: dispatch to the serverless variant once it is implemented
+            return Err(GridstoreError::service_error(format!(
+                "Serverless mode is not supported yet: {}",
+                base_path.display(),
+            )));
+        }
 
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
@@ -234,24 +239,16 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
     }
 }
 
-/// Read config and open tracker from the base path.
+/// Read the storage config from the base path.
 ///
-/// Shared helper used by both [`GridstoreReader::open`] and [`super::Gridstore::open`].
-pub(super) fn read_config_and_tracker<Fs, S>(
+/// Shared helper used by the `open` paths of [`GridstoreReader`] and [`super::Gridstore`], which
+/// read the config first to select the operating mode.
+pub(super) fn read_config<Fs: UniversalReadFs>(
     fs: &Fs,
     base_path: &std::path::Path,
-    populate: Populate,
-    writeable: bool,
-) -> Result<(StorageConfig, Tracker<S>)>
-where
-    Fs: UniversalReadFs<File = S>,
-    S: UniversalRead,
-{
+) -> Result<StorageConfig> {
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageConfig =
+    let config =
         read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
-
-    let tracker = Tracker::<S>::open(fs, base_path, populate, writeable)?;
-
-    Ok((config, tracker))
+    Ok(config)
 }

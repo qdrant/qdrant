@@ -15,6 +15,7 @@ pub(super) const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
     page_size_bytes: None,
     block_size_bytes: None,
     region_size_blocks: None,
+    mode: None,
 };
 
 pub struct MutableFullTextIndex {

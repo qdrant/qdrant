@@ -16,6 +16,20 @@ pub enum Compression {
     LZ4,
 }
 
+/// Operating mode of the storage
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// Read-write storage. Values can be updated and deleted, freed blocks are tracked and
+    /// reused (bitmask, gaps and regions).
+    #[default]
+    Dynamic,
+    /// Append-only storage for serverless deployments. Files are only ever appended to, existing
+    /// bytes are never rewritten. Values cannot be updated or deleted, and must be put in
+    /// monotonically increasing point offset order.
+    Serverless,
+}
+
 /// Configuration options for the storage
 #[derive(Debug, Default)]
 pub struct StorageOptions {
@@ -38,6 +52,11 @@ pub struct StorageOptions {
     ///
     /// Default is LZ4
     pub compression: Option<Compression>,
+
+    /// Operating mode of the storage
+    ///
+    /// Default is dynamic
+    pub mode: Option<Mode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +81,12 @@ pub(crate) struct StorageConfig {
     /// Default is true
     #[serde(default)]
     pub compression: Compression,
+
+    /// Operating mode of the storage
+    ///
+    /// Configs written before this field existed default to dynamic
+    #[serde(default)]
+    pub mode: Mode,
 }
 
 impl TryFrom<StorageOptions> for StorageConfig {
@@ -102,6 +127,7 @@ impl TryFrom<StorageOptions> for StorageConfig {
             block_size_bytes,
             region_size_blocks,
             compression: options.compression.unwrap_or_default(),
+            mode: options.mode.unwrap_or_default(),
         })
     }
 }
@@ -113,6 +139,55 @@ impl From<&StorageConfig> for StorageOptions {
             block_size_bytes: Some(config.block_size_bytes),
             region_size_blocks: Some(config.region_size_blocks as u16),
             compression: Some(config.compression),
+            mode: Some(config.mode),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Configs written before the `mode` field existed must load as dynamic.
+    #[test]
+    fn test_config_without_mode_is_dynamic() {
+        let json = r#"{
+            "page_size_bytes": 33554432,
+            "block_size_bytes": 128,
+            "region_size_blocks": 8192,
+            "compression": "LZ4"
+        }"#;
+        let config: StorageConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.mode, Mode::Dynamic);
+    }
+
+    /// The mode is always serialized explicitly, even for the dynamic default.
+    #[test]
+    fn test_config_serializes_mode() {
+        let config = StorageConfig::try_from(StorageOptions::default()).unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains(r#""mode":"dynamic""#));
+
+        let options = StorageOptions {
+            mode: Some(Mode::Serverless),
+            ..Default::default()
+        };
+        let config = StorageConfig::try_from(options).unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains(r#""mode":"serverless""#));
+    }
+
+    /// The mode must survive the config -> options -> config round trip that `clear()` uses.
+    #[test]
+    fn test_mode_survives_options_round_trip() {
+        let options = StorageOptions {
+            mode: Some(Mode::Serverless),
+            ..Default::default()
+        };
+        let config = StorageConfig::try_from(options).unwrap();
+        let options = StorageOptions::from(&config);
+        assert_eq!(options.mode, Some(Mode::Serverless));
+        let config = StorageConfig::try_from(options).unwrap();
+        assert_eq!(config.mode, Mode::Serverless);
     }
 }

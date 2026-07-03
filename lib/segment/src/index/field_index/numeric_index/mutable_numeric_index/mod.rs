@@ -22,6 +22,7 @@ pub(super) const fn default_gridstore_options<T: Sized>() -> StorageOptions {
         // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
         page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
         region_size_blocks: None,
+        mode: None,
     }
 }
 
