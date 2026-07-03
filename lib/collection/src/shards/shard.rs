@@ -77,31 +77,6 @@ impl Shard {
         }
     }
 
-    /// Can this shard act as the resolving coordinator for a filter-resolving
-    /// update operation (issue #9575)?
-    ///
-    /// Coordinating means: resolve the filter to concrete point ids under
-    /// this shard's update fence, append the id-based chunks to the local WAL,
-    /// and forward exactly those chunks to the other replicas
-    /// (`ShardReplicaSet::dispatch_resolved_update`).
-    ///
-    /// Only a plain local shard qualifies. The proxy variants exist during
-    /// shard transfer and forward each incoming operation to the transfer
-    /// target as well — routing resolved chunks through that forwarding is
-    /// not wired up, so during a transfer the original filter operation is
-    /// forwarded instead and every receiving shard resolves it individually
-    /// in its submit fallback (`LocalShard::submit_update_filter_resolving`).
-    /// `Dummy` holds no data to resolve against.
-    pub fn supports_resolved_update_dispatch(&self) -> bool {
-        match self {
-            Shard::Local(_) => true,
-            Shard::Proxy(_) => false,
-            Shard::ForwardProxy(_) => false,
-            Shard::QueueProxy(_) => false,
-            Shard::Dummy(_) => false,
-        }
-    }
-
     /// Return the underlying [`LocalShard`] if this shard wraps one.
     ///
     /// Proxy variants forward writes to a wrapped local shard, so callers
