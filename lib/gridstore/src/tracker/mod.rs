@@ -1,5 +1,8 @@
 pub mod iter;
 pub mod read_only;
+// TODO: remove allow once used by the serverless gridstore variant
+#[allow(dead_code)]
+pub(crate) mod serverless;
 
 #[cfg(test)]
 mod tests;
@@ -42,9 +45,9 @@ fn tracker_open_options(populate: Populate, writeable: bool) -> OpenOptions {
 /// gridstore files, but it is well-defined, unlike [`std::option::Option`].
 ///
 /// Please note that it uses 32-bit tag so that there's no padding before `ValuePointer`.
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
-struct OptionalPointer {
+pub(crate) struct OptionalPointer {
     discriminant: u32,
     value: ValuePointer,
 }

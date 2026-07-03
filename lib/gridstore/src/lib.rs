@@ -1,6 +1,9 @@
 pub mod bitmask;
 pub mod blob;
 pub mod config;
+// TODO: remove allow once used by the serverless gridstore variant
+#[allow(dead_code)]
+mod direct_io;
 pub mod error;
 pub mod fixtures;
 mod gridstore;
