@@ -23,7 +23,9 @@ use crate::operations::point_ops::{ConditionalInsertOperationInternal, PointOper
 use crate::operations::vector_ops::{UpdateVectorsOp, VectorOperations};
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations, VectorNameOperations};
 use crate::segment_holder::SegmentHolder;
-use crate::update::{points_by_filter, retain_conditional_upsert_points, select_excluded_by_filter_ids};
+use crate::update::{
+    points_by_filter, retain_conditional_upsert_points, select_excluded_by_filter_ids,
+};
 
 /// Does this operation decide its target point set by reading current segment
 /// data (a filter or an existence condition)?
@@ -233,8 +235,9 @@ mod tests {
 
     use super::*;
     use crate::fixtures::{build_segment_1, build_segment_2};
-    use crate::operations::point_ops::{PointInsertOperationsInternal, UpdateMode};
-    use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+    use crate::operations::point_ops::{
+        PointInsertOperationsInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
+    };
     use crate::update::{delete_points_by_filter, points_by_filter, process_point_operation};
 
     fn color_filter(color: &str) -> Filter {
@@ -428,5 +431,4 @@ mod tests {
             ))
         ));
     }
-
 }
