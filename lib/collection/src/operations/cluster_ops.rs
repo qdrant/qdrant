@@ -51,6 +51,9 @@ pub enum ClusterOperations {
     /// Introduce artificial delay to a node
     #[cfg(feature = "staging")]
     TestSlowDown(TestSlowDownOperation),
+    /// Simulate a transient consensus failure on a node
+    #[cfg(feature = "staging")]
+    TestTransientError(TestTransientErrorOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -130,6 +133,8 @@ impl Validate for ClusterOperations {
             ClusterOperations::ReplicatePoints(op) => op.validate(),
             #[cfg(feature = "staging")]
             ClusterOperations::TestSlowDown(op) => op.validate(),
+            #[cfg(feature = "staging")]
+            ClusterOperations::TestTransientError(op) => op.validate(),
         }
     }
 }
@@ -361,4 +366,6 @@ pub struct FinishResharding {}
 pub struct AbortResharding {}
 
 #[cfg(feature = "staging")]
-pub use super::staging::{TestSlowDown, TestSlowDownOperation};
+pub use super::staging::{
+    TestSlowDown, TestSlowDownOperation, TestTransientError, TestTransientErrorOperation,
+};

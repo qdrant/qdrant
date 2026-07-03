@@ -8,13 +8,13 @@ use api::rest::models::{
     CollectionDescription, CollectionsResponse, ShardKeyDescription, ShardKeysResponse,
 };
 use collection::config::ShardingMethod;
-#[cfg(feature = "staging")]
-use collection::operations::cluster_ops::TestSlowDownOperation;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
     RestartTransfer, RestartTransferOperation, StartResharding,
 };
+#[cfg(feature = "staging")]
+use collection::operations::cluster_ops::{TestSlowDownOperation, TestTransientErrorOperation};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -32,12 +32,12 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
-#[cfg(feature = "staging")]
-use storage::content_manager::collection_meta_ops::TestSlowDown;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
     SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
 };
+#[cfg(feature = "staging")]
+use storage::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -966,6 +966,30 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::TestSlowDown(TestSlowDown {
                         peer_id: test_slow_down.peer_id,
                         duration_ms,
+                    }),
+                    auth,
+                    wait_timeout,
+                )
+                .await
+        }
+
+        #[cfg(feature = "staging")]
+        ClusterOperations::TestTransientError(TestTransientErrorOperation {
+            test_transient_error,
+        }) => {
+            if let Some(peer_id) = test_transient_error.peer_id {
+                validate_peer_exists(peer_id)?;
+            }
+
+            // Convert probability (f64, 0.0-1.0) to percent (u8, 0-100)
+            let failure_probability_percent =
+                (test_transient_error.failure_probability * 100.0) as u8;
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TestTransientError(TestTransientError {
+                        peer_id: test_transient_error.peer_id,
+                        failure_probability_percent,
                     }),
                     auth,
                     wait_timeout,

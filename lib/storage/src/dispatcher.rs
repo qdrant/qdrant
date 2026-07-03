@@ -154,7 +154,8 @@ impl Dispatcher {
                 | CollectionMetaOperations::DeleteNamedVector(_)
                 | CollectionMetaOperations::Nop { .. } => operation,
                 #[cfg(feature = "staging")]
-                CollectionMetaOperations::TestSlowDown(_) => operation,
+                CollectionMetaOperations::TestSlowDown(_)
+                | CollectionMetaOperations::TestTransientError(_) => operation,
             };
 
             let operation_awaiter =
@@ -199,7 +200,8 @@ impl Dispatcher {
                 | CollectionMetaOperations::Nop { .. } => false,
 
                 #[cfg(feature = "staging")]
-                CollectionMetaOperations::TestSlowDown(_) => false,
+                CollectionMetaOperations::TestSlowDown(_)
+                | CollectionMetaOperations::TestTransientError(_) => false,
             };
 
             // During creation of a shard key, we must ensure that all replicas are ready to accept

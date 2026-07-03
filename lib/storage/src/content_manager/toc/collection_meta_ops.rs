@@ -139,6 +139,12 @@ impl TableOfContent {
                 test_slow_down.execute(self.this_peer_id).await;
                 Ok(true)
             }
+            #[cfg(feature = "staging")]
+            CollectionMetaOperations::TestTransientError(test_transient_error) => {
+                test_transient_error
+                    .execute(self.this_peer_id)
+                    .map(|()| true)
+            }
         }
     }
 
