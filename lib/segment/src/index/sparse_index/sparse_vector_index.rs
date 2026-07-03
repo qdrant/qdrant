@@ -64,6 +64,9 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     path: PathBuf,
     inverted_index: TInvertedIndex,
+    /// Internal ids that have at least one sparse posting. This costs one bit
+    /// per sparse vector id and lets per-filter IDF compute the filtered
+    /// `indexed_vectors` denominator without reading sparse vector storage.
     indexed_vector_ids: BitVec,
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,

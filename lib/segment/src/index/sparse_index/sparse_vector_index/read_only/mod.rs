@@ -36,6 +36,10 @@ pub struct ReadOnlySparseVectorIndex<S: UniversalReadExt, TInvertedIndex: Invert
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
     inverted_index: TInvertedIndex,
+    /// Internal ids that have at least one sparse posting. Read-only indexes
+    /// build this on open from postings; it costs one bit per sparse vector id
+    /// and lets per-filter IDF compute the filtered `indexed_vectors`
+    /// denominator without reading sparse vector storage.
     indexed_vector_ids: BitVec,
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
