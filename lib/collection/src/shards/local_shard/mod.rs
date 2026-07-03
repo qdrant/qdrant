@@ -12,6 +12,8 @@ mod telemetry;
 pub(super) mod updaters;
 
 #[cfg(test)]
+mod optimizer_config_update_tests;
+#[cfg(test)]
 mod snapshot_tests;
 
 mod drop;
