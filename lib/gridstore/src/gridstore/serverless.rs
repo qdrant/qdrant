@@ -837,7 +837,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::config::{Compression, Mode};
+    use crate::config::{Compression, DEFAULT_BLOCK_SIZE_BYTES, Mode};
     use crate::fixtures::{Payload, empty_storage_serverless, random_payload};
     use crate::{Gridstore, GridstoreReader};
 
@@ -1587,5 +1587,393 @@ mod tests {
         let pointer = ValuePointer::new(1, 0, 8);
         let err = view.read_from_pages::<Random>(pointer).unwrap_err();
         assert!(matches!(err, GridstoreError::PageNotFound { page_id: 1 },));
+    }
+
+    /// All writes must be pure appends: the tracker and page files only ever grow, and
+    /// previously written bytes are never touched.
+    #[test]
+    fn test_serverless_writes_only_append() {
+        let (dir, mut storage) = empty_storage_serverless();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let put = |storage: &mut Gridstore<Payload>, point_offset: u32, value: &str| {
+            let mut payload = Payload::default();
+            payload.0.insert(
+                "key".to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
+            storage
+                .put_value(point_offset, &payload, hw_counter_ref)
+                .unwrap();
+        };
+
+        let page_path = dir.path().join("serverless_page_0.dat");
+        let tracker_path = dir.path().join("serverless_tracker.dat");
+
+        // Write, flush, and snapshot the raw file bytes
+        put(&mut storage, 0, "first value");
+        storage.flusher()().unwrap();
+        let page_snapshot = fs::read(&page_path).unwrap();
+        let tracker_snapshot = fs::read(&tracker_path).unwrap();
+        assert!(!page_snapshot.is_empty(), "page must hold the first value");
+        assert!(
+            !tracker_snapshot.is_empty(),
+            "tracker must hold the first mapping",
+        );
+
+        // Putting and flushing more values must only extend both files
+        put(&mut storage, 1, "second value");
+        put(&mut storage, 2, "third value");
+        storage.flusher()().unwrap();
+
+        let page_grown = fs::read(&page_path).unwrap();
+        assert!(
+            page_grown.len() > page_snapshot.len(),
+            "append-only writes must grow the page ({} -> {})",
+            page_snapshot.len(),
+            page_grown.len(),
+        );
+        assert_eq!(
+            &page_grown[..page_snapshot.len()],
+            &page_snapshot[..],
+            "previously written page bytes must be untouched (append-only)",
+        );
+
+        let tracker_grown = fs::read(&tracker_path).unwrap();
+        assert!(
+            tracker_grown.len() > tracker_snapshot.len(),
+            "append-only writes must grow the tracker ({} -> {})",
+            tracker_snapshot.len(),
+            tracker_grown.len(),
+        );
+        assert_eq!(
+            &tracker_grown[..tracker_snapshot.len()],
+            &tracker_snapshot[..],
+            "previously written tracker bytes must be untouched (append-only)",
+        );
+    }
+
+    /// New mappings are appended right at the end of the tracker file, which always covers the
+    /// exact number of mappings.
+    #[test]
+    fn test_serverless_tracker_appends_new_mappings_at_end() {
+        const ENTRY_SIZE: usize = TRACKER_ENTRY_SIZE as usize;
+
+        let (dir, mut storage) = empty_storage_serverless();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+        let tracker_path = dir.path().join("serverless_tracker.dat");
+
+        let first_batch = 10u32;
+        let second_batch = 25u32;
+
+        for point_offset in 0..first_batch {
+            storage
+                .put_value(point_offset, &random_payload(rng, 1), hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        let before = fs::read(&tracker_path).unwrap();
+        assert_eq!(
+            before.len(),
+            first_batch as usize * ENTRY_SIZE,
+            "file must grow to exactly the appended mappings",
+        );
+
+        for point_offset in first_batch..second_batch {
+            storage
+                .put_value(point_offset, &random_payload(rng, 1), hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        let after = fs::read(&tracker_path).unwrap();
+        assert_eq!(
+            after.len(),
+            second_batch as usize * ENTRY_SIZE,
+            "file must grow to exactly the appended mappings",
+        );
+
+        // The full prefix must be byte-for-byte untouched
+        assert_eq!(
+            after[..before.len()],
+            before[..],
+            "existing bytes must stay untouched",
+        );
+        assert!(
+            after[before.len()..]
+                .chunks(ENTRY_SIZE)
+                .all(|entry| entry.iter().any(|&byte| byte != 0)),
+            "new mappings must fill the entries right after the existing ones",
+        );
+    }
+
+    /// A mapping append past the end of the file pads the write with zeroed (unmapped) entries
+    /// so the mapping lands at its correct place.
+    #[test]
+    fn test_serverless_tracker_pads_mapping_gap_with_zeroes() {
+        const ENTRY_SIZE: usize = TRACKER_ENTRY_SIZE as usize;
+
+        let (dir, mut storage) = empty_storage_serverless();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+        // Write points 0 and 3, skipping 1 and 2
+        let payload_0 = random_payload(rng, 1);
+        let payload_3 = random_payload(rng, 1);
+        storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
+        storage.put_value(3, &payload_3, hw_counter_ref).unwrap();
+        storage.flusher()().unwrap();
+
+        // The file covers entries 0..=3 exactly; the skipped entries are zero
+        let bytes = fs::read(dir.path().join("serverless_tracker.dat")).unwrap();
+        assert_eq!(bytes.len(), 4 * ENTRY_SIZE);
+        assert!(
+            bytes[ENTRY_SIZE..3 * ENTRY_SIZE]
+                .iter()
+                .all(|&byte| byte == 0),
+            "skipped entries must be zero-padded",
+        );
+
+        // The skipped points read as missing; the mapped ones round-trip
+        assert!(
+            storage
+                .get_value::<Random>(1, &hw_counter)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            storage
+                .get_value::<Random>(2, &hw_counter)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            storage
+                .get_value::<Random>(0, &hw_counter)
+                .unwrap()
+                .as_ref(),
+            Some(&payload_0),
+        );
+        assert_eq!(
+            storage
+                .get_value::<Random>(3, &hw_counter)
+                .unwrap()
+                .as_ref(),
+            Some(&payload_3),
+        );
+
+        // Same after reopen; the count is derived from the exact file length
+        let path = dir.path().to_path_buf();
+        drop(storage);
+        let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+        assert_eq!(storage.max_point_offset(), 4);
+        assert!(
+            storage
+                .get_value::<Random>(1, &hw_counter)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            storage
+                .get_value::<Random>(3, &hw_counter)
+                .unwrap()
+                .as_ref(),
+            Some(&payload_3),
+        );
+    }
+
+    /// Values are packed back to back at block aligned offsets: each value starts at the block
+    /// boundary right after the previous value, and the page file ends exactly at the last value.
+    #[test]
+    fn test_serverless_values_are_packed_block_aligned() {
+        let (dir, mut storage) = empty_byte_storage(Compression::None);
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+        let num_values = 64u32;
+        let value = |i: u32| vec![i as u8; 1 + (i as usize * 37) % 300];
+        for point_offset in 0..num_values {
+            storage
+                .put_value(point_offset, &value(point_offset), hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        // Each value starts at the block boundary right after the previous value
+        let block_size = DEFAULT_BLOCK_SIZE_BYTES as u64;
+        let mut expected_start = 0;
+        for point_offset in 0..num_values {
+            let pointer = storage.get_pointer(point_offset).unwrap();
+            assert_eq!(pointer.page_id, 0);
+            assert_eq!(
+                u64::from(pointer.block_offset) * block_size,
+                expected_start,
+                "value {point_offset} must start right after the previous one",
+            );
+            expected_start =
+                (expected_start + u64::from(pointer.length)).next_multiple_of(block_size);
+
+            assert_eq!(
+                storage
+                    .get_value::<Random>(point_offset, &hw_counter)
+                    .unwrap(),
+                Some(value(point_offset)),
+            );
+        }
+
+        // The page file ends exactly at the last value, without trailing padding
+        let last_pointer = storage.get_pointer(num_values - 1).unwrap();
+        let last_end =
+            u64::from(last_pointer.block_offset) * block_size + u64::from(last_pointer.length);
+        let page_len = fs::metadata(dir.path().join("serverless_page_0.dat"))
+            .unwrap()
+            .len();
+        assert_eq!(page_len, last_end);
+        assert_eq!(storage.get_storage_size_bytes().unwrap() as u64, last_end);
+    }
+
+    /// Serverless mode never creates or reports the block flag files of the dynamic mode.
+    #[test]
+    fn test_serverless_has_no_block_flag_files() {
+        let (dir, mut storage) = empty_storage_serverless();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+        for point_offset in 0..32u32 {
+            storage
+                .put_value(point_offset, &random_payload(rng, 2), hw_counter_ref)
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        // Not on disk...
+        let on_disk: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !on_disk
+                .iter()
+                .any(|name| name == "bitmask.dat" || name == "gaps.dat"),
+            "serverless mode must not create block flag files, found {on_disk:?}",
+        );
+
+        // ...and not reported by files()
+        let reported: Vec<String> = storage
+            .files()
+            .into_iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !reported
+                .iter()
+                .any(|name| name == "bitmask.dat" || name == "gaps.dat"),
+            "files() must not report block flag files, got {reported:?}",
+        );
+    }
+
+    /// A flusher persists exactly the mappings that existed when it was created: values put
+    /// afterwards stay pending and are lost when reopening without another flush.
+    #[test]
+    fn test_serverless_flusher_persists_mappings_up_to_creation() {
+        let (dir, mut storage) = empty_storage_serverless();
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+        let payloads: Vec<_> = (0..5).map(|_| random_payload(rng, 1)).collect();
+        for (point_offset, payload) in payloads.iter().enumerate().take(3) {
+            storage
+                .put_value(point_offset as u32, payload, hw_counter_ref)
+                .unwrap();
+        }
+
+        let flusher = storage.flusher();
+
+        for (point_offset, payload) in payloads.iter().enumerate().skip(3) {
+            storage
+                .put_value(point_offset as u32, payload, hw_counter_ref)
+                .unwrap();
+        }
+
+        // The flusher only persists the mappings that existed when it was created
+        flusher().unwrap();
+        assert_eq!(tracker_file_len(&dir), 3 * TRACKER_ENTRY_SIZE);
+
+        // In this session all values are readable, the later ones from pending mappings
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            assert_eq!(
+                storage
+                    .get_value::<Random>(point_offset as u32, &hw_counter)
+                    .unwrap()
+                    .as_ref(),
+                Some(payload),
+            );
+        }
+
+        // On reopen, only the flushed mappings are left
+        let path = dir.path().to_path_buf();
+        drop(storage);
+        let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+        assert_eq!(storage.max_point_offset(), 3);
+        for (point_offset, payload) in payloads.iter().enumerate() {
+            let expected = (point_offset < 3).then_some(payload);
+            assert_eq!(
+                storage
+                    .get_value::<Random>(point_offset as u32, &hw_counter)
+                    .unwrap()
+                    .as_ref(),
+                expected,
+            );
+        }
+    }
+
+    /// The two modes have deliberately distinct file names, so a config that claims the wrong
+    /// mode fails loudly instead of loading the incompatible file format of the other mode.
+    #[rstest::rstest]
+    #[case(Mode::Dynamic, Mode::Serverless)]
+    #[case(Mode::Serverless, Mode::Dynamic)]
+    fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_path_buf();
+
+        let options = StorageOptions {
+            mode: Some(created),
+            ..Default::default()
+        };
+        let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        storage
+            .put_value(
+                0,
+                &Payload::default(),
+                hw_counter.ref_payload_io_write_counter(),
+            )
+            .unwrap();
+        storage.flusher()().unwrap();
+        drop(storage);
+
+        // Tamper with the persisted mode, pointing it at the other mode
+        let config_path = path.join(CONFIG_FILENAME);
+        let config_json = fs::read_to_string(&config_path).unwrap();
+        let mut config: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&config_json).unwrap();
+        let mode_name = match tampered {
+            Mode::Dynamic => "dynamic",
+            Mode::Serverless => "serverless",
+        };
+        config.insert("mode".to_string(), mode_name.into());
+        fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+
+        // The other mode never finds its own files, so opening fails instead of misreading
+        assert!(Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
+        assert!(GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
     }
 }
