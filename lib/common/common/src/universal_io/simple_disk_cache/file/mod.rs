@@ -69,6 +69,24 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     },
 }
 
+impl<R: UniversalRead + 'static> State<R> {
+    #[inline]
+    pub fn is_ready(&self) -> bool {
+        match self {
+            State::Ready { .. } => true,
+            State::Uninit | State::OpenPrefill { .. } | State::ReopenPrefill { .. } => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_uninit(&self) -> bool {
+        match self {
+            State::Uninit => true,
+            State::Ready { .. } | State::OpenPrefill { .. } | State::ReopenPrefill { .. } => false,
+        }
+    }
+}
+
 impl<R> DiskCache<R>
 where
     R: DiskCacheRemote,
@@ -81,7 +99,7 @@ where
         options: OpenOptions,
         state: State<R>,
     ) -> Self {
-        let is_ready = matches!(state, State::Ready { .. });
+        let is_ready = state.is_ready();
         Self {
             remote_fs,
             remote_extra,

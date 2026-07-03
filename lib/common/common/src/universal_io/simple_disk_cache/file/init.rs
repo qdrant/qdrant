@@ -136,7 +136,7 @@ where
         }
 
         let mut state = self.state.lock();
-        if matches!(&*state, State::Uninit) {
+        if state.is_uninit() {
             // Use the remote's `schedule_whole` to avoid an extra `len` call.
             let mut pipeline = OwnedPipeline::new(self.open_remote()?)?;
             pipeline.schedule_whole((), 0)?;
