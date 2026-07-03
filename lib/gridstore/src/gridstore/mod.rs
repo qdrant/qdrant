@@ -24,7 +24,7 @@ pub use view::GridstoreView;
 use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
-use crate::config::{StorageConfig, StorageOptions};
+use crate::config::{Mode, StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::pages::{Pages, page_path};
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
@@ -115,6 +115,13 @@ where
     /// It should exist already.
     pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
+        if config.mode == Mode::Serverless {
+            // TODO: dispatch to the serverless variant once it is implemented
+            return Err(GridstoreError::service_error(format!(
+                "Serverless mode is not supported yet: {}",
+                base_path.display(),
+            )));
+        }
         let config_path = base_path.join(CONFIG_FILENAME);
 
         let bitmask = Bitmask::create(&fs, &base_path, config.clone())?;
@@ -148,8 +155,17 @@ where
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
+        let config = reader::read_config(&fs, &base_path)?;
+        if config.mode == Mode::Serverless {
+            // TODO: dispatch to the serverless variant once it is implemented
+            return Err(GridstoreError::service_error(format!(
+                "Serverless mode is not supported yet: {}",
+                base_path.display(),
+            )));
+        }
+
         // Writable store: open pages and tracker writable so it can append.
-        let (config, tracker) = reader::read_config_and_tracker(&fs, &base_path, populate, true)?;
+        let tracker = Tracker::open(&fs, &base_path, populate, true)?;
         let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 

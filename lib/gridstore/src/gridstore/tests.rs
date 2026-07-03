@@ -20,6 +20,7 @@ use super::*;
 use crate::blob::Blob;
 use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
+    Mode,
 };
 use crate::fixtures::{HM_FIELDS, Payload, empty_storage, empty_storage_sized, random_payload};
 
@@ -242,6 +243,7 @@ fn test_write_across_pages() {
         block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
         region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         compression: Compression::None,
+        mode: Mode::Dynamic,
     };
 
     storage.create_new_page().unwrap();
