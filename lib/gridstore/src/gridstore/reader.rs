@@ -413,5 +413,11 @@ pub(super) fn read_config<Fs: UniversalReadFs>(
     let config_path = base_path.join(CONFIG_FILENAME);
     let config =
         read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
+    config.validate().map_err(|message| {
+        GridstoreError::service_error(format!(
+            "Invalid gridstore config at {}: {message}",
+            config_path.display(),
+        ))
+    })?;
     Ok(config)
 }

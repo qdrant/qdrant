@@ -4,25 +4,14 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{UniversalRead, UserData};
-use lz4_flex::compress_prepend_size;
 
 use super::serverless::ServerlessGridstoreView;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::{Compression, StorageConfig};
+use crate::config::StorageConfig;
 use crate::error::GridstoreError;
 use crate::pages::Pages;
 use crate::tracker::{PointOffset, PointerItem, ReadOnlyTracker, TrackerRead, ValuePointer};
-
-#[inline]
-pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
-    compress_prepend_size(value)
-}
-
-#[inline]
-pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
-    lz4_flex::decompress_size_prepended(value).unwrap()
-}
 
 /// A non-owning view into gridstore data.
 ///
@@ -175,17 +164,11 @@ impl<'a, V, S: UniversalRead, T: TrackerRead<S>> DynamicGridstoreView<'a, V, S, 
 
 impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> DynamicGridstoreView<'a, V, S, T> {
     pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
-        match self.config.compression {
-            Compression::None => value,
-            Compression::LZ4 => compress_lz4(&value),
-        }
+        self.config.compression.compress(value)
     }
 
     pub(super) fn decompress<'val>(&self, value: Cow<'val, [u8]>) -> Cow<'val, [u8]> {
-        match self.config.compression {
-            Compression::None => value,
-            Compression::LZ4 => decompress_lz4(&value).into(),
-        }
+        self.config.compression.decompress(value)
     }
 
     /// Get the value for a given point offset.

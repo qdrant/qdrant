@@ -51,7 +51,8 @@ Concepts shared by both modes:
 Serverless environments restrict IO: files can only be appended to, existing
 bytes can never be rewritten (preallocated zero padding cannot be filled in
 later), and IO is expensive so as few files as possible are used. Files are
-read and written directly, they are never memory mapped.
+read and written directly on the local filesystem, they are never memory
+mapped and the configured universal IO backend is not used in this mode.
 
 - Values cannot be updated or deleted, and must be put at monotonically
   increasing point offsets. Violating puts and deletes are rejected.

@@ -4,8 +4,48 @@
 //! them.
 
 use std::io;
+use std::path::Path;
 
+use fs_err as fs;
 use fs_err::File;
+
+use crate::error::GridstoreError;
+
+/// Create a new empty file, truncating it if it already exists.
+pub(crate) fn create_new(path: &Path) -> io::Result<File> {
+    fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+}
+
+/// Open an existing file, writable or read-only.
+///
+/// If the file does not exist, return an error mentioning `description`.
+pub(crate) fn open_existing(
+    path: &Path,
+    writeable: bool,
+    description: &str,
+) -> crate::Result<File> {
+    fs::OpenOptions::new()
+        .read(true)
+        .write(writeable)
+        .open(path)
+        .map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                // If config exists and this file doesn't,
+                // it should be treated as inconsistent storage rather than a missing one
+                GridstoreError::service_error(format!(
+                    "{description} file does not exist: {}",
+                    path.display(),
+                ))
+            } else {
+                GridstoreError::from(err)
+            }
+        })
+}
 
 /// Read exactly `buf.len()` bytes from the file at the given byte offset.
 #[cfg(unix)]
