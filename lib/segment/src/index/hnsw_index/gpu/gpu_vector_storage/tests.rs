@@ -1,5 +1,9 @@
 //! Unit tests for GPU vector storage, covering f32, f16, u8 dense/multivectors with SQ, BQ, PQ.
 
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -119,6 +123,7 @@ fn test_gpu_vector_storage_sq(
     let quantization_config = QuantizationConfig::Scalar(ScalarQuantization {
         scalar: ScalarQuantizationConfig {
             always_ram: Some(true),
+            memory: None,
             r#type: crate::types::ScalarType::Int8,
             quantile: Some(0.99),
         },
@@ -219,6 +224,7 @@ fn test_gpu_vector_storage_bq(
     let quantization_config = QuantizationConfig::Binary(BinaryQuantization {
         binary: BinaryQuantizationConfig {
             always_ram: Some(true),
+            memory: None,
             encoding: Some(encoding),
             query_encoding: None,
         },
@@ -309,6 +315,7 @@ fn test_gpu_vector_storage_pq(
     let quantization_config = QuantizationConfig::Product(ProductQuantization {
         product: ProductQuantizationConfig {
             always_ram: Some(true),
+            memory: None,
             compression: crate::types::CompressionRatio::X8,
         },
     });
@@ -555,6 +562,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
     let tq_config = QuantizationConfig::Turbo(TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
             always_ram: Some(true),
+            memory: None,
             bits: Some(TurboQuantBitSize::Bits4),
         },
     });
