@@ -16,7 +16,9 @@ use segment::data_types::index::{
 };
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedMultiDenseVector, VectorInternal};
-use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
+use segment::data_types::{
+    facets as segment_facets, idf_estimate as segment_idf, vectors as segment_vectors,
+};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
@@ -32,12 +34,12 @@ use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    KeywordIndexParams, LookupLocation, MaxOptimizationThreads, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
-    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, StartFrom,
-    StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
-    TurboQuantBitSize, TurboQuantization, UuidIndexParams, VectorsOutput, WithLookup, raw_query,
-    start_from,
+    IdfEstimate, IdfTermEstimate, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
+    ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
+    StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize, TurboQuantization,
+    UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
 use super::stemming_algorithm::StemmingParams;
 use super::{
@@ -3331,6 +3333,34 @@ impl From<segment_facets::FacetValue> for FacetValue {
                 }
                 segment_facets::FacetValue::Bool(value) => Variant::BoolValue(value),
             }),
+        }
+    }
+}
+
+impl From<segment_idf::IdfEstimate> for IdfEstimate {
+    fn from(estimate: segment_idf::IdfEstimate) -> Self {
+        let segment_idf::IdfEstimate {
+            document_count,
+            terms,
+        } = estimate;
+        Self {
+            document_count: document_count as u64,
+            terms: terms.into_iter().map(From::from).collect(),
+        }
+    }
+}
+
+impl From<segment_idf::IdfTermEstimate> for IdfTermEstimate {
+    fn from(term: segment_idf::IdfTermEstimate) -> Self {
+        let segment_idf::IdfTermEstimate {
+            index,
+            document_frequency,
+            idf,
+        } = term;
+        Self {
+            index,
+            document_frequency: document_frequency as u64,
+            idf,
         }
     }
 }

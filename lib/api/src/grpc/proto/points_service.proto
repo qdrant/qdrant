@@ -98,6 +98,11 @@ service Points {
   // For each value in the field, count the number of points that have this
   // value and match the conditions.
   rpc Facet(FacetCounts) returns (FacetResponse) {}
+  // Estimate IDF statistics for a sparse query vector.
+  // Reports the document count and per-term document frequencies used by
+  // sparse vector search with the IDF modifier, along with the IDF values
+  // derived from them, optionally scoped to the points matching a corpus filter.
+  rpc EstimateIdf(EstimateIdfRequest) returns (EstimateIdfResponse) {}
   // Compute distance matrix for sampled points with a pair based output format
   rpc SearchMatrixPairs(SearchMatrixPoints)
       returns (SearchMatrixPairsResponse) {}

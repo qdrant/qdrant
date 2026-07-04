@@ -1,11 +1,15 @@
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::iterator_ext::IteratorExt;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::data_types::query_context::QueryContext;
-use segment::types::VectorName;
+use segment::data_types::idf_estimate::IdfStats;
+use segment::data_types::query_context::{IdfScopeStats, QueryContext};
+use segment::types::{Filter, VectorName};
+use sparse::common::types::DimId;
 
 use crate::common::stopping_guard::StoppingGuard;
 use crate::search::CoreSearchRequest;
@@ -82,6 +86,55 @@ pub fn fill_query_context(
         segment_guard.fill_query_context(&mut query_context)?;
     }
     Ok(Some(query_context))
+}
+
+/// Collect raw IDF statistics — the document count and per-term document
+/// frequencies — for the given sparse vector over the segments of a shard.
+///
+/// `corpus` defines the population the statistics are computed over,
+/// `None` for the whole collection.
+pub fn collect_idf_stats(
+    segments: LockedSegmentHolder,
+    vector_name: &VectorName,
+    indices: &[DimId],
+    corpus: Option<&Filter>,
+    timeout: Duration,
+    is_stopped: Arc<AtomicBool>,
+    hw_measurement_acc: HwMeasurementAcc,
+) -> OperationResult<IdfStats> {
+    // The search-optimized threshold does not affect statistics collection.
+    let mut query_context =
+        QueryContext::new(usize::MAX, hw_measurement_acc).with_is_stopped(is_stopped);
+    query_context.init_idf(vector_name, corpus, indices);
+
+    let is_stopped = query_context.is_stopped_handle();
+    let query_context = fill_query_context(query_context, segments, timeout, &is_stopped)?;
+
+    // `init_idf` seeded a zero count for every query term, so terms missing
+    // from the shard report a zero frequency. A shard without segments
+    // contributes empty statistics.
+    let mut document_frequency: HashMap<DimId, usize> =
+        indices.iter().map(|&index| (index, 0)).collect();
+    let mut document_count = 0;
+
+    if let Some(mut query_context) = query_context
+        && let Some(scope) = query_context.mut_idf_stats().take_scope(corpus)
+    {
+        let IdfScopeStats {
+            corpus: _,
+            mut idf,
+            indexed_vectors,
+        } = scope;
+        if let Some(df) = idf.remove(vector_name) {
+            document_frequency = df;
+        }
+        document_count = indexed_vectors.get(vector_name).copied().unwrap_or(0);
+    }
+
+    Ok(IdfStats {
+        document_count,
+        document_frequency,
+    })
 }
 
 #[cfg(test)]

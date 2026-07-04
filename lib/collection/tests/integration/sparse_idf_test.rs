@@ -13,6 +13,7 @@ use collection::operations::types::{SparseVectorParams, UpdateStatus};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::{CollectionUpdateOperations, point_ops};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use segment::data_types::idf_estimate::{IdfEstimate, IdfEstimateParams};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::NamedSparseVector;
 use segment::json_path::JsonPath;
@@ -273,6 +274,128 @@ async fn sparse_idf_corpus_search() {
     let ln2 = expected_idf(0, 0);
     assert_score(&scores, 0, 2.0 * ln2);
     assert_score(&scores, 2, 3.0 * ln2);
+}
+
+async fn estimate(collection: &Collection, corpus: Option<Filter>) -> IdfEstimate {
+    let request = IdfEstimateParams {
+        using: SPARSE_VECTOR_NAME.to_owned(),
+        query: SparseVector::new(vec![0, 1, 2], vec![1.0, 1.0, 1.0]).unwrap(),
+        corpus,
+    };
+
+    collection
+        .estimate_idf(
+            request,
+            ShardSelectorInternal::All,
+            None,
+            None,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap()
+}
+
+fn assert_estimate(estimate: &IdfEstimate, document_count: usize, df: [usize; 3]) {
+    assert_eq!(estimate.document_count, document_count);
+    assert_eq!(estimate.terms.len(), df.len());
+    for (term, (index, expected_df)) in estimate.terms.iter().zip((0..).zip(df)) {
+        assert_eq!(term.index, index);
+        assert_eq!(
+            term.document_frequency, expected_df,
+            "index {index}: got df {}, expected {expected_df}",
+            term.document_frequency,
+        );
+        let expected = expected_idf(document_count, expected_df);
+        assert!(
+            (term.idf - expected).abs() < 1e-6,
+            "index {index}: got idf {}, expected {expected}",
+            term.idf,
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sparse_idf_estimate() {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = sparse_idf_collection_fixture(collection_dir.path()).await;
+
+    // Global statistics: N = 4, df = [3, 3, 1].
+    let global = estimate(&collection, None).await;
+    assert_estimate(&global, 4, [3, 3, 1]);
+
+    // Corpus = tenant a: N = 2, df = [2, 1, 0].
+    let corpus_a = estimate(&collection, Some(tenant_filter("a"))).await;
+    assert_estimate(&corpus_a, 2, [2, 1, 0]);
+
+    // Corpus = tenant b: N = 2, df = [1, 2, 1].
+    let corpus_b = estimate(&collection, Some(tenant_filter("b"))).await;
+    assert_estimate(&corpus_b, 2, [1, 2, 1]);
+
+    // An empty corpus reports degenerate but corpus-scoped statistics —
+    // never a fallback to global. idf(0, 0) = ln(2) for every term.
+    let empty = estimate(&collection, Some(tenant_filter("missing"))).await;
+    assert_estimate(&empty, 0, [0, 0, 0]);
+
+    // A term missing from the collection reports a zero frequency.
+    let request = IdfEstimateParams {
+        using: SPARSE_VECTOR_NAME.to_owned(),
+        query: SparseVector::new(vec![2, 7], vec![1.0, 1.0]).unwrap(),
+        corpus: None,
+    };
+    let missing_term = collection
+        .estimate_idf(
+            request,
+            ShardSelectorInternal::All,
+            None,
+            None,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing_term.document_count, 4);
+    assert_eq!(missing_term.terms[0].index, 2);
+    assert_eq!(missing_term.terms[0].document_frequency, 1);
+    assert_eq!(missing_term.terms[1].index, 7);
+    assert_eq!(missing_term.terms[1].document_frequency, 0);
+
+    // The estimate must report exactly the statistics search scores with:
+    // point 0 has dims [0, 1], so its score is the sum of their IDF values.
+    let baseline = search(&collection, None, None).await;
+    let scores = scores_by_id(&baseline);
+    assert_score(&scores, 0, global.terms[0].idf + global.terms[1].idf);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sparse_idf_estimate_requires_idf_modifier() {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = sparse_idf_collection_fixture(collection_dir.path()).await;
+
+    // IDF estimation on a vector without the IDF modifier (the dense default
+    // vector here) is rejected, same as the `idf` search param.
+    for using in ["", "missing"] {
+        let request = IdfEstimateParams {
+            using: using.to_owned(),
+            query: SparseVector::new(vec![0], vec![1.0]).unwrap(),
+            corpus: None,
+        };
+        let error = collection
+            .estimate_idf(
+                request,
+                ShardSelectorInternal::All,
+                None,
+                None,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("idf"),
+            "unexpected error: {error}"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

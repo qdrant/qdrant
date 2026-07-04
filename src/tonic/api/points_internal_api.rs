@@ -9,12 +9,13 @@ use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, CreateVectorNameInternal,
     DeleteFieldIndexCollectionInternal, DeletePayloadPointsInternal, DeletePointsInternal,
-    DeleteVectorNameInternal, DeleteVectorsInternal, FacetCountsInternal, FacetResponseInternal,
-    GetPointsInternal, GetResponse, IntermediateResult, PointsOperationResponseInternal,
-    QueryBatchPointsInternal, QueryBatchResponseInternal, QueryResultInternal, QueryShardPoints,
-    RecommendPointsInternal, RecommendResponse, ScrollPointsInternal, ScrollResponse,
-    SearchBatchResponse, SetPayloadPointsInternal, SyncPointsInternal, UpdateBatchInternal,
-    UpdateVectorsInternal, UpsertPointsInternal,
+    DeleteVectorNameInternal, DeleteVectorsInternal, EstimateIdfRequestInternal,
+    EstimateIdfResponseInternal, FacetCountsInternal, FacetResponseInternal, GetPointsInternal,
+    GetResponse, IntermediateResult, PointsOperationResponseInternal, QueryBatchPointsInternal,
+    QueryBatchResponseInternal, QueryResultInternal, QueryShardPoints, RecommendPointsInternal,
+    RecommendResponse, ScrollPointsInternal, ScrollResponse, SearchBatchResponse,
+    SetPayloadPointsInternal, SyncPointsInternal, UpdateBatchInternal, UpdateVectorsInternal,
+    UpsertPointsInternal,
 };
 use api::grpc::update_operation::Update;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -23,6 +24,7 @@ use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 use segment::json_path::JsonPath;
 use segment::types::Filter;
 use storage::content_manager::toc::TableOfContent;
@@ -493,6 +495,55 @@ async fn facet_counts_internal(
 
     let response = FacetResponseInternal {
         hits: hits.into_iter().map(From::from).collect_vec(),
+        time: timing.elapsed().as_secs_f64(),
+        usage: request_hw_data.to_grpc_api(),
+    };
+
+    Ok(Response::new(response))
+}
+
+async fn estimate_idf_internal(
+    toc: &TableOfContent,
+    request: EstimateIdfRequestInternal,
+    request_hw_data: RequestHwCounter,
+) -> Result<Response<EstimateIdfResponseInternal>, Status> {
+    let timing = Instant::now();
+
+    let EstimateIdfRequestInternal {
+        collection_name,
+        shard_id,
+        using,
+        indices,
+        corpus,
+        timeout,
+    } = request;
+
+    let shard_selection = ShardSelectorInternal::ShardId(shard_id);
+
+    let request =
+        IdfEstimateParams::from_indices(using, indices, corpus.map(Filter::try_from).transpose()?);
+
+    let response = toc
+        .estimate_idf_internal(
+            &collection_name,
+            request,
+            shard_selection,
+            timeout.map(Duration::from_secs),
+            request_hw_data.get_counter(),
+        )
+        .await?;
+
+    let IdfStats {
+        document_count,
+        document_frequency,
+    } = response;
+
+    let response = EstimateIdfResponseInternal {
+        document_count: document_count as u64,
+        document_frequency: document_frequency
+            .into_iter()
+            .map(|(index, count)| (index, count as u64))
+            .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: request_hw_data.to_grpc_api(),
     };
@@ -1021,6 +1072,19 @@ impl PointsInternal for PointsInternalService {
             request_inner.collection_name.clone(),
         );
         facet_counts_internal(self.toc.as_ref(), request_inner, hw_data).await
+    }
+
+    async fn estimate_idf(
+        &self,
+        request: Request<EstimateIdfRequestInternal>,
+    ) -> Result<Response<EstimateIdfResponseInternal>, Status> {
+        validate_and_log(request.get_ref());
+
+        let request_inner = request.into_inner();
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+            request_inner.collection_name.clone(),
+        );
+        estimate_idf_internal(self.toc.as_ref(), request_inner, hw_data).await
     }
 }
 

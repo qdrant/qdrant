@@ -14,15 +14,16 @@ use api::grpc::qdrant::{
     DeleteFullSnapshotRequest, DeletePayloadPoints, DeletePointVectors, DeletePoints,
     DeleteShardSnapshotRequest, DeleteSnapshotRequest, DeleteSnapshotResponse,
     DeleteVectorNameRequest, DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints,
-    DiscoverResponse, FacetCounts, FacetResponse, GetPoints, GetResponse, ListFullSnapshotsRequest,
-    ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
-    PointsOperationResponse, QueryBatchPoints, QueryBatchResponse, QueryGroupsResponse,
-    QueryPointGroups, QueryPoints, QueryResponse, RecommendBatchPoints, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollResponse,
-    SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse, SearchMatrixOffsetsResponse,
-    SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    DiscoverResponse, EstimateIdfRequest, EstimateIdfResponse, FacetCounts, FacetResponse,
+    GetPoints, GetResponse, ListFullSnapshotsRequest, ListShardSnapshotsRequest,
+    ListSnapshotsRequest, ListSnapshotsResponse, PointsOperationResponse, QueryBatchPoints,
+    QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
+    RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups,
+    RecommendPoints, RecommendResponse, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
+    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
+    SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups,
+    SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse,
+    UpdatePointVectors, UpsertPoints,
 };
 use tonic::{Request, Response, Status};
 
@@ -318,6 +319,16 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         Ok(resp)
     }
 
+    async fn estimate_idf(
+        &self,
+        request: Request<EstimateIdfRequest>,
+    ) -> Result<Response<EstimateIdfResponse>, Status> {
+        let cn = request.get_ref().collection_name.clone();
+        let mut resp = self.inner.estimate_idf(request).await?;
+        resp.extensions_mut().insert(CollectionName(cn));
+        Ok(resp)
+    }
+
     async fn search_matrix_pairs(
         &self,
         request: Request<SearchMatrixPoints>,
@@ -533,6 +544,7 @@ mod tests {
         query_batch(QueryBatchPoints) -> QueryBatchResponse,
         query_groups(QueryPointGroups) -> QueryGroupsResponse,
         facet(FacetCounts) -> FacetResponse,
+        estimate_idf(EstimateIdfRequest) -> EstimateIdfResponse,
         search_matrix_pairs(SearchMatrixPoints) -> SearchMatrixPairsResponse,
         search_matrix_offsets(SearchMatrixPoints) -> SearchMatrixOffsetsResponse,
     }

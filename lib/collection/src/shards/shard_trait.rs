@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 use segment::types::*;
 use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
@@ -165,6 +166,16 @@ pub trait ShardOperation {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse>;
+
+    /// Collect raw IDF statistics — the document count and per-term document
+    /// frequencies — of this shard for the given sparse query vector.
+    async fn estimate_idf(
+        &self,
+        request: Arc<IdfEstimateParams>,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<IdfStats>;
 
     /// Signal `Stop` to all background operations gracefully
     /// and wait till they are finished.

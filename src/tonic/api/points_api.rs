@@ -6,14 +6,15 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     CreateVectorNameRequest, DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors,
     DeletePoints, DeleteVectorNameRequest, DiscoverBatchPoints, DiscoverBatchResponse,
-    DiscoverPoints, DiscoverResponse, FacetCounts, FacetResponse, GetPoints, GetResponse,
-    PointsOperationResponse, QueryBatchPoints, QueryBatchResponse, QueryGroupsResponse,
-    QueryPointGroups, QueryPoints, QueryResponse, RecommendBatchPoints, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
-    SearchMatrixOffsets, SearchMatrixOffsetsResponse, SearchMatrixPairs, SearchMatrixPairsResponse,
-    SearchMatrixPoints, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
-    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    DiscoverPoints, DiscoverResponse, EstimateIdfRequest, EstimateIdfResponse, FacetCounts,
+    FacetResponse, GetPoints, GetResponse, PointsOperationResponse, QueryBatchPoints,
+    QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
+    RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints,
+    SearchBatchResponse, SearchGroupsResponse, SearchMatrixOffsets, SearchMatrixOffsetsResponse,
+    SearchMatrixPairs, SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups,
+    SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse,
+    UpdatePointVectors, UpsertPoints,
 };
 use api::grpc::{PointsOperationResponseInternal, Usage};
 use collection::operations::types::CoreSearchRequest;
@@ -750,6 +751,25 @@ impl Points for PointsService {
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         facet(
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
+            request.into_inner(),
+            auth,
+            routing_token,
+            hw_metrics,
+        )
+        .await
+    }
+
+    async fn estimate_idf(
+        &self,
+        mut request: Request<EstimateIdfRequest>,
+    ) -> Result<Response<EstimateIdfResponse>, Status> {
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
+        let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        estimate_idf(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             auth,

@@ -10,12 +10,13 @@ use api::grpc::qdrant::shard_snapshot_location::Location;
 use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
-    CountResponse, FacetCountsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
-    GetPoints, GetPointsInternal, GetShardOptimizationsRequest, GetShardRecoveryPointRequest,
-    HealthCheckRequest, InitiateShardTransferRequest, QueryBatchPointsInternal,
-    QueryBatchResponseInternal, QueryShardPoints, RecoverShardSnapshotRequest,
-    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, SearchBatchResponse,
-    ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    CountResponse, EstimateIdfRequestInternal, EstimateIdfResponseInternal, FacetCountsInternal,
+    GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
+    GetShardOptimizationsRequest, GetShardRecoveryPointRequest, HealthCheckRequest,
+    InitiateShardTransferRequest, QueryBatchPointsInternal, QueryBatchResponseInternal,
+    QueryShardPoints, RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints,
+    ScrollPointsInternal, SearchBatchResponse, ShardSnapshotLocation,
+    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{MAX_GRPC_CHANNEL_TIMEOUT, PoolInterceptor};
 use api::grpc::update_operation::Update;
@@ -29,6 +30,7 @@ use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::data_types::facets::{FacetParams, FacetResponse, FacetValueHit};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -1552,6 +1554,69 @@ impl ShardOperation for RemoteShard {
             .try_collect()?;
 
         let result = FacetResponse { hits };
+
+        timer.set_success(true);
+
+        Ok(result)
+    }
+
+    async fn estimate_idf(
+        &self,
+        request: Arc<IdfEstimateParams>,
+        _search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<IdfStats> {
+        let processed_timeout = Self::process_read_timeout(timeout, "estimate_idf")?;
+        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
+        timer.set_success(false);
+
+        let IdfEstimateParams {
+            using,
+            query,
+            corpus,
+        } = request.as_ref();
+
+        let response = self
+            .with_points_client(|mut client| async move {
+                let request = &EstimateIdfRequestInternal {
+                    collection_name: self.collection_id.clone(),
+                    shard_id: self.id,
+                    using: using.clone(),
+                    indices: query.indices.clone(),
+                    corpus: corpus.clone().map(api::grpc::qdrant::Filter::from),
+                    timeout: processed_timeout.map(|t| t.as_secs()),
+                };
+
+                let mut request = tonic::Request::new(request.clone());
+
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+
+                client.estimate_idf(request).await
+            })
+            .await?
+            .into_inner();
+
+        let EstimateIdfResponseInternal {
+            document_count,
+            document_frequency,
+            time: _,
+            usage,
+        } = response;
+
+        if let Some(hw_usage) = usage {
+            hw_measurement_acc.accumulate_request(hw_usage);
+        }
+
+        let result = IdfStats {
+            document_count: document_count as usize,
+            document_frequency: document_frequency
+                .into_iter()
+                .map(|(index, count)| (index, count as usize))
+                .collect(),
+        };
 
         timer.set_success(true);
 

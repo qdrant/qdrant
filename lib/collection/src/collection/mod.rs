@@ -1,6 +1,7 @@
 mod clean;
 mod collection_ops;
 pub mod distance_matrix;
+mod estimate_idf;
 mod facet;
 pub mod mmr;
 pub mod payload_index_schema;

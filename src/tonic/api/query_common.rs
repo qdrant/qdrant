@@ -3,12 +3,13 @@ use std::time::{Duration, Instant};
 use api::conversions::json::json_path_from_proto;
 use api::grpc::qdrant::{
     BatchResult, CoreSearchPoints, CountPoints, CountResponse, DiscoverBatchResponse,
-    DiscoverPoints, DiscoverResponse, FacetCounts, FacetResponse, GetPoints, GetResponse,
-    GroupsResult, QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints,
-    QueryResponse, ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchMatrixPoints,
-    SearchParams, SearchPointGroups, SearchPoints, SearchResponse, WithVectorsSelector,
+    DiscoverPoints, DiscoverResponse, EstimateIdfRequest, EstimateIdfResponse, FacetCounts,
+    FacetResponse, GetPoints, GetResponse, GroupsResult, QueryBatchResponse, QueryGroupsResponse,
+    QueryPointGroups, QueryPoints, QueryResponse, ReadConsistency as ReadConsistencyGrpc,
+    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
+    SearchMatrixPoints, SearchParams, SearchPointGroups, SearchPoints, SearchResponse,
+    WithVectorsSelector,
 };
 use api::grpc::{InferenceUsage, Usage};
 use collection::collection::distance_matrix::{
@@ -22,6 +23,7 @@ use collection::operations::types::{CoreSearchRequest, PointRequestInternal};
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::FacetParams;
+use segment::data_types::idf_estimate::IdfEstimateParams;
 use segment::data_types::order_by::{OrderBy, OrderByInterface};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::types::{ExtendedPointId, ScoredPoint};
@@ -35,6 +37,7 @@ use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::rbac::Auth;
 use tonic::{Response, Status};
 
+use super::validate;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
@@ -1037,6 +1040,69 @@ pub async fn facet(
 
     let response = FacetResponse {
         hits: hits.into_iter().map(From::from).collect(),
+        time: timing.elapsed().as_secs_f64(),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn estimate_idf(
+    toc_provider: impl CheckedTocProvider,
+    request: EstimateIdfRequest,
+    auth: Auth,
+    routing_token: Option<RoutingToken>,
+    request_hw_counter: RequestHwCounter,
+) -> Result<Response<EstimateIdfResponse>, Status> {
+    let EstimateIdfRequest {
+        collection_name,
+        using,
+        query,
+        corpus,
+        timeout,
+        read_consistency,
+        shard_key_selector,
+    } = request;
+
+    let query = query.ok_or_else(|| Status::invalid_argument("query is not specified"))?;
+
+    let estimate_request = IdfEstimateParams {
+        using,
+        query: query.into(),
+        corpus: corpus.map(TryInto::try_into).transpose()?,
+    };
+    validate(&estimate_request)?;
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &estimate_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &auth,
+        )
+        .await?;
+
+    let timeout = timeout.map(Duration::from_secs);
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
+
+    let timing = Instant::now();
+    let estimate = toc
+        .estimate_idf(
+            &collection_name,
+            estimate_request,
+            shard_selector,
+            read_consistency,
+            routing_token,
+            auth,
+            timeout,
+            request_hw_counter.get_counter(),
+        )
+        .await?;
+
+    let response = EstimateIdfResponse {
+        result: Some(estimate.into()),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };

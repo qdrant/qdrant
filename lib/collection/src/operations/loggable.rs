@@ -2,6 +2,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
 use segment::data_types::facets::FacetParams;
+use segment::data_types::idf_estimate::IdfEstimateParams;
 use serde_json::Value;
 use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
@@ -91,6 +92,23 @@ impl Loggable for FacetParams {
 
     fn request_name(&self) -> &'static str {
         "facet"
+    }
+
+    fn request_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.request_name().hash(&mut hasher);
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl Loggable for IdfEstimateParams {
+    fn to_log_value(&self) -> Value {
+        serde_json::to_value(self).unwrap_or_default()
+    }
+
+    fn request_name(&self) -> &'static str {
+        "estimate_idf"
     }
 
     fn request_hash(&self) -> u64 {

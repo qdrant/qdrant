@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, StrictModeConfig, WithPayload,
@@ -208,6 +209,16 @@ impl ShardOperation for DummyShard {
         _: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         self.dummy("facet")
+    }
+
+    async fn estimate_idf(
+        &self,
+        _: Arc<IdfEstimateParams>,
+        _search_runtime_handle: &AdaptiveSearchHandle,
+        _: Option<Duration>,
+        _: HwMeasurementAcc,
+    ) -> CollectionResult<IdfStats> {
+        self.dummy("estimate_idf")
     }
 
     async fn stop_gracefully(self) {}

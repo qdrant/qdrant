@@ -20,6 +20,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimate, IdfEstimateParams};
 use segment::types::{ScoredPoint, ShardKey};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
@@ -429,6 +430,36 @@ impl TableOfContent {
 
         collection
             .facet(
+                request,
+                shard_selection,
+                read_consistency,
+                routing_token,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await
+            .map_err(StorageError::from)
+    }
+
+    // Estimate IDF statistics for a sparse query vector.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn estimate_idf(
+        &self,
+        collection_name: &str,
+        request: IdfEstimateParams,
+        shard_selection: ShardSelectorInternal,
+        read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
+        auth: Auth,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> StorageResult<IdfEstimate> {
+        let collection_pass = auth.check_point_op(collection_name, &request, "estimate_idf")?;
+
+        let collection = self.get_collection(&collection_pass).await?;
+
+        collection
+            .estimate_idf(
                 request,
                 shard_selection,
                 read_consistency,

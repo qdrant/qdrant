@@ -3,9 +3,9 @@
 use api::rest::models::{CollectionsResponse, ShardKeysResponse, Usage, VersionInfo};
 use api::rest::schema::PointInsertOperations;
 use api::rest::{
-    FacetRequest, FacetResponse, QueryGroupsRequest, QueryRequest, QueryRequestBatch,
-    QueryResponse, Record, ScoredPoint, SearchMatrixOffsetsResponse, SearchMatrixPairsResponse,
-    SearchMatrixRequest, UpdateVectors,
+    FacetRequest, FacetResponse, IdfEstimateRequest, IdfEstimateResponse, QueryGroupsRequest,
+    QueryRequest, QueryRequestBatch, QueryResponse, Record, ScoredPoint,
+    SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest, UpdateVectors,
 };
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
@@ -102,6 +102,8 @@ struct AllDefinitions {
     bp: OptimizationsResponse,
     bq: DistributedTelemetryData,
     br: segment::data_types::vector_name_config::VectorNameConfig,
+    bs: IdfEstimateRequest,
+    bt: IdfEstimateResponse,
 }
 
 fn save_schema<T: JsonSchema>() {
