@@ -178,7 +178,7 @@ impl ShardReplicaSet {
         // the flag exists, recovery must finish to a marker-consistent state instead of returning
         // `Cancelled` and leaving a false dirty marker behind.
         if cancel.is_cancelled() {
-            return Err(cancel::Error::Cancelled.into());
+            return Err(CollectionError::from(cancel::Error::Cancelled));
         }
 
         // set shard_id initialization flag
