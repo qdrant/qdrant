@@ -807,3 +807,45 @@ fn test_str_prefix_payload_blocks() {
     // Exact-value blocks are unaffected: the three urls with 4 postings each.
     assert_eq!(value_blocks, vec![4, 4, 4]);
 }
+
+/// `prefix_index.bin` must be tracked by `files()` / `immutable_files()`
+/// (snapshot manifest) exactly when the index is built with the prefix
+/// option.
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
+    use std::ffi::OsStr;
+
+    use super::prefix_index::PREFIX_INDEX_PATH;
+
+    let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
+    let data = prefix_test_data();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut builder =
+        MapIndex::<str>::builder_immutable(temp_dir.path(), false, &empty_deleted(), with_prefix);
+    builder.init().unwrap();
+    for (idx, values) in data.iter().enumerate() {
+        let values: Vec<Value> = values.iter().map(|v| v.to_string().into()).collect();
+        let values: Vec<_> = values.iter().collect();
+        builder
+            .add_point(idx as PointOffsetType, &values, &hw_counter)
+            .unwrap();
+    }
+    let index = builder.finalize().unwrap();
+
+    let tracks_file = |files: &[std::path::PathBuf]| {
+        files
+            .iter()
+            .any(|file| file.file_name() == Some(OsStr::new(PREFIX_INDEX_PATH)))
+    };
+
+    assert_eq!(tracks_file(&index.files()), with_prefix);
+    assert_eq!(tracks_file(&index.immutable_files()), with_prefix);
+    // The file must actually exist on disk to be snapshottable.
+    assert_eq!(
+        temp_dir.path().join(PREFIX_INDEX_PATH).exists(),
+        with_prefix
+    );
+}
