@@ -6,7 +6,7 @@ mod write;
 
 use std::fmt;
 
-pub use file_ops::{UniversalReadFileOps, UniversalReadFs};
+pub use file_ops::{UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps};
 pub use open_extra::OpenExtra;
 pub use pipeline::{OwnedPipeline, ReadPipeline};
 pub use read::UniversalRead;

@@ -11,7 +11,7 @@ use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
 use self::pipeline::MmapReadPipeline;
-use super::traits::{UniversalReadFileOps, UniversalReadFs};
+use super::traits::{UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps};
 use super::*;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -35,7 +35,9 @@ impl UniversalReadFileOps for MmapFs {
     fn exists(&self, path: &Path) -> Result<bool> {
         fs_err::exists(path).map_err(UniversalIoError::from)
     }
+}
 
+impl UniversalWriteFileOps for MmapFs {
     fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
         local_file_ops::local_create(path, expected_length)
     }

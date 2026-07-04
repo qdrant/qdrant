@@ -1,7 +1,12 @@
-use super::UniversalRead;
+use super::{UniversalRead, UniversalWriteFileOps};
 use crate::universal_io::{ByteOffset, FileIndex, Flusher, Result, UniversalIoError};
 
-pub trait UniversalWrite: UniversalRead {
+/// A writeable file handle.
+///
+/// Requires the backing filesystem to support mutating file operations
+/// ([`UniversalWriteFileOps`]): a backend that can open files for writing
+/// must also be able to create and remove them.
+pub trait UniversalWrite: UniversalRead<Fs: UniversalWriteFileOps> {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()>;
 
     fn write_batch<'a, T: bytemuck::Pod>(

@@ -5,7 +5,7 @@ use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
 use crate::universal_io::{ListedFile, OpenOptions, Result};
 
-/// Filesystem-level handle.
+/// Filesystem-level handle for read-only operations.
 ///
 /// Constructed once per backend instance from a
 /// [`Self::ContextConfig`] (e.g. a bucket name + credentials for S3, an
@@ -15,7 +15,10 @@ use crate::universal_io::{ListedFile, OpenOptions, Result};
 /// Deliberately does NOT depend on [`UniversalRead`] or `UniversalWrite`:
 /// a backend can implement this trait to expose metadata-style operations
 /// without ever opening file handles. The "open files" capability lives on
-/// the [`UniversalReadFs`] subtrait.
+/// the [`UniversalReadFs`] subtrait, and mutating operations live on the
+/// [`UniversalWriteFileOps`] subtrait.
+///
+/// [`UniversalWrite`]: super::UniversalWrite
 pub trait UniversalReadFileOps: Clone + Debug + Sized {
     /// Implementation-specific construction config. Backends are free to
     /// require explicit construction; callers that want to opt into the
@@ -38,6 +41,17 @@ pub trait UniversalReadFileOps: Clone + Debug + Sized {
     /// Check whether a file exists at the given path.
     fn exists(&self, path: &Path) -> Result<bool>;
 
+    // When adding provided methods, don't forget to update impls in
+    // `crate::universal_io::wrappers::*`.
+}
+
+/// Filesystem-level handle for mutating operations.
+///
+/// Extends [`UniversalReadFileOps`] with create/remove/save operations.
+/// Read-only backends (e.g. `ReadOnlyFs`) implement only the read side,
+/// making the absence of write support a compile-time property instead of
+/// a runtime error.
+pub trait UniversalWriteFileOps: UniversalReadFileOps {
     /// Create or truncate a file at the given path.
     ///
     /// Local backends use `expected_length` to pre-size the file. Backends

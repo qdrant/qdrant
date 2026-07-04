@@ -113,73 +113,6 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         }
     }
 
-    fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.0.clone();
-        let key = build_key(path);
-
-        async move {
-            store
-                .put(&key, Bytes::new().into())
-                .await
-                .map(drop)
-                .map_err(UniversalIoError::s3)
-        }
-    }
-
-    fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.0.clone();
-        let key = build_key(path);
-
-        async move {
-            store.delete(&key).await.map_err(|err| match err {
-                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
-                    path: PathBuf::from(key.to_string()),
-                },
-                err => UniversalIoError::s3(err),
-            })
-        }
-    }
-
-    fn remove_dir(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.0.clone();
-        let prefix_path = path.to_path_buf();
-        let prefix = build_dir_prefix(path);
-
-        async move {
-            let mut objects = store.list(Some(&prefix));
-            while let Some(meta) = objects.try_next().await.map_err(|err| match err {
-                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
-                    path: prefix_path.clone(),
-                },
-                other => UniversalIoError::s3(other),
-            })? {
-                match store.delete(&meta.location).await {
-                    Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
-                    Err(other) => return Err(UniversalIoError::s3(other)),
-                }
-            }
-
-            Ok(())
-        }
-    }
-
-    fn atomic_save(
-        &self,
-        path: &Path,
-        bytes: Bytes,
-    ) -> impl Future<Output = Result<()>> + Send + 'static {
-        let store = self.0.clone();
-        let key = build_key(path);
-
-        async move {
-            store
-                .put(&key, bytes.into())
-                .await
-                .map(drop)
-                .map_err(UniversalIoError::s3)
-        }
-    }
-
     fn read_range(
         &self,
         path: &Path,
@@ -270,8 +203,8 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use common::universal_io::{ListedFile, ReadRange, UniversalRead, UniversalReadFileOps};
-    use io_bridge::{BlobFile, BlobFs, BridgeRuntime};
+    use common::universal_io::{ListedFile, ReadRange, UniversalRead};
+    use io_bridge::{BlobFile, BridgeRuntime};
     use object_store::memory::InMemory;
 
     use super::*;
@@ -415,32 +348,6 @@ mod tests {
         let file = make_file(runtime, store, "obj");
         let len: u64 = <BlobFile<InMemorySource> as UniversalRead>::len::<u16>(&file).unwrap();
         assert_eq!(len, 2);
-    }
-
-    #[test]
-    fn fs_create_writes_empty_object_and_create_dir_is_noop() {
-        let runtime = BridgeRuntime::global();
-        let store = Arc::new(InMemory::new());
-        let fs = BlobFs::new(ObjectStoreSource::new(store.clone()), runtime.clone());
-
-        fs.create_dir(Path::new("prefix")).unwrap();
-        fs.create(Path::new("prefix/empty"), 1024).unwrap();
-        fs.create(Path::new("prefix/nested/empty"), 1024).unwrap();
-        fs.create(Path::new("prefix-sibling/empty"), 1024).unwrap();
-        fs.atomic_save(Path::new("prefix/saved"), b"saved").unwrap();
-
-        assert!(fs.exists(Path::new("prefix/empty")).unwrap());
-        let len = runtime.block_on(store.head(&object_store::path::Path::from("prefix/empty")));
-        assert_eq!(len.unwrap().size, 0);
-        let len = runtime.block_on(store.head(&object_store::path::Path::from("prefix/saved")));
-        assert_eq!(len.unwrap().size, 5);
-
-        fs.remove(Path::new("prefix/empty")).unwrap();
-        fs.remove_dir(Path::new("prefix")).unwrap();
-        assert!(!fs.exists(Path::new("prefix/empty")).unwrap());
-        assert!(!fs.exists(Path::new("prefix/nested/empty")).unwrap());
-        assert!(!fs.exists(Path::new("prefix/saved")).unwrap());
-        assert!(fs.exists(Path::new("prefix-sibling/empty")).unwrap());
     }
 
     #[test]

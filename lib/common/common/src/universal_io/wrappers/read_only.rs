@@ -10,8 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalIoError,
-    UniversalKind, UniversalRead, UniversalReadFs, UserData,
+    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalKind, UniversalRead,
+    UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -51,35 +51,8 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
         self.0.exists(path)
     }
 
-    fn create(&self, _path: &Path, _expected_length: usize) -> Result<()> {
-        Err(UniversalIoError::uninitialized(
-            "ReadOnlyFs does not support creating files",
-        ))
-    }
-
-    fn create_dir(&self, _path: &Path) -> Result<()> {
-        Err(UniversalIoError::uninitialized(
-            "ReadOnlyFs does not support creating directories",
-        ))
-    }
-
-    fn remove(&self, _path: &Path) -> Result<()> {
-        Err(UniversalIoError::uninitialized(
-            "ReadOnlyFs does not support removing files",
-        ))
-    }
-
-    fn remove_dir(&self, _path: &Path) -> Result<()> {
-        Err(UniversalIoError::uninitialized(
-            "ReadOnlyFs does not support removing directories",
-        ))
-    }
-
-    fn atomic_save(&self, _path: &Path, _bytes: &[u8]) -> Result<()> {
-        Err(UniversalIoError::uninitialized(
-            "ReadOnlyFs does not support atomic saves",
-        ))
-    }
+    // Deliberately no `UniversalWriteFileOps` impl: read-only is a
+    // compile-time property of this wrapper.
 }
 
 impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {

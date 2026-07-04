@@ -170,26 +170,6 @@ mod tests {
             std::future::ready(Ok(true))
         }
 
-        fn create(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-            std::future::ready(Ok(()))
-        }
-
-        fn remove(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-            std::future::ready(Ok(()))
-        }
-
-        fn remove_dir(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-            std::future::ready(Ok(()))
-        }
-
-        fn atomic_save(
-            &self,
-            _path: &Path,
-            _bytes: Bytes,
-        ) -> impl Future<Output = Result<()>> + Send + 'static {
-            std::future::ready(Ok(()))
-        }
-
         fn read_range(
             &self,
             _path: &Path,

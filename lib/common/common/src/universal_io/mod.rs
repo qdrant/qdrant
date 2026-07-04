@@ -22,7 +22,7 @@ pub use self::simple_disk_cache::{
 };
 pub use self::traits::{
     Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWrite, UserData,
+    UniversalReadFs, UniversalWrite, UniversalWriteFileOps, UserData,
 };
 pub use self::types::{
     ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, ReadBytesItem, ReadRange,

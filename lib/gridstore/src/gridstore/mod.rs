@@ -14,7 +14,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{MmapFile, Populate, UniversalReadFileOps, UniversalWrite, UserData};
+use common::universal_io::{MmapFile, Populate, UniversalWrite, UniversalWriteFileOps, UserData};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use reader::CONFIG_FILENAME;

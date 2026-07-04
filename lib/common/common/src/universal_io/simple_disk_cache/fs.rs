@@ -8,7 +8,7 @@ use super::file::{DiskCache, State};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs,
+    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -85,7 +85,13 @@ where
     fn exists(&self, path: &Path) -> Result<bool> {
         self.remote_fs.exists(path)
     }
+}
 
+impl<R> UniversalWriteFileOps for DiskCacheFs<R>
+where
+    R: UniversalRead,
+    R::Fs: UniversalWriteFileOps,
+{
     fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
         self.remote_fs.create(path, expected_length)
     }
