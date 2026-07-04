@@ -208,13 +208,19 @@ pub struct PyKeywordIndexParams(KeywordIndexParams);
 #[pymethods]
 impl PyKeywordIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None))]
-    pub fn new(is_tenant: Option<bool>, on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, prefix = None))]
+    pub fn new(
+        is_tenant: Option<bool>,
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+        prefix: Option<bool>,
+    ) -> Self {
         Self(KeywordIndexParams {
             r#type: Default::default(),
             is_tenant,
             on_disk,
             enable_hnsw,
+            prefix,
         })
     }
 
@@ -232,6 +238,11 @@ impl PyKeywordIndexParams {
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
+
+    #[getter]
+    pub fn prefix(&self) -> Option<bool> {
+        self.0.prefix
+    }
 }
 
 impl PyKeywordIndexParams {
@@ -242,6 +253,7 @@ impl PyKeywordIndexParams {
             is_tenant: _,
             on_disk: _,
             enable_hnsw: _,
+            prefix: _,
         } = self.0;
     }
 }

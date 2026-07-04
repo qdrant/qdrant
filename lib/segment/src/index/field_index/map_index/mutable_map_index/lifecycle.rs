@@ -33,7 +33,15 @@ where
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
     /// not exist. If false and files don't exist, the load function will indicate nothing could be
     /// loaded.
-    pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    ///
+    /// `prefix_index` enables in-memory prefix range scans; it is not
+    /// persisted, so it must be re-supplied (from the payload schema) on every
+    /// open.
+    pub fn open_gridstore(
+        path: PathBuf,
+        create_if_missing: bool,
+        prefix_index: bool,
+    ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             let options = default_gridstore_options(N::gridstore_block_size());
             Gridstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
@@ -53,7 +61,7 @@ where
         };
 
         // Load in-memory index from Gridstore
-        let mut in_memory_index = InMemoryMapIndex::<N>::empty();
+        let mut in_memory_index = InMemoryMapIndex::<N>::empty(prefix_index);
 
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();

@@ -41,7 +41,10 @@ where
             return Ok(None);
         };
 
-        let mut in_memory_index = InMemoryMapIndex::<N>::empty();
+        // Prefix support is not wired for the read-only appendable variant:
+        // the gridstore carries no prefix marker, and this open path has no
+        // schema access. Prefix conditions fall back to slower checks.
+        let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
         let hw_counter = HardwareCounterCell::disposable();
         storage.iter::<_, GridstoreError>(
             storage.max_point_offset(),

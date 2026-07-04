@@ -7,6 +7,7 @@ use common::universal_io::{MmapFile, UniversalRead};
 use serde::{Deserialize, Serialize};
 
 use super::MapIndexKey;
+use super::prefix_index::PrefixIndex;
 use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 
 mod lifecycle;
@@ -43,6 +44,10 @@ pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
     /// the build-time empty-payload bits read from `deleted.bin` and the
     /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
     pub(super) deleted: BitVec,
+    /// Sorted key dictionary for prefix queries. Present only when the index
+    /// was built with the `prefix` option (signalled by the presence of its
+    /// file on disk).
+    pub(super) prefix_index: Option<PrefixIndex<S>>,
 }
 
 impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> Storage<N, S> {
@@ -51,10 +56,15 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> Storage<N, S> {
             value_to_points: _,
             point_to_values,
             deleted,
+            prefix_index,
         } = self;
 
         // `value_to_points` is a storage-backed hashmap with no in-memory state.
-        point_to_values.ram_usage_bytes() + deleted.capacity().div_ceil(u8::BITS as usize)
+        point_to_values.ram_usage_bytes()
+            + deleted.capacity().div_ceil(u8::BITS as usize)
+            + prefix_index
+                .as_ref()
+                .map_or(0, |prefix_index| prefix_index.ram_usage_bytes())
     }
 }
 

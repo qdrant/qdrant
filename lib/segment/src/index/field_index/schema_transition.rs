@@ -107,6 +107,7 @@ mod tests {
             is_tenant,
             on_disk,
             enable_hnsw: None,
+            prefix: None,
         })
     }
 
@@ -206,6 +207,25 @@ mod tests {
         assert_eq!(
             classify(&on, &off),
             SchemaTransition::OnlyOnDiskFlipped { new_on_disk: false },
+        );
+    }
+
+    #[test]
+    fn keyword_prefix_change_is_incompatible() {
+        // Enabling or disabling prefix matching requires building or dropping
+        // the sorted key dictionary — a full rebuild, never an in-place swap.
+        let plain = wrap(keyword(Some(false), None));
+        let mut with_prefix_params = KeywordIndexParams::default();
+        with_prefix_params.on_disk = Some(false);
+        with_prefix_params.prefix = Some(true);
+        let with_prefix = wrap(PayloadSchemaParams::Keyword(with_prefix_params));
+        assert_eq!(
+            classify(&plain, &with_prefix),
+            SchemaTransition::Incompatible
+        );
+        assert_eq!(
+            classify(&with_prefix, &plain),
+            SchemaTransition::Incompatible
         );
     }
 

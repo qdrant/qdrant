@@ -134,7 +134,15 @@ impl TestSegments {
             .create_field_index(
                 opnum,
                 &JsonPath::new(STR_KEY),
-                Some(&Keyword.into()),
+                Some(&FieldParams(PayloadSchemaParams::Keyword(
+                    KeywordIndexParams {
+                        r#type: KeywordIndexType::Keyword,
+                        is_tenant: None,
+                        on_disk: None,
+                        enable_hnsw: None,
+                        prefix: Some(true),
+                    },
+                ))),
                 &hw_counter,
             )
             .unwrap();
@@ -312,6 +320,7 @@ impl TestSegments {
                         is_tenant: None,
                         on_disk: Some(true),
                         enable_hnsw: None,
+                        prefix: Some(true),
                     },
                 ))),
                 &hw_counter,
@@ -597,6 +606,7 @@ fn test_read_operations() -> Result<()> {
         test_struct_payload_geo_radius_index,
         test_struct_payload_geo_polygon_index,
         test_any_matcher_cardinality_estimation,
+        test_prefix_match,
         test_struct_keyword_facet,
         test_mmap_keyword_facet,
         test_struct_keyword_facet_filtered,
@@ -1523,6 +1533,52 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
 
     ensure!(exact <= estimation.max);
     ensure!(exact >= estimation.min);
+
+    Ok(())
+}
+
+/// Prefix match must return identical results on the plain segment (payload
+/// fallback), the appendable struct segment (mutable prefix structure) and
+/// the mmap segment (on-disk prefix index).
+fn test_prefix_match(test_segments: &TestSegments) -> Result<()> {
+    let hw_counter = HardwareCounterCell::new();
+
+    let read_with_prefix = |segment: &Segment, prefix: &str| {
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new(STR_KEY),
+            Match::new_prefix(prefix),
+        )));
+        let mut points = segment
+            .read_filtered(
+                None,
+                None,
+                Some(&filter),
+                &Default::default(),
+                &hw_counter,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+        points.sort_unstable();
+        points
+    };
+
+    let mut matched_something = false;
+    for prefix in ["", "b", "bl", "re", "sol", "solid", "nonexistent-prefix"] {
+        let plain_result = read_with_prefix(&test_segments.plain_segment, prefix);
+        let struct_result = read_with_prefix(&test_segments.struct_segment, prefix);
+        let mmap_result = read_with_prefix(&test_segments.mmap_segment, prefix);
+
+        ensure!(
+            plain_result == struct_result,
+            "prefix {prefix:?}: plain vs struct mismatch",
+        );
+        ensure!(
+            plain_result == mmap_result,
+            "prefix {prefix:?}: plain vs mmap mismatch",
+        );
+        matched_something |= !plain_result.is_empty();
+    }
+    ensure!(matched_something, "test probes never matched anything");
 
     Ok(())
 }

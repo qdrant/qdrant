@@ -34,6 +34,11 @@ pub struct KeywordIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// If true, enable prefix matching (`match: { "prefix": ... }`) on this
+    /// field. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<bool>,
 }
 
 // Integer
