@@ -145,8 +145,33 @@ impl ShardReplicaSet {
         flag_file.sync_all().await?;
         sync_parent_dir_async(&shard_flag).await?;
 
-        // Check `cancel` token one last time before starting non-cancellable section
+        // Check `cancel` token one last time before starting non-cancellable section.
+        //
+        // At this point the initializing marker has been persisted, but no destructive
+        // restore step has run yet: `local` still holds the old (valid) shard, and no
+        // on-disk data has been cleared, moved, or replaced. If we return `Cancelled`
+        // here without removing the marker, a later restart would see the marker,
+        // classify the still-healthy local shard as dirty, and load it as a dummy
+        // shard instead. Since nothing destructive has happened, it's safe (and
+        // required) to remove the marker before bailing out.
         if cancel.is_cancelled() {
+            // Best-effort cleanup: if this fails, the marker may be left behind, but
+            // the shard is still genuinely healthy at this point, so we still return
+            // `Cancelled` to the caller rather than pretending recovery succeeded.
+            if let Err(err) = tokio_fs::remove_file(&shard_flag).await {
+                log::warn!(
+                    "Failed to remove shard initializing flag {} after recovery was cancelled \
+                     before any destructive restore step ran: {err}",
+                    shard_flag.display(),
+                );
+            } else if let Err(err) = sync_parent_dir_async(&shard_flag).await {
+                log::warn!(
+                    "Failed to sync parent directory of shard initializing flag {} after \
+                     removing it: {err}",
+                    shard_flag.display(),
+                );
+            }
+
             return Err(cancel::Error::Cancelled.into());
         }
 
