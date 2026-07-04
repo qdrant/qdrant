@@ -324,7 +324,15 @@ pub trait SegmentOptimizer: Sync {
                 };
 
                 config.index.index_type = index_type;
-                config.index.memory = config_memory;
+                // Persist only the explicitly requested `memory` parameter: the structural
+                // decision is carried by `index_type`, and only the cold/cached distinction
+                // (reachable solely through the explicit parameter) needs the extra field.
+                // Legacy-only configurations thus keep a byte-identical index config,
+                // which older Qdrant versions can load without any unknown fields.
+                config.index.memory = segment_optimizer_config
+                    .sparse_vector
+                    .get(vector_name)
+                    .and_then(|cfg| cfg.memory);
             });
 
         let optimized_config = segment::types::SegmentConfig {
