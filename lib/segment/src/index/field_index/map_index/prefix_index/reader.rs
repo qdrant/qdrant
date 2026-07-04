@@ -175,6 +175,11 @@ impl<S: UniversalRead> PrefixIndex<S> {
 
     /// Invoke `f(key, postings_count)` for every key starting with `prefix`,
     /// in ascending byte order.
+    ///
+    /// Candidate blocks are contiguous in the file (by construction), so the
+    /// whole candidate range is fetched with a single storage read; the
+    /// over-read relative to the exact key range is bounded by the two
+    /// partially-matching boundary blocks.
     pub fn for_each_key_with_prefix(
         &self,
         prefix: &[u8],
@@ -183,9 +188,31 @@ impl<S: UniversalRead> PrefixIndex<S> {
     ) -> OperationResult<()> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
-        for block_index in self.block_range_for_prefix(prefix) {
+        let range = self.block_range_for_prefix(prefix);
+        let Some((first_block, last_block)) = self.blocks[range.clone()]
+            .first()
+            .zip(self.blocks[range.clone()].last())
+        else {
+            return Ok(());
+        };
+
+        let bytes_start = first_block.bytes.start;
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta((last_block.bytes.end - bytes_start) as usize);
+
+        let bytes = self.storage.read::<Random, u8>(ReadRange::new(
+            bytes_start,
+            last_block.bytes.end - bytes_start,
+        ))?;
+
+        for block in &self.blocks[range] {
+            let block_bytes = bytes
+                .as_ref()
+                .get((block.bytes.start - bytes_start) as usize..)
+                .ok_or_else(block_corrupt)?;
             let mut past_range = false;
-            self.decode_block(block_index, &hw_counter, &mut |key, count| {
+            decode_block(block_bytes, block.key_count, &mut |key, count| {
                 if key_vs_prefix_range(key, prefix).is_gt() {
                     past_range = true;
                     return Ok(());
@@ -238,7 +265,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         let mut boundary = |block_index: usize| -> OperationResult<()> {
             let mut keys = 0;
             let mut postings = 0;
-            self.decode_block(block_index, &hw_counter, &mut |key, count| {
+            self.read_and_decode_block(block_index, &hw_counter, &mut |key, count| {
                 if key.starts_with(prefix) {
                     keys += 1;
                     postings += count;
@@ -270,7 +297,8 @@ impl<S: UniversalRead> PrefixIndex<S> {
         self.for_each_key_with_prefix(b"", hw_counter, f)
     }
 
-    fn decode_block(
+    /// Fetch a single block from storage and decode it.
+    fn read_and_decode_block(
         &self,
         block_index: usize,
         hw_counter: &ConditionedCounter<'_>,
@@ -286,25 +314,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
             block.bytes.start,
             block.bytes.end - block.bytes.start,
         ))?;
-        let mut bytes = bytes.as_ref();
-
-        let corrupt = || OperationError::service_error("Prefix index key block is corrupt");
-
-        let mut key = Vec::new();
-        for _ in 0..block.key_count {
-            let (entry, rest) = read_record::<KeyEntry>(bytes).ok_or_else(corrupt)?;
-            let suffix = rest.get(..entry.suffix_len as usize).ok_or_else(corrupt)?;
-            bytes = &rest[entry.suffix_len as usize..];
-
-            if entry.shared_prefix_len as usize > key.len() {
-                return Err(corrupt());
-            }
-            key.truncate(entry.shared_prefix_len as usize);
-            key.extend_from_slice(suffix);
-
-            f(&key, entry.postings_count as usize)?;
-        }
-        Ok(())
+        decode_block(bytes.as_ref(), block.key_count, f)
     }
 
     /// Populate all pages of the backing storage.
@@ -318,4 +328,34 @@ impl<S: UniversalRead> PrefixIndex<S> {
         self.storage.clear_ram_cache()?;
         Ok(())
     }
+}
+
+fn block_corrupt() -> OperationError {
+    OperationError::service_error("Prefix index key block is corrupt")
+}
+
+/// Decode the front-coded keys of one block, reconstructing each key and
+/// invoking `f(key, postings_count)` in order.
+fn decode_block(
+    mut bytes: &[u8],
+    key_count: u32,
+    f: &mut dyn FnMut(&[u8], usize) -> OperationResult<()>,
+) -> OperationResult<()> {
+    let mut key = Vec::new();
+    for _ in 0..key_count {
+        let (entry, rest) = read_record::<KeyEntry>(bytes).ok_or_else(block_corrupt)?;
+        let suffix = rest
+            .get(..entry.suffix_len as usize)
+            .ok_or_else(block_corrupt)?;
+        bytes = &rest[entry.suffix_len as usize..];
+
+        if entry.shared_prefix_len as usize > key.len() {
+            return Err(block_corrupt());
+        }
+        key.truncate(entry.shared_prefix_len as usize);
+        key.extend_from_slice(suffix);
+
+        f(&key, entry.postings_count as usize)?;
+    }
+    Ok(())
 }
