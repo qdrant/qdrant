@@ -277,9 +277,9 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixR
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
-    // Prefix blocks first: they are the larger point sets, and HNSW's
-    // subgraph-connectivity check can then skip nested blocks (including
-    // exact values under an already-built prefix block).
+    // Prefix blocks are disjoint from each other and from the exact-value
+    // blocks (see `heavy_prefix_blocks`), so emission order doesn't matter;
+    // blocks come largest-first for determinism.
     for_each_prefix_payload_block(index, threshold, &key, f)?;
 
     index.for_each_value(|value| {
@@ -323,27 +323,36 @@ fn for_each_prefix_payload_block<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefi
     Ok(())
 }
 
-/// Enumerate heavy *branching* prefixes over sorted `(key, count)` entries:
-/// one block per distinct key range, not per prefix string.
+/// Enumerate the *smallest* heavy prefixes over sorted `(key, count)`
+/// entries — the same principle as the geo index's `large_hashes`, which
+/// emits only the deepest geohash regions above the threshold.
 ///
-/// All prefixes along a single-child trie chain select the same keys, so
-/// building a subgraph for each would redo the same work; every chain
-/// collapses to its longest prefix — the longest common prefix (LCP) of its
-/// key range. Ranges of a single key are already covered by the exact-value
-/// blocks and are skipped. Blocks are returned largest-first so that HNSW's
-/// connectivity check can skip nested blocks whose parent subgraph already
-/// connects them.
+/// A prefix qualifies when it covers at least two keys and more postings
+/// than the threshold, and it is emitted only if nothing heavy is nested
+/// inside it: neither a longer qualifying prefix nor a single heavy value
+/// (which already gets its own exact-match block). The emitted blocks are
+/// therefore mutually disjoint and disjoint from the exact-value blocks —
+/// no subgraph is built twice for nested subsets. Broader prefix queries
+/// span several blocks, each internally navigable, exactly like a large
+/// bounding box spans several geohash tile blocks.
+///
+/// All prefixes along a single-child trie chain select the same keys; each
+/// chain collapses to its longest prefix — the longest common prefix (LCP)
+/// of its key range.
 ///
 /// Single streaming pass with a stack of open LCP intervals: an interval
 /// opens when consecutive keys share a longer prefix and closes when the
-/// shared length drops; totals propagate from closed intervals into their
-/// parents. O(total key bytes).
+/// shared length drops; totals and coverage propagate from closed intervals
+/// into their parents. O(total key bytes).
 fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<(String, usize)> {
     struct OpenInterval {
         /// Prefix length (in bytes) shared by every key in the interval.
         lcp: usize,
         keys: usize,
         postings: usize,
+        /// Whether something heavy nested in this interval already produced
+        /// a block (a deeper interval or a single heavy value).
+        covered: bool,
     }
 
     let lcp_len = |a: &str, b: &str| {
@@ -356,21 +365,29 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
 
     // The byte-level LCP may end mid-codepoint; round down to a char boundary
     // to emit a valid prefix string. Rounding can collapse a node onto its
-    // ancestor, so keep the larger (ancestor) count per emitted prefix.
+    // ancestor, so keep the larger count per emitted prefix.
     let mut heavy: HashMap<String, usize> = HashMap::new();
-    let mut emit = |last_key: &str, node: &OpenInterval| {
+    // Returns whether the interval's subtree now contains an emitted block,
+    // i.e. whether its ancestors must be suppressed.
+    let mut close = |last_key: &str, node: &OpenInterval| -> bool {
         if node.keys < 2 || node.postings <= threshold {
-            return;
+            return false;
+        }
+        if node.covered {
+            return true;
         }
         let mut boundary = node.lcp;
         while boundary > 0 && !last_key.is_char_boundary(boundary) {
             boundary -= 1;
         }
         if boundary == 0 {
-            return;
+            // Heavy but unrepresentable at this depth; let an ancestor with
+            // a valid boundary produce the block instead.
+            return false;
         }
         let entry = heavy.entry(last_key[..boundary].to_string()).or_default();
         *entry = (*entry).max(node.postings);
+        true
     };
 
     let n = entries.len();
@@ -378,6 +395,7 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
         lcp: 0,
         keys: 0,
         postings: 0,
+        covered: false,
     }];
     for i in 0..n {
         let (key, count) = &entries[i];
@@ -396,11 +414,13 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
         // predecessor: they ended at the previous key.
         let mut carry_keys = 0;
         let mut carry_postings = 0;
+        let mut carry_covered = false;
         while stack.last().is_some_and(|top| top.lcp > lcp_left) {
             let mut node = stack.pop().unwrap();
             node.keys += carry_keys;
             node.postings += carry_postings;
-            emit(&entries[i - 1].0, &node);
+            node.covered |= carry_covered;
+            carry_covered = close(&entries[i - 1].0, &node);
             carry_keys = node.keys;
             carry_postings = node.postings;
         }
@@ -409,11 +429,13 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
         if top.lcp == lcp_left {
             top.keys += carry_keys;
             top.postings += carry_postings;
+            top.covered |= carry_covered;
         } else {
             stack.push(OpenInterval {
                 lcp: lcp_left,
                 keys: carry_keys,
                 postings: carry_postings,
+                covered: carry_covered,
             });
         }
         // A deeper interval opens if the next key shares more than the
@@ -423,22 +445,29 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
                 lcp: lcp_right,
                 keys: 0,
                 postings: 0,
+                covered: false,
             });
         }
-        // The key itself belongs to the deepest open interval.
+        // The key itself belongs to the deepest open interval. A single
+        // heavy value gets its own exact-match block, which counts as
+        // covering every prefix above it.
         let top = stack.last_mut().unwrap();
         top.keys += 1;
         top.postings += count;
+        top.covered |= *count > threshold;
     }
     // Close everything still open; those intervals end at the last key.
     let mut carry_keys = 0;
     let mut carry_postings = 0;
+    let mut carry_covered = false;
     while let Some(mut node) = stack.pop() {
         node.keys += carry_keys;
         node.postings += carry_postings;
-        if let Some((last_key, _)) = entries.last() {
-            emit(last_key, &node);
-        }
+        node.covered |= carry_covered;
+        carry_covered = match entries.last() {
+            Some((last_key, _)) => close(last_key, &node),
+            None => false,
+        };
         carry_keys = node.keys;
         carry_postings = node.postings;
     }

@@ -747,8 +747,9 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
     }
 }
 
-/// Prefix payload blocks are emitted per distinct heavy key range,
-/// largest-first, in addition to the exact-value blocks.
+/// Prefix payload blocks follow the geo index principle (`large_hashes`):
+/// only the *smallest* heavy subsets produce blocks, so prefix blocks are
+/// disjoint from each other and from the exact-value blocks.
 #[test]
 fn test_str_prefix_payload_blocks() {
     use crate::json_path::JsonPath;
@@ -793,17 +794,12 @@ fn test_str_prefix_payload_blocks() {
         })
         .unwrap();
 
-    // Branching nodes with more than 3 postings: "https://" (12),
-    // "https://qdrant.tech/" (8) and "tag" (4). Chains are collapsed to the
-    // longest shared prefix; nothing is emitted twice; largest first.
-    assert_eq!(
-        prefix_blocks,
-        vec![
-            ("https://".to_string(), 12),
-            ("https://qdrant.tech/".to_string(), 8),
-            ("tag".to_string(), 4),
-        ],
-    );
+    // Heavy branching nodes are "https://" (12), "https://qdrant.tech/" (8)
+    // and "tag" (4), but the first two contain heavy exact values (each url
+    // has 4 > 3 postings and gets its own exact-value block), so they are
+    // suppressed — only the smallest heavy subset produces a block. "tag"
+    // covers only light values (2 postings each) and is emitted.
+    assert_eq!(prefix_blocks, vec![("tag".to_string(), 4)]);
     // Exact-value blocks are unaffected: the three urls with 4 postings each.
     assert_eq!(value_blocks, vec![4, 4, 4]);
 }
