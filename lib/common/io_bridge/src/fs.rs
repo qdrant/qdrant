@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use bytes::Bytes;
 use common::universal_io::{
     ListedFile, OpenOptions, Result, UniversalReadFileOps, UniversalReadFs,
 };
@@ -49,26 +48,8 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
         self.runtime.block_on(self.inner.exists(path))
     }
 
-    fn create(&self, path: &Path, _expected_length: usize) -> Result<()> {
-        self.runtime.block_on(self.inner.create(path))
-    }
-
-    fn create_dir(&self, _path: &Path) -> Result<()> {
-        Ok(())
-    }
-
-    fn remove(&self, path: &Path) -> Result<()> {
-        self.runtime.block_on(self.inner.remove(path))
-    }
-
-    fn remove_dir(&self, path: &Path) -> Result<()> {
-        self.runtime.block_on(self.inner.remove_dir(path))
-    }
-
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
-        self.runtime
-            .block_on(self.inner.atomic_save(path, Bytes::copy_from_slice(bytes)))
-    }
+    // Deliberately no `UniversalWriteFileOps` impl: blob backends are
+    // read-only; a future `AsyncWrite` trait is the place for mutations.
 }
 
 impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {

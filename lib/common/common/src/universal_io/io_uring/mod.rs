@@ -21,7 +21,7 @@ use self::error::*;
 use self::pipeline::IoUringPipeline;
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{OpenExtra, UniversalReadFileOps, UniversalReadFs};
+use super::traits::{OpenExtra, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps};
 use super::*;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -69,7 +69,9 @@ impl UniversalReadFileOps for IoUringFs {
     fn exists(&self, path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
+}
 
+impl UniversalWriteFileOps for IoUringFs {
     fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
         local_file_ops::local_create(path, expected_length)
     }

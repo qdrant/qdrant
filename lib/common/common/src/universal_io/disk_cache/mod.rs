@@ -8,7 +8,7 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     ListedFile, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UserData, local_file_ops,
+    UniversalReadFs, UniversalWriteFileOps, UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -98,7 +98,9 @@ impl UniversalReadFileOps for BlockCacheFs {
     fn exists(&self, path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
+}
 
+impl UniversalWriteFileOps for BlockCacheFs {
     fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
         local_file_ops::local_create(path, expected_length)
     }
