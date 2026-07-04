@@ -29,21 +29,18 @@
 //!
 //! # Read-only
 //!
-//! `StorageRead` is a read-only service. The mutating [`AsyncRead`] methods
-//! ([`create`](AsyncRead::create), [`remove`](AsyncRead::remove),
-//! [`remove_dir`](AsyncRead::remove_dir), [`atomic_save`](AsyncRead::atomic_save))
-//! therefore return an `Unsupported` IO error; wrap a [`UioGrpcFile`] in
+//! `StorageRead` is a read-only service, matching the read-only [`AsyncRead`]
+//! trait; wrap a [`UioGrpcFile`] in
 //! [`ReadOnly`](common::universal_io::ReadOnly) when a read-only handle is what
 //! the caller expects.
 
 use std::future::Future;
-use std::io;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, Result, UniversalIoError, UniversalKind};
+use common::universal_io::{ListedFile, Result, UniversalKind};
 use futures::stream::{self, BoxStream, StreamExt as _};
 use io_bridge::{AsyncRead, BlobFile, BlobFs};
 use tokio::sync::OnceCell;
@@ -123,13 +120,6 @@ fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn read_only_error(op: &str) -> UniversalIoError {
-    UniversalIoError::Io(io::Error::new(
-        io::ErrorKind::Unsupported,
-        format!("uio-grpc StorageRead backend is read-only: {op} is not supported"),
-    ))
-}
-
 impl AsyncRead for UioGrpcSource {
     type Config = UioGrpcConfig;
 
@@ -165,26 +155,6 @@ impl AsyncRead for UioGrpcSource {
                 .file_exists(&inner.collection, inner.shard_id, &path)
                 .await
         }
-    }
-
-    fn create(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        std::future::ready(Err(read_only_error("create")))
-    }
-
-    fn remove(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        std::future::ready(Err(read_only_error("remove")))
-    }
-
-    fn remove_dir(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
-        std::future::ready(Err(read_only_error("remove_dir")))
-    }
-
-    fn atomic_save(
-        &self,
-        _path: &Path,
-        _bytes: Bytes,
-    ) -> impl Future<Output = Result<()>> + Send + 'static {
-        std::future::ready(Err(read_only_error("atomic_save")))
     }
 
     fn read_range(
@@ -263,9 +233,6 @@ pub type UioGrpcFs = BlobFs<UioGrpcSource>;
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::UniversalReadFileOps;
-    use io_bridge::BridgeRuntime;
-
     use super::*;
 
     fn offline_source() -> UioGrpcSource {
@@ -288,25 +255,5 @@ mod tests {
         // `open` must not touch the network or a runtime (the endpoint here is
         // unreachable, and we are not inside a Tokio runtime).
         let _source = offline_source();
-    }
-
-    #[test]
-    fn writes_are_unsupported() {
-        let fs = UioGrpcFs::new(offline_source(), BridgeRuntime::global());
-
-        // Mutating ops resolve to a ready `Unsupported` error without any IO, so
-        // they can be checked offline.
-        let err = fs
-            .create(Path::new("f"), 0)
-            .expect_err("create is read-only");
-        assert!(matches!(err, UniversalIoError::Io(e) if e.kind() == io::ErrorKind::Unsupported));
-
-        let err = fs
-            .atomic_save(Path::new("f"), b"x")
-            .expect_err("atomic_save is read-only");
-        assert!(matches!(err, UniversalIoError::Io(e) if e.kind() == io::ErrorKind::Unsupported));
-
-        let err = fs.remove(Path::new("f")).expect_err("remove is read-only");
-        assert!(matches!(err, UniversalIoError::Io(e) if e.kind() == io::ErrorKind::Unsupported));
     }
 }
