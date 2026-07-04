@@ -10,8 +10,7 @@ use gridstore::Blob;
 
 use super::super::MapIndex;
 use super::super::key::MapIndexKey;
-use super::super::prefix_index::PrefixIndexStats;
-use super::super::prefix_read::StrMapIndexPrefixRead;
+use super::super::prefix_index::{PrefixIndexStats, StrMapIndexPrefixRead};
 use super::super::read_only::ReadOnlyMapIndex;
 use super::super::read_ops::{MapConditionChecker, MapIndexRead};
 use crate::common::Flusher;

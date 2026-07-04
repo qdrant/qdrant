@@ -782,7 +782,12 @@ fn test_str_prefix_payload_blocks() {
                 Match::Prefix(prefix) => {
                     prefix_blocks.push((prefix.prefix.clone(), block.cardinality));
                 }
-                _ => value_blocks.push(block.cardinality),
+                Match::Value(_)
+                | Match::Text(_)
+                | Match::TextAny(_)
+                | Match::Phrase(_)
+                | Match::Any(_)
+                | Match::Except(_) => value_blocks.push(block.cardinality),
             }
             Ok(())
         })

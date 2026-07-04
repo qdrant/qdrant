@@ -215,10 +215,13 @@ mod tests {
         // Enabling or disabling prefix matching requires building or dropping
         // the sorted key dictionary — a full rebuild, never an in-place swap.
         let plain = wrap(keyword(Some(false), None));
-        let mut with_prefix_params = KeywordIndexParams::default();
-        with_prefix_params.on_disk = Some(false);
-        with_prefix_params.prefix = Some(true);
-        let with_prefix = wrap(PayloadSchemaParams::Keyword(with_prefix_params));
+        let with_prefix = wrap(PayloadSchemaParams::Keyword(KeywordIndexParams {
+            r#type: KeywordIndexType::Keyword,
+            is_tenant: None,
+            on_disk: Some(false),
+            enable_hnsw: None,
+            prefix: Some(true),
+        }));
         assert_eq!(
             classify(&plain, &with_prefix),
             SchemaTransition::Incompatible

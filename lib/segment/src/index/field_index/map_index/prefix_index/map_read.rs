@@ -2,13 +2,14 @@
 //!
 //! Counterpart of [`MapIndexRead`][1] for the [`Match::Prefix`][2] condition:
 //! every variant that carries a prefix structure (the mutable `BTreeSet`, the
-//! immutable sorted key vector, or the on-disk [`PrefixIndex`]) enumerates
+//! immutable sorted key vector, or the on-disk [`PrefixIndex`][3]) enumerates
 //! keys by byte-prefix through this trait. Variants without the structure
 //! (built without the `prefix` option, or loaded from legacy files) return
 //! `None`, which makes the caller fall back to the generic slow paths.
 //!
-//! [1]: super::read_ops::MapIndexRead
+//! [1]: super::super::read_ops::MapIndexRead
 //! [2]: crate::types::Match::Prefix
+//! [3]: super::reader::PrefixIndex
 
 use std::ops::Bound;
 
@@ -17,15 +18,15 @@ use common::universal_io::UniversalRead;
 use ecow::EcoString;
 use gridstore::Blob;
 
-use super::MapIndex;
-use super::immutable_map_index::ImmutableMapIndex;
-use super::key::MapIndexKey;
-use super::mutable_map_index::MutableMapIndex;
-use super::mutable_map_index::in_memory::InMemoryMapIndex;
-use super::on_disk_map_index::OnDiskMapIndex;
-use super::prefix_index::PrefixIndexStats;
-use super::read_only::ReadOnlyMapIndex;
-use super::read_ops::MapIndexRead;
+use super::super::MapIndex;
+use super::super::immutable_map_index::ImmutableMapIndex;
+use super::super::key::MapIndexKey;
+use super::super::mutable_map_index::MutableMapIndex;
+use super::super::mutable_map_index::in_memory::InMemoryMapIndex;
+use super::super::on_disk_map_index::OnDiskMapIndex;
+use super::super::read_only::ReadOnlyMapIndex;
+use super::super::read_ops::MapIndexRead;
+use super::reader::PrefixIndexStats;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Prefix range scans over the keys of a string-keyed map index.
