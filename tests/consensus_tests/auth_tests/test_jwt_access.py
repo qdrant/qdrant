@@ -609,6 +609,13 @@ ACTION_ACCESS = {
     "facet": EndpointAccess(
         True, True, True, "POST /collections/{collection_name}/facet", "qdrant.Points/Facet"
     ),
+    "estimate_idf": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/idf",
+        "qdrant.Points/EstimateIdf",
+    ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck", everything=True),
     "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check", everything=True),
@@ -1964,6 +1971,22 @@ def test_facet():
         grpc_request={
             "collection_name": COLL_NAME,
             "key": FACET_KEY,
+        },
+    )
+
+
+def test_estimate_idf():
+    check_access(
+        "estimate_idf",
+        path_params={"collection_name": COLL_NAME},
+        rest_request={
+            "using": "sparse-text",
+            "query": {"indices": [0], "values": [1.0]},
+        },
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "using": "sparse-text",
+            "query": {"indices": [0], "values": [1.0]},
         },
     )
 
