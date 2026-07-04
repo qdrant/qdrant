@@ -10,12 +10,15 @@
 //!
 //! # File format
 //!
-//! All integers are little-endian; `varint` is LEB128-encoded `u64`.
+//! Fixed-size little-endian [`bytemuck::Pod`] records interleaved with raw
+//! key bytes. Records are written with [`bytemuck::bytes_of`] and read back
+//! by copy ([`bytemuck::pod_read_unaligned`]), so they carry no alignment
+//! requirement on their position in the file.
 //!
 //! ```text
 //! prefix_index.bin
 //! ┌──────────────────────────────────────────────────────────────────┐
-//! │ Header (fixed size, zerocopy)                                    │
+//! │ Header (Pod, 40 bytes)                                           │
 //! │   magic             [u8; 8]   = "QdrPrfx\0"                      │
 //! │   version           u32       = 1                                │
 //! │   _reserved         u32                                          │
@@ -23,21 +26,23 @@
 //! │   block_count       u64                                          │
 //! │   block_index_size  u64       bytes in the block index section   │
 //! ├──────────────────────────────────────────────────────────────────┤
-//! │ Block index — read into RAM at open time                         │
-//! │   per block:                                                     │
-//! │     first_key_len    varint                                      │
-//! │     block_size       varint   bytes of the block in the next     │
+//! │ Block index — read into RAM at open time; per block:             │
+//! │   BlockEntry (Pod, 24 bytes)                                     │
+//! │     block_size      u32       bytes of the block in the next     │
 //! │                               section                            │
-//! │     key_count        varint   keys in the block                  │
-//! │     postings_count   varint   Σ postings counts over the block   │
-//! │     first_key        u8[first_key_len]   stored in full          │
+//! │     key_count       u32       keys in the block                  │
+//! │     first_key_len   u32                                          │
+//! │     _reserved       u32                                          │
+//! │     postings_count  u64       Σ postings counts over the block   │
+//! │   first_key         u8[first_key_len]   stored in full           │
 //! ├──────────────────────────────────────────────────────────────────┤
-//! │ Key blocks (~4 KiB each, ≥ 1 key) — fetched and decoded lazily   │
+//! │ Key blocks (~4 KiB each, ≥ 1 key) — fetched and decoded lazily;  │
 //! │   per key, front-coded against the previous key in the block:    │
-//! │     shared_prefix_len  varint   0 for the block's first key      │
-//! │     suffix_len         varint                                    │
-//! │     postings_count     varint                                    │
-//! │     suffix             u8[suffix_len]                            │
+//! │   KeyEntry (Pod, 12 bytes)                                       │
+//! │     shared_prefix_len  u32    0 for the block's first key        │
+//! │     suffix_len         u32                                       │
+//! │     postings_count     u32                                       │
+//! │   suffix            u8[suffix_len]                               │
 //! └──────────────────────────────────────────────────────────────────┘
 //! ```
 //!

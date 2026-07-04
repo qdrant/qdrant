@@ -11,11 +11,11 @@ use common::universal_io::{
     MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps as _,
     UniversalReadFs as _,
 };
-use zerocopy::FromBytes as _;
 
 use super::PREFIX_INDEX_PATH;
 use super::format::{
-    HEADER_SIZE, Header, MAGIC, VERSION, key_vs_prefix_range, prefix_successor, read_varint,
+    BlockEntry, Header, KeyEntry, MAGIC, VERSION, key_vs_prefix_range, prefix_successor,
+    read_record,
 };
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -72,8 +72,9 @@ impl<S: UniversalRead> PrefixIndex<S> {
             Default::default(),
         )?;
 
-        let header_bytes = storage.read_bytes::<Random>(0..HEADER_SIZE, align_of::<Header>())?;
-        let header = Header::read_from_bytes(header_bytes.as_ref())
+        let header_size = size_of::<Header>() as u64;
+        let header_bytes = storage.read_bytes::<Random>(0..header_size, align_of::<Header>())?;
+        let header: Header = bytemuck::try_pod_read_unaligned(header_bytes.as_ref())
             .map_err(|_| OperationError::service_error("Failed to read prefix index header"))?;
 
         if header.magic != MAGIC {
@@ -89,11 +90,11 @@ impl<S: UniversalRead> PrefixIndex<S> {
         }
 
         let index_bytes =
-            storage.read_bytes::<Random>(HEADER_SIZE..HEADER_SIZE + header.block_index_size, 1)?;
+            storage.read_bytes::<Random>(header_size..header_size + header.block_index_size, 1)?;
         let blocks = Self::parse_block_index(
             index_bytes.as_ref(),
             header.block_count,
-            HEADER_SIZE + header.block_index_size,
+            header_size + header.block_index_size,
         )?;
 
         Ok(Some(Self {
@@ -114,22 +115,21 @@ impl<S: UniversalRead> PrefixIndex<S> {
         let mut block_offset = blocks_section_offset;
         let mut postings_before = 0u64;
         for _ in 0..block_count {
-            let (first_key_len, rest) = read_varint(bytes).ok_or_else(corrupt)?;
-            let (block_size, rest) = read_varint(rest).ok_or_else(corrupt)?;
-            let (key_count, rest) = read_varint(rest).ok_or_else(corrupt)?;
-            let (postings_count, rest) = read_varint(rest).ok_or_else(corrupt)?;
-            let first_key = rest.get(..first_key_len as usize).ok_or_else(corrupt)?;
-            bytes = &rest[first_key_len as usize..];
+            let (entry, rest) = read_record::<BlockEntry>(bytes).ok_or_else(corrupt)?;
+            let first_key = rest
+                .get(..entry.first_key_len as usize)
+                .ok_or_else(corrupt)?;
+            bytes = &rest[entry.first_key_len as usize..];
 
             blocks.push(BlockMeta {
                 first_key: first_key.into(),
-                bytes: block_offset..block_offset + block_size,
-                key_count: key_count as u32,
+                bytes: block_offset..block_offset + u64::from(entry.block_size),
+                key_count: entry.key_count,
                 postings_before,
-                postings_count,
+                postings_count: entry.postings_count,
             });
-            block_offset += block_size;
-            postings_before += postings_count;
+            block_offset += u64::from(entry.block_size);
+            postings_before += entry.postings_count;
         }
         Ok(blocks)
     }
@@ -292,19 +292,17 @@ impl<S: UniversalRead> PrefixIndex<S> {
 
         let mut key = Vec::new();
         for _ in 0..block.key_count {
-            let (shared_len, rest) = read_varint(bytes).ok_or_else(corrupt)?;
-            let (suffix_len, rest) = read_varint(rest).ok_or_else(corrupt)?;
-            let (count, rest) = read_varint(rest).ok_or_else(corrupt)?;
-            let suffix = rest.get(..suffix_len as usize).ok_or_else(corrupt)?;
-            bytes = &rest[suffix_len as usize..];
+            let (entry, rest) = read_record::<KeyEntry>(bytes).ok_or_else(corrupt)?;
+            let suffix = rest.get(..entry.suffix_len as usize).ok_or_else(corrupt)?;
+            bytes = &rest[entry.suffix_len as usize..];
 
-            if shared_len as usize > key.len() {
+            if entry.shared_prefix_len as usize > key.len() {
                 return Err(corrupt());
             }
-            key.truncate(shared_len as usize);
+            key.truncate(entry.shared_prefix_len as usize);
             key.extend_from_slice(suffix);
 
-            f(&key, count as usize)?;
+            f(&key, entry.postings_count as usize)?;
         }
         Ok(())
     }

@@ -4,10 +4,11 @@ use std::io::{BufWriter, Write as _};
 use std::path::Path;
 
 use fs_err as fs;
-use zerocopy::IntoBytes as _;
 
 use super::PREFIX_INDEX_PATH;
-use super::format::{BLOCK_SIZE_TARGET, Header, MAGIC, VERSION, common_prefix_len, write_varint};
+use super::format::{
+    BLOCK_SIZE_TARGET, BlockEntry, Header, KeyEntry, MAGIC, VERSION, common_prefix_len,
+};
 use crate::common::operation_error::OperationResult;
 
 /// Build the prefix index file from `(key, postings_count)` entries sorted in
@@ -25,19 +26,22 @@ pub fn build_prefix_index<'a>(
     // Current block state.
     let mut block_start = 0usize;
     let mut block_first_key: Vec<u8> = Vec::new();
-    let mut block_key_count = 0u64;
+    let mut block_key_count = 0u32;
     let mut block_postings = 0u64;
     let mut prev_key: Vec<u8> = Vec::new();
 
     let mut flush_block = |blocks: &mut Vec<u8>,
                            block_start: usize,
                            first_key: &[u8],
-                           key_count: u64,
+                           key_count: u32,
                            postings: u64| {
-        write_varint(&mut block_index, first_key.len() as u64);
-        write_varint(&mut block_index, (blocks.len() - block_start) as u64);
-        write_varint(&mut block_index, key_count);
-        write_varint(&mut block_index, postings);
+        block_index.extend_from_slice(bytemuck::bytes_of(&BlockEntry {
+            block_size: (blocks.len() - block_start) as u32,
+            key_count,
+            first_key_len: first_key.len() as u32,
+            _reserved: 0,
+            postings_count: postings,
+        }));
         block_index.extend_from_slice(first_key);
     };
 
@@ -69,9 +73,12 @@ pub fn build_prefix_index<'a>(
             common_prefix_len(&prev_key, key)
         };
 
-        write_varint(&mut blocks, shared_len as u64);
-        write_varint(&mut blocks, (key.len() - shared_len) as u64);
-        write_varint(&mut blocks, count as u64);
+        blocks.extend_from_slice(bytemuck::bytes_of(&KeyEntry {
+            shared_prefix_len: shared_len as u32,
+            suffix_len: (key.len() - shared_len) as u32,
+            // Bounded by the number of points, which is a `u32` offset.
+            postings_count: count as u32,
+        }));
         blocks.extend_from_slice(&key[shared_len..]);
 
         prev_key.clear();
@@ -103,7 +110,7 @@ pub fn build_prefix_index<'a>(
 
     let file = fs::File::create(path.join(PREFIX_INDEX_PATH))?;
     let mut writer = BufWriter::new(file);
-    writer.write_all(header.as_bytes())?;
+    writer.write_all(bytemuck::bytes_of(&header))?;
     writer.write_all(&block_index)?;
     writer.write_all(&blocks)?;
     writer
