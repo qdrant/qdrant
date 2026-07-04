@@ -1,4 +1,7 @@
 #![cfg_attr(not(feature = "testing"), allow(unused_imports))]
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -686,6 +689,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let config = TextIndexParams {
+            memory: None,
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::Word,
             min_token_len: None,

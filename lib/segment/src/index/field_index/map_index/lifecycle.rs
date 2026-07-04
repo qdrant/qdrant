@@ -13,6 +13,7 @@ use super::mutable_map_index::MutableMapIndex;
 use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::types::Memory;
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N>
 where
@@ -21,27 +22,25 @@ where
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_immutable(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        // Low-memory mode downgrades the in-RAM `Immutable` wrapper to the
-        // pure-mmap `Storage` variant at load time. Files are shared between
-        // variants; the persisted `is_on_disk` flag in `mmap_index` is
-        // untouched.
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement at load time (pinned falls back to the
+        // pure-mmap variant). Files are shared between variants; the persisted
+        // configuration is untouched.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let Some(on_disk_index) = OnDiskMapIndex::open(&MmapFs, path, populate, deleted_points)?
         else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            MapIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             // Load into RAM, use mmap as backing storage
             MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            MapIndex::OnDisk(on_disk_index)
         };
         Ok(Some(index))
     }

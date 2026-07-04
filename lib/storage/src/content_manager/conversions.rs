@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -77,6 +81,7 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
             optimizers_config,
             shard_number,
             on_disk_payload,
+            payload,
             timeout: _,
             vectors_config,
             replication_factor,
@@ -103,6 +108,9 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 optimizers_config: optimizers_config.map(TryFrom::try_from).transpose()?,
                 shard_number,
                 on_disk_payload,
+                payload: payload
+                    .map(collection::config::PayloadStorageParams::try_from)
+                    .transpose()?,
                 replication_factor,
                 write_consistency_factor,
                 quantization_config: quantization_config.map(TryInto::try_into).transpose()?,

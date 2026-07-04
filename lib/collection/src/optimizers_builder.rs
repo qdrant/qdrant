@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
@@ -197,6 +201,7 @@ pub fn build_segment_optimizer_config(
                 hnsw_config,
                 quantization_config,
                 on_disk,
+                memory,
                 datatype,
                 multivector_config,
             } = params;
@@ -207,6 +212,7 @@ pub fn build_segment_optimizer_config(
                     size: size.get() as usize,
                     distance: *distance,
                     on_disk: *on_disk,
+                    memory: *memory,
                     hnsw_config: global_hnsw_config.update_opt(hnsw_config.as_ref()),
                     quantization_config: quantization_config
                         .as_ref()
@@ -232,6 +238,7 @@ pub fn build_segment_optimizer_config(
                         name.clone(),
                         SparseVectorOptimizerInput {
                             on_disk: index.and_then(|index| index.on_disk),
+                            memory: index.and_then(|index| index.memory),
                             full_scan_threshold: index.and_then(|index| index.full_scan_threshold),
                             index_datatype: index
                                 .and_then(|index| index.datatype)

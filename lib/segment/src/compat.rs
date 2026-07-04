@@ -166,6 +166,7 @@ mod tests {
                         size: 10,
                         distance: Distance::Dot,
                         hnsw_config: Some(HnswConfig {
+                            memory: None,
                             m: 20,
                             ef_construct: 100,
                             full_scan_threshold: 10000,
@@ -186,6 +187,7 @@ mod tests {
                         hnsw_config: None,
                         quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                             scalar: ScalarQuantizationConfig {
+                                memory: None,
                                 r#type: Default::default(),
                                 quantile: Some(0.99),
                                 always_ram: Some(true),
@@ -198,6 +200,7 @@ mod tests {
             .into_iter()
             .collect(),
             index: Indexes::Hnsw(HnswConfig {
+                memory: None,
                 m: 25,
                 ef_construct: 120,
                 full_scan_threshold: 10000,
@@ -262,6 +265,7 @@ mod tests {
                         hnsw_config: None,
                         quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                             scalar: ScalarQuantizationConfig {
+                                memory: None,
                                 r#type: Default::default(),
                                 quantile: Some(0.99),
                                 always_ram: Some(true),
@@ -274,6 +278,7 @@ mod tests {
             .into_iter()
             .collect(),
             index: Indexes::Hnsw(HnswConfig {
+                memory: None,
                 m: 25,
                 ef_construct: 120,
                 full_scan_threshold: 10000,
@@ -286,6 +291,7 @@ mod tests {
             payload_storage_type: None,
             quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: ScalarQuantizationConfig {
+                    memory: None,
                     r#type: Default::default(),
                     quantile: Some(0.95),
                     always_ram: Some(true),

@@ -19,7 +19,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::json_path::JsonPath;
-use crate::types::{FieldCondition, FloatPayloadType, Range, RangeInterface};
+use crate::types::{FieldCondition, FloatPayloadType, Memory, Range, RangeInterface};
 
 /// Generous default size for the deleted-points bitslice used in tests.
 ///
@@ -112,10 +112,10 @@ fn open_index_from_disk(
         IndexType::MutableGridstore => NumericIndex::new_mutable(temp_dir.to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::Mmap => NumericIndex::new_immutable(temp_dir, true, deleted)
+        IndexType::Mmap => NumericIndex::new_immutable(temp_dir, Memory::Cold, deleted)
             .unwrap()
             .unwrap(),
-        IndexType::RamMmap => NumericIndex::new_immutable(temp_dir, false, deleted)
+        IndexType::RamMmap => NumericIndex::new_immutable(temp_dir, Memory::Pinned, deleted)
             .unwrap()
             .unwrap(),
     }
@@ -399,15 +399,17 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         .unwrap()
         .unwrap(),
         IndexType::Mmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true, &deleted)
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), Memory::Cold, &deleted)
                 .unwrap()
                 .unwrap()
         }
-        IndexType::RamMmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false, &deleted)
-                .unwrap()
-                .unwrap()
-        }
+        IndexType::RamMmap => NumericIndexInner::<FloatPayloadType>::new_mmap(
+            temp_dir.path(),
+            Memory::Pinned,
+            &deleted,
+        )
+        .unwrap()
+        .unwrap(),
     };
 
     test_cond(

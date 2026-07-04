@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::assert_matches;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -169,6 +173,7 @@ fn test_byte_storage_hnsw(
         .unwrap();
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,

@@ -1,6 +1,12 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::BTreeMap;
 
-use collection::config::{CollectionConfigInternal, CollectionParams, ShardingMethod};
+use collection::config::{
+    CollectionConfigInternal, CollectionParams, PayloadStorageParams, ShardingMethod,
+};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
@@ -142,6 +148,7 @@ pub struct CreateCollection {
     #[serde(default)]
     #[validate(range(min = 1))]
     pub write_consistency_factor: Option<u32>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -149,7 +156,12 @@ pub struct CreateCollection {
     ///
     /// Default: true
     #[serde(default)]
+    #[deprecated(since = "1.19.0", note = "Use `payload.memory` instead")]
     pub on_disk_payload: Option<bool>,
+    /// Configuration of the payload storage
+    #[serde(default)]
+    #[validate(nested)]
+    pub payload: Option<PayloadStorageParams>,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
     #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
@@ -276,6 +288,7 @@ pub struct UpdateCollection {
     #[validate(nested)]
     pub optimizers_config: Option<OptimizersConfigDiff>, // TODO: Allow updates for other configuration params as well
     /// Collection base params. If none - it is left unchanged.
+    #[validate(nested)]
     pub params: Option<CollectionParamsDiff>,
     /// HNSW parameters to update for the collection index. If none - it is left unchanged.
     #[validate(nested)]
@@ -501,6 +514,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             read_fan_out_factor: _,
             read_fan_out_delay_ms: _,
             on_disk_payload,
+            payload,
             sparse_vectors,
         } = params;
 
@@ -511,6 +525,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             replication_factor: Some(replication_factor.get()),
             write_consistency_factor: Some(write_consistency_factor.get()),
             on_disk_payload: Some(on_disk_payload),
+            payload,
             hnsw_config: Some(hnsw_config.into()),
             wal_config: Some(wal_config.into()),
             optimizers_config: Some(optimizer_config.into()),

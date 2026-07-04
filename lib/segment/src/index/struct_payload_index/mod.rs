@@ -27,7 +27,7 @@ use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::visited_pool::VisitedPool;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
+use crate::types::{Memory, PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 
 #[derive(Debug)]
@@ -146,7 +146,7 @@ impl StructPayloadIndex {
                 .iter()
                 // Load each index
                 .map(|index| {
-                    let selector = self.selector_with_type(index);
+                    let selector = self.selector_with_type(index, &payload_schema.schema);
                     selector.new_index_with_type(
                         field,
                         &payload_schema.schema,
@@ -272,24 +272,41 @@ impl StructPayloadIndex {
 
     /// Select which type of PayloadIndex to use for the field
     pub(super) fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector<'_> {
-        let is_on_disk = payload_schema.is_on_disk();
+        let memory = payload_schema.memory_placement();
 
         match &self.storage_type {
             StorageType::Appendable => IndexSelector::Appendable { dir: &self.path },
             StorageType::NonAppendable => IndexSelector::NonAppendable {
                 dir: &self.path,
-                is_on_disk,
+                memory,
             },
         }
     }
 
-    fn selector_with_type(&self, index_type: &FullPayloadIndexType) -> IndexSelector<'_> {
+    fn selector_with_type(
+        &self,
+        index_type: &FullPayloadIndexType,
+        payload_schema: &PayloadFieldSchema,
+    ) -> IndexSelector<'_> {
         match index_type.storage_type {
             payload_config::StorageType::Gridstore => IndexSelector::Appendable { dir: &self.path },
-            payload_config::StorageType::Mmap { is_on_disk } => IndexSelector::NonAppendable {
-                dir: &self.path,
-                is_on_disk,
-            },
+            payload_config::StorageType::Mmap { is_on_disk } => {
+                // The persisted flag records the structural variant (heap wrapper vs mmap) the
+                // index was built with; the schema's requested placement refines cold vs cached
+                // for the mmap variant.
+                let memory = if is_on_disk {
+                    match payload_schema.memory_placement() {
+                        Memory::Cached => Memory::Cached,
+                        Memory::Cold | Memory::Pinned => Memory::Cold,
+                    }
+                } else {
+                    Memory::Pinned
+                };
+                IndexSelector::NonAppendable {
+                    dir: &self.path,
+                    memory,
+                }
+            }
         }
     }
 

@@ -428,8 +428,10 @@ pub struct VectorParams {
     #[prost(message, optional, tag = "4")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// Deprecated: use `memory` instead.
     /// If true - serve vectors from disk.
     /// If set to false, the vectors will be loaded in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
     /// Data type of the vectors
@@ -438,6 +440,11 @@ pub struct VectorParams {
     /// Configuration for multi-vector search
     #[prost(message, optional, tag = "7")]
     pub multivector_config: ::core::option::Option<MultiVectorConfig>,
+    /// Memory placement of the original vector storage.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    /// `Pinned` is not supported for dense vector storage.
+    #[prost(enumeration = "Memory", optional, tag = "8")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -452,10 +459,17 @@ pub struct VectorParamsDiff {
     #[prost(message, optional, tag = "2")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
+    /// Deprecated: use `memory` instead.
     /// If true - serve vectors from disk.
     /// If set to false, the vectors will be loaded in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "3")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Memory placement of the original vector storage.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    /// `Pinned` is not supported for dense vector storage.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -699,7 +713,9 @@ pub struct HnswConfigDiff {
     /// On small CPUs, less threads are used.
     #[prost(uint64, optional, tag = "4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
+    /// Deprecated: use `memory` instead.
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
     /// Number of additional payload-aware links per node in the index graph.
@@ -712,6 +728,10 @@ pub struct HnswConfigDiff {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[prost(bool, optional, tag = "7")]
     pub inline_storage: ::core::option::Option<bool>,
+    /// Memory placement of the HNSW graph.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "8")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -721,13 +741,19 @@ pub struct SparseIndexConfig {
     /// Note: this is number of vectors, not KiloBytes.
     #[prost(uint64, optional, tag = "1")]
     pub full_scan_threshold: ::core::option::Option<u64>,
+    /// Deprecated: use `memory` instead.
     /// Store inverted index on disk. If set to false, the index will be stored in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Datatype used to store weights in the index.
     #[prost(enumeration = "Datatype", optional, tag = "3")]
     #[validate(custom(function = "crate::grpc::validate::validate_sparse_datatype"))]
     pub datatype: ::core::option::Option<i32>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -838,9 +864,15 @@ pub struct ScalarQuantization {
     #[prost(float, optional, tag = "2")]
     #[validate(range(min = 0.5, max = 1.0))]
     pub quantile: ::core::option::Option<f32>,
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[deprecated]
     #[prost(bool, optional, tag = "3")]
     pub always_ram: ::core::option::Option<bool>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -849,9 +881,15 @@ pub struct ProductQuantization {
     /// Compression ratio
     #[prost(enumeration = "CompressionRatio", tag = "1")]
     pub compression: i32,
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub always_ram: ::core::option::Option<bool>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -915,7 +953,9 @@ pub mod binary_quantization_query_encoding {
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BinaryQuantization {
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub always_ram: ::core::option::Option<bool>,
     /// Binary quantization encoding method
@@ -926,15 +966,25 @@ pub struct BinaryQuantization {
     /// It can increase the accuracy of search at the cost of performance.
     #[prost(message, optional, tag = "3")]
     pub query_encoding: ::core::option::Option<BinaryQuantizationQueryEncoding>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TurboQuantization {
+    /// Deprecated: use `memory` instead.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub always_ram: ::core::option::Option<bool>,
     #[prost(enumeration = "TurboQuantBitSize", optional, tag = "2")]
     pub bits: ::core::option::Option<i32>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1110,6 +1160,16 @@ pub struct StrictModeMultivector {
     #[validate(range(min = 1))]
     pub max_vectors: ::core::option::Option<u64>,
 }
+/// Params of the payload storage
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PayloadStorageParams {
+    /// Memory placement of the payload storage.
+    /// Overrides the deprecated `on_disk_payload` flag if both are set.
+    /// `Pinned` is not supported for payload storage.
+    #[prost(enumeration = "Memory", optional, tag = "1")]
+    pub memory: ::core::option::Option<i32>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1138,7 +1198,9 @@ pub struct CreateCollection {
     #[prost(uint32, optional, tag = "7")]
     #[validate(range(min = 1))]
     pub shard_number: ::core::option::Option<u32>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory
+    #[deprecated]
     #[prost(bool, optional, tag = "8")]
     pub on_disk_payload: ::core::option::Option<bool>,
     /// Wait timeout for operation commit in seconds, if not specified - default
@@ -1174,6 +1236,9 @@ pub struct CreateCollection {
     /// Arbitrary JSON metadata for the collection
     #[prost(map = "string, message", tag = "18")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// Configuration of the payload storage
+    #[prost(message, optional, tag = "19")]
+    pub payload: ::core::option::Option<PayloadStorageParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1259,7 +1324,9 @@ pub struct CollectionParams {
     /// Number of shards in collection
     #[prost(uint32, tag = "3")]
     pub shard_number: u32,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory
+    #[deprecated]
     #[prost(bool, tag = "4")]
     pub on_disk_payload: bool,
     /// Configuration for vectors
@@ -1284,6 +1351,9 @@ pub struct CollectionParams {
     /// Define number of milliseconds to wait before attempting to read from another replica.
     #[prost(uint64, optional, tag = "11")]
     pub read_fan_out_delay_ms: ::core::option::Option<u64>,
+    /// Configuration of the payload storage
+    #[prost(message, optional, tag = "12")]
+    pub payload: ::core::option::Option<PayloadStorageParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1297,7 +1367,9 @@ pub struct CollectionParamsDiff {
     #[prost(uint32, optional, tag = "2")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: ::core::option::Option<u32>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory
+    #[deprecated]
     #[prost(bool, optional, tag = "3")]
     pub on_disk_payload: ::core::option::Option<bool>,
     /// Fan-out every read request to these many additional remote nodes (and return first available response)
@@ -1306,6 +1378,9 @@ pub struct CollectionParamsDiff {
     /// Define number of milliseconds to wait before attempting to read from another replica.
     #[prost(uint64, optional, tag = "5")]
     pub read_fan_out_delay_ms: ::core::option::Option<u64>,
+    /// Update params of the payload storage
+    #[prost(message, optional, tag = "6")]
+    pub payload: ::core::option::Option<PayloadStorageParams>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1338,7 +1413,9 @@ pub struct KeywordIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "1")]
     pub is_tenant: ::core::option::Option<bool>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1349,6 +1426,10 @@ pub struct KeywordIndexParams {
     /// If set, enable prefix matching (`match: { "prefix": ... }`) on this field.
     #[prost(message, optional, tag = "4")]
     pub prefix: ::core::option::Option<KeywordPrefixParams>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "5")]
+    pub memory: ::core::option::Option<i32>,
 }
 /// Prefix matching options for the keyword index. Has no options yet:
 /// presence of this message enables prefix matching.
@@ -1369,7 +1450,9 @@ pub struct IntegerIndexParams {
     /// Default is false.
     #[prost(bool, optional, tag = "3")]
     pub is_principal: ::core::option::Option<bool>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk. Default is false.
+    #[deprecated]
     #[prost(bool, optional, tag = "4")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1377,11 +1460,17 @@ pub struct IntegerIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "5")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "6")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FloatIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// If true - use this key to organize storage of the collection data.
@@ -1393,11 +1482,17 @@ pub struct FloatIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GeoIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1405,6 +1500,10 @@ pub struct GeoIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "2")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1431,7 +1530,9 @@ pub struct TextIndexParams {
     /// Maximal token length
     #[prost(uint64, optional, tag = "4")]
     pub max_token_len: ::core::option::Option<u64>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
     /// Stopwords for the text index
@@ -1452,6 +1553,10 @@ pub struct TextIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "10")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "11")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1486,7 +1591,9 @@ pub struct DisabledStemmer {}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BoolIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1494,11 +1601,17 @@ pub struct BoolIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "2")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DatetimeIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// If true - use this key to organize storage of the collection data.
@@ -1510,6 +1623,10 @@ pub struct DatetimeIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1517,7 +1634,9 @@ pub struct UuidIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "1")]
     pub is_tenant: ::core::option::Option<bool>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1525,6 +1644,10 @@ pub struct UuidIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -2080,6 +2203,45 @@ impl Datatype {
             "Uint8" => Some(Self::Uint8),
             "Float16" => Some(Self::Float16),
             "Turbo4" => Some(Self::Turbo4),
+            _ => None,
+        }
+    }
+}
+/// Memory placement of a component's data.
+/// Data is always persisted on disk regardless of this setting;
+/// it only controls how the data is held in RAM.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Memory {
+    Unknown = 0,
+    /// Data is not pre-loaded from disk to RAM; cached with usage.
+    Cold = 1,
+    /// Data is pre-loaded into disk-cache RAM on start, but may be evicted under memory pressure.
+    Cached = 2,
+    /// Data is loaded in RAM and never evicted.
+    Pinned = 3,
+}
+impl Memory {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "MemoryUnknown",
+            Self::Cold => "Cold",
+            Self::Cached => "Cached",
+            Self::Pinned => "Pinned",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MemoryUnknown" => Some(Self::Unknown),
+            "Cold" => Some(Self::Cold),
+            "Cached" => Some(Self::Cached),
+            "Pinned" => Some(Self::Pinned),
             _ => None,
         }
     }

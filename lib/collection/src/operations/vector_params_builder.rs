@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::num::NonZeroU64;
 
 use segment::types::{Distance, QuantizationConfig};
@@ -18,6 +22,7 @@ impl VectorParamsBuilder {
                 hnsw_config: None,
                 quantization_config: None,
                 on_disk: None,
+                memory: None,
                 datatype: None,
                 multivector_config: None,
             },
@@ -26,6 +31,11 @@ impl VectorParamsBuilder {
 
     pub fn with_on_disk(mut self, on_disk: bool) -> Self {
         self.vector_params.on_disk = Some(on_disk);
+        self
+    }
+
+    pub fn with_memory(mut self, memory: segment::types::Memory) -> Self {
+        self.vector_params.memory = Some(memory);
         self
     }
 

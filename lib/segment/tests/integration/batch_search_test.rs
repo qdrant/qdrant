@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -137,6 +141,7 @@ fn test_batch_and_single_request_equivalency() {
     let full_scan_threshold = 10000;
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,

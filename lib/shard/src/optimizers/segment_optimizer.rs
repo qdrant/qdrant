@@ -16,7 +16,7 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{HnswGlobalConfig, Indexes, VectorNameBuf, VectorStorageType};
+use segment::types::{HnswGlobalConfig, Indexes, Memory, VectorNameBuf, VectorStorageType};
 use uuid::Uuid;
 
 use super::config::SegmentOptimizerConfig;
@@ -242,22 +242,32 @@ pub trait SegmentOptimizer: Sync {
 
         // We want to use single-file mmap in the following cases:
         // - It is explicitly configured by `mmap_threshold` -> threshold_is_on_disk=true
-        // - The segment is indexed and configured on disk -> threshold_is_indexed=true && config_on_disk=Some(true)
+        // - The segment is indexed and configured on disk
+        //   -> threshold_is_indexed=true && requested placement is cold
         if threshold_is_on_disk || threshold_is_indexed {
             vector_data.iter_mut().for_each(|(vector_name, config)| {
-                // Check whether on_disk is explicitly configured, if not, set it to true
-                let config_on_disk = segment_optimizer_config
+                // Requested memory placement: explicit `memory`, or the deprecated `on_disk`
+                let config_memory = segment_optimizer_config
                     .dense_vector
                     .get(vector_name)
-                    .and_then(|cfg| cfg.on_disk);
+                    .and_then(|cfg| {
+                        Memory::resolve_or_warn(
+                            cfg.memory,
+                            cfg.on_disk.map(Memory::from_on_disk),
+                            &format_args!("dense vector `{vector_name}`"),
+                        )
+                    });
 
-                match config_on_disk {
-                    Some(true) => config.storage_type = VectorStorageType::Mmap, // Both agree, but prefer mmap storage type
-                    Some(false) => {
+                match config_memory {
+                    // Both agree, but prefer mmap storage type
+                    Some(Memory::Cold) => config.storage_type = VectorStorageType::Mmap,
+                    // `pinned` is not supported for dense vector storage (rejected by API
+                    // validation); defensively treated as the closest supported placement
+                    Some(Memory::Cached) | Some(Memory::Pinned) => {
                         if common::flags::feature_flags().single_file_mmap_vector_storage {
                             config.storage_type = VectorStorageType::InRamMmap;
                         }
-                        // on_disk=false wins, do nothing
+                        // requested in-RAM placement wins, do nothing
                     }
                     None => {
                         if threshold_is_on_disk {
@@ -269,13 +279,13 @@ pub trait SegmentOptimizer: Sync {
                     }
                 }
 
-                // If we explicitly configure on_disk, but the segment storage type uses something
-                // that doesn't match, warn about it
-                if let Some(config_on_disk) = config_on_disk
-                    && config_on_disk != config.storage_type.is_on_disk()
+                // If we explicitly configure the placement, but the segment storage type uses
+                // something that doesn't match, warn about it
+                if let Some(config_memory) = config_memory
+                    && config_memory.is_on_disk() != config.storage_type.is_on_disk()
                 {
                     log::warn!(
-                        "Collection config for vector {vector_name} has on_disk={config_on_disk:?} configured, but storage type for segment doesn't match it"
+                        "Collection config for vector {vector_name} has memory placement {config_memory:?} configured, but storage type for segment doesn't match it"
                     );
                 }
             });
@@ -284,23 +294,37 @@ pub trait SegmentOptimizer: Sync {
         sparse_vector_data
             .iter_mut()
             .for_each(|(vector_name, config)| {
-                // Assign sparse index on disk
-                let config_on_disk = segment_optimizer_config
+                // Requested memory placement: explicit `memory`, or the deprecated `on_disk`
+                let config_memory = segment_optimizer_config
                     .sparse_vector
                     .get(vector_name)
-                    .and_then(|cfg| cfg.on_disk)
-                    .unwrap_or(threshold_is_on_disk);
+                    .and_then(|cfg| {
+                        Memory::resolve_or_warn(
+                            cfg.memory,
+                            cfg.on_disk.map(Memory::from_on_disk_heap),
+                            &format_args!("sparse vector `{vector_name}`"),
+                        )
+                    });
+
+                let requested_memory = config_memory
+                    .unwrap_or_else(|| Memory::from_on_disk_heap(threshold_is_on_disk));
 
                 // If mmap OR index is exceeded
                 let is_big = threshold_is_on_disk || threshold_is_indexed;
 
-                let index_type = match (is_big, config_on_disk) {
-                    (true, true) => SparseIndexType::Mmap,
-                    (true, false) => SparseIndexType::ImmutableRam,
-                    (false, _) => SparseIndexType::MutableRam,
+                let index_type = if is_big {
+                    match requested_memory {
+                        // Both cold and cached are backed by the mmap index; the requested
+                        // placement is kept in the index config to drive cache population
+                        Memory::Cold | Memory::Cached => SparseIndexType::Mmap,
+                        Memory::Pinned => SparseIndexType::ImmutableRam,
+                    }
+                } else {
+                    SparseIndexType::MutableRam
                 };
 
                 config.index.index_type = index_type;
+                config.index.memory = config_memory;
             });
 
         let optimized_config = segment::types::SegmentConfig {

@@ -19,7 +19,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
 };
-use crate::types::{FieldCondition, IntPayloadType, PayloadKeyType, UuidIntType};
+use crate::types::{FieldCondition, IntPayloadType, Memory, PayloadKeyType, UuidIntType};
 
 /// Generous default size for the deleted-points bitslice used in tests.
 ///
@@ -102,10 +102,10 @@ where
         IndexType::MutableGridstore => MapIndex::<N>::new_mutable(path.to_path_buf(), true, true)
             .unwrap()
             .unwrap(),
-        IndexType::Mmap => MapIndex::<N>::new_immutable(path, true, &empty_deleted())
+        IndexType::Mmap => MapIndex::<N>::new_immutable(path, Memory::Cold, &empty_deleted())
             .unwrap()
             .unwrap(),
-        IndexType::RamMmap => MapIndex::<N>::new_immutable(path, false, &empty_deleted())
+        IndexType::RamMmap => MapIndex::<N>::new_immutable(path, Memory::Pinned, &empty_deleted())
             .unwrap()
             .unwrap(),
     };
@@ -361,12 +361,12 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
                 .unwrap()
         }
         IndexType::Mmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
                 .unwrap()
                 .unwrap()
         }
         IndexType::RamMmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), false, &deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Pinned, &deleted)
                 .unwrap()
                 .unwrap()
         }
@@ -428,15 +428,17 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
 
     let new_index = match index_type {
         IndexType::Mmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &short_deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &short_deleted)
                 .unwrap()
                 .unwrap()
         }
-        IndexType::RamMmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), false, &short_deleted)
-                .unwrap()
-                .unwrap()
-        }
+        IndexType::RamMmap => MapIndex::<IntPayloadType>::new_immutable(
+            temp_dir.path(),
+            Memory::Pinned,
+            &short_deleted,
+        )
+        .unwrap()
+        .unwrap(),
         IndexType::MutableGridstore => unreachable!(),
     };
 
@@ -538,7 +540,7 @@ fn test_for_values_map_on_disk_deleted() {
 
     // Load the on-disk variant with points 0 and 2 marked deleted.
     let deleted = deleted_with(&[0, 2]);
-    let index = MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &deleted)
+    let index = MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
         .unwrap()
         .unwrap();
     assert!(matches!(index, MapIndex::OnDisk(_)));

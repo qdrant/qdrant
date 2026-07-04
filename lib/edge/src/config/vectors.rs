@@ -88,6 +88,7 @@ impl EdgeVectorParams {
         } = self;
         DenseVectorOptimizerConfig {
             on_disk: *on_disk,
+            memory: None,
             hnsw_config: hnsw_config.unwrap_or(*global_hnsw_config),
             quantization_config: quantization_config
                 .clone()
@@ -155,6 +156,7 @@ impl EdgeSparseVectorParams {
                 full_scan_threshold: *full_scan_threshold,
                 index_type: SparseIndexType::default(),
                 datatype: *datatype,
+                memory: None,
             },
             storage_type: SparseVectorStorageType::Mmap,
             modifier: *modifier,
@@ -170,7 +172,10 @@ impl EdgeSparseVectorParams {
             modifier: _,
             datatype: _,
         } = self;
-        shard::optimizers::config::SparseVectorOptimizerConfig { on_disk: *on_disk }
+        shard::optimizers::config::SparseVectorOptimizerConfig {
+            on_disk: *on_disk,
+            memory: None,
+        }
     }
 
     pub fn from_sparse_vector_data_config(s: &SparseVectorDataConfig) -> Self {
@@ -183,6 +188,7 @@ impl EdgeSparseVectorParams {
             full_scan_threshold,
             index_type,
             datatype,
+            memory: _,
         } = index;
         Self {
             full_scan_threshold: *full_scan_threshold,

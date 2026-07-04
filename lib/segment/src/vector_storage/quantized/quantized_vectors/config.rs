@@ -3,10 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::types::{
-    BinaryQuantization, ProductQuantization, QuantizationConfig, ScalarQuantization,
-    TurboQuantization,
-};
+use crate::types::{Memory, QuantizationConfig};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
@@ -85,19 +82,25 @@ impl QuantizedVectorsConfig {
         )
     }
 
+    /// Effective memory placement of this config, given whether the source vector storage is
+    /// on disk.
+    pub(in crate::vector_storage::quantized) fn memory_placement(
+        &self,
+        on_disk_vector_storage: bool,
+    ) -> Memory {
+        QuantizedVectors::memory_placement(
+            self.quantization_config.memory_placement(),
+            on_disk_vector_storage,
+        )
+    }
+
     /// Whether this config should be materialized in RAM (vs. kept as a read-only mmap),
     /// given whether the source vector storage is on disk.
     pub(in crate::vector_storage::quantized) fn is_ram(
         &self,
         on_disk_vector_storage: bool,
     ) -> bool {
-        let always_ram = match &self.quantization_config {
-            QuantizationConfig::Scalar(ScalarQuantization { scalar }) => scalar.always_ram,
-            QuantizationConfig::Product(ProductQuantization { product }) => product.always_ram,
-            QuantizationConfig::Binary(BinaryQuantization { binary }) => binary.always_ram,
-            QuantizationConfig::Turbo(TurboQuantization { turbo }) => turbo.always_ram,
-        };
-        QuantizedVectors::is_ram(always_ram, on_disk_vector_storage)
+        self.memory_placement(on_disk_vector_storage) == Memory::Pinned
     }
 
     /// Resolve which storage variant this config selects, given whether the source

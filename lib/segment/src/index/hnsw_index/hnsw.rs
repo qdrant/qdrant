@@ -12,7 +12,7 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::types::HnswConfig;
+use crate::types::{HnswConfig, Memory};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
@@ -103,14 +103,18 @@ impl HNSWIndex {
 
         let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
 
-        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
+        // Effective placement of the graph links: the `memory` parameter (falling back to the
+        // deprecated `on_disk` flag), degraded at load time by the node-wide low-memory mode.
+        let memory = hnsw_config.memory_placement().clamp_to_low_memory();
+        let is_on_disk = memory.is_on_disk();
 
-        // Keep the links cold (lazily on disk) when configured so; otherwise
-        // pre-populate them into the page cache on load.
-        let residency = if is_on_disk {
-            GraphLinksResidency::Cold
-        } else {
-            GraphLinksResidency::Cached
+        let residency = match memory {
+            // Keep the links cold: lazily loaded from disk, cached with usage
+            Memory::Cold => GraphLinksResidency::Cold,
+            // Pre-populate the links into the page cache on load
+            Memory::Cached => GraphLinksResidency::Cached,
+            // Materialize the links on heap, so they are never evicted by cache pressure
+            Memory::Pinned => GraphLinksResidency::Pinned,
         };
 
         let graph = GraphLayers::load(path, residency, do_convert)?;

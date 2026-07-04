@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::fmt;
 
 use bytemuck::TransparentWrapper;
@@ -100,6 +104,7 @@ impl PyScalarQuantizationConfig {
             r#type: ScalarType::from(r#type),
             quantile,
             always_ram,
+            memory: None,
         })
     }
 
@@ -130,6 +135,7 @@ impl PyScalarQuantizationConfig {
             r#type: _,
             quantile: _,
             always_ram: _,
+            memory: _,
         } = self.0;
     }
 }
@@ -187,6 +193,7 @@ impl PyProductQuantizationConfig {
         Self(ProductQuantizationConfig {
             compression: CompressionRatio::from(compression),
             always_ram,
+            memory: None,
         })
     }
 
@@ -211,6 +218,7 @@ impl PyProductQuantizationConfig {
         let ProductQuantizationConfig {
             compression: _,
             always_ram: _,
+            memory: _,
         } = self.0;
     }
 }
@@ -287,6 +295,7 @@ impl PyBinaryQuantizationConfig {
     ) -> Self {
         Self(BinaryQuantizationConfig {
             always_ram,
+            memory: None,
             encoding: encoding.map(BinaryQuantizationEncoding::from),
             query_encoding: query_encoding.map(BinaryQuantizationQueryEncoding::from),
         })
@@ -319,6 +328,7 @@ impl PyBinaryQuantizationConfig {
         // Every field should have a getter method
         let BinaryQuantizationConfig {
             always_ram: _,
+            memory: _,
             encoding: _,
             query_encoding: _,
         } = self.0;
@@ -448,6 +458,7 @@ impl PyTurboQuantQuantizationConfig {
     pub fn new(always_ram: Option<bool>, bits: Option<PyTurboQuantBitSize>) -> Self {
         Self(TurboQuantQuantizationConfig {
             always_ram,
+            memory: None,
             bits: bits.map(TurboQuantBitSize::from),
         })
     }
@@ -472,6 +483,7 @@ impl PyTurboQuantQuantizationConfig {
         // Every field should have a getter method
         let TurboQuantQuantizationConfig {
             always_ram: _,
+            memory: _,
             bits: _,
         } = self.0;
     }

@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
@@ -36,6 +40,7 @@ fn test_full_text_indexing() {
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
+        memory: None,
         r#type: TextIndexType::Text,
         tokenizer: TokenizerType::Word,
         min_token_len: None,

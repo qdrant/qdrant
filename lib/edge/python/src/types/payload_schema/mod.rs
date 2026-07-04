@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 pub mod text_index;
 
 use std::fmt;
@@ -219,6 +223,7 @@ impl PyKeywordIndexParams {
             r#type: Default::default(),
             is_tenant,
             on_disk,
+            memory: None,
             enable_hnsw,
             prefix,
         })
@@ -252,6 +257,7 @@ impl PyKeywordIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_tenant: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
             prefix: _,
         } = self.0;
@@ -281,6 +287,7 @@ impl PyIntegerIndexParams {
             range,
             is_principal,
             on_disk,
+            memory: None,
             enable_hnsw,
         })
     }
@@ -320,6 +327,7 @@ impl PyIntegerIndexParams {
             range: _,
             is_principal: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
         } = self.0;
     }
@@ -344,6 +352,7 @@ impl PyFloatIndexParams {
             r#type: Default::default(),
             is_principal,
             on_disk,
+            memory: None,
             enable_hnsw,
         })
     }
@@ -371,6 +380,7 @@ impl PyFloatIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_principal: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
         } = self.0;
     }
@@ -390,6 +400,7 @@ impl PyGeoIndexParams {
         Self(GeoIndexParams {
             r#type: Default::default(),
             on_disk,
+            memory: None,
             enable_hnsw,
         })
     }
@@ -411,6 +422,7 @@ impl PyGeoIndexParams {
         let GeoIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
         } = self.0;
     }
@@ -430,6 +442,7 @@ impl PyBoolIndexParams {
         Self(BoolIndexParams {
             r#type: Default::default(),
             on_disk,
+            memory: None,
             enable_hnsw,
         })
     }
@@ -451,6 +464,7 @@ impl PyBoolIndexParams {
         let BoolIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
         } = self.0;
     }
@@ -475,6 +489,7 @@ impl PyDatetimeIndexParams {
             r#type: Default::default(),
             is_principal,
             on_disk,
+            memory: None,
             enable_hnsw,
         })
     }
@@ -502,6 +517,7 @@ impl PyDatetimeIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_principal: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
         } = self.0;
     }
@@ -522,6 +538,7 @@ impl PyUuidIndexParams {
             r#type: Default::default(),
             is_tenant,
             on_disk,
+            memory: None,
             enable_hnsw,
         })
     }
@@ -549,6 +566,7 @@ impl PyUuidIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_tenant: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
         } = self.0;
     }

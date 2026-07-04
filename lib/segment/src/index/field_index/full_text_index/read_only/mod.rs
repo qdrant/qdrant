@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use common::universal_io::UniversalRead;
 
 use super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
@@ -57,6 +61,7 @@ mod tests {
 
     fn test_config() -> TextIndexParams {
         TextIndexParams {
+            memory: None,
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::Word,
             min_token_len: None,
