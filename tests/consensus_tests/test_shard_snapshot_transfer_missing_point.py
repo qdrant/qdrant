@@ -40,6 +40,12 @@ INITIAL_POINTS = 20_000
 # How long to wait for the transferred replica to reach the Active state.
 TRANSFER_TIMEOUT_SEC = 90
 
+# How long to wait for point counts to converge across peers after the load is
+# stopped. Killing the load processes does not cancel their requests that are
+# already executing server-side, so the last accepted update may still be
+# propagating to replicas when we start counting.
+CONVERGENCE_TIMEOUT_SEC = 30
+
 
 def set_payload_missing_points_in_loop(peer_url, collection_name, base_id):
     """Continuously issue set-payload requests for points that do not exist.
@@ -209,11 +215,23 @@ def test_shard_snapshot_transfer_with_missing_point_updates(tmp_path: pathlib.Pa
     receiver_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
     assert len(receiver_info['local_shards']) == 2
 
-    counts = []
-    for uri in peer_api_uris:
-        r = requests.post(
-            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={"exact": True}
-        )
-        assert_http_ok(r)
-        counts.append(r.json()["result"]['count'])
+    def exact_counts():
+        counts = []
+        for uri in peer_api_uris:
+            r = requests.post(
+                f"{uri}/collections/{COLLECTION_NAME}/points/count", json={"exact": True}
+            )
+            assert_http_ok(r)
+            counts.append(r.json()["result"]['count'])
+        return counts
+
+    # An upsert accepted just before the load processes were killed may still be
+    # in flight: applied on the receiving peer's local replica but not yet
+    # forwarded to the other replica of the shard. Counting during that window
+    # observes different totals per peer, so poll until the counts converge.
+    deadline = time.time() + CONVERGENCE_TIMEOUT_SEC
+    counts = exact_counts()
+    while not counts[0] == counts[1] == counts[2] and time.time() < deadline:
+        sleep(0.5)
+        counts = exact_counts()
     assert counts[0] == counts[1] == counts[2], f"Inconsistent point counts: {counts}"
