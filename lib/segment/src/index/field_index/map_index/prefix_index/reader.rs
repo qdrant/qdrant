@@ -336,18 +336,52 @@ fn block_corrupt() -> OperationError {
 
 /// Decode the front-coded keys of one block, reconstructing each key and
 /// invoking `f(key, postings_count)` in order.
+///
+/// `bytes` must start at the block's first [`KeyEntry`] and contain
+/// `key_count` records of the following layout (trailing bytes beyond the
+/// last record are ignored):
+///
+/// ```text
+/// ┌──────────────────────────────────────┬─────────────────┐
+/// │ KeyEntry (Pod, 12 bytes)             │ suffix          │
+/// │   shared_prefix_len  u32             │ u8[suffix_len]  │  × key_count
+/// │   suffix_len         u32             │                 │
+/// │   postings_count     u32             │                 │
+/// └──────────────────────────────────────┴─────────────────┘
+/// ```
+///
+/// Each key is reconstructed from its predecessor: keep its first
+/// `shared_prefix_len` bytes and append the suffix. The first record of a
+/// block has `shared_prefix_len == 0`, so its suffix is the full key:
+///
+/// ```text
+/// (0, 19, _) "https://qdrant.tech"       → https://qdrant.tech
+/// (19, 5, _) "/docs"                     → https://qdrant.tech/docs
+/// (13, 3, _) "com"                       → https://qdrant.com
+/// ```
+///
+/// Records are read via [`read_record`] (`bytemuck::pod_read_unaligned`),
+/// which *copies* the 12 record bytes into an aligned local instead of
+/// casting a reference into the buffer. An aligned view (`cast_slice` /
+/// `from_bytes`) is not an option here: the variable-length suffixes
+/// interleaved between records put every record after the first at an
+/// arbitrary, data-dependent offset, and the buffer itself is a slice of a
+/// larger storage read starting at an arbitrary file offset — so no
+/// alignment can be guaranteed by construction, and a reference cast would
+/// be undefined behavior whenever the offset isn't a multiple of 4.
 fn decode_block(
-    mut bytes: &[u8],
+    bytes: &[u8],
     key_count: u32,
     f: &mut dyn FnMut(&[u8], usize) -> OperationResult<()>,
 ) -> OperationResult<()> {
+    let mut rolling_bytes = bytes;
     let mut key = Vec::new();
     for _ in 0..key_count {
-        let (entry, rest) = read_record::<KeyEntry>(bytes).ok_or_else(block_corrupt)?;
+        let (entry, rest) = read_record::<KeyEntry>(rolling_bytes).ok_or_else(block_corrupt)?;
         let suffix = rest
             .get(..entry.suffix_len as usize)
             .ok_or_else(block_corrupt)?;
-        bytes = &rest[entry.suffix_len as usize..];
+        rolling_bytes = &rest[entry.suffix_len as usize..];
 
         if entry.shared_prefix_len as usize > key.len() {
             return Err(block_corrupt());
