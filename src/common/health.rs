@@ -17,6 +17,7 @@ use itertools::Itertools;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
+use storage::types::PeerAddressById;
 use tokio::{runtime, sync, time};
 
 const READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
@@ -166,7 +167,7 @@ impl Task {
                 self.check_ready_signal.notified().await;
 
                 // Ensure we're not the only peer left
-                if self.consensus_state.peer_count() <= 1 {
+                if self.member_peer_addresses().len() <= 1 {
                     self.set_ready();
                     return;
                 }
@@ -210,13 +211,14 @@ impl Task {
         // Wait for `/readyz` signal
         self.check_ready_signal.notified().await;
 
+        let peer_address_by_id = self.member_peer_addresses();
+
         // Check if there is only 1 node in the cluster
-        if self.consensus_state.peer_count() <= 1 {
+        if peer_address_by_id.len() <= 1 {
             return None;
         }
 
         // Get *cluster* commit index
-        let peer_address_by_id = self.consensus_state.peer_address_by_id();
         let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
         let this_peer_id = self.toc.this_peer_id;
         let this_peer_uri = peer_address_by_id.get(&this_peer_id);
@@ -299,6 +301,39 @@ impl Task {
             .read()
             .last_applied_entry()
             .unwrap_or(0)
+    }
+
+    /// Addresses of the peers that are members of the current consensus configuration.
+    ///
+    /// `peer_address_by_id` can also hold peers that are no longer part of the cluster. Most
+    /// notably, after `--reinit` of a previously removed peer, it still lists the peers of the
+    /// old cluster, while `conf_state` is reset to this peer only. Waiting to reach the commit
+    /// index of such peers means waiting for the commit index of a foreign consensus, which this
+    /// peer may never reach.
+    ///
+    /// An empty `conf_state` means this peer doesn't know the cluster configuration yet (e.g. it
+    /// bootstraps and didn't apply any configuration change so far). In this case all known peer
+    /// addresses are considered members.
+    fn member_peer_addresses(&self) -> PeerAddressById {
+        let persistent = self.consensus_state.persistent.read();
+        let conf_state = &persistent.state().conf_state;
+
+        let members: HashSet<_> = conf_state
+            .voters
+            .iter()
+            .chain(&conf_state.voters_outgoing)
+            .chain(&conf_state.learners)
+            .chain(&conf_state.learners_next)
+            .copied()
+            .collect();
+
+        let mut peer_address_by_id = persistent.peer_address_by_id();
+
+        if !members.is_empty() {
+            peer_address_by_id.retain(|peer_id, _| members.contains(peer_id));
+        }
+
+        peer_address_by_id
     }
 
     /// List shards that are unhealthy, which may undergo automatic recovery.
