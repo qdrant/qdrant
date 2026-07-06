@@ -24,8 +24,8 @@ use segment::data_types::vector_name_config::{
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
-    MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PointIdType,
-    VectorNameBuf, WithPayloadInterface, WithVector,
+    MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    PointIdType, VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use sparse::common::sparse_vector::SparseVector;
 
@@ -453,14 +453,27 @@ impl Op {
                 };
                 Op::ClearPayload(ids)
             }
-            8 => Op::CreateIndex(
-                // Toggle a prefix-enabled keyword index on `url`. When absent, prefix filters
-                // fall back to per-point `starts_with`; when present, the prefix index path is
-                // exercised across segment variants.
-                "url".parse().unwrap(),
-                url_prefix_index_schema(),
-            ),
-            9 => Op::DropIndex("url".parse().unwrap()),
+            8 => {
+                // Randomly toggle one of two keyword indices, preserving coverage of both the
+                // plain keyword-equality path (`tag`) and the prefix path (`url`):
+                // - `tag`: plain keyword index, exercised by exact match ops;
+                // - `url`: prefix-enabled keyword index, exercised by prefix match ops.
+                // When the index is absent, the corresponding filters fall back to full-scan;
+                // when present, the index path is exercised across segment variants.
+                let (field, schema) = if rng.random_bool(0.5) {
+                    (
+                        "tag".parse().unwrap(),
+                        PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+                    )
+                } else {
+                    ("url".parse().unwrap(), url_prefix_index_schema())
+                };
+                Op::CreateIndex(field, schema)
+            }
+            9 => {
+                let field = if rng.random_bool(0.5) { "tag" } else { "url" };
+                Op::DropIndex(field.parse().unwrap())
+            }
             10 => Op::RetrieveRandom(random_distinct_ids(rng, 3..=10, id_pool)),
             11 => Op::CountByNum(random_num(rng)),
             12 => {
@@ -746,29 +759,10 @@ pub(super) fn optional_read_filter(
     filter_num: Option<i64>,
     filter_url_prefix: Option<&str>,
 ) -> Option<Filter> {
-    let mut must = Vec::new();
-    if let Some(num) = filter_num {
-        must.push(Condition::Field(FieldCondition::new_match(
-            "num".parse().unwrap(),
-            Match::from(num),
-        )));
-    }
-    if let Some(prefix) = filter_url_prefix {
-        must.push(Condition::Field(FieldCondition::new_match(
-            "url".parse().unwrap(),
-            Match::new_prefix(prefix),
-        )));
-    }
-    if must.is_empty() {
-        None
-    } else {
-        Some(Filter {
-            should: None,
-            min_should: None,
-            must: Some(must),
-            must_not: None,
-        })
-    }
+    Filter::merge_opts(
+        filter_num.map(match_num_filter),
+        filter_url_prefix.map(match_url_prefix_filter),
+    )
 }
 
 pub(super) fn match_num_filter(num: i64) -> Filter {
