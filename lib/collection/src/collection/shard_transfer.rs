@@ -117,12 +117,15 @@ impl Collection {
                 .unwrap_or(shard_transfer.shard_id);
 
             let shards_holder = self.shards_holder.read().await;
+
             let from_replica_set = shards_holder.get_shard(from_shard_id).ok_or_else(|| {
-                CollectionError::service_error(format!("Shard {from_shard_id} doesn't exist"))
+                CollectionError::bad_request(format!("shard {from_shard_id} doesn't exist"))
             })?;
+
             let to_replica_set = shards_holder.get_shard(to_shard_id).ok_or_else(|| {
-                CollectionError::service_error(format!("Shard {to_shard_id} doesn't exist"))
+                CollectionError::bad_request(format!("shard {to_shard_id} doesn't exist"))
             })?;
+
             let _was_not_transferred =
                 shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
 
