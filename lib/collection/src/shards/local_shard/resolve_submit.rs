@@ -39,6 +39,20 @@ use crate::update_handler::UpdateSignal;
 
 #[cfg(test)]
 impl LocalShard {
+    /// Test helper: append a record to the WAL as-is, bypassing submit-time
+    /// resolution. Emulates a WAL written before filter operations were
+    /// resolved at submit (old-version WALs).
+    pub(crate) async fn append_raw_wal_operation(&self, operation: &OperationWithClockTag) -> u64 {
+        let record =
+            shard::wal::WalRawRecord::new(operation).expect("failed to serialize WAL record");
+        self.wal
+            .wal
+            .lock()
+            .await
+            .write(&record)
+            .expect("failed to write WAL record")
+    }
+
     /// Test helper: read every record currently in the WAL.
     pub(crate) async fn read_all_wal_operations(&self) -> Vec<(u64, OperationWithClockTag)> {
         let wal = self.wal.wal.lock().await;

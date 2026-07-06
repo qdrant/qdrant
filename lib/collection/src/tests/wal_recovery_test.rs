@@ -903,3 +903,135 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
 
     shard.stop_gracefully().await;
 }
+
+/// A WAL written before filter operations were resolved at submit time may
+/// still contain filter-carrying records after an upgrade. The by-filter
+/// apply paths are kept so such records replay one final time with the old
+/// apply semantics.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_old_wal_filter_op_replays_with_apply_semantics() {
+    use ahash::AHashSet;
+    use segment::types::{Condition, Filter};
+    use shard::operations::OperationWithClockTag;
+
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    let config = create_collection_config();
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // Points 1..=5, applied in this run.
+    shard
+        .update(
+            upsert_operation().into(),
+            WaitUntil::Visible,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .unwrap();
+
+    // Emulate an old-version WAL: append a raw DeletePointsByFilter record
+    // directly, bypassing submit-time resolution. It is never applied in
+    // this run, like a filter op fsynced right before a crash on the old
+    // version.
+    let delete_by_filter = CollectionUpdateOperations::PointOperation(
+        PointOperations::DeletePointsByFilter(Filter::new_must(Condition::HasId(
+            AHashSet::from([2.into(), 3.into()]).into(),
+        ))),
+    );
+    shard
+        .append_raw_wal_operation(&OperationWithClockTag::new(delete_by_filter, None))
+        .await;
+
+    // The WAL genuinely contains an unresolved filter record.
+    let wal_records = shard.read_all_wal_operations().await;
+    assert!(
+        wal_records
+            .iter()
+            .any(|(_, record)| shard::resolve::is_filter_resolving(&record.operation)),
+        "old-style filter record missing from the WAL: {wal_records:?}",
+    );
+
+    shard.stop_gracefully().await;
+
+    // Reload: replay must apply the filter record through the kept by-filter
+    // apply path.
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        true,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .unwrap();
+
+    // Barrier: replayed records past the synchronous window are enqueued to
+    // the update worker; a wait-visible no-op serializes behind them.
+    let barrier = CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+        ids: vec![999.into()],
+    });
+    shard
+        .update(barrier.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .await
+        .unwrap();
+
+    let request = Arc::new(PointRequestInternal {
+        ids: (1..=5u64).map(Into::into).collect(),
+        with_payload: None,
+        with_vector: WithVector::Bool(false),
+    });
+    let retrieved = shard
+        .retrieve(
+            request,
+            &WithPayload::from(false),
+            &WithVector::Bool(false),
+            &current_runtime,
+            None,
+            hw_acc.clone(),
+            DeferredBehavior::VisibleOnly,
+        )
+        .await
+        .unwrap();
+
+    let present: Vec<_> = retrieved.iter().map(|record| record.id).collect();
+    assert_eq!(
+        present,
+        vec![1.into(), 4.into(), 5.into()],
+        "old-style filter record was not replayed with the by-filter apply semantics",
+    );
+
+    shard.stop_gracefully().await;
+}
