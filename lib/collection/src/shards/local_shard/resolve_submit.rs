@@ -95,6 +95,14 @@ impl LocalShard {
         })
         .await??;
 
+        // Guard against `is_filter_resolving` and `resolve_operation` drifting
+        // apart: a resolved operation must never classify as filter-resolving,
+        // or a filter could reach the WAL again (issue #9575).
+        debug_assert!(
+            !shard::resolve::is_filter_resolving(&resolved),
+            "resolve_operation left a filter-resolving operation unresolved: {resolved:?}",
+        );
+
         // 4. Append + dispatch, still inside the fence so no foreign
         // operation can slip into the WAL between resolution and the append.
         self.append_and_dispatch(
