@@ -5,17 +5,21 @@ use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::common::stopping_guard::StoppingGuard;
 use shard::count::CountRequestInternal;
+use shard::query::query_context::collect_idf_stats;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
@@ -544,6 +548,66 @@ impl ShardOperation for LocalShard {
         };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         result.map(|hits| FacetResponse { hits })
+    }
+
+    /// This call is rate limited by the read rate limiter.
+    async fn estimate_idf(
+        &self,
+        request: Arc<IdfEstimateParams>,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<IdfStats> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter(&hw_measurement_acc, "estimate_idf", || {
+            let mut cost = BASE_COST;
+            if let Some(corpus) = &request.corpus {
+                cost += filter_rate_cost(corpus);
+            }
+            cost
+        })?;
+
+        let start_time = Instant::now();
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+
+        let is_stopped_guard = StoppingGuard::new();
+        let is_stopped = is_stopped_guard.get_is_stopped();
+        let segments = self.segments.clone();
+
+        // Statistics collection does blocking calls: run it in a blocking
+        // task on the search runtime.
+        let task = search_runtime_handle.spawn_blocking({
+            let request = request.clone();
+            let cpu_utilization = cpu_utilization.clone();
+            move || {
+                cpu_utilization.measure(|| {
+                    collect_idf_stats(
+                        segments,
+                        &request.using,
+                        &request.query.indices,
+                        request.corpus.as_ref(),
+                        timeout,
+                        is_stopped,
+                        hw_measurement_acc,
+                    )
+                })
+            }
+        });
+        let result = match AbortOnDropHandle::new(task).await {
+            Ok(stats) => stats.map_err(CollectionError::from),
+            Err(join_error) => Err(CollectionError::from(join_error)),
+        };
+
+        let elapsed = start_time.elapsed();
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+        result
     }
 
     /// Finishes ongoing update tasks

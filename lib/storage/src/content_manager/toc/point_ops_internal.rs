@@ -8,6 +8,7 @@ use collection::operations::universal_query::shard_query::{ShardQueryRequest, Sh
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 
 use super::TableOfContent;
 use crate::content_manager::errors::StorageResult;
@@ -47,6 +48,31 @@ impl TableOfContent {
             .facet_internal(
                 request,
                 peer_limit,
+                shard_selection,
+                None,
+                // Internal node-to-node call: routing already resolved by the coordinator.
+                None,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await?;
+
+        Ok(res)
+    }
+
+    pub async fn estimate_idf_internal(
+        &self,
+        collection_name: &str,
+        request: IdfEstimateParams,
+        shard_selection: ShardSelectorInternal,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> StorageResult<IdfStats> {
+        let collection = self.get_collection_unchecked(collection_name).await?;
+
+        let res = collection
+            .estimate_idf_internal(
+                request,
                 shard_selection,
                 None,
                 // Internal node-to-node call: routing already resolved by the coordinator.

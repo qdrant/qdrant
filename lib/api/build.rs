@@ -391,6 +391,10 @@ fn configure_validation(builder: Builder) -> Builder {
             ("FacetCounts.key", "length(min = 1)"),
             ("FacetCounts.filter", ""),
             ("FacetCounts.timeout", "range(min = 1)"),
+            ("EstimateIdfRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("EstimateIdfRequest.using", "length(min = 1)"),
+            ("EstimateIdfRequest.corpus", ""),
+            ("EstimateIdfRequest.timeout", "range(min = 1)"),
             ("SearchMatrixPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("SearchMatrixPoints.filter", ""),
             ("SearchMatrixPoints.sample", "range(min = 2)"),
@@ -441,6 +445,9 @@ fn configure_validation(builder: Builder) -> Builder {
             ("QueryBatchPointsInternal.timeout", "range(min = 1)"),
             ("FacetCountsInternal.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("FacetCountsInternal.timeout", "range(min = 1)"),
+            ("EstimateIdfRequestInternal.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("EstimateIdfRequestInternal.corpus", ""),
+            ("EstimateIdfRequestInternal.timeout", "range(min = 1)"),
         ], &[])
         // Service: raft_service.proto
         .validates(&[

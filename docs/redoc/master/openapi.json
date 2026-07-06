@@ -6518,6 +6518,114 @@
         }
       }
     },
+    "/collections/{collection_name}/points/idf": {
+      "post": {
+        "tags": [
+          "Points"
+        ],
+        "summary": "Estimate IDF statistics for a sparse query vector.",
+        "description": "Report the document count and per-term document frequencies used by sparse vector search with the IDF modifier, along with the IDF values derived from them, optionally scoped to the points matching a corpus filter.",
+        "operationId": "estimate_idf",
+        "requestBody": {
+          "description": "Request IDF statistics for a sparse query vector",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdfEstimateRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to estimate IDF in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/IdfEstimateResponse"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/query": {
       "post": {
         "tags": [
@@ -17945,6 +18053,124 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "IdfEstimateRequest": {
+        "description": "Parameters of an IDF estimation request.",
+        "type": "object",
+        "required": [
+          "query",
+          "using"
+        ],
+        "properties": {
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "using": {
+            "description": "Name of the sparse vector the statistics are computed for. The vector must be configured with the `idf` modifier.",
+            "type": "string"
+          },
+          "query": {
+            "$ref": "#/components/schemas/IdfEstimateQuery"
+          },
+          "corpus": {
+            "description": "Filter defining the corpus: IDF statistics are computed over the points matching this filter. If not specified, statistics are computed over the whole collection.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "IdfEstimateQuery": {
+        "description": "Sparse query of an IDF estimation request. Only term indices: values of a sparse vector do not participate in the statistics.",
+        "type": "object",
+        "required": [
+          "indices"
+        ],
+        "properties": {
+          "indices": {
+            "description": "Indices of the query terms the statistics are reported for.",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "IdfEstimateResponse": {
+        "type": "object",
+        "required": [
+          "idf"
+        ],
+        "properties": {
+          "idf": {
+            "$ref": "#/components/schemas/IdfEstimate"
+          }
+        }
+      },
+      "IdfEstimate": {
+        "description": "IDF statistics for a sparse query vector.",
+        "type": "object",
+        "required": [
+          "document_count",
+          "terms"
+        ],
+        "properties": {
+          "document_count": {
+            "description": "Number of documents the statistics are computed over: points matching the corpus filter which have the sparse vector, or all points with the sparse vector for global statistics.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "terms": {
+            "description": "Per-term statistics, one entry per index of the query vector.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdfTermEstimate"
+            }
+          }
+        }
+      },
+      "IdfTermEstimate": {
+        "description": "IDF statistics of a single query term.",
+        "type": "object",
+        "required": [
+          "document_frequency",
+          "idf",
+          "index"
+        ],
+        "properties": {
+          "index": {
+            "description": "Index of the term in the sparse vector.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "document_frequency": {
+            "description": "Number of documents containing the term.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "idf": {
+            "description": "IDF value: the factor the term weight is multiplied by when searching with the `idf` modifier.",
+            "type": "number",
+            "format": "float"
           }
         }
       }

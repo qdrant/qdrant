@@ -1231,6 +1231,46 @@ message FacetHit {
   uint64 count = 2;
 }
 
+message EstimateIdfRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Name of the sparse vector the statistics are computed for.
+  // The vector must be configured with the IDF modifier.
+  string using = 2;
+  // Sparse query the statistics are computed for
+  IdfQuery query = 3;
+  // Filter defining the corpus: IDF statistics are computed over the points
+  // matching this filter. If not specified, statistics are computed over the whole collection.
+  optional Filter corpus = 4;
+  // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional uint64 timeout = 5;
+  // Options for specifying read consistency guarantees
+  optional ReadConsistency read_consistency = 6;
+  // Specify in which shards to look for the points, if not specified - look in all shards
+  optional ShardKeySelector shard_key_selector = 7;
+}
+
+message IdfQuery {
+  // Indices of the query terms the statistics are reported for
+  repeated uint64 indices = 1;
+}
+
+message IdfEstimate {
+  // Number of documents the statistics are computed over
+  uint64 document_count = 1;
+  // Per-term statistics, one entry per index of the query
+  repeated IdfTermEstimate terms = 2;
+}
+
+message IdfTermEstimate {
+  // Index of the term in the sparse query
+  uint64 index = 1;
+  // Number of documents containing the term
+  uint64 document_frequency = 2;
+  // IDF value: the factor the term weight is multiplied by when searching with the IDF modifier
+  float idf = 3;
+}
+
 message SearchMatrixPoints {
   // Name of the collection
   string collection_name = 1;
@@ -1576,6 +1616,13 @@ message UpdateBatchResponse {
 
 message FacetResponse {
   repeated FacetHit hits = 1;
+  // Time spent to process
+  double time = 2;
+  optional Usage usage = 3;
+}
+
+message EstimateIdfResponse {
+  IdfEstimate result = 1;
   // Time spent to process
   double time = 2;
   optional Usage usage = 3;

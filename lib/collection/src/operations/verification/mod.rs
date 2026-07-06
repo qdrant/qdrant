@@ -1,5 +1,6 @@
 mod count;
 mod discover;
+mod estimate_idf;
 mod facet;
 mod local_shard;
 mod matrix;

@@ -7,6 +7,7 @@ use common::validation::validate_multi_vector;
 use ordered_float::NotNan;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
+use segment::data_types::idf_estimate::{IdfEstimate, IdfEstimateParams};
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::data_types::order_by::OrderByInterface;
 use segment::data_types::vectors::{DenseVector, MultiDenseVector};
@@ -1399,6 +1400,21 @@ pub struct FacetValueHit {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct FacetResponse {
     pub hits: Vec<FacetValueHit>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct IdfEstimateRequest {
+    #[validate(nested)]
+    #[serde(flatten)]
+    pub estimate_request: IdfEstimateParams,
+
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct IdfEstimateResponse {
+    /// IDF statistics for the sparse query vector
+    pub idf: IdfEstimate,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]

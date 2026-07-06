@@ -10,6 +10,7 @@ pub mod count_api;
 pub mod debug_api;
 pub mod discover_api;
 pub mod facet_api;
+pub mod idf_api;
 pub mod issues_api;
 pub mod local_shard_api;
 pub mod profiler_api;

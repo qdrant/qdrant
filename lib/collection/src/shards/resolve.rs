@@ -5,8 +5,10 @@ use std::rc::Rc;
 
 use itertools::Itertools;
 use segment::data_types::facets::{FacetResponse, FacetValue};
+use segment::data_types::idf_estimate::IdfStats;
 use segment::types::{Payload, ScoredPoint};
 use shard::retrieve::record_internal::RecordInternal;
+use sparse::common::types::DimId;
 use tinyvec::TinyVec;
 
 use crate::common::transpose_iterator::transposed_iter;
@@ -53,6 +55,43 @@ impl Resolve for CountResult {
                     count: counts.get(middle).copied().unwrap_or_default(),
                 }
             }
+        }
+    }
+}
+
+impl Resolve for IdfStats {
+    /// Resolve each statistic across replicas using the CountResult implementation
+    fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self {
+        let document_count = CountResult::resolve(
+            responses
+                .iter()
+                .map(|stats| CountResult {
+                    count: stats.document_count,
+                })
+                .collect(),
+            condition,
+        )
+        .count;
+
+        // Every replica reports a frequency for every query term, so terms
+        // resolve with a full column of counts.
+        let mut per_term_counts: HashMap<DimId, Vec<CountResult>> = HashMap::new();
+        for stats in &responses {
+            for (&index, &count) in &stats.document_frequency {
+                per_term_counts
+                    .entry(index)
+                    .or_default()
+                    .push(CountResult { count });
+            }
+        }
+        let document_frequency = per_term_counts
+            .into_iter()
+            .map(|(index, counts)| (index, CountResult::resolve(counts, condition).count))
+            .collect();
+
+        Self {
+            document_count,
+            document_frequency,
         }
     }
 }

@@ -29,6 +29,15 @@ impl QueryIdfStats {
             .iter()
             .find(|scope| scope.corpus.as_ref() == corpus)
     }
+
+    /// Remove and return the statistics scope for the given corpus.
+    pub fn take_scope(&mut self, corpus: Option<&Filter>) -> Option<IdfScopeStats> {
+        let index = self
+            .scopes
+            .iter()
+            .position(|scope| scope.corpus.as_ref() == corpus)?;
+        Some(self.scopes.swap_remove(index))
+    }
 }
 
 /// Statistics of the element frequency, collected over all segments,
@@ -253,6 +262,13 @@ pub struct VectorQueryContext<'a> {
     hardware_counter: HardwareCounterCell,
 }
 
+/// Compute advanced formula for Inverse Document Frequency (IDF) according to wikipedia.
+/// This should account for corner cases when `df` and `n` are small or zero.
+#[inline]
+pub fn fancy_idf(n: DimWeight, df: DimWeight) -> DimWeight {
+    ((n - df + 0.5) / (df + 0.5) + 1.).ln()
+}
+
 impl VectorQueryContext<'_> {
     pub fn hardware_counter(&self) -> HardwareCounterCell {
         self.hardware_counter.fork()
@@ -272,13 +288,6 @@ impl VectorQueryContext<'_> {
             .unwrap_or_else(|| SimpleCow::Owned(AtomicBool::new(false)))
     }
 
-    /// Compute advanced formula for Inverse Document Frequency (IDF) according to wikipedia.
-    /// This should account for corner cases when `df` and `n` are small or zero.
-    #[inline]
-    fn fancy_idf(n: DimWeight, df: DimWeight) -> DimWeight {
-        ((n - df + 0.5) / (df + 0.5) + 1.).ln()
-    }
-
     pub fn remap_idf_weights(&self, indices: &[DimId], weights: &mut [DimWeight]) {
         // Number of documents
         let Some(indexed_vectors) = self.indexed_vectors else {
@@ -294,7 +303,7 @@ impl VectorQueryContext<'_> {
                 .copied()
                 .unwrap_or(0);
 
-            *weight *= Self::fancy_idf(n, df as DimWeight);
+            *weight *= fancy_idf(n, df as DimWeight);
         }
     }
 

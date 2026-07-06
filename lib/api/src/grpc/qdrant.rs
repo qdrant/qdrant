@@ -6884,6 +6884,71 @@ pub struct FacetHit {
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EstimateIdfRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Name of the sparse vector the statistics are computed for.
+    /// The vector must be configured with the IDF modifier.
+    #[prost(string, tag = "2")]
+    #[validate(length(min = 1))]
+    pub using: ::prost::alloc::string::String,
+    /// Sparse query the statistics are computed for
+    #[prost(message, optional, tag = "3")]
+    pub query: ::core::option::Option<IdfQuery>,
+    /// Filter defining the corpus: IDF statistics are computed over the points
+    /// matching this filter. If not specified, statistics are computed over the whole collection.
+    #[prost(message, optional, tag = "4")]
+    #[validate(nested)]
+    pub corpus: ::core::option::Option<Filter>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "5")]
+    #[validate(range(min = 1))]
+    pub timeout: ::core::option::Option<u64>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "6")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IdfQuery {
+    /// Indices of the query terms the statistics are reported for
+    #[prost(uint64, repeated, tag = "1")]
+    pub indices: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IdfEstimate {
+    /// Number of documents the statistics are computed over
+    #[prost(uint64, tag = "1")]
+    pub document_count: u64,
+    /// Per-term statistics, one entry per index of the query
+    #[prost(message, repeated, tag = "2")]
+    pub terms: ::prost::alloc::vec::Vec<IdfTermEstimate>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct IdfTermEstimate {
+    /// Index of the term in the sparse query
+    #[prost(uint64, tag = "1")]
+    pub index: u64,
+    /// Number of documents containing the term
+    #[prost(uint64, tag = "2")]
+    pub document_frequency: u64,
+    /// IDF value: the factor the term weight is multiplied by when searching with the IDF modifier
+    #[prost(float, tag = "3")]
+    pub idf: f32,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixPoints {
     /// Name of the collection
     #[prost(string, tag = "1")]
@@ -7433,6 +7498,17 @@ pub struct UpdateBatchResponse {
 pub struct FacetResponse {
     #[prost(message, repeated, tag = "1")]
     pub hits: ::prost::alloc::vec::Vec<FacetHit>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+    #[prost(message, optional, tag = "3")]
+    pub usage: ::core::option::Option<Usage>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EstimateIdfResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<IdfEstimate>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -8618,6 +8694,33 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Facet"));
             self.inner.unary(req, path, codec).await
         }
+        /// Estimate IDF statistics for a sparse query vector.
+        /// Reports the document count and per-term document frequencies used by
+        /// sparse vector search with the IDF modifier, along with the IDF values
+        /// derived from them, optionally scoped to the points matching a corpus filter.
+        pub async fn estimate_idf(
+            &mut self,
+            request: impl tonic::IntoRequest<super::EstimateIdfRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::EstimateIdfResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/EstimateIdf",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "EstimateIdf"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Compute distance matrix for sampled points with a pair based output format
         pub async fn search_matrix_pairs(
             &mut self,
@@ -8922,6 +9025,17 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::FacetCounts>,
         ) -> std::result::Result<tonic::Response<super::FacetResponse>, tonic::Status>;
+        /// Estimate IDF statistics for a sparse query vector.
+        /// Reports the document count and per-term document frequencies used by
+        /// sparse vector search with the IDF modifier, along with the IDF values
+        /// derived from them, optionally scoped to the points matching a corpus filter.
+        async fn estimate_idf(
+            &self,
+            request: tonic::Request<super::EstimateIdfRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::EstimateIdfResponse>,
+            tonic::Status,
+        >;
         /// Compute distance matrix for sampled points with a pair based output format
         async fn search_matrix_pairs(
             &self,
@@ -10241,6 +10355,51 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/EstimateIdf" => {
+                    #[allow(non_camel_case_types)]
+                    struct EstimateIdfSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::EstimateIdfRequest>
+                    for EstimateIdfSvc<T> {
+                        type Response = super::EstimateIdfResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::EstimateIdfRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::estimate_idf(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = EstimateIdfSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/qdrant.Points/SearchMatrixPairs" => {
                     #[allow(non_camel_case_types)]
                     struct SearchMatrixPairsSvc<T: Points>(pub Arc<T>);
@@ -11181,6 +11340,47 @@ pub struct FacetResponseInternal {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
 }
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EstimateIdfRequestInternal {
+    #[prost(string, tag = "1")]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Name of the sparse vector the statistics are computed for
+    #[prost(string, tag = "3")]
+    pub using: ::prost::alloc::string::String,
+    /// Indices of the sparse query vector
+    #[prost(uint32, repeated, tag = "4")]
+    pub indices: ::prost::alloc::vec::Vec<u32>,
+    /// Filter defining the corpus, absent for global statistics
+    #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
+    pub corpus: ::core::option::Option<Filter>,
+    #[prost(uint64, optional, tag = "6")]
+    #[validate(range(min = 1))]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EstimateIdfResponseInternal {
+    /// Number of documents the statistics are computed over
+    #[prost(uint64, tag = "1")]
+    pub document_count: u64,
+    /// Document frequency per query term index
+    #[prost(map = "uint32, uint64", tag = "2")]
+    pub document_frequency: ::std::collections::HashMap<u32, u64>,
+    /// Time spent to process
+    #[prost(double, tag = "3")]
+    pub time: f64,
+    #[prost(message, optional, tag = "4")]
+    pub usage: ::core::option::Option<HardwareUsage>,
+}
 /// Controls how an update operation waits for completion.
 /// When present, fully overrides the `wait` boolean from the wrapped public message.
 /// When absent, the `wait` boolean is used (backward compatible with older nodes).
@@ -11802,6 +12002,30 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "Facet"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn estimate_idf(
+            &mut self,
+            request: impl tonic::IntoRequest<super::EstimateIdfRequestInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::EstimateIdfResponseInternal>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/EstimateIdf",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "EstimateIdf"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -11953,6 +12177,13 @@ pub mod points_internal_server {
             request: tonic::Request<super::FacetCountsInternal>,
         ) -> std::result::Result<
             tonic::Response<super::FacetResponseInternal>,
+            tonic::Status,
+        >;
+        async fn estimate_idf(
+            &self,
+            request: tonic::Request<super::EstimateIdfRequestInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::EstimateIdfResponseInternal>,
             tonic::Status,
         >;
     }
@@ -12974,6 +13205,51 @@ pub mod points_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = FacetSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/EstimateIdf" => {
+                    #[allow(non_camel_case_types)]
+                    struct EstimateIdfSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::EstimateIdfRequestInternal>
+                    for EstimateIdfSvc<T> {
+                        type Response = super::EstimateIdfResponseInternal;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::EstimateIdfRequestInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::estimate_idf(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = EstimateIdfSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

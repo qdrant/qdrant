@@ -10,6 +10,7 @@ use common::tar_ext;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig,
@@ -396,6 +397,19 @@ impl ShardOperation for ProxyShard {
         let local_shard = &self.wrapped_shard;
         local_shard
             .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .await
+    }
+
+    async fn estimate_idf(
+        &self,
+        request: Arc<IdfEstimateParams>,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<IdfStats> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .estimate_idf(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 

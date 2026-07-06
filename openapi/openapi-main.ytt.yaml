@@ -670,6 +670,42 @@ paths:
             minimum: 1
       responses: #@ response(reference("FacetResponse"))
 
+  /collections/{collection_name}/points/idf:
+    post:
+      tags:
+        - Points
+      summary: Estimate IDF statistics for a sparse query vector.
+      description: Report the document count and per-term document frequencies used by sparse vector search with the IDF modifier, along with the IDF values derived from them, optionally scoped to the points matching a corpus filter.
+      operationId: estimate_idf
+      requestBody:
+        description: Request IDF statistics for a sparse query vector
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdfEstimateRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to estimate IDF in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(reference("IdfEstimateResponse"))
+
   /collections/{collection_name}/points/query:
     post:
       tags:

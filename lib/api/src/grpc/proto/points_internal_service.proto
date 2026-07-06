@@ -43,6 +43,8 @@ service PointsInternal {
   rpc QueryBatch(QueryBatchPointsInternal)
       returns (QueryBatchResponseInternal) {}
   rpc Facet(FacetCountsInternal) returns (FacetResponseInternal) {}
+  rpc EstimateIdf(EstimateIdfRequestInternal)
+      returns (EstimateIdfResponseInternal) {}
 }
 
 message SyncPoints {
@@ -479,4 +481,26 @@ message FacetResponseInternal {
   // Time spent to process
   double time = 2;
   optional HardwareUsage usage = 3;
+}
+
+message EstimateIdfRequestInternal {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  // Name of the sparse vector the statistics are computed for
+  string using = 3;
+  // Indices of the sparse query vector
+  repeated uint32 indices = 4;
+  // Filter defining the corpus, absent for global statistics
+  optional Filter corpus = 5;
+  optional uint64 timeout = 6;
+}
+
+message EstimateIdfResponseInternal {
+  // Number of documents the statistics are computed over
+  uint64 document_count = 1;
+  // Document frequency per query term index
+  map<uint32, uint64> document_frequency = 2;
+  // Time spent to process
+  double time = 3;
+  optional HardwareUsage usage = 4;
 }

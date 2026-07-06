@@ -2,6 +2,7 @@ pub mod build_index_result;
 pub mod collection_defaults;
 pub mod facets;
 pub mod groups;
+pub mod idf_estimate;
 pub mod index;
 pub mod manifest;
 pub mod modifier;

@@ -5,6 +5,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use futures::FutureExt as _;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::idf_estimate::{IdfEstimateParams, IdfStats};
 use segment::types::*;
 use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
@@ -291,6 +292,35 @@ impl ShardReplicaSet {
 
                 let hw_acc = hw_measurement_acc.clone();
                 async move { shard.facet(request, &search_runtime, timeout, hw_acc).await }.boxed()
+            },
+            read_consistency,
+            routing_token,
+            local_only,
+        )
+        .await
+    }
+
+    pub async fn estimate_idf(
+        &self,
+        request: Arc<IdfEstimateParams>,
+        read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
+        local_only: bool,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<IdfStats> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = request.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                let hw_acc = hw_measurement_acc.clone();
+                async move {
+                    shard
+                        .estimate_idf(request, &search_runtime, timeout, hw_acc)
+                        .await
+                }
+                .boxed()
             },
             read_consistency,
             routing_token,

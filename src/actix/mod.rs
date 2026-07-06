@@ -20,6 +20,7 @@ use actix_web::middleware::{Compress, Condition, Logger, NormalizePath};
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, error, get, web};
 use actix_web_extras::middleware::Condition as ConditionEx;
 use api::facet_api::config_facet_api;
+use api::idf_api::config_idf_api;
 use collection::operations::validation;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
@@ -158,6 +159,7 @@ pub fn init(
                 .configure(config_discover_api)
                 .configure(config_query_api)
                 .configure(config_facet_api)
+                .configure(config_idf_api)
                 .configure(config_shards_api)
                 .configure(config_issues_api)
                 .configure(config_debugger_api)

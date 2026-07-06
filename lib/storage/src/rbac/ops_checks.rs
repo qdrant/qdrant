@@ -13,6 +13,7 @@ use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryRequest,
 };
 use segment::data_types::facets::FacetParams;
+use segment::data_types::idf_estimate::IdfEstimateParams;
 use shard::scroll::ScrollRequestInternal;
 
 use super::{Access, AccessRequirements, CollectionAccessList, CollectionPass};
@@ -270,6 +271,20 @@ fn check_access_for_prefetch(
 }
 
 impl CheckableCollectionOperation for FacetParams {
+    fn access_requirements(&self) -> AccessRequirements {
+        AccessRequirements {
+            write: false,
+            manage: false,
+            extras: false,
+        }
+    }
+
+    fn check_access(&self, _access: &CollectionAccessList) -> StorageResult<()> {
+        Ok(())
+    }
+}
+
+impl CheckableCollectionOperation for IdfEstimateParams {
     fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
