@@ -731,6 +731,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
     use ahash::AHashSet;
     use segment::types::{Condition, Filter};
     use shard::operations::point_ops::{ConditionalInsertOperationInternal, UpdateMode};
+    use shard::operations::{ClockTag, OperationWithClockTag};
 
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -799,7 +800,10 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
         .await
         .unwrap();
 
-    // Delete-by-filter matching points 2 and 3.
+    // Delete-by-filter matching points 2 and 3, submitted with a clock tag:
+    // the rewritten record must reuse it (one tag covers exactly one record,
+    // and WAL-delta recovery relies on the tag surviving the rewrite).
+    let delete_clock_tag = ClockTag::new_with_token(1, 0, 1, 42);
     let delete_by_filter = CollectionUpdateOperations::PointOperation(
         PointOperations::DeletePointsByFilter(Filter::new_must(Condition::HasId(
             AHashSet::from([2.into(), 3.into()]).into(),
@@ -807,7 +811,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
     );
     shard
         .update(
-            delete_by_filter.into(),
+            OperationWithClockTag::new(delete_by_filter, Some(delete_clock_tag)),
             WaitUntil::Visible,
             None,
             hw_acc.clone(),
@@ -837,6 +841,11 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
             && *ids == vec![2.into(), 3.into()]
         {
             saw_resolved_delete = true;
+            assert_eq!(
+                record.clock_tag,
+                Some(delete_clock_tag),
+                "rewritten record must reuse the incoming operation's clock tag",
+            );
         }
     }
     assert!(
