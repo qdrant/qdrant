@@ -192,7 +192,15 @@ impl ShardReplicaSet {
                     if err.is_transient() {
                         // Deactivate the peer if forwarding failed with transient error
                         let replica_state = self.replica_state.read();
-                        let from_state = replica_state.get_peer_state(leader_peer);
+
+                        // Note, we explicitly *don't* want to use `from_state` for `ReshardingScaleDown`,
+                        // because it interacts poorly with how abort resharding currently works. 😔
+                        //
+                        // See https://github.com/qdrant/qdrant/pull/7849#issuecomment-4720894619
+                        let from_state = replica_state
+                            .get_peer_state(leader_peer)
+                            .filter(|state| !state.is_partial_or_recovery());
+
                         self.add_locally_disabled(Some(&replica_state), leader_peer, from_state);
 
                         // Return service error
