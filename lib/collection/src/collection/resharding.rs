@@ -203,23 +203,31 @@ impl Collection {
                 shard_holder.remove_shard_from_key_mapping(resharding_key.shard_id, shard_key)?;
             }
 
-            shard_holder
-                .drop_and_remove_shard(resharding_key.shard_id)
-                .await?;
-
+            // Decrement and persist shard count *before* dropping shard directory, so crash
+            // doesn't leave `shard_number` pointing at deleted dir, which would panic on startup
             {
                 let mut config = self.collection_config.write().await;
+
                 match config.params.sharding_method.unwrap_or_default() {
-                    // Idempotent: set the shard count to the id of the just
-                    // removed shard (which equals the new count, since shard
-                    // ids are contiguous and this was the highest one). A
-                    // replay converges to the same value instead of
-                    // decrementing again.
+                    // Custom shards don't use persisted count, no need to change it
+                    ShardingMethod::Custom => {}
+
+                    // Set shard count to ID of shard being removed, instead of decrementing current
+                    // shard count.
+                    //
+                    // Shard IDs are contiguous, from 0 to N.
+                    // During scale-down resharding, we remove shard N.
+                    // Once shard N is removed, there will be N shards left, from 0 to N-1.
+                    //
+                    // If operation is replayed after crash, we select same count every time,
+                    // instead of decrementing it twice.
                     ShardingMethod::Auto => {
                         resharding_key
                             .debug_assert_targets_last_shard(config.params.shard_number.get());
+
                         let new_shard_number = NonZeroU32::new(resharding_key.shard_id)
                             .expect("cannot have zero shards after finishing resharding down");
+
                         if config.params.shard_number != new_shard_number {
                             config.params.shard_number = new_shard_number;
                             if let Err(err) = config.save(&self.path) {
@@ -229,10 +237,12 @@ impl Collection {
                             }
                         }
                     }
-                    // Custom shards don't use the persisted count, we don't change it
-                    ShardingMethod::Custom => {}
                 }
             }
+
+            shard_holder
+                .drop_and_remove_shard(resharding_key.shard_id)
+                .await?;
         }
 
         Ok(())
