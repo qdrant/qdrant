@@ -251,7 +251,7 @@ murmur3_32 = "0.1"
 nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
 num_cpus = "1.17"
-object_store = { version = "0.13.2", features = ["aws", "gcp", "azure"] }
+object_store = { version = "0.14.0", features = ["aws", "gcp", "azure"] }
 ordered-float = { version = "5.3.0", features = ["serde", "schemars", "bytemuck"] }
 rayon = "1.12.0"
 parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection", "serde"] }

@@ -24,8 +24,7 @@ pub struct AwsConfig {
 /// Authentication mode for AWS S3.
 #[derive(Clone, Debug)]
 pub enum AwsCredentials {
-    /// AWS default credential chain: env vars, shared config files, IMDS,
-    /// ECS task role, etc. (Delegates to whatever the AWS SDK auto-detects.)
+    /// AWS default credential chain, resolved from the environment by `object_store`.
     Default,
     /// Hard-coded access key + secret + optional session token. Useful for
     /// tests and for short-lived credentials provided out-of-band.
@@ -40,21 +39,14 @@ impl BlobBackend for AmazonS3 {
     type Config = AwsConfig;
 
     fn build_store(config: &Self::Config) -> Result<Self> {
-        let mut builder = AmazonS3Builder::new().with_bucket_name(&config.bucket);
-        if let Some(region) = &config.region {
-            builder = builder.with_region(region);
-        }
-        if let Some(endpoint) = &config.endpoint {
-            builder = builder.with_endpoint(endpoint).with_allow_http(true);
-        }
-        builder = match &config.credentials {
-            AwsCredentials::Default => builder,
+        let mut builder = match &config.credentials {
+            AwsCredentials::Default => AmazonS3Builder::from_env(),
             AwsCredentials::Static {
                 access_key_id,
                 secret_access_key,
                 session_token,
             } => {
-                let mut b = builder
+                let mut b = AmazonS3Builder::new()
                     .with_access_key_id(access_key_id)
                     .with_secret_access_key(secret_access_key);
                 if let Some(t) = session_token {
@@ -63,6 +55,13 @@ impl BlobBackend for AmazonS3 {
                 b
             }
         };
+        builder = builder.with_bucket_name(&config.bucket);
+        if let Some(region) = &config.region {
+            builder = builder.with_region(region);
+        }
+        if let Some(endpoint) = &config.endpoint {
+            builder = builder.with_endpoint(endpoint).with_allow_http(true);
+        }
         builder.build().map_err(|err| UniversalIoError::S3Config {
             description: format!("AmazonS3Builder: {err}"),
         })
