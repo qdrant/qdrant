@@ -52,7 +52,9 @@ use crate::config::shard::EDGE_CONFIG_FILE;
 #[derive(Debug)]
 pub struct EdgeShard {
     path: PathBuf,
-    config: SaveOnDisk<EdgeConfig>,
+    /// Shared so long-lived closures (e.g. the optimizer's live vector-name provider) can read the
+    /// current config after `&self` borrows expire.
+    config: Arc<SaveOnDisk<EdgeConfig>>,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
     /// Segment manifest (`segments/manifest.json`), kept in sync with the live segment set so a
@@ -89,8 +91,10 @@ impl EdgeShard {
         let search_pool = pool::build_search_pool(config.search_thread_count())?;
 
         let config_path = path.join(EDGE_CONFIG_FILE);
-        let config = SaveOnDisk::new(&config_path, config)
-            .map_err(|e| OperationError::service_error(e.to_string()))?;
+        let config = Arc::new(
+            SaveOnDisk::new(&config_path, config)
+                .map_err(|e| OperationError::service_error(e.to_string()))?,
+        );
 
         let segment_manifest = init_segment_manifest(path, &segments)?;
 
@@ -145,8 +149,10 @@ impl EdgeShard {
         let search_pool = pool::build_search_pool(config.search_thread_count())?;
 
         let config_path = path.join(EDGE_CONFIG_FILE);
-        let config = SaveOnDisk::new(&config_path, config)
-            .map_err(|e| OperationError::service_error(e.to_string()))?;
+        let config = Arc::new(
+            SaveOnDisk::new(&config_path, config)
+                .map_err(|e| OperationError::service_error(e.to_string()))?,
+        );
 
         let segment_manifest = init_segment_manifest(path, &segments)?;
 

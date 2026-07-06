@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -16,7 +16,7 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{HnswGlobalConfig, Indexes, VectorStorageType};
+use segment::types::{HnswGlobalConfig, Indexes, VectorNameBuf, VectorStorageType};
 use uuid::Uuid;
 
 use super::config::SegmentOptimizerConfig;
@@ -60,6 +60,12 @@ impl<O: SegmentOptimizer + ?Sized> OptimizationStrategy for ShardOptimizationStr
 
     fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)> {
         self.optimizer.temp_segment(false)
+    }
+
+    fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>> {
+        self.optimizer
+            .segment_optimizer_config()
+            .live_vector_names()
     }
 }
 

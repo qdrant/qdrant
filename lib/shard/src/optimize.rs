@@ -31,7 +31,7 @@ use segment::entry::{
 };
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::PointIdType;
+use segment::types::{PointIdType, VectorNameBuf};
 use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
@@ -74,6 +74,14 @@ pub trait OptimizationStrategy: Send {
     /// Returns the segment together with the [`NewSegmentToken`] obliging the caller to register it
     /// in the manifest once it is published into the holder.
     fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)>;
+
+    /// Vector names currently present in the live collection schema, if a live source is wired in.
+    ///
+    /// `None` means the live schema is unknown, in which case the merge must treat a source vector
+    /// name absent from the target conservatively (cancel). When present, it lets the builder tell a
+    /// genuinely deleted vector (safe to prune) from the CreateVectorName-vs-optimizer race (must
+    /// cancel). See [`SegmentBuilder::set_live_vector_names`].
+    fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>>;
 }
 
 /// Restores original segments from proxies
@@ -256,6 +264,15 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
 
     if !defragmentation_keys.is_empty() {
         segment_builder.set_defragment_keys(defragmentation_keys.into_iter().collect());
+    }
+
+    // Wire in the live collection schema so the merge can distinguish a deleted vector (prune it)
+    // from the CreateVectorName race (cancel). Read here, after the proxy install froze the source
+    // segments: the schema is persisted before a vector-name op reaches the segments, so any name a
+    // frozen source carries is guaranteed visible in this read, and no concurrent create can be
+    // missed (which would otherwise cause a wrong prune).
+    if let Some(live_vector_names) = factory.live_vector_names() {
+        segment_builder.set_live_vector_names(live_vector_names);
     }
 
     {

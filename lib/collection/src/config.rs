@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Read, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::Path;
@@ -142,6 +142,22 @@ pub struct CollectionParams {
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
         PayloadStorageType::from_on_disk_payload(self.on_disk_payload)
+    }
+
+    /// All vector names (dense and sparse) currently present in the collection schema.
+    ///
+    /// Covers both kinds because a segment's `vector_data` holds dense and sparse vectors
+    /// together; callers validating segment data against the schema (WAL-recovery name
+    /// stripping, the optimizer's live-schema read) need the full set. A dense-only set would
+    /// make a sparse vector look deleted.
+    pub fn vector_names(&self) -> HashSet<VectorNameBuf> {
+        let dense = self.vectors.params_iter().map(|(name, _)| name.to_owned());
+        let sparse = self
+            .sparse_vectors
+            .iter()
+            .flatten()
+            .map(|(name, _)| name.to_owned());
+        dense.chain(sparse).collect()
     }
 
     pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {

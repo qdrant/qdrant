@@ -113,6 +113,7 @@ impl LocalShard {
 
         let new_optimizers = build_optimizers(
             &self.path,
+            self.collection_config.clone(),
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,

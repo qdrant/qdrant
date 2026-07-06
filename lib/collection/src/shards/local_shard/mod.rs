@@ -22,7 +22,7 @@ pub mod indexed_only;
 pub mod testing;
 mod wal_ops;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -492,6 +492,7 @@ impl LocalShard {
         clear_temp_segments(shard_path);
         let optimizers = build_optimizers(
             shard_path,
+            collection_config.clone(),
             &collection_config_read.params,
             &effective_optimizers_config,
             &collection_config_read.hnsw_config,
@@ -679,6 +680,7 @@ impl LocalShard {
 
         let optimizers = build_optimizers(
             shard_path,
+            collection_config.clone(),
             &config.params,
             &effective_optimizers_config,
             &config.hnsw_config,
@@ -806,20 +808,7 @@ impl LocalShard {
         //
         // Seeded from the current config and grown as the replay re-applies `CreateVectorName`
         // operations, so a name that is created and used within the replay window stays valid.
-        let mut valid_vector_names: HashSet<_> = {
-            let params = &self.collection_config.read().await.params;
-            params
-                .vectors
-                .params_iter()
-                .map(|(name, _)| name.to_owned())
-                .chain(
-                    params
-                        .sparse_vectors
-                        .iter()
-                        .flat_map(|sparse| sparse.keys().cloned()),
-                )
-                .collect()
-        };
+        let mut valid_vector_names = self.collection_config.read().await.params.vector_names();
 
         for entry in wal.read_range(from..to) {
             let (op_num, mut update) = entry.map_err(|e| {

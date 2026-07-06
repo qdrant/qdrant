@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cmp;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::path::Path;
@@ -71,6 +71,13 @@ pub struct SegmentBuilder {
 
     // Payload key to defragment data to
     defragment_keys: Vec<PayloadKeyType>,
+
+    // Vector names that currently exist in the live collection schema. Used to decide what to do
+    // with a source vector name that is absent from this builder's (frozen) target schema:
+    // - present here (or `None`, i.e. unknown) => cancel the merge (the CreateVectorName race);
+    // - absent here => a previously deleted vector whose data still lingers in older segment
+    //   files, safe to prune. See the merge loop in `update`.
+    live_vector_names: Option<HashSet<VectorNameBuf>>,
 }
 
 struct VectorData {
@@ -138,11 +145,24 @@ impl SegmentBuilder {
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
+            live_vector_names: None,
         })
     }
 
     pub fn set_defragment_keys(&mut self, keys: Vec<PayloadKeyType>) {
         self.defragment_keys = keys;
+    }
+
+    /// Set the vector names that currently exist in the live collection schema.
+    ///
+    /// When set, [`SegmentBuilder::update`] prunes (rather than rejects) source vector names that
+    /// are absent from both the target schema and this set, i.e. vectors that were deleted from the
+    /// collection but whose data still lingers in older segment files. Source vector names that are
+    /// still present in the live schema keep cancelling the merge, since those signal the
+    /// CreateVectorName-vs-optimizer race rather than a genuine deletion. When unset, every
+    /// source-superset mismatch cancels (the conservative default).
+    pub fn set_live_vector_names(&mut self, names: HashSet<VectorNameBuf>) {
+        self.live_vector_names = Some(names);
     }
 
     pub fn remove_indexed_field(&mut self, field: &PayloadKeyType) {
@@ -322,24 +342,40 @@ impl SegmentBuilder {
 
         let vector_storages: Vec<_> = segments.iter().map(|i| &i.vector_data).collect();
 
-        // Every named vector present on any source segment must also be in the
-        // target schema. The merge loop below iterates `self.vector_data`
-        // (target) and would otherwise silently drop source vectors that
-        // aren't in target — the harm behind the optimizer-vs-CreateVectorName
-        // race: an optimizer launched with a pre-`CreateVectorName(V)` config
-        // would observe sources that gained V mid-flight and emit a merged
-        // segment without V at version >= V_opnum, breaking the next
-        // optimization round that uses the refreshed config (which has V).
+        // The merge loop below iterates `self.vector_data` (target), so any vector name present on
+        // a source segment but absent from the target schema is silently dropped. Whether that drop
+        // is correct depends on *why* the source carries a name the target lacks:
         //
-        // Use `Cancelled` rather than `ServiceError` so the optimization
-        // worker treats this as a recoverable cancellation (logged at debug,
-        // tracker marked Cancelled, no shard-level optimizer_errors set, no
-        // RED status). The follow-up `recreate_optimizers_blocking` will
-        // restart workers with a refreshed `target_config` that matches the
-        // sources, and the retry merges cleanly.
+        // - DeleteVectorName: the name was removed from the collection schema, but its data still
+        //   lives in older segment files. Pruning it on rebuild is the desired recovery.
+        // - CreateVectorName-vs-optimizer race: an optimizer launched with a pre-`CreateVectorName(V)`
+        //   config observes sources that gained V mid-flight. Dropping V here would emit a merged
+        //   segment without V at version >= V_opnum and break the next optimization round (whose
+        //   refreshed config has V). This must be cancelled and retried.
+        //
+        // We tell the two apart with the live collection schema (`live_vector_names`), which is
+        // authoritative because the schema is persisted before the op is applied to segments: a
+        // deleted name is gone from the live schema, a freshly created one is present. When the live
+        // schema is unknown (`None`) we conservatively cancel.
+        //
+        // Cancel via `Cancelled` rather than `ServiceError` so the optimization worker treats it as
+        // a recoverable cancellation (logged at debug, tracker marked Cancelled, no shard-level
+        // optimizer_errors, no RED status); the retry under the refreshed config merges cleanly.
         for vector_storage in &vector_storages {
             for source_vector_name in vector_storage.keys() {
-                if !self.vector_data.contains_key(source_vector_name) {
+                if self.vector_data.contains_key(source_vector_name) {
+                    continue;
+                }
+                let deleted_from_schema = self
+                    .live_vector_names
+                    .as_ref()
+                    .is_some_and(|live| !live.contains(source_vector_name));
+                if deleted_from_schema {
+                    log::debug!(
+                        "Dropping vector name {source_vector_name} from source segment during \
+                         optimization; it was deleted from the collection schema"
+                    );
+                } else {
                     return Err(OperationError::cancelled(format!(
                         "Cannot update from other segment because it has an extra \
                          vector name {source_vector_name} not in the target schema; \
@@ -529,6 +565,7 @@ impl SegmentBuilder {
                 temp_dir,
                 indexed_fields,
                 defragment_keys: _,
+                live_vector_names: _,
             } = self;
 
             let progress_quantization = progress_segment.subtask("quantization");
