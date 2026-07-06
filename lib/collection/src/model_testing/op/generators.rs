@@ -38,6 +38,25 @@ const TEXTS: [&str; 4] = [
     "beta epsilon",
     "gamma delta zeta",
 ];
+// Identifier-like strings with shared prefixes — exercises keyword prefix index + filter.
+const URLS: [&str; 6] = [
+    "https://qdrant.tech",
+    "https://qdrant.tech/docs",
+    "https://qdrant.tech/blog",
+    "https://example.com",
+    "http://example.com",
+    "ftp://files.example.com",
+];
+const URL_PREFIX_PROBES: [&str; 8] = [
+    "https://qdrant.",
+    "https://",
+    "http",
+    "ftp://",
+    "https://example.com",
+    "nonexistent",
+    "", // matches every point that has `url`
+    "qdrant",
+];
 // Geo coords live in a small EU-shaped rectangle, snapped to 0.1 degree.
 const GEO_LAT_LO: f64 = 40.0;
 const GEO_LAT_HI: f64 = 50.0;
@@ -51,6 +70,14 @@ const SPARSE_NNZ_MAX: usize = 6;
 
 pub(super) fn random_tag(rng: &mut impl Rng) -> &'static str {
     TAGS.choose(rng).unwrap()
+}
+
+pub(super) fn random_url(rng: &mut impl Rng) -> &'static str {
+    URLS.choose(rng).unwrap()
+}
+
+pub(super) fn random_url_prefix_probe(rng: &mut impl Rng) -> &'static str {
+    URL_PREFIX_PROBES.choose(rng).unwrap()
 }
 
 fn random_id(rng: &mut impl Rng, id_pool: u64) -> PointIdType {
@@ -104,7 +131,7 @@ pub(super) fn upsert_fallback(
 }
 
 pub(super) fn random_payload_keys(rng: &mut impl Rng) -> Vec<JsonPath> {
-    let all_keys = ["num", "tag", "f", "b", "d", "g", "t"];
+    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t"];
     let mut keys: Vec<JsonPath> = all_keys
         .iter()
         .filter(|_| rng.random_bool(0.4))
@@ -123,7 +150,7 @@ pub(super) fn random_payload_keys(rng: &mut impl Rng) -> Vec<JsonPath> {
 /// (which assigns the source payload as the value at this path) maps to a simple field overwrite
 /// the model can mirror via `Payload::merge_by_key`.
 pub(super) fn random_payload_key(rng: &mut impl Rng) -> JsonPath {
-    let all_keys = ["num", "tag", "f", "b", "d", "g", "t"];
+    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t"];
     all_keys.choose(rng).unwrap().parse().unwrap()
 }
 
@@ -133,7 +160,7 @@ pub(super) fn random_payload_key(rng: &mut impl Rng) -> JsonPath {
 pub(super) fn random_with_payload(rng: &mut impl Rng) -> WithPayloadInterface {
     // 1-3 distinct top-level keys for the field/selector variants.
     let n = rng.random_range(1..=3);
-    let keys: Vec<JsonPath> = ["num", "tag", "f", "b", "d", "g", "t"]
+    let keys: Vec<JsonPath> = ["num", "tag", "url", "f", "b", "d", "g", "t"]
         .iter()
         .copied()
         .sample(rng, n)
@@ -175,7 +202,7 @@ pub(super) fn random_scroll_filter(
     active: &BTreeSet<VectorNameBuf>,
     id_pool: u64,
 ) -> ScrollFilter {
-    match rng.random_range(0..5) {
+    match rng.random_range(0..6) {
         0 => ScrollFilter::None,
         1 => ScrollFilter::Num(random_num(rng)),
         2 => ScrollFilter::Tag(random_tag(rng).to_string()),
@@ -192,6 +219,7 @@ pub(super) fn random_scroll_filter(
         // `DeleteVectors`/`UpdateVectors`/`CreateVectorName` make the populated set vary per point,
         // so this meaningfully restricts.
         4 => ScrollFilter::HasVector(random_vector_name(rng, active)),
+        5 => ScrollFilter::UrlPrefix(random_url_prefix_probe(rng).to_string()),
         _ => unreachable!(),
     }
 }
@@ -305,6 +333,7 @@ pub(super) fn random_payload(rng: &mut impl Rng) -> Payload {
     geo.insert("lon".to_string(), Value::from(lon));
     map.insert("g".to_string(), Value::Object(geo));
     map.insert("t".to_string(), Value::from(*TEXTS.choose(rng).unwrap()));
+    map.insert("url".to_string(), Value::from(random_url(rng)));
     Payload(map)
 }
 

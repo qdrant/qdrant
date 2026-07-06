@@ -183,7 +183,8 @@ pub(super) async fn fixture(
     }
 
     // Eagerly index all "always-on" payload fields so filter ops run through the index path.
-    // `tag` is left out — the test toggles it via Op::CreateIndex / Op::DropIndex.
+    // `tag` and `url` are left out — `tag` is optional on points; `url` is toggled via
+    // `Op::CreateIndex` / `Op::DropIndex` with `prefix: true`.
     let eager_indices: &[(&str, PayloadSchemaType)] = &[
         ("num", PayloadSchemaType::Integer),
         ("f", PayloadSchemaType::Float),
