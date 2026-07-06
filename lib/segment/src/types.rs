@@ -2354,12 +2354,18 @@ impl Display for PayloadFieldSchema {
         match self {
             PayloadFieldSchema::FieldType(t) => write!(f, "{}", t.name()),
             PayloadFieldSchema::FieldParams(params) => match params {
-                PayloadSchemaParams::Keyword(_)
-                | PayloadSchemaParams::Float(_)
+                PayloadSchemaParams::Float(_)
                 | PayloadSchemaParams::Geo(_)
                 | PayloadSchemaParams::Bool(_)
                 | PayloadSchemaParams::Datetime(_)
                 | PayloadSchemaParams::Uuid(_) => write!(f, "{}", params.name()),
+                PayloadSchemaParams::Keyword(keyword_params) => {
+                    if keyword_params.prefix.unwrap_or_default() {
+                        write!(f, "keyword (with prefix: true)")
+                    } else {
+                        write!(f, "keyword")
+                    }
+                }
                 PayloadSchemaParams::Integer(integer_params) => {
                     let range = integer_params.range.unwrap_or(true);
                     let lookup = integer_params.lookup.unwrap_or(true);
@@ -2604,6 +2610,25 @@ impl<S: Into<String>> From<S> for MatchPhrase {
     }
 }
 
+/// Match keyword values that start with the given string.
+///
+/// Byte-wise (hence, for valid UTF-8, character-wise) and case-sensitive,
+/// consistent with exact keyword matching. Served efficiently by a keyword
+/// index created with the `prefix` option.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchPrefix {
+    pub prefix: String,
+}
+
+impl<S: Into<String>> From<S> for MatchPrefix {
+    fn from(prefix: S) -> Self {
+        MatchPrefix {
+            prefix: prefix.into(),
+        }
+    }
+}
+
 /// Exact match on any of the given values
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -2626,6 +2651,7 @@ pub enum MatchInterface {
     Text(MatchText),
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
+    Prefix(MatchPrefix),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2638,6 +2664,7 @@ pub enum Match {
     Text(MatchText),
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
+    Prefix(MatchPrefix),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2649,6 +2676,12 @@ impl Match {
 
     pub fn new_text(text: &str) -> Self {
         Self::Text(MatchText { text: text.into() })
+    }
+
+    pub fn new_prefix(prefix: &str) -> Self {
+        Self::Prefix(MatchPrefix {
+            prefix: prefix.into(),
+        })
     }
 
     pub fn new_any(any: AnyVariants) -> Self {
@@ -2679,6 +2712,7 @@ impl From<MatchInterface> for Match {
                 except: except.except,
             }),
             MatchInterface::Phrase(MatchPhrase { phrase }) => Self::Phrase(MatchPhrase { phrase }),
+            MatchInterface::Prefix(MatchPrefix { prefix }) => Self::Prefix(MatchPrefix { prefix }),
         }
     }
 }
@@ -3286,6 +3320,7 @@ impl FieldCondition {
             Match::Text(_) => 0,
             Match::Phrase(_) => 0,
             Match::TextAny(_) => 0,
+            Match::Prefix(_) => 0,
         }
     }
 }

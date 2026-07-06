@@ -16,8 +16,8 @@ use crate::index::field_index::{
 };
 use crate::index::payload_config::StorageType;
 use crate::types::{
-    FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
-    PayloadKeyType,
+    FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchText,
+    MatchTextAny, MatchValue, PayloadKeyType,
 };
 
 impl FullTextIndexRead for FullTextIndex {
@@ -231,7 +231,9 @@ pub fn filter<'a, T: FullTextIndexRead>(
         Match::TextAny(MatchTextAny { text_any }) => {
             index.parse_text_any_query(text_any, hw_counter)
         }
-        Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
+        Match::Value(_) | Match::Any(_) | Match::Except(_) | Match::Prefix(_) => {
+            return Ok(None);
+        }
     }?;
 
     let Some(parsed_query) = parsed_query_opt else {
@@ -257,7 +259,9 @@ pub fn estimate_cardinality<T: FullTextIndexRead>(
         Match::TextAny(MatchTextAny { text_any }) => {
             index.parse_text_any_query(text_any, hw_counter)
         }
-        Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
+        Match::Value(_) | Match::Any(_) | Match::Except(_) | Match::Prefix(_) => {
+            return Ok(None);
+        }
     }?;
 
     let Some(parsed_query) = parsed_query_opt else {
@@ -316,7 +320,8 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
         Match::Phrase(MatchPhrase { phrase }) => (phrase, PayloadMatchQueryType::Phrase),
         Match::Value(MatchValue { value: _ })
         | Match::Any(MatchAny { any: _ })
-        | Match::Except(MatchExcept { except: _ }) => return Ok(None),
+        | Match::Except(MatchExcept { except: _ })
+        | Match::Prefix(MatchPrefix { prefix: _ }) => return Ok(None),
     };
 
     let query_opt = match query_type {
@@ -376,6 +381,6 @@ pub fn special_check_condition<T: FullTextIndexRead>(
             PayloadMatchQueryType::TextAny,
             hw_counter,
         )?),
-        Some(Match::Value(_) | Match::Any(_) | Match::Except(_)) | None => None,
+        Some(Match::Value(_) | Match::Any(_) | Match::Except(_) | Match::Prefix(_)) | None => None,
     })
 }

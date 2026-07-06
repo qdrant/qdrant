@@ -8349,6 +8349,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "prefix": {
+            "description": "If true, enable prefix matching (`match: { \"prefix\": ... }`) on this field. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -9504,6 +9509,9 @@
             "$ref": "#/components/schemas/MatchPhrase"
           },
           {
+            "$ref": "#/components/schemas/MatchPrefix"
+          },
+          {
             "$ref": "#/components/schemas/MatchAny"
           },
           {
@@ -9569,6 +9577,18 @@
         ],
         "properties": {
           "phrase": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchPrefix": {
+        "description": "Match keyword values that start with the given string.\n\nByte-wise (hence, for valid UTF-8, character-wise) and case-sensitive, consistent with exact keyword matching. Served efficiently by a keyword index created with the `prefix` option.",
+        "type": "object",
+        "required": [
+          "prefix"
+        ],
+        "properties": {
+          "prefix": {
             "type": "string"
           }
         }

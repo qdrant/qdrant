@@ -8,7 +8,8 @@ use serde_json::Value;
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
     GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
-    MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
+    MatchPrefix, MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants,
+    ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -184,6 +185,14 @@ impl ValueChecker for Match {
                 Value::String(stored) => text_any
                     .split_whitespace()
                     .any(|token| stored.contains(token)),
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_) => false,
+            },
+            Match::Prefix(MatchPrefix { prefix }) => match payload {
+                Value::String(stored) => stored.starts_with(prefix),
                 Value::Null
                 | Value::Bool(_)
                 | Value::Number(_)

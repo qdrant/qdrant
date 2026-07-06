@@ -67,7 +67,7 @@ mod tests {
         // Build via the writable gridstore builder (matches the existing map
         // tests' `IndexType::MutableGridstore` path).
         {
-            let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf());
+            let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf(), false);
             builder.init().unwrap();
             let entries: &[(PointOffsetType, &[&str])] = &[
                 (0, &["red", "green"]),

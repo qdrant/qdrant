@@ -32,12 +32,12 @@ use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    KeywordIndexParams, LookupLocation, MaxOptimizationThreads, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
-    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, StartFrom,
-    StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
-    TurboQuantBitSize, TurboQuantization, UuidIndexParams, VectorsOutput, WithLookup, raw_query,
-    start_from,
+    KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
+    ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
+    StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize, TurboQuantization,
+    UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
 use super::stemming_algorithm::StemmingParams;
 use super::{
@@ -200,12 +200,14 @@ impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams
             is_tenant,
             on_disk,
             enable_hnsw,
+            prefix,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::KeywordIndexParams(KeywordIndexParams {
                 is_tenant,
                 on_disk,
                 enable_hnsw,
+                prefix: prefix.unwrap_or_default().then_some(KeywordPrefixParams {}),
             })),
         }
     }
@@ -492,12 +494,16 @@ impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexPar
             is_tenant,
             on_disk,
             enable_hnsw,
+            prefix,
         } = params;
         Ok(segment::data_types::index::KeywordIndexParams {
             r#type: KeywordIndexType::Keyword,
             is_tenant,
             on_disk,
             enable_hnsw,
+            // Presence of the (currently empty) message enables prefix
+            // matching.
+            prefix: prefix.map(|KeywordPrefixParams {}| true),
         })
     }
 }
@@ -2107,6 +2113,7 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::TextAny(text_any) => {
                     segment::types::Match::TextAny(segment::types::MatchTextAny { text_any })
                 }
+                MatchValue::Prefix(prefix) => segment::types::Match::Prefix(prefix.into()),
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -2149,6 +2156,9 @@ impl From<segment::types::Match> for Match {
             },
             segment::types::Match::TextAny(segment::types::MatchTextAny { text_any }) => {
                 MatchValue::TextAny(text_any)
+            }
+            segment::types::Match::Prefix(segment::types::MatchPrefix { prefix }) => {
+                MatchValue::Prefix(prefix)
             }
         };
         Self {

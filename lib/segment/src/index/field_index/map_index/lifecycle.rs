@@ -46,8 +46,12 @@ where
         Ok(Some(index))
     }
 
-    pub fn new_mutable(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
-        let index = MutableMapIndex::open_gridstore(dir, create_if_missing)?;
+    pub fn new_mutable(
+        dir: PathBuf,
+        create_if_missing: bool,
+        prefix_index: bool,
+    ) -> OperationResult<Option<Self>> {
+        let index = MutableMapIndex::open_gridstore(dir, create_if_missing, prefix_index)?;
         Ok(index.map(MapIndex::Mutable))
     }
 
@@ -55,6 +59,7 @@ where
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        prefix_index: bool,
     ) -> MapIndexMmapBuilder<N> {
         MapIndexMmapBuilder {
             path: path.to_owned(),
@@ -62,11 +67,15 @@ where
             values_to_points: Default::default(),
             is_on_disk,
             deleted_points: deleted_points.to_owned(),
+            prefix_index,
         }
     }
 
-    pub fn builder_mutable(dir: PathBuf) -> super::builders::MapIndexGridstoreBuilder<N> {
-        super::builders::MapIndexGridstoreBuilder::new(dir)
+    pub fn builder_mutable(
+        dir: PathBuf,
+        prefix_index: bool,
+    ) -> super::builders::MapIndexGridstoreBuilder<N> {
+        super::builders::MapIndexGridstoreBuilder::new(dir, prefix_index)
     }
 
     pub(crate) fn flusher(&self) -> Flusher {

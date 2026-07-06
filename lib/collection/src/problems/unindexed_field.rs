@@ -8,7 +8,9 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
-use segment::data_types::index::{TextIndexParams, TextIndexType};
+use segment::data_types::index::{
+    KeywordIndexParams, KeywordIndexType, TextIndexParams, TextIndexType,
+};
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -240,6 +242,7 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
             Match::Value(match_value) => infer_index_from_match_value(match_value),
             Match::Text(_match_text) => vec![FieldIndexType::Text],
             Match::Phrase(_match_text) => vec![FieldIndexType::TextPhrase],
+            Match::Prefix(_match_prefix) => vec![FieldIndexType::KeywordPrefix],
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
             Match::TextAny(_match_text_any) => vec![FieldIndexType::Text],
@@ -548,6 +551,8 @@ enum FieldIndexType {
     IntMatch,
     IntRange,
     KeywordMatch,
+    /// Keyword index with the `prefix` option enabled.
+    KeywordPrefix,
     FloatRange,
     Text,
     TextPhrase,
@@ -578,7 +583,12 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
             PayloadSchemaType::Datetime => index_types.insert(FieldIndexType::DatetimeRange),
         },
         PayloadFieldSchema::FieldParams(payload_schema_params) => match payload_schema_params {
-            PayloadSchemaParams::Keyword(_) => index_types.insert(FieldIndexType::KeywordMatch),
+            PayloadSchemaParams::Keyword(keyword_index_params) => {
+                if keyword_index_params.prefix.unwrap_or_default() {
+                    index_types.insert(FieldIndexType::KeywordPrefix);
+                }
+                index_types.insert(FieldIndexType::KeywordMatch)
+            }
             PayloadSchemaParams::Integer(integer_index_params) => {
                 if integer_index_params.lookup.unwrap_or(true) {
                     index_types.insert(FieldIndexType::IntMatch);
@@ -623,6 +633,13 @@ impl From<FieldIndexType> for PayloadFieldSchema {
             FieldIndexType::KeywordMatch => {
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
             }
+            FieldIndexType::KeywordPrefix => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                    r#type: KeywordIndexType::Keyword,
+                    prefix: Some(true),
+                    ..Default::default()
+                }))
+            }
             FieldIndexType::FloatRange => PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             FieldIndexType::Text => PayloadFieldSchema::FieldType(PayloadSchemaType::Text),
             FieldIndexType::TextPhrase => {
@@ -648,6 +665,36 @@ mod tests {
     use segment::data_types::index::IntegerIndexParams;
 
     use super::*;
+
+    #[test]
+    fn keyword_prefix_capabilities() {
+        // Plain keyword index (by type or by params) doesn't serve prefix.
+        let plain = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let index_types = schema_capabilities(&plain);
+        assert!(index_types.contains(&FieldIndexType::KeywordMatch));
+        assert!(!index_types.contains(&FieldIndexType::KeywordPrefix));
+
+        // Keyword index with `prefix` serves both exact and prefix match.
+        let with_prefix =
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                r#type: KeywordIndexType::Keyword,
+                prefix: Some(true),
+                ..Default::default()
+            }));
+        let index_types = schema_capabilities(&with_prefix);
+        assert!(index_types.contains(&FieldIndexType::KeywordMatch));
+        assert!(index_types.contains(&FieldIndexType::KeywordPrefix));
+
+        // A prefix condition requires the prefix capability.
+        let condition = FieldCondition::new_match(
+            segment::json_path::JsonPath::new("url"),
+            segment::types::Match::new_prefix("https://"),
+        );
+        assert_eq!(
+            infer_index_from_field_condition(&condition),
+            vec![FieldIndexType::KeywordPrefix],
+        );
+    }
 
     #[test]
     fn integer_index_capacities() {

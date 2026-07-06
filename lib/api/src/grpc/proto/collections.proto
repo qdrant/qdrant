@@ -628,6 +628,13 @@ message KeywordIndexParams {
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // If set, enable prefix matching (`match: { "prefix": ... }`) on this field.
+  optional KeywordPrefixParams prefix = 4;
+}
+
+// Prefix matching options for the keyword index. Has no options yet:
+// presence of this message enables prefix matching.
+message KeywordPrefixParams {
 }
 
 message IntegerIndexParams {

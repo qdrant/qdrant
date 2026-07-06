@@ -240,6 +240,22 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         }
     }
 
+    /// Condition checker for [`crate::types::Match::Prefix`].
+    ///
+    /// Checks a point's values through the forward index, so it works in
+    /// every variant regardless of whether prefix structures were built.
+    fn match_prefix_checker(
+        &'a self,
+        hw_counter: HardwareCounterCell,
+        prefix: impl Borrow<N>,
+    ) -> MapConditionChecker<'a, N, Self> {
+        MapConditionChecker {
+            index: self,
+            hw_counter,
+            predicate: MapPredicate::Prefix(<N as MapIndexKey>::to_owned(prefix.borrow())),
+        }
+    }
+
     /// Condition checker for
     /// - [`crate::types::Match::Any`] (when `negate` is `false`),
     /// - [`crate::types::Match::Except`] (when `negate` is `true`).
@@ -521,6 +537,9 @@ pub struct MapConditionChecker<'a, N: MapIndexKey + ?Sized, T> {
 enum MapPredicate<N: MapIndexKey + ?Sized> {
     /// For [`crate::types::Match::Value`].
     Value(<N as MapIndexKey>::Owned),
+    /// For [`crate::types::Match::Prefix`]; meaningful for string keys only
+    /// ([`MapIndexKey::starts_with`] is constant `false` elsewhere).
+    Prefix(<N as MapIndexKey>::Owned),
     /// For [`crate::types::Match::Any`] and [`crate::types::Match::Except`],
     /// Linear scan version.
     AnyScan {
@@ -546,6 +565,9 @@ where
         self.index
             .check_values_any(point_id, &self.hw_counter, |value| match &self.predicate {
                 MapPredicate::Value(expected) => value == expected.borrow(),
+                MapPredicate::Prefix(prefix) => {
+                    <N as MapIndexKey>::starts_with(value, prefix.borrow())
+                }
                 MapPredicate::AnyScan { list, negate } => {
                     list.iter().any(|key| key.borrow() == value) != *negate
                 }

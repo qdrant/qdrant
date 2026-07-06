@@ -255,7 +255,7 @@ pub struct FieldCondition {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -293,6 +293,9 @@ pub mod r#match {
         /// Match any word in the text
         #[prost(string, tag = "10")]
         TextAny(::prost::alloc::string::String),
+        /// Match keywords starting with the given prefix
+        #[prost(string, tag = "11")]
+        Prefix(::prost::alloc::string::String),
     }
 }
 #[derive(serde::Serialize)]
@@ -1343,7 +1346,15 @@ pub struct KeywordIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// If set, enable prefix matching (`match: { "prefix": ... }`) on this field.
+    #[prost(message, optional, tag = "4")]
+    pub prefix: ::core::option::Option<KeywordPrefixParams>,
 }
+/// Prefix matching options for the keyword index. Has no options yet:
+/// presence of this message enables prefix matching.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct KeywordPrefixParams {}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IntegerIndexParams {

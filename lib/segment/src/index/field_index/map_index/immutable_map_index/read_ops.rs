@@ -157,11 +157,17 @@ where
             value_to_points_container,
             deleted_value_to_points_container,
             point_to_values,
+            sorted_keys,
             indexed_points: _,
             values_count: _,
             storage: _,
             cached_ram_usage_bytes: _,
         } = self;
+
+        let sorted_keys_bytes = sorted_keys.as_ref().map_or(0, |keys| {
+            keys.capacity() * size_of::<<N as MapIndexKey>::Owned>()
+                + keys.iter().map(|k| N::owned_heap_bytes(k)).sum::<usize>()
+        });
 
         let hashmap_entry_overhead = size_of::<u64>() + size_of::<usize>();
         let vtp_base_bytes: usize = value_to_points.capacity()
@@ -178,6 +184,7 @@ where
             + vtp_heap_bytes
             + container_bytes
             + deleted_bytes
+            + sorted_keys_bytes
             + point_to_values.ram_usage_bytes()
     }
 }

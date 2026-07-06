@@ -58,6 +58,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
     pub(super) values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
     pub(super) is_on_disk: bool,
     pub(super) deleted_points: BitVec,
+    pub(super) prefix_index: bool,
 }
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
@@ -120,6 +121,7 @@ where
             self.values_to_points,
             populate,
             &self.deleted_points,
+            self.prefix_index,
         )?;
 
         let index = if self.is_on_disk {
@@ -138,14 +140,19 @@ where
 {
     dir: PathBuf,
     index: Option<MapIndex<N>>,
+    prefix_index: bool,
 }
 
 impl<N: MapIndexKey + ?Sized> MapIndexGridstoreBuilder<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub(super) fn new(dir: PathBuf) -> Self {
-        Self { dir, index: None }
+    pub(super) fn new(dir: PathBuf, prefix_index: bool) -> Self {
+        Self {
+            dir,
+            index: None,
+            prefix_index,
+        }
     }
 }
 
@@ -163,7 +170,7 @@ where
             "index must be initialized exactly once",
         );
         self.index.replace(
-            MapIndex::new_mutable(self.dir.clone(), true)?.ok_or_else(|| {
+            MapIndex::new_mutable(self.dir.clone(), true, self.prefix_index)?.ok_or_else(|| {
                 OperationError::service_error("Failed to create mutable map index")
             })?,
         );

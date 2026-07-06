@@ -1,5 +1,6 @@
 use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use std::iter;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -28,18 +29,24 @@ where
     /// Amount of point which have at least one indexed payload value
     pub(in crate::index::field_index::map_index) indexed_points: usize,
     pub(in crate::index::field_index::map_index) values_count: usize,
+    /// Ordered mirror of `map`'s keys, maintained only when the index is
+    /// built with the `prefix` option; enables prefix range scans. Like
+    /// `map`, keys are never removed when their postings become empty.
+    pub(in crate::index::field_index::map_index) sorted_keys:
+        Option<BTreeSet<<N as MapIndexKey>::Owned>>,
 }
 
 impl<N: MapIndexKey + ?Sized> InMemoryMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub(in crate::index::field_index::map_index) fn empty() -> Self {
+    pub(in crate::index::field_index::map_index) fn empty(prefix_index: bool) -> Self {
         Self {
             map: HashMap::new(),
             point_to_values: Vec::new(),
             indexed_points: 0,
             values_count: 0,
+            sorted_keys: prefix_index.then(BTreeSet::new),
         }
     }
 
@@ -57,6 +64,9 @@ where
 
         for value in values {
             let entry = self.map.entry(value.clone());
+            if let (Entry::Vacant(_), Some(sorted_keys)) = (&entry, &mut self.sorted_keys) {
+                sorted_keys.insert(value.clone());
+            }
             let inserted = entry.or_default().insert(idx);
 
             // only insert into forward index if it is not a duplicate
@@ -214,7 +224,13 @@ where
             point_to_values,
             indexed_points: _,
             values_count: _,
+            sorted_keys,
         } = self;
+
+        let sorted_keys_bytes = sorted_keys.as_ref().map_or(0, |keys| {
+            keys.len() * size_of::<<N as MapIndexKey>::Owned>()
+                + keys.iter().map(|k| N::owned_heap_bytes(k)).sum::<usize>()
+        });
 
         let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
         let map_base_bytes = map.capacity()
@@ -231,6 +247,6 @@ where
                 .iter()
                 .map(|v| v.capacity() * std::mem::size_of::<<N as MapIndexKey>::Owned>())
                 .sum::<usize>();
-        map_bytes + ptv_bytes
+        map_bytes + ptv_bytes + sorted_keys_bytes
     }
 }

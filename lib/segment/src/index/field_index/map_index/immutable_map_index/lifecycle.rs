@@ -94,11 +94,21 @@ where
             log::warn!("Failed to clear mmap cache of immutable map index: {err}");
         }
 
+        // In-RAM counterpart of the storage's prefix index: `Owned` ordering
+        // is required to match the byte order of the on-disk dictionary.
+        let sorted_keys = index.has_prefix_index().then(|| {
+            let mut keys: Vec<<N as MapIndexKey>::Owned> =
+                value_to_points.keys().cloned().collect();
+            keys.sort_unstable();
+            keys
+        });
+
         let mut result = Self {
             value_to_points,
             value_to_points_container,
             deleted_value_to_points_container: BitVec::new(),
             point_to_values,
+            sorted_keys,
             indexed_points,
             values_count,
             storage: index,
