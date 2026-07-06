@@ -27,6 +27,7 @@ use segment::types::{
 };
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
+use sparse::common::types::DimId;
 use tonic::Status;
 use uuid::Uuid;
 
@@ -3337,10 +3338,23 @@ impl From<segment_facets::FacetValue> for FacetValue {
     }
 }
 
-impl From<IdfQuery> for segment_idf::IdfEstimateQuery {
-    fn from(query: IdfQuery) -> Self {
+impl TryFrom<IdfQuery> for segment_idf::IdfEstimateQuery {
+    type Error = Status;
+
+    fn try_from(query: IdfQuery) -> Result<Self, Self::Error> {
         let IdfQuery { indices } = query;
-        Self { indices }
+
+        // The wire format is 64-bit to be future-proof; the engine addresses
+        // sparse dimensions with 32 bits.
+        let indices = indices
+            .into_iter()
+            .map(|index| {
+                DimId::try_from(index).map_err(|_| {
+                    Status::invalid_argument(format!("query index {index} is out of range"))
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self { indices })
     }
 }
 
@@ -3365,7 +3379,7 @@ impl From<segment_idf::IdfTermEstimate> for IdfTermEstimate {
             idf,
         } = term;
         Self {
-            index,
+            index: u64::from(index),
             document_frequency: document_frequency as u64,
             idf,
         }

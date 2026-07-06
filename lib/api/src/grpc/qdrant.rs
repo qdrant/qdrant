@@ -6920,8 +6920,8 @@ pub struct EstimateIdfRequest {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IdfQuery {
     /// Indices of the query terms the statistics are reported for
-    #[prost(uint32, repeated, tag = "1")]
-    pub indices: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint64, repeated, tag = "1")]
+    pub indices: ::prost::alloc::vec::Vec<u64>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6936,9 +6936,9 @@ pub struct IdfEstimate {
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct IdfTermEstimate {
-    /// Index of the term in the sparse vector
-    #[prost(uint32, tag = "1")]
-    pub index: u32,
+    /// Index of the term in the sparse query
+    #[prost(uint64, tag = "1")]
+    pub index: u64,
     /// Number of documents containing the term
     #[prost(uint64, tag = "2")]
     pub document_frequency: u64,

@@ -1252,7 +1252,7 @@ message EstimateIdfRequest {
 
 message IdfQuery {
   // Indices of the query terms the statistics are reported for
-  repeated uint32 indices = 1;
+  repeated uint64 indices = 1;
 }
 
 message IdfEstimate {
@@ -1263,8 +1263,8 @@ message IdfEstimate {
 }
 
 message IdfTermEstimate {
-  // Index of the term in the sparse vector
-  uint32 index = 1;
+  // Index of the term in the sparse query
+  uint64 index = 1;
   // Number of documents containing the term
   uint64 document_frequency = 2;
   // IDF value: the factor the term weight is multiplied by when searching with the IDF modifier

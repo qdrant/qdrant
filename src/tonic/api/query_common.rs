@@ -1068,7 +1068,7 @@ pub async fn estimate_idf(
 
     let estimate_request = IdfEstimateParams {
         using,
-        query: query.into(),
+        query: query.try_into()?,
         corpus: corpus.map(TryInto::try_into).transpose()?,
     };
     validate(&estimate_request)?;
