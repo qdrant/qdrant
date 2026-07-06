@@ -30,26 +30,6 @@ static RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK: std::sync::Mutex<
     Option<RestoreLocalReplicaBeforeFlagHook>,
 > = std::sync::Mutex::new(None);
 
-#[cfg(test)]
-async fn wait_restore_local_replica_before_flag_hook_for_test(shard_flag: &Path) {
-    let hook = {
-        let mut hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK.lock().unwrap();
-        if hook
-            .as_ref()
-            .is_some_and(|(expected_shard_flag, _, _)| expected_shard_flag.as_path() == shard_flag)
-        {
-            hook.take()
-        } else {
-            None
-        }
-    };
-
-    if let Some((_expected_shard_flag, reached, release)) = hook {
-        let _ = reached.send(());
-        let _ = release.await;
-    }
-}
-
 impl ShardReplicaSet {
     pub async fn create_snapshot(
         &self,
@@ -446,6 +426,26 @@ impl ShardReplicaSet {
             })?
             .snapshot_manifest()
             .await
+    }
+}
+
+#[cfg(test)]
+async fn wait_restore_local_replica_before_flag_hook_for_test(shard_flag: &Path) {
+    let hook = {
+        let mut hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK.lock().unwrap();
+        if hook
+            .as_ref()
+            .is_some_and(|(expected_shard_flag, _, _)| expected_shard_flag.as_path() == shard_flag)
+        {
+            hook.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some((_expected_shard_flag, reached, release)) = hook {
+        let _ = reached.send(());
+        let _ = release.await;
     }
 }
 
