@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{CachedReadFs, MmapFile, MmapFs};
 use criterion::measurement::Measurement;
 use criterion::{Criterion, criterion_group, criterion_main};
 use dataset::Dataset;
@@ -156,16 +156,22 @@ pub fn run_bench(
 
             run_bench2(
                 c.benchmark_group(format!("search/ram_{}/{name}", $name)),
-                &InvertedIndexCompressedImmutableRam::<$type>::open_ro(&MmapFs, &index_path)
-                    .unwrap(),
+                &InvertedIndexCompressedImmutableRam::<$type>::open_ro::<MmapFile>(
+                    &CachedReadFs::new(MmapFs, &index_path).unwrap(),
+                    &index_path,
+                )
+                .unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
 
             run_bench2(
                 c.benchmark_group(format!("search/mmap_{}/{name}", $name)),
-                &InvertedIndexCompressedMmap::<$type, MmapFile>::open_ro(&MmapFs, &index_path)
-                    .unwrap(),
+                &InvertedIndexCompressedMmap::<$type, MmapFile>::open_ro(
+                    &CachedReadFs::new(MmapFs, &index_path).unwrap(),
+                    &index_path,
+                )
+                .unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
