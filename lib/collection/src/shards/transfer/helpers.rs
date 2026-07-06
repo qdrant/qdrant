@@ -125,7 +125,38 @@ pub fn validate_transfer(
         )));
     }
 
-    if let Some(existing_transfer) = check_transfer_conflicts(transfer, current_transfers.iter()) {
+    // If transfer with this key already exist, there are two possible cases:
+    // - either we apply identical, but *conflicting* operation
+    // - or we re-apply *the same* operation after a crash
+    //
+    // We can distinguish between the two, because *last step* of `start_resharding`
+    // sets destination replica state to `Partial`.
+    //
+    // If destination replica *is* in `Partial` state, we should reject conflicting operation.
+    // If destination replica is *not* in `Partial` state, we should re-apply existing operation.
+    if get_transfer(&transfer.key(), current_transfers).is_some() {
+        // Resharding/filtered transfers have separate destination shard
+        let destination_replicas = destination_replicas.unwrap_or(source_replicas);
+
+        let is_applied = destination_replicas
+            .get(&transfer.to)
+            .is_some_and(|state| state.is_partial_or_recovery());
+
+        if is_applied {
+            return Err(CollectionError::bad_request(format!(
+                "Shard {} is already involved in transfer {} -> {}",
+                transfer.shard_id, transfer.from, transfer.to,
+            )));
+        }
+    }
+
+    // Exclude this key from conflict check, because we already checked for identical transfer
+    // conflict above
+    let other_transfers = current_transfers
+        .iter()
+        .filter(|other| transfer.key() != other.key());
+
+    if let Some(existing_transfer) = check_transfer_conflicts(transfer, other_transfers) {
         return Err(CollectionError::bad_request(format!(
             "Shard {} is already involved in transfer {} -> {}",
             transfer.shard_id, existing_transfer.from, existing_transfer.to,
