@@ -89,11 +89,7 @@ impl Collection {
                             .expect("cannot have more than u32::MAX shards after resharding");
                         if config.params.shard_number != new_shard_number {
                             config.params.shard_number = new_shard_number;
-                            if let Err(err) = config.save(&self.path) {
-                                log::error!(
-                                    "Failed to update and save collection config during resharding: {err}",
-                                );
-                            }
+                            config.save(&self.path)?;
                         }
                     }
                     // Custom shards don't use the persisted count, we don't change it
@@ -230,11 +226,7 @@ impl Collection {
 
                         if config.params.shard_number != new_shard_number {
                             config.params.shard_number = new_shard_number;
-                            if let Err(err) = config.save(&self.path) {
-                                log::error!(
-                                    "Failed to update and save collection config during resharding: {err}"
-                                );
-                            }
+                            config.save(&self.path)?;
                         }
                     }
                 }
@@ -319,11 +311,7 @@ impl Collection {
 
                     if config.params.shard_number != new_shard_number {
                         config.params.shard_number = new_shard_number;
-                        if let Err(err) = config.save(&self.path) {
-                            log::error!(
-                                "Failed to update and save collection config during resharding: {err}"
-                            );
-                        }
+                        config.save(&self.path)?;
                     }
                 }
             }
