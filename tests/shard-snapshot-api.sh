@@ -35,6 +35,9 @@ declare DOWNLOADED_SNAPSHOT_POINTS=0
 
 declare FILESERVER_PID=''
 
+# Fail fast instead of hanging indefinitely when Qdrant or the file server stalls.
+declare -a CURL_TIMEOUT_OPTS=(--connect-timeout 10 --max-time 120)
+
 
 function main {
 	load-qdrant-status
@@ -590,9 +593,9 @@ function url {
 function curl-ok {
 	if [[ -t 1 ]]
 	then
-		curl -sS --fail-with-body "$@" | jq
+		curl -sS --fail-with-body "${CURL_TIMEOUT_OPTS[@]}" "$@" | jq
 	else
-		curl -sS --fail-with-body "$@"
+		curl -sS --fail-with-body "${CURL_TIMEOUT_OPTS[@]}" "$@"
 	fi
 }
 
@@ -600,7 +603,7 @@ function curl-status {
 	declare EXPECTED="$1"
 	declare ARGS=( "${@:2}" )
 
-	declare STATUS ; STATUS="$(curl -sS -w '%{http_code}' -o /dev/null "${ARGS[@]}")"
+	declare STATUS ; STATUS="$(curl -sS "${CURL_TIMEOUT_OPTS[@]}" -w '%{http_code}' -o /dev/null "${ARGS[@]}")"
 	[[ $STATUS == "$EXPECTED" ]]
 }
 
