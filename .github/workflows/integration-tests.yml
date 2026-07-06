@@ -177,6 +177,7 @@ jobs:
         run: cargo build --bin qdrant --features "staging" --locked
       - name: Run Shard Snapshot API Tests (local)
         shell: bash
+        timeout-minutes: 15
         run: |
           cargo run --features "staging" &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
@@ -185,6 +186,7 @@ jobs:
           ./tests/shard-snapshot-api.sh test-all
       - name: Run Shard Snapshot API Tests (s3)
         shell: bash
+        timeout-minutes: 15
         run: |
           export QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE=s3
           export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__BUCKET=test-bucket
