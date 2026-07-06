@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalRead};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -22,7 +22,11 @@ pub struct QuantizedChunkedStorageRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
-    pub fn open(fs: &S::Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
+    pub fn open(
+        fs: &CachedReadFs<S::Fs>,
+        path: &Path,
+        quantized_vector_size: usize,
+    ) -> OperationResult<Self> {
         let data = ChunkedVectorsRead::open(
             fs,
             path,

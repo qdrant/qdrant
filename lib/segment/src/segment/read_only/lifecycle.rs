@@ -3,9 +3,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::storage_version::StorageVersion;
+use common::mmap::AdviceSetting;
+use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, read_json_via};
+use common::universal_io::{
+    CachedReadFs, ListedFile, OkNotFound, OpenOptions, Populate, UniversalReadFs, read_json_via,
+};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -28,11 +31,69 @@ use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVector
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
+/// Build a per-segment [`CachedReadFs`] over `segment_path`, ready to serve
+/// every open of the segment's files from prefetched handles.
+///
+/// Order matters for object-storage backends: the files whose names are known
+/// in advance (version file, segment state) are scheduled *before* the listing
+/// snapshot is taken, so their fetch overlaps the listing round-trip. Every
+/// remaining listed file is then scheduled too — a read-only segment opens
+/// essentially all of its files, and prefetching them up front runs the
+/// fetches in parallel instead of serializing them inside each component's
+/// open.
+fn build_cached_fs<Fs: UniversalReadFs>(
+    fs: &Fs,
+    segment_path: &Path,
+) -> OperationResult<CachedReadFs<Fs>> {
+    let mut cached_fs = CachedReadFs::new(fs.clone(), segment_path)?;
+
+    // Absence is tolerated here: the subsequent read reports it gracefully.
+    for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
+        cached_fs
+            .schedule_prefetch(&segment_path.join(file_name), None, None)
+            .ok_not_found()?;
+    }
+
+    cached_fs.cache_file_info()?;
+
+    let open_options = OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::PreferBackground,
+        advice: AdviceSetting::Global,
+    };
+    for ListedFile { path, size: _ } in cached_fs.list_files(segment_path) {
+        cached_fs.schedule_prefetch(&path, Some(open_options), None)?;
+    }
+
+    Ok(cached_fs)
+}
+
 impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
-    /// Read-only mirror of `load_segment`: assembles every read-only component
-    /// from `fs` (id tracker, payload storage+index, per-vector storage/index). No writes.
+    /// Open the segment over a per-segment [`CachedReadFs`]: known files are
+    /// prefetched before the listing snapshot is taken, the rest right after
+    /// it, and every component open below takes its handles from that pool
+    /// (see [`build_cached_fs`]). Probes for optional files resolve against
+    /// the snapshot, without inner-filesystem round-trips.
     pub fn open(
         fs: &S::Fs,
+        segment_path: &Path,
+        uuid: Uuid,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Self> {
+        let cached_fs = build_cached_fs(fs, segment_path)?;
+        Self::open_via(&cached_fs, segment_path, uuid, deferred_internal_id)
+    }
+
+    /// Read-only mirror of `load_segment`: assembles every read-only component
+    /// from `fs` (id tracker, payload storage+index, per-vector storage/index). No writes.
+    ///
+    /// Stored handles are taken from the [`CachedReadFs`] pool via
+    /// [`CachedReadFs::take_file`], so component types stay over plain `S`;
+    /// transient reads (state/config JSON) go through its `UniversalReadFs`
+    /// impl and never leak the wrapper.
+    pub(crate) fn open_via(
+        fs: &CachedReadFs<S::Fs>,
         segment_path: &Path,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
@@ -155,7 +216,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn open_dense(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         segment_path: &Path,
         vector_name: &VectorName,
         vector_config: &VectorDataConfig,
@@ -207,7 +268,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Open one sparse vector's index over `fs`, mirroring
     /// `open_sparse_vector_data`. Sparse vectors are never quantized.
     pub(super) fn open_sparse(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         segment_path: &Path,
         vector_name: &VectorName,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,

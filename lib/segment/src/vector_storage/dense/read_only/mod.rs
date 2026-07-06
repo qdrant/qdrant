@@ -82,7 +82,7 @@ mod tests {
         }
 
         let storage = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             dir.path(),
             DIM,
             Distance::Dot,
@@ -139,7 +139,7 @@ mod tests {
         writer.flusher()().unwrap();
 
         let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             dir.path(),
             DIM,
             Distance::Dot,

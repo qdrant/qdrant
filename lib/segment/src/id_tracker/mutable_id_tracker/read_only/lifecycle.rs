@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use common::mmap::Advice::Normal;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+};
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -24,13 +26,18 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// mappings log and versions file are consumed, applying only committed points (a partial
     /// trailing entry is simply not consumed and picked up on a later reload).
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
+        // The tracker keeps a filesystem handle to re-open the append-only
+        // files on later reloads, so it must retain the *raw* backend — the
+        // `CachedReadFs` snapshot goes stale as soon as the writer appends.
+        // The bootstrap below consequently opens through the raw fs too,
+        // bypassing the prefetch pool (its handles are simply dropped).
         let mut tracker = Self {
             segment_path: segment_path.into(),
-            fs: fs.clone(),
+            fs: fs.inner().clone(),
             internal_to_version: Vec::new(),
             mappings: PointMappings::new(
                 Default::default(),

@@ -1,5 +1,6 @@
 mod live_reload;
 
+use common::universal_io::CachedReadFs;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -62,7 +63,7 @@ pub enum VectorIndexReadEnum<S: UniversalReadExt + 'static> {
 
 /// Shared read-only backends plus the `fs`/`path` an index opens its files from.
 pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalReadExt + 'static> {
-    pub fs: &'a S::Fs,
+    pub fs: &'a CachedReadFs<S::Fs>,
     pub path: &'a Path,
     pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,

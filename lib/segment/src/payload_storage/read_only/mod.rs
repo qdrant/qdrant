@@ -61,8 +61,12 @@ mod tests {
         // read-only.
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
-        let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
-            ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate).unwrap();
+        let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> = ReadOnlyPayloadStorage::open(
+            &common::universal_io::CachedReadFs::new(fs, std::path::Path::new(".")).unwrap(),
+            dir.path().to_path_buf(),
+            populate,
+        )
+        .unwrap();
 
         assert_eq!(storage.is_on_disk(), !populate.to_bool::<MmapFile>());
         for i in 0..5 {

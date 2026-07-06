@@ -79,6 +79,17 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         })
     }
 
+    /// Wrap an already-opened backend file (e.g. taken from a
+    /// [`CachedReadFs`](crate::universal_io::CachedReadFs) prefetch pool).
+    pub fn from_file(file: S) -> Result<Self> {
+        let storage = TypedStorage::new(file);
+        let element_len = storage.len()?;
+        Ok(Self {
+            storage,
+            element_len,
+        })
+    }
+
     pub fn reopen(&mut self) -> Result<()> {
         self.storage.reopen()?;
         self.element_len = self.storage.len()?;

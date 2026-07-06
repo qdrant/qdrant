@@ -1,3 +1,4 @@
+use common::universal_io::CachedReadFs;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -51,7 +52,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// entry on apply.
     pub fn config_reload_diff(
         &self,
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         new_config: PayloadConfig,
     ) -> OperationResult<PayloadIndexReloadDiff<S>> {
         let mut added: ReadOnlyIndexesMap<S> = HashMap::new();

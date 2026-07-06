@@ -84,7 +84,7 @@ mod tests {
         }
 
         let storage = ReadOnlyImmutableDenseVectorStorage::<VectorElementType, MmapFile>::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             dir.path(),
             DIM,
             Distance::Dot,
@@ -137,7 +137,7 @@ mod tests {
         }
 
         let mut reader = ReadOnlyImmutableDenseVectorStorage::<VectorElementType, MmapFile>::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             dir.path(),
             DIM,
             Distance::Dot,

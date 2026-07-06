@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, Populate};
+use common::universal_io::{CachedReadFs, MmapFs, Populate};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -32,8 +32,13 @@ impl FullTextIndex {
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
-        let Some(on_disk_index) =
-            OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
+        let Some(on_disk_index) = OnDiskFullTextIndex::open(
+            &CachedReadFs::new(MmapFs, &path)?,
+            path,
+            config,
+            populate,
+            deleted_points,
+        )?
         else {
             return Ok(None);
         };

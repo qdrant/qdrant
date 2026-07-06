@@ -6,7 +6,8 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalWrite,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    UniversalWrite,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -49,9 +50,8 @@ impl MultivectorOffsetsStorageRam {
     /// performing no writes.
     ///
     /// Read-only counterpart of [`Self::load`] used by read-only storages.
-    pub fn open<S: UniversalRead>(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
-        let offsets = TypedStorage::<S, MultivectorOffset>::open(
-            fs,
+    pub fn open<S: UniversalRead>(fs: &CachedReadFs<S::Fs>, path: &Path) -> OperationResult<Self> {
+        let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.take_file(
             path,
             OpenOptions {
                 writeable: false,
@@ -60,7 +60,7 @@ impl MultivectorOffsetsStorageRam {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?);
         Ok(MultivectorOffsetsStorageRam {
             offsets: offsets.read_whole()?.into_owned(),
             path: path.to_path_buf(),
@@ -138,7 +138,7 @@ impl MultivectorOffsetsStorageMmap<MmapFile> {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        Self::open(&MmapFs, path)
+        Self::open(&CachedReadFs::new(MmapFs, path)?, path)
     }
 }
 
@@ -146,9 +146,8 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
     /// Open the offsets file read-only through the provided [`UniversalRead`] filesystem.
     ///
     /// Performs no writes, making this the entry point used by read-only storages.
-    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
-        let offsets = TypedStorage::<S, MultivectorOffset>::open(
-            fs,
+    pub fn open(fs: &CachedReadFs<S::Fs>, path: &Path) -> OperationResult<Self> {
+        let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.take_file(
             path,
             OpenOptions {
                 writeable: false,
@@ -157,7 +156,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?);
 
         Ok(Self {
             offsets,
@@ -373,7 +372,7 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
-    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &CachedReadFs<S::Fs>, path: &Path) -> OperationResult<Self> {
         let data = ChunkedVectorsRead::open(
             fs,
             path,

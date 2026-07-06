@@ -9,8 +9,8 @@ use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
-    UniversalWrite, UserData,
+    CachedReadFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFs, UniversalWrite, UserData,
 };
 use smallvec::SmallVec;
 
@@ -278,6 +278,30 @@ impl<S: UniversalRead> Tracker<S> {
     pub fn open(fs: &S::Fs, path: &Path, writeable: bool) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         let storage = Self::open_storage(fs, &path, writeable)?;
+        Self::from_storage(path, storage)
+    }
+
+    /// Open the tracker read-only, taking its storage from a
+    /// [`CachedReadFs`] prefetch pool.
+    pub fn open_cached(fs: &CachedReadFs<S::Fs>, path: &Path) -> Result<Self> {
+        let path = Self::tracker_file_name(path);
+        let storage = match fs.take_file(&path, tracker_open_options(false), Default::default()) {
+            Err(UniversalIoError::NotFound { .. }) => {
+                // If config exists and storage doesn't,
+                // it should be treated as inconsistent storage rather than a missing one
+                return Err(GridstoreError::service_error(format!(
+                    "Tracker file does not exist: {}",
+                    path.display()
+                )));
+            }
+            other => other?,
+        };
+        Self::from_storage(path, storage)
+    }
+
+    /// Build the tracker over an already-opened storage file. `path` must be
+    /// the tracker file path the storage was opened from.
+    fn from_storage(path: PathBuf, storage: S) -> Result<Self> {
         let header: TrackerHeader = Self::read_header(&storage)?;
         let pending_updates = AHashMap::new();
         Ok(Self {

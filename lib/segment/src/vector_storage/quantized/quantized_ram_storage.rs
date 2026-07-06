@@ -3,9 +3,9 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{OneshotFile, UniversalRead};
+use common::universal_io::{CachedReadFs, OneshotFile, OpenOptions, Populate, UniversalRead};
 use fs_err as fs;
 use fs_err::File;
 
@@ -28,7 +28,7 @@ impl QuantizedRamStorage {
     /// object storage, …) and evicted from the RAM/page cache afterwards via
     /// [`OneshotFile`], since we keep our own heap copy.
     pub fn from_file<S: UniversalRead>(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<Self> {
@@ -38,7 +38,16 @@ impl QuantizedRamStorage {
             ));
         }
 
-        let storage = OneshotFile::<S>::open(fs, path)?;
+        let storage = OneshotFile::new(fs.take_file(
+            path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: true,
+                populate: Populate::No,
+                advice: AdviceSetting::Advice(Advice::Sequential),
+            },
+            Default::default(),
+        )?);
 
         // Read the whole file in a single access and validate against the returned
         // buffer's length, rather than querying `len()` separately. Avoids an extra
@@ -180,7 +189,12 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4]).unwrap();
 
-        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 0).unwrap_err();
+        let err = QuantizedRamStorage::from_file::<MmapFile>(
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            &path,
+            0,
+        )
+        .unwrap_err();
 
         assert!(matches!(
             err,
@@ -195,7 +209,12 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4, 5]).unwrap();
 
-        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap_err();
+        let err = QuantizedRamStorage::from_file::<MmapFile>(
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            &path,
+            2,
+        )
+        .unwrap_err();
 
         assert!(matches!(
             err,
@@ -212,7 +231,12 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4]).unwrap();
 
-        let storage = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap();
+        let storage = QuantizedRamStorage::from_file::<MmapFile>(
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            &path,
+            2,
+        )
+        .unwrap();
 
         assert_eq!(storage.vectors_count(), 2);
         assert_eq!(storage.get_vector_data(0).as_ref(), [1, 2]);

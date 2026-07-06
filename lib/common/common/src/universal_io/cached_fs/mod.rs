@@ -23,22 +23,30 @@ pub struct FileInfo {
     pub size: u64,
 }
 
-/// Read-only filesystem wrapper that snapshots the file listing at
-/// construction time and serves opens from explicitly prefetched handles.
+/// Read-only filesystem wrapper that snapshots the file listing and serves
+/// opens from explicitly prefetched handles.
 ///
-/// Listing and existence checks are answered from the snapshot taken in
-/// [`Self::new`] without touching the inner filesystem. Opens are expected
-/// to hit a handle registered via [`Self::schedule_prefetch`]; a miss falls
-/// back to a direct open on the inner filesystem, but is treated as a logic
-/// error (panics in debug builds, logs a warning in release builds).
+/// Until [`Self::cache_file_info`] takes the listing snapshot, the wrapper is
+/// a passthrough: listing, existence checks and opens forward to the inner
+/// filesystem unchanged (prefetched handles are still consumed first).
+///
+/// Once the snapshot is taken, listing and existence checks are answered
+/// from it without touching the inner filesystem, and opens of paths absent
+/// from the snapshot fail with `NotFound` locally — probing for optional
+/// files is free. Opens are expected to hit a handle registered via
+/// [`Self::schedule_prefetch`]; a miss on a path the snapshot does contain
+/// is currently `todo!` (unreachable: the open path prefetches every listed
+/// file, and each file is opened at most once).
 ///
 /// Prefetched handles are take-once: [`UniversalReadFs::open`] removes the
-/// handle from the pool and returns it owned, so a second open of the same
-/// path goes through the fallback. The pool is shared across clones.
+/// handle from the pool and returns it owned. The pool is shared across
+/// clones.
 pub struct CachedReadFs<Fs: UniversalReadFs> {
     fs: Fs,
     prefix_path: PathBuf,
-    files_info: HashMap<PathBuf, FileInfo>,
+    /// `None` until [`Self::cache_file_info`] takes the listing snapshot;
+    /// the wrapper forwards to `fs` until then.
+    files_info: Option<HashMap<PathBuf, FileInfo>>,
     files_prefetched: Arc<Mutex<HashMap<PathBuf, Fs::File>>>,
 }
 
@@ -67,7 +75,7 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
         Ok(Self {
             fs,
             prefix_path: prefix_path.to_path_buf(),
-            files_info: HashMap::new(),
+            files_info: None,
             files_prefetched: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -84,20 +92,33 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
             })
             .collect();
 
-        self.files_info = files_info;
+        self.files_info = Some(files_info);
 
         Ok(())
     }
 
-    pub fn file_info(&self, path: &Path) -> Option<&FileInfo> {
-        self.files_info.get(path)
+    /// The wrapped inner filesystem.
+    ///
+    /// Components that keep a filesystem handle for *later* opens (e.g. live
+    /// reload attaching files that appear after the snapshot) must retain
+    /// this raw handle, not the `CachedReadFs`: the snapshot goes stale the
+    /// moment the underlying directory changes.
+    pub fn inner(&self) -> &Fs {
+        &self.fs
     }
 
+    /// File info from the snapshot; `None` before [`Self::cache_file_info`].
+    pub fn file_info(&self, path: &Path) -> Option<&FileInfo> {
+        self.files_info.as_ref()?.get(path)
+    }
+
+    /// Files from the snapshot; empty before [`Self::cache_file_info`].
     pub fn list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
         let prefix_string = prefix_path.to_string_lossy();
 
         self.files_info
             .iter()
+            .flatten()
             .filter(|(path, _)| path.to_string_lossy().starts_with(prefix_string.as_ref()))
             .map(|(path, info)| ListedFile {
                 path: path.clone(),
@@ -106,8 +127,65 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
             .collect()
     }
 
+    /// Existence per the snapshot; `false` before [`Self::cache_file_info`].
     pub fn exists(&self, path: &Path) -> bool {
-        self.files_info.contains_key(path)
+        self.files_info
+            .as_ref()
+            .is_some_and(|files_info| files_info.contains_key(path))
+    }
+
+    /// Take a raw inner file handle, bypassing the [`UniversalReadFs`] trait.
+    ///
+    /// Cache-aware callers that *store* handles long-term use this so their
+    /// stored type stays `Fs::File` — the [`CachedFile`] wrapper the trait
+    /// impl returns is only meant for transient open-read-discard access
+    /// (e.g. [`read_json_via`](crate::universal_io::read_json_via)).
+    ///
+    /// Semantics match the trait open: prefetched handles are taken from the
+    /// pool first; without a snapshot the call passes through to the inner
+    /// filesystem; with one, unlisted paths fail `NotFound` locally and a
+    /// listed-but-not-prefetched path is currently `todo!` (unreachable; see
+    /// the type-level docs).
+    pub fn take_file(
+        &self,
+        path: &Path,
+        options: OpenOptions,
+        extra: Fs::OpenExtra,
+    ) -> Result<Fs::File> {
+        if options.writeable {
+            return Err(UniversalIoError::Uninitialized {
+                description:
+                    "CachedReadFs only supports read-only files, writeable option is not allowed"
+                        .to_string(),
+            });
+        }
+
+        if let Some(file) = self.files_prefetched.lock().remove(path) {
+            return Ok(file);
+        }
+
+        // No snapshot taken: passthrough to the inner filesystem.
+        let Some(files_info) = &self.files_info else {
+            return self.fs.open(path, options, extra);
+        };
+
+        // Known-absent per the listing snapshot: answer locally, without a
+        // round-trip to the inner filesystem. Callers probing for optional
+        // files (e.g. format detection) take this path.
+        if !files_info.contains_key(path) {
+            return Err(UniversalIoError::NotFound {
+                path: path.to_path_buf(),
+            });
+        }
+
+        // Listed but not prefetched: unreachable today — the open path
+        // prefetches every listed file before any component opens, and each
+        // file is opened at most once. Decide the semantics (fallback open
+        // vs hard error) when a real caller appears.
+        todo!(
+            "CachedReadFs: file {} is in the listing snapshot but was not prefetched",
+            path.display(),
+        )
     }
 
     pub fn schedule_prefetch(
@@ -155,11 +233,17 @@ impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedReadFs<Fs> {
     }
 
     fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
-        Ok(self.list_files(prefix_path))
+        match &self.files_info {
+            Some(_) => Ok(self.list_files(prefix_path)),
+            None => self.fs.list_files(prefix_path),
+        }
     }
 
     fn exists(&self, path: &Path) -> Result<bool> {
-        Ok(self.exists(path))
+        match &self.files_info {
+            Some(files_info) => Ok(files_info.contains_key(path)),
+            None => self.fs.exists(path),
+        }
     }
 }
 
@@ -190,40 +274,22 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedReadFs<Fs> {
         options: OpenOptions,
         extra: Self::OpenExtra,
     ) -> Result<Self::File> {
-        let path = path.as_ref();
-
-        if options.writeable {
-            return Err(UniversalIoError::Uninitialized {
-                description:
-                    "CachedReadFs only supports read-only files, writeable option is not allowed"
-                        .to_string(),
-            });
-        }
-
-        if let Some(file) = self.files_prefetched.lock().remove(path) {
-            return Ok(CachedFile(file));
-        }
-
-        debug_assert!(
-            false,
-            "CachedReadFs: file {} was not prefetched",
-            path.display(),
-        );
-        log::warn!(
-            "CachedReadFs: file {} was not prefetched, falling back to a direct open",
-            path.display(),
-        );
-
-        Ok(CachedFile(self.fs.open(path, options, extra)?))
+        Ok(CachedFile(self.take_file(path.as_ref(), options, extra)?))
     }
 }
 
-/// File handle produced by [`CachedReadFs::open`]: the prefetched inner
-/// handle taken out of the pool (or a direct fallback open).
+/// File handle produced by the [`UniversalReadFs`] impl of
+/// [`CachedReadFs`]: the prefetched inner handle taken out of the pool (or
+/// a direct fallback open).
 ///
 /// Exists purely to satisfy the bidirectional
-/// `UniversalReadFs<File = Self>` constraint on [`UniversalRead::Fs`];
-/// all operations delegate to the wrapped inner file.
+/// `UniversalReadFs<File = Self>` constraint on [`UniversalRead::Fs`]; all
+/// operations delegate to the wrapped inner file. Meant for transient
+/// open-read-discard helpers (e.g.
+/// [`read_json_via`](crate::universal_io::read_json_via)) that never leak
+/// the handle; code that stores handles long-term takes the raw inner file
+/// via [`CachedReadFs::take_file`] instead, so `CachedFile` never spreads
+/// into stored types.
 #[derive(Debug, TransparentWrapper)]
 #[repr(transparent)]
 pub struct CachedFile<S>(S);

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::universal_io::CachedReadFs;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
@@ -69,7 +70,7 @@ type ReadView<'a, S> = HNSWIndexReadView<
 impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// Read-only mirror of `HNSWIndex::open`: loads the graph through `fs`.
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, UniversalRead};
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
@@ -35,7 +35,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// The attempts are sequential for now; they are independent and can be
     /// issued concurrently later (the slow-path being remote opens).
     pub fn detect_and_load(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::bitvec::BitSlice;
+use common::universal_io::CachedReadFs;
 
 use super::ReadOnlyFieldIndex;
 use crate::common::operation_error::OperationResult;
@@ -56,7 +57,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     ///
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         dir: &Path,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,

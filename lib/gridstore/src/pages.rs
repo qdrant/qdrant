@@ -8,8 +8,8 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
+    CachedReadFs, FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange,
+    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
 
@@ -72,18 +72,52 @@ impl<S: UniversalRead> Pages<S> {
         Ok(pages)
     }
 
+    /// Read-only [`Self::open`] taking page handles from a [`CachedReadFs`]
+    /// prefetch pool. Listing goes through the trait so a snapshot-less
+    /// (passthrough) wrapper behaves like the plain open.
+    pub fn open_cached(fs: &CachedReadFs<S::Fs>, dir: &Path, populate: Populate) -> Result<Self> {
+        let mut pages = Self::new(dir.to_path_buf(), false);
+
+        let page_files: HashSet<_> = UniversalReadFileOps::list_files(fs, &dir.join("page_"))?
+            .into_iter()
+            .map(|listed| listed.path)
+            .collect();
+
+        for page_id in 0.. {
+            let page_path = pages.page_path(page_id);
+            if !page_files.contains(&page_path) {
+                break;
+            }
+            let page = fs.take_file(
+                &page_path,
+                pages.page_open_options(populate),
+                Default::default(),
+            )?;
+            pages.attach_file(page);
+        }
+
+        Ok(pages)
+    }
+
     pub fn attach_page(&mut self, fs: &S::Fs, path: &Path, populate: Populate) -> Result<()> {
-        let options = OpenOptions {
+        let page = fs.open(path, self.page_open_options(populate), Default::default())?;
+        self.attach_file(page);
+        Ok(())
+    }
+
+    /// Attach an already-opened page file. Pages must be attached in page-id
+    /// order, matching what [`Self::page_path`] maps ids to.
+    pub fn attach_file(&mut self, page: S) {
+        self.pages.push(page);
+    }
+
+    fn page_open_options(&self, populate: Populate) -> OpenOptions {
+        OpenOptions {
             writeable: self.writeable,
             need_sequential: true,
             populate,
             advice: AdviceSetting::Advice(Advice::Random),
-        };
-
-        let page = fs.open(path, options, Default::default())?;
-        self.pages.push(page);
-
-        Ok(())
+        }
     }
 
     pub fn num_pages(&self) -> usize {

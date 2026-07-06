@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::AdviceSetting;
-use common::universal_io::{Populate, UniversalRead};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead};
 
 use super::ReadOnlyChunkedDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -19,7 +19,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
     /// creates and writes nothing. `populate` warms the vector chunks.
     #[allow(dead_code)] // pending: read-only vector storage enum will use this
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         dim: usize,
         distance: Distance,

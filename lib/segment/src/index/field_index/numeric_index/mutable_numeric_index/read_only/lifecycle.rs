@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{OkNotFound, Populate, UniversalRead};
+use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead};
 use gridstore::{Blob, GridstoreReader};
 
 use super::super::InMemoryNumericIndex;
@@ -30,7 +30,7 @@ where
     /// the read path never creates.
     ///
     /// [1]: super::super::MutableNumericIndex::open_gridstore
-    pub fn open(fs: &S::Fs, path: PathBuf) -> OperationResult<Option<Self>> {
+    pub fn open(fs: &CachedReadFs<S::Fs>, path: PathBuf) -> OperationResult<Option<Self>> {
         let Some(storage) =
             GridstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
         else {

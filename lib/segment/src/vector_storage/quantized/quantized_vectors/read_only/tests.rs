@@ -124,7 +124,7 @@ fn read_only_matches_read_write(
     .unwrap();
 
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
-        &MmapFs,
+        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
         quant_dir.path(),
         storage.distance(),
         storage.datatype(),
@@ -206,7 +206,7 @@ fn read_only_matches_read_write_multivector(
     .unwrap();
 
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
-        &MmapFs,
+        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
         quant_dir.path(),
         storage.distance(),
         storage.datatype(),
@@ -289,7 +289,7 @@ fn live_reload_chunked_preserves_scores() {
     .unwrap();
 
     let mut ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
-        &MmapFs,
+        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
         quant_dir.path(),
         storage.distance(),
         storage.datatype(),

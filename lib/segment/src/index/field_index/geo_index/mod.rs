@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, Populate};
+use common::universal_io::{CachedReadFs, MmapFile, MmapFs, Populate};
 use mutable_geo_index::InMemoryGeoIndex;
 
 pub use self::builders::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
@@ -52,7 +52,12 @@ impl GeoIndex {
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
-        let Some(on_disk_index) = OnDiskGeoIndex::open(&MmapFs, path, populate, deleted_points)?
+        let Some(on_disk_index) = OnDiskGeoIndex::open(
+            &CachedReadFs::new(MmapFs, path)?,
+            path,
+            populate,
+            deleted_points,
+        )?
         else {
             return Ok(None);
         };

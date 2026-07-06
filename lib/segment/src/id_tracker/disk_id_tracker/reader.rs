@@ -20,7 +20,7 @@ use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead,
 };
 use itertools::Itertools as _;
 use rand::distr::{Distribution as _, Uniform};
@@ -54,7 +54,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     ///
     /// Errors if the segment is not in the on-disk format (`i2e` absent). Use
     /// [`try_open`](Self::try_open) to probe without erroring.
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &CachedReadFs<S::Fs>, segment_path: &Path) -> OperationResult<Self> {
         Self::try_open(fs, segment_path)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker mapping ({}) not found",
@@ -67,7 +67,10 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// file is absent — i.e. the segment is not in the on-disk format. Any other
     /// missing/corrupt file is a hard error. Opening the `i2e` handle also serves
     /// as the format probe, so no separate existence check is issued.
-    pub fn try_open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Option<Self>> {
+    pub fn try_open(
+        fs: &CachedReadFs<S::Fs>,
+        segment_path: &Path,
+    ) -> OperationResult<Option<Self>> {
         let options = OpenOptions {
             writeable: false,
             need_sequential: false,
@@ -76,7 +79,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         };
 
         let Some(i2e) = fs
-            .open(i2e_path(segment_path), options, Default::default())
+            .take_file(&i2e_path(segment_path), options, Default::default())
             .ok_not_found()?
         else {
             return Ok(None);
@@ -87,7 +90,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         })?;
         let i2e_header = I2eHeader::parse(i2e_header_bytes.as_ref())?;
 
-        let e2i = fs.open(e2i_path(segment_path), options, Default::default())?;
+        let e2i = fs.take_file(&e2i_path(segment_path), options, Default::default())?;
         let e2i_header_bytes = e2i.read::<common::generic_consts::Random, u8>(ReadRange {
             byte_offset: 0,
             length: E2I_HEADER_SIZE,

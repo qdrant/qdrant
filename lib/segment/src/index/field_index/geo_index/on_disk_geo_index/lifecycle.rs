@@ -14,8 +14,8 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    read_json_via,
+    CachedReadFs, MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    UniversalRead, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -155,13 +155,19 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             },
         )?;
 
-        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
+        Self::open(
+            &CachedReadFs::new(fs.clone(), path)?,
+            path,
+            populate,
+            deleted_points,
+        )?
+        .ok_or_else(|| {
             OperationError::service_error("Failed to open OnDiskGeoIndex after building it")
         })
     }
 
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
@@ -185,18 +191,23 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             advice: AdviceSetting::Global,
         };
 
-        let counts_per_hash =
-            TypedStorage::open(fs, &counts_per_hash_path, open_options, Default::default())?;
+        let counts_per_hash = TypedStorage::new(fs.take_file(
+            &counts_per_hash_path,
+            open_options,
+            Default::default(),
+        )?);
         let points_map =
-            TypedStorage::open(fs, &points_map_path, open_options, Default::default())?;
-        let points_map_ids =
-            TypedStorage::open(fs, &points_map_ids_path, open_options, Default::default())?;
+            TypedStorage::new(fs.take_file(&points_map_path, open_options, Default::default())?);
+        let points_map_ids = TypedStorage::new(fs.take_file(
+            &points_map_ids_path,
+            open_options,
+            Default::default(),
+        )?);
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
+        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.take_file(
             &deleted_path,
             OpenOptions {
                 writeable: false,
@@ -205,7 +216,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?)?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only

@@ -103,9 +103,14 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total)
-            .unwrap()
-            .unwrap();
+        let index = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(
+            &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
+                .unwrap(),
+            dir.path(),
+            total,
+        )
+        .unwrap()
+        .unwrap();
 
         let key = JsonPath::new("test");
         let is_null = FieldCondition::new_is_null(key.clone(), true);
@@ -200,9 +205,14 @@ mod tests {
         let fs = RoFs::from_context(Default::default()).unwrap();
 
         // Read-only view of points 0..=3, taken before the writer continues.
-        let mut reloaded = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 4)
-            .unwrap()
-            .unwrap();
+        let mut reloaded = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(
+            &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
+                .unwrap(),
+            dir.path(),
+            4,
+        )
+        .unwrap()
+        .unwrap();
 
         // Writer's delta: drop point 1, flip point 2 (empty -> value), append a
         // null point 4 (which grows `total_point_count` to 5).
@@ -221,9 +231,14 @@ mod tests {
             )
             .unwrap();
 
-        let fresh = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total)
-            .unwrap()
-            .unwrap();
+        let fresh = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(
+            &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
+                .unwrap(),
+            dir.path(),
+            total,
+        )
+        .unwrap()
+        .unwrap();
 
         let key = JsonPath::new("test");
         let is_null = FieldCondition::new_is_null(key.clone(), true);
@@ -320,11 +335,27 @@ mod tests {
         // `has_values` present, `is_null` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(IS_NULL_DIRNAME)).unwrap();
-        assert!(ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 1).is_err());
+        assert!(
+            ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(
+                &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
+                    .unwrap(),
+                dir.path(),
+                1
+            )
+            .is_err()
+        );
 
         // `is_null` present, `has_values` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(HAS_VALUES_DIRNAME)).unwrap();
-        assert!(ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 1).is_err());
+        assert!(
+            ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(
+                &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
+                    .unwrap(),
+                dir.path(),
+                1
+            )
+            .is_err()
+        );
     }
 }

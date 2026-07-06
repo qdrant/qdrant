@@ -8,8 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps as _,
-    UniversalReadFs as _,
+    CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
 };
 
 use super::PREFIX_INDEX_PATH;
@@ -55,13 +54,17 @@ pub struct PrefixIndex<S: UniversalRead = MmapFile> {
 impl<S: UniversalRead> PrefixIndex<S> {
     /// Open the prefix index if its file exists; `Ok(None)` when the backing
     /// map index was built without prefix support.
-    pub fn open(fs: &S::Fs, path: &Path, populate: Populate) -> OperationResult<Option<Self>> {
+    pub fn open(
+        fs: &CachedReadFs<S::Fs>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<Option<Self>> {
         let file_path = path.join(PREFIX_INDEX_PATH);
-        if !fs.exists(&file_path)? {
+        if !UniversalReadFileOps::exists(fs, &file_path)? {
             return Ok(None);
         }
 
-        let storage = fs.open(
+        let storage = fs.take_file(
             &file_path,
             OpenOptions {
                 writeable: false,

@@ -16,8 +16,8 @@ use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs,
-    UniversalWrite, UserData, read_json_via,
+    CachedReadFs, MmapFs, OpenOptions, Populate, ReadBytesItem, Result, UniversalRead,
+    UniversalReadFs, UniversalWrite, UserData, read_json_via,
 };
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -46,12 +46,12 @@ impl StorageVersion for Version {
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     for InvertedIndexCompressedMmap<W, S>
 {
-    fn open_ro_impl(fs: &S::Fs, path: &Path) -> Result<Self> {
+    fn open_ro_impl(fs: &CachedReadFs<S::Fs>, path: &Path) -> Result<Self> {
         let file_header: InvertedIndexFileHeader =
             read_json_via(fs, Self::index_config_file_path(path))?;
 
-        let storage = fs.open(
-            Self::index_file_path(path),
+        let storage = fs.take_file(
+            &Self::index_file_path(path),
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
@@ -622,8 +622,11 @@ mod tests {
 
             compare_indexes(&inverted_index_ram, &inverted_index_mmap);
         }
-        let index =
-            InvertedIndexCompressedMmap::<W, _>::open_ro(&MmapFs, tmp_dir_path.path()).unwrap();
+        let index = InvertedIndexCompressedMmap::<W, MmapFile>::open_ro(
+            &CachedReadFs::new(MmapFs, tmp_dir_path.path()).unwrap(),
+            tmp_dir_path.path(),
+        )
+        .unwrap();
         // posting_count: 0th entry is always empty + 1st + 2nd + 3rd + 4th empty + 5th
         assert_eq!(index.file_header.posting_count, 6);
         assert_eq!(index.file_header.vector_count, 9);

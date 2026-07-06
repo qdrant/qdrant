@@ -7,7 +7,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    Result, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    CachedReadFs, Result, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite,
+    UserData,
 };
 
 use super::posting_list_common::PostingListIter;
@@ -28,7 +29,10 @@ pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
 pub trait InvertedIndexReadOnly<S: UniversalRead>: InvertedIndex {
     /// See [`InvertedIndex::open_ro`].
-    fn open_ro_impl(fs: &S::Fs, path: &Path) -> Result<Self>;
+    ///
+    /// Takes a [`CachedReadFs`] so stored handles come from its prefetch
+    /// pool (via `take_file`) and the index type stays over plain `S`.
+    fn open_ro_impl(fs: &CachedReadFs<S::Fs>, path: &Path) -> Result<Self>;
 }
 
 pub trait InvertedIndexReadWrite<S: UniversalWrite>: InvertedIndex {
@@ -53,9 +57,9 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn is_on_disk(&self) -> bool;
 
     /// Open existing index based on path.
-    fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> Result<Self>
+    fn open_ro<S: UniversalRead>(fs: &CachedReadFs<S::Fs>, path: &Path) -> Result<Self>
     where
-        Self: InvertedIndexReadOnly<Fs::File>,
+        Self: InvertedIndexReadOnly<S>,
     {
         Self::open_ro_impl(fs, path)
     }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion as _;
+use common::universal_io::CachedReadFs;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
@@ -55,7 +56,7 @@ type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
 >;
 
 pub struct ReadOnlySparseVectorIndexOpenArgs<'a, S: UniversalReadExt> {
-    pub fs: &'a S::Fs,
+    pub fs: &'a CachedReadFs<S::Fs>,
     pub config: SparseIndexConfig,
     pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
@@ -80,7 +81,7 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
             path,
         } = args;
 
-        let inverted_index = TInvertedIndex::open_ro(fs, path)?;
+        let inverted_index = TInvertedIndex::open_ro::<S>(fs, path)?;
 
         let stored_version = TInvertedIndex::Version::load_universal(fs, path)?;
         if stored_version != Some(TInvertedIndex::Version::current()) {

@@ -8,7 +8,8 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, read_json_via,
+    CachedReadFs, MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead,
+    read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -108,14 +109,20 @@ where
             deleted.flusher()()?;
         }
 
-        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
+        Self::open(
+            &CachedReadFs::new(fs.clone(), path)?,
+            path,
+            populate,
+            deleted_points,
+        )?
+        .ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalNumericIndex after building it")
         })
     }
 
     /// Open and load mmap numeric index from the given path
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
@@ -139,13 +146,13 @@ where
             populate,
             advice: AdviceSetting::Global,
         };
-        let pairs = TypedStorage::open(fs, pairs_path, pairs_options, Default::default())?;
+        let pairs =
+            TypedStorage::new(fs.take_file(&pairs_path, pairs_options, Default::default())?);
 
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
+        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.take_file(
             &deleted_path,
             OpenOptions {
                 writeable: false,
@@ -154,7 +161,7 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?)?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only

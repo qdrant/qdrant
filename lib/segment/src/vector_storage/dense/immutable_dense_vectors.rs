@@ -11,8 +11,8 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange, TypedStorage,
-    UniversalRead,
+    CachedReadFs, MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange,
+    TypedStorage, UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
@@ -45,7 +45,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
     /// Open the immutable vector blob read-only through `fs`. The file must
     /// already exist (the writer creates it); nothing is created here.
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         vectors_path: &Path,
         dim: usize,
         populate: Populate,
@@ -56,8 +56,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
             populate,
             advice: AdviceSetting::Global,
         };
-        let read_only =
-            ReadOnly::open(fs, vectors_path, options, Default::default()).map_err(|e| {
+        let read_only = fs
+            .take_file(vectors_path, options, Default::default())
+            .map(ReadOnly::from_file)
+            .map_err(|e| {
                 crate::common::operation_error::OperationError::service_error(format!(
                     "Failed to open vector mmap at {}: {e}",
                     vectors_path.display()
@@ -222,7 +224,7 @@ where
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,

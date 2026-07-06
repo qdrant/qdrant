@@ -9,7 +9,7 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -50,9 +50,10 @@ impl QuantizedStorage<MmapFile> {
 
     /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
     pub(crate) fn reload(&mut self) -> OperationResult<()> {
+        let path = self.path.clone();
         *self = Self::from_file(
-            &MmapFs,
-            &self.path.clone(),
+            &CachedReadFs::new(MmapFs, &path)?,
+            &path,
             self.quantized_vector_size.get(),
         )?;
         Ok(())
@@ -83,11 +84,12 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 
     pub fn from_file(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
-        let storage = ReadOnly::open(fs, path, Self::open_options(), Default::default())?;
+        let storage =
+            ReadOnly::from_file(fs.take_file(path, Self::open_options(), Default::default())?);
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -127,7 +129,11 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             .truncate(false)
             .open(path)?;
 
-        let storage = Self::from_file(fs, path, quantized_vector_size)?;
+        let storage = Self::from_file(
+            &CachedReadFs::new(fs.clone(), path)?,
+            path,
+            quantized_vector_size,
+        )?;
 
         if prefault {
             storage.populate();

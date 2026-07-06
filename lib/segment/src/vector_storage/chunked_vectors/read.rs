@@ -7,12 +7,12 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    Populate, ReadPipeline, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
+    CachedReadFs, Populate, ReadPipeline, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
     UniversalReadFs, UserData, read_json_via, read_whole_via,
 };
 use num_traits::AsPrimitive;
 
-use super::chunks::{chunk_name, read_chunks};
+use super::chunks::{chunk_name, read_chunks_cached};
 use super::config::{CONFIG_FILE_NAME, ChunkedVectorsConfig, STATUS_FILE_NAME};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
@@ -48,11 +48,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         directory.join(STATUS_FILE_NAME)
     }
 
-    pub(super) fn load_config(
-        fs: &S::Fs,
+    pub(super) fn load_config<Fs: UniversalReadFs>(
+        fs: &Fs,
         config_file: &Path,
     ) -> OperationResult<Option<ChunkedVectorsConfig>> {
-        match read_json_via::<S::Fs, ChunkedVectorsConfig>(fs, config_file) {
+        match read_json_via::<Fs, ChunkedVectorsConfig>(fs, config_file) {
             Ok(config) => Ok(Some(config)),
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
@@ -64,7 +64,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     /// Both `config.json` and `status.dat` must already exist; this function
     /// will not create them.
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         directory: &Path,
         dim: usize,
         advice: AdviceSetting,
@@ -86,7 +86,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         }
 
         let len = read_status_len(fs, &Self::status_file(directory))?;
-        let chunks = read_chunks(fs, directory, advice, populate, false)?;
+        let chunks = read_chunks_cached(fs, directory, advice, populate)?;
 
         Ok(Self {
             config,
@@ -403,7 +403,7 @@ mod tests {
         writer.flusher()().unwrap();
 
         let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             dir.path(),
             DIM,
             AdviceSetting::Global,
@@ -453,7 +453,7 @@ mod tests {
         writer.flusher()().unwrap();
 
         let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             dir.path(),
             DIM,
             AdviceSetting::Global,

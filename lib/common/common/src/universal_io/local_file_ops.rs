@@ -29,27 +29,37 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Resu
     })
 }
 
+/// List files whose full path starts with `prefix_path`, recursing into
+/// subdirectories — matching the flat key-prefix semantics of object-store
+/// backends, so a directory prefix lists the whole tree beneath it.
 pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<ListedFile>> {
-    let dir = prefix_path.parent().unwrap_or(Path::new("."));
-    let file_prefix = prefix_path
-        .file_name()
-        .map(|str| str.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let start_dir = prefix_path.parent().unwrap_or(Path::new("."));
+    let prefix = prefix_path.to_string_lossy().into_owned();
 
     let mut results = Vec::new();
-    let entries =
-        fs_err::read_dir(dir).map_err(|err| UniversalIoError::extract_not_found(err, dir))?;
+    let mut dirs = vec![start_dir.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        let entries =
+            fs_err::read_dir(&dir).map_err(|err| UniversalIoError::extract_not_found(err, &dir))?;
 
-    for entry in entries {
-        let entry = entry?;
-        if let Some(name) = entry.file_name().to_str()
-            && name.starts_with(&file_prefix)
-            && entry.file_type()?.is_file()
-        {
-            let path = dir.join(name);
-            let size = entry.metadata()?.len();
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            let path_string = path.to_string_lossy().into_owned();
+            let file_type = entry.file_type()?;
 
-            results.push(ListedFile { path, size });
+            if file_type.is_dir() {
+                // Descend when the directory can contain matching paths: it
+                // matches the prefix itself, or it is an ancestor of it (the
+                // walk starts at the prefix's parent, e.g. prefix `dir/file_`
+                // must descend into `dir`).
+                if path_string.starts_with(&prefix) || prefix.starts_with(&path_string) {
+                    dirs.push(path);
+                }
+            } else if file_type.is_file() && path_string.starts_with(&prefix) {
+                let size = entry.metadata()?.len();
+                results.push(ListedFile { path, size });
+            }
         }
     }
 

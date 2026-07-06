@@ -112,9 +112,13 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &common::universal_io::CachedReadFs::new(fs, std::path::Path::new(".")).unwrap(),
+                dir.path().to_path_buf(),
+                config,
+            )
+            .unwrap()
+            .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyFullTextIndex::Appendable(_)));

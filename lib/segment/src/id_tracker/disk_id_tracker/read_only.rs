@@ -21,7 +21,9 @@ use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::{DeferredBehavior, PointOffsetType};
-use common::universal_io::{OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead};
+use common::universal_io::{
+    CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+};
 
 use super::mappings::{DiskMappingsSource, log_lookup_err};
 use super::on_disk_format::{e2i_path, i2e_path};
@@ -57,7 +59,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     ///
     /// Errors if the segment is not in the on-disk format; use
     /// [`try_open`](Self::try_open) to probe without erroring.
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &CachedReadFs<S::Fs>, segment_path: &Path) -> OperationResult<Self> {
         Self::try_open(fs, segment_path)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker not found in segment {}",
@@ -69,7 +71,10 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// Like [`open`](Self::open), but returns `Ok(None)` when the segment is not
     /// in the on-disk format (`i2e` absent). Probing happens by opening the
     /// mapping directly, so no separate existence check is issued.
-    pub fn try_open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Option<Self>> {
+    pub fn try_open(
+        fs: &CachedReadFs<S::Fs>,
+        segment_path: &Path,
+    ) -> OperationResult<Option<Self>> {
         let Some(reader) = DiskMappingReader::try_open(fs, segment_path)? else {
             return Ok(None);
         };
@@ -80,16 +85,18 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             populate: Populate::No,
             advice: AdviceSetting::Global,
         };
-        let versions = TypedStorage::<S, SeqNumberType>::open(
-            fs,
-            version_mapping_path(segment_path),
+        let versions = TypedStorage::<S, SeqNumberType>::new(fs.take_file(
+            &version_mapping_path(segment_path),
             options,
             Default::default(),
-        )?;
+        )?);
         let versions_len = versions.len()?;
 
-        let deleted_file =
-            StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
+        let deleted_file = StoredBitSlice::from_file(fs.take_file(
+            &deleted_path(segment_path),
+            options,
+            Default::default(),
+        )?)?;
 
         Ok(Some(Self {
             path: segment_path.to_path_buf(),

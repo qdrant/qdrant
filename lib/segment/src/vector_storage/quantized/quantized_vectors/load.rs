@@ -1,3 +1,4 @@
+use common::universal_io::CachedReadFs;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -112,9 +113,12 @@ impl QuantizedVectors {
         let in_ram = config.is_ram(on_disk_vector_storage);
 
         // Open the flat (RAM / mmap) or appendable chunked storage selected for this config.
+        // `from_file` takes a `CachedReadFs`; snapshot-less it is a passthrough
+        // to the raw backend.
+        let read_fs = CachedReadFs::new(READ_FS, data_path.as_path())?;
         let ram =
-            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
-        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
+            || QuantizedRamStorage::from_file::<ReadFile>(&read_fs, data_path.as_path(), size);
+        let mmap = || QuantizedStorage::from_file(&read_fs, data_path.as_path(), size);
         let chunked =
             || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
 
@@ -169,9 +173,12 @@ impl QuantizedVectors {
 
         // Open the inner quantized storage and the matching offsets storage for the
         // selected backend.
+        // `from_file` takes a `CachedReadFs`; snapshot-less it is a passthrough
+        // to the raw backend.
+        let read_fs = CachedReadFs::new(READ_FS, data_path.as_path())?;
         let ram =
-            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
-        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
+            || QuantizedRamStorage::from_file::<ReadFile>(&read_fs, data_path.as_path(), size);
+        let mmap = || QuantizedStorage::from_file(&read_fs, data_path.as_path(), size);
         let chunked =
             || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
         let ram_offsets = || MultivectorOffsetsStorageRam::load(&offsets_path);

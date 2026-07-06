@@ -76,9 +76,12 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyAppendableNumericIndex<FloatPayloadType, ReadOnly<MmapFile>> =
-            ReadOnlyAppendableNumericIndex::open(&fs, dir.path().to_path_buf())
-                .unwrap()
-                .unwrap();
+            ReadOnlyAppendableNumericIndex::open(
+                &common::universal_io::CachedReadFs::new(fs, std::path::Path::new(".")).unwrap(),
+                dir.path().to_path_buf(),
+            )
+            .unwrap()
+            .unwrap();
 
         assert_eq!(index.get_points_count(), 3);
         assert_eq!(index.get_max_values_per_point(), 2);

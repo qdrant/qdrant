@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{Populate, UniversalRead};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead};
 use gridstore::Blob;
 
 use super::super::super::Encodable;
@@ -28,7 +28,10 @@ where
     /// uniformly. No `create_if_missing`: the read path never creates.
     ///
     /// [1]: super::super::NumericIndexInner::new_gridstore
-    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+    pub fn open_appendable(
+        fs: &CachedReadFs<S::Fs>,
+        dir: PathBuf,
+    ) -> OperationResult<Option<Self>> {
         Ok(ReadOnlyAppendableNumericIndex::open(fs, dir)?.map(Self::Appendable))
     }
 
@@ -46,7 +49,7 @@ where
     ///
     /// [1]: super::super::NumericIndexInner::new_mmap
     pub fn open_immutable(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,

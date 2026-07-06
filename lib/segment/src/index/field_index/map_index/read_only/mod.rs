@@ -87,10 +87,12 @@ mod tests {
         // The read-only filesystem context is `Default`.
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
-        let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> =
-            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf())
-                .unwrap()
-                .unwrap();
+        let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> = ReadOnlyMapIndex::open_appendable(
+            &common::universal_io::CachedReadFs::new(fs, std::path::Path::new(".")).unwrap(),
+            dir.path().to_path_buf(),
+        )
+        .unwrap()
+        .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyMapIndex::Appendable(_)));

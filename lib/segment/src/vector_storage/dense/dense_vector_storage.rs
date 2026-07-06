@@ -13,7 +13,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead};
+use common::universal_io::{CachedReadFs, MmapFile, MmapFs, Populate, UniversalRead};
 use fs_err::{File, OpenOptions};
 
 use crate::common::Flusher;
@@ -201,8 +201,10 @@ where
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
 
+    // `ImmutableDenseVectors::open` takes a `CachedReadFs`; snapshot-less it
+    // is a passthrough to the raw backend.
     let vectors = ImmutableDenseVectors::open(
-        &fs,
+        &CachedReadFs::new(fs.clone(), path)?,
         &vectors_path,
         &deleted_path,
         dim,
@@ -288,7 +290,7 @@ where
 
         // Load store with updated files
         self.vectors.replace(ImmutableDenseVectors::open(
-            &self.fs,
+            &CachedReadFs::new(self.fs.clone(), &self.vectors_path)?,
             &self.vectors_path,
             &self.deleted_path,
             dim,

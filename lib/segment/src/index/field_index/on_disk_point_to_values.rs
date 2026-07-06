@@ -8,7 +8,7 @@ use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{self, CachedReadFs, Populate, ReadOnly, ReadRange, UniversalRead};
 use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -161,7 +161,11 @@ where
         Ok(())
     }
 
-    pub fn open(fs: &S::Fs, path: &Path, populate: Populate) -> OperationResult<Self> {
+    pub fn open(
+        fs: &CachedReadFs<S::Fs>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<Self> {
         let file_name = path.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
@@ -171,7 +175,8 @@ where
             advice: AdviceSetting::Global,
         };
 
-        let store = ReadOnly::open(fs, &file_name, open_options, Default::default())?;
+        let store =
+            ReadOnly::from_file(fs.take_file(&file_name, open_options, Default::default())?);
 
         let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
 
@@ -505,8 +510,12 @@ mod tests {
                 .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.as_str()))),
         )
         .unwrap();
-        let point_to_values =
-            OnDiskPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+        let point_to_values = OnDiskPointToValues::<str, MmapFile>::open(
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            dir.path(),
+            Populate::No,
+        )
+        .unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
@@ -565,9 +574,12 @@ mod tests {
                 .map(|(id, values)| (id as PointOffsetType, values.iter())),
         )
         .unwrap();
-        let point_to_values =
-            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let point_to_values = OnDiskPointToValues::<GeoPoint, MmapFile>::open(
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            dir.path(),
+            Populate::No,
+        )
+        .unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values

@@ -563,7 +563,7 @@ mod tests {
         OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             mmap_dir.path().into(),
             Populate::No,
             phrase_matching,
@@ -644,7 +644,7 @@ mod tests {
         OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
         let mut mmap_index = OnDiskInvertedIndex::open(
-            &MmapFs,
+            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
             mmap_dir.path().into(),
             Populate::No,
             phrase_matching,

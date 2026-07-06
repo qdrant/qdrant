@@ -1,3 +1,4 @@
+use common::universal_io::CachedReadFs;
 use std::path::Path;
 
 use common::universal_io::UniversalRead;
@@ -25,7 +26,7 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
     ///
     /// [1]: super::super::mutable_null_index::MutableNullIndex::open
     pub fn open(
-        fs: &S::Fs,
+        fs: &CachedReadFs<S::Fs>,
         path: &Path,
         total_point_count: usize,
     ) -> OperationResult<Option<Self>> {
