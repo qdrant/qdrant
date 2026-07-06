@@ -553,6 +553,160 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 6);
 }
 
+/// `retrieve_raw` on a plain dense segment must return the verbatim f32 bytes
+/// of the stored vector (zero-copy `bytemuck` cast), with payload untouched.
+#[test]
+fn test_retrieve_raw_dense_bytes() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    segment
+        .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[7.into()],
+            &WithPayload::default(),
+            &true.into(),
+            &hw_counter,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    let record = raw.get(&7.into()).expect("point 7 must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+    let (_, bytes) = vectors
+        .iter()
+        .find(|(name, _)| name == DEFAULT_VECTOR_NAME)
+        .expect("default vector must be present");
+
+    let expected: &[u8] = bytemuck::cast_slice(&vec);
+    assert_eq!(bytes.as_slice(), expected);
+}
+
+/// `retrieve_raw` over a multi-dense storage must return the flattened inner
+/// vectors as raw bytes for each named vector.
+#[test]
+fn test_retrieve_raw_multivec_bytes() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 1;
+
+    let mut segment = build_multivec_segment(dir.path(), dim, dim, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let v1 = vec![0.4_f32];
+    let v2 = vec![0.5_f32];
+    segment
+        .upsert_point(
+            100,
+            4.into(),
+            NamedVectors::from_pairs([
+                (VECTOR1_NAME.into(), v1.clone()),
+                (VECTOR2_NAME.into(), v2.clone()),
+            ]),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[4.into()],
+            &WithPayload::default(),
+            &true.into(),
+            &hw_counter,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    let record = raw.get(&4.into()).expect("point 4 must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+
+    for (name, expected) in [(VECTOR1_NAME, &v1), (VECTOR2_NAME, &v2)] {
+        let (_, bytes) = vectors
+            .iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("vector {name} must be present"));
+        let expected_bytes: &[u8] = bytemuck::cast_slice(expected);
+        assert_eq!(bytes.as_slice(), expected_bytes, "mismatch for {name}");
+    }
+}
+
+/// `retrieve_raw` over a sparse storage must return the on-disk
+/// `StoredSparseVector` bincode form, which decodes back to the original vector.
+#[test]
+fn test_retrieve_raw_sparse_bytes() {
+    use gridstore::Blob;
+
+    use crate::vector_storage::sparse::StoredSparseVector;
+
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let sparse_name = "sparse";
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::new(),
+            sparse_vector_data: HashMap::from_iter([(
+                sparse_name.to_string(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
+                    storage_type: SparseVectorStorageType::Mmap,
+                    modifier: None,
+                },
+            )]),
+            payload_storage_type: Default::default(),
+        },
+        None,
+        true,
+    )
+    .unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(
+        sparse_name.to_string(),
+        VectorInternal::Sparse(sparse.clone()),
+    );
+    segment
+        .upsert_point(100, 7.into(), vectors, &hw_counter)
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[7.into()],
+            &WithPayload::default(),
+            &true.into(),
+            &hw_counter,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    let record = raw.get(&7.into()).expect("point 7 must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+    let (_, bytes) = vectors
+        .iter()
+        .find(|(name, _)| name == sparse_name)
+        .expect("sparse vector must be present");
+
+    let decoded = SparseVector::try_from(StoredSparseVector::from_bytes(bytes)).unwrap();
+    assert_eq!(decoded, sparse);
+}
+
 /// Tests segment functions to ensure invalid requests do error
 #[test]
 fn test_vector_compatibility_checks() {

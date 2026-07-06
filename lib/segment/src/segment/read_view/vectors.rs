@@ -96,6 +96,56 @@ where
         Ok(())
     }
 
+    /// Byte-blob analogue of [`Self::vectors_by_offsets`]: yields each vector as
+    /// storage-native bytes (`Vec<u8>`) instead of a decoded [`VectorInternal`],
+    /// avoiding a lossy round-trip. Deleted vectors/points are skipped lazily.
+    pub fn vector_bytes_by_offsets<U: Copy + common::universal_io::UserData>(
+        &self,
+        vector_name: &VectorName,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        hw_counter: &HardwareCounterCell,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        check_vector_name(vector_name, self.segment_config)?;
+        let vector_data = self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+        let vector_storage = vector_data.vector_storage();
+        let total_vectors = vector_storage.total_vector_count();
+        let id_tracker = self.id_tracker;
+
+        for (user_data, point_offset) in keys {
+            if total_vectors <= point_offset as usize {
+                debug_assert!(
+                    false,
+                    "Vector storage is inconsistent, total_vector_count: {total_vectors}, point_offset: {point_offset}, external_id: {:?}",
+                    id_tracker.external_id(point_offset),
+                );
+                continue;
+            }
+            if vector_storage.is_deleted_vector(point_offset)
+                || id_tracker.is_deleted_point(point_offset)
+            {
+                continue;
+            }
+
+            let bytes = vector_storage
+                .vector_bytes_opt::<Random>(point_offset)
+                .ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "Raw bytes are not available for vector {vector_name:?} at offset {point_offset}",
+                    ))
+                })?;
+            if vector_storage.is_on_disk() {
+                hw_counter.vector_io_read().incr_delta(bytes.len());
+            }
+            callback(user_data, point_offset, bytes);
+        }
+
+        Ok(())
+    }
+
     /// Retrieve a named vector for an external point ID.
     pub fn vector(
         &self,
