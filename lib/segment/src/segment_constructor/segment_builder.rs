@@ -33,6 +33,7 @@ use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
+use crate::id_tracker::disk_id_tracker::DiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerRead, for_each_unique_point};
@@ -588,19 +589,33 @@ impl SegmentBuilder {
 
             let id_tracker = match id_tracker {
                 IdTrackerEnum::InMemoryIdTracker(in_memory_id_tracker) => {
-                    let (versions, mappings) = in_memory_id_tracker.into_internal();
-                    let compressed_mapping = CompressedPointMappings::from_mappings(mappings);
-                    let immutable_id_tracker = ImmutableIdTracker::new(
-                        &MmapFs,
-                        temp_dir.path(),
-                        &versions,
-                        compressed_mapping,
-                    )?;
-                    IdTrackerEnum::ImmutableIdTracker(immutable_id_tracker)
+                    // Serverless-compatible builds produce the disk-resident tracker
+                    // (mapping stays on disk); otherwise the in-RAM immutable tracker.
+                    if feature_flags().serverless_compatible() {
+                        let disk_id_tracker = DiskIdTracker::from_in_memory_tracker(
+                            &MmapFs,
+                            in_memory_id_tracker,
+                            temp_dir.path(),
+                        )?;
+                        IdTrackerEnum::DiskIdTracker(disk_id_tracker)
+                    } else {
+                        let (versions, mappings) = in_memory_id_tracker.into_internal();
+                        let compressed_mapping = CompressedPointMappings::from_mappings(mappings);
+                        let immutable_id_tracker = ImmutableIdTracker::new(
+                            &MmapFs,
+                            temp_dir.path(),
+                            &versions,
+                            compressed_mapping,
+                        )?;
+                        IdTrackerEnum::ImmutableIdTracker(immutable_id_tracker)
+                    }
                 }
                 IdTrackerEnum::MutableIdTracker(_) => id_tracker,
                 IdTrackerEnum::ImmutableIdTracker(_) => {
                     unreachable!("ImmutableIdTracker should not be used for building segment")
+                }
+                IdTrackerEnum::DiskIdTracker(_) => {
+                    unreachable!("DiskIdTracker should not be used for building segment")
                 }
             };
 

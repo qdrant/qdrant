@@ -5,12 +5,11 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalReadFileOps, read_json_via};
+use common::universal_io::{Populate, read_json_via};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::immutable_id_tracker;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::read_only::{ReadOnlyVectorIndexOpenArgs, VectorIndexReadEnum};
@@ -64,13 +63,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_populate,
         )?));
 
-        // Appendable (mutable-format) segments have no immutable mappings file.
-        let use_appendable_id_tracker =
-            is_appendable || !fs.exists(&immutable_id_tracker::mappings_path(segment_path))?;
-        let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::open(
+        // Detect the persisted format by attempting each format's open (no
+        // per-file `exists` round-trips — important for object-storage backends).
+        let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
             fs,
             segment_path,
-            use_appendable_id_tracker,
             deferred_internal_id,
         )?));
 

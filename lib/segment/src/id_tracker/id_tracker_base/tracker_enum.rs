@@ -8,6 +8,7 @@ use super::point_mappings_ref::PointMappingsRefEnum;
 use super::trait_def::{IdTracker, IdTrackerRead};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::disk_id_tracker::DiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
@@ -18,6 +19,7 @@ pub enum IdTrackerEnum {
     MutableIdTracker(MutableIdTracker),
     ImmutableIdTracker(ImmutableIdTracker<MmapFile>),
     InMemoryIdTracker(InMemoryIdTracker),
+    DiskIdTracker(DiskIdTracker<MmapFile>),
 }
 
 impl IdTrackerRead for IdTrackerEnum {
@@ -30,6 +32,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.internal_version(internal_id)
             }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
         }
     }
 
@@ -48,6 +51,9 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(t) => {
                 t.internal_id_with_behavior(external_id, deferred_behavior)
             }
+            IdTrackerEnum::DiskIdTracker(t) => {
+                t.internal_id_with_behavior(external_id, deferred_behavior)
+            }
         }
     }
 
@@ -56,14 +62,18 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.external_id(internal_id),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.external_id(internal_id),
         }
     }
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+    type Backend = MmapFile;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.point_mappings(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.point_mappings(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.point_mappings(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.point_mappings(),
         }
     }
 
@@ -72,6 +82,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.total_point_count(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.total_point_count(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.total_point_count(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.total_point_count(),
         }
     }
 
@@ -80,6 +91,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_count(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.deleted_point_count(),
         }
     }
 
@@ -88,6 +100,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
         }
     }
 
@@ -100,6 +113,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.is_deleted_point(internal_id)
             }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.is_deleted_point(internal_id),
         }
     }
 
@@ -108,6 +122,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.name(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.name(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.name(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.name(),
         }
     }
 
@@ -118,6 +133,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
         }
     }
 
@@ -126,6 +142,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
         }
     }
 
@@ -134,6 +151,7 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
         }
     }
 }
@@ -154,6 +172,9 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.set_internal_version(internal_id, version)
             }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.set_internal_version(internal_id, version)
+            }
         }
     }
 
@@ -172,6 +193,9 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.set_link(external_id, internal_id)
             }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.set_link(external_id, internal_id)
+            }
         }
     }
 
@@ -180,6 +204,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop(external_id),
         }
     }
 
@@ -188,6 +213,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
         }
     }
 
@@ -196,6 +222,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.mapping_flusher(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.mapping_flusher(),
         }
     }
 
@@ -204,6 +231,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.versions_flusher(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.versions_flusher(),
         }
     }
 
@@ -212,6 +240,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
         }
     }
 
@@ -220,6 +249,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.files(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.files(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.files(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.files(),
         }
     }
 
@@ -228,6 +258,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.immutable_files(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.immutable_files(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.immutable_files(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.immutable_files(),
         }
     }
 
@@ -236,6 +267,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.clear_cache(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.clear_cache(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.clear_cache(),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.clear_cache(),
         }
     }
 }

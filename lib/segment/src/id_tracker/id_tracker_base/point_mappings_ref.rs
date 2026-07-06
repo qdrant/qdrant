@@ -1,11 +1,13 @@
 use atomic_refcell::AtomicRef;
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::types::{DeferredBehavior, PointOffsetType};
+use common::universal_io::{MmapFile, UniversalRead};
 use itertools::Either;
 use self_cell::self_cell;
 
 use super::tracker_enum::IdTrackerEnum;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
+use crate::id_tracker::disk_id_tracker::mappings::DiskMappingsRef;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::PointIdType;
 
@@ -13,20 +15,35 @@ use crate::types::PointIdType;
 ///
 /// Provides iteration methods over external/internal IDs without requiring
 /// the `IdTracker` trait to return boxed iterators.
-#[derive(Clone, Copy)]
-pub enum PointMappingsRefEnum<'a> {
+///
+/// Generic over the disk-resident tracker's read backend `S`
+/// ([`IdTrackerRead::Backend`](super::trait_def::IdTrackerRead::Backend)); the
+/// [`Disk`](Self::Disk) variant holds a concrete [`DiskMappingsRef`] rather than a
+/// trait object, so the mapping is reached by static dispatch. `S` is unused by
+/// the `Plain`/`Compressed` variants.
+pub enum PointMappingsRefEnum<'a, S: UniversalRead> {
     Plain(&'a PointMappings),
     Compressed(&'a CompressedPointMappings),
+    Disk(DiskMappingsRef<'a, S>),
 }
 
-impl<'a> PointMappingsRefEnum<'a> {
+// Hand-written so `Copy` doesn't require `S: Copy` (every variant is references).
+impl<S: UniversalRead> Clone for PointMappingsRefEnum<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<S: UniversalRead> Copy for PointMappingsRefEnum<'_, S> {}
+
+impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
     /// Iterate over all external IDs.
     ///
     /// Excludes soft deleted points.
     pub fn iter_external(self) -> impl Iterator<Item = PointIdType> + 'a {
         match self {
             PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_external()),
-            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_external()),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(Either::Left(m.iter_external())),
+            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_external())),
         }
     }
 
@@ -36,7 +53,8 @@ impl<'a> PointMappingsRefEnum<'a> {
     pub fn iter_internal(self) -> impl Iterator<Item = PointOffsetType> + 'a {
         match self {
             PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_internal()),
-            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_internal()),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(Either::Left(m.iter_internal())),
+            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_internal())),
         }
     }
 
@@ -49,7 +67,10 @@ impl<'a> PointMappingsRefEnum<'a> {
     ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         match self {
             PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_from(external_id)),
-            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_from(external_id)),
+            PointMappingsRefEnum::Compressed(m) => {
+                Either::Right(Either::Left(m.iter_from(external_id)))
+            }
+            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_from(external_id))),
         }
     }
 
@@ -91,8 +112,10 @@ impl<'a> PointMappingsRefEnum<'a> {
                 // they can't have deferred points,
                 // so we can only pull visible points
                 // and ignore the parameter
-                Either::Right(m.iter_internal())
+                Either::Right(Either::Left(m.iter_internal()))
             }
+            // Disk mappings are immutable too; ignore the deferred parameter.
+            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_internal())),
         }
     }
 
@@ -152,7 +175,10 @@ impl<'a> PointMappingsRefEnum<'a> {
             PointMappingsRefEnum::Plain(m) => {
                 Either::Left(m.iter_from_with_behavior(external_id, deferred_behavior))
             }
-            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_from(external_id)),
+            PointMappingsRefEnum::Compressed(m) => {
+                Either::Right(Either::Left(m.iter_from(external_id)))
+            }
+            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_from(external_id))),
         }
     }
 
@@ -169,7 +195,8 @@ impl<'a> PointMappingsRefEnum<'a> {
             PointMappingsRefEnum::Plain(m) => {
                 Either::Left(m.iter_random_with_behavior(deferred_behavior))
             }
-            PointMappingsRefEnum::Compressed(m) => Either::Right(m.iter_random()),
+            PointMappingsRefEnum::Compressed(m) => Either::Right(Either::Left(m.iter_random())),
+            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_random())),
         }
     }
 
@@ -201,7 +228,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     fn deferred_internal_id(self) -> Option<PointOffsetType> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.deferred_internal_id(),
-            PointMappingsRefEnum::Compressed(_) => None,
+            PointMappingsRefEnum::Compressed(_) | PointMappingsRefEnum::Disk(_) => None,
         }
     }
 
@@ -210,18 +237,25 @@ impl<'a> PointMappingsRefEnum<'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.deleted(),
             PointMappingsRefEnum::Compressed(m) => m.deleted(),
+            PointMappingsRefEnum::Disk(m) => m.deleted(),
         }
     }
 
-    /// Shadowed-active bitslice for this mapping. Empty for compressed
+    /// Shadowed-active bitslice for this mapping. Empty for compressed and disk
     /// mappings (immutable trackers can't carry deferred mutations).
     fn shadowed(self) -> &'a BitSlice {
         match self {
             PointMappingsRefEnum::Plain(m) => m.shadowed_bitslice(),
-            PointMappingsRefEnum::Compressed(_) => BitSlice::empty(),
+            PointMappingsRefEnum::Compressed(_) | PointMappingsRefEnum::Disk(_) => {
+                BitSlice::empty()
+            }
         }
     }
 }
+
+/// The `PointMappingsRefEnum` produced by an [`IdTrackerEnum`], whose backend is
+/// always [`MmapFile`] (all its variants are local, `MmapFile`-backed trackers).
+type IdTrackerEnumMappingsRef<'a> = PointMappingsRefEnum<'a, MmapFile>;
 
 self_cell! {
     /// Wrapper around `PointMappingsRefEnum` that only exposes external ID iteration.
@@ -232,6 +266,6 @@ self_cell! {
         owner: AtomicRef<'a, IdTrackerEnum>,
 
         #[covariant]
-        dependent: PointMappingsRefEnum,
+        dependent: IdTrackerEnumMappingsRef,
     }
 }

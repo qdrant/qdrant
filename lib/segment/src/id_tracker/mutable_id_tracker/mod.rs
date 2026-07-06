@@ -188,7 +188,9 @@ impl IdTrackerRead for MutableIdTracker {
         self.mappings.external_id(internal_id)
     }
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+    type Backend = common::universal_io::MmapFile;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Plain(&self.mappings)
     }
 

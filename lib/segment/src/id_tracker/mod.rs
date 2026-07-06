@@ -1,4 +1,6 @@
 pub mod compressed;
+pub mod disk_id_tracker;
+pub mod format_detection;
 pub mod id_tracker_base;
 pub mod immutable_id_tracker;
 pub mod in_memory_id_tracker;
@@ -7,6 +9,7 @@ pub mod mutable_id_tracker;
 pub mod point_mappings;
 
 use common::types::PointOffsetType;
+pub use format_detection::IdTrackerFormat;
 pub use id_tracker_base::*;
 use itertools::Itertools as _;
 
