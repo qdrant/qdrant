@@ -140,11 +140,7 @@ pub fn resolve_operation(
                         points,
                         filter,
                     } = dp;
-                    // An explicit id list takes precedence over the filter on apply.
-                    let points = match (points, filter) {
-                        (None, Some(filter)) => Some(matched_ids(segments, &filter, hw_counter)?),
-                        (points, _) => points,
-                    };
+                    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
                     PayloadOps::DeletePayload(DeletePayloadOp {
                         keys,
                         points,
@@ -182,6 +178,21 @@ fn matched_ids(
     Ok(ids)
 }
 
+/// Resolve the `(points, filter)` pair of a payload operation. An explicit id
+/// list takes precedence over the filter on apply, so a filter only resolves
+/// when there is no id list.
+fn resolve_points_or_filter(
+    segments: &SegmentHolder,
+    points: Option<Vec<PointIdType>>,
+    filter: Option<segment::types::Filter>,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<Option<Vec<PointIdType>>> {
+    match (points, filter) {
+        (None, Some(filter)) => Ok(Some(matched_ids(segments, &filter, hw_counter)?)),
+        (points, _) => Ok(points),
+    }
+}
+
 /// Applies the same point-retention as `update::conditional_upsert`, but
 /// instead of upserting the surviving subset it returns it as a plain upsert.
 fn resolve_conditional_upsert(
@@ -211,11 +222,7 @@ fn resolve_set_payload(
         filter,
         key,
     } = operation;
-    // An explicit id list takes precedence over the filter on apply.
-    let points = match (points, filter) {
-        (None, Some(filter)) => Some(matched_ids(segments, &filter, hw_counter)?),
-        (points, _) => points,
-    };
+    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
     Ok(SetPayloadOp {
         payload,
         points,
