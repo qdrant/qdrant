@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::AccessPattern;
-use common::universal_io::UserData;
+use common::generic_consts::{AccessPattern, Sequential};
+use common::universal_io::{UniversalRead, UserData};
 
 use super::page::AppendOnlyPage;
 use crate::Result;
@@ -19,20 +19,19 @@ use crate::tracker::{PointOffset, ValuePointer};
 ///
 /// Holds borrowed references to the tracker and page, and contains all reading logic.
 ///
-/// The append-only mode does not use the universal io backend `S`, it reads files directly. The
-/// parameter is kept so this view fits in the generic [`crate::GridstoreView`].
-pub(crate) struct AppendOnlyGridstoreView<'a, V, S> {
+/// Value data is read through the universal IO backend `S`, the tracker is read directly.
+pub(crate) struct AppendOnlyGridstoreView<'a, V, S: UniversalRead> {
     config: &'a StorageConfig,
     tracker: &'a AppendOnlyTracker,
-    page: &'a AppendOnlyPage,
-    _phantom: PhantomData<(V, S)>,
+    page: &'a AppendOnlyPage<S>,
+    _phantom: PhantomData<V>,
 }
 
-impl<'a, V, S> AppendOnlyGridstoreView<'a, V, S> {
+impl<'a, V, S: UniversalRead> AppendOnlyGridstoreView<'a, V, S> {
     pub(super) fn new(
         config: &'a StorageConfig,
         tracker: &'a AppendOnlyTracker,
-        page: &'a AppendOnlyPage,
+        page: &'a AppendOnlyPage<S>,
     ) -> Self {
         Self {
             config,
@@ -52,17 +51,17 @@ impl<'a, V, S> AppendOnlyGridstoreView<'a, V, S> {
     }
 
     /// Read the raw value bytes at the given pointer.
-    pub(crate) fn read_from_page(&self, pointer: ValuePointer) -> Result<Vec<u8>> {
+    pub(crate) fn read_from_page<P: AccessPattern>(
+        &self,
+        pointer: ValuePointer,
+    ) -> Result<Cow<'_, [u8]>> {
         self.page
-            .read_value(pointer, self.config.block_size_bytes as u64)
+            .read_value::<P>(pointer, self.config.block_size_bytes as u64)
     }
 }
 
-impl<'a, V: Blob, S> AppendOnlyGridstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead> AppendOnlyGridstoreView<'a, V, S> {
     /// Get the value for a given point offset.
-    ///
-    /// The access pattern `P` is ignored, the append-only mode always reads the file directly.
-    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
@@ -72,19 +71,16 @@ impl<'a, V: Blob, S> AppendOnlyGridstoreView<'a, V, S> {
             return Ok(None);
         };
 
-        let raw = self.read_from_page(pointer)?;
+        let raw = self.read_from_page::<P>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
-        let decompressed = self.config.compression.decompress(Cow::Owned(raw));
+        let decompressed = self.config.compression.decompress(raw);
         Ok(Some(V::from_bytes(&decompressed)))
     }
 
     /// Iterate over all given values and execute callback for each one.
     ///
     /// Return `false` from the callback to stop iteration early.
-    ///
-    /// The access pattern `P` is ignored, the append-only mode always reads the file directly.
-    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
@@ -100,10 +96,10 @@ impl<'a, V: Blob, S> AppendOnlyGridstoreView<'a, V, S> {
             let value = match self.tracker.get(point_offset).map_err(E::from)? {
                 None => None,
                 Some(pointer) => {
-                    let raw = self.read_from_page(pointer).map_err(E::from)?;
+                    let raw = self.read_from_page::<P>(pointer).map_err(E::from)?;
                     hw_counter_cell.incr_delta(raw.len());
 
-                    let decompressed = self.config.compression.decompress(Cow::Owned(raw));
+                    let decompressed = self.config.compression.decompress(raw);
                     Some(V::from_bytes(&decompressed))
                 }
             };
@@ -141,10 +137,12 @@ impl<'a, V: Blob, S> AppendOnlyGridstoreView<'a, V, S> {
                 continue;
             };
 
-            let raw = self.read_from_page(pointer).map_err(E::from)?;
+            let raw = self
+                .read_from_page::<Sequential>(pointer)
+                .map_err(E::from)?;
             hw_counter.incr_delta(raw.len());
 
-            let decompressed = self.config.compression.decompress(Cow::Owned(raw));
+            let decompressed = self.config.compression.decompress(raw);
             let value = V::from_bytes(&decompressed);
 
             if !callback(start + index as PointOffset, value)? {

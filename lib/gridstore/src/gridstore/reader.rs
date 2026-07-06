@@ -76,9 +76,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                     variant: ReaderVariant::Dynamic(reader),
                 })
             }
-            // The append-only mode does not use the universal io backend, it reads files directly
             Mode::AppendOnly => {
-                let reader = AppendOnlyGridstoreReader::open(base_path, config)?;
+                let reader = AppendOnlyGridstoreReader::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: ReaderVariant::AppendOnly(reader),
                 })

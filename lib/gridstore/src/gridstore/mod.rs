@@ -107,10 +107,8 @@ where
                     variant: GridstoreVariant::Dynamic(storage),
                 })
             }
-            // The append-only mode does not use the universal io backend, it reads and writes
-            // files directly
             Mode::AppendOnly => {
-                let storage = AppendOnlyGridstore::new(base_path, options)?;
+                let storage = AppendOnlyGridstore::new(fs, base_path, options)?;
                 Ok(Self {
                     variant: GridstoreVariant::AppendOnly(storage),
                 })
@@ -130,10 +128,8 @@ where
                     variant: GridstoreVariant::Dynamic(storage),
                 })
             }
-            // The append-only mode does not use the universal io backend, it reads and writes
-            // files directly
             Mode::AppendOnly => {
-                let storage = AppendOnlyGridstore::open(base_path, config)?;
+                let storage = AppendOnlyGridstore::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: GridstoreVariant::AppendOnly(storage),
                 })
@@ -283,7 +279,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
 
     /// Populate all parts of the storage in the mmap.
     ///
-    /// No-op in append-only mode, which does not memory map its files.
+    /// No-op in append-only mode, which never populates its files into RAM.
     pub fn populate(&self) -> Result<()> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.populate(),
@@ -293,7 +289,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
 
     /// Drop disk cache.
     ///
-    /// No-op in append-only mode, which does not memory map its files.
+    /// No-op in append-only mode, which never populates its files into RAM.
     pub fn clear_cache(&self) -> crate::Result<()> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage.clear_cache(),

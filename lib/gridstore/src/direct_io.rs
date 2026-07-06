@@ -1,7 +1,7 @@
-//! Cross-platform positional file IO helpers, used by the append-only storage mode.
+//! Cross-platform positional file IO helpers, used by the append-only tracker.
 //!
-//! The append-only storage variant reads and writes its files directly, without memory mapping
-//! them.
+//! The append-only tracker reads and writes its file directly, without memory mapping it. The
+//! append-only page goes through universal IO instead.
 
 use std::io;
 use std::path::Path;
