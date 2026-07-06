@@ -69,7 +69,7 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
     ) -> Result<Cow<'_, [u8]>> {
         match &self.variant {
             ViewVariant::Dynamic(view) => view.read_from_pages::<P>(pointer),
-            ViewVariant::AppendOnly(view) => Ok(Cow::Owned(view.read_from_page(pointer)?)),
+            ViewVariant::AppendOnly(view) => view.read_from_page::<P>(pointer),
         }
     }
 }

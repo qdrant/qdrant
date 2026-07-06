@@ -1,11 +1,17 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use fs_err::File;
+use common::generic_consts::AccessPattern;
+use common::mmap::{Advice, AdviceSetting};
+use common::universal_io::{
+    IsNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs, UniversalWrite,
+    UniversalWriteFileOps,
+};
 
+use crate::Result;
 use crate::error::GridstoreError;
 use crate::gridstore::Flusher;
 use crate::tracker::{BlockOffset, ValuePointer};
-use crate::{Result, direct_io};
 
 /// File name of the append-only page file
 ///
@@ -21,38 +27,57 @@ const PAGE_FILE_NAME: &str = "append_only_page_0.dat";
 /// rewritten. The file length always matches the end of the last appended value, there is no
 /// preallocation and no trailing padding.
 ///
-/// The file is read and written directly, it is never memory mapped.
+/// The file is read and written through the universal IO backend `S`.
 #[derive(Debug)]
-pub(super) struct AppendOnlyPage {
+pub(super) struct AppendOnlyPage<S> {
     /// Path to the page file
     path: PathBuf,
     /// Open handle to the page file
-    file: File,
+    file: S,
     /// Length of the page file in bytes, tracked in memory
     len: u64,
 }
 
-impl AppendOnlyPage {
+impl<S: UniversalRead> AppendOnlyPage<S> {
     pub(super) fn page_file_name(dir: &Path) -> PathBuf {
         dir.join(PAGE_FILE_NAME)
     }
 
-    /// Create a new empty page in the given directory.
-    ///
-    /// The directory must exist already.
-    pub(super) fn new(dir: &Path) -> Result<Self> {
-        let path = Self::page_file_name(dir);
-        let file = direct_io::create_new(&path)?;
-        Ok(Self { path, file, len: 0 })
+    /// Universal IO open options for the page file.
+    fn open_options(writeable: bool) -> OpenOptions {
+        OpenOptions {
+            writeable,
+            need_sequential: true,
+            // The append-only mode never populates, see [`super::AppendOnlyGridstore::populate`]
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Random),
+        }
     }
 
     /// Open an existing page in the given directory.
     ///
     /// If the file does not exist, return an error.
-    pub(super) fn open(dir: &Path, writeable: bool) -> Result<Self> {
+    pub(super) fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        writeable: bool,
+    ) -> Result<Self> {
         let path = Self::page_file_name(dir);
-        let file = direct_io::open_existing(&path, writeable, "Append-only page")?;
-        let len = file.metadata()?.len();
+        let file = fs
+            .open(&path, Self::open_options(writeable), Default::default())
+            .map_err(|err| {
+                if err.is_not_found() {
+                    // If config exists and this file doesn't,
+                    // it should be treated as inconsistent storage rather than a missing one
+                    GridstoreError::service_error(format!(
+                        "Append-only page file does not exist: {}",
+                        path.display(),
+                    ))
+                } else {
+                    GridstoreError::from(err)
+                }
+            })?;
+        let len = file.len::<u8>()?;
         Ok(Self { path, file, len })
     }
 
@@ -65,12 +90,56 @@ impl AppendOnlyPage {
         self.len
     }
 
+    /// Read the raw value bytes at the given pointer.
+    pub(super) fn read_value<P: AccessPattern>(
+        &self,
+        pointer: ValuePointer,
+        block_size_bytes: u64,
+    ) -> Result<Cow<'_, [u8]>> {
+        // The append-only mode stores all values in a single page
+        if pointer.page_id != 0 {
+            return Err(GridstoreError::PageNotFound {
+                page_id: pointer.page_id,
+            });
+        }
+
+        let range = ReadRange {
+            byte_offset: u64::from(pointer.block_offset) * block_size_bytes,
+            length: u64::from(pointer.length),
+        };
+        Ok(self.file.read::<P, u8>(range)?)
+    }
+
+    /// Reopen the page file handle and reload its length, making newly appended value data
+    /// visible to reads and the reported storage size.
+    ///
+    /// The reopen is a no-op for backends that read the file directly, those see newly appended
+    /// data without it.
+    pub(super) fn live_reload(&mut self) -> Result<()> {
+        self.file.reopen()?;
+        self.len = self.file.len::<u8>()?;
+        Ok(())
+    }
+}
+
+impl<S: UniversalWrite> AppendOnlyPage<S> {
+    /// Create a new empty page in the given directory, truncating it if it already exists.
+    ///
+    /// The directory must exist already.
+    pub(super) fn new(fs: &S::Fs, dir: &Path) -> Result<Self> {
+        let path = Self::page_file_name(dir);
+        fs.create(&path, 0)?;
+        let file = fs.open(&path, Self::open_options(true), Default::default())?;
+        Ok(Self { path, file, len: 0 })
+    }
+
     /// Append a value at the next block aligned offset, returning the block offset it landed at.
     ///
     /// The write starts exactly at the current end of the file and includes the zero padding up
     /// to the next block boundary, so that it is a pure append.
     pub(super) fn append_value(
         &mut self,
+        fs: &S::Fs,
         value: &[u8],
         block_size_bytes: u64,
     ) -> Result<BlockOffset> {
@@ -85,66 +154,55 @@ impl AppendOnlyPage {
             ))
         })?;
 
-        let pad = (start - self.len) as usize;
-        let result = if pad == 0 {
-            direct_io::write_all_at(&self.file, value, self.len)
-        } else {
-            // Prefix the write with the padding, so that it lands at the end of the file
-            let mut buf = vec![0; pad + value.len()];
-            buf[pad..].copy_from_slice(value);
-            direct_io::write_all_at(&self.file, &buf, self.len)
-        };
-        if let Err(err) = result {
+        if let Err(err) = self.grow_and_write(fs, value, start) {
             // Best effort: drop partially appended bytes, so that the file stays consistent
             // with the tracked length and a retried append never rewrites existing bytes
-            let _ = self.file.set_len(self.len);
-            return Err(err.into());
+            let _ = fs.create(&self.path, self.len as usize);
+            return Err(err);
         }
         self.len = start + value.len() as u64;
 
         Ok(block_offset)
     }
 
-    /// Read the raw value bytes at the given pointer.
-    pub(super) fn read_value(
-        &self,
-        pointer: ValuePointer,
-        block_size_bytes: u64,
-    ) -> Result<Vec<u8>> {
-        // The append-only mode stores all values in a single page
-        if pointer.page_id != 0 {
-            return Err(GridstoreError::PageNotFound {
-                page_id: pointer.page_id,
-            });
+    /// Grow the page file so the value fits at `start`, then write the value and the zero
+    /// padding before it.
+    ///
+    /// Universal IO writes cannot grow a file, so the file is extended to its new length first
+    /// and the handle is reopened to make the appended range accessible. Backends resize an
+    /// existing file in place, preserving its content.
+    //
+    // TODO(serverless): the append-only mode must grow the file and write the appended bytes in a single
+    // syscall, growing the file before writing to it is not allowed. Universal IO has no such
+    // append operation yet, replace the separate grow and write steps with it once it exists.
+    fn grow_and_write(&mut self, fs: &S::Fs, value: &[u8], start: u64) -> Result<()> {
+        let end = start + value.len() as u64;
+        fs.create(&self.path, end as usize)?;
+        self.file.reopen()?;
+
+        let pad = (start - self.len) as usize;
+        if pad == 0 {
+            self.file.write(self.len, value)?;
+        } else {
+            // Prefix the write with the padding, so that it lands at the end of the file
+            let mut buf = vec![0; pad + value.len()];
+            buf[pad..].copy_from_slice(value);
+            self.file.write(self.len, &buf)?;
         }
 
-        let start = u64::from(pointer.block_offset) * block_size_bytes;
-        let mut buf = vec![0; pointer.length as usize];
-        direct_io::read_exact_at(&self.file, &mut buf, start)?;
-        Ok(buf)
-    }
-
-    /// Reload the length from the file, making newly appended value data visible in the reported
-    /// storage size.
-    ///
-    /// Reads themselves always go directly to the file and need no reload.
-    pub(super) fn refresh_len(&mut self) -> Result<()> {
-        self.len = self.file.metadata()?.len();
         Ok(())
     }
 
     /// Create a closure that syncs all written value data in the page file to disk.
-    pub(super) fn flusher(&self) -> Result<Flusher> {
-        let file = self.file.try_clone()?;
-        Ok(Box::new(move || {
-            file.sync_data()?;
-            Ok(())
-        }))
+    pub(super) fn flusher(&self) -> Flusher {
+        let flusher = self.file.flusher();
+        Box::new(move || flusher().map_err(GridstoreError::from))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use common::universal_io::{MmapFile, MmapFs};
     use fs_err as fs;
     use tempfile::TempDir;
 
@@ -156,13 +214,15 @@ mod tests {
     #[test]
     fn test_page_append_rejects_beyond_addressable_range() {
         let dir = TempDir::new().unwrap();
-        let mut page = AppendOnlyPage::new(dir.path()).unwrap();
+        let mut page = AppendOnlyPage::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
 
         // Pretend the page already holds the maximum addressable amount of data
         let block_size_bytes = DEFAULT_BLOCK_SIZE_BYTES as u64;
         page.len = (u64::from(u32::MAX) + 1) * block_size_bytes;
 
-        let err = page.append_value(&[1, 2, 3], block_size_bytes).unwrap_err();
+        let err = page
+            .append_value(&MmapFs, &[1, 2, 3], block_size_bytes)
+            .unwrap_err();
         assert!(matches!(err, GridstoreError::ServiceError { .. }));
 
         // Nothing was written, and the tracked length is unchanged

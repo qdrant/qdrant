@@ -13,7 +13,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{UniversalWrite, UserData};
+use common::universal_io::{UniversalRead, UniversalWrite, UserData};
 use fs_err as fs;
 use page::AppendOnlyPage;
 use parking_lot::RwLock;
@@ -37,9 +37,9 @@ const OPEN_CHECK_MAPPINGS: PointOffset = 256;
 /// Guards against a page file that is shorter than what the tracker references, for example
 /// after a partial copy or restore of the storage directory. Only the most recent mappings are
 /// checked to keep opening cheap.
-fn validate_consistency(
+fn validate_consistency<S: UniversalRead>(
     tracker: &AppendOnlyTracker,
-    page: &AppendOnlyPage,
+    page: &AppendOnlyPage<S>,
     config: &StorageConfig,
 ) -> Result<()> {
     let count = tracker.pointer_count();
@@ -74,7 +74,8 @@ fn validate_consistency(
 /// stored in a single page file, next to a single tracker file and the storage config.
 ///
 /// Values cannot be updated or deleted, and must be put at monotonically increasing point
-/// offsets. All files are read and written directly, they are never memory mapped.
+/// offsets. Value data is read and written through the universal IO backend `S`; the tracker
+/// file is read and written directly.
 ///
 /// Uses `Arc<RwLock<...>>` for the page and tracker to support concurrent flushing.
 #[derive(Debug)]
@@ -82,15 +83,14 @@ pub(super) struct AppendOnlyGridstore<V, S>
 where
     S: UniversalWrite + 'static,
 {
+    fs: S::Fs,
     pub(super) config: StorageConfig,
     tracker: Arc<RwLock<AppendOnlyTracker>>,
-    page: Arc<RwLock<AppendOnlyPage>>,
+    page: Arc<RwLock<AppendOnlyPage<S>>>,
     base_path: PathBuf,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
     is_alive_flush_lock: IsAliveLock,
-    /// The append-only mode does not use the universal io backend `S`, it reads and writes files
-    /// directly. The parameter is kept so this variant fits in the generic [`super::Gridstore`].
-    _phantom: PhantomData<(V, S)>,
+    _phantom: PhantomData<V>,
 }
 
 impl<V, S> AppendOnlyGridstore<V, S>
@@ -114,16 +114,17 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
+    pub(super) fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
 
         let tracker = AppendOnlyTracker::new(&base_path)?;
-        let page = AppendOnlyPage::new(&base_path)?;
+        let page = AppendOnlyPage::new(&fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
         common::fs::atomic_save_json(&config_path, &config)?;
 
         Ok(Self {
+            fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
             page: Arc::new(RwLock::new(page)),
@@ -134,12 +135,13 @@ where
     }
 
     /// Open an existing storage at the given path, with the already read config.
-    pub(super) fn open(base_path: PathBuf, config: StorageConfig) -> Result<Self> {
+    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: StorageConfig) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, true)?;
-        let page = AppendOnlyPage::open(&base_path, true)?;
+        let page = AppendOnlyPage::open(&fs, &base_path, true)?;
         validate_consistency(&tracker, &page, &config)?;
 
         Ok(Self {
+            fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
             page: Arc::new(RwLock::new(page)),
@@ -195,10 +197,10 @@ where
             .map_err(|_| GridstoreError::service_error("value is too large"))?;
 
         let block_size_bytes = self.config.block_size_bytes as u64;
-        let block_offset = self
-            .page
-            .write()
-            .append_value(&comp_value, block_size_bytes)?;
+        let block_offset =
+            self.page
+                .write()
+                .append_value(&self.fs, &comp_value, block_size_bytes)?;
 
         self.tracker
             .write()
@@ -223,7 +225,11 @@ where
         fs::remove_dir_all(&self.base_path)?;
         fs::create_dir_all(&self.base_path)?;
 
-        *self = Self::new(self.base_path.clone(), StorageOptions::from(&self.config))?;
+        *self = Self::new(
+            self.fs.clone(),
+            self.base_path.clone(),
+            StorageOptions::from(&self.config),
+        )?;
 
         Ok(())
     }
@@ -235,6 +241,7 @@ where
     /// storage.
     pub(super) fn wipe(self) -> Result<()> {
         let Self {
+            fs: _,
             config: _,
             tracker,
             page,
@@ -375,7 +382,7 @@ impl<V, S: UniversalWrite + 'static> AppendOnlyGridstore<V, S> {
                 return Err(GridstoreError::FlushCancelled);
             };
 
-            let page_flusher = page.read().flusher()?;
+            let page_flusher = page.read().flusher();
             page_flusher()?;
 
             let tracker_flusher = {
@@ -393,7 +400,7 @@ impl<V, S: UniversalWrite + 'static> AppendOnlyGridstore<V, S> {
 
     /// Populating is a no-op in append-only mode.
     ///
-    /// Files are read directly without memory mapping, the OS page cache manages caching.
+    /// Files are never populated into RAM, the OS page cache manages caching.
     // Signature parity with the dynamic variant
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     pub(super) fn populate(&self) -> Result<()> {
@@ -402,7 +409,7 @@ impl<V, S: UniversalWrite + 'static> AppendOnlyGridstore<V, S> {
 
     /// Dropping disk cache is a no-op in append-only mode.
     ///
-    /// Files are read directly without memory mapping, the OS page cache manages caching.
+    /// Files are never populated into RAM, the OS page cache manages caching.
     // Signature parity with the dynamic variant
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     pub(super) fn clear_cache(&self) -> crate::Result<()> {

@@ -5,7 +5,7 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
-use common::universal_io::UserData;
+use common::universal_io::{UniversalRead, UniversalReadFs, UserData};
 
 use super::page::AppendOnlyPage;
 use super::validate_consistency;
@@ -23,22 +23,25 @@ use crate::tracker::append_only::AppendOnlyTracker;
 /// Holds the tracker and page directly (no locks) since it provides only read access.
 /// For read-write access, use [`AppendOnlyGridstore`].
 ///
-/// The append-only mode does not use the universal io backend `S`, it reads files directly. The
-/// parameter is kept so this reader fits in the generic [`crate::GridstoreReader`].
+/// Value data is read through the universal IO backend `S`, the tracker file is read directly.
 #[derive(Debug)]
-pub(crate) struct AppendOnlyGridstoreReader<V, S> {
+pub(crate) struct AppendOnlyGridstoreReader<V, S: UniversalRead> {
     config: StorageConfig,
     tracker: AppendOnlyTracker,
-    page: AppendOnlyPage,
+    page: AppendOnlyPage<S>,
     base_path: PathBuf,
-    _phantom: PhantomData<(V, S)>,
+    _phantom: PhantomData<V>,
 }
 
-impl<V: Blob, S> AppendOnlyGridstoreReader<V, S> {
+impl<V: Blob, S: UniversalRead> AppendOnlyGridstoreReader<V, S> {
     /// Open an existing read-only storage at the given path, with the already read config.
-    pub(crate) fn open(base_path: PathBuf, config: StorageConfig) -> Result<Self> {
+    pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        base_path: PathBuf,
+        config: StorageConfig,
+    ) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, false)?;
-        let page = AppendOnlyPage::open(&base_path, false)?;
+        let page = AppendOnlyPage::open(fs, &base_path, false)?;
         validate_consistency(&tracker, &page, &config)?;
 
         Ok(Self {
@@ -148,18 +151,20 @@ impl<V: Blob, S> AppendOnlyGridstoreReader<V, S> {
     pub(crate) fn live_reload(&mut self) -> Result<()> {
         self.tracker.live_reload()?;
 
-        // Value reads always go directly to the file; refreshing the page length only updates
-        // the reported storage size. Refresh it even without new mappings, unflushed value data
-        // may have been appended already.
-        self.page.refresh_len()?;
+        // Reload the page after the tracker: newly loaded mappings only reference value data
+        // that was appended before the mappings were written, so reloading the page last
+        // guarantees it covers all of them. Reload it even without new mappings, unflushed
+        // value data may have been appended already and counts towards the reported storage
+        // size.
+        self.page.live_reload()?;
 
         Ok(())
     }
 }
 
-impl<V, S> AppendOnlyGridstoreReader<V, S> {
-    /// Returns `true`: append-only storage always reads from disk, it is never memory mapped or
-    /// populated into RAM.
+impl<V, S: UniversalRead> AppendOnlyGridstoreReader<V, S> {
+    /// Returns `true`: append-only storage always reads from disk, it is never populated into
+    /// RAM.
     #[allow(clippy::unused_self)]
     pub(crate) fn is_on_disk(&self) -> bool {
         true
@@ -167,7 +172,7 @@ impl<V, S> AppendOnlyGridstoreReader<V, S> {
 
     /// Dropping disk cache is a no-op in append-only mode.
     ///
-    /// Files are read directly without memory mapping, the OS page cache manages caching.
+    /// Files are never populated into RAM, the OS page cache manages caching.
     // Signature parity with the dynamic variant
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     pub(crate) fn clear_cache(&self) -> crate::Result<()> {
