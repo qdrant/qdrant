@@ -16,6 +16,7 @@ mod lifecycle;
 pub mod mutable_map_index;
 pub mod on_disk_map_index;
 mod payload_index_impl;
+pub mod prefix_index;
 pub mod read_ops;
 #[cfg(test)]
 mod tests;

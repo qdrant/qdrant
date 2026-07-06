@@ -115,6 +115,8 @@ message Match {
     string phrase = 9;
     // Match any word in the text
     string text_any = 10;
+    // Match keywords starting with the given prefix
+    string prefix = 11;
   }
 }
 

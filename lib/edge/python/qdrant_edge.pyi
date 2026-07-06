@@ -29,7 +29,13 @@ ConditionType = Union[
     "Filter",
 ]
 MatchType = Union[
-    "MatchValue", "MatchText", "MatchTextAny", "MatchPhrase", "MatchAny", "MatchExcept"
+    "MatchValue",
+    "MatchText",
+    "MatchTextAny",
+    "MatchPhrase",
+    "MatchPrefix",
+    "MatchAny",
+    "MatchExcept",
 ]
 RangeType = Union["RangeFloat", "RangeDateTime"]
 QuantizationConfigType = Union[
@@ -1100,6 +1106,7 @@ class KeywordIndexParams:
         is_tenant: Optional[bool] = None,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        prefix: Optional[bool] = None,
     ) -> None:
         """
         Create KeywordIndexParams.
@@ -1108,6 +1115,7 @@ class KeywordIndexParams:
             is_tenant: Whether this field is used for tenant separation.
             on_disk: Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            prefix: Whether to enable prefix matching for this field.
         """
         ...
 
@@ -1124,6 +1132,11 @@ class KeywordIndexParams:
     @property
     def enable_hnsw(self) -> Optional[bool]:
         """Whether to enable HNSW index."""
+        ...
+
+    @property
+    def prefix(self) -> Optional[bool]:
+        """Whether prefix matching is enabled."""
         ...
 
 class IntegerIndexParams:
@@ -2766,6 +2779,23 @@ class MatchPhrase:
     @property
     def phrase(self) -> str:
         """Phrase."""
+        ...
+
+class MatchPrefix:
+    """Match keyword values starting with the given prefix."""
+
+    def __init__(self, prefix: str) -> None:
+        """
+        Create a MatchPrefix.
+
+        Args:
+            prefix: Prefix to match.
+        """
+        ...
+
+    @property
+    def prefix(self) -> str:
+        """Prefix."""
         ...
 
 class MatchAny:

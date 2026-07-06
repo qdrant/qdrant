@@ -25,6 +25,11 @@ where
     pub(super) value_to_points_container: Vec<PointOffsetType>,
     pub(super) deleted_value_to_points_container: BitVec,
     pub(super) point_to_values: ImmutablePointToValues<<N as MapIndexKey>::Owned>,
+    /// Keys of `value_to_points` in ascending order, built at load time only
+    /// when the backing storage carries a prefix index; enables prefix range
+    /// scans without touching the storage. Keys whose postings become empty
+    /// through deletions are kept (lookups then yield empty/zero results).
+    pub(super) sorted_keys: Option<Vec<<N as MapIndexKey>::Owned>>,
     /// Amount of point which have at least one indexed payload value
     pub(super) indexed_points: usize,
     pub(super) values_count: usize,

@@ -82,6 +82,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     is_tenant: None,
                     on_disk: Some(true),
                     enable_hnsw: None,
+                    prefix: None,
                 }),
             )),
             &hw_counter,

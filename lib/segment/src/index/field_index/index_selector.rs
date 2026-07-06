@@ -71,15 +71,20 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                self.map_new(field, create_if_missing, deleted_points)?
+                self.map_new(field, create_if_missing, deleted_points, false)?
                     .map(FieldIndex::IntMapIndex)
             }
             (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => self
                 .numeric_new(field, create_if_missing, deleted_points)?
                 .map(FieldIndex::DatetimeIndex),
 
-            (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => self
-                .map_new(field, create_if_missing, deleted_points)?
+            (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(params)) => self
+                .map_new(
+                    field,
+                    create_if_missing,
+                    deleted_points,
+                    params.prefix.unwrap_or_default(),
+                )?
                 .map(FieldIndex::KeywordIndex),
 
             (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => self
@@ -104,11 +109,11 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::BoolIndex),
 
             (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => self
-                .map_new(field, create_if_missing, deleted_points)?
+                .map_new(field, create_if_missing, deleted_points, false)?
                 .map(FieldIndex::UuidMapIndex),
 
             (PayloadIndexType::UuidMapIndex, PayloadSchemaParams::Uuid(_)) => self
-                .map_new(field, create_if_missing, deleted_points)?
+                .map_new(field, create_if_missing, deleted_points, false)?
                 .map(FieldIndex::UuidMapIndex),
 
             (PayloadIndexType::NullIndex, _) => {
@@ -135,15 +140,20 @@ impl IndexSelector<'_> {
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         let indexes = match payload_schema.expand().as_ref() {
-            PayloadSchemaParams::Keyword(_) => self
-                .map_new(field, create_if_missing, deleted_points)?
+            PayloadSchemaParams::Keyword(params) => self
+                .map_new(
+                    field,
+                    create_if_missing,
+                    deleted_points,
+                    params.prefix.unwrap_or_default(),
+                )?
                 .map(|index| vec![FieldIndex::KeywordIndex(index)]),
             PayloadSchemaParams::Integer(integer_params) => {
                 let use_lookup = integer_params.lookup.unwrap_or(true);
                 let use_range = integer_params.range.unwrap_or(true);
 
                 let lookup = if use_lookup {
-                    match self.map_new(field, create_if_missing, deleted_points)? {
+                    match self.map_new(field, create_if_missing, deleted_points, false)? {
                         Some(index) => Some(FieldIndex::IntMapIndex(index)),
                         None => return Ok(None),
                     }
@@ -187,7 +197,7 @@ impl IndexSelector<'_> {
                 .numeric_new(field, create_if_missing, deleted_points)?
                 .map(|index| vec![FieldIndex::DatetimeIndex(index)]),
             PayloadSchemaParams::Uuid(_) => self
-                .map_new(field, create_if_missing, deleted_points)?
+                .map_new(field, create_if_missing, deleted_points, false)?
                 .map(|index| vec![FieldIndex::UuidMapIndex(index)]),
         };
 
@@ -202,12 +212,13 @@ impl IndexSelector<'_> {
         deleted_points: &BitSlice,
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
         let builders = match payload_schema.expand().as_ref() {
-            PayloadSchemaParams::Keyword(_) => {
+            PayloadSchemaParams::Keyword(params) => {
                 vec![self.map_builder(
                     field,
                     FieldIndexBuilder::KeywordMmapIndex,
                     FieldIndexBuilder::KeywordGridstoreIndex,
                     deleted_points,
+                    params.prefix.unwrap_or_default(),
                 )]
             }
             PayloadSchemaParams::Integer(integer_params) => {
@@ -220,6 +231,7 @@ impl IndexSelector<'_> {
                         FieldIndexBuilder::IntMapMmapIndex,
                         FieldIndexBuilder::IntMapGridstoreIndex,
                         deleted_points,
+                        false,
                     ))
                 } else {
                     None
@@ -274,6 +286,7 @@ impl IndexSelector<'_> {
                     FieldIndexBuilder::UuidMmapIndex,
                     FieldIndexBuilder::UuidGridstoreIndex,
                     deleted_points,
+                    false,
                 )]
             }
         };
@@ -281,21 +294,27 @@ impl IndexSelector<'_> {
         Ok(builders)
     }
 
+    /// `prefix_index` enables the sorted key dictionary for prefix matching;
+    /// only meaningful for the keyword (string-keyed) index, other callers
+    /// pass `false`.
     fn map_new<N: MapIndexKey + ?Sized>(
         &self,
         field: &JsonPath,
         create_if_missing: bool,
         deleted_points: &BitSlice,
+        prefix_index: bool,
     ) -> OperationResult<Option<MapIndex<N>>>
     where
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
+            // The immutable variants detect prefix support from the presence
+            // of the prefix index file, written at build time.
             IndexSelector::NonAppendable { dir, is_on_disk } => {
                 MapIndex::new_immutable(&map_dir(dir, field), *is_on_disk, deleted_points)?
             }
             IndexSelector::Appendable { dir } => {
-                MapIndex::new_mutable(map_dir(dir, field), create_if_missing)?
+                MapIndex::new_mutable(map_dir(dir, field), create_if_missing, prefix_index)?
             }
         })
     }
@@ -306,16 +325,22 @@ impl IndexSelector<'_> {
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
         make_gridstore: fn(MapIndexGridstoreBuilder<N>) -> FieldIndexBuilder,
         deleted_points: &BitSlice,
+        prefix_index: bool,
     ) -> FieldIndexBuilder
     where
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         match self {
-            IndexSelector::NonAppendable { dir, is_on_disk } => make_mmap(
-                MapIndex::builder_immutable(&map_dir(dir, field), *is_on_disk, deleted_points),
-            ),
+            IndexSelector::NonAppendable { dir, is_on_disk } => {
+                make_mmap(MapIndex::builder_immutable(
+                    &map_dir(dir, field),
+                    *is_on_disk,
+                    deleted_points,
+                    prefix_index,
+                ))
+            }
             IndexSelector::Appendable { dir } => {
-                make_gridstore(MapIndex::builder_mutable(map_dir(dir, field)))
+                make_gridstore(MapIndex::builder_mutable(map_dir(dir, field), prefix_index))
             }
         }
     }

@@ -15,6 +15,7 @@ use common::universal_io::{
 use fs_err as fs;
 
 use super::super::MapIndexKey;
+use super::super::prefix_index::{PREFIX_INDEX_PATH, PrefixIndex, build_prefix_index};
 use super::{
     CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, OnDiskMapIndex, Storage, UniversalMapIndexConfig,
 };
@@ -57,6 +58,7 @@ where
             Default::default(),
         )?;
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
+        let prefix_index = PrefixIndex::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
@@ -90,6 +92,7 @@ where
                 value_to_points,
                 point_to_values,
                 deleted,
+                prefix_index,
             },
             deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
@@ -114,6 +117,9 @@ where
             self.path.join(DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
+        if self.storage.prefix_index.is_some() {
+            files.push(self.path.join(PREFIX_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.files());
         files
     }
@@ -124,6 +130,9 @@ where
             self.path.join(DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
+        if self.storage.prefix_index.is_some() {
+            files.push(self.path.join(PREFIX_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.immutable_files());
         files
     }
@@ -133,6 +142,9 @@ where
     pub fn populate(&self) -> OperationResult<()> {
         self.storage.value_to_points.populate()?;
         self.storage.point_to_values.populate()?;
+        if let Some(prefix_index) = &self.storage.prefix_index {
+            prefix_index.populate()?;
+        }
         Ok(())
     }
 
@@ -148,11 +160,21 @@ where
             value_to_points,
             point_to_values,
             deleted: _,
+            prefix_index,
         } = storage;
         value_to_points.clear_ram_cache()?;
         clear_disk_cache(&path.join(DELETED_PATH))?;
         point_to_values.clear_cache()?;
+        if let Some(prefix_index) = prefix_index {
+            prefix_index.clear_cache()?;
+        }
         Ok(())
+    }
+
+    /// Whether this index was built with the prefix option (its sorted key
+    /// dictionary is present on disk).
+    pub(in super::super) fn has_prefix_index(&self) -> bool {
+        self.storage.prefix_index.is_some()
     }
 
     pub(crate) fn ram_usage_bytes(&self) -> usize {
@@ -173,6 +195,7 @@ where
         values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
         populate: Populate,
         deleted_points: &BitSlice,
+        with_prefix_index: bool,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
@@ -193,6 +216,20 @@ where
                 .iter()
                 .map(|(value, ids)| (value.borrow(), ids.iter().copied())),
         )?;
+
+        if with_prefix_index && N::SUPPORTS_PREFIX_INDEX {
+            // The file is written (even when empty) so that its presence
+            // signals prefix support at load time.
+            let mut entries: Vec<(&[u8], usize)> = values_to_points
+                .iter()
+                .filter_map(|(value, ids)| {
+                    let value: &N = value.borrow();
+                    value.prefix_index_bytes().map(|bytes| (bytes, ids.len()))
+                })
+                .collect();
+            entries.sort_unstable_by_key(|&(key, _count)| key);
+            build_prefix_index(path, entries.into_iter())?;
+        }
 
         OnDiskPointToValues::<N, MmapFile>::build_from_iter(
             path,
