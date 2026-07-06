@@ -18,6 +18,18 @@ use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
 
+#[cfg(test)]
+type RestoreLocalReplicaBeforeFlagHook = (
+    std::path::PathBuf,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::sync::oneshot::Receiver<()>,
+);
+
+#[cfg(test)]
+static RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK: std::sync::Mutex<
+    Option<RestoreLocalReplicaBeforeFlagHook>,
+> = std::sync::Mutex::new(None);
+
 impl ShardReplicaSet {
     pub async fn create_snapshot(
         &self,
@@ -137,18 +149,24 @@ impl ShardReplicaSet {
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
 
+        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
+
+        #[cfg(test)]
+        wait_restore_local_replica_before_flag_hook_for_test(&shard_flag).await;
+
+        // Check `cancel` token one last time before creating the durable initializing flag. Once
+        // the flag exists, recovery must finish to a marker-consistent state instead of returning
+        // `Cancelled` and leaving a false dirty marker behind.
+        if cancel.is_cancelled() {
+            return Err(CollectionError::from(cancel::Error::Cancelled));
+        }
+
         // set shard_id initialization flag
         // the file is removed after full recovery to indicate a well-formed shard
         // for example: some of the files may go missing if node gets killed during shard directory move/replace
-        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
         let flag_file = tokio_fs::File::create(&shard_flag).await?;
         flag_file.sync_all().await?;
         sync_parent_dir_async(&shard_flag).await?;
-
-        // Check `cancel` token one last time before starting non-cancellable section
-        if cancel.is_cancelled() {
-            return Err(cancel::Error::Cancelled.into());
-        }
 
         let local_manifest = match local.take() {
             Some(shard) if snapshot_manifest.is_empty() => {
@@ -408,5 +426,211 @@ impl ShardReplicaSet {
             })?
             .snapshot_manifest()
             .await
+    }
+}
+
+#[cfg(test)]
+async fn wait_restore_local_replica_before_flag_hook_for_test(shard_flag: &Path) {
+    let hook = {
+        let mut hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK.lock().unwrap();
+        if hook
+            .as_ref()
+            .is_some_and(|(expected_shard_flag, _, _)| expected_shard_flag.as_path() == shard_flag)
+        {
+            hook.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some((_expected_shard_flag, reached, release)) = hook {
+        let _ = reached.send(());
+        let _ = release.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+
+    use common::budget::ResourceBudget;
+    use common::save_on_disk::SaveOnDisk;
+    use segment::types::Distance;
+    use tempfile::{Builder, TempDir};
+    use tokio::runtime::Handle;
+    use tokio::sync::{RwLock, oneshot};
+
+    use super::*;
+    use crate::collection::payload_index_schema::PayloadIndexSchema;
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+    use crate::operations::shared_storage_config::SharedStorageConfig;
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+    use crate::optimizers_builder::OptimizersConfig;
+    use crate::shards::channel_service::ChannelService;
+    use crate::shards::replica_set::replica_set_state::ReplicaState;
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+    use crate::shards::shard::ShardId;
+
+    const TEST_COLLECTION_ID: &str = "test_collection";
+    const TEST_TARGET_SHARD_ID: ShardId = 1;
+    const TEST_SOURCE_SHARD_ID: ShardId = 2;
+    const TEST_PEER_ID: PeerId = 1;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_dirty() {
+        let target_collection_dir = Builder::new()
+            .prefix("snapshot-recovery-cancel-target")
+            .tempdir()
+            .unwrap();
+        let source_collection_dir = Builder::new()
+            .prefix("snapshot-recovery-cancel-source")
+            .tempdir()
+            .unwrap();
+
+        let target_replica_set =
+            new_shard_replica_set(&target_collection_dir, TEST_TARGET_SHARD_ID).await;
+        let source_replica_set =
+            new_shard_replica_set(&source_collection_dir, TEST_SOURCE_SHARD_ID).await;
+
+        let source_shard_path = source_collection_dir
+            .path()
+            .join(TEST_SOURCE_SHARD_ID.to_string());
+        assert!(
+            LocalShard::check_data(&source_shard_path),
+            "test fixture must create a valid source local shard"
+        );
+
+        let shard_flag =
+            shard_initializing_flag_path(target_collection_dir.path(), TEST_TARGET_SHARD_ID);
+        let (reached_tx, reached_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        install_restore_local_replica_before_flag_hook(shard_flag.clone(), reached_tx, release_rx);
+
+        let cancel = cancel::CancellationToken::new();
+        let restore = target_replica_set.restore_local_replica_from(
+            &source_shard_path,
+            RecoveryType::Full,
+            target_collection_dir.path(),
+            cancel.clone(),
+        );
+        tokio::pin!(restore);
+
+        tokio::select! {
+            _ = reached_rx => {}
+            result = &mut restore => {
+                panic!("snapshot recovery completed before the cancellation window: {result:?}");
+            }
+        }
+
+        cancel.cancel();
+        let _ = release_tx.send(());
+
+        let result = restore.await;
+        assert!(
+            matches!(result, Err(CollectionError::Cancelled { .. })),
+            "recovery should observe cancellation before creating the initializing flag, got {result:?}"
+        );
+        assert!(
+            !shard_flag.exists(),
+            "cancellation before destructive restore starts must not leave a false dirty marker"
+        );
+        assert!(
+            !target_replica_set.is_dummy().await,
+            "cancellation before destructive restore starts must keep the old local shard installed"
+        );
+
+        let local = target_replica_set.local.read().await;
+        assert!(
+            matches!(local.as_ref(), Some(Shard::Local(_))),
+            "the old local shard should remain installed"
+        );
+        drop(local);
+
+        target_replica_set.stop_gracefully().await;
+        source_replica_set.stop_gracefully().await;
+    }
+
+    fn install_restore_local_replica_before_flag_hook(
+        shard_flag: std::path::PathBuf,
+        reached: oneshot::Sender<()>,
+        release: oneshot::Receiver<()>,
+    ) {
+        let mut hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK.lock().unwrap();
+        assert!(
+            hook.is_none(),
+            "restore-local-replica test hook is already installed"
+        );
+        *hook = Some((shard_flag, reached, release));
+    }
+
+    async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> ShardReplicaSet {
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+
+        let wal_config = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            replication_factor: NonZeroU32::new(1).unwrap(),
+            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
+        };
+
+        let optimizers_config = OptimizersConfig::fixture();
+        let config = CollectionConfigInternal {
+            params: collection_params,
+            optimizer_config: optimizers_config.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+            quantization_config: None,
+            strict_mode_config: None,
+            uuid: None,
+            metadata: None,
+        };
+
+        let payload_index_schema_file = collection_dir.path().join("payload-schema.json");
+        let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+        let shared_config = Arc::new(RwLock::new(config));
+
+        ShardReplicaSet::build(
+            shard_id,
+            None,
+            TEST_COLLECTION_ID.to_string(),
+            TEST_PEER_ID,
+            true,
+            HashSet::new(),
+            dummy_on_replica_failure(),
+            dummy_abort_shard_transfer(),
+            collection_dir.path(),
+            shared_config,
+            optimizers_config.clone(),
+            Arc::new(SharedStorageConfig::default()),
+            payload_index_schema,
+            ChannelService::default(),
+            update_runtime,
+            search_runtime,
+            ResourceBudget::default(),
+            Some(ReplicaState::Active),
+        )
+        .await
+        .unwrap()
+    }
+
+    fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
+    }
+
+    fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+        Arc::new(|_shard_transfer, _reason| {})
     }
 }
