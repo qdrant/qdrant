@@ -125,6 +125,8 @@ impl PlannedQuery {
             with_vector,
             with_payload,
             params,
+            // Resolved at collection level, not relevant for the shard-level plan
+            dims_explained: _,
         } = request;
 
         // Adjust limit so that we have enough results when we cut off the offset at a higher level.
@@ -141,6 +143,9 @@ impl PlannedQuery {
             | Some(ScoringQuery::Formula(_))
             | Some(ScoringQuery::Sample(_)) => with_vector,
             Some(ScoringQuery::Mmr(mmr)) => with_vector.merge(&WithVector::from(mmr.using.clone())),
+            Some(ScoringQuery::DimsFocus(focus)) => {
+                with_vector.merge(&WithVector::from(focus.using.clone()))
+            }
         };
 
         let root_plan = if prefetches.is_empty() {
@@ -189,12 +194,14 @@ impl PlannedQuery {
             Some(ScoringQuery::OrderBy(_)) => None,
             Some(ScoringQuery::Formula(_)) => None,
             Some(ScoringQuery::Sample(_)) => None,
-            Some(ScoringQuery::Mmr(_)) => Some(RescoreStages::collection_level(RescoreParams {
-                rescore: query.clone().unwrap(),
-                limit,
-                score_threshold: score_threshold.map(OrderedFloat),
-                params,
-            })),
+            Some(ScoringQuery::Mmr(_) | ScoringQuery::DimsFocus(_)) => {
+                Some(RescoreStages::collection_level(RescoreParams {
+                    rescore: query.clone().unwrap(),
+                    limit,
+                    score_threshold: score_threshold.map(OrderedFloat),
+                    params,
+                }))
+            }
         };
 
         // Everything must come from a single source.
@@ -258,6 +265,38 @@ impl PlannedQuery {
 
                 let collection_level = RescoreParams {
                     rescore: ScoringQuery::Mmr(mmr),
+                    limit,
+                    score_threshold: score_threshold.map(OrderedFloat),
+                    params,
+                };
+
+                Some(RescoreStages {
+                    shard_level: Some(shard_level),
+                    collection_level: Some(collection_level),
+                })
+            }
+            ScoringQuery::DimsFocus(focus) => {
+                let DimsFocusInternal {
+                    vector,
+                    using,
+                    dims: _,
+                    candidates_limit,
+                } = &focus;
+
+                // Preselect candidates via a nearest rescoring, then re-score
+                // on the focused dimensions at collection level.
+                let shard_level = RescoreParams {
+                    rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                        vector.clone(),
+                        using,
+                    ))),
+                    limit: *candidates_limit,
+                    score_threshold: score_threshold.map(OrderedFloat),
+                    params,
+                };
+
+                let collection_level = RescoreParams {
+                    rescore: ScoringQuery::DimsFocus(focus),
                     limit,
                     score_threshold: score_threshold.map(OrderedFloat),
                     params,
@@ -440,6 +479,32 @@ fn leaf_source_from_scoring_query(
             lambda: _,
             candidates_limit,
         })) => {
+            let query = QueryEnum::Nearest(NamedQuery::new(vector, using));
+
+            let core_search = CoreSearchRequest {
+                query,
+                filter,
+                score_threshold,
+                with_vector: Some(WithVector::from(false)),
+                with_payload: Some(WithPayloadInterface::from(false)),
+                offset: 0,
+                params,
+                limit: candidates_limit,
+            };
+
+            let idx = core_searches.len();
+            core_searches.push(core_search);
+
+            Source::SearchesIdx(idx)
+        }
+        Some(ScoringQuery::DimsFocus(DimsFocusInternal {
+            vector,
+            using,
+            dims: _,
+            candidates_limit,
+        })) => {
+            // Preselect candidates with a regular nearest neighbors search,
+            // re-scoring on the focused dimensions happens at collection level.
             let query = QueryEnum::Nearest(NamedQuery::new(vector, using));
 
             let core_search = CoreSearchRequest {

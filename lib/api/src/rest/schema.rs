@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
 use common::types::ScoreType;
@@ -479,6 +479,11 @@ pub struct ScoredPoint {
     /// Order-by value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
+    /// Dimensions of the vector which contributed the most to the score,
+    /// and how much each of them contributed. Only present if requested
+    /// with `with_dims_explained`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dims_explained: Option<BTreeMap<u32, ScoreType>>,
 }
 
 /// Point data
@@ -610,6 +615,14 @@ pub struct QueryRequestInternal {
     /// Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection
     #[serde(default)]
     pub lookup_from: Option<LookupLocation>,
+
+    /// Options for including per-dimension score explanations into the response. Default is false.
+    ///
+    /// If enabled, each returned point will contain a `dims_explained` field with the top
+    /// dimensions which contributed the most to its score.
+    /// Only supported for `nearest` queries against dense vectors.
+    #[validate(nested)]
+    pub with_dims_explained: Option<WithDimsExplained>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -684,6 +697,12 @@ pub struct NearestQuery {
     /// using the same vector in this query to calculate relevance.
     #[validate(nested)]
     pub mmr: Option<Mmr>,
+
+    /// Re-score the results considering only the given dimensions of the vector.
+    ///
+    /// Cannot be combined with `mmr`. Only supported for dense vectors.
+    #[validate(nested)]
+    pub focus: Option<DimsFocus>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -770,6 +789,54 @@ pub struct Mmr {
     /// If not specified, the `limit` value is used.
     #[validate(range(max = 16_384))] // artificial maximum, to avoid too expensive query.
     pub candidates_limit: Option<usize>,
+}
+
+/// Focus the similarity scoring on a subset of the vector dimensions.
+///
+/// Candidates are preselected with a regular (full-vector) nearest neighbors search,
+/// and then re-scored considering only the given dimensions.
+///
+/// Only supported for dense vectors.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct DimsFocus {
+    /// Dimension indexes of the vector to focus the scoring on.
+    #[validate(length(min = 1))]
+    pub dims: Vec<u32>,
+
+    /// The maximum number of candidates to preselect with the full-vector search before re-scoring.
+    ///
+    /// If not specified, the `limit` value is used.
+    #[validate(range(max = 16_384))] // artificial maximum, to avoid too expensive query.
+    pub candidates_limit: Option<usize>,
+}
+
+/// Options for including per-dimension score explanations into the search response.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum WithDimsExplained {
+    /// Include or exclude the explanation, with the default number of top dimensions.
+    Bool(bool),
+    /// Include the explanation with custom parameters.
+    Params(DimsExplainedParams),
+}
+
+impl Validate for WithDimsExplained {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            WithDimsExplained::Bool(_) => Ok(()),
+            WithDimsExplained::Params(params) => params.validate(),
+        }
+    }
+}
+
+/// Parameters for per-dimension score explanations.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct DimsExplainedParams {
+    /// Max number of top contributing dimensions to return. Default is 10.
+    #[validate(range(min = 1, max = 65_536))]
+    pub top: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

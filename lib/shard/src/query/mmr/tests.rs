@@ -35,6 +35,7 @@ fn create_scored_point_with_vector(
         vector: Some(VectorStructInternal::Named(vectors)),
         shard_key: None,
         order_value: None,
+        dims_explained: None,
     }
 }
 
@@ -48,6 +49,7 @@ fn create_scored_point_without_vector(id: PointIdType) -> ScoredPoint {
         vector: None,
         shard_key: None,
         order_value: None,
+        dims_explained: None,
     }
 }
 
@@ -73,6 +75,7 @@ fn create_scored_point_with_sparse_vector(
         vector: Some(VectorStructInternal::Named(vectors)),
         shard_key: None,
         order_value: None,
+        dims_explained: None,
     }
 }
 
@@ -97,6 +100,7 @@ fn create_scored_point_with_multi_vector(
         vector: Some(VectorStructInternal::Named(vector_map)),
         shard_key: None,
         order_value: None,
+        dims_explained: None,
     }
 }
 

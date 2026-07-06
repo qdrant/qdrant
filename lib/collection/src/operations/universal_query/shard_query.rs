@@ -35,6 +35,12 @@ pub fn query_result_order(
             ScoringQuery::Sample(SampleInternal::Random) => None,
             // MMR cannot be reordered
             ScoringQuery::Mmr(_) => None,
+            // Candidates for a dims-focused search carry regular nearest neighbor scores
+            ScoringQuery::DimsFocus(focus) => Some(
+                collection_params
+                    .get_distance(&focus.using)?
+                    .distance_order(),
+            ),
         },
         None => {
             // Order by ID

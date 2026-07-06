@@ -194,6 +194,13 @@ pub(crate) fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result
                 .map(|vector| collect_vector_input(vector, batch))
                 .transpose()?;
         }
+        query::Variant::NearestWithFocus(nearest_with_focus) => {
+            nearest_with_focus
+                .nearest
+                .as_ref()
+                .map(|vector| collect_vector_input(vector, batch))
+                .transpose()?;
+        }
         query::Variant::RelevanceFeedback(feedback) => collect_feedback_input(feedback, batch)?,
     }
 

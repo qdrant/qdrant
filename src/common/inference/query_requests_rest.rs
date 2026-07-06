@@ -2,11 +2,14 @@ use api::rest::models::InferenceUsage;
 use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, DimsFocus,
+    FeedbackInternal, FeedbackStrategy, Mmr, NearestWithFocus, NearestWithMmr, Query,
+    VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
-use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
+use collection::operations::universal_query::shard_query::{
+    DimsExplainedInternal, FusionInternal, SampleInternal,
+};
 use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
@@ -114,6 +117,7 @@ pub async fn convert_query_request_from_rest(
         with_vector,
         with_payload,
         lookup_from,
+        with_dims_explained,
     } = request;
 
     let prefetch = prefetch
@@ -142,11 +146,27 @@ pub async fn convert_query_request_from_rest(
         with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
         with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
         lookup_from,
+        dims_explained: with_dims_explained.and_then(dims_explained_from_rest),
     };
     Ok(CollectionQueryRequestWithUsage {
         request: collection_query_request,
         usage,
     })
+}
+
+/// Resolves the user-facing `with_dims_explained` options into internal parameters.
+///
+/// Returns [None] if the explanations were not requested.
+fn dims_explained_from_rest(value: rest::WithDimsExplained) -> Option<DimsExplainedInternal> {
+    match value {
+        rest::WithDimsExplained::Bool(false) => None,
+        rest::WithDimsExplained::Bool(true) => Some(DimsExplainedInternal {
+            top: DimsExplainedInternal::DEFAULT_TOP,
+        }),
+        rest::WithDimsExplained::Params(params) => Some(DimsExplainedInternal {
+            top: params.top.unwrap_or(DimsExplainedInternal::DEFAULT_TOP),
+        }),
+    }
 }
 
 fn convert_vector_input_with_inferred(
@@ -200,8 +220,18 @@ fn convert_query_with_inferred(
 ) -> StorageResult<Query> {
     let query = rest::Query::from(query);
     match query {
-        rest::Query::Nearest(rest::NearestQuery { nearest, mmr }) => {
+        rest::Query::Nearest(rest::NearestQuery {
+            nearest,
+            mmr,
+            focus,
+        }) => {
             let vector = convert_vector_input_with_inferred(nearest, inferred)?;
+
+            if mmr.is_some() && focus.is_some() {
+                return Err(StorageError::bad_request(
+                    "mmr and focus cannot be combined in the same query",
+                ));
+            }
 
             if let Some(mmr) = mmr {
                 let mmr = Mmr {
@@ -212,6 +242,17 @@ fn convert_query_with_inferred(
                     nearest: vector,
                     mmr,
                 })))
+            } else if let Some(focus) = focus {
+                let focus = DimsFocus {
+                    dims: focus.dims,
+                    candidates_limit: focus.candidates_limit,
+                };
+                Ok(Query::Vector(VectorQuery::NearestWithFocus(
+                    NearestWithFocus {
+                        nearest: vector,
+                        focus,
+                    },
+                )))
             } else {
                 Ok(Query::Vector(VectorQuery::Nearest(vector)))
             }
@@ -478,6 +519,7 @@ mod tests {
         let nearest = NearestQuery {
             nearest: rest::VectorInput::Document(create_test_document("test")),
             mmr: None,
+            focus: None,
         };
         let query = rest::QueryInterface::Query(rest::Query::Nearest(nearest));
 

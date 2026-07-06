@@ -68,6 +68,7 @@ fn validate_query(query: &ScoringQuery, sources: &[Source]) -> OperationResult<(
         ScoringQuery::Formula(_) => Ok(()),
         ScoringQuery::Sample(_) => Ok(()),
         ScoringQuery::Mmr(_) => Ok(()),
+        ScoringQuery::DimsFocus(_) => Ok(()),
     }
 }
 

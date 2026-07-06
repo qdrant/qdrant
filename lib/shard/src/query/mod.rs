@@ -1,5 +1,6 @@
 #[cfg(feature = "api")]
 mod conversions;
+pub mod dims_focus;
 pub mod formula;
 pub mod mmr;
 pub mod planned_query;
@@ -48,6 +49,12 @@ pub struct ShardQueryRequest {
     pub params: Option<SearchParams>,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
+    /// Include per-dimension score explanations into the response.
+    ///
+    /// Resolved at collection level, on the node responding to the user.
+    /// It is not propagated to other nodes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dims_explained: Option<DimsExplainedInternal>,
 }
 
 impl ShardQueryRequest {
@@ -134,6 +141,12 @@ pub enum ScoringQuery {
     ///   1. Performs search all the way down to segments.
     ///   2. MMR gets calculated once results reach collection level.
     Mmr(MmrInternal),
+
+    /// Nearest neighbors search re-scored on a subset of vector dimensions.
+    ///
+    /// Two-part query, like MMR: performs a nearest neighbor search in segment space
+    /// to preselect candidates, then re-scores them on the given dimensions higher up.
+    DimsFocus(DimsFocusInternal),
 }
 
 impl ScoringQuery {
@@ -142,6 +155,7 @@ impl ScoringQuery {
         match self {
             ScoringQuery::Vector(query) => Some(query.get_vector_name()),
             ScoringQuery::Mmr(mmr) => Some(&mmr.using),
+            ScoringQuery::DimsFocus(focus) => Some(&focus.using),
             ScoringQuery::Fusion(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
@@ -181,6 +195,30 @@ pub struct MmrInternal {
     pub candidates_limit: usize,
 }
 
+/// Dimension-focused search configuration
+#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
+pub struct DimsFocusInternal {
+    /// Query vector to score the points against.
+    pub vector: VectorInternal,
+    /// Vector name to use for similarity computation, defaults to empty string (default vector)
+    pub using: VectorNameBuf,
+    /// Dimension indexes to focus the scoring on.
+    pub dims: Vec<u32>,
+    /// Maximum number of candidates to preselect using nearest neighbors.
+    pub candidates_limit: usize,
+}
+
+/// Resolved options for per-dimension score explanations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
+pub struct DimsExplainedInternal {
+    /// Max number of top contributing dimensions to return.
+    pub top: usize,
+}
+
+impl DimsExplainedInternal {
+    pub const DEFAULT_TOP: usize = 10;
+}
+
 impl From<CoreSearchRequest> for ShardQueryRequest {
     fn from(value: CoreSearchRequest) -> Self {
         let CoreSearchRequest {
@@ -204,6 +242,7 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
             params,
             with_vector: with_vector.unwrap_or_default(),
             with_payload: with_payload.unwrap_or_default(),
+            dims_explained: None,
         }
     }
 }

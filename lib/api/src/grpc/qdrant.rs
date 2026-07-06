@@ -6524,6 +6524,46 @@ pub struct NearestInputWithMmr {
     #[validate(nested)]
     pub mmr: ::core::option::Option<Mmr>,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NearestInputWithFocus {
+    /// The vector to search for nearest neighbors.
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub nearest: ::core::option::Option<VectorInput>,
+    /// Re-score the preselected candidates considering only the given dimensions.
+    #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
+    pub focus: ::core::option::Option<DimsFocus>,
+}
+/// Focus the similarity scoring on a subset of the vector dimensions.
+/// Only supported for dense vectors.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DimsFocus {
+    /// Dimension indexes of the vector to focus the scoring on.
+    #[prost(uint32, repeated, tag = "1")]
+    #[validate(length(min = 1))]
+    pub dims: ::prost::alloc::vec::Vec<u32>,
+    /// The maximum number of candidates to preselect with the full-vector search before re-scoring.
+    ///
+    /// If not specified, the `limit` value is used.
+    #[prost(uint32, optional, tag = "2")]
+    #[validate(range(max = 16_384))]
+    pub candidates_limit: ::core::option::Option<u32>,
+}
+/// Options for including per-dimension score explanations into the search response.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WithDimsExplained {
+    /// Max number of top contributing dimensions to return. Default is 10.
+    #[prost(uint32, optional, tag = "1")]
+    #[validate(range(min = 1, max = 65_536))]
+    pub top: ::core::option::Option<u32>,
+}
 /// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -6567,7 +6607,7 @@ pub struct Rrf {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -6609,6 +6649,9 @@ pub mod query {
         /// Search with feedback from some oracle.
         #[prost(message, tag = "11")]
         RelevanceFeedback(super::RelevanceFeedbackInput),
+        /// Search nearest neighbors, but re-score based on a subset of the vector dimensions.
+        #[prost(message, tag = "12")]
+        NearestWithFocus(super::NearestInputWithFocus),
     }
 }
 #[derive(validator::Validate)]
@@ -6712,6 +6755,10 @@ pub struct QueryPoints {
     #[prost(uint64, optional, tag = "15")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    /// Options for including per-dimension score explanations into the response.
+    /// Only supported for nearest queries against dense vectors.
+    #[prost(message, optional, tag = "16")]
+    pub with_dims_explained: ::core::option::Option<WithDimsExplained>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -7183,6 +7230,11 @@ pub struct ScoredPoint {
     /// Order by value
     #[prost(message, optional, tag = "8")]
     pub order_value: ::core::option::Option<OrderValue>,
+    /// Dimensions of the vector which contributed the most to the score,
+    /// and how much each of them contributed.
+    /// Only present if requested with `with_dims_explained`.
+    #[prost(map = "uint32, float", tag = "9")]
+    pub dims_explained: ::std::collections::HashMap<u32, f32>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10990,6 +11042,19 @@ pub struct MmrInternal {
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DimsFocusInternal {
+    /// Query vector to score the points against
+    #[prost(message, optional, tag = "1")]
+    pub vector: ::core::option::Option<RawVector>,
+    /// Dimension indexes to focus the scoring on
+    #[prost(uint32, repeated, tag = "2")]
+    pub dims: ::prost::alloc::vec::Vec<u32>,
+    /// Maximum number of candidates to preselect using nearest neighbors
+    #[prost(uint32, tag = "3")]
+    pub candidates_limit: u32,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryShardPoints {
     #[prost(message, repeated, tag = "1")]
     pub prefetch: ::prost::alloc::vec::Vec<query_shard_points::Prefetch>,
@@ -11018,7 +11083,7 @@ pub mod query_shard_points {
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -11047,6 +11112,9 @@ pub mod query_shard_points {
             /// Parameterized RRF fusion
             #[prost(message, tag = "7")]
             Rrf(super::super::Rrf),
+            /// Nearest neighbors re-scored on a subset of vector dimensions
+            #[prost(message, tag = "8")]
+            DimsFocus(super::super::DimsFocusInternal),
         }
     }
     #[derive(serde::Serialize)]

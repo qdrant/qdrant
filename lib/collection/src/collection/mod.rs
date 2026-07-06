@@ -1,5 +1,6 @@
 mod clean;
 mod collection_ops;
+pub mod dims_explained;
 pub mod distance_matrix;
 mod facet;
 pub mod mmr;

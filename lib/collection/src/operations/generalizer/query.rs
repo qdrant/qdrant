@@ -10,7 +10,7 @@ use sparse::common::types::DimId;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::universal_query::collection_query::VectorInputInternal;
 use crate::operations::universal_query::shard_query::{
-    MmrInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+    DimsFocusInternal, MmrInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
 
 impl Generalizer for Vec<ShardQueryRequest> {
@@ -31,6 +31,7 @@ impl Generalizer for ShardQueryRequest {
             params,
             with_vector,
             with_payload,
+            dims_explained,
         } = self;
 
         ShardQueryRequest {
@@ -43,6 +44,7 @@ impl Generalizer for ShardQueryRequest {
             params: *params,
             with_vector: with_vector.clone(),
             with_payload: with_payload.clone(),
+            dims_explained: *dims_explained,
         }
     }
 }
@@ -78,6 +80,7 @@ impl Generalizer for ScoringQuery {
             ScoringQuery::Formula(_) => self.clone(),
             ScoringQuery::Sample(_) => self.clone(),
             ScoringQuery::Mmr(mmr) => ScoringQuery::Mmr(mmr.remove_details()),
+            ScoringQuery::DimsFocus(focus) => ScoringQuery::DimsFocus(focus.remove_details()),
         }
     }
 }
@@ -95,6 +98,24 @@ impl Generalizer for MmrInternal {
             vector: vector.remove_details(),
             using: using.clone(),
             lambda: *lambda,
+            candidates_limit: *candidates_limit,
+        }
+    }
+}
+
+impl Generalizer for DimsFocusInternal {
+    fn remove_details(&self) -> Self {
+        let Self {
+            vector,
+            using,
+            dims,
+            candidates_limit,
+        } = self;
+
+        Self {
+            vector: vector.remove_details(),
+            using: using.clone(),
+            dims: dims.clone(),
             candidates_limit: *candidates_limit,
         }
     }

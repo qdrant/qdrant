@@ -29,6 +29,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
 
 use crate::common::anonymize::Anonymize;
+use crate::common::dims_explained::DimsExplained;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::index::{
@@ -403,6 +404,8 @@ pub struct ScoredPoint {
     pub shard_key: Option<ShardKey>,
     /// Order-by value
     pub order_value: Option<OrderValue>,
+    /// Top dimensions contributing to the score, if requested
+    pub dims_explained: Option<DimsExplained>,
 }
 
 impl Eq for ScoredPoint {}

@@ -59,6 +59,9 @@ impl PyQueryRequest {
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
             params: params.map(SearchParams::from),
+            // Per-dimension explanations are resolved at collection level,
+            // they are not supported in Qdrant Edge.
+            dims_explained: None,
         })
     }
 
@@ -127,6 +130,8 @@ impl PyQueryRequest {
             params: _,
             with_vector: _,
             with_payload: _,
+            // Not supported in Qdrant Edge, always `None`
+            dims_explained: _,
         } = self.0;
     }
 }
@@ -243,6 +248,7 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
             Formula(PyFormula),
             Sample(PySample),
             Mmr(PyMmr),
+            DimsFocus(PyDimsFocus),
         }
 
         fn _variants(query: ScoringQuery) {
@@ -253,6 +259,7 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
                 ScoringQuery::Formula(_) => {}
                 ScoringQuery::Sample(_) => {}
                 ScoringQuery::Mmr(_) => {}
+                ScoringQuery::DimsFocus(_) => {}
             }
         }
 
@@ -263,6 +270,7 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
             Helper::Formula(formula) => ScoringQuery::Formula(ParsedFormula::from(formula)),
             Helper::Sample(sample) => ScoringQuery::Sample(SampleInternal::from(sample)),
             Helper::Mmr(mmr) => ScoringQuery::Mmr(MmrInternal::from(mmr)),
+            Helper::DimsFocus(focus) => ScoringQuery::DimsFocus(DimsFocusInternal::from(focus)),
         };
 
         Ok(Self(query))
@@ -282,6 +290,7 @@ impl<'py> IntoPyObject<'py> for PyScoringQuery {
             ScoringQuery::Formula(formula) => PyFormula(formula).into_bound_py_any(py),
             ScoringQuery::Sample(sample) => PySample::from(sample).into_bound_py_any(py),
             ScoringQuery::Mmr(mmr) => PyMmr(mmr).into_bound_py_any(py),
+            ScoringQuery::DimsFocus(focus) => PyDimsFocus(focus).into_bound_py_any(py),
         }
     }
 }
@@ -305,6 +314,7 @@ impl Repr for PyScoringQuery {
             ScoringQuery::Formula(_formula) => f.unimplemented(), // TODO!
             ScoringQuery::Sample(sample) => PySample::from(*sample).fmt(f),
             ScoringQuery::Mmr(mmr) => PyMmr::wrap_ref(mmr).fmt(f),
+            ScoringQuery::DimsFocus(focus) => PyDimsFocus::wrap_ref(focus).fmt(f),
         }
     }
 }
@@ -645,6 +655,69 @@ impl PyMmr {
             vector: _,
             using: _,
             lambda: _,
+            candidates_limit: _,
+        } = self.0;
+    }
+}
+
+#[pyclass(name = "DimsFocus", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyDimsFocus(DimsFocusInternal);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyDimsFocus {
+    #[new]
+    #[pyo3(signature = (vector, dims, candidates_limit, using = None))]
+    pub fn new(
+        vector: PyNamedVectorInternal,
+        dims: Vec<u32>,
+        candidates_limit: usize,
+        using: Option<String>,
+    ) -> Self {
+        let focus = DimsFocusInternal {
+            vector: VectorInternal::from(vector),
+            using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
+            dims,
+            candidates_limit,
+        };
+
+        Self(focus)
+    }
+
+    #[getter]
+    pub fn vector(&self) -> &PyNamedVectorInternal {
+        PyNamedVectorInternal::wrap_ref(&self.0.vector)
+    }
+
+    #[getter]
+    pub fn using(&self) -> &str {
+        &self.0.using
+    }
+
+    #[getter]
+    pub fn dims(&self) -> Vec<u32> {
+        self.0.dims.clone()
+    }
+
+    #[getter]
+    pub fn candidates_limit(&self) -> usize {
+        self.0.candidates_limit
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyDimsFocus {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let DimsFocusInternal {
+            vector: _,
+            using: _,
+            dims: _,
             candidates_limit: _,
         } = self.0;
     }

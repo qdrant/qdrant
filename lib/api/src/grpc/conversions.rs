@@ -1076,6 +1076,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             vector,
             shard_key,
             order_value,
+            dims_explained,
         } = point;
         Self {
             id: Some(PointId::from(id)),
@@ -1085,6 +1086,9 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             vectors: vector.map(VectorsOutput::from),
             shard_key: shard_key.map(convert_shard_key_to_grpc),
             order_value: order_value.map(OrderValue::from),
+            dims_explained: dims_explained
+                .map(|dims| dims.into_iter().collect())
+                .unwrap_or_default(),
         }
     }
 }
@@ -1100,6 +1104,7 @@ impl TryFrom<rest::ScoredPoint> for ScoredPoint {
             vector,
             shard_key,
             order_value,
+            dims_explained,
         } = point;
         Ok(Self {
             id: Some(PointId::from(id)),
@@ -1109,6 +1114,9 @@ impl TryFrom<rest::ScoredPoint> for ScoredPoint {
             vectors: vector.map(VectorsOutput::try_from).transpose()?,
             shard_key: shard_key.map(convert_shard_key_to_grpc),
             order_value: order_value.map(OrderValue::from),
+            dims_explained: dims_explained
+                .map(|dims| dims.into_iter().collect())
+                .unwrap_or_default(),
         })
     }
 }

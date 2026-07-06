@@ -301,6 +301,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             with_vector,
             with_payload,
             lookup_from,
+            dims_explained: None,
         };
 
         GroupRequest {
@@ -579,6 +580,7 @@ mod tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            dims_explained: None,
         }
     }
 
