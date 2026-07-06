@@ -13,7 +13,7 @@ pub struct PyEdgeOptimizersConfig(pub EdgeOptimizersConfig);
 #[pymethods]
 impl PyEdgeOptimizersConfig {
     #[new]
-    #[pyo3(signature = (deleted_threshold=None, vacuum_min_vector_number=None, default_segment_number=None, max_segment_size=None, indexing_threshold=None, prevent_unoptimized=None))]
+    #[pyo3(signature = (deleted_threshold=None, vacuum_min_vector_number=None, default_segment_number=None, max_segment_size=None, indexing_threshold=None, prevent_unoptimized=None, healing_threshold=None))]
     pub fn new(
         deleted_threshold: Option<f64>,
         vacuum_min_vector_number: Option<usize>,
@@ -21,6 +21,7 @@ impl PyEdgeOptimizersConfig {
         max_segment_size: Option<usize>,
         indexing_threshold: Option<usize>,
         prevent_unoptimized: Option<bool>,
+        healing_threshold: Option<f64>,
     ) -> Self {
         Self(EdgeOptimizersConfig {
             deleted_threshold,
@@ -29,6 +30,7 @@ impl PyEdgeOptimizersConfig {
             max_segment_size,
             indexing_threshold,
             prevent_unoptimized,
+            healing_threshold,
         })
     }
 
@@ -60,6 +62,11 @@ impl PyEdgeOptimizersConfig {
     #[getter]
     pub fn prevent_unoptimized(&self) -> Option<bool> {
         self.0.prevent_unoptimized
+    }
+
+    #[getter]
+    pub fn healing_threshold(&self) -> Option<f64> {
+        self.0.healing_threshold
     }
 
     pub fn __repr__(&self) -> String {

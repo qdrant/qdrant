@@ -33,6 +33,11 @@ pub struct EdgeOptimizersConfig {
     /// become visible.
     #[serde(default)]
     pub prevent_unoptimized: Option<bool>,
+    /// HNSW healing threshold: max ratio of missing points to allow reusing an old HNSW graph
+    /// instead of rebuilding from scratch. Set to `0.0` to disable healing entirely (always
+    /// rebuild), or up to `1.0` to always attempt reuse. Default is `0.3`.
+    #[serde(default)]
+    pub healing_threshold: Option<f64>,
 }
 
 impl EdgeOptimizersConfig {
@@ -46,5 +51,28 @@ impl EdgeOptimizersConfig {
 
     pub fn get_max_segment_size_kb(&self, num_indexing_threads: usize) -> usize {
         get_max_segment_size_kb(self.max_segment_size, num_indexing_threads)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_edge_optimizers_config_serialization() {
+        let config = EdgeOptimizersConfig {
+            healing_threshold: Some(0.5),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"healing_threshold\":0.5"));
+
+        let deserialized: EdgeOptimizersConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.healing_threshold, Some(0.5));
+
+        let empty_json = "{}";
+        let empty_config: EdgeOptimizersConfig = serde_json::from_str(empty_json).unwrap();
+        assert_eq!(empty_config.healing_threshold, None);
     }
 }
