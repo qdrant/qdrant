@@ -8,13 +8,15 @@ use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
     random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
     random_point, random_prefetch, random_query_for_name, random_recommend_strategy,
-    random_scroll_filter, random_tag, random_update_mode, random_vector_name,
-    random_vector_name_subset, random_with_payload, random_with_vector, upsert_fallback,
+    random_scroll_filter, random_tag, random_update_mode, random_url_prefix_probe,
+    random_vector_name, random_vector_name_subset, random_with_payload, random_with_vector,
+    upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
 use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::{Rng, RngExt};
+use segment::data_types::index::{KeywordIndexParams, KeywordIndexType};
 use segment::data_types::order_by::Direction;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
@@ -22,8 +24,8 @@ use segment::data_types::vector_name_config::{
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
-    MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaType, PointIdType, VectorNameBuf,
-    WithPayloadInterface, WithVector,
+    MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    PointIdType, VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use sparse::common::sparse_vector::SparseVector;
 
@@ -69,6 +71,7 @@ pub(super) enum Op {
         limit: usize,
         exact: bool,
         filter_num: Option<i64>,
+        filter_url_prefix: Option<String>,
     },
     /// Verification op: nearest-neighbor search via the Query API (`ScoringQuery::Vector(Nearest)`),
     /// the unified entrypoint that also backs prefetch/fusion. We exercise only the plain Nearest
@@ -80,6 +83,7 @@ pub(super) enum Op {
         limit: usize,
         exact: bool,
         filter_num: Option<i64>,
+        filter_url_prefix: Option<String>,
     },
     /// Upsert that only applies to a point if the existing payload matches the filter
     /// (semantics depend on `mode`).
@@ -115,8 +119,12 @@ pub(super) enum Op {
     ScrollFilteredByNum(i64),
     /// Verification op: count points matching `tag == X`, compare to model count.
     CountByTag(String),
+    /// Verification op: count points whose `url` starts with the given prefix.
+    CountByUrlPrefix(String),
     /// Verification op: scroll all points matching `tag == X`, compare id set to model.
     ScrollFilteredByTag(String),
+    /// Verification op: scroll all points whose `url` starts with the given prefix.
+    ScrollFilteredByUrlPrefix(String),
     /// Verification op: scroll ordered by `num` (requires the eager `num` index).
     /// Asserts monotonic ordering and that the returned set covers every point with a `num`.
     ScrollOrdered(Direction),
@@ -167,6 +175,7 @@ pub(super) enum Op {
     Facet {
         key: &'static str,
         filter_num: Option<i64>,
+        filter_url_prefix: Option<String>,
     },
     /// Set-payload scoped to a nested key path (`SetPayloadOp.key`): the engine inserts
     /// `payload` *under* `key` for each listed point (`merge_by_key` / `JsonPath::value_set`),
@@ -199,6 +208,7 @@ pub(super) enum Op {
         fusion: FusionKind,
         limit: usize,
         filter_num: Option<i64>,
+        filter_url_prefix: Option<String>,
     },
 }
 
@@ -234,6 +244,8 @@ pub(super) enum ScrollFilter {
     /// populated vector set varies per point (DeleteVectors / partial UpdateVectors), so this
     /// restricts to a model-checkable subset.
     HasVector(VectorNameBuf),
+    /// `url` prefix matcher: only points whose `url` payload starts with the given prefix.
+    UrlPrefix(String),
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -252,7 +264,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 35;
+    const N: usize = 37;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -291,6 +303,8 @@ impl Swarm {
         "ScrollPaged",
         "Query",
         "QueryFusion",
+        "CountByUrlPrefix",
+        "ScrollFilteredByUrlPrefix",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -342,6 +356,8 @@ impl Swarm {
         4,  // ScrollPaged
         6,  // Query
         5,  // QueryFusion
+        4,  // CountByUrlPrefix
+        4,  // ScrollFilteredByUrlPrefix
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -437,13 +453,27 @@ impl Op {
                 };
                 Op::ClearPayload(ids)
             }
-            8 => Op::CreateIndex(
-                // Only toggle `tag`; the fixture eagerly indexes `num` and the test relies on it
-                // staying indexed (e.g. for ordered scroll).
-                "tag".parse().unwrap(),
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
-            ),
-            9 => Op::DropIndex("tag".parse().unwrap()),
+            8 => {
+                // Randomly toggle one of two keyword indices, preserving coverage of both the
+                // plain keyword-equality path (`tag`) and the prefix path (`url`):
+                // - `tag`: plain keyword index, exercised by exact match ops;
+                // - `url`: prefix-enabled keyword index, exercised by prefix match ops.
+                // When the index is absent, the corresponding filters fall back to full-scan;
+                // when present, the index path is exercised across segment variants.
+                let (field, schema) = if rng.random_bool(0.5) {
+                    (
+                        "tag".parse().unwrap(),
+                        PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+                    )
+                } else {
+                    ("url".parse().unwrap(), url_prefix_index_schema())
+                };
+                Op::CreateIndex(field, schema)
+            }
+            9 => {
+                let field = if rng.random_bool(0.5) { "tag" } else { "url" };
+                Op::DropIndex(field.parse().unwrap())
+            }
             10 => Op::RetrieveRandom(random_distinct_ids(rng, 3..=10, id_pool)),
             11 => Op::CountByNum(random_num(rng)),
             12 => {
@@ -455,6 +485,9 @@ impl Op {
                     limit: rng.random_range(1..=10),
                     exact: rng.random_bool(0.5),
                     filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                    filter_url_prefix: rng
+                        .random_bool(0.5)
+                        .then(|| random_url_prefix_probe(rng).to_string()),
                 }
             }
             13 => Op::UpsertConditional {
@@ -587,6 +620,9 @@ impl Op {
                 // Always-indexed, facetable fields (`num`: Integer, `b`: Bool).
                 key: ["num", "b"].choose(rng).copied().unwrap(),
                 filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                filter_url_prefix: rng
+                    .random_bool(0.5)
+                    .then(|| random_url_prefix_probe(rng).to_string()),
             },
             30 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
@@ -622,6 +658,9 @@ impl Op {
                     limit: rng.random_range(1..=10),
                     exact: rng.random_bool(0.5),
                     filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                    filter_url_prefix: rng
+                        .random_bool(0.5)
+                        .then(|| random_url_prefix_probe(rng).to_string()),
                 }
             }
             34 => {
@@ -642,8 +681,13 @@ impl Op {
                     fusion,
                     limit: rng.random_range(1..=10),
                     filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                    filter_url_prefix: rng
+                        .random_bool(0.5)
+                        .then(|| random_url_prefix_probe(rng).to_string()),
                 }
             }
+            35 => Op::CountByUrlPrefix(random_url_prefix_probe(rng).to_string()),
+            36 => Op::ScrollFilteredByUrlPrefix(random_url_prefix_probe(rng).to_string()),
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -673,7 +717,9 @@ impl Op {
             Op::DeleteVectorsByFilter { .. } => "DeleteVectorsByFilter",
             Op::ScrollFilteredByNum(_) => "ScrollFilteredByNum",
             Op::CountByTag(_) => "CountByTag",
+            Op::CountByUrlPrefix(_) => "CountByUrlPrefix",
             Op::ScrollFilteredByTag(_) => "ScrollFilteredByTag",
+            Op::ScrollFilteredByUrlPrefix(_) => "ScrollFilteredByUrlPrefix",
             Op::ScrollOrdered(_) => "ScrollOrdered",
             Op::Recommend { .. } => "Recommend",
             Op::CreateVectorName { .. } => "CreateVectorName",
@@ -692,6 +738,32 @@ impl Op {
 }
 
 // ───── shared filter constructors + predicates ─────────────────────────────
+
+fn url_prefix_index_schema() -> PayloadFieldSchema {
+    PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+        r#type: KeywordIndexType::Keyword,
+        prefix: Some(true),
+        ..Default::default()
+    }))
+}
+
+pub(super) fn match_url_prefix_filter(prefix: &str) -> Filter {
+    Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "url".parse().unwrap(),
+        Match::new_prefix(prefix),
+    )))
+}
+
+/// Optional combined filter for read ops that may restrict by `num` and/or `url` prefix.
+pub(super) fn optional_read_filter(
+    filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
+) -> Option<Filter> {
+    Filter::merge_opts(
+        filter_num.map(match_num_filter),
+        filter_url_prefix.map(match_url_prefix_filter),
+    )
+}
 
 pub(super) fn match_num_filter(num: i64) -> Filter {
     Filter::new_must(Condition::Field(FieldCondition::new_match(
@@ -733,6 +805,23 @@ pub(super) fn tag_matches(payload: &Payload, target: &str) -> bool {
         .get("tag")
         .and_then(|v| v.as_str())
         .is_some_and(|t| t == target)
+}
+
+pub(super) fn url_prefix_matches(payload: &Payload, prefix: &str) -> bool {
+    payload
+        .0
+        .get("url")
+        .and_then(|v| v.as_str())
+        .is_some_and(|url| url.starts_with(prefix))
+}
+
+pub(super) fn passes_read_filters(
+    payload: &Payload,
+    filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
+) -> bool {
+    filter_num.is_none_or(|n| num_matches(payload, n))
+        && filter_url_prefix.is_none_or(|p| url_prefix_matches(payload, p))
 }
 
 pub(super) fn has_num(payload: &Payload) -> bool {

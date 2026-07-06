@@ -51,6 +51,7 @@ pub(super) async fn apply(
             limit,
             exact,
             filter_num,
+            filter_url_prefix,
         } => {
             reads::apply_search(
                 collection,
@@ -60,6 +61,7 @@ pub(super) async fn apply(
                 *limit,
                 *exact,
                 *filter_num,
+                filter_url_prefix.as_deref(),
             )
             .await
         }
@@ -69,6 +71,7 @@ pub(super) async fn apply(
             limit,
             exact,
             filter_num,
+            filter_url_prefix,
         } => {
             reads::apply_query(
                 collection,
@@ -78,6 +81,7 @@ pub(super) async fn apply(
                 *limit,
                 *exact,
                 *filter_num,
+                filter_url_prefix.as_deref(),
             )
             .await
         }
@@ -103,8 +107,14 @@ pub(super) async fn apply(
             reads::apply_scroll_filtered_by_num(collection, model, *num).await
         }
         Op::CountByTag(tag) => reads::apply_count_by_tag(collection, model, tag).await,
+        Op::CountByUrlPrefix(prefix) => {
+            reads::apply_count_by_url_prefix(collection, model, prefix).await
+        }
         Op::ScrollFilteredByTag(tag) => {
             reads::apply_scroll_filtered_by_tag(collection, model, tag).await
+        }
+        Op::ScrollFilteredByUrlPrefix(prefix) => {
+            reads::apply_scroll_filtered_by_url_prefix(collection, model, prefix).await
         }
         Op::ScrollOrdered(direction) => {
             reads::apply_scroll_ordered(collection, model, *direction).await
@@ -145,8 +155,19 @@ pub(super) async fn apply(
         Op::ClearPayloadByFilter(num) => {
             writes::apply_clear_payload_by_filter(collection, model, *num).await
         }
-        Op::Facet { key, filter_num } => {
-            reads::apply_facet(collection, model, key, *filter_num).await
+        Op::Facet {
+            key,
+            filter_num,
+            filter_url_prefix,
+        } => {
+            reads::apply_facet(
+                collection,
+                model,
+                key,
+                *filter_num,
+                filter_url_prefix.as_deref(),
+            )
+            .await
         }
         Op::SetPayloadByKey { ids, payload, key } => {
             writes::apply_set_payload_by_key(collection, model, ids, payload, key).await
@@ -166,9 +187,18 @@ pub(super) async fn apply(
             fusion,
             limit,
             filter_num,
+            filter_url_prefix,
         } => {
-            reads::apply_query_fusion(collection, model, prefetches, *fusion, *limit, *filter_num)
-                .await
+            reads::apply_query_fusion(
+                collection,
+                model,
+                prefetches,
+                *fusion,
+                *limit,
+                *filter_num,
+                filter_url_prefix.as_deref(),
+            )
+            .await
         }
     }
 }

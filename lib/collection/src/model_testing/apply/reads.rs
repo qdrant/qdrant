@@ -18,8 +18,9 @@ use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
     FusionKind, NamedVectors, Prefetch, ScrollFilter, canonical_sparse, has_num,
-    match_has_id_filter, match_has_vector_filter, match_num_filter, match_tag_filter, num_matches,
-    tag_matches,
+    match_has_id_filter, match_has_vector_filter, match_num_filter, match_tag_filter,
+    match_url_prefix_filter, num_matches, optional_read_filter, passes_read_filters, tag_matches,
+    url_prefix_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -290,12 +291,13 @@ fn nearest_candidates(
     model: &Model,
     vector_name: &str,
     filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
     limit: usize,
 ) -> (AHashSet<PointIdType>, usize) {
     let candidates: AHashSet<PointIdType> = model
         .iter()
         .filter(|(_, entry)| entry.vectors.contains_key(vector_name))
-        .filter(|(_, entry)| filter_num.is_none_or(|n| num_matches(&entry.payload, n)))
+        .filter(|(_, entry)| passes_read_filters(&entry.payload, filter_num, filter_url_prefix))
         .map(|(id, _)| *id)
         .collect();
     let expected_len = limit.min(candidates.len());
@@ -321,6 +323,7 @@ fn assert_nearest_results_valid(
     model: &Model,
     vector_name: &str,
     filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
     label: &str,
 ) {
     for id in results_ids {
@@ -331,12 +334,10 @@ fn assert_nearest_results_valid(
             entry.vectors.contains_key(vector_name),
             "{label} returned id {id:?} that doesn't have vector `{vector_name}`",
         );
-        if let Some(n) = filter_num {
-            assert!(
-                num_matches(&entry.payload, n),
-                "{label}(filter num=={n}) returned id {id:?} that does not match",
-            );
-        }
+        assert!(
+            passes_read_filters(&entry.payload, filter_num, filter_url_prefix),
+            "{label}(filter num={filter_num:?}, url_prefix={filter_url_prefix:?}) returned id {id:?} that does not match",
+        );
     }
 }
 
@@ -357,12 +358,13 @@ async fn assert_nearest_size_invariant(
     strict: bool,
     vector_name: &str,
     filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
     limit: usize,
 ) {
     if !strict {
         assert!(
             returned_ids.len() <= expected_len,
-            "{label}(approx, name={vector_name}, filter={filter_num:?}) returned {} points, expected at most {expected_len}",
+            "{label}(approx, name={vector_name}, filter_num={filter_num:?}, filter_url_prefix={filter_url_prefix:?}) returned {} points, expected at most {expected_len}",
             returned_ids.len(),
         );
         return;
@@ -411,9 +413,8 @@ async fn assert_nearest_size_invariant(
                 let has_num = r
                     .payload
                     .as_ref()
-                    .and_then(|p| p.0.get("num").and_then(|v| v.as_i64()))
-                    == filter_num;
-                format!("{:?}{{vec:{has_vec}, num_match:{has_num}}}", r.id)
+                    .is_some_and(|p| passes_read_filters(p, filter_num, filter_url_prefix));
+                format!("{:?}{{vec:{has_vec}, filter_match:{has_num}}}", r.id)
             })
             .collect::<Vec<_>>()
             .join(", "),
@@ -423,7 +424,7 @@ async fn assert_nearest_size_invariant(
     let probe_count = collection
         .count(
             CountRequestInternal {
-                filter: filter_num.map(match_num_filter),
+                filter: optional_read_filter(filter_num, filter_url_prefix),
                 exact: true,
             },
             None,
@@ -445,7 +446,7 @@ async fn assert_nearest_size_invariant(
             ScrollRequestInternal {
                 offset: None,
                 limit: Some(usize::MAX),
-                filter: filter_num.map(match_num_filter),
+                filter: optional_read_filter(filter_num, filter_url_prefix),
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Bool(false),
                 order_by: None,
@@ -487,7 +488,7 @@ async fn assert_nearest_size_invariant(
     );
 
     panic!(
-        "{label}(exact, name={vector_name}, filter={filter_num:?}, limit={limit}) returned \
+        "{label}(exact, name={vector_name}, filter_num={filter_num:?}, filter_url_prefix={filter_url_prefix:?}, limit={limit}) returned \
          {} points, expected {expected_len} (candidates: {}); \
          missing from result: {missing:?}; extra in result: {extra:?}\n\
          PROBE: retrieve(missing) = [{retrieved_summary}]\n\
@@ -519,6 +520,7 @@ pub(super) async fn apply_search(
     limit: usize,
     exact: bool,
     filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
 ) {
     let run = async || {
         let named_query = NamedQuery::new(nearest_internal_query(query), vector_name);
@@ -526,7 +528,7 @@ pub(super) async fn apply_search(
             .search(
                 CoreSearchRequest {
                     query: QueryEnum::Nearest(named_query),
-                    filter: filter_num.map(match_num_filter),
+                    filter: optional_read_filter(filter_num, filter_url_prefix),
                     params: Some(SearchParams {
                         exact,
                         ..Default::default()
@@ -551,7 +553,8 @@ pub(super) async fn apply_search(
     };
 
     let returned_ids = run().await;
-    let (candidates, expected_len) = nearest_candidates(model, vector_name, filter_num, limit);
+    let (candidates, expected_len) =
+        nearest_candidates(model, vector_name, filter_num, filter_url_prefix, limit);
     let strict = nearest_is_strict(exact, query);
 
     // Only re-run for the diagnostic comparison when we're about to fail the strict check.
@@ -570,10 +573,18 @@ pub(super) async fn apply_search(
         strict,
         vector_name,
         filter_num,
+        filter_url_prefix,
         limit,
     )
     .await;
-    assert_nearest_results_valid(returned_ids, model, vector_name, filter_num, "search");
+    assert_nearest_results_valid(
+        returned_ids,
+        model,
+        vector_name,
+        filter_num,
+        filter_url_prefix,
+        "search",
+    );
 }
 
 /// Basic coverage of the Query API. Issues a plain Nearest query (no prefetch/fusion) via
@@ -590,6 +601,7 @@ pub(super) async fn apply_query(
     limit: usize,
     exact: bool,
     filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
 ) {
     let run = async || {
         let named_query = NamedQuery::new(nearest_internal_query(query), vector_name);
@@ -598,7 +610,7 @@ pub(super) async fn apply_query(
                 ShardQueryRequest {
                     prefetches: vec![],
                     query: Some(ScoringQuery::Vector(QueryEnum::Nearest(named_query))),
-                    filter: filter_num.map(match_num_filter),
+                    filter: optional_read_filter(filter_num, filter_url_prefix),
                     score_threshold: None,
                     limit,
                     offset: 0,
@@ -623,7 +635,8 @@ pub(super) async fn apply_query(
     };
 
     let returned_ids = run().await;
-    let (candidates, expected_len) = nearest_candidates(model, vector_name, filter_num, limit);
+    let (candidates, expected_len) =
+        nearest_candidates(model, vector_name, filter_num, filter_url_prefix, limit);
     let strict = nearest_is_strict(exact, query);
 
     let retry_ids = if strict && returned_ids.len() != expected_len {
@@ -641,10 +654,18 @@ pub(super) async fn apply_query(
         strict,
         vector_name,
         filter_num,
+        filter_url_prefix,
         limit,
     )
     .await;
-    assert_nearest_results_valid(returned_ids, model, vector_name, filter_num, "query");
+    assert_nearest_results_valid(
+        returned_ids,
+        model,
+        vector_name,
+        filter_num,
+        filter_url_prefix,
+        "query",
+    );
 }
 
 /// Coverage of the Query API's `prefetch` + fusion path (the plain `Query` op only does a top-level
@@ -663,6 +684,7 @@ pub(super) async fn apply_query_fusion(
     fusion: FusionKind,
     limit: usize,
     filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
 ) {
     let shard_prefetches = prefetches
         .iter()
@@ -690,7 +712,7 @@ pub(super) async fn apply_query_fusion(
             ShardQueryRequest {
                 prefetches: shard_prefetches,
                 query: Some(ScoringQuery::Fusion(fusion_internal)),
-                filter: filter_num.map(match_num_filter),
+                filter: optional_read_filter(filter_num, filter_url_prefix),
                 score_threshold: None,
                 limit,
                 offset: 0,
@@ -713,7 +735,7 @@ pub(super) async fn apply_query_fusion(
     assert_eq!(
         returned_vec.len(),
         returned_ids.len(),
-        "query_fusion(fusion={fusion:?}, filter={filter_num:?}) returned duplicate ids",
+        "query_fusion(fusion={fusion:?}, filter_num={filter_num:?}, filter_url_prefix={filter_url_prefix:?}) returned duplicate ids",
     );
 
     // Two independent upper bounds on the fused result, both narrowed by the outer `limit`:
@@ -724,17 +746,20 @@ pub(super) async fn apply_query_fusion(
     let mut union: AHashSet<PointIdType> = AHashSet::new();
     let mut prefetch_cap = 0usize;
     for p in prefetches {
-        let (candidates, cap) = nearest_candidates(model, &p.vector_name, p.filter_num, p.limit);
+        let (candidates, cap) =
+            nearest_candidates(model, &p.vector_name, p.filter_num, None, p.limit);
         prefetch_cap += cap;
         union.extend(candidates);
     }
-    if let Some(n) = filter_num {
-        union.retain(|id| model.get(id).is_some_and(|e| num_matches(&e.payload, n)));
-    }
+    union.retain(|id| {
+        model
+            .get(id)
+            .is_some_and(|e| passes_read_filters(&e.payload, filter_num, filter_url_prefix))
+    });
     let expected_len = limit.min(union.len()).min(prefetch_cap);
     assert!(
         returned_ids.len() <= expected_len,
-        "query_fusion(fusion={fusion:?}, filter={filter_num:?}) returned {} points, expected at most {expected_len}",
+        "query_fusion(fusion={fusion:?}, filter_num={filter_num:?}, filter_url_prefix={filter_url_prefix:?}) returned {} points, expected at most {expected_len}",
         returned_ids.len(),
     );
 
@@ -750,12 +775,10 @@ pub(super) async fn apply_query_fusion(
             is_prefetch_candidate,
             "query_fusion returned id {id:?} matching no prefetch source",
         );
-        if let Some(n) = filter_num {
-            assert!(
-                num_matches(&entry.payload, n),
-                "query_fusion(outer filter num=={n}) returned id {id:?} that does not match",
-            );
-        }
+        assert!(
+            passes_read_filters(&entry.payload, filter_num, filter_url_prefix),
+            "query_fusion(outer filter num={filter_num:?}, url_prefix={filter_url_prefix:?}) returned id {id:?} that does not match",
+        );
     }
 }
 
@@ -800,6 +823,7 @@ pub(super) async fn apply_facet(
     model: &Model,
     key: &str,
     filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
 ) {
     // `limit` is set well above any field's cardinality (`num` is 0..100, `b` is 2) so `exact`
     // facet returns every value with a nonzero count and nothing is truncated — letting us
@@ -811,7 +835,7 @@ pub(super) async fn apply_facet(
             FacetParams {
                 key: key.parse().unwrap(),
                 limit: FACET_LIMIT,
-                filter: filter_num.map(match_num_filter),
+                filter: optional_read_filter(filter_num, filter_url_prefix),
                 exact: true,
             },
             ShardSelectorInternal::All,
@@ -836,7 +860,7 @@ pub(super) async fn apply_facet(
 
     let mut expected: HashMap<FacetValue, usize> = HashMap::new();
     for entry in model.values() {
-        if filter_num.is_some_and(|n| !num_matches(&entry.payload, n)) {
+        if !passes_read_filters(&entry.payload, filter_num, filter_url_prefix) {
             continue;
         }
         if let Some(value) = entry.payload.0.get(key).and_then(facet_value_of) {
@@ -846,7 +870,7 @@ pub(super) async fn apply_facet(
 
     assert_eq!(
         actual, expected,
-        "facet(key={key}, filter_num={filter_num:?}) mismatch",
+        "facet(key={key}, filter_num={filter_num:?}, filter_url_prefix={filter_url_prefix:?}) mismatch",
     );
 }
 
@@ -933,6 +957,69 @@ pub(super) async fn apply_scroll_filtered_by_tag(
     assert_id_sets_eq(&returned, &expected, &format!("scroll(tag=={tag:?})"));
 }
 
+pub(super) async fn apply_count_by_url_prefix(
+    collection: &Collection,
+    model: &Model,
+    prefix: &str,
+) {
+    let actual = collection
+        .count(
+            CountRequestInternal {
+                filter: Some(match_url_prefix_filter(prefix)),
+                exact: true,
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("count by url prefix failed")
+        .count;
+    let expected = model
+        .values()
+        .filter(|entry| url_prefix_matches(&entry.payload, prefix))
+        .count();
+    assert_eq!(actual, expected, "count(url prefix={prefix:?}) mismatch");
+}
+
+pub(super) async fn apply_scroll_filtered_by_url_prefix(
+    collection: &Collection,
+    model: &Model,
+    prefix: &str,
+) {
+    let scroll = collection
+        .scroll_by(
+            ScrollRequestInternal {
+                offset: None,
+                limit: Some(usize::MAX),
+                filter: Some(match_url_prefix_filter(prefix)),
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: WithVector::Bool(false),
+                order_by: None,
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("scroll(filtered by url prefix) failed");
+    let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
+    let expected: AHashSet<PointIdType> = model
+        .iter()
+        .filter(|(_, entry)| url_prefix_matches(&entry.payload, prefix))
+        .map(|(id, _)| *id)
+        .collect();
+    assert_id_sets_eq(
+        &returned,
+        &expected,
+        &format!("scroll(url prefix={prefix:?})"),
+    );
+}
+
 pub(super) async fn apply_scroll_paged(
     collection: &Collection,
     model: &Model,
@@ -943,6 +1030,7 @@ pub(super) async fn apply_scroll_paged(
         ScrollFilter::None => None,
         ScrollFilter::Num(num) => Some(match_num_filter(*num)),
         ScrollFilter::Tag(tag) => Some(match_tag_filter(tag)),
+        ScrollFilter::UrlPrefix(prefix) => Some(match_url_prefix_filter(prefix)),
         ScrollFilter::HasId(ids) => Some(match_has_id_filter(ids)),
         ScrollFilter::HasVector(name) => Some(match_has_vector_filter(name)),
     };
@@ -952,6 +1040,7 @@ pub(super) async fn apply_scroll_paged(
         ScrollFilter::None
         | ScrollFilter::Num(_)
         | ScrollFilter::Tag(_)
+        | ScrollFilter::UrlPrefix(_)
         | ScrollFilter::HasVector(_) => AHashSet::new(),
     };
     let expected: AHashSet<PointIdType> = model
@@ -960,6 +1049,7 @@ pub(super) async fn apply_scroll_paged(
             ScrollFilter::None => true,
             ScrollFilter::Num(num) => num_matches(&entry.payload, *num),
             ScrollFilter::Tag(tag) => tag_matches(&entry.payload, tag),
+            ScrollFilter::UrlPrefix(prefix) => url_prefix_matches(&entry.payload, prefix),
             ScrollFilter::HasId(_) => has_id_set.contains(*id),
             ScrollFilter::HasVector(name) => entry.vectors.contains_key(name),
         })
