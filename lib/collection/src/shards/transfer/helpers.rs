@@ -91,7 +91,7 @@ pub fn validate_transfer(
     shards_key_mapping: &ShardKeyMapping,
 ) -> CollectionResult<()> {
     let Some(source_replicas) = source_replicas else {
-        return Err(CollectionError::service_error(format!(
+        return Err(CollectionError::bad_request(format!(
             "Shard {} does not exist",
             transfer.shard_id,
         )));
@@ -165,7 +165,7 @@ pub fn validate_transfer(
 
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
         let Some(destination_replicas) = destination_replicas else {
-            return Err(CollectionError::service_error(format!(
+            return Err(CollectionError::bad_request(format!(
                 "Destination shard {} does not exist",
                 transfer.shard_id,
             )));
@@ -207,7 +207,7 @@ pub fn validate_transfer(
         }
     } else if transfer.filter.is_some() {
         let Some(destination_replicas) = destination_replicas else {
-            return Err(CollectionError::service_error(format!(
+            return Err(CollectionError::bad_request(format!(
                 "Destination shard {} does not exist",
                 transfer.shard_id,
             )));
