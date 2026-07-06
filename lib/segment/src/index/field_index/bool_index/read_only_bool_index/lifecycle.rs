@@ -1,5 +1,6 @@
-use common::universal_io::CachedReadFs;
 use std::path::Path;
+
+use common::universal_io::CachedReadFs;
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};

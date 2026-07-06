@@ -1,8 +1,8 @@
-use common::universal_io::CachedReadFs;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::fs::read_json;
+use common::universal_io::CachedReadFs;
 use quantization::EncodedVectorsPQ;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;

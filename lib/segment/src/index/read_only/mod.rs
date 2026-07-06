@@ -1,6 +1,5 @@
 mod live_reload;
 
-use common::universal_io::CachedReadFs;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -9,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::types::{ScoredPointOffset, TelemetryDetail};
+use common::universal_io::CachedReadFs;
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;

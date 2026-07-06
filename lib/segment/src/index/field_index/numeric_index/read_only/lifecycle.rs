@@ -2,8 +2,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::CachedReadFs;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, UniversalRead};
 use gridstore::Blob;
 
 use super::super::Encodable;

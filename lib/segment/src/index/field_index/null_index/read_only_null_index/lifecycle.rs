@@ -1,7 +1,6 @@
-use common::universal_io::CachedReadFs;
 use std::path::Path;
 
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, UniversalRead};
 
 use super::super::mutable_null_index::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME};
 use super::{ReadOnlyNullIndex, ReadOnlyStorage};
