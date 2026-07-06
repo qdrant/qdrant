@@ -12,18 +12,19 @@ use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput,
-    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH,
-    get_deferred_points_threshold_bytes, get_indexing_threshold_kb, get_max_segment_size_kb,
-    get_number_segments,
+    LiveVectorNamesProvider, SegmentOptimizerConfig, SparseVectorOptimizerInput,
+    TEMP_SEGMENTS_PATH, get_deferred_points_threshold_bytes, get_indexing_threshold_kb,
+    get_max_segment_size_kb, get_number_segments,
 };
 use shard::optimizers::segment_optimizer::max_num_indexing_threads;
+use tokio::sync::RwLock as TokioRwLock;
 use validator::Validate;
 
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
-use crate::config::CollectionParams;
+use crate::config::{CollectionConfigInternal, CollectionParams};
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{SparseVectorParams, VectorParams};
 use crate::update_handler::Optimizer;
@@ -251,8 +252,20 @@ pub fn build_segment_optimizer_config(
     )
 }
 
+/// Build a [`LiveVectorNamesProvider`] that reads the collection's current vector names.
+///
+/// The provider is invoked from the optimization worker (a `spawn_blocking` thread), so the
+/// synchronous `blocking_read` is safe there. Optimizers use it to tell a deleted vector (to prune)
+/// from the CreateVectorName race (to cancel); see [`SegmentBuilder::set_live_vector_names`].
+fn live_vector_names_provider(
+    collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
+) -> LiveVectorNamesProvider {
+    LiveVectorNamesProvider::new(move || collection_config.blocking_read().params.vector_names())
+}
+
 pub fn build_optimizers(
     shard_path: &Path,
+    collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
     collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
@@ -262,7 +275,8 @@ pub fn build_optimizers(
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     let segment_config =
-        build_segment_optimizer_config(collection_params, hnsw_config, quantization_config);
+        build_segment_optimizer_config(collection_params, hnsw_config, quantization_config)
+            .with_live_vector_names(live_vector_names_provider(collection_config));
     let num_indexing_threads = max_num_indexing_threads(&segment_config);
     let threshold_config = optimizers_config.optimizer_thresholds(
         num_indexing_threads,
@@ -307,4 +321,47 @@ pub fn build_optimizers(
             hnsw_global_config.clone(),
         )),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use segment::types::Distance;
+
+    use super::*;
+    use crate::operations::types::{SparseVectorParams, VectorsConfig};
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+
+    #[test]
+    fn live_vector_names_include_dense_and_sparse() {
+        // A segment's `vector_data` holds dense and sparse vectors together, so the live set the
+        // optimizer consults must enumerate both. A dense-only set would make a freshly-created
+        // sparse vector look deleted and get wrongly pruned during the optimizer race.
+        let params = CollectionParams {
+            vectors: VectorsConfig::Multi(BTreeMap::from([(
+                "dense".to_owned(),
+                VectorParamsBuilder::new(4, Distance::Dot).build(),
+            )])),
+            sparse_vectors: Some(BTreeMap::from([(
+                "sparse".to_owned(),
+                SparseVectorParams {
+                    index: None,
+                    modifier: None,
+                },
+            )])),
+            ..CollectionParams::empty()
+        };
+
+        let names = params.vector_names();
+
+        assert!(
+            names.contains("dense"),
+            "dense vector name missing: {names:?}"
+        );
+        assert!(
+            names.contains("sparse"),
+            "sparse vector name missing: {names:?}",
+        );
+    }
 }

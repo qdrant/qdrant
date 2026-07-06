@@ -1,6 +1,6 @@
 //! Edge shard configuration: user-facing params and conversion to/from SegmentConfig.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use common::fs::{atomic_save_json, read_json};
@@ -177,6 +177,18 @@ impl EdgeConfig {
         }
     }
 
+    /// All vector names (dense and sparse) currently present in this config.
+    ///
+    /// Must cover both kinds: a segment's `vector_data` holds dense and sparse vectors together,
+    /// so the optimizer merge consults this set for both.
+    pub fn vector_names(&self) -> HashSet<VectorNameBuf> {
+        self.vectors
+            .keys()
+            .chain(self.sparse_vectors.keys())
+            .cloned()
+            .collect()
+    }
+
     /// Build segment optimizer config from this config (for blocking optimizers).
     /// Use this instead of converting to SegmentConfig first.
     pub fn segment_optimizer_config(&self) -> shard::optimizers::config::SegmentOptimizerConfig {
@@ -214,6 +226,7 @@ impl EdgeConfig {
             plain_sparse_vector_config,
             dense_vector,
             sparse_vector,
+            live_vector_names: None,
         }
     }
 

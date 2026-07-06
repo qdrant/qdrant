@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,7 +25,7 @@ use segment::types::{
 };
 use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 use uuid::Uuid;
 
 use crate::fixtures::segment::{
@@ -584,21 +584,18 @@ fn test_segment_builder_rejects_target_with_extra_vector_name() {
     );
 }
 
-#[test]
-fn test_segment_builder_rejects_source_with_extra_vector_name() {
+/// Build a source segment that carries the default vector plus `extra_vector_name`, together with a
+/// target schema that lacks `extra_vector_name`. This is the shape both races produce: a source
+/// vector name absent from the optimizer's target. The returned [`TempDir`]s must be kept alive for
+/// the duration of the test.
+fn build_source_with_extra_vector(
+    extra_vector_name: &str,
+    hw_counter: &HardwareCounterCell,
+) -> (Segment, SegmentConfig, Vec<TempDir>) {
     use segment::segment_constructor::build_segment;
 
     let source_dir = Builder::new().prefix("segment_source").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let stopped = AtomicBool::new(false);
-    let hw_counter = HardwareCounterCell::new();
-
-    let extra_vector_name = "extra_vec";
-
-    // Build a source segment carrying both the default vector and an extra
-    // named vector — emulates a segment that received `CreateVectorName(V)`
-    // while an optimizer in flight was holding a `target_config` without V.
     let template = build_segment_1(source_dir.path());
     let mut source_config = template.segment_config.clone();
     source_config.vector_data.insert(
@@ -614,6 +611,7 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
         },
     );
     drop(template);
+
     let source_dir2 = Builder::new().prefix("segment_source2").tempdir().unwrap();
     let (mut source, _) = build_segment(source_dir2.path(), &source_config, None, true).unwrap();
     for i in 0..3u64 {
@@ -622,13 +620,29 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
             (extra_vector_name.to_owned(), vec![1.0, 1.0, 1.0, 1.0]),
         ]);
         source
-            .upsert_point(10 + i, (100 + i).into(), vectors, &hw_counter)
+            .upsert_point(10 + i, (100 + i).into(), vectors, hw_counter)
             .unwrap();
     }
 
-    // Target schema lacks the extra vector — the optimizer's pre-`CreateVectorName` view.
-    let mut target_config = source_config.clone();
+    // Target schema lacks the extra vector.
+    let mut target_config = source_config;
     target_config.vector_data.remove(extra_vector_name);
+
+    (source, target_config, vec![source_dir, source_dir2])
+}
+
+#[test]
+fn test_segment_builder_rejects_source_with_extra_vector_name() {
+    // Conservative default: without a live schema (`set_live_vector_names` not called), a source
+    // vector name absent from the target cancels the merge. This covers the
+    // CreateVectorName-vs-optimizer race, where dropping the vector would corrupt the next round.
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+    let extra_vector_name = "extra_vec";
+
+    let (source, target_config, _dirs) =
+        build_source_with_extra_vector(extra_vector_name, &hw_counter);
 
     let mut builder = SegmentBuilder::new(
         temp_dir.path(),
@@ -640,6 +654,80 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
     let err = builder
         .update(&[&source], &stopped, &hw_counter)
         .expect_err("merge must reject a source carrying a vector not in target");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("extra vector name") && msg.contains(extra_vector_name),
+        "unexpected error message: {msg}",
+    );
+}
+
+#[test]
+fn test_segment_builder_drops_deleted_source_vector_name() {
+    // DeleteVectorName recovery: the extra vector is absent from the live collection schema, so the
+    // merge prunes the stale data and succeeds rather than cancelling forever.
+    let build_dir = Builder::new().prefix("segment_build").tempdir().unwrap();
+    let out_dir = Builder::new().prefix("segment_out").tempdir().unwrap();
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+    let extra_vector_name = "extra_vec";
+
+    let (source, target_config, _dirs) =
+        build_source_with_extra_vector(extra_vector_name, &hw_counter);
+
+    let mut builder = SegmentBuilder::new(
+        build_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    // Live schema has only the default vector — the extra one was deleted from the collection.
+    builder.set_live_vector_names(HashSet::from([DEFAULT_VECTOR_NAME.to_owned()]));
+
+    builder
+        .update(&[&source], &stopped, &hw_counter)
+        .expect("merge should succeed by dropping the deleted source vector");
+
+    let built = builder.build_for_test(out_dir.path());
+    assert!(
+        !built.vector_data.contains_key(extra_vector_name),
+        "built segment must not contain the dropped vector {extra_vector_name}",
+    );
+    assert!(
+        built.vector_data.contains_key(DEFAULT_VECTOR_NAME),
+        "built segment must retain the default vector",
+    );
+}
+
+#[test]
+fn test_segment_builder_rejects_source_when_extra_vector_still_live() {
+    // CreateVectorName race: the extra vector is still present in the live collection schema (it was
+    // just created), only this optimizer's frozen target lags behind. Dropping it would corrupt the
+    // next round, so the merge must cancel even with a live schema set.
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+    let extra_vector_name = "extra_vec";
+
+    let (source, target_config, _dirs) =
+        build_source_with_extra_vector(extra_vector_name, &hw_counter);
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    // Live schema still carries the extra vector.
+    builder.set_live_vector_names(HashSet::from([
+        DEFAULT_VECTOR_NAME.to_owned(),
+        extra_vector_name.to_owned(),
+    ]));
+
+    let err = builder
+        .update(&[&source], &stopped, &hw_counter)
+        .expect_err("merge must reject a source whose extra vector is still in the live schema");
     let msg = err.to_string();
     assert!(
         msg.contains("extra vector name") && msg.contains(extra_vector_name),
