@@ -19,7 +19,7 @@ pub enum GridstoreError {
     FlushCancelled,
     #[error("Validation error: {message}")]
     ValidationError { message: String },
-    #[error("Operation not supported in serverless mode: {operation}")]
+    #[error("Operation not supported in append-only mode: {operation}")]
     UnsupportedOperation { operation: String },
     #[error("Page {page_id} not found")]
     PageNotFound { page_id: PageId },

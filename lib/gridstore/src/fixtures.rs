@@ -32,9 +32,9 @@ pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
     empty_storage_mode(Mode::Dynamic)
 }
 
-/// Create an empty storage in serverless mode with the default configuration
-pub fn empty_storage_serverless() -> (TempDir, Gridstore<Payload>) {
-    empty_storage_mode(Mode::Serverless)
+/// Create an empty storage in append-only mode with the default configuration
+pub fn empty_storage_append_only() -> (TempDir, Gridstore<Payload>) {
+    empty_storage_mode(Mode::AppendOnly)
 }
 
 /// Create an empty storage in the given mode with the default configuration

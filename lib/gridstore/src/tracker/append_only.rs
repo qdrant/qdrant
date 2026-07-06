@@ -8,16 +8,16 @@ use crate::gridstore::Flusher;
 use crate::tracker::{OptionalPointer, PointOffset, ValuePointer};
 use crate::{Result, direct_io};
 
-/// File name of the serverless tracker file
+/// File name of the append-only tracker file
 ///
 /// Deliberately different from the dynamic tracker file name, so that one mode never attempts to
 /// load the incompatible file format of the other.
-const FILE_NAME: &str = "serverless_tracker.dat";
+const FILE_NAME: &str = "append_only_tracker.dat";
 
 /// Size in bytes of a single mapping entry in the tracker file
 const ENTRY_SIZE: u64 = size_of::<OptionalPointer>() as u64;
 
-/// Append-only tracker of value pointers for the serverless storage mode.
+/// Append-only tracker of value pointers for the append-only storage mode.
 ///
 /// Stores a plain array of [`OptionalPointer`] entries in a single file, without any header. The
 /// entry at index `i` is the mapping for point offset `i`, and the number of mappings is defined
@@ -33,7 +33,7 @@ const ENTRY_SIZE: u64 = size_of::<OptionalPointer>() as u64;
 /// A write may be torn. If the file length is not a multiple of the entry size, the trailing
 /// partial entry is ignored when reading, and truncated away when opening writable.
 #[derive(Debug)]
-pub(crate) struct ServerlessTracker {
+pub(crate) struct AppendOnlyTracker {
     /// Path to the tracker file
     path: PathBuf,
     /// Open handle to the tracker file
@@ -47,7 +47,7 @@ pub(crate) struct ServerlessTracker {
     pending: Vec<OptionalPointer>,
 }
 
-impl ServerlessTracker {
+impl AppendOnlyTracker {
     fn tracker_file_name(dir: &Path) -> PathBuf {
         dir.join(FILE_NAME)
     }
@@ -74,7 +74,7 @@ impl ServerlessTracker {
     /// truncated away, so that appends always start at a whole entry offset.
     pub fn open(dir: &Path, writeable: bool) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let file = direct_io::open_existing(&path, writeable, "Serverless tracker")?;
+        let file = direct_io::open_existing(&path, writeable, "Append-only tracker")?;
 
         let len = file.metadata()?.len();
         let aligned_len = len - (len % ENTRY_SIZE);
@@ -168,7 +168,7 @@ impl ServerlessTracker {
     /// than every offset set before it. Skipped offsets are backfilled as `None` entries.
     pub fn set(&mut self, point_offset: PointOffset, pointer: ValuePointer) -> Result<()> {
         // Defensive re-check: the storage validates this before appending any value data, see
-        // ServerlessGridstore::put_value
+        // AppendOnlyGridstore::put_value
         let next = self.pointer_count();
         if point_offset < next {
             return Err(GridstoreError::unsupported_operation(format!(
@@ -267,7 +267,7 @@ impl ServerlessTracker {
 fn count_from_len(len: u64) -> Result<PointOffset> {
     PointOffset::try_from(len / ENTRY_SIZE).map_err(|_| {
         GridstoreError::service_error(format!(
-            "serverless tracker file of {len} bytes holds more mappings than supported",
+            "append-only tracker file of {len} bytes holds more mappings than supported",
         ))
     })
 }
@@ -279,9 +279,9 @@ mod tests {
 
     use super::*;
 
-    fn empty_tracker() -> (TempDir, ServerlessTracker) {
+    fn empty_tracker() -> (TempDir, AppendOnlyTracker) {
         let dir = TempDir::new().unwrap();
-        let tracker = ServerlessTracker::new(dir.path()).unwrap();
+        let tracker = AppendOnlyTracker::new(dir.path()).unwrap();
         (dir, tracker)
     }
 
@@ -289,7 +289,7 @@ mod tests {
         ValuePointer::new(0, n * 2, n * 3 + 1)
     }
 
-    fn file_len(tracker: &ServerlessTracker) -> u64 {
+    fn file_len(tracker: &AppendOnlyTracker) -> u64 {
         fs::metadata(&tracker.path).unwrap().len()
     }
 
@@ -304,8 +304,8 @@ mod tests {
     #[test]
     fn test_open_missing_tracker_fails() {
         let dir = TempDir::new().unwrap();
-        assert!(ServerlessTracker::open(dir.path(), true).is_err());
-        assert!(ServerlessTracker::open(dir.path(), false).is_err());
+        assert!(AppendOnlyTracker::open(dir.path(), true).is_err());
+        assert!(AppendOnlyTracker::open(dir.path(), false).is_err());
     }
 
     #[test]
@@ -367,7 +367,7 @@ mod tests {
     fn test_write_pending_and_reopen() {
         let dir = TempDir::new().unwrap();
 
-        let mut tracker = ServerlessTracker::new(dir.path()).unwrap();
+        let mut tracker = AppendOnlyTracker::new(dir.path()).unwrap();
         for n in 0..5 {
             tracker.set(n, pointer(n)).unwrap();
         }
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
         drop(tracker);
 
-        let tracker = ServerlessTracker::open(dir.path(), true).unwrap();
+        let tracker = AppendOnlyTracker::open(dir.path(), true).unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
             assert_eq!(tracker.get(n).unwrap(), Some(pointer(n)));
@@ -440,7 +440,7 @@ mod tests {
     fn test_torn_write_is_ignored_and_truncated() {
         let dir = TempDir::new().unwrap();
 
-        let mut tracker = ServerlessTracker::new(dir.path()).unwrap();
+        let mut tracker = AppendOnlyTracker::new(dir.path()).unwrap();
         for n in 0..5 {
             tracker.set(n, pointer(n)).unwrap();
         }
@@ -455,14 +455,14 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().len(), 5 * ENTRY_SIZE + 7);
 
         // A read-only open ignores the partial entry, but leaves the file untouched
-        let tracker = ServerlessTracker::open(dir.path(), false).unwrap();
+        let tracker = AppendOnlyTracker::open(dir.path(), false).unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         assert_eq!(tracker.get(4).unwrap(), Some(pointer(4)));
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE + 7);
         drop(tracker);
 
         // A writable open truncates the partial entry away
-        let tracker = ServerlessTracker::open(dir.path(), true).unwrap();
+        let tracker = AppendOnlyTracker::open(dir.path(), true).unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         assert_eq!(tracker.get(4).unwrap(), Some(pointer(4)));
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
@@ -472,13 +472,13 @@ mod tests {
     fn test_live_reload() {
         let dir = TempDir::new().unwrap();
 
-        let mut writer = ServerlessTracker::new(dir.path()).unwrap();
+        let mut writer = AppendOnlyTracker::new(dir.path()).unwrap();
         for n in 0..3 {
             writer.set(n, pointer(n)).unwrap();
         }
         writer.write_pending(writer.pointer_count()).unwrap();
 
-        let mut reader = ServerlessTracker::open(dir.path(), false).unwrap();
+        let mut reader = AppendOnlyTracker::open(dir.path(), false).unwrap();
         assert_eq!(reader.pointer_count(), 3);
         assert!(!reader.live_reload().unwrap());
 

@@ -1,6 +1,6 @@
-//! Cross-platform positional file IO helpers, used by the serverless storage mode.
+//! Cross-platform positional file IO helpers, used by the append-only storage mode.
 //!
-//! The serverless storage variant reads and writes its files directly, without memory mapping
+//! The append-only storage variant reads and writes its files directly, without memory mapping
 //! them.
 
 use std::io;

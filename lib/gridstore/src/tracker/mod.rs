@@ -1,6 +1,6 @@
+pub(crate) mod append_only;
 pub mod iter;
 pub mod read_only;
-pub(crate) mod serverless;
 
 #[cfg(test)]
 mod tests;
