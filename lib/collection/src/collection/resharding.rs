@@ -292,6 +292,43 @@ impl Collection {
         drop(shard_holder); // drop the read lock before acquiring write lock
         let mut shard_holder = self.shards_holder.write().await;
 
+        // Decrement and persist shard count *before* aborting resharding, so crash
+        // doesn't leave `shard_number` pointing at deleted dir, which would panic on startup
+        if resharding_key.direction == ReshardingDirection::Up {
+            let mut config = self.collection_config.write().await;
+
+            match config.params.sharding_method.unwrap_or_default() {
+                // Custom shards don't use persisted count, no need to change it
+                ShardingMethod::Custom => {}
+
+                // Set shard count to ID of shard being aborted, instead of decrementing current
+                // shard count.
+                //
+                // Shard IDs are contiguous, from 0 to N-1.
+                // During scale-up resharding, we add shard N.
+                // Once shard N is aborted, there will be N shards left, from 0 to N-1.
+                //
+                // If operation is replayed after crash, we select same count every time,
+                // instead of decrementing it twice.
+                ShardingMethod::Auto => {
+                    resharding_key
+                        .debug_assert_targets_last_shard(config.params.shard_number.get());
+
+                    let new_shard_number = NonZeroU32::new(resharding_key.shard_id)
+                        .expect("cannot have zero shards after aborting resharding up");
+
+                    if config.params.shard_number != new_shard_number {
+                        config.params.shard_number = new_shard_number;
+                        if let Err(err) = config.save(&self.path) {
+                            log::error!(
+                                "Failed to update and save collection config during resharding: {err}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // Abort resharding before the related transfers to keep this
         // idempotent on replay: if we aborted a transfer first and crashed,
         // on restart the transfer would be gone and we'd no longer detect
@@ -319,33 +356,6 @@ impl Collection {
             self.abort_shard_transfer(transfer, &shard_holder).await?;
         }
         drop(shard_holder);
-
-        // Decrease the persisted shard count, ensures we don't load dropped shard on restart
-        if resharding_key.direction == ReshardingDirection::Up {
-            let mut config = self.collection_config.write().await;
-            match config.params.sharding_method.unwrap_or_default() {
-                // Idempotent: set the shard count to the aborted shard's id
-                // (shard ids are contiguous from zero, so this is the count
-                // after removing the shard). A replay converges to the same
-                // value instead of decrementing again.
-                ShardingMethod::Auto => {
-                    resharding_key
-                        .debug_assert_targets_last_shard(config.params.shard_number.get());
-                    let new_shard_number = NonZeroU32::new(resharding_key.shard_id)
-                        .expect("cannot have zero shards after aborting resharding up");
-                    if config.params.shard_number != new_shard_number {
-                        config.params.shard_number = new_shard_number;
-                        if let Err(err) = config.save(&self.path) {
-                            log::error!(
-                                "Failed to update and save collection config during resharding: {err}"
-                            );
-                        }
-                    }
-                }
-                // Custom shards don't use the persisted count, we don't change it
-                ShardingMethod::Custom => {}
-            }
-        }
 
         Ok(())
     }
