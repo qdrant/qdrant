@@ -26,7 +26,7 @@ mod reexports_from_qdrant_crates {
         PayloadFieldSchema, PayloadIndexInfo, PayloadSchemaParams, PayloadSchemaType,
         PayloadSelector, PayloadSelectorExclude, PayloadSelectorInclude, ProductQuantizationConfig,
         QuantizationConfig, QuantizationSearchParams, Range, RangeInterface,
-        ScalarQuantizationConfig, ScalarType, ScoredPoint, SearchParams, ShardKey, ValueVariants,
+        ScalarQuantizationConfig, ScalarType, ScoredPoint, SearchParams, ValueVariants,
         ValuesCount, VectorStorageDatatype, WithPayloadInterface, WithVector,
     };
     pub use segment::vector_storage::query::{
