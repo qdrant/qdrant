@@ -158,18 +158,15 @@ impl Collection {
             ShardingMethod::Custom => {}
         }
 
+        // Abort resharding and propagate abort error, so we don't leave active resharding
+        // referencing deleted shard key
         let resharding_state = self
             .resharding_state()
             .await
             .filter(|state| state.shard_key.as_ref() == Some(&shard_key));
 
-        if let Some(state) = resharding_state
-            && let Err(err) = self.abort_resharding(state.key(), true).await
-        {
-            log::error!(
-                "failed to abort resharding {} while deleting shard key {shard_key}: {err}",
-                state.key(),
-            );
+        if let Some(state) = resharding_state {
+            self.abort_resharding(state.key(), true).await?;
         }
 
         // Invalidate local shard cleaning tasks
