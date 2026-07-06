@@ -1981,12 +1981,12 @@ def test_estimate_idf():
         path_params={"collection_name": COLL_NAME},
         rest_request={
             "using": "sparse-text",
-            "query": {"indices": [0], "values": [1.0]},
+            "query": {"indices": [0]},
         },
         grpc_request={
             "collection_name": COLL_NAME,
             "using": "sparse-text",
-            "query": {"indices": [0], "values": [1.0]},
+            "query": {"indices": [0]},
         },
     )
 

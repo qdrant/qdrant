@@ -18079,7 +18079,7 @@
             "type": "string"
           },
           "query": {
-            "$ref": "#/components/schemas/SparseVector"
+            "$ref": "#/components/schemas/IdfEstimateQuery"
           },
           "corpus": {
             "description": "Filter defining the corpus: IDF statistics are computed over the points matching this filter. If not specified, statistics are computed over the whole collection.",
@@ -18091,6 +18091,24 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "IdfEstimateQuery": {
+        "description": "Sparse query of an IDF estimation request. Only term indices: values of a sparse vector do not participate in the statistics.",
+        "type": "object",
+        "required": [
+          "indices"
+        ],
+        "properties": {
+          "indices": {
+            "description": "Indices of the query terms the statistics are reported for.",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
           }
         }
       },

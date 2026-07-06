@@ -3,13 +3,16 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 from .test_sparse_idf_corpus import (
-    QUERY,
     SPARSE_VECTOR_NAME,
     corpus_collection_setup,
     expected_idf,
     search,
     tenant_filter,
 )
+
+# Unlike a sparse search query, an IDF query carries no values: only the term
+# indices participate in the statistics.
+QUERY = {"indices": [0, 1, 2]}
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +87,7 @@ def test_estimate_corpus_accepts_any_filter(collection_name):
 
 def test_estimate_missing_term(collection_name):
     # A term missing from the collection reports a zero frequency.
-    idf = estimate(collection_name, query={"indices": [2, 7], "values": [1.0, 1.0]})
+    idf = estimate(collection_name, query={"indices": [2, 7]})
     assert_estimate(idf, 4, [(2, 1), (7, 0)])
 
 
@@ -112,10 +115,10 @@ def test_estimate_requires_idf_modifier(collection_name):
         assert "idf" in error
 
 
-def test_estimate_rejects_invalid_sparse_vector(collection_name):
-    # Mismatched indices/values lengths fail sparse vector validation.
+def test_estimate_rejects_invalid_query(collection_name):
+    # Duplicated term indices fail validation, same as in a sparse vector.
     estimate_expecting_error(
         collection_name,
-        {"using": SPARSE_VECTOR_NAME, "query": {"indices": [0, 1], "values": [1.0]}},
+        {"using": SPARSE_VECTOR_NAME, "query": {"indices": [0, 1, 0]}},
         expected_status=422,
     )

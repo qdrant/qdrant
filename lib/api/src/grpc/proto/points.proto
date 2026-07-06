@@ -1237,8 +1237,8 @@ message EstimateIdfRequest {
   // Name of the sparse vector the statistics are computed for.
   // The vector must be configured with the IDF modifier.
   string using = 2;
-  // Sparse query vector the statistics are computed for
-  SparseVector query = 3;
+  // Sparse query the statistics are computed for
+  IdfQuery query = 3;
   // Filter defining the corpus: IDF statistics are computed over the points
   // matching this filter. If not specified, statistics are computed over the whole collection.
   optional Filter corpus = 4;
@@ -1250,10 +1250,15 @@ message EstimateIdfRequest {
   optional ShardKeySelector shard_key_selector = 7;
 }
 
+message IdfQuery {
+  // Indices of the query terms the statistics are reported for
+  repeated uint32 indices = 1;
+}
+
 message IdfEstimate {
   // Number of documents the statistics are computed over
   uint64 document_count = 1;
-  // Per-term statistics, one entry per index of the query vector
+  // Per-term statistics, one entry per index of the query
   repeated IdfTermEstimate terms = 2;
 }
 

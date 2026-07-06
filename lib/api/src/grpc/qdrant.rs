@@ -6897,9 +6897,9 @@ pub struct EstimateIdfRequest {
     #[prost(string, tag = "2")]
     #[validate(length(min = 1))]
     pub using: ::prost::alloc::string::String,
-    /// Sparse query vector the statistics are computed for
+    /// Sparse query the statistics are computed for
     #[prost(message, optional, tag = "3")]
-    pub query: ::core::option::Option<SparseVector>,
+    pub query: ::core::option::Option<IdfQuery>,
     /// Filter defining the corpus: IDF statistics are computed over the points
     /// matching this filter. If not specified, statistics are computed over the whole collection.
     #[prost(message, optional, tag = "4")]
@@ -6917,12 +6917,19 @@ pub struct EstimateIdfRequest {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IdfQuery {
+    /// Indices of the query terms the statistics are reported for
+    #[prost(uint32, repeated, tag = "1")]
+    pub indices: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IdfEstimate {
     /// Number of documents the statistics are computed over
     #[prost(uint64, tag = "1")]
     pub document_count: u64,
-    /// Per-term statistics, one entry per index of the query vector
+    /// Per-term statistics, one entry per index of the query
     #[prost(message, repeated, tag = "2")]
     pub terms: ::prost::alloc::vec::Vec<IdfTermEstimate>,
 }

@@ -34,10 +34,10 @@ use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    IdfEstimate, IdfTermEstimate, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
-    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
-    ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
+    IdfEstimate, IdfQuery, IdfTermEstimate, KeywordIndexParams, LookupLocation,
+    MaxOptimizationThreads, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range,
+    RawVector, RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups,
+    SearchPoints, ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
     StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize, TurboQuantization,
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
@@ -3334,6 +3334,13 @@ impl From<segment_facets::FacetValue> for FacetValue {
                 segment_facets::FacetValue::Bool(value) => Variant::BoolValue(value),
             }),
         }
+    }
+}
+
+impl From<IdfQuery> for segment_idf::IdfEstimateQuery {
+    fn from(query: IdfQuery) -> Self {
+        let IdfQuery { indices } = query;
+        Self { indices }
     }
 }
 

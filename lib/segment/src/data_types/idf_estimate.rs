@@ -1,7 +1,7 @@
 //! Types for the IDF estimation API.
 //!
 //! The API exposes the IDF statistics used by sparse vector search with the
-//! `idf` modifier: for a given sparse query vector it reports the document
+//! `idf` modifier: for the given query term indices it reports the document
 //! count `N` and per-term document frequencies `df(term)`, along with the
 //! IDF values derived from them — computed globally or over an *IDF corpus*
 //! (the points matching a caller-supplied filter, see
@@ -9,11 +9,11 @@
 
 use std::collections::HashMap;
 
+use itertools::Itertools as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
-use validator::Validate;
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::data_types::query_context::fancy_idf;
 use crate::types::{Filter, VectorNameBuf};
@@ -25,10 +25,10 @@ pub struct IdfEstimateParams {
     /// The vector must be configured with the `idf` modifier.
     pub using: VectorNameBuf,
 
-    /// Sparse query vector the statistics are computed for. Document
-    /// frequencies are reported for each of its indices.
+    /// Sparse query the statistics are computed for. Document frequencies
+    /// are reported for each of its term indices.
     #[validate(nested)]
-    pub query: SparseVector,
+    pub query: IdfEstimateQuery,
 
     /// Filter defining the corpus: IDF statistics are computed over the
     /// points matching this filter. If not specified, statistics are
@@ -38,17 +38,36 @@ pub struct IdfEstimateParams {
 }
 
 impl IdfEstimateParams {
-    /// Build params from bare query term indices. Values do not participate
-    /// in the statistics, only the indices do.
+    /// Build params from bare query term indices.
     pub fn from_indices(using: VectorNameBuf, indices: Vec<DimId>, corpus: Option<Filter>) -> Self {
         Self {
             using,
-            query: SparseVector {
-                values: vec![0.0; indices.len()],
-                indices,
-            },
+            query: IdfEstimateQuery { indices },
             corpus,
         }
+    }
+}
+
+/// Sparse query of an IDF estimation request. Only term indices: values of
+/// a sparse vector do not participate in the statistics.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Hash)]
+pub struct IdfEstimateQuery {
+    /// Indices of the query terms the statistics are reported for.
+    pub indices: Vec<DimId>,
+}
+
+impl Validate for IdfEstimateQuery {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let Self { indices } = self;
+
+        // Same constraint sparse vectors are validated against; duplicated
+        // terms would report duplicated statistics.
+        if indices.iter().unique().count() != indices.len() {
+            let mut errors = ValidationErrors::new();
+            errors.add("indices", ValidationError::new("must be unique"));
+            return Err(errors);
+        }
+        Ok(())
     }
 }
 

@@ -13,7 +13,7 @@ use collection::operations::types::{SparseVectorParams, UpdateStatus};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::{CollectionUpdateOperations, point_ops};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::idf_estimate::{IdfEstimate, IdfEstimateParams};
+use segment::data_types::idf_estimate::{IdfEstimate, IdfEstimateParams, IdfEstimateQuery};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::NamedSparseVector;
 use segment::json_path::JsonPath;
@@ -279,7 +279,9 @@ async fn sparse_idf_corpus_search() {
 async fn estimate(collection: &Collection, corpus: Option<Filter>) -> IdfEstimate {
     let request = IdfEstimateParams {
         using: SPARSE_VECTOR_NAME.to_owned(),
-        query: SparseVector::new(vec![0, 1, 2], vec![1.0, 1.0, 1.0]).unwrap(),
+        query: IdfEstimateQuery {
+            indices: vec![0, 1, 2],
+        },
         corpus,
     };
 
@@ -340,7 +342,9 @@ async fn sparse_idf_estimate() {
     // A term missing from the collection reports a zero frequency.
     let request = IdfEstimateParams {
         using: SPARSE_VECTOR_NAME.to_owned(),
-        query: SparseVector::new(vec![2, 7], vec![1.0, 1.0]).unwrap(),
+        query: IdfEstimateQuery {
+            indices: vec![2, 7],
+        },
         corpus: None,
     };
     let missing_term = collection
@@ -377,7 +381,7 @@ async fn sparse_idf_estimate_requires_idf_modifier() {
     for using in ["", "missing"] {
         let request = IdfEstimateParams {
             using: using.to_owned(),
-            query: SparseVector::new(vec![0], vec![1.0]).unwrap(),
+            query: IdfEstimateQuery { indices: vec![0] },
             corpus: None,
         };
         let error = collection
