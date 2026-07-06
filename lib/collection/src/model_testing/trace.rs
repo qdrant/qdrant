@@ -218,24 +218,28 @@ fn op_payload(op: &Op) -> Value {
             limit,
             exact,
             filter_num,
+            filter_url_prefix,
             ..
         } => json!({
             "vector_name": vector_name,
             "limit": limit,
             "exact": exact,
             "filter_num": filter_num,
+            "filter_url_prefix": filter_url_prefix,
         }),
         Op::Query {
             vector_name,
             limit,
             exact,
             filter_num,
+            filter_url_prefix,
             ..
         } => json!({
             "vector_name": vector_name,
             "limit": limit,
             "exact": exact,
             "filter_num": filter_num,
+            "filter_url_prefix": filter_url_prefix,
         }),
         Op::UpsertConditional {
             points,
@@ -263,7 +267,9 @@ fn op_payload(op: &Op) -> Value {
         }),
         Op::ScrollFilteredByNum(num) => json!({ "num": num }),
         Op::CountByTag(tag) => json!({ "tag": tag }),
+        Op::CountByUrlPrefix(prefix) => json!({ "url_prefix": prefix }),
         Op::ScrollFilteredByTag(tag) => json!({ "tag": tag }),
+        Op::ScrollFilteredByUrlPrefix(prefix) => json!({ "url_prefix": prefix }),
         Op::ScrollOrdered(dir) => json!({ "direction": dir }),
         Op::Recommend {
             positive,
@@ -287,7 +293,15 @@ fn op_payload(op: &Op) -> Value {
             "keys": keys.iter().map(|k| k.to_string()).collect::<Vec<_>>(),
         }),
         Op::ClearPayloadByFilter(num) => json!({ "num": num }),
-        Op::Facet { key, filter_num } => json!({ "key": key, "filter_num": filter_num }),
+        Op::Facet {
+            key,
+            filter_num,
+            filter_url_prefix,
+        } => json!({
+            "key": key,
+            "filter_num": filter_num,
+            "filter_url_prefix": filter_url_prefix,
+        }),
         Op::SetPayloadByKey { ids, key, .. } => json!({
             "ids": ids,
             "key": key.to_string(),
@@ -310,10 +324,12 @@ fn op_payload(op: &Op) -> Value {
             fusion,
             limit,
             filter_num,
+            filter_url_prefix,
         } => json!({
             "fusion": format!("{fusion:?}"),
             "limit": limit,
             "filter_num": filter_num,
+            "filter_url_prefix": filter_url_prefix,
             "prefetches": prefetches
                 .iter()
                 .map(|p| json!({
