@@ -261,3 +261,52 @@ fn deletion_and_live_reload() {
         assert_eq!(read_only.external_id(*offset), None);
     }
 }
+
+/// The on-disk layout must keep headers and every section start aligned to
+/// `SECTION_ALIGN`, so the files stay mmap+transmute-friendly (`u128` requires
+/// 16-byte alignment). Also pins the store/parse padding agreement: parsed
+/// offsets must land exactly at the section ends implied by the written bytes.
+#[test]
+fn on_disk_sections_are_aligned() {
+    use super::on_disk_format::{
+        E2I_HEADER_SIZE, E2iHeader, I2E_HEADER_SIZE, I2eHeader, NUM_ENTRY_SIZE, SECTION_ALIGN,
+        UUID_ENTRY_SIZE, store_e2i, store_i2e,
+    };
+
+    assert_eq!(I2E_HEADER_SIZE % SECTION_ALIGN, 0);
+    assert_eq!(E2I_HEADER_SIZE % SECTION_ALIGN, 0);
+
+    // Several seeds so both runs hit block-count/entry-count parities that
+    // require actual padding bytes.
+    for seed in [1, 2, 3] {
+        let (_versions, mappings) = make_data(seed);
+
+        let mut i2e_bytes = Vec::new();
+        store_i2e(&mappings, &mut i2e_bytes).unwrap();
+        let i2e = I2eHeader::parse(&i2e_bytes).unwrap();
+        assert_eq!(i2e.data_offset % SECTION_ALIGN, 0);
+        assert_eq!(i2e.is_uuid_offset % SECTION_ALIGN, 0);
+        assert_eq!(
+            i2e_bytes.len() as u64,
+            i2e.is_uuid_offset + i2e.total.div_ceil(8),
+            "i2e file length must match the parsed layout",
+        );
+
+        let mut e2i_bytes = Vec::new();
+        store_e2i(&mappings, &mut e2i_bytes).unwrap();
+        let e2i = E2iHeader::parse(&e2i_bytes).unwrap();
+        assert_eq!(e2i.num_sparse_offset % SECTION_ALIGN, 0);
+        assert_eq!(e2i.uuid_sparse_offset % SECTION_ALIGN, 0);
+        assert_eq!(e2i.num_run_offset % SECTION_ALIGN, 0);
+        assert_eq!(e2i.uuid_run_offset % SECTION_ALIGN, 0);
+        assert_eq!(
+            e2i_bytes.len() as u64,
+            e2i.uuid_run_offset + e2i.uuid_count * UUID_ENTRY_SIZE,
+            "e2i file length must match the parsed layout",
+        );
+        // The parsed offsets must also cover the written sections exactly.
+        assert!(e2i.uuid_sparse_offset >= e2i.num_sparse_offset + e2i.num_blocks() * 8);
+        assert!(e2i.num_run_offset >= e2i.uuid_sparse_offset + e2i.uuid_blocks() * 16);
+        assert!(e2i.uuid_run_offset >= e2i.num_run_offset + e2i.num_count * NUM_ENTRY_SIZE);
+    }
+}

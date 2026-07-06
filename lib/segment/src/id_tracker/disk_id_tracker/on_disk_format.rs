@@ -48,11 +48,25 @@ pub const ON_DISK_FORMAT_VERSION: u32 = 1;
 const I2E_MAGIC: u64 = 0x5144_5F49_3245_0001;
 const E2I_MAGIC: u64 = 0x5144_5F45_3249_0001;
 
-/// Header size in bytes for the i2e file: magic(8) + version(4) + reserved(4) + total(8).
-pub const I2E_HEADER_SIZE: u64 = 24;
+/// Header size in bytes for the i2e file:
+/// magic(8) + version(4) + reserved(4) + total(8) + reserved(8).
+///
+/// Headers and every section start are aligned to [`SECTION_ALIGN`] so the
+/// files stay transmute-friendly if we ever mmap them (`u128` needs 16-byte
+/// alignment in Rust).
+pub const I2E_HEADER_SIZE: u64 = 32;
 /// Header size in bytes for the e2i file:
-/// magic(8) + version(4) + reserved(4) + num_count(8) + uuid_count(8) + num_bs(4) + uuid_bs(4).
-pub const E2I_HEADER_SIZE: u64 = 40;
+/// magic(8) + version(4) + reserved(4) + num_count(8) + uuid_count(8) + num_bs(4) + uuid_bs(4)
+/// + reserved(8).
+pub const E2I_HEADER_SIZE: u64 = 48;
+
+/// Alignment (bytes) of headers and section starts within both files.
+pub const SECTION_ALIGN: u64 = 16;
+
+/// Round `offset` up to the next [`SECTION_ALIGN`] boundary.
+fn align_section(offset: u64) -> u64 {
+    offset.next_multiple_of(SECTION_ALIGN)
+}
 
 /// Byte width of one numeric run entry: `u64` key + `u32` offset.
 pub const NUM_ENTRY_SIZE: u64 = 12;
@@ -113,6 +127,7 @@ pub fn store_i2e<W: Write>(
     writer.write_u32::<Endian>(ON_DISK_FORMAT_VERSION)?;
     writer.write_u32::<Endian>(0)?; // reserved
     writer.write_u64::<Endian>(total as u64)?;
+    writer.write_u64::<Endian>(0)?; // reserved, pads header to SECTION_ALIGN
 
     let mut is_uuid = BitVec::with_capacity(total);
     for (offset, external_id) in mappings.iter_internal_raw() {
@@ -153,20 +168,36 @@ pub fn store_e2i<W: Write>(
     writer.write_u64::<Endian>(uuid.len() as u64)?;
     writer.write_u32::<Endian>(NUM_BLOCK_ENTRIES)?;
     writer.write_u32::<Endian>(UUID_BLOCK_ENTRIES)?;
+    writer.write_u64::<Endian>(0)?; // reserved, pads header to SECTION_ALIGN
+
+    // Sections are padded so each starts at a SECTION_ALIGN boundary; the pad
+    // sizes here must mirror the offsets computed in `E2iHeader::parse`.
+    let write_section_pad = |writer: &mut W, end: u64| -> OperationResult<()> {
+        writer.write_all(&vec![0u8; (align_section(end) - end) as usize])?;
+        Ok(())
+    };
 
     // Sparse block index: first key of every block, for each run.
     for chunk in num.chunks(NUM_BLOCK_ENTRIES as usize) {
         writer.write_u64::<Endian>(chunk[0].0)?;
     }
+    let num_sparse_end =
+        E2I_HEADER_SIZE + num.len().div_ceil(NUM_BLOCK_ENTRIES as usize) as u64 * 8;
+    write_section_pad(&mut writer, num_sparse_end)?;
     for chunk in uuid.chunks(UUID_BLOCK_ENTRIES as usize) {
         writer.write_u128::<Endian>(chunk[0].0)?;
     }
 
-    // Runs.
+    // Runs. The uuid sparse section ends SECTION_ALIGN-aligned (16-byte
+    // entries), so the numeric run needs no leading pad.
     for (key, offset) in &num {
         writer.write_u64::<Endian>(*key)?;
         writer.write_u32::<Endian>(*offset)?;
     }
+    let num_run_end = align_section(num_sparse_end)
+        + uuid.len().div_ceil(UUID_BLOCK_ENTRIES as usize) as u64 * 16
+        + num.len() as u64 * NUM_ENTRY_SIZE;
+    write_section_pad(&mut writer, num_run_end)?;
     for (key, offset) in &uuid {
         writer.write_u128::<Endian>(*key)?;
         writer.write_u32::<Endian>(*offset)?;
@@ -210,6 +241,9 @@ impl I2eHeader {
             .read_u32::<Endian>()
             .map_err(|e| inconsistent(format!("i2e header: {e}")))?;
         let total = cursor
+            .read_u64::<Endian>()
+            .map_err(|e| inconsistent(format!("i2e header: {e}")))?;
+        let _reserved2 = cursor
             .read_u64::<Endian>()
             .map_err(|e| inconsistent(format!("i2e header: {e}")))?;
 
@@ -291,11 +325,16 @@ impl E2iHeader {
         let uuid_block_size = cursor
             .read_u32::<Endian>()
             .map_err(|e| inconsistent(format!("e2i header: {e}")))?;
+        let _reserved2 = cursor
+            .read_u64::<Endian>()
+            .map_err(|e| inconsistent(format!("e2i header: {e}")))?;
 
         if num_block_size == 0 || uuid_block_size == 0 {
             return Err(inconsistent("e2i block size is zero"));
         }
 
+        // Every section starts SECTION_ALIGN-aligned; must mirror the pads
+        // written in `store_e2i`.
         let mut header = Self {
             num_count,
             uuid_count,
@@ -306,9 +345,10 @@ impl E2iHeader {
             num_run_offset: 0,
             uuid_run_offset: 0,
         };
-        header.uuid_sparse_offset = header.num_sparse_offset + header.num_blocks() * 8;
+        header.uuid_sparse_offset =
+            align_section(header.num_sparse_offset + header.num_blocks() * 8);
         header.num_run_offset = header.uuid_sparse_offset + header.uuid_blocks() * 16;
-        header.uuid_run_offset = header.num_run_offset + num_count * NUM_ENTRY_SIZE;
+        header.uuid_run_offset = align_section(header.num_run_offset + num_count * NUM_ENTRY_SIZE);
         Ok(header)
     }
 }

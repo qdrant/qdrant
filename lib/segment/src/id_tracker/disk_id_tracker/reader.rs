@@ -104,6 +104,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         for _ in 0..e2i_header.num_blocks() {
             num_sparse.push(cursor.read_u64::<Endian>()?);
         }
+        // Skip the alignment pad between the numeric and UUID sparse sections.
+        cursor.set_position(e2i_header.uuid_sparse_offset - E2I_HEADER_SIZE);
         let mut uuid_sparse = Vec::with_capacity(e2i_header.uuid_blocks() as usize);
         for _ in 0..e2i_header.uuid_blocks() {
             uuid_sparse.push(cursor.read_u128::<Endian>()?);
