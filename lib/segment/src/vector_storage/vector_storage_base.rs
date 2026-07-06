@@ -776,9 +776,6 @@ impl VectorStorageRead for VectorStorageEnum {
             | VectorStorageEnum::DenseMemmap(_)
             | VectorStorageEnum::DenseMemmapByte(_)
             | VectorStorageEnum::DenseMemmapHalf(_)
-            | VectorStorageEnum::DenseUring(_)
-            | VectorStorageEnum::DenseUringByte(_)
-            | VectorStorageEnum::DenseUringHalf(_)
             | VectorStorageEnum::DenseAppendableMemmap(_)
             | VectorStorageEnum::DenseAppendableMemmapByte(_)
             | VectorStorageEnum::DenseAppendableMemmapHalf(_)
@@ -797,6 +794,12 @@ impl VectorStorageRead for VectorStorageEnum {
             | VectorStorageEnum::DenseVolatileHalf(_)
             | VectorStorageEnum::MultiDenseVolatileByte(_)
             | VectorStorageEnum::MultiDenseVolatileHalf(_) => {
+                self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_)
+            | VectorStorageEnum::DenseUringByte(_)
+            | VectorStorageEnum::DenseUringHalf(_) => {
                 self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
             }
         }
