@@ -7,7 +7,7 @@ automatically when opening one, based on the persisted config:
 
 - **dynamic** (default): read-write storage with in-place space reuse, backed
   by memory mapped files.
-- **serverless**: append-only storage for serverless deployments, reading and
+- **append-only**: append-only storage for serverless deployments, reading and
   writing files directly.
 
 Concepts shared by both modes:
@@ -46,11 +46,12 @@ Concepts shared by both modes:
 | `bitmask.dat` | one bit per block: used or free                             |
 | `gaps.dat`    | per-region free block gap summaries                         |
 
-## Serverless mode
+## Append-only mode
 
-Serverless environments restrict IO: files can only be appended to, existing
-bytes can never be rewritten (preallocated zero padding cannot be filled in
-later), and IO is expensive so as few files as possible are used. Files are
+Designed for serverless environments, which restrict IO: files can only be
+appended to, existing bytes can never be rewritten (preallocated zero padding
+cannot be filled in later), and IO is expensive so as few files as possible
+are used. Files are
 read and written directly on the local filesystem, they are never memory
 mapped and the configured universal IO backend is not used in this mode.
 
@@ -76,11 +77,11 @@ mapped and the configured universal IO backend is not used in this mode.
 - Three files in total, with names distinct from the dynamic mode so that one
   mode never attempts to load the incompatible file format of the other:
 
-| file                     | content                                          |
-|--------------------------|--------------------------------------------------|
-| `config.json`            | storage config, `"mode": "serverless"`           |
-| `serverless_tracker.dat` | mapping entries, exact length = count * 16       |
-| `serverless_page_0.dat`  | value data, exact length = end of last value     |
+| file                      | content                                        |
+|---------------------------|------------------------------------------------|
+| `config.json`             | storage config, `"mode": "append_only"`        |
+| `append_only_tracker.dat` | mapping entries, exact length = count * 16     |
+| `append_only_page_0.dat`  | value data, exact length = end of last value   |
 
 ## TODOs
 

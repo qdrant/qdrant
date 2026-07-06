@@ -9,7 +9,7 @@ use common::universal_io::{
     CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 
-use super::serverless::ServerlessGridstoreReader;
+use super::append_only::AppendOnlyGridstoreReader;
 use super::view::{DynamicGridstoreView, GridstoreView};
 use crate::Result;
 use crate::blob::Blob;
@@ -35,7 +35,7 @@ pub struct GridstoreReader<V, S: UniversalRead> {
 #[derive(Debug)]
 enum ReaderVariant<V, S: UniversalRead> {
     Dynamic(DynamicGridstoreReader<V, S>),
-    Serverless(ServerlessGridstoreReader<V, S>),
+    AppendOnly(AppendOnlyGridstoreReader<V, S>),
 }
 
 impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
@@ -76,11 +76,11 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                     variant: ReaderVariant::Dynamic(reader),
                 })
             }
-            // The serverless mode does not use the universal io backend, it reads files directly
-            Mode::Serverless => {
-                let reader = ServerlessGridstoreReader::open(base_path, config)?;
+            // The append-only mode does not use the universal io backend, it reads files directly
+            Mode::AppendOnly => {
+                let reader = AppendOnlyGridstoreReader::open(base_path, config)?;
                 Ok(Self {
-                    variant: ReaderVariant::Serverless(reader),
+                    variant: ReaderVariant::AppendOnly(reader),
                 })
             }
         }
@@ -90,7 +90,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub fn view(&self) -> GridstoreView<'_, V, S> {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => GridstoreView::from_dynamic(reader.view()),
-            ReaderVariant::Serverless(reader) => GridstoreView::from_serverless(reader.view()),
+            ReaderVariant::AppendOnly(reader) => GridstoreView::from_append_only(reader.view()),
         }
     }
 
@@ -101,7 +101,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub fn files(&self) -> Vec<PathBuf> {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => reader.files(),
-            ReaderVariant::Serverless(reader) => reader.files(),
+            ReaderVariant::AppendOnly(reader) => reader.files(),
         }
     }
 
@@ -113,7 +113,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => reader.max_point_offset(),
-            ReaderVariant::Serverless(reader) => Ok(reader.max_point_offset()),
+            ReaderVariant::AppendOnly(reader) => Ok(reader.max_point_offset()),
         }
     }
 
@@ -124,7 +124,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     ) -> Result<Option<V>> {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => reader.get_value::<P>(point_offset, hw_counter),
-            ReaderVariant::Serverless(reader) => reader.get_value::<P>(point_offset, hw_counter),
+            ReaderVariant::AppendOnly(reader) => reader.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -144,7 +144,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => reader.iter(max_id, callback, hw_counter),
-            ReaderVariant::Serverless(reader) => reader.iter(max_id, callback, hw_counter),
+            ReaderVariant::AppendOnly(reader) => reader.iter(max_id, callback, hw_counter),
         }
     }
 
@@ -163,7 +163,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
             ReaderVariant::Dynamic(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            ReaderVariant::Serverless(reader) => {
+            ReaderVariant::AppendOnly(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }
@@ -171,11 +171,11 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
 
     /// Return the storage size in bytes.
     ///
-    /// Approximate (total page capacity) in dynamic mode, exact in serverless mode.
+    /// Approximate (total page capacity) in dynamic mode, exact in append-only mode.
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => reader.get_storage_size_bytes(),
-            ReaderVariant::Serverless(reader) => reader.get_storage_size_bytes(),
+            ReaderVariant::AppendOnly(reader) => reader.get_storage_size_bytes(),
         }
     }
 
@@ -190,7 +190,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         match &mut self.variant {
             ReaderVariant::Dynamic(reader) => reader.live_reload(fs),
-            ReaderVariant::Serverless(reader) => reader.live_reload(),
+            ReaderVariant::AppendOnly(reader) => reader.live_reload(),
         }
     }
 }
@@ -200,7 +200,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
     pub fn is_on_disk(&self) -> bool {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => reader.is_on_disk(),
-            ReaderVariant::Serverless(reader) => reader.is_on_disk(),
+            ReaderVariant::AppendOnly(reader) => reader.is_on_disk(),
         }
     }
 
@@ -208,7 +208,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
     pub fn clear_cache(&self) -> crate::Result<()> {
         match &self.variant {
             ReaderVariant::Dynamic(reader) => reader.clear_cache(),
-            ReaderVariant::Serverless(reader) => reader.clear_cache(),
+            ReaderVariant::AppendOnly(reader) => reader.clear_cache(),
         }
     }
 }

@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{UniversalRead, UserData};
 
-use super::serverless::ServerlessGridstoreView;
+use super::append_only::AppendOnlyGridstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
@@ -25,7 +25,7 @@ pub struct GridstoreView<'a, V, S: UniversalRead> {
 /// Mode specific implementation of the view, see [`crate::config::Mode`].
 enum ViewVariant<'a, V, S: UniversalRead> {
     Dynamic(DynamicGridstoreView<'a, V, S, ReadOnlyTracker<S>>),
-    Serverless(ServerlessGridstoreView<'a, V, S>),
+    AppendOnly(AppendOnlyGridstoreView<'a, V, S>),
 }
 
 impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
@@ -35,9 +35,9 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
         }
     }
 
-    pub(super) fn from_serverless(view: ServerlessGridstoreView<'a, V, S>) -> Self {
+    pub(super) fn from_append_only(view: AppendOnlyGridstoreView<'a, V, S>) -> Self {
         Self {
-            variant: ViewVariant::Serverless(view),
+            variant: ViewVariant::AppendOnly(view),
         }
     }
 
@@ -48,17 +48,17 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
             ViewVariant::Dynamic(view) => view.max_point_offset(),
-            ViewVariant::Serverless(view) => Ok(view.max_point_offset()),
+            ViewVariant::AppendOnly(view) => Ok(view.max_point_offset()),
         }
     }
 
     /// Return the storage size in bytes.
     ///
-    /// Approximate (total page capacity) in dynamic mode, exact in serverless mode.
+    /// Approximate (total page capacity) in dynamic mode, exact in append-only mode.
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
             ViewVariant::Dynamic(view) => view.get_storage_size_bytes(),
-            ViewVariant::Serverless(view) => view.get_storage_size_bytes(),
+            ViewVariant::AppendOnly(view) => view.get_storage_size_bytes(),
         }
     }
 
@@ -69,7 +69,7 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
     ) -> Result<Cow<'_, [u8]>> {
         match &self.variant {
             ViewVariant::Dynamic(view) => view.read_from_pages::<P>(pointer),
-            ViewVariant::Serverless(view) => Ok(Cow::Owned(view.read_from_page(pointer)?)),
+            ViewVariant::AppendOnly(view) => Ok(Cow::Owned(view.read_from_page(pointer)?)),
         }
     }
 }
@@ -83,7 +83,7 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
     ) -> Result<Option<V>> {
         match &self.variant {
             ViewVariant::Dynamic(view) => view.get_value::<P>(point_offset, hw_counter),
-            ViewVariant::Serverless(view) => view.get_value::<P>(point_offset, hw_counter),
+            ViewVariant::AppendOnly(view) => view.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -105,7 +105,7 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
             ViewVariant::Dynamic(view) => {
                 view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            ViewVariant::Serverless(view) => {
+            ViewVariant::AppendOnly(view) => {
                 view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }

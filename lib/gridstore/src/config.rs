@@ -59,7 +59,7 @@ pub enum Mode {
     ///
     /// Always reads and writes its files directly on the local filesystem, the configured
     /// universal IO backend is not used in this mode.
-    Serverless,
+    AppendOnly,
 }
 
 /// Configuration options for the storage
@@ -218,25 +218,25 @@ mod tests {
         assert!(json.contains(r#""mode":"dynamic""#));
 
         let options = StorageOptions {
-            mode: Some(Mode::Serverless),
+            mode: Some(Mode::AppendOnly),
             ..Default::default()
         };
         let config = StorageConfig::try_from(options).unwrap();
         let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains(r#""mode":"serverless""#));
+        assert!(json.contains(r#""mode":"append_only""#));
     }
 
     /// The mode must survive the config -> options -> config round trip that `clear()` uses.
     #[test]
     fn test_mode_survives_options_round_trip() {
         let options = StorageOptions {
-            mode: Some(Mode::Serverless),
+            mode: Some(Mode::AppendOnly),
             ..Default::default()
         };
         let config = StorageConfig::try_from(options).unwrap();
         let options = StorageOptions::from(&config);
-        assert_eq!(options.mode, Some(Mode::Serverless));
+        assert_eq!(options.mode, Some(Mode::AppendOnly));
         let config = StorageConfig::try_from(options).unwrap();
-        assert_eq!(config.mode, Mode::Serverless);
+        assert_eq!(config.mode, Mode::AppendOnly);
     }
 }

@@ -28,7 +28,7 @@ use crate::fixtures::{
 };
 
 #[rstest]
-fn test_empty_payload_storage(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+fn test_empty_payload_storage(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     let hw_counter = HardwareCounterCell::new();
     let (_dir, storage) = empty_storage_mode(mode);
     let payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -37,7 +37,7 @@ fn test_empty_payload_storage(#[values(Mode::Dynamic, Mode::Serverless)] mode: M
 }
 
 #[rstest]
-fn test_put_single_empty_value(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+fn test_put_single_empty_value(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
     let hw_counter = HardwareCounterCell::new();
@@ -65,12 +65,12 @@ fn test_put_single_empty_value(#[values(Mode::Dynamic, Mode::Serverless)] mode: 
         // Values occupy whole blocks
         Mode::Dynamic => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
         // Values are packed exactly, this is the compressed payload size
-        Mode::Serverless => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
+        Mode::AppendOnly => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
     }
 }
 
 #[rstest]
-fn test_put_single_payload(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+fn test_put_single_payload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
     let mut payload = Payload::default();
@@ -106,12 +106,12 @@ fn test_put_single_payload(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode
         // Values occupy whole blocks
         Mode::Dynamic => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
         // Values are packed exactly, this is the compressed payload size
-        Mode::Serverless => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
+        Mode::AppendOnly => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
     }
 }
 
 #[rstest]
-fn test_storage_files(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+fn test_storage_files(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     let (dir, mut storage) = empty_storage_mode(mode);
 
     let mut payload = Payload::default();
@@ -142,9 +142,9 @@ fn test_storage_files(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
             "bitmask.dat",
             "gaps.dat",
         ],
-        Mode::Serverless => &[
-            "serverless_tracker.dat",
-            "serverless_page_0.dat",
+        Mode::AppendOnly => &[
+            "append_only_tracker.dat",
+            "append_only_page_0.dat",
             "config.json",
         ],
     };
@@ -165,7 +165,7 @@ fn test_storage_files(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
 fn test_put_payload(
     #[case] num_payloads: u32,
     #[case] payload_size_factor: usize,
-    #[values(Mode::Dynamic, Mode::Serverless)] mode: Mode,
+    #[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode,
 ) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
@@ -685,7 +685,7 @@ fn test_handle_huge_payload() {
 }
 
 #[rstest]
-fn test_storage_persistence_basic(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+fn test_storage_persistence_basic(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -771,7 +771,7 @@ fn test_open_config_without_mode_as_dynamic() {
 /// A corrupt config with zero sized blocks must be rejected when opening, it would otherwise
 /// break pointer arithmetic.
 #[rstest]
-fn test_open_rejects_corrupt_config(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+fn test_open_rejects_corrupt_config(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -937,7 +937,7 @@ fn test_payload_compression() {
 #[case(512)]
 fn test_different_block_sizes(
     #[case] block_size_bytes: usize,
-    #[values(Mode::Dynamic, Mode::Serverless)] mode: Mode,
+    #[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode,
 ) {
     use crate::fixtures::minimal_payload;
 
@@ -972,7 +972,7 @@ fn test_different_block_sizes(
             assert_eq!(last_pointer.page_id, 3);
         }
         // A single ever growing page, values are packed at consecutive blocks
-        Mode::Serverless => {
+        Mode::AppendOnly => {
             assert_eq!(last_pointer.block_offset, last_point_id);
             assert_eq!(last_pointer.page_id, 0);
         }
@@ -1262,7 +1262,7 @@ fn test_deferred_flush_with_delete() {
 /// 5. Call `live_reload` on reader, verify it sees new data.
 /// 6. Also test that live_reload is a no-op when nothing changed.
 #[rstest]
-fn test_live_reload(#[values(Mode::Dynamic, Mode::Serverless)] mode: Mode) {
+fn test_live_reload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -1638,7 +1638,7 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
 /// silently skipped (matching `get_value`'s `Ok(None)`).
 #[rstest]
 fn test_for_each_in_batch_congruent_with_get_value(
-    #[values(Mode::Dynamic, Mode::Serverless)] mode: Mode,
+    #[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode,
 ) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
@@ -1652,8 +1652,8 @@ fn test_for_each_in_batch_congruent_with_get_value(
 
     let num_payloads = 100u32;
     for point_offset in 0..num_payloads {
-        // In serverless mode deletes are unsupported, create the gaps by skipping puts instead
-        if mode == Mode::Serverless && missing.contains(&point_offset) {
+        // In append-only mode deletes are unsupported, create the gaps by skipping puts instead
+        if mode == Mode::AppendOnly && missing.contains(&point_offset) {
             continue;
         }
 
