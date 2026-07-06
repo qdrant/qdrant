@@ -1013,7 +1013,11 @@ pub(super) async fn apply_scroll_filtered_by_url_prefix(
         .filter(|(_, entry)| url_prefix_matches(&entry.payload, prefix))
         .map(|(id, _)| *id)
         .collect();
-    assert_id_sets_eq(&returned, &expected, &format!("scroll(url prefix={prefix:?})"));
+    assert_id_sets_eq(
+        &returned,
+        &expected,
+        &format!("scroll(url prefix={prefix:?})"),
+    );
 }
 
 pub(super) async fn apply_scroll_paged(

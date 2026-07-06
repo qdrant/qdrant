@@ -8,8 +8,9 @@ use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
     random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
     random_point, random_prefetch, random_query_for_name, random_recommend_strategy,
-    random_scroll_filter, random_tag, random_update_mode, random_url_prefix_probe, random_vector_name,
-    random_vector_name_subset, random_with_payload, random_with_vector, upsert_fallback,
+    random_scroll_filter, random_tag, random_update_mode, random_url_prefix_probe,
+    random_vector_name, random_vector_name_subset, random_with_payload, random_with_vector,
+    upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
