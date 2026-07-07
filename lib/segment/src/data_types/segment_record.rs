@@ -3,18 +3,17 @@ use crate::types::{Payload, PointIdType, VectorNameBuf};
 
 pub type NamedVectorsOwned = Vec<(VectorNameBuf, VectorInternal)>;
 
-pub struct SegmentRecord {
+/// A retrieved point: id, optional vectors, optional payload.
+///
+/// `V` is the vector representation: [`VectorInternal`] for [`SegmentRecord`],
+/// storage-native bytes for [`SegmentRecordRaw`].
+pub struct SegmentRecordGeneric<V> {
     pub id: PointIdType,
-    pub vectors: Option<NamedVectorsOwned>,
+    pub vectors: Option<Vec<(VectorNameBuf, V)>>,
     pub payload: Option<Payload>,
 }
 
-impl SegmentRecord {
-    pub fn empty(id: PointIdType) -> Self {
-        Self {
-            id,
-            vectors: Some(NamedVectorsOwned::default()),
-            payload: None,
-        }
-    }
-}
+pub type SegmentRecord = SegmentRecordGeneric<VectorInternal>;
+
+/// Byte-blob analogue of [`SegmentRecord`].
+pub type SegmentRecordRaw = SegmentRecordGeneric<Vec<u8>>;

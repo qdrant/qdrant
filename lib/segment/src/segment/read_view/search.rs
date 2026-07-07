@@ -4,12 +4,12 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
-use common::types::{DeferredBehavior, ScoredPointOffset};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
 use crate::data_types::query_context::{QueryContext, QueryIdfStats, SegmentQueryContext};
-use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
+use crate::data_types::segment_record::{SegmentRecord, SegmentRecordGeneric, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
@@ -39,52 +39,106 @@ where
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        // Stage 1: resolve external → internal once, into two parallel vectors.
-        // The id tracker owns this: deferred filtering happens inline (no
-        // `point_is_deferred` lookup). The parallel-vector shape lets
-        // a future batched payload / vector fetcher consume `&offsets`
-        // straight without unzipping first.
+        self.retrieve_generic(
+            point_ids,
+            with_payload,
+            with_vector,
+            is_stopped,
+            deferred_behavior,
+            hw_counter,
+            |vector_name, keys, push| {
+                self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
+                    push(id, vec)
+                })
+            },
+        )
+    }
+
+    /// Byte-blob analogue of [`Self::retrieve`]: vectors are read as
+    /// storage-native bytes (`Vec<u8>`) to avoid a lossy round-trip.
+    pub fn retrieve_raw(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
+        self.retrieve_generic(
+            point_ids,
+            with_payload,
+            with_vector,
+            is_stopped,
+            deferred_behavior,
+            hw_counter,
+            |vector_name, keys, push| {
+                self.vector_bytes_by_offsets(vector_name, keys, hw_counter, |id, _offset, bytes| {
+                    push(id, bytes)
+                })
+            },
+        )
+    }
+
+    /// Shared body of [`Self::retrieve`] and [`Self::retrieve_raw`]; only the
+    /// vector representation `V` and the storage read differ. `read_name` gets
+    /// each vector name, the resolved `(id, offset)` keys (already wired to the
+    /// stop signal) and a `push` sink for the `(id, value)`s it reads — it owns
+    /// the storage reader choice.
+    #[allow(clippy::too_many_arguments)]
+    fn retrieve_generic<V>(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+        mut read_name: impl FnMut(
+            &VectorNameBuf,
+            &mut dyn Iterator<Item = (ExtendedPointId, PointOffsetType)>,
+            &mut dyn FnMut(ExtendedPointId, V),
+        ) -> OperationResult<()>,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordGeneric<V>>> {
+        // Stage 1: resolve external → internal ids once, with deferred filtering.
         let (resolved_ids, resolved_offsets) = self
             .id_tracker
             .resolve_external_ids(point_ids, deferred_behavior);
         debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
 
-        // Stage 2: pre-allocate one record per resolved point. The `vectors`
-        // slot is initialised here according to `with_vector`, so the
-        // `WithVector::Bool(false)` path needs no separate clearing pass.
+        // Stage 2: pre-allocate one record per point; `vectors` is `Some` only
+        // when requested, so the `WithVector::Bool(false)` path needs no cleanup.
         let needs_vectors = match with_vector {
             WithVector::Bool(true) | WithVector::Selector(_) => true,
             WithVector::Bool(false) => false,
         };
-        let mut records: AHashMap<ExtendedPointId, SegmentRecord> = resolved_ids
+        let mut records: AHashMap<ExtendedPointId, SegmentRecordGeneric<V>> = resolved_ids
             .iter()
             .map(|&id| {
-                let record = SegmentRecord {
+                let record = SegmentRecordGeneric {
                     id,
-                    vectors: needs_vectors.then(NamedVectorsOwned::default),
+                    vectors: needs_vectors.then(Vec::new),
                     payload: None,
                 };
                 (id, record)
             })
             .collect();
 
-        // Stage 3: vectors. The external id rides along as the read's user
-        // data — it comes back unchanged in the callback, so no extra
-        // `offset → id` lookup is needed.
+        // Stage 3: vectors, delegated to `read_name` per requested vector name.
         if needs_vectors {
             let mut process_vectors = |vector_name: &VectorNameBuf| -> OperationResult<()> {
-                let keys = resolved_ids
+                let mut keys = resolved_ids
                     .iter()
                     .zip(&resolved_offsets)
                     .map(|(&id, &offset)| (id, offset))
                     .stop_if(is_stopped);
-                self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
+                read_name(vector_name, &mut keys, &mut |id, value| {
                     if let Some(record) = records.get_mut(&id) {
                         record
                             .vectors
                             .as_mut()
                             .expect("needs_vectors path keeps vectors as Some")
-                            .push((vector_name.clone(), vec));
+                            .push((vector_name.clone(), value));
                     }
                 })
             };
@@ -104,10 +158,7 @@ where
             }
         }
 
-        // Stage 4: payload. Use the already-resolved offsets to skip another
-        // external→internal lookup per point. The per-iteration shape here
-        // mirrors what a future batched payload fetcher would consume —
-        // `&resolved_offsets` becomes its input directly.
+        // Stage 4: payload, reusing the already-resolved offsets.
         if with_payload.enable {
             let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
 

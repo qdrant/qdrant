@@ -14,8 +14,8 @@ use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 /// This trait lets the [`serialize_graph_links`] to access vector values.
 ///
@@ -81,7 +81,7 @@ impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
         f: &mut dyn FnMut(&[u8]) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.vector_storage
-            .with_vector_bytes_opt::<Sequential, _>(point_id, f)
+            .with_vector_bytes_opt::<Sequential, _>(point_id, f)?
             .unwrap_or_else(|| {
                 Err(OperationError::service_error(format!(
                     "Point {point_id} not found in vector storage"

@@ -12,6 +12,7 @@ use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
 use common::universal_io::UserData;
+use gridstore::Blob;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::dense_vector_storage::DenseVectorStorageImpl;
@@ -19,6 +20,7 @@ use super::dense::empty_dense_vector_storage::EmptyDenseVectorStorage;
 use super::dense::volatile_dense_vector_storage::VolatileDenseVectorStorage;
 use super::multi_dense::appendable_mmap_multi_dense_vector_storage::AppendableMmapMultiDenseVectorStorage;
 use super::multi_dense::volatile_multi_dense_vector_storage::VolatileMultiDenseVectorStorage;
+use super::sparse::StoredSparseVector;
 use super::sparse::empty_sparse_vector_storage::EmptySparseVectorStorage;
 use super::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use super::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
@@ -140,6 +142,41 @@ pub trait VectorStorageRead {
 
     /// Size of all available (non-deleted) vectors in bytes.
     fn size_of_available_vectors_in_bytes(&self) -> usize;
+
+    /// Call `f` with the storage-native serialized bytes of the vector.
+    /// `Ok(None)` means the storage has no value for this key.
+    ///
+    /// Only [`VectorStorageEnum`] implements this, dispatching to the concrete
+    /// dense / sparse / multi byte readers; calling it on any other storage
+    /// type is a bug and returns a service error. The format is storage-native
+    /// (raw elements, TurboQuant bytes, or bincoded sparse) and carries no
+    /// encoding/version tag, so it round-trips only into a matching storage.
+    fn with_vector_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> OperationResult<Option<R>> {
+        let _ = (key, f);
+        debug_assert!(
+            false,
+            "with_vector_bytes_opt is only dispatched by VectorStorageEnum",
+        );
+        Err(OperationError::service_error(
+            "Raw vector bytes are not implemented for this storage",
+        ))
+    }
+
+    /// Owned counterpart of [`VectorStorageRead::with_vector_bytes_opt`], for
+    /// callers that need a `Vec<u8>` (e.g. `retrieve_raw`).
+    ///
+    /// Default copies the borrowed bytes once; [`VectorStorageEnum`] returns the
+    /// already-owned sparse buffer directly to skip a redundant copy.
+    fn vector_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<Vec<u8>>> {
+        self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+    }
 }
 
 /// Trait for vector storage with mutating operations.
@@ -244,6 +281,29 @@ pub trait SparseVectorStorageRead: VectorStorageRead {
     ) -> OperationResult<()>
     where
         F: FnMut(usize, SparseVector);
+
+    /// Serialized sparse vector bytes, in the lossless on-disk
+    /// [`StoredSparseVector`] form. Never zero-copy: re-encoding allocates the
+    /// returned buffer. Prefer this over [`Self::with_sparse_bytes_opt`] when an
+    /// owned `Vec<u8>` is needed, to skip an extra copy.
+    fn sparse_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<Vec<u8>>> {
+        let Some(sparse) = self.get_sparse_opt::<P>(key)? else {
+            return Ok(None);
+        };
+        Ok(Some(StoredSparseVector::from(&sparse).to_bytes()))
+    }
+
+    /// Borrow-based form of [`Self::sparse_bytes_opt`].
+    fn with_sparse_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> OperationResult<Option<R>> {
+        Ok(self.sparse_bytes_opt::<P>(key)?.map(|bytes| f(&bytes)))
+    }
 }
 
 pub trait SparseVectorStorage: SparseVectorStorageRead {
@@ -278,6 +338,17 @@ pub trait MultiVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
+
+    /// Call `f` with the raw bytes of the flattened inner vectors, if any.
+    /// Inner-vector count = `len() / (vector_dim() * size_of::<T>())`.
+    fn with_multi_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> Option<R> {
+        let multi = self.get_multi_opt::<P>(key)?;
+        Some(f(bytemuck::cast_slice(multi.as_ref().flattened_vectors)))
+    }
 }
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: MultiVectorStorageRead<T> {
@@ -375,6 +446,19 @@ pub trait MultiTQVectorStorage: VectorStorageRead {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
+
+    /// Call `f` with the concatenated encoded inner vectors, if any.
+    /// Inner-vector count = `len() / quantized_vector_size()`.
+    fn with_multi_tq_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> Option<R> {
+        ((key as usize) < self.total_vector_count()).then(|| {
+            let multi_tq = self.get_multi_tq::<P>(key);
+            f(&multi_tq)
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -602,53 +686,6 @@ impl VectorStorageEnum {
         Ok(())
     }
 
-    /// Call `f` with the raw bytes of the vector if it exists.
-    pub fn with_vector_bytes_opt<P: AccessPattern, R>(
-        &self,
-        key: PointOffsetType,
-        f: impl FnOnce(&[u8]) -> R,
-    ) -> Option<R> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::DenseMemmap(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::DenseMemmapByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.with_dense_bytes_opt::<P, R>(key, f)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.with_dense_bytes_opt::<P, R>(key, f)
-            }
-            VectorStorageEnum::DenseTurbo(v) => v.with_dense_tq_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::SparseVolatile(_) => None,
-            VectorStorageEnum::SparseMmap(_) => None,
-            VectorStorageEnum::MultiDenseVolatile(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmap(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => None,
-            VectorStorageEnum::MultiDenseTurbo(_) => None,
-            VectorStorageEnum::EmptyDense(_) => None,
-            VectorStorageEnum::EmptySparse(_) => None,
-        }
-    }
-
     /// Get layout for a single vector
     pub fn get_vector_layout(&self) -> OperationResult<Layout> {
         match self {
@@ -693,6 +730,106 @@ impl VectorStorageEnum {
 }
 
 impl VectorStorageRead for VectorStorageEnum {
+    fn with_vector_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> OperationResult<Option<R>> {
+        match self {
+            VectorStorageEnum::DenseVolatile(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::DenseMemmap(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::DenseMemmapByte(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::DenseMemmapHalf(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => {
+                Ok(v.with_dense_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                Ok(v.with_dense_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                Ok(v.with_dense_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageEnum::DenseTurbo(v) => Ok(v.with_dense_tq_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::SparseVolatile(v) => v.with_sparse_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::SparseMmap(v) => v.with_sparse_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::MultiDenseVolatile(v) => Ok(v.with_multi_bytes_opt::<P, R>(key, f)),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => {
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageEnum::MultiDenseTurbo(v) => Ok(v.with_multi_tq_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::EmptyDense(_) => Ok(None),
+            VectorStorageEnum::EmptySparse(_) => Ok(None),
+        }
+    }
+
+    fn vector_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<Vec<u8>>> {
+        match self {
+            // Sparse already allocates on serialize — return it without a copy.
+            VectorStorageEnum::SparseVolatile(v) => v.sparse_bytes_opt::<P>(key),
+            VectorStorageEnum::SparseMmap(v) => v.sparse_bytes_opt::<P>(key),
+            // Others expose borrowed bytes; one copy out is unavoidable.
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::DenseMemmap(_)
+            | VectorStorageEnum::DenseMemmapByte(_)
+            | VectorStorageEnum::DenseMemmapHalf(_)
+            | VectorStorageEnum::DenseAppendableMemmap(_)
+            | VectorStorageEnum::DenseAppendableMemmapByte(_)
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseTurbo(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::MultiDenseTurbo(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => {
+                self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {
+                self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_)
+            | VectorStorageEnum::DenseUringByte(_)
+            | VectorStorageEnum::DenseUringHalf(_) => {
+                self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+            }
+        }
+    }
+
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         match self {
             VectorStorageEnum::DenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
