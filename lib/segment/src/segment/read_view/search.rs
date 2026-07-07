@@ -46,12 +46,7 @@ where
             is_stopped,
             deferred_behavior,
             hw_counter,
-            |vector_name, ids, offsets, push| {
-                let keys = ids
-                    .iter()
-                    .zip(offsets)
-                    .map(|(&id, &offset)| (id, offset))
-                    .stop_if(is_stopped);
+            |vector_name, keys, push| {
                 self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
                     push(id, vec)
                 })
@@ -77,12 +72,7 @@ where
             is_stopped,
             deferred_behavior,
             hw_counter,
-            |vector_name, ids, offsets, push| {
-                let keys = ids
-                    .iter()
-                    .zip(offsets)
-                    .map(|(&id, &offset)| (id, offset))
-                    .stop_if(is_stopped);
+            |vector_name, keys, push| {
                 self.vector_bytes_by_offsets(vector_name, keys, hw_counter, |id, _offset, bytes| {
                     push(id, bytes)
                 })
@@ -92,8 +82,9 @@ where
 
     /// Shared body of [`Self::retrieve`] and [`Self::retrieve_raw`]; only the
     /// vector representation `V` and the storage read differ. `read_name` gets
-    /// each vector name, the resolved (id, offset) slices and a `push` sink for
-    /// the `(id, value)`s it reads — it owns the storage reader choice.
+    /// each vector name, the resolved `(id, offset)` keys (already wired to the
+    /// stop signal) and a `push` sink for the `(id, value)`s it reads — it owns
+    /// the storage reader choice.
     #[allow(clippy::too_many_arguments)]
     fn retrieve_generic<V>(
         &self,
@@ -105,8 +96,7 @@ where
         hw_counter: &HardwareCounterCell,
         mut read_name: impl FnMut(
             &VectorNameBuf,
-            &[ExtendedPointId],
-            &[PointOffsetType],
+            &mut dyn Iterator<Item = (ExtendedPointId, PointOffsetType)>,
             &mut dyn FnMut(ExtendedPointId, V),
         ) -> OperationResult<()>,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordGeneric<V>>> {
@@ -137,20 +127,20 @@ where
         // Stage 3: vectors, delegated to `read_name` per requested vector name.
         if needs_vectors {
             let mut process_vectors = |vector_name: &VectorNameBuf| -> OperationResult<()> {
-                read_name(
-                    vector_name,
-                    &resolved_ids,
-                    &resolved_offsets,
-                    &mut |id, value| {
-                        if let Some(record) = records.get_mut(&id) {
-                            record
-                                .vectors
-                                .as_mut()
-                                .expect("needs_vectors path keeps vectors as Some")
-                                .push((vector_name.clone(), value));
-                        }
-                    },
-                )
+                let mut keys = resolved_ids
+                    .iter()
+                    .zip(&resolved_offsets)
+                    .map(|(&id, &offset)| (id, offset))
+                    .stop_if(is_stopped);
+                read_name(vector_name, &mut keys, &mut |id, value| {
+                    if let Some(record) = records.get_mut(&id) {
+                        record
+                            .vectors
+                            .as_mut()
+                            .expect("needs_vectors path keeps vectors as Some")
+                            .push((vector_name.clone(), value));
+                    }
+                })
             };
 
             match with_vector {

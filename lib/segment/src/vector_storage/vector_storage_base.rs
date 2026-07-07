@@ -143,19 +143,27 @@ pub trait VectorStorageRead {
     /// Size of all available (non-deleted) vectors in bytes.
     fn size_of_available_vectors_in_bytes(&self) -> usize;
 
-    /// Call `f` with the storage-native serialized bytes of the vector, if any.
+    /// Call `f` with the storage-native serialized bytes of the vector.
+    /// `Ok(None)` means the storage has no value for this key.
     ///
-    /// Default returns `None`; [`VectorStorageEnum`] dispatches to the concrete
-    /// dense / sparse / multi byte readers. The format is storage-native (raw
-    /// elements, TurboQuant bytes, or bincoded sparse) and carries no
+    /// Only [`VectorStorageEnum`] implements this, dispatching to the concrete
+    /// dense / sparse / multi byte readers; calling it on any other storage
+    /// type is a bug and returns a service error. The format is storage-native
+    /// (raw elements, TurboQuant bytes, or bincoded sparse) and carries no
     /// encoding/version tag, so it round-trips only into a matching storage.
     fn with_vector_bytes_opt<P: AccessPattern, R>(
         &self,
         key: PointOffsetType,
         f: impl FnOnce(&[u8]) -> R,
-    ) -> Option<R> {
+    ) -> OperationResult<Option<R>> {
         let _ = (key, f);
-        None
+        debug_assert!(
+            false,
+            "with_vector_bytes_opt is only dispatched by VectorStorageEnum",
+        );
+        Err(OperationError::service_error(
+            "Raw vector bytes are not implemented for this storage",
+        ))
     }
 
     /// Owned counterpart of [`VectorStorageRead::with_vector_bytes_opt`], for
@@ -163,7 +171,10 @@ pub trait VectorStorageRead {
     ///
     /// Default copies the borrowed bytes once; [`VectorStorageEnum`] returns the
     /// already-owned sparse buffer directly to skip a redundant copy.
-    fn vector_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Vec<u8>> {
+    fn vector_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<Vec<u8>>> {
         self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
     }
 }
@@ -275,9 +286,14 @@ pub trait SparseVectorStorageRead: VectorStorageRead {
     /// [`StoredSparseVector`] form. Never zero-copy: re-encoding allocates the
     /// returned buffer. Prefer this over [`Self::with_sparse_bytes_opt`] when an
     /// owned `Vec<u8>` is needed, to skip an extra copy.
-    fn sparse_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Vec<u8>> {
-        let sparse = self.get_sparse_opt::<P>(key).ok().flatten()?;
-        Some(StoredSparseVector::from(&sparse).to_bytes())
+    fn sparse_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<Vec<u8>>> {
+        let Some(sparse) = self.get_sparse_opt::<P>(key)? else {
+            return Ok(None);
+        };
+        Ok(Some(StoredSparseVector::from(&sparse).to_bytes()))
     }
 
     /// Borrow-based form of [`Self::sparse_bytes_opt`].
@@ -285,8 +301,8 @@ pub trait SparseVectorStorageRead: VectorStorageRead {
         &self,
         key: PointOffsetType,
         f: impl FnOnce(&[u8]) -> R,
-    ) -> Option<R> {
-        self.sparse_bytes_opt::<P>(key).map(|bytes| f(&bytes))
+    ) -> OperationResult<Option<R>> {
+        Ok(self.sparse_bytes_opt::<P>(key)?.map(|bytes| f(&bytes)))
     }
 }
 
@@ -718,55 +734,64 @@ impl VectorStorageRead for VectorStorageEnum {
         &self,
         key: PointOffsetType,
         f: impl FnOnce(&[u8]) -> R,
-    ) -> Option<R> {
+    ) -> OperationResult<Option<R>> {
         match self {
-            VectorStorageEnum::DenseVolatile(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseVolatile(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseVolatileByte(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::DenseMemmap(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::DenseMemmapByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseVolatileHalf(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::DenseMemmap(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::DenseMemmapByte(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::DenseMemmapHalf(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
 
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseUring(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseUringByte(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseUringHalf(v) => Ok(v.with_dense_bytes_opt::<P, R>(key, f)),
 
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseAppendableMemmap(v) => {
+                Ok(v.with_dense_bytes_opt::<P, R>(key, f))
+            }
             VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.with_dense_bytes_opt::<P, R>(key, f)
+                Ok(v.with_dense_bytes_opt::<P, R>(key, f))
             }
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.with_dense_bytes_opt::<P, R>(key, f)
+                Ok(v.with_dense_bytes_opt::<P, R>(key, f))
             }
-            VectorStorageEnum::DenseTurbo(v) => v.with_dense_tq_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseTurbo(v) => Ok(v.with_dense_tq_bytes_opt::<P, R>(key, f)),
             VectorStorageEnum::SparseVolatile(v) => v.with_sparse_bytes_opt::<P, R>(key, f),
             VectorStorageEnum::SparseMmap(v) => v.with_sparse_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.with_multi_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::MultiDenseVolatile(v) => Ok(v.with_multi_bytes_opt::<P, R>(key, f)),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.with_multi_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::MultiDenseVolatileByte(v) => {
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
+            }
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.with_multi_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
+            }
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.with_multi_bytes_opt::<P, R>(key, f)
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
             }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.with_multi_bytes_opt::<P, R>(key, f)
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.with_multi_bytes_opt::<P, R>(key, f)
+                Ok(v.with_multi_bytes_opt::<P, R>(key, f))
             }
-            VectorStorageEnum::MultiDenseTurbo(v) => v.with_multi_tq_bytes_opt::<P, R>(key, f),
-            VectorStorageEnum::EmptyDense(_) => None,
-            VectorStorageEnum::EmptySparse(_) => None,
+            VectorStorageEnum::MultiDenseTurbo(v) => Ok(v.with_multi_tq_bytes_opt::<P, R>(key, f)),
+            VectorStorageEnum::EmptyDense(_) => Ok(None),
+            VectorStorageEnum::EmptySparse(_) => Ok(None),
         }
     }
 
-    fn vector_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Vec<u8>> {
+    fn vector_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<Vec<u8>>> {
         match self {
             // Sparse already allocates on serialize — return it without a copy.
             VectorStorageEnum::SparseVolatile(v) => v.sparse_bytes_opt::<P>(key),

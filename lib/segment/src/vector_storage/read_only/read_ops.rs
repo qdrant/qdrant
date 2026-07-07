@@ -4,9 +4,12 @@ use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
 use super::VectorStorageReadEnum;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::VectorStorageRead;
+use crate::vector_storage::{
+    DenseVectorStorageRead, MultiVectorStorageRead, SparseVectorStorageRead, VectorStorageRead,
+};
 
 impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
@@ -183,6 +186,57 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.deleted_vector_bitslice(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.deleted_vector_bitslice(),
             VectorStorageReadEnum::Sparse(s) => s.deleted_vector_bitslice(),
+        }
+    }
+
+    fn with_vector_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> OperationResult<Option<R>> {
+        match self {
+            VectorStorageReadEnum::Dense(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::DenseByte(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::DenseHalf(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::DenseChunked(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::DenseChunkedByte(s) => {
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageReadEnum::DenseChunkedHalf(s) => {
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageReadEnum::MultiDenseChunked(s) => {
+                Ok(s.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
+                Ok(s.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
+                Ok(s.with_multi_bytes_opt::<P, R>(key, f))
+            }
+            VectorStorageReadEnum::Sparse(s) => s.with_sparse_bytes_opt::<P, R>(key, f),
+        }
+    }
+
+    fn vector_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<Vec<u8>>> {
+        match self {
+            // Sparse already allocates on serialize — return it without a copy.
+            VectorStorageReadEnum::Sparse(s) => s.sparse_bytes_opt::<P>(key),
+            // Others expose borrowed bytes; one copy out is unavoidable.
+            VectorStorageReadEnum::Dense(_)
+            | VectorStorageReadEnum::DenseByte(_)
+            | VectorStorageReadEnum::DenseHalf(_)
+            | VectorStorageReadEnum::DenseChunked(_)
+            | VectorStorageReadEnum::DenseChunkedByte(_)
+            | VectorStorageReadEnum::DenseChunkedHalf(_)
+            | VectorStorageReadEnum::MultiDenseChunked(_)
+            | VectorStorageReadEnum::MultiDenseChunkedByte(_)
+            | VectorStorageReadEnum::MultiDenseChunkedHalf(_) => {
+                self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+            }
         }
     }
 }

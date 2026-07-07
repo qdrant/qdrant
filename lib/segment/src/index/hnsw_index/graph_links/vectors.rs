@@ -81,7 +81,7 @@ impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
         f: &mut dyn FnMut(&[u8]) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.vector_storage
-            .with_vector_bytes_opt::<Sequential, _>(point_id, f)
+            .with_vector_bytes_opt::<Sequential, _>(point_id, f)?
             .unwrap_or_else(|| {
                 Err(OperationError::service_error(format!(
                     "Point {point_id} not found in vector storage"
