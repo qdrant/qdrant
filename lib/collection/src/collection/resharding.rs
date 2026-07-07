@@ -203,15 +203,29 @@ impl Collection {
             .commit_write_hashring(resharding_key)
     }
 
+    /// Finish a resharding operation, as a flat composition ending with the
+    /// persisted `resharding_state` cleared **last** so it gates the whole
+    /// operation on replay.
+    ///
+    /// Replay walk (invariants 1 & 3): crash before the state clear → replay
+    /// finds the state `Some(matching)` → the gate returns `Proceed` and every
+    /// step below re-runs, each no-oping or rewriting the same value
+    /// (`remove_shard_from_key_mapping` and the config save are value-idempotent;
+    /// `drop_and_remove_shard` no-ops once the shard is gone). Crash after the
+    /// clear → replay finds `None` → the gate returns `NoOp` → pure no-op, so the
+    /// destructive down-branch (not keyed by resharding uuid) never runs against a
+    /// shard a newer resharding may have recreated. A `Some(mismatch)` state is a
+    /// provably-stale duplicate and is deterministically dismissed by the gate
+    /// (finding I).
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let mut shard_holder = self.shards_holder.write().await;
 
-        // Each step below is individually idempotent, so on replay (e.g. after
-        // a crash that applied only part of the operation) we fall through
-        // every step to reconcile any partially-applied state instead of
-        // short-circuiting on the first condition that already holds.
-        shard_holder.check_finish_resharding(&resharding_key)?;
-        shard_holder.finish_resharding_unchecked(&resharding_key)?;
+        // Gate: on `None` return early — NEVER fall through to the destructive
+        // down-branch below, which is not keyed by resharding uuid.
+        match shard_holder.check_finish_resharding(&resharding_key)? {
+            ReshardingCheck::Proceed => {}
+            ReshardingCheck::NoOp => return Ok(()),
+        }
 
         if resharding_key.direction == ReshardingDirection::Down {
             // Remove the shard we've now migrated all points out of
@@ -256,6 +270,11 @@ impl Collection {
                 .drop_and_remove_shard(resharding_key.shard_id)
                 .await?;
         }
+
+        // Clear the persisted resharding state — LAST, the gate of this
+        // composition (see the replay walk above). Reuses the same primitive as
+        // abort, so a matching state is cleared and a mismatch/None is left alone.
+        shard_holder.clear_resharding_state(&resharding_key)?;
 
         Ok(())
     }

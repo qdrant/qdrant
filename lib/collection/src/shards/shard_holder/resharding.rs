@@ -266,13 +266,21 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        // Idempotent: if no resharding is active, finish was already applied.
+    pub fn check_finish_resharding(
+        &mut self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<ReshardingCheck> {
+        // No resharding in progress: finish was already applied (state is cleared
+        // last). Signal a no-op so the caller does NOT fall through to the
+        // destructive down-branch teardown, which is not keyed by resharding uuid
+        // (finding I). A *mismatched* state, by contrast, is a provably-stale
+        // duplicate (invariant 3) and keeps its deterministic `bad_request`
+        // dismissal via `check_resharding` below.
         if self.resharding_state.read().is_none() {
             log::warn!(
                 "check_finish_resharding: no resharding in progress for {resharding_key}, treating as already finished",
             );
-            return Ok(());
+            return Ok(ReshardingCheck::NoOp);
         }
 
         self.check_resharding(
@@ -280,19 +288,7 @@ impl ShardHolder {
             check_stage(ReshardingStage::WriteHashRingCommitted),
         )?;
 
-        Ok(())
-    }
-
-    pub fn finish_resharding_unchecked(&mut self, _: &ReshardKey) -> CollectionResult<()> {
-        // Idempotent: if state is already cleared (replay after a successful
-        // finish/abort), leave it alone so we don't spuriously touch the file.
-        self.resharding_state.write_optional(
-            |state| {
-                if state.is_some() { Some(None) } else { None }
-            },
-        )?;
-
-        Ok(())
+        Ok(ReshardingCheck::Proceed)
     }
 
     fn check_resharding(
@@ -1000,25 +996,55 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // finish_resharding_unchecked idempotency
+    // clear_resharding_state idempotency (the finish/abort last write)
     // ------------------------------------------------------------------
 
     #[test]
-    fn test_finish_unchecked_idempotent_when_no_resharding_active() {
-        let (_dir, mut holder) = make_holder();
+    fn test_clear_resharding_state_idempotent_when_no_resharding_active() {
+        let (_dir, holder) = make_holder();
         let key = make_reshard_key(1);
 
-        // Replay `finish` after the resharding state has already been cleared
-        // (partial apply between the state write and a subsequent step).
-        // The unchecked helper must not panic or error in this case.
-        let result = holder.finish_resharding_unchecked(&key);
+        // Replay `finish`/`abort` after the resharding state has already been
+        // cleared (replay after a successful apply, or crash after the final
+        // clear). The primitive must not panic or error in this case.
+        let result = holder.clear_resharding_state(&key);
         assert!(
             result.is_ok(),
-            "finish_resharding_unchecked must return Ok when no resharding state is present, got error: {result:?}",
+            "clear_resharding_state must return Ok when no resharding state is present, got error: {result:?}",
         );
         assert!(
             holder.resharding_state.read().is_none(),
-            "state must remain cleared after idempotent finish",
+            "state must remain cleared after idempotent clear",
+        );
+    }
+
+    #[test]
+    fn test_clear_resharding_state_leaves_mismatched_state_untouched() {
+        let (_dir, holder) = make_holder();
+
+        // A different resharding is active (e.g. a stale-duplicate finish/abort of
+        // a key a newer resharding has since replaced). Clearing must be a no-op:
+        // only a matching key is cleared (invariant 3 / finding I).
+        let active_key = make_reshard_key(1);
+        let active_state = ReshardState::new(
+            active_key.uuid,
+            active_key.direction,
+            active_key.peer_id,
+            active_key.shard_id,
+            active_key.shard_key.clone(),
+        );
+        holder
+            .resharding_state
+            .write(|state| *state = Some(active_state.clone()))
+            .unwrap();
+
+        let stale_key = make_reshard_key(2);
+        holder.clear_resharding_state(&stale_key).unwrap();
+
+        assert_eq!(
+            holder.resharding_state.read().clone(),
+            Some(active_state),
+            "a mismatched resharding state must be left untouched by clear_resharding_state",
         );
     }
 
