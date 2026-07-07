@@ -32,6 +32,10 @@ impl SnapshotMapping {
             !collection_name.is_empty(),
             "Collection name is missing: {snapshot_params}"
         );
+        assert!(
+            !collection_name.contains(['/', '\\']),
+            "Collection name is missing: {snapshot_params}"
+        );
 
         Self {
             snapshot_path: PathBuf::from(path),
@@ -248,5 +252,11 @@ mod tests {
     #[should_panic(expected = "Collection name is missing")]
     fn snapshot_mapping_rejects_empty_collection_name() {
         SnapshotMapping::from_cli_arg("collection.snapshot:");
+    }
+
+    #[test]
+    #[should_panic(expected = "Collection name is missing")]
+    fn snapshot_mapping_rejects_windows_path_without_collection_name() {
+        SnapshotMapping::from_cli_arg(r"C:\tmp\collection.snapshot");
     }
 }
