@@ -30,7 +30,6 @@ pub mod read_only;
 /// - "some", "text", "here" - 16 bytes
 pub(super) const BLOCK_SIZE_KEYWORD: usize = 16;
 
-pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
 pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
 pub enum MapIndex<N: MapIndexKey + ?Sized>

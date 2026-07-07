@@ -170,5 +170,3 @@ pub trait ShardOperation {
     /// and wait till they are finished.
     async fn stop_gracefully(self);
 }
-
-pub type ShardOperationSS = dyn ShardOperation + Send + Sync;

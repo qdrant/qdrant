@@ -85,22 +85,6 @@ pub trait HwMeasurementIteratorExt: Iterator {
             f(&hw_counter).incr_delta(total_count / fraction);
         })
     }
-
-    /// Measures the hardware usage of an iterator with the size of a single value being represented as a fraction.
-    fn measure_hw_with_cell_and_fraction<R>(
-        self,
-        hw_cell: &HardwareCounterCell,
-        fraction: usize,
-        mut f: R,
-    ) -> OnFinalCount<Self, impl FnMut(usize)>
-    where
-        Self: Sized,
-        R: FnMut(&HardwareCounterCell) -> &CounterCell,
-    {
-        OnFinalCount::new(self, move |total_count| {
-            f(hw_cell).incr_delta(total_count / fraction);
-        })
-    }
 }
 
 impl<I: Iterator> HwMeasurementIteratorExt for I {}

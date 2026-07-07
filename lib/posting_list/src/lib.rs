@@ -40,9 +40,6 @@ pub type SizedTypeFor<V> = <<V as PostingValue>::Handler as ValueHandler>::Sized
 /// Posting list of ids, where ids are compressed.
 pub type IdsPostingList = PostingList<()>;
 
-/// Non-owning posting list of ids, where ids are compressed.
-pub type IdsPostingListView<'a> = PostingListView<'a, ()>;
-
 pub use builder::PostingBuilder;
 pub use iterator::PostingIterator;
 pub use posting_list::{PostingChunk, PostingElement, PostingList, RemainderPosting};

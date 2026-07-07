@@ -211,13 +211,6 @@ impl InvertedIndexRam {
 
         self.total_sparse_size += new_vector_size
     }
-
-    pub fn total_posting_elements_size(&self) -> usize {
-        self.postings
-            .iter()
-            .map(|posting| posting.elements.len() * size_of::<PostingElementEx>())
-            .sum()
-    }
 }
 
 #[cfg(feature = "testing")]

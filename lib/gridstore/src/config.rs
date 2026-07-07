@@ -9,8 +9,6 @@ pub const DEFAULT_PAGE_SIZE_BYTES: usize = 32 * 1024 * 1024; // 32MB
 
 pub const DEFAULT_REGION_SIZE_BLOCKS: usize = 8_192;
 
-pub const DEFAULT_USE_COMPRESSION: bool = true;
-
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Default)]
 pub enum Compression {
     None,

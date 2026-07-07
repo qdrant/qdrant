@@ -2,10 +2,8 @@
 
 use std::collections::hash_map::Entry;
 use std::hash::Hash;
-use std::iter::{Once, once};
 
 use ahash::AHashMap;
-use itertools::Either;
 
 pub trait FallibleIteratorExt: Iterator + Sized {
     /// Like [`itertools::Itertools::unique`], but for iterators over [`Result`].
@@ -35,24 +33,6 @@ impl<I: Iterator + Sized> FallibleIteratorExt for I {
                 Err(v) => Some(Err(v)),
             })
         })
-    }
-}
-
-pub trait TransposeResultIter<I, T, E> {
-    /// Convert `Result<Iterator<Item = Result<T, E>>, E>`
-    /// into    `Iterator<Item = Result<T, E>>`
-    fn into_result_iter(self) -> Either<I, Once<Result<T, E>>>;
-}
-
-impl<I, T, E> TransposeResultIter<I, T, E> for Result<I, E>
-where
-    I: Iterator<Item = Result<T, E>>,
-{
-    fn into_result_iter(self) -> Either<I, Once<Result<T, E>>> {
-        match self {
-            Ok(iter) => Either::Left(iter),
-            Err(err) => Either::Right(once(Err(err))),
-        }
     }
 }
 
