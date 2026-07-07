@@ -680,7 +680,7 @@ fn test_retrieve_raw_sparse_bytes() {
             sparse_vector_data: HashMap::from_iter([(
                 sparse_name.to_string(),
                 SparseVectorDataConfig {
-                    index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
+                    index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None, None),
                     storage_type: SparseVectorStorageType::Mmap,
                     modifier: None,
                 },
