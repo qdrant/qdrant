@@ -223,7 +223,7 @@ impl SegmentHolder {
 
             log::trace!(
                 "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}",
-                &read_segment.data_path(),
+                read_segment.data_path(),
             );
 
             if segment_version > segment_persisted_version {
