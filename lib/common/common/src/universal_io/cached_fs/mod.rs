@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytemuck::TransparentWrapper;
-use log::debug;
 use parking_lot::Mutex;
 
 use crate::ext::aligned_vec::ACow;
