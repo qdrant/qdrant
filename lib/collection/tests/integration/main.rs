@@ -1,6 +1,7 @@
 mod collection_restore_test;
 mod collection_test;
 mod common;
+mod consensus_idempotency_test;
 mod continuous_snapshot_test;
 mod distance_matrix_test;
 mod grouping_test;
