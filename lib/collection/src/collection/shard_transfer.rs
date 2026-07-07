@@ -279,6 +279,126 @@ impl Collection {
         );
     }
 
+    /// Restart a shard transfer with a new method, updating the transfer record
+    /// **in place** instead of composing an inner Abort followed by an inner
+    /// Start (finding E).
+    ///
+    /// `transfer_key` identifies the existing record; `new_transfer` is the
+    /// replacement (`to_shard_id: None`, the new method, and the old record's
+    /// `sync` preserved — byte-matching the old Abort∘Start result).
+    ///
+    /// Replay walk (invariant 1): the record's method update
+    /// (`register_restart_transfer`, step 6) is the LAST durable write, so it
+    /// gates the operation, and the record is never removed at any point. Crash
+    /// before step 6 → the record still carries the old method → the gate below
+    /// proceeds and re-runs steps 2–6, all idempotent (`stop_task` no-ops if the
+    /// task is gone, `revert_proxy_shard_to_local` is runtime-only,
+    /// `init_empty_local_shard` re-wiping an empty shard is a no-op in effect,
+    /// the replica-state write is absolute). Crash after step 6 → the record
+    /// carries the new method → the gate returns an idempotent no-op. Because the
+    /// record is present throughout, neither of finding E's windows (no transfer
+    /// found; method unchanged) can dismiss the entry with partial state.
+    pub async fn restart_shard_transfer<T, F>(
+        &self,
+        transfer_key: ShardTransferKey,
+        new_transfer: ShardTransfer,
+        consensus: Box<dyn ShardTransferConsensus>,
+        temp_dir: PathBuf,
+        on_finish: T,
+        on_error: F,
+    ) -> CollectionResult<()>
+    where
+        T: Future<Output = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let new_method = new_transfer
+            .method
+            .expect("restart transfer method must be set");
+
+        // 1. Gate. The record is never removed mid-restart, so:
+        //    - absent  → stale-duplicate restart → dismiss (bad_request).
+        //    - method already new → replay whose final write landed → no-op.
+        {
+            let shard_holder = self.shards_holder.read().await;
+            let Some(existing) = shard_holder.get_transfer(&transfer_key) else {
+                return Err(CollectionError::bad_request(format!(
+                    "There is no transfer for shard {} from {} to {}",
+                    transfer_key.shard_id, transfer_key.from, transfer_key.to,
+                )));
+            };
+            if existing.method == Some(new_method) {
+                log::warn!(
+                    "Restart of shard transfer {transfer_key:?} to method {new_method:?} \
+                     was already applied, treating as idempotent no-op",
+                );
+                return Ok(());
+            }
+        }
+
+        let this_peer_id = consensus.this_peer_id();
+        let is_sender = this_peer_id == new_transfer.from;
+        let is_receiver = this_peer_id == new_transfer.to;
+        let dest_shard_id = new_transfer.to_shard_id.unwrap_or(new_transfer.shard_id);
+
+        let initial_state = self.initial_replica_state_for_transfer(new_method).await?;
+
+        // 2. Stop the running transfer task for the *old* record (runtime-only).
+        let _ = self
+            .transfer_tasks
+            .lock()
+            .await
+            .stop_task(&transfer_key)
+            .await;
+
+        {
+            let shard_holder = self.shards_holder.read().await;
+
+            // 3. Sender: revert the queue/proxy back to a plain local shard
+            //    (runtime-only, replay-safe).
+            if is_sender {
+                transfer::driver::revert_proxy_shard_to_local(&shard_holder, new_transfer.shard_id)
+                    .await?;
+            }
+
+            // The destination replica set exists on every peer (remote elsewhere,
+            // local on the receiver).
+            let Some(dest_replica_set) = shard_holder.get_shard(dest_shard_id) else {
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {dest_shard_id} doesn't exist"
+                )));
+            };
+
+            // 4. Receiver: reset the destination local shard to empty, discarding
+            //    any partially-transferred data. Safe because a restart is only
+            //    ever proposed as a WAL-delta-transfer fallback (never resharding),
+            //    and the fallback method (snapshot/stream) fully re-populates the
+            //    destination, so starting from empty converges to the same data.
+            //    Replaying this (re-wiping an already-empty shard) is a no-op in
+            //    effect.
+            if is_receiver {
+                dest_replica_set.init_empty_local_shard().await?;
+            }
+
+            // 5. All peers: set the destination replica to the new method's
+            //    initial state (absolute write).
+            dest_replica_set
+                .ensure_replica_with_state(new_transfer.to, initial_state)
+                .await?;
+
+            // 6. LAST durable write: update the record's method in place. Gates
+            //    the whole operation on replay.
+            shard_holder.register_restart_transfer(&transfer_key, new_method)?;
+        }
+
+        // 7. Sender: (re)spawn the transfer driver for the new transfer.
+        if is_sender {
+            self.send_shard(new_transfer, consensus, temp_dir, on_finish, on_error)
+                .await;
+        }
+
+        Ok(())
+    }
+
     /// Handles finishing of the shard transfer.
     ///
     /// Returns true if state was changed, false otherwise.
