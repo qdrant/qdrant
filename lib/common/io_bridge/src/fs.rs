@@ -1,10 +1,11 @@
 use std::path::Path;
 
+use bytes::Bytes;
 use common::universal_io::{
-    ListedFile, OpenOptions, Result, UniversalReadFileOps, UniversalReadFs,
+    ListedFile, OpenOptions, Result, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
 };
 
-use crate::{AsyncRead, BlobFile, BridgeRuntime};
+use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 
 /// Filesystem handle for an object-store backend: an [`AsyncRead`] handle plus
 /// the [`BridgeRuntime`] used to drive its async operations. Opens per-object
@@ -70,9 +71,34 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
         }
         result
     }
+}
 
-    // Deliberately no `UniversalWriteFileOps` impl: blob backends are
-    // read-only; a future `AsyncWrite` trait is the place for mutations.
+impl<A: AsyncWrite + Clone> UniversalWriteFileOps for BlobFs<A> {
+    fn create(&self, path: &Path, _expected_length: usize) -> Result<()> {
+        // Object stores have no fixed-size preallocation; the expected
+        // length is ignored, as the trait allows.
+        self.runtime.block_on(self.inner.create(path))
+    }
+
+    fn create_dir(&self, _path: &Path) -> Result<()> {
+        // No materialized directories.
+        Ok(())
+    }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        self.runtime.block_on(self.inner.remove(path))
+    }
+
+    fn remove_dir(&self, _path: &Path) -> Result<()> {
+        // No materialized directories.
+        Ok(())
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        // A whole-object put is atomic on object stores.
+        self.runtime
+            .block_on(self.inner.save(path, Bytes::copy_from_slice(bytes)))
+    }
 }
 
 impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {

@@ -3783,6 +3783,7 @@ version = "0.0.0"
 dependencies = [
  "ahash",
  "aligned-vec",
+ "bytemuck",
  "bytes",
  "common",
  "futures",
