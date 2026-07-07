@@ -28,7 +28,8 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::OrderBy;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, VectorRef, only_default_vector,
+    DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, VectorInternal, VectorRef,
+    only_default_multi_vector, only_default_vector,
 };
 use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
@@ -43,9 +44,9 @@ use crate::segment_constructor::simple_segment_constructor::{
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
-    Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType, PointIdType, SearchParams,
-    SnapshotFormat, SparseVectorDataConfig, SparseVectorStorageType, ValueVariants,
-    VectorDataConfig, VectorStorageType, WithPayload, WithVector,
+    MultiVectorConfig, Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType,
+    PointIdType, SearchParams, SnapshotFormat, SparseVectorDataConfig, SparseVectorStorageType,
+    ValueVariants, VectorDataConfig, VectorStorageType, WithPayload, WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
 use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
@@ -592,27 +593,47 @@ fn test_retrieve_raw_dense_bytes() {
     assert_eq!(bytes.as_slice(), expected);
 }
 
-/// `retrieve_raw` over a multi-dense storage must return the flattened inner
-/// vectors as raw bytes for each named vector.
+/// `retrieve_raw` over a multi-dense (ColBERT-style) storage must return the
+/// flattened inner vectors as raw bytes; the inner count is derived from the
+/// byte length, so the blob must cover all inner vectors, not just the first.
 #[test]
 fn test_retrieve_raw_multivec_bytes() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let dim = 1;
+    let dim = 3;
 
-    let mut segment = build_multivec_segment(dir.path(), dim, dim, Distance::Dot).unwrap();
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: Some(MultiVectorConfig::default()),
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+        None,
+        true,
+    )
+    .unwrap();
     let hw_counter = HardwareCounterCell::new();
 
-    let v1 = vec![0.4_f32];
-    let v2 = vec![0.5_f32];
+    // Two inner vectors of `dim` elements each, flattened.
+    let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
+    let multi_vec = MultiDenseVectorInternal::new(flattened.clone(), dim);
     segment
         .upsert_point(
             100,
             4.into(),
-            NamedVectors::from_pairs([
-                (VECTOR1_NAME.into(), v1.clone()),
-                (VECTOR2_NAME.into(), v2.clone()),
-            ]),
+            only_default_multi_vector(&multi_vec),
             &hw_counter,
         )
         .unwrap();
@@ -631,15 +652,13 @@ fn test_retrieve_raw_multivec_bytes() {
 
     let record = raw.get(&4.into()).expect("point 4 must be retrieved");
     let vectors = record.vectors.as_ref().expect("vectors requested");
+    let (_, bytes) = vectors
+        .iter()
+        .find(|(name, _)| name == DEFAULT_VECTOR_NAME)
+        .expect("default vector must be present");
 
-    for (name, expected) in [(VECTOR1_NAME, &v1), (VECTOR2_NAME, &v2)] {
-        let (_, bytes) = vectors
-            .iter()
-            .find(|(n, _)| n == name)
-            .unwrap_or_else(|| panic!("vector {name} must be present"));
-        let expected_bytes: &[u8] = bytemuck::cast_slice(expected);
-        assert_eq!(bytes.as_slice(), expected_bytes, "mismatch for {name}");
-    }
+    let expected: &[u8] = bytemuck::cast_slice(&flattened);
+    assert_eq!(bytes.as_slice(), expected);
 }
 
 /// `retrieve_raw` over a sparse storage must return the on-disk
