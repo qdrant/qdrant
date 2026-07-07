@@ -22,11 +22,15 @@
 //!
 //! | `kind`         | When                                            | Extra fields |
 //! |----------------|-------------------------------------------------|---|
-//! | `Header`       | First line — run configuration                  | `seed`, `op_num`, `shard_count`, `id_pool`, `disable_optimizer`, `max_segment_size_kb`, `indexing_threshold_kb`, `flush_interval_sec`, `restart_probability`, `swarm_interval`, `enable_force_off`, `duration_sec` (null unless `--duration`) |
+//! | `Header`       | First line — run configuration                  | `seed`, `op_num`, `shard_count`, `id_pool`, `disable_optimizer`, `max_segment_size_kb`, `indexing_threshold_kb`, `flush_interval_sec`, `restart_probability`, `swarm_interval`, `disable_snapshots`, `enable_force_off`, `duration_sec` (null unless `--duration`) |
 //! | *(op variant)* | Each `Op` from the workload generator           | See `op_payload` below — `id`/`ids`/etc. depending on variant |
 //! | `Restart`      | Mid-run close+reopen+verify                     | `pre_points`, `pre_segments` |
 //! | `LiveVerify`   | End-of-run scroll vs model, before reload       | `model_points`, `engine_points`, `segments`, `optimized_points`, `extra`, `missing` |
 //! | `ReloadVerify` | End-of-run scroll vs model, after final reload  | `model_points`, `engine_points`, `extra`, `missing` |
+//!
+//! `CreateSnapshot` is an ordinary op event: it spawns a background snapshot that runs concurrently
+//! with the op events that follow it (the archive is discarded — no recovery). It draws no rng, so
+//! it doesn't perturb the op stream.
 //!
 //! `extra` = ids the engine has that the model doesn't.
 //! `missing` = ids the model has that the engine doesn't.
@@ -51,6 +55,10 @@
 //! counts, optimizer counters) point at engine-side non-determinism. Use
 //! `diff -u trace.log other.log` and ignore the verify lines if you only care
 //! about workload determinism.
+//!
+//! `CreateSnapshot` ops don't affect this: they draw no rng and spawn a
+//! background task, so a fixed seed reproduces the same op stream whether or not
+//! snapshots are enabled (only the snapshots' wall-clock timing varies).
 
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -87,6 +95,7 @@ impl Trace {
         restart_probability: f64,
         swarm_interval: usize,
         enable_force_off: bool,
+        disable_snapshots: bool,
         duration: Option<Duration>,
     ) {
         self.write(&json!({
@@ -101,6 +110,7 @@ impl Trace {
             "flush_interval_sec": flush_interval_sec,
             "restart_probability": restart_probability,
             "swarm_interval": swarm_interval,
+            "disable_snapshots": disable_snapshots,
             "enable_force_off": enable_force_off,
             // null in op-count mode; seconds when the run is time-bounded (`--duration`).
             "duration_sec": duration.map(|d| d.as_secs()),
@@ -339,6 +349,8 @@ fn op_payload(op: &Op) -> Value {
                 }))
                 .collect::<Vec<_>>(),
         }),
+        // The op events that follow a `CreateSnapshot` ran concurrently with the background capture.
+        Op::CreateSnapshot => json!({}),
     }
 }
 

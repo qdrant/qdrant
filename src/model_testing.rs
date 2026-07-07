@@ -137,6 +137,15 @@ struct Args {
     /// count is unchanged vs. the default, so the non-broken op stream stays reproducible per seed.
     #[clap(long, default_value_t = false)]
     enable_force_off: bool,
+
+    /// Disable the `CreateSnapshot` op entirely — it's masked out of every swarm config. Off by
+    /// default, so a normal soak takes snapshots in the background concurrently with the workload
+    /// (the archive is discarded — this stresses snapshot *creation* under concurrent writes, not
+    /// recovery). The op draws no rng, so `--seed` reproduces identically whether or not snapshots
+    /// are enabled; disable them only to avoid the background snapshot IO. The rng-draw count for
+    /// the swarm config is unchanged either way.
+    #[clap(long, default_value_t = false)]
+    disable_snapshots: bool,
 }
 
 fn main() {
@@ -202,8 +211,9 @@ async fn run_main(args: Args) {
     println!(
         "model_testing: seed={} {stop} shard_count={} id_pool={} storage_path={} \
          disable_optimizer={} max_segment_size_kb={} indexing_threshold_kb={} \
-         flush_interval_sec={} restart_probability={} swarm_interval={} on_disk={} \
-         async_scorer={} pre_restart_check={} enable_force_off={}",
+         flush_interval_sec={} restart_probability={} swarm_interval={} \
+         on_disk={} async_scorer={} pre_restart_check={} enable_force_off={} \
+         disable_snapshots={}",
         args.seed,
         args.shard_count,
         args.id_pool,
@@ -218,6 +228,7 @@ async fn run_main(args: Args) {
         args.async_scorer,
         args.pre_restart_check,
         args.enable_force_off,
+        args.disable_snapshots,
     );
     let start = Instant::now();
     collection::model_testing::run(
@@ -235,6 +246,7 @@ async fn run_main(args: Args) {
         args.on_disk,
         args.pre_restart_check,
         args.enable_force_off,
+        args.disable_snapshots,
         args.duration_sec.map(Duration::from_secs),
         shutdown,
     )
