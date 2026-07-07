@@ -51,7 +51,7 @@ fn main() {
         .unwrap_or_else(|error| {
             eprintln!(
                 "Unable to open write ahead log in directory {:?}: {}.",
-                &args.flag_path, error
+                args.flag_path, error
             );
             process::exit(1);
         });
@@ -96,7 +96,7 @@ fn entry(wal: Wal, index: u64) {
             eprintln!(
                 "No entry at index {} in the write ahead log in directory {:?}.",
                 index,
-                &wal.path()
+                wal.path()
             );
             process::exit(1);
         }

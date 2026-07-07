@@ -35,7 +35,7 @@ pub async fn activate_shard(
         log::debug!(
             "Activating shard {} of collection {} with consensus",
             shard_id,
-            &collection.name()
+            collection.name()
         );
         toc.send_set_replica_state_proposal(
             collection.name().to_string(),
@@ -48,7 +48,7 @@ pub async fn activate_shard(
         log::debug!(
             "Activating shard {} of collection {} locally",
             shard_id,
-            &collection.name()
+            collection.name()
         );
         collection
             .set_shard_replica_state(*shard_id, peer_id, ReplicaState::Active, None)

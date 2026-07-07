@@ -184,7 +184,9 @@ where
                 length: self.header.buckets_count * size_of::<BucketOffset>() as u64,
             })?;
             let mut offsets: Vec<BucketOffset> = buckets
-                .chunks_exact(size_of::<BucketOffset>())
+                .as_chunks::<{ size_of::<BucketOffset>() }>()
+                .0
+                .iter()
                 .map(|c| parse_bucket_offset(c).unwrap())
                 .collect();
             offsets.sort_unstable();

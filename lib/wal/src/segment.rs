@@ -461,10 +461,7 @@ impl Segment {
                 self.flush_offset = end;
 
                 let log_msg = if log_enabled!(log::Level::Trace) {
-                    format!(
-                        "{:?}: async flushing byte range [{}, {})",
-                        &self, start, end
-                    )
+                    format!("{self:?}: async flushing byte range [{start}, {end})")
                 } else {
                     String::new()
                 };
