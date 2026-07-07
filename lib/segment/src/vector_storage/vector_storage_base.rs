@@ -31,8 +31,8 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
-    VectorElementTypeHalf, VectorInternal, VectorRef,
+    MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType,
+    VectorElementTypeByte, VectorElementTypeHalf, VectorInternal, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -768,6 +768,155 @@ impl VectorStorageEnum {
             "Vector layout is not implemented for this storage",
         ))
     }
+
+    /// Write-side counterpart of [`VectorStorageRead::with_vector_bytes_opt`]:
+    /// insert a vector given in the storage-native serialized form.
+    ///
+    /// The bytes carry no encoding/version tag, so they must come from a
+    /// storage with the same configuration (kind, datatype, dim) — in
+    /// practice, from `retrieve_raw` on a segment with a matching config.
+    /// TurboQuant storages ingest the encoded bytes verbatim, avoiding the
+    /// lossy dequantize/requantize round-trip; all other storages decode
+    /// losslessly and reuse their regular insert path.
+    pub fn insert_vector_bytes(
+        &mut self,
+        key: PointOffsetType,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::DenseVolatile(v) => insert_dense_bytes(v, key, bytes, hw_counter),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => {
+                insert_dense_bytes(v, key, bytes, hw_counter)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => {
+                insert_dense_bytes(v, key, bytes, hw_counter)
+            }
+            VectorStorageEnum::DenseMemmap(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::DenseMemmapByte(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::DenseMemmapHalf(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                insert_dense_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::DenseTurbo(v) => v.insert_tq_bytes(key, bytes, hw_counter),
+            VectorStorageEnum::SparseVolatile(v) => insert_sparse_bytes(v, key, bytes, hw_counter),
+            VectorStorageEnum::SparseMmap(v) => insert_sparse_bytes(v, key, bytes, hw_counter),
+            VectorStorageEnum::MultiDenseVolatile(v) => {
+                insert_multi_bytes(v, key, bytes, hw_counter)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => {
+                insert_multi_bytes(v, key, bytes, hw_counter)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
+                insert_multi_bytes(v, key, bytes, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                insert_multi_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                insert_multi_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                insert_multi_bytes(v.as_mut(), key, bytes, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseTurbo(v) => {
+                v.insert_multi_tq_bytes(key, bytes, hw_counter)
+            }
+            VectorStorageEnum::EmptyDense(_) | VectorStorageEnum::EmptySparse(_) => Err(
+                OperationError::service_error("Cannot insert into empty vector storage"),
+            ),
+        }
+    }
+}
+
+/// Insert a dense vector from its storage-native bytes (packed `[T]`, as
+/// returned by [`DenseVectorStorageRead::with_dense_bytes_opt`]). The `T` →
+/// `f32` → `T` round-trip through the regular insert path is lossless for
+/// every supported element type.
+fn insert_dense_bytes<T: PrimitiveVectorElement, S: DenseVectorStorageRead<T> + VectorStorage>(
+    storage: &mut S,
+    key: PointOffsetType,
+    bytes: &[u8],
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<()> {
+    let expected_size = storage.vector_dim() * size_of::<T>();
+    if bytes.len() != expected_size {
+        return Err(OperationError::service_error(format!(
+            "Malformed dense vector blob of {} bytes, expected {expected_size}",
+            bytes.len(),
+        )));
+    }
+    // `pod_collect_to_vec` instead of `cast_slice`: incoming bytes may not be
+    // aligned for `T`.
+    let elements: Vec<T> = bytemuck::allocation::pod_collect_to_vec(bytes);
+    let vector = T::slice_to_float_cow(Cow::Owned(elements));
+    storage.insert_vector(key, VectorRef::from(vector.as_ref()), hw_counter)
+}
+
+/// Insert a multi-dense vector from its storage-native bytes (flattened inner
+/// vectors, as returned by [`MultiVectorStorageRead::with_multi_bytes_opt`]).
+fn insert_multi_bytes<T: PrimitiveVectorElement, S: MultiVectorStorageRead<T> + VectorStorage>(
+    storage: &mut S,
+    key: PointOffsetType,
+    bytes: &[u8],
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<()> {
+    let inner_size = storage.vector_dim() * size_of::<T>();
+    if bytes.is_empty() || !bytes.len().is_multiple_of(inner_size) {
+        return Err(OperationError::service_error(format!(
+            "Malformed multi vector blob of {} bytes, expected a positive multiple of {inner_size}",
+            bytes.len(),
+        )));
+    }
+    let elements: Vec<T> = bytemuck::allocation::pod_collect_to_vec(bytes);
+    let dim = storage.vector_dim();
+    let multi = T::into_float_multivector(CowMultiVector::Owned(TypedMultiDenseVector::new(
+        elements, dim,
+    )));
+    storage.insert_vector(key, VectorRef::MultiDense(multi.as_vec_ref()), hw_counter)
+}
+
+/// Insert a sparse vector from its storage-native bytes (the lossless
+/// [`StoredSparseVector`] bincode form returned by
+/// [`SparseVectorStorageRead::sparse_bytes_opt`]).
+fn insert_sparse_bytes<S: VectorStorage>(
+    storage: &mut S,
+    key: PointOffsetType,
+    bytes: &[u8],
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<()> {
+    let sparse = SparseVector::try_from(StoredSparseVector::try_from_bytes(bytes)?)?;
+    storage.insert_vector(key, VectorRef::from(&sparse), hw_counter)
 }
 
 /// Per-key fallback for [`VectorStorageRead::read_vector_bytes`], for storages

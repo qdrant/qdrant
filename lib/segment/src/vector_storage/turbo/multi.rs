@@ -258,17 +258,14 @@ impl TurboMultiVectorStorage {
         Ok(next_chunk)
     }
 
-    /// Encode and upsert one multivector at `key`: reuse the existing record range
-    /// in place when the new count fits its capacity, else append a fresh range.
-    fn insert_multi(
-        &mut self,
+    /// Record range for upserting `count` records at `key`: reuse the existing
+    /// range in place when the new count fits its capacity, else allocate a
+    /// fresh range at the end.
+    fn record_range_for_upsert(
+        &self,
         key: PointOffsetType,
-        multi_vector: TypedMultiDenseVectorRef<'_, VectorElementType>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        assert_eq!(multi_vector.dim, self.dim);
-
-        let count = multi_vector.vectors_count() as PointOffsetType;
+        count: PointOffsetType,
+    ) -> OperationResult<MultivectorMmapOffset> {
         let mut offset = self
             .offsets
             .get::<Random>(key as VectorOffsetType)
@@ -284,6 +281,20 @@ impl TurboMultiVectorStorage {
         } else {
             offset.count = count;
         }
+        Ok(offset)
+    }
+
+    /// Encode and upsert one multivector at `key`.
+    fn insert_multi(
+        &mut self,
+        key: PointOffsetType,
+        multi_vector: TypedMultiDenseVectorRef<'_, VectorElementType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        assert_eq!(multi_vector.dim, self.dim);
+
+        let count = multi_vector.vectors_count() as PointOffsetType;
+        let offset = self.record_range_for_upsert(key, count)?;
 
         for (i, inner) in multi_vector
             .flattened_vectors
@@ -296,6 +307,41 @@ impl TurboMultiVectorStorage {
             self.storage.upsert_vector(
                 offset.offset + i as PointOffsetType,
                 &quantized,
+                hw_counter,
+            )?;
+        }
+        self.offsets
+            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
+        self.set_deleted(key, false);
+
+        Ok(())
+    }
+
+    /// Upsert one multivector from its already-encoded concatenated inner
+    /// records (the [`MultiTQVectorStorage::get_multi_tq`] form), verbatim —
+    /// no dequantize/requantize round-trip. The bytes must come from a storage
+    /// with the same quantizer configuration (dim, distance).
+    pub(crate) fn insert_multi_tq_bytes(
+        &mut self,
+        key: PointOffsetType,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let record_size = self.quantizer.quantized_size();
+        if bytes.is_empty() || !bytes.len().is_multiple_of(record_size) {
+            return Err(OperationError::service_error(format!(
+                "Malformed multi TQ blob of {} bytes, expected a positive multiple of {record_size}",
+                bytes.len(),
+            )));
+        }
+
+        let count = (bytes.len() / record_size) as PointOffsetType;
+        let offset = self.record_range_for_upsert(key, count)?;
+
+        for (i, encoded) in bytes.chunks_exact(record_size).enumerate() {
+            self.storage.upsert_vector(
+                offset.offset + i as PointOffsetType,
+                encoded,
                 hw_counter,
             )?;
         }

@@ -25,10 +25,21 @@ use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
-    SnapshotFormat, VectorName,
+    SnapshotFormat, VectorName, VectorNameBuf,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorageRead;
+
+/// Look up a named vector in the `retrieve_raw`-shaped `(name, bytes)` list.
+fn find_raw_vector<'a>(
+    vectors: &'a [(VectorNameBuf, Vec<u8>)],
+    vector_name: &VectorName,
+) -> Option<&'a [u8]> {
+    vectors
+        .iter()
+        .find(|(name, _)| name == vector_name)
+        .map(|(_, bytes)| bytes.as_slice())
+}
 
 impl Segment {
     /// Replace vectors in-place
@@ -116,6 +127,94 @@ impl Segment {
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
+    }
+
+    /// Byte-blob analogue of [`Segment::replace_all_vectors`]: vector values
+    /// are storage-native bytes (the `retrieve_raw` form). Semantics are the
+    /// same — named vectors not present in `vectors` are deleted.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
+    pub(super) fn replace_all_vectors_raw(
+        &mut self,
+        internal_id: PointOffsetType,
+        op_num: SeqNumberType,
+        vectors: &[(VectorNameBuf, Vec<u8>)],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        debug_assert!(self.is_appendable());
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let bytes = find_raw_vector(vectors, vector_name);
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector_raw(internal_id, bytes, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+        Ok(())
+    }
+
+    /// Byte-blob analogue of [`Segment::insert_new_vectors`]: vector values
+    /// are storage-native bytes (the `retrieve_raw` form).
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
+    pub(super) fn insert_new_vectors_raw(
+        &mut self,
+        point_id: PointIdType,
+        op_num: SeqNumberType,
+        vectors: &[(VectorNameBuf, Vec<u8>)],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PointOffsetType> {
+        debug_assert!(self.is_appendable());
+        let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let bytes = find_raw_vector(vectors, vector_name);
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector_raw(new_index, bytes, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+        self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
+        Ok(new_index)
+    }
+
+    /// Append-only counterpart of [`Segment::replace_all_vectors_raw`]: write
+    /// the raw vectors at a fresh internal id and repoint the id tracker,
+    /// tombstoning `old_id` — the raw twin of [`Segment::clone_and_mutate_point`]
+    /// specialized to full-vector replacement.
+    ///
+    /// Unlike `clone_and_mutate_point`, no vector snapshot is taken: upsert
+    /// discards every old named vector anyway, so reading them (a lossy
+    /// decode for TurboQuant storages) is unnecessary. Only the payload
+    /// survives the move; it is rewritten at the new id — always, even when
+    /// empty, for the same null-index `total_point_count` bump reason.
+    ///
+    /// The payload lands after `set_link`, unlike `clone_and_mutate_point`'s
+    /// order. Not observable: callers hold exclusive segment access, and on a
+    /// mid-way failure the wrapping version handler parks the segment in a
+    /// failed state for replay either way.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
+    pub(super) fn clone_and_replace_point_raw(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        old_id: PointOffsetType,
+        vectors: &[(VectorNameBuf, Vec<u8>)],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PointOffsetType> {
+        debug_assert!(self.is_appendable());
+        let payload = self
+            .payload_index
+            .borrow()
+            .with_view(|view| view.get_payload(old_id, hw_counter))?;
+        let new_id = self.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
+        self.payload_index
+            .borrow_mut()
+            .overwrite_payload(new_id, &payload, hw_counter)?;
+        Ok(new_id)
     }
 
     /// Append-only update: snapshot the point at `old_id` into owned vectors

@@ -30,7 +30,7 @@ use self::turbo_encoded_vectors::TurboEncodedVectorStorage;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::spaces::metric::Metric;
@@ -86,6 +86,27 @@ impl TurboVectorStorage {
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.storage.clear_cache()?;
         self.deleted.clear_cache()?;
+        Ok(())
+    }
+
+    /// Upsert one vector from its already-encoded TurboQuant bytes, verbatim —
+    /// no dequantize/requantize round-trip. The bytes must come from a storage
+    /// with the same quantizer configuration (dim, distance).
+    pub(crate) fn insert_tq_bytes(
+        &mut self,
+        key: PointOffsetType,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let expected_size = self.quantizer.quantized_size();
+        if bytes.len() != expected_size {
+            return Err(OperationError::service_error(format!(
+                "Malformed dense TQ blob of {} bytes, expected {expected_size}",
+                bytes.len(),
+            )));
+        }
+        self.storage.upsert_vector(key, bytes, hw_counter)?;
+        self.set_deleted(key, false);
         Ok(())
     }
 

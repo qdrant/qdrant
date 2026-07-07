@@ -15,6 +15,14 @@ pub struct StoredSparseVector {
 }
 
 impl StoredSparseVector {
+    /// Fallible counterpart of [`Blob::from_bytes`], for deserializing bytes
+    /// that arrive from outside this storage (e.g. raw point relocation).
+    pub(crate) fn try_from_bytes(data: &[u8]) -> Result<Self, OperationError> {
+        bincode::deserialize(data).map_err(|err| {
+            OperationError::service_error(format!("Failed to decode sparse vector bytes: {err}"))
+        })
+    }
+
     /// Convert indices into a byte array
     /// Use bitpacking and delta-encoding for additional compression
     fn serialize_indices(indices: &[DimId64]) -> Vec<u8> {
