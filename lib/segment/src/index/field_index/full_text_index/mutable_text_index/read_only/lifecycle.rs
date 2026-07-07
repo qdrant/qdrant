@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead};
+use common::universal_io::{OkNotFound, Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::super::inner::MutableFullTextIndexInner;
@@ -30,7 +30,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     ///
     /// [1]: super::super::MutableFullTextIndex::open_gridstore
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {

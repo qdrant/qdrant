@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoIndex;
 use super::super::on_disk_geo_index::OnDiskGeoIndex;
@@ -20,7 +20,7 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     ///
     /// [1]: super::super::GeoIndex::new_mutable
     pub fn open_appendable(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
     ) -> OperationResult<Option<Self>> {
         Ok(ReadOnlyAppendableGeoIndex::open(fs, dir)?.map(Self::Appendable))
@@ -45,7 +45,7 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     /// [2]: common::universal_io::MmapFile
     /// [3]: common::universal_io::ReadOnly
     pub fn open_immutable(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,

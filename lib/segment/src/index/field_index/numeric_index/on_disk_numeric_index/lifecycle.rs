@@ -8,7 +8,7 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead,
+    MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
     read_json_via,
 };
 use fs_err as fs;
@@ -109,20 +109,14 @@ where
             deleted.flusher()()?;
         }
 
-        Self::open(
-            &CachedReadFs::new(fs.clone(), path)?,
-            path,
-            populate,
-            deleted_points,
-        )?
-        .ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalNumericIndex after building it")
         })
     }
 
     /// Open and load mmap numeric index from the given path
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
@@ -146,13 +140,12 @@ where
             populate,
             advice: AdviceSetting::Global,
         };
-        let pairs =
-            TypedStorage::new(fs.take_file(&pairs_path, pairs_options, Default::default())?);
+        let pairs = TypedStorage::new(fs.open(&pairs_path, pairs_options, Default::default())?);
 
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.take_file(
+        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.open(
             &deleted_path,
             OpenOptions {
                 writeable: false,

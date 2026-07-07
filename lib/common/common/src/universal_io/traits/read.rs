@@ -33,13 +33,17 @@ use crate::universal_io::{ReadBytesItem, ReadRange, Result, UniversalKind};
 ///   enough for the majority of types.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead: Sized + Debug + Send + Sync {
-    /// Filesystem handle type that opens `Self`-typed file handles via
-    /// [`UniversalReadFs::open`](UniversalReadFs::open).
+    /// The canonical filesystem handle type that opens `Self`-typed file
+    /// handles via [`UniversalReadFs::open`](UniversalReadFs::open).
     ///
-    /// Bidirectionally pinned: `Self::Fs::File = Self`. Wrappers such as
-    /// `ReadOnly<S>` declare a phantom `ReadOnlyFs<S::Fs>` to satisfy this
-    /// constraint at the type level, while their inherent `open`
-    /// constructor still accepts the unwrapped inner `S::Fs`.
+    /// Pinned in this direction only (`Self::Fs::File = Self`): every file
+    /// type names exactly one canonical backend, but other filesystems may
+    /// produce the same file type (e.g.
+    /// [`CachedReadFs`](crate::universal_io::CachedReadFs) opens the
+    /// wrapped backend's files). Code that should accept any of them takes
+    /// `&impl UniversalReadFs<File = S>` instead of `&S::Fs`. Wrappers such
+    /// as `ReadOnly<S>` declare a phantom `ReadOnlyFs<S::Fs>` to satisfy
+    /// this constraint at the type level.
     type Fs: UniversalReadFs<File = Self>;
 
     /// Read-pipeline implementation for this backend.

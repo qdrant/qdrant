@@ -5,7 +5,9 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::VecExt;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, MmapFs, Result, UniversalRead, UniversalWrite, UserData};
+use common::universal_io::{
+    MmapFs, Result, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+};
 
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
@@ -31,7 +33,7 @@ type Storage = common::universal_io::MmapFile;
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     for InvertedIndexCompressedImmutableRam<W>
 {
-    fn open_ro_impl(fs: &CachedReadFs<S::Fs>, path: &Path) -> Result<Self> {
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<Self> {
         let mmap_inverted_index = InvertedIndexCompressedMmap::<W, S>::open_ro(fs, path)?;
         Self::from_mmap_index(mmap_inverted_index)
     }
@@ -247,11 +249,8 @@ mod tests {
             .unwrap();
 
         let loaded_inverted_index =
-            InvertedIndexCompressedImmutableRam::<W>::open_ro::<common::universal_io::MmapFile>(
-                &CachedReadFs::new(MmapFs, tmp_dir_path.path()).unwrap(),
-                tmp_dir_path.path(),
-            )
-            .unwrap();
+            InvertedIndexCompressedImmutableRam::<W>::open_ro(&MmapFs, tmp_dir_path.path())
+                .unwrap();
         assert_eq!(inverted_index_immutable_ram, loaded_inverted_index);
     }
 }

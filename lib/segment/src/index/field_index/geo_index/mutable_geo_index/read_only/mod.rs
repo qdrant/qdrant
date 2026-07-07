@@ -77,12 +77,9 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyAppendableGeoIndex<ReadOnly<MmapFile>> =
-            ReadOnlyAppendableGeoIndex::open(
-                &common::universal_io::CachedReadFs::new(fs, std::path::Path::new(".")).unwrap(),
-                dir.path().to_path_buf(),
-            )
-            .unwrap()
-            .unwrap();
+            ReadOnlyAppendableGeoIndex::open(&fs, dir.path().to_path_buf())
+                .unwrap()
+                .unwrap();
 
         // Counts reconstructed from the Gridstore on open.
         assert_eq!(index.points_count(), 3);

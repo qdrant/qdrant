@@ -96,11 +96,7 @@ fn read_only_matches_immutable() {
     // Writing the files also validates the on-disk format round-trips.
     let _disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
 
-    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        dir.path(),
-    )
-    .unwrap();
+    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
     assert_read_parity(&immutable, &read_only);
 }
 
@@ -135,12 +131,9 @@ fn detect_and_load_selects_disk_format() {
     let disk_dir = Builder::new().prefix("disk").tempdir().unwrap();
     let _disk =
         DiskIdTracker::<MmapFile>::new(&MmapFs, disk_dir.path(), &versions, mappings).unwrap();
-    let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        disk_dir.path(),
-        None,
-    )
-    .unwrap();
+    let loaded =
+        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, &MmapFs, disk_dir.path(), None)
+            .unwrap();
     assert_eq!(loaded.name(), "read-only disk id tracker");
     assert_read_parity(&immutable, &loaded);
 
@@ -149,18 +142,16 @@ fn detect_and_load_selects_disk_format() {
     let imm_dir = Builder::new().prefix("imm").tempdir().unwrap();
     let _imm = ImmutableIdTracker::<MmapFile>::new(&MmapFs, imm_dir.path(), &versions2, mappings2)
         .unwrap();
-    let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        imm_dir.path(),
-        None,
-    )
-    .unwrap();
+    let loaded =
+        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, &MmapFs, imm_dir.path(), None)
+            .unwrap();
     assert_eq!(loaded.name(), "read-only immutable id tracker");
 
     // An empty segment (no mapping files) falls back to the appendable reader.
     let empty_dir = Builder::new().prefix("empty").tempdir().unwrap();
     let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+        &MmapFs,
+        &MmapFs,
         empty_dir.path(),
         None,
     )
@@ -204,11 +195,7 @@ fn read_by_id_does_not_materialize_deleted_set() {
         disk.point_mappings().iter_from(None).collect()
     };
 
-    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        dir.path(),
-    )
-    .unwrap();
+    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
 
     // Point lookups must not trigger the full deleted-set materialization.
     for (external_id, offset) in live.iter().take(200) {
@@ -238,11 +225,7 @@ fn deletion_and_live_reload() {
         DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
 
     // A reader opened before the deletions; it will pick them up via live_reload.
-    let mut read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        dir.path(),
-    )
-    .unwrap();
+    let mut read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
     // Establish the diff baseline (a search-style access) so the next reload
     // reports only the incremental deletions, not every build-time deletion.
     let _ = read_only.deleted_point_bitslice();

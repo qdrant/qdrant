@@ -9,8 +9,8 @@ use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
-    CachedReadFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
-    UniversalReadFs, UniversalWrite, UserData,
+    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+    UniversalWrite, UserData,
 };
 use smallvec::SmallVec;
 
@@ -275,27 +275,13 @@ impl<S> Tracker<S> {
 impl<S: UniversalRead> Tracker<S> {
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
-    pub fn open(fs: &S::Fs, path: &Path, writeable: bool) -> Result<Self> {
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        writeable: bool,
+    ) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         let storage = Self::open_storage(fs, &path, writeable)?;
-        Self::from_storage(path, storage)
-    }
-
-    /// Open the tracker read-only, taking its storage from a
-    /// [`CachedReadFs`] prefetch pool.
-    pub fn open_cached(fs: &CachedReadFs<S::Fs>, path: &Path) -> Result<Self> {
-        let path = Self::tracker_file_name(path);
-        let storage = match fs.take_file(&path, tracker_open_options(false), Default::default()) {
-            Err(UniversalIoError::NotFound { .. }) => {
-                // If config exists and storage doesn't,
-                // it should be treated as inconsistent storage rather than a missing one
-                return Err(GridstoreError::service_error(format!(
-                    "Tracker file does not exist: {}",
-                    path.display()
-                )));
-            }
-            other => other?,
-        };
         Self::from_storage(path, storage)
     }
 
@@ -318,7 +304,11 @@ impl<S: UniversalRead> Tracker<S> {
         Ok(header)
     }
 
-    fn open_storage(fs: &S::Fs, path: &Path, writeable: bool) -> Result<S> {
+    fn open_storage<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        writeable: bool,
+    ) -> Result<S> {
         let storage = match fs.open(path, tracker_open_options(writeable), Default::default()) {
             Err(UniversalIoError::NotFound { .. }) => {
                 // If config exists and storage doesn't,

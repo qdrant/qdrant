@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::CachedReadFs;
+use common::universal_io::UniversalReadFs;
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
 use crate::common::operation_error::OperationResult;
@@ -52,7 +52,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// entry on apply.
     pub fn config_reload_diff(
         &self,
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         new_config: PayloadConfig,
     ) -> OperationResult<PayloadIndexReloadDiff<S>> {
         let mut added: ReadOnlyIndexesMap<S> = HashMap::new();

@@ -5,9 +5,7 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{
-    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
-};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs, UserData, read_json_via};
 
 use super::view::GridstoreView;
 use crate::Result;
@@ -64,21 +62,21 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     ///
     /// Infers page count by scanning for page files on disk.
     ///
-    /// Stored handles (tracker, pages) are taken from the [`CachedReadFs`]
-    /// prefetch pool, so the reader's storage type stays plain `S`. Live
-    /// reload keeps taking a raw `&S::Fs` — the snapshot behind `fs` goes
-    /// stale the moment the leader writes.
-    pub fn open(fs: &CachedReadFs<S::Fs>, base_path: PathBuf, populate: Populate) -> Result<Self> {
+    /// `fs` may be the raw backend or a caching wrapper producing the same
+    /// `S`-typed handles (e.g. `CachedReadFs`). Live reload keeps taking a
+    /// raw `&S::Fs` — a caching wrapper's snapshot goes stale the moment
+    /// the leader writes.
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        base_path: PathBuf,
+        populate: Populate,
+    ) -> Result<Self> {
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
         // writable `Gridstore` opens these same files writable instead.
-        let config_path = base_path.join(CONFIG_FILENAME);
-        let config: StorageConfig =
-            read_json_via(fs, &config_path).map_err(GridstoreError::from)?;
+        let (config, tracker) = read_config_and_tracker(fs, &base_path, false)?;
 
-        let tracker = Tracker::<S>::open_cached(fs, &base_path)?;
-
-        let pages = Pages::<S>::open_cached(fs, &base_path, populate)?;
+        let pages = Pages::<S>::open(fs, &base_path, false, populate)?;
 
         Ok(Self {
             tracker,
@@ -220,7 +218,7 @@ pub(super) fn read_config_and_tracker<Fs, S>(
 ) -> Result<(StorageConfig, Tracker<S>)>
 where
     Fs: UniversalReadFs<File = S>,
-    S: UniversalRead<Fs = Fs>,
+    S: UniversalRead,
 {
     let config_path = base_path.join(CONFIG_FILENAME);
     let config: StorageConfig =

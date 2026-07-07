@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::CachedReadFs;
+use common::universal_io::UniversalReadFs;
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};
@@ -26,7 +26,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// index that would drop the persisted postings of the present half.
     ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
-    pub fn open(fs: &CachedReadFs<S::Fs>, path: &Path) -> OperationResult<Option<Self>> {
+    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
         let trues_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;

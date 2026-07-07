@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, MmapFs, Populate, UniversalRead};
+use common::universal_io::{MmapFs, Populate, UniversalRead, UniversalReadFs};
 use fs_err as fs;
 use serde_json::Value;
 
@@ -22,7 +22,7 @@ use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 impl<S: UniversalRead> OnDiskFullTextIndex<S> {
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         config: TextIndexParams,
         populate: Populate,
@@ -191,18 +191,13 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         let populate = Populate::from(!is_on_disk);
         let has_positions = config.phrase_matching.unwrap_or_default();
-        let inverted_index = OnDiskInvertedIndex::open(
-            &CachedReadFs::new(MmapFs, &path)?,
-            path,
-            populate,
-            has_positions,
-            &deleted_points,
-        )?
-        .ok_or_else(|| {
-            OperationError::service_error(
-                "Failed to open OnDiskInvertedIndex that was just created",
-            )
-        })?;
+        let inverted_index =
+            OnDiskInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
+                .ok_or_else(|| {
+                    OperationError::service_error(
+                        "Failed to open OnDiskInvertedIndex that was just created",
+                    )
+                })?;
 
         let on_disk_index = OnDiskFullTextIndex {
             inverted_index,

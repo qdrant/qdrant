@@ -43,11 +43,11 @@ where
     S: UniversalRead,
 {
     /// Load the hash map from file.
-    pub fn open(
-        fs: &S::Fs,
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
         path: impl AsRef<Path>,
         options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+        extra: Fs::OpenExtra,
     ) -> Result<Self> {
         Self::from_file(fs.open(path, options, extra)?)
     }

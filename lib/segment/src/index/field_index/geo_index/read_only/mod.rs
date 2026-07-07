@@ -130,12 +130,10 @@ mod tests {
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
-        let index: ReadOnlyGeoIndex<ReadOnly<MmapFile>> = ReadOnlyGeoIndex::open_appendable(
-            &common::universal_io::CachedReadFs::new(fs, std::path::Path::new(".")).unwrap(),
-            dir.path().to_path_buf(),
-        )
-        .unwrap()
-        .unwrap();
+        let index: ReadOnlyGeoIndex<ReadOnly<MmapFile>> =
+            ReadOnlyGeoIndex::open_appendable(&fs, dir.path().to_path_buf())
+                .unwrap()
+                .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyGeoIndex::Appendable(_)));

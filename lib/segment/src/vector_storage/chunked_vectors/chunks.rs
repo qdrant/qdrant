@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
-    CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalWrite,
+    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
+    UniversalWrite,
 };
 
 use super::config::{MMAP_CHUNKS_PATTERN_END, MMAP_CHUNKS_PATTERN_START};
@@ -19,7 +19,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
 }
 
 pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
-    fs: &S::Fs,
+    fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
     advice: AdviceSetting,
     populate: Populate,
@@ -28,58 +28,9 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
     read_chunks_from(fs, directory, 0, advice, populate, writeable)
 }
 
-/// Read-only [`read_chunks`] taking chunk handles from a [`CachedReadFs`]
-/// prefetch pool. Listing goes through the trait so a snapshot-less
-/// (passthrough) wrapper behaves like the plain variant.
-pub fn read_chunks_cached<T: bytemuck::Pod + Send, S: UniversalRead>(
-    fs: &CachedReadFs<S::Fs>,
-    directory: &Path,
-    advice: AdviceSetting,
-    populate: Populate,
-) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
-    let chunks_prefix = directory.join(MMAP_CHUNKS_PATTERN_START);
-    let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
-    for listed in UniversalReadFileOps::list_files(fs, &chunks_prefix)? {
-        let path = listed.path;
-        let chunk_id = path
-            .file_name()
-            .and_then(|file_name| file_name.to_str())
-            .and_then(check_mmap_file_name_pattern);
-
-        if let Some(chunk_id) = chunk_id {
-            chunks_files.insert(chunk_id, path);
-        }
-    }
-
-    let num_chunks = chunks_files.len();
-    let mut result = Vec::with_capacity(num_chunks);
-    for chunk_id in 0..num_chunks {
-        let chunk_path = chunks_files.remove(&chunk_id).ok_or_else(|| {
-            UniversalIoError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Missing chunk {chunk_id} in {}", directory.display(),),
-            ))
-        })?;
-
-        let chunk = TypedStorage::new(fs.take_file(
-            &chunk_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: *MULTI_MMAP_IS_SUPPORTED,
-                populate,
-                advice,
-            },
-            Default::default(),
-        )?);
-
-        result.push(chunk);
-    }
-    Ok(result)
-}
-
 /// Open chunk files with id `>= start_chunk_id`, in ascending order.
 pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
-    fs: &S::Fs,
+    fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
     start_chunk_id: usize,
     advice: AdviceSetting,

@@ -87,7 +87,16 @@ pub trait UniversalWriteFileOps: UniversalReadFileOps {
 /// a single file handle implementing [`UniversalRead`].
 pub trait UniversalReadFs: UniversalReadFileOps {
     /// File handle type produced by [`Self::open`].
-    type File: UniversalRead<Fs = Self>;
+    ///
+    /// Deliberately NOT pinned back to `Self` (no `Fs = Self` bound):
+    /// several filesystems may produce the same file type. The canonical
+    /// backend for a file type is still unique — [`UniversalRead::Fs`]
+    /// names it — but wrappers like
+    /// [`CachedReadFs`](crate::universal_io::CachedReadFs) reuse the
+    /// wrapped backend's file type, so generic code bounded on
+    /// `UniversalReadFs<File = S>` accepts the raw backend and any such
+    /// wrapper interchangeably.
+    type File: UniversalRead;
 
     /// Backend-specific per-open knobs.
     ///

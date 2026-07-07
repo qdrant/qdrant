@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::{Advice, AdviceSetting};
-use common::universal_io::{CachedReadFs, Populate, UniversalRead};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
 
 use super::VectorStorageReadEnum;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -16,7 +16,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
     /// `VectorDataConfig`, mirroring `open_vector_storage`. Sparse storages are
     /// opened separately via `ReadOnlySparseVectorStorage::open`.
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
     ) -> OperationResult<Option<Self>> {

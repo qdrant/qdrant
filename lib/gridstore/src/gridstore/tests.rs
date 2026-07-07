@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
-use common::universal_io::{CachedReadFs, MmapFs};
+use common::universal_io::MmapFs;
 use fs_err as fs;
 use fs_err::File;
 use itertools::Itertools;
@@ -1131,12 +1131,8 @@ fn test_live_reload() {
     storage.flusher()().unwrap();
 
     // Step 2: Open a reader
-    let mut reader = GridstoreReader::<Payload, MmapFile>::open(
-        &CachedReadFs::new(MmapFs, &path).unwrap(),
-        path.clone(),
-        Populate::No,
-    )
-    .unwrap();
+    let mut reader =
+        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(reader.max_point_offset(), 2);
 
     // Step 3: Verify reader sees initial data
@@ -1212,12 +1208,8 @@ fn test_live_reload_across_pages() {
     let initial_pages = storage.pages.read().num_pages();
 
     // Open reader
-    let mut reader = GridstoreReader::<Payload, MmapFile>::open(
-        &CachedReadFs::new(MmapFs, &path).unwrap(),
-        path.clone(),
-        Populate::No,
-    )
-    .unwrap();
+    let mut reader =
+        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(reader.max_point_offset(), first_batch);
 
     // Verify reader can read all initial data
@@ -1518,7 +1510,7 @@ fn read_only_reader_over_write_enforced_backend() {
     type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
     let fs = RoFs::from_context(Default::default()).unwrap();
     let reader = GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(
-        &CachedReadFs::new(fs, dir.path()).unwrap(),
+        &fs,
         dir.path().to_path_buf(),
         Populate::No,
     )

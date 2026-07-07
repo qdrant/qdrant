@@ -6,7 +6,7 @@ use common::sorted_slice::SortedSlice;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead,
+    OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
 };
 use roaring::RoaringBitmap;
 
@@ -57,12 +57,12 @@ const READ_ONLY_OPTIONS: OpenOptions = OpenOptions {
 /// `TypedStorage`. Returns `Ok(None)` when the status file is absent — the flag
 /// directory doesn't exist — matching the read path's never-create contract.
 fn read_status_len<S: UniversalRead>(
-    fs: &CachedReadFs<S::Fs>,
+    fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
 ) -> OperationResult<Option<usize>> {
     let Some(file) = fs
-        .take_file(
-            &status_file(directory),
+        .open(
+            status_file(directory),
             READ_ONLY_OPTIONS,
             Default::default(),
         )
@@ -77,11 +77,11 @@ fn read_status_len<S: UniversalRead>(
 /// Open the flags bitslice read-only for [`ReadOnlyRoaringFlags::open`]'s full
 /// scan into a fresh bitmap. `live_reload` instead reopens the retained handle.
 fn open_flags_storage<S: UniversalRead>(
-    fs: &CachedReadFs<S::Fs>,
+    fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
 ) -> OperationResult<StoredBitSlice<S>> {
-    Ok(StoredBitSlice::<S>::from_file(fs.take_file(
-        &directory.join(FLAGS_FILE),
+    Ok(StoredBitSlice::<S>::from_file(fs.open(
+        directory.join(FLAGS_FILE),
         READ_ONLY_OPTIONS,
         Default::default(),
     )?)?)
@@ -101,7 +101,10 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     /// file is absent), matching the read path's never-create contract.
     ///
     /// [1]: super::roaring_flags::RoaringFlags::new
-    pub fn open(fs: &CachedReadFs<S::Fs>, directory: &Path) -> OperationResult<Option<Self>> {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+    ) -> OperationResult<Option<Self>> {
         // A missing status file means the index isn't present on disk.
         let Some(len) = read_status_len::<S>(fs, directory)? else {
             return Ok(None);
@@ -171,10 +174,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
 
         // The logical length grows as points are appended; refresh it so
         // length-driven readers (the null index's `iter_falses`) stay correct.
-        // `read_status_len` takes a `CachedReadFs`; snapshot-less it is a
-        // passthrough to the raw backend.
-        let reload_fs = CachedReadFs::new(fs.clone(), &self.directory)?;
-        if let Some(len) = read_status_len::<S>(&reload_fs, &self.directory)? {
+        if let Some(len) = read_status_len::<S>(fs, &self.directory)? {
             self.len = len;
         }
 

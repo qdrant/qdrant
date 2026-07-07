@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::universal_io::{CachedReadFs, Populate, UniversalRead};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::ReadOnlyPayloadStorage;
@@ -14,7 +14,7 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
     ///
     /// [1]: crate::payload_storage::payload_storage_impl::PayloadStorageImpl::open_or_create
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         populate: Populate,
     ) -> OperationResult<Self> {
