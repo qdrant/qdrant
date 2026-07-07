@@ -149,7 +149,7 @@ where
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
-        let (config, tracker) = reader::read_config_and_tracker(&fs, &base_path, true)?;
+        let (config, tracker) = reader::read_config_and_tracker(&fs, &base_path, populate, true)?;
         let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
