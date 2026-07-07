@@ -563,7 +563,7 @@ fn test_point_vector_count() {
 #[test]
 fn test_point_vector_count_multivec() {
     use segment::segment_constructor::simple_segment_constructor::{
-        VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
+        VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs,
     };
     use segment::types::Distance;
 
@@ -571,7 +571,8 @@ fn test_point_vector_count_multivec() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
-    let mut original_segment = build_multivec_segment(dir.path(), dim, dim, Distance::Dot).unwrap();
+    let mut original_segment =
+        build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
 
     let hw_cell = HardwareCounterCell::new();
 
