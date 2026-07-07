@@ -54,11 +54,8 @@ impl InMemoryBitvecFlags {
             .map_or(0, DynamicFlagsStatus::len);
 
         let flags_path = directory.join(FLAGS_FILE);
-        let flags = StoredBitSlice::<S>::from_file(fs.open(
-            &flags_path,
-            READ_ONLY_OPTIONS,
-            Default::default(),
-        )?)?;
+        let flags =
+            StoredBitSlice::<S>::open(fs, &flags_path, READ_ONLY_OPTIONS, Default::default())?;
         let bits = flags.read_all()?;
         let bitvec = bits.get(..len).map(BitVec::from_bitslice).ok_or_else(|| {
             OperationError::service_error(format!(

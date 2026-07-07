@@ -84,14 +84,8 @@ impl<S: UniversalRead> Pages<S> {
         populate: Populate,
     ) -> Result<()> {
         let page = fs.open(path, self.page_open_options(populate), Default::default())?;
-        self.attach_file(page);
-        Ok(())
-    }
-
-    /// Attach an already-opened page file. Pages must be attached in page-id
-    /// order, matching what [`Self::page_path`] maps ids to.
-    pub fn attach_file(&mut self, page: S) {
         self.pages.push(page);
+        Ok(())
     }
 
     fn page_open_options(&self, populate: Populate) -> OpenOptions {

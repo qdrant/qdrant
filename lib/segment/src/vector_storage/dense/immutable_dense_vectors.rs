@@ -56,10 +56,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
             populate,
             advice: AdviceSetting::Global,
         };
-        let read_only = fs
-            .open(vectors_path, options, Default::default())
-            .map(ReadOnly::from_file)
-            .map_err(|e| {
+        let read_only =
+            ReadOnly::open(fs, vectors_path, options, Default::default()).map_err(|e| {
                 crate::common::operation_error::OperationError::service_error(format!(
                     "Failed to open vector mmap at {}: {e}",
                     vectors_path.display()

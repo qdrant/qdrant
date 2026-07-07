@@ -50,11 +50,8 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
             advice: AdviceSetting::Global,
         };
 
-        let deleted = StoredBitSlice::from_file(fs.open(
-            deleted_path(segment_path),
-            options,
-            Default::default(),
-        )?)?;
+        let deleted =
+            StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
         let mut deleted_bitvec = BitVec::new();
         deleted_bitvec.extend_from_bitslice(deleted.read_all()?.as_ref());
 

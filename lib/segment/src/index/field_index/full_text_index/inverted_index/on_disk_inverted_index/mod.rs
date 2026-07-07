@@ -191,7 +191,8 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             // If postings don't exist, assume the index doesn't exist on disk
             return Ok(None);
         };
-        let vocab = UniversalHashMap::<str, TokenId, S>::from_file(fs.open(
+        let vocab = UniversalHashMap::<str, TokenId, S>::open(
+            fs,
             &vocab_path,
             OpenOptions {
                 writeable: false,
@@ -200,7 +201,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?)?;
+        )?;
 
         let point_to_tokens_count = TypedStorage::<S, usize>::new(fs.open(
             &point_to_tokens_count_path,
@@ -213,7 +214,8 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             Default::default(),
         )?);
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.open(
+        let deleted_payload_mmap = StoredBitSlice::<S>::open(
+            fs,
             &deleted_points_path,
             OpenOptions {
                 writeable: false,
@@ -222,7 +224,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?)?;
+        )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_tokens_count.len()` because it

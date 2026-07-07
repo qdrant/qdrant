@@ -47,7 +47,8 @@ where
             return Ok(None);
         };
 
-        let value_to_points = UniversalHashMap::from_file(fs.open(
+        let value_to_points = UniversalHashMap::open(
+            fs,
             &hashmap_path,
             OpenOptions {
                 writeable: false,
@@ -56,13 +57,14 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?)?;
+        )?;
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let prefix_index = PrefixIndex::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.open(
+        let deleted_payload_mmap = StoredBitSlice::<S>::open(
+            fs,
             &deleted_path,
             OpenOptions {
                 writeable: false,
@@ -71,7 +73,7 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?)?;
+        )?;
 
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
