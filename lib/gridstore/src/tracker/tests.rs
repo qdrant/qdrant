@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, UniversalFlush as _};
 use rstest::rstest;
 use tempfile::Builder;
 

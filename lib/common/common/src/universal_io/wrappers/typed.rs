@@ -7,8 +7,8 @@ use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalKind,
-    UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalAppend,
+    UniversalKind, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -160,5 +160,29 @@ where
         T: 'a,
     {
         S::write_multi::<T>(Self::peel_slice_mut(files), writes)
+    }
+}
+
+impl<S, T> TypedStorage<S, T>
+where
+    S: UniversalAppend,
+    T: bytemuck::Pod,
+{
+    /// Returns the byte offset at which `data` begins.
+    #[inline]
+    pub fn append(&mut self, data: &[T]) -> Result<ByteOffset> {
+        self.inner.append::<T>(data)
+    }
+
+    /// Returns the byte offset of the first appended byte.
+    #[inline]
+    pub fn append_batch<'a>(
+        &mut self,
+        items: impl IntoIterator<Item = &'a [T]>,
+    ) -> Result<ByteOffset>
+    where
+        T: 'a,
+    {
+        self.inner.append_batch::<T>(items)
     }
 }

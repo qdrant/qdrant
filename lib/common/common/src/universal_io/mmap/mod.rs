@@ -72,12 +72,16 @@ impl UniversalReadFs for MmapFs {
 pub struct MmapFile {
     path: PathBuf,
 
-    #[cfg_attr(target_os = "linux", expect(dead_code))]
     writeable: bool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     populate: bool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
+
+    /// Dedicated `O_APPEND` fd, lazily opened on first
+    /// [`UniversalAppend::append`]. Kept separate from the mmap so appends
+    /// cannot disturb the mapping, and `Arc`-shared so clones stay cheap.
+    append_file: Option<Arc<fs_err::File>>,
 
     // `mmap` and `mmap_seq` own the mmaps.
     mmap: Arc<Mutex<MmapRaw>>,
@@ -139,6 +143,7 @@ impl MmapFile {
             writeable,
             populate,
             advice,
+            append_file: None,
             mmap: Arc::new(Mutex::new(mmap)),
             mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
             len,
@@ -310,20 +315,97 @@ impl UniversalWrite for MmapFile {
 
         Ok(())
     }
+}
 
+impl UniversalFlush for MmapFile {
     fn flusher(&self) -> Flusher {
         let mmap = self.mmap.clone();
+        let append_file = self.append_file.clone();
         let flusher = move || {
-            // flushing empty mmap returns error on some platforms
-            let mmap = mmap.lock();
-            if mmap.len() > 0 {
-                mmap.flush()?;
+            {
+                // flushing empty mmap returns error on some platforms
+                let mmap = mmap.lock();
+                if mmap.len() > 0 {
+                    mmap.flush()?;
+                }
+            }
+
+            // Appends change the file size, and `msync` alone does not
+            // persist size metadata — also fdatasync when this handle has
+            // appended.
+            if let Some(file) = append_file {
+                file.sync_data()?;
             }
 
             Ok(())
         };
 
         Box::new(flusher)
+    }
+}
+
+impl UniversalAppend for MmapFile {
+    fn append<T: bytemuck::Pod>(&mut self, data: &[T]) -> Result<ByteOffset> {
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        if bytes.is_empty() {
+            return Ok(self.len as ByteOffset);
+        }
+
+        let mut fd = self.append_fd()?;
+        io::Write::write_all(&mut fd, bytes)?;
+
+        // Remap so reads and `len` through this handle see the growth.
+        self.reopen()?;
+
+        Ok((self.len - bytes.len()) as ByteOffset)
+    }
+
+    fn append_batch<'a, T: bytemuck::Pod>(
+        &mut self,
+        items: impl IntoIterator<Item = &'a [T]>,
+    ) -> Result<ByteOffset> {
+        let mut slices: Vec<io::IoSlice<'_>> = items
+            .into_iter()
+            .map(|item| bytemuck::cast_slice(item))
+            .filter(|bytes: &&[u8]| !bytes.is_empty())
+            .map(io::IoSlice::new)
+            .collect();
+        let total: usize = slices.iter().map(|slice| slice.len()).sum();
+        if total == 0 {
+            return Ok(self.len as ByteOffset);
+        }
+
+        let fd = self.append_fd()?;
+        local_file_ops::write_all_vectored(fd, &mut slices)?;
+
+        self.reopen()?;
+
+        Ok((self.len - total) as ByteOffset)
+    }
+}
+
+impl MmapFile {
+    /// Lazily open (and cache) a dedicated `O_APPEND` fd used exclusively for
+    /// appends. Every `write(2)`/`writev(2)` through it is an atomic
+    /// grow+write at the file's current end, so growth cannot leave a
+    /// zero-filled window behind.
+    fn append_fd(&mut self) -> Result<&fs_err::File> {
+        if !self.writeable {
+            return Err(UniversalIoError::Io(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "append requires a handle opened with writeable=true",
+            )));
+        }
+
+        if self.append_file.is_none() {
+            let file = fs_err::OpenOptions::new()
+                .append(true)
+                .open(&self.path)
+                .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
+            self.append_file = Some(Arc::new(file));
+        }
+
+        Ok(self.append_file.as_ref().expect("just set"))
     }
 }
 

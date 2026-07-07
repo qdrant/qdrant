@@ -1,9 +1,45 @@
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::path::Path;
 
 use crate::fs::atomic_save;
 use crate::mmap::create_and_ensure_length;
 use crate::universal_io::{ListedFile, UniversalIoError};
+
+/// `writev(2)`-family syscalls accept at most this many iovecs per call
+/// (`IOV_MAX`, 1024 on Linux).
+pub(super) const IOV_MAX: usize = 1024;
+
+/// Write all `slices` with vectored writes, handling short writes and the
+/// [`IOV_MAX`] limit.
+///
+/// On an `O_APPEND` fd every underlying `write`/`writev` syscall is an atomic
+/// grow+write at the current end-of-file, and under a single writer
+/// consecutive syscalls stay contiguous — so splitting is safe there.
+///
+/// `slices` must not contain empty slices: an all-empty head would report a
+/// spurious `WriteZero` error.
+pub(super) fn write_all_vectored(
+    mut writer: impl io::Write,
+    mut slices: &mut [io::IoSlice<'_>],
+) -> io::Result<()> {
+    while !slices.is_empty() {
+        let chunk = slices.len().min(IOV_MAX);
+        let written = match writer.write_vectored(&slices[..chunk]) {
+            Ok(written) => written,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(err),
+        };
+        if written == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "failed to write whole buffer",
+            ));
+        }
+        io::IoSlice::advance_slices(&mut slices, written);
+    }
+
+    Ok(())
+}
 
 pub fn local_create(path: &Path, expected_length: usize) -> crate::universal_io::Result<()> {
     create_and_ensure_length(path, expected_length)

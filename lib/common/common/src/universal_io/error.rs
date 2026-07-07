@@ -48,6 +48,7 @@ impl IsNotFound for UniversalIoError {
             | Self::InvalidFileIndex { .. }
             | Self::Uninitialized { .. }
             | Self::QueueIsFull
+            | Self::AppendOffsetConflict { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::TaskPanicked(_) => false,
@@ -96,6 +97,12 @@ pub enum UniversalIoError {
 
     #[error("Request queue is full")]
     QueueIsFull,
+
+    /// The backend rejected an append because `offset` no longer matches the
+    /// file's size (another writer appended, or the handle's cached length is
+    /// stale). Reopen the handle and retry.
+    #[error("append offset conflict at {path}: expected end-of-file offset {offset}")]
+    AppendOffsetConflict { path: PathBuf, offset: u64 },
 
     #[error("S3 object store error: {0}")]
     S3(#[source] Box<dyn std::error::Error + Send + Sync>),

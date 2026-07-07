@@ -288,9 +288,107 @@ impl UniversalWrite for IoUringFile {
 
         Ok(())
     }
+}
 
+impl UniversalFlush for IoUringFile {
     fn flusher(&self) -> Flusher {
         let file = self.file.clone();
         Box::new(move || Ok(file.sync_all()?))
+    }
+}
+
+impl UniversalAppend for IoUringFile {
+    fn append<T: bytemuck::Pod>(&mut self, data: &[T]) -> Result<ByteOffset> {
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        let mut slices = [io::IoSlice::new(bytes)];
+        self.append_slices(&mut slices, bytes.len())
+    }
+
+    fn append_batch<'a, T: bytemuck::Pod>(
+        &mut self,
+        items: impl IntoIterator<Item = &'a [T]>,
+    ) -> Result<ByteOffset> {
+        let mut slices: Vec<io::IoSlice<'_>> = items
+            .into_iter()
+            .map(|item| bytemuck::cast_slice(item))
+            .filter(|bytes: &&[u8]| !bytes.is_empty())
+            .map(io::IoSlice::new)
+            .collect();
+        let total = slices.iter().map(|slice| slice.len()).sum();
+        self.append_slices(&mut slices, total)
+    }
+}
+
+impl IoUringFile {
+    /// Vectored atomic append via `pwritev2(2)` with `RWF_APPEND`: each call
+    /// atomically grows the file at its current end in a single syscall.
+    ///
+    /// Not `O_APPEND` on the shared fd: on Linux, `pwrite(2)` on an
+    /// `O_APPEND` fd appends regardless of the given offset, which would
+    /// break the positioned writes of [`UniversalWrite`] on clones sharing
+    /// this fd. `RWF_APPEND` gives the same atomic-append semantics per call
+    /// without touching the fd's flags.
+    ///
+    /// A future io_uring-batched variant could set `.rw_flags(RWF_APPEND)`
+    /// on `Write` SQEs, but concurrent SQE completion order makes per-record
+    /// offsets unknowable — the sync syscall is the right primitive here.
+    ///
+    /// `slices` must not contain empty slices (an all-empty head would
+    /// report a spurious `WriteZero` error). Returns the byte offset at
+    /// which the first byte was appended.
+    fn append_slices(
+        &self,
+        mut slices: &mut [io::IoSlice<'_>],
+        total: usize,
+    ) -> Result<ByteOffset> {
+        if self.direct_io {
+            return Err(UniversalIoError::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "append is not supported on O_DIRECT (prevent_caching) handles",
+            )));
+        }
+
+        // Exact under the single-writer contract: nothing else grows the
+        // file between this fstat and the writes below.
+        let offset = self.file.metadata()?.len();
+        if total == 0 {
+            return Ok(offset);
+        }
+
+        while !slices.is_empty() {
+            let chunk = slices.len().min(local_file_ops::IOV_MAX);
+            let written = loop {
+                let written = unsafe {
+                    nix::libc::pwritev2(
+                        self.file.as_raw_fd(),
+                        slices.as_ptr().cast(),
+                        chunk as i32,
+                        0,
+                        nix::libc::RWF_APPEND,
+                    )
+                };
+
+                match usize::try_from(written) {
+                    Ok(written) => break written,
+                    Err(_) => {
+                        let err = io::Error::last_os_error();
+                        if err.kind() != io::ErrorKind::Interrupted {
+                            return Err(err.into());
+                        }
+                    }
+                }
+            };
+
+            if written == 0 {
+                return Err(UniversalIoError::Io(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "failed to write whole buffer",
+                )));
+            }
+
+            io::IoSlice::advance_slices(&mut slices, written);
+        }
+
+        Ok(offset)
     }
 }
