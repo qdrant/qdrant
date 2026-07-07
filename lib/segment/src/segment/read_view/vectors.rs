@@ -87,23 +87,20 @@ where
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
     ) -> OperationResult<()> {
         let vector_storage = self.vector_storage_for(vector_name)?;
+        let live_keys = self.filter_live_keys(&*vector_storage, keys);
 
-        // TODO(tqdt): this issues one blocking read per offset, unlike the
-        // decoded path which pipelines reads (io_uring) via `read_vectors`.
-        // Batch the raw reads too before relying on this for bulk relocation.
-        for (user_data, point_offset) in self.filter_live_keys(&*vector_storage, keys) {
-            let Some(bytes) = vector_storage.vector_bytes_opt::<Random>(point_offset)? else {
-                // No stored value for a live offset (e.g. empty placeholder
-                // storage) — skip it, mirroring `vectors_by_offsets`.
-                continue;
-            };
-            if vector_storage.is_on_disk() {
-                hw_counter.vector_io_read().incr_delta(bytes.len());
-            }
-            callback(user_data, point_offset, bytes);
-        }
-
-        Ok(())
+        vector_storage
+            .read_vector_bytes::<Random, U>(live_keys, |user_data, point_offset, bytes| {
+                if vector_storage.is_on_disk() {
+                    hw_counter.vector_io_read().incr_delta(bytes.len());
+                }
+                callback(user_data, point_offset, bytes);
+            })
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to read raw bytes of vector {vector_name:?}: {err}"
+                ))
+            })
     }
 
     /// Resolve the vector storage for a named vector, validating the name.
