@@ -14,7 +14,7 @@ use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use segment::data_types::segment_record::SegmentRecord;
+use segment::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::StorageSegmentEntry;
@@ -27,6 +27,28 @@ use uuid::Uuid;
 
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
+
+impl ProxySegment {
+    /// Shared preamble of `retrieve` and `retrieve_raw`: strip any vector
+    /// names that the proxy intends to delete or replace with a different
+    /// schema, and drop proxy-deleted points, before delegating to the
+    /// wrapped segment.
+    fn redact_and_filter_for_retrieve<'a>(
+        &self,
+        with_vector: &'a WithVector,
+        point_ids: &[PointIdType],
+    ) -> (std::borrow::Cow<'a, WithVector>, Vec<PointIdType>) {
+        let with_vector = self
+            .changed_vector_names
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let filtered_point_ids = point_ids
+            .iter()
+            .copied()
+            .filter(|id| !self.deleted_points.contains_key(id))
+            .collect();
+        (with_vector, filtered_point_ids)
+    }
+}
 
 impl ReadSegmentEntry for ProxySegment {
     fn is_proxy(&self) -> bool {
@@ -279,22 +301,33 @@ impl ReadSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        // Strip any vector names that the proxy intends to delete or replace
-        // with a different schema before delegating to the wrapped segment.
-        let with_vector = self
-            .changed_vector_names
-            .redact_with_vector(with_vector, &self.wrapped_config);
-        let with_vector = with_vector.as_ref();
-
-        let filtered_point_ids: Vec<PointIdType> = point_ids
-            .iter()
-            .copied()
-            .filter(|id| !self.deleted_points.contains_key(id))
-            .collect();
+        let (with_vector, filtered_point_ids) =
+            self.redact_and_filter_for_retrieve(with_vector, point_ids);
         self.wrapped_segment.get().read().retrieve(
             &filtered_point_ids,
             with_payload,
-            with_vector,
+            with_vector.as_ref(),
+            hw_counter,
+            is_stopped,
+            deferred_behavior,
+        )
+    }
+
+    fn retrieve_raw(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
+        let (with_vector, filtered_point_ids) =
+            self.redact_and_filter_for_retrieve(with_vector, point_ids);
+        self.wrapped_segment.get().read().retrieve_raw(
+            &filtered_point_ids,
+            with_payload,
+            with_vector.as_ref(),
             hw_counter,
             is_stopped,
             deferred_behavior,
