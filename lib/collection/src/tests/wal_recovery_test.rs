@@ -5,10 +5,15 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector};
+use segment::payload_json;
+use segment::types::{
+    Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType, WithPayload,
+    WithVector,
+};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointOperations,
+    PointStructPersisted, UpdateMode,
 };
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -21,6 +26,70 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::tests::fixtures::*;
 use crate::update_workers::applied_seq::{APPLIED_SEQ_SAVE_INTERVAL, AppliedSeqHandler};
+
+fn num_point(id: u64, num: i64) -> PointStructPersisted {
+    PointStructPersisted {
+        id: id.into(),
+        vector: VectorStructInternal::from(vec![id as f32, 2.0, 3.0, 4.0]).into(),
+        payload: Some(payload_json! {"num": num}),
+    }
+}
+
+fn upsert_num_point_operation(id: u64, num: i64) -> CollectionUpdateOperations {
+    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(vec![num_point(id, num)]),
+    ))
+}
+
+fn insert_only_num_point_operation(id: u64, num: i64) -> CollectionUpdateOperations {
+    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
+        ConditionalInsertOperationInternal {
+            points_op: PointInsertOperationsInternal::PointsList(vec![num_point(id, num)]),
+            condition: match_num_filter(num),
+            update_mode: Some(UpdateMode::InsertOnly),
+        },
+    ))
+}
+
+fn delete_num_filter_operation(num: i64) -> CollectionUpdateOperations {
+    CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
+        match_num_filter(num),
+    ))
+}
+
+fn match_num_filter(num: i64) -> Filter {
+    Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "num".parse().unwrap(),
+        Match::from(num),
+    )))
+}
+
+async fn retrieve_point_count(
+    shard: &LocalShard,
+    id: u64,
+    current_runtime: &AdaptiveSearchHandle,
+    hw_acc: HwMeasurementAcc,
+) -> usize {
+    let request = Arc::new(PointRequestInternal {
+        ids: vec![id.into()],
+        with_payload: None,
+        with_vector: WithVector::Bool(false),
+    });
+
+    shard
+        .retrieve(
+            request,
+            &WithPayload::from(false),
+            &WithVector::Bool(false),
+            current_runtime,
+            None,
+            hw_acc,
+            DeferredBehavior::VisibleOnly,
+        )
+        .await
+        .unwrap()
+        .len()
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
@@ -265,6 +334,108 @@ async fn test_partial_flush_recovery() {
         .points;
 
     assert_eq!(number_of_indexed_points_after_load, 4);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_replay_delete_by_filter_after_insert_only() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    let config = create_collection_config();
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Keep all WAL records for the reload below while still flushing the post-delete
+    // segment state to disk manually.
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    shard
+        .update(
+            upsert_num_point_operation(1, 1).into(),
+            WaitUntil::Visible,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .unwrap();
+
+    // Live execution should skip this insert because point 1 already exists.
+    shard
+        .update(
+            insert_only_num_point_operation(1, 2).into(),
+            WaitUntil::Visible,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .unwrap();
+
+    shard
+        .update(
+            delete_num_filter_operation(1).into(),
+            WaitUntil::Visible,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        retrieve_point_count(&shard, 1, &current_runtime, hw_acc.clone()).await,
+        0,
+        "point should be deleted before reload"
+    );
+
+    shard.full_flush();
+    shard.stop_gracefully().await;
+
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        true,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        retrieve_point_count(&shard, 1, &current_runtime, hw_acc).await,
+        0,
+        "WAL replay must not resurrect a point deleted by filter"
+    );
+
+    shard.stop_gracefully().await;
 }
 
 /// Test that truncate_unapplied_wal correctly drops unapplied records from a non-empty WAL

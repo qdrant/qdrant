@@ -10,9 +10,12 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::count::CountRequestInternal;
+use shard::operations::CollectionUpdateOperations;
+use shard::operations::point_ops::PointOperations;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
+use shard::update::resolve_delete_points_by_filter;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
@@ -51,39 +54,57 @@ pub enum SubmitOutcome {
 }
 
 impl LocalShard {
-    /// Submit an update to the worker queue without waiting for completion.
-    ///
-    /// Holds locks only for the brief WAL write + channel send. The returned
-    /// [`SubmitOutcome::Submitted`] carries an owned `oneshot::Receiver` that
-    /// can be awaited via [`await_update_result`] after dropping any outer
-    /// read guards on the replica set.
-    pub async fn submit_update(
+    fn operation_needs_wal_resolution(operation: &CollectionUpdateOperations) -> bool {
+        matches!(
+            operation,
+            CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(_))
+        )
+    }
+
+    fn resolve_operation_for_wal(
+        &self,
+        operation: &mut OperationWithClockTag,
+        hw_measurement_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<()> {
+        let CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
+            filter,
+        )) = &operation.operation
+        else {
+            return Ok(());
+        };
+
+        let filter = filter.clone();
+        let hw_counter = hw_measurement_acc.get_counter_cell();
+        let point_ids = {
+            let segments = self.segments.read();
+            resolve_delete_points_by_filter(&segments, &filter, &hw_counter)
+                .map_err(CollectionError::from)?
+        };
+
+        operation.operation =
+            CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+                ids: point_ids,
+            });
+
+        Ok(())
+    }
+
+    async fn wait_for_prior_updates(&self) -> CollectionResult<()> {
+        let plunger = self.plunge_async().await?;
+        plunger.await.map_err(|err| {
+            CollectionError::service_error(format!("Update plunger callback dropped: {err}"))
+        })
+    }
+
+    async fn write_and_queue_update(
         &self,
         mut operation: OperationWithClockTag,
         wait: WaitUntil,
+        pending_operations_count: usize,
+        callback_sender: Option<oneshot::Sender<CollectionResult<InternalUpdateResult>>>,
+        callback_receiver: Option<oneshot::Receiver<CollectionResult<InternalUpdateResult>>>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<SubmitOutcome> {
-        let (callback_sender, callback_receiver) = if wait.needs_callback() {
-            let (tx, rx) = oneshot::channel();
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
-
-        if self
-            .disk_usage_watcher
-            .is_disk_full()
-            .await?
-            .unwrap_or(false)
-        {
-            return Err(CollectionError::service_error(
-                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
-            ));
-        }
-
-        let _update_lock = self.update_lock.read().await;
-        let pending_operations_count = self.update_queue_length();
-
         let update_sender = self.update_sender.load();
         let channel_permit = update_sender.reserve().await?;
 
@@ -122,6 +143,67 @@ impl LocalShard {
             receiver: callback_receiver,
             clock_tag,
         })
+    }
+
+    /// Submit an update to the worker queue without waiting for completion.
+    ///
+    /// Holds locks only for the brief WAL write + channel send. The returned
+    /// [`SubmitOutcome::Submitted`] carries an owned `oneshot::Receiver` that
+    /// can be awaited via [`await_update_result`] after dropping any outer
+    /// read guards on the replica set.
+    pub async fn submit_update(
+        &self,
+        mut operation: OperationWithClockTag,
+        wait: WaitUntil,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<SubmitOutcome> {
+        let (callback_sender, callback_receiver) = if wait.needs_callback() {
+            let (tx, rx) = oneshot::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
+        if self
+            .disk_usage_watcher
+            .is_disk_full()
+            .await?
+            .unwrap_or(false)
+        {
+            return Err(CollectionError::service_error(
+                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
+            ));
+        }
+
+        if Self::operation_needs_wal_resolution(&operation.operation) {
+            let _update_lock = self.update_lock.write().await;
+            self.wait_for_prior_updates().await?;
+            self.resolve_operation_for_wal(&mut operation, &hw_measurement_acc)?;
+            let pending_operations_count = self.update_queue_length();
+            return self
+                .write_and_queue_update(
+                    operation,
+                    wait,
+                    pending_operations_count,
+                    callback_sender,
+                    callback_receiver,
+                    hw_measurement_acc,
+                )
+                .await;
+        }
+
+        let _update_lock = self.update_lock.read().await;
+        let pending_operations_count = self.update_queue_length();
+
+        self.write_and_queue_update(
+            operation,
+            wait,
+            pending_operations_count,
+            callback_sender,
+            callback_receiver,
+            hw_measurement_acc,
+        )
+        .await
     }
 }
 

@@ -366,6 +366,12 @@ pub fn delete_points(
         }
     }
 
+    if ids.is_empty() {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
     Ok(total_deleted_points)
 }
 
@@ -413,6 +419,82 @@ fn deferred_points_to_exclude_by_filter(
     }
 
     to_exclude
+}
+
+fn latest_filter_matched_point_ids(
+    segments: &SegmentHolder,
+    per_segment_points: &AHashMap<SegmentId, Vec<PointIdType>>,
+) -> AHashSet<PointIdType> {
+    let mut max_matched_versions: AHashMap<PointIdType, SeqNumberType> = Default::default();
+
+    for (segment_id, point_ids) in per_segment_points {
+        let segment = segments.get(*segment_id).unwrap().get().read();
+        for point_id in point_ids {
+            let Some(version) = segment.point_version(*point_id) else {
+                continue;
+            };
+            max_matched_versions
+                .entry(*point_id)
+                .and_modify(|current| *current = (*current).max(version))
+                .or_insert(version);
+        }
+    }
+
+    let matched_point_ids: Vec<_> = max_matched_versions.keys().copied().collect();
+    let mut latest_versions = max_matched_versions.clone();
+
+    for (_segment_id, segment) in segments.iter() {
+        let segment = segment.get().read();
+        for point_id in &matched_point_ids {
+            let Some(version) = segment.point_version(*point_id) else {
+                continue;
+            };
+            latest_versions
+                .entry(*point_id)
+                .and_modify(|current| *current = (*current).max(version))
+                .or_insert(version);
+        }
+    }
+
+    max_matched_versions
+        .into_iter()
+        .filter_map(|(point_id, max_matched_version)| {
+            let latest_version = latest_versions[&point_id];
+            (max_matched_version >= latest_version).then_some(point_id)
+        })
+        .collect()
+}
+
+pub fn resolve_delete_points_by_filter(
+    segments: &SegmentHolder,
+    filter: &Filter,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<Vec<PointIdType>> {
+    // we don’t want to cancel this filtered read
+    let is_stopped = AtomicBool::new(false);
+    let per_segment_points: AHashMap<SegmentId, Vec<PointIdType>> = segments
+        .iter()
+        .map(|(segment_id, segment)| {
+            let segment = segment.get().read();
+            let point_ids = segment.read_filtered(
+                None,
+                None,
+                Some(filter),
+                &is_stopped,
+                hw_counter,
+                // Include deferred points when resolving the logical delete set.
+                DeferredBehavior::WithDeferred,
+            )?;
+            Ok((segment_id, point_ids))
+        })
+        .collect::<OperationResult<_>>()?;
+
+    let mut point_ids: Vec<_> = latest_filter_matched_point_ids(segments, &per_segment_points)
+        .into_iter()
+        .collect();
+    point_ids.sort_unstable();
+
+    Ok(point_ids)
 }
 
 /// Deletes points from all segments matching the given filter
