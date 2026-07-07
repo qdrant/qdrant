@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
@@ -20,6 +20,18 @@ pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
+    /// Schedule background prefetch for whichever id-tracker format is
+    /// present, probing in the same order as [`Self::detect_and_load`].
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
+        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path)? {
+            return Ok(());
+        }
+        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path)? {
+            return Ok(());
+        }
+        ReadOnlyAppendableIdTracker::preopen(fs, segment_path)
+    }
+
     /// Detect the persisted id-tracker format and load it, by *attempting* each
     /// format's open rather than probing file names one by one.
     ///

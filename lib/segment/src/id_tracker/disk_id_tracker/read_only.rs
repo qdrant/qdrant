@@ -22,7 +22,7 @@ use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
+    CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
 };
 
 use super::mappings::{DiskMappingsSource, log_lookup_err};
@@ -53,6 +53,36 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
+    fn open_options() -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of every file [`try_open`](Self::try_open)
+    /// will read
+    ///
+    /// Returns `false` (nothing scheduled) when the tracker is not in the
+    /// on-disk format.
+    pub fn try_preopen(
+        fs: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<bool> {
+        if !DiskMappingReader::try_preopen(fs, segment_path)? {
+            return Ok(false);
+        }
+
+        let options = Self::open_options();
+
+        fs.schedule_prefetch(&version_mapping_path(segment_path), Some(options), None)?;
+        fs.schedule_prefetch(&deleted_path(segment_path), Some(options), None)?;
+
+        Ok(true)
+    }
+
     /// Open a read-only disk id tracker at `segment_path`. Reads only the two
     /// headers and the e2i sparse block index into RAM; all per-point data stays
     /// on the backing store.
@@ -79,12 +109,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             return Ok(None);
         };
 
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Global,
-        };
+        let options = Self::open_options();
+
         let versions = TypedStorage::<S, SeqNumberType>::new(fs.open(
             version_mapping_path(segment_path),
             options,
