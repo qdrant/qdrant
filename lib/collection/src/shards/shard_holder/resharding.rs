@@ -868,10 +868,12 @@ mod tests {
         // resharding state is not cleared on this peer while it IS cleared on
         // peers where the operation succeeded.
         let result = holder.check_abort_resharding(&key);
-        assert!(
-            result.is_ok(),
-            "check_abort_resharding must return Ok when no resharding is active \
-             (idempotent: already aborted or never started), got error: {result:?}",
+        assert_eq!(
+            result.ok(),
+            Some(ReshardingCheck::NoOp),
+            "check_abort_resharding must signal NoOp when no resharding is active \
+             (idempotent: already aborted or never started) so the caller does not \
+             fall through to the destructive teardown",
         );
     }
 
@@ -898,10 +900,12 @@ mod tests {
         // the original resharding was already aborted and a new one was started.
         let other_key = make_reshard_key(2);
         let result = holder.check_abort_resharding(&other_key);
-        assert!(
-            result.is_ok(),
-            "check_abort_resharding must return Ok when a different resharding is active \
-             (the one we're aborting was already handled), got error: {result:?}"
+        assert_eq!(
+            result.ok(),
+            Some(ReshardingCheck::NoOp),
+            "check_abort_resharding must signal NoOp when a different resharding is active \
+             (the one we're aborting was already handled, or this is a stale-duplicate \
+             abort of a key a newer resharding replaced — finding I)",
         );
     }
 
@@ -949,9 +953,46 @@ mod tests {
         let key = make_reshard_key(1);
 
         let result = holder.check_finish_resharding(&key);
+        assert_eq!(
+            result.ok(),
+            Some(ReshardingCheck::NoOp),
+            "check_finish_resharding must signal NoOp when no resharding is active \
+             (idempotent: already finished) so the caller does not fall through to the \
+             destructive down-branch teardown",
+        );
+    }
+
+    #[test]
+    fn test_finish_check_dismisses_stale_duplicate() {
+        let (_dir, mut holder) = make_holder();
+
+        // A different resharding is active: a stale-duplicate Finish of a key a
+        // newer resharding has since replaced. Finish keeps the deterministic
+        // `bad_request` dismissal (provably stale by invariant 3), so the
+        // destructive down-branch never runs against the newer resharding's shard.
+        let active_key = make_reshard_key(1);
+        holder
+            .rings
+            .get_mut(&None)
+            .unwrap()
+            .start_resharding(active_key.shard_id, active_key.direction);
+        holder
+            .resharding_state
+            .write(|state| {
+                *state = Some(ReshardState::new(
+                    active_key.uuid,
+                    active_key.direction,
+                    active_key.peer_id,
+                    active_key.shard_id,
+                    active_key.shard_key.clone(),
+                ));
+            })
+            .unwrap();
+
+        let stale_key = make_reshard_key(2);
         assert!(
-            result.is_ok(),
-            "check_finish_resharding must return Ok when no resharding is active (idempotent: already finished), got error: {result:?}",
+            holder.check_finish_resharding(&stale_key).is_err(),
+            "a stale-duplicate finish (mismatched key) must be dismissed, not proceed",
         );
     }
 
@@ -1128,13 +1169,62 @@ mod tests {
         let result_a = holder_a.check_abort_resharding(&key);
         let result_b = holder_b.check_abort_resharding(&key);
 
-        assert!(
-            result_a.is_ok(),
-            "Peer A (has resharding state) must succeed: {result_a:?}"
+        assert_eq!(
+            result_a.ok(),
+            Some(ReshardingCheck::Proceed),
+            "Peer A (has matching resharding state) must proceed with the abort",
         );
-        assert!(
-            result_b.is_ok(),
-            "Peer B (no resharding state) must also succeed to prevent divergence: {result_b:?}"
+        assert_eq!(
+            result_b.ok(),
+            Some(ReshardingCheck::NoOp),
+            "Peer B (no resharding state) must signal NoOp (not error) to prevent divergence",
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Finding I: a stale-duplicate abort must not touch a newer resharding
+    // ------------------------------------------------------------------
+
+    /// [abort A][start B reusing shard id][stale duplicate abort A]: the stale
+    /// abort A arrives after a new resharding B has reused the same shard id. It
+    /// must be a complete no-op — the gate signals NoOp (so the caller never runs
+    /// the destructive teardown that would drop B's shard) and, even if the
+    /// teardown's last write were reached, `clear_resharding_state` refuses to
+    /// clear B's state because it does not match A.
+    #[test]
+    fn test_stale_duplicate_abort_leaves_newer_resharding_untouched() {
+        let (_dir, holder) = make_holder();
+
+        // Resharding A completed its abort: state is cleared.
+        let key_a = make_reshard_key(1);
+        holder.clear_resharding_state(&key_a).unwrap();
+
+        // Resharding B started, reusing shard id 1.
+        let key_b = make_reshard_key(1);
+        let state_b = ReshardState::new(
+            key_b.uuid,
+            key_b.direction,
+            key_b.peer_id,
+            key_b.shard_id,
+            key_b.shard_key.clone(),
+        );
+        holder
+            .resharding_state
+            .write(|state| *state = Some(state_b.clone()))
+            .unwrap();
+
+        // A stale duplicate abort of A arrives.
+        assert_eq!(
+            holder.check_abort_resharding(&key_a).ok(),
+            Some(ReshardingCheck::NoOp),
+            "stale-duplicate abort of A must signal NoOp while B is active",
+        );
+        holder.clear_resharding_state(&key_a).unwrap();
+
+        assert_eq!(
+            holder.resharding_state.read().clone(),
+            Some(state_b),
+            "B's resharding state must survive a stale-duplicate abort of A",
         );
     }
 }
