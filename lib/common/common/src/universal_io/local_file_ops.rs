@@ -29,36 +29,64 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Resu
     })
 }
 
-/// List files whose full path starts with `prefix_path`, recursing into
-/// subdirectories — matching the flat key-prefix semantics of object-store
-/// backends, so a directory prefix lists the whole tree beneath it.
+/// List files matching `prefix_path`, recursing into subdirectories —
+/// mirroring the flat key-prefix semantics of object-store backends, so a
+/// directory prefix lists the whole tree beneath it.
+///
+/// An entry matches when its name at the prefix's final position starts with
+/// the prefix's final component: `dir/chunk_` matches `dir/chunk_1.dat` and
+/// everything under `dir/chunk_extra/`. Matching is name-based, never a
+/// whole-path string comparison — a joined prefix may mix `/` and `\` on
+/// Windows, where entry paths use `\` throughout.
 pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<ListedFile>> {
-    let start_dir = prefix_path.parent().unwrap_or(Path::new("."));
-    let prefix = prefix_path.to_string_lossy().into_owned();
+    let dir = prefix_path.parent().unwrap_or(Path::new("."));
+    let name_prefix = prefix_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
 
     let mut results = Vec::new();
-    let mut dirs = vec![start_dir.to_path_buf()];
-    while let Some(dir) = dirs.pop() {
+    // Directories whose name matched the prefix: the whole tree beneath each
+    // of them matches.
+    let mut matched_dirs = Vec::new();
+
+    let entries =
+        fs_err::read_dir(dir).map_err(|err| UniversalIoError::extract_not_found(err, dir))?;
+    for entry in entries {
+        let entry = entry?;
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(&name_prefix)
+        {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            matched_dirs.push(entry.path());
+        } else if file_type.is_file() {
+            let size = entry.metadata()?.len();
+            results.push(ListedFile {
+                path: entry.path(),
+                size,
+            });
+        }
+    }
+
+    while let Some(dir) = matched_dirs.pop() {
         let entries =
             fs_err::read_dir(&dir).map_err(|err| UniversalIoError::extract_not_found(err, &dir))?;
-
         for entry in entries {
             let entry = entry?;
-            let path = entry.path();
-            let path_string = path.to_string_lossy().into_owned();
             let file_type = entry.file_type()?;
-
             if file_type.is_dir() {
-                // Descend when the directory can contain matching paths: it
-                // matches the prefix itself, or it is an ancestor of it (the
-                // walk starts at the prefix's parent, e.g. prefix `dir/file_`
-                // must descend into `dir`).
-                if path_string.starts_with(&prefix) || prefix.starts_with(&path_string) {
-                    dirs.push(path);
-                }
-            } else if file_type.is_file() && path_string.starts_with(&prefix) {
+                matched_dirs.push(entry.path());
+            } else if file_type.is_file() {
                 let size = entry.metadata()?.len();
-                results.push(ListedFile { path, size });
+                results.push(ListedFile {
+                    path: entry.path(),
+                    size,
+                });
             }
         }
     }

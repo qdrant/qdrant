@@ -113,13 +113,33 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
     }
 
     /// Files from the snapshot; empty before [`Self::cache_file_info`].
+    ///
+    /// A path matches when its component at the prefix's final position
+    /// starts with the prefix's final component (`dir/chunk_` matches
+    /// `dir/chunk_1.dat` and everything under `dir/chunk_extra/`) — the
+    /// same name-based matching as the local backends, immune to mixed
+    /// `/` and `\` separators on Windows.
     pub fn list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
-        let prefix_string = prefix_path.to_string_lossy();
+        let dir = prefix_path.parent().unwrap_or(Path::new(""));
+        let name_prefix = prefix_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
 
         self.files_info
             .iter()
             .flatten()
-            .filter(|(path, _)| path.to_string_lossy().starts_with(prefix_string.as_ref()))
+            .filter(|(path, _)| {
+                path.strip_prefix(dir)
+                    .ok()
+                    .and_then(|rel| rel.components().next())
+                    .is_some_and(|first| {
+                        first
+                            .as_os_str()
+                            .to_string_lossy()
+                            .starts_with(&name_prefix)
+                    })
+            })
             .map(|(path, info)| ListedFile {
                 path: path.clone(),
                 size: info.size,
@@ -200,12 +220,14 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
             return Ok(());
         }
 
-        let open_options = open_arguments.unwrap_or(OpenOptions {
+        let mut open_options = open_arguments.unwrap_or(OpenOptions {
             writeable: false,
             need_sequential: false,
             populate: Populate::PreferBackground,
             advice: AdviceSetting::Global,
         });
+
+        open_options.populate = Populate::PreferBackground;
 
         let open_extra = open_extra.unwrap_or_default();
 
