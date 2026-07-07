@@ -53,12 +53,10 @@ impl<V> PostingBuilder<V> {
         let mut id_data_size = 0;
 
         // process full chunks
-        let ids_chunks_iter = ids.chunks_exact(CHUNK_LEN);
-        let values_chunks_iter = sized_values.chunks_exact(CHUNK_LEN);
-        let remainder_ids = ids_chunks_iter.remainder();
-        let remainder_values = values_chunks_iter.remainder();
+        let (ids_chunks, remainder_ids) = ids.as_chunks::<CHUNK_LEN>();
+        let (values_chunks, remainder_values) = sized_values.as_chunks::<CHUNK_LEN>();
 
-        for (chunk_ids, chunk_values) in ids_chunks_iter.zip(values_chunks_iter) {
+        for (chunk_ids, chunk_values) in ids_chunks.iter().zip(values_chunks) {
             let initial = chunk_ids[0];
             let chunk_bits = bitpacker.num_bits_sorted(initial, chunk_ids);
             let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
@@ -68,9 +66,7 @@ impl<V> PostingBuilder<V> {
                 offset: u32::try_from(id_data_size)
                     .expect("id_data_size should fit in u32, (smaller than 4GB)")
                     .into(),
-                sized_values: chunk_values
-                    .try_into()
-                    .expect("should be a valid chunk size"),
+                sized_values: *chunk_values,
             });
             id_data_size += chunk_size;
         }
@@ -86,7 +82,7 @@ impl<V> PostingBuilder<V> {
 
         // compress id_data
         let mut id_data = vec![0u8; id_data_size];
-        for (chunk_index, chunk_ids) in ids.chunks_exact(CHUNK_LEN).enumerate() {
+        for (chunk_index, chunk_ids) in ids_chunks.iter().enumerate() {
             let chunk = &chunks[chunk_index];
             let compressed_size = PostingChunk::get_compressed_size(&chunks, &id_data, chunk_index);
             let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;

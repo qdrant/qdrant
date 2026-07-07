@@ -83,7 +83,7 @@ where
             }
             Ok(None) => Self::create_config(&config_file, dim, populate),
             Err(e) => {
-                log::error!("Failed to deserialize config file {:?}: {e}", &config_file);
+                log::error!("Failed to deserialize config file {config_file:?}: {e}");
                 Self::create_config(&config_file, dim, populate)
             }
         }

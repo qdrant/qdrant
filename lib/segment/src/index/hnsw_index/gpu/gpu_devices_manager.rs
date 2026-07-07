@@ -87,13 +87,13 @@ impl GpuDevicesMaganer {
                             false,
                         ) {
                             Ok(device) => {
-                                log::info!("Initialized GPU device: {:?}", &physical_device.name);
+                                log::info!("Initialized GPU device: {:?}", physical_device.name);
                                 Some(Mutex::new(device))
                             }
                             Err(err) => {
                                 log::error!(
                                     "Failed to create GPU device: {:?}, error: {:?}",
-                                    &physical_device.name,
+                                    physical_device.name,
                                     err
                                 );
                                 None

@@ -407,7 +407,9 @@ impl CompressedPostingBuilder {
         }
 
         let mut id_data = vec![0u8; data_size];
-        for (chunk_index, chunk_data) in self.elements.chunks_exact(CHUNK_SIZE).enumerate() {
+        for (chunk_index, chunk_data) in
+            self.elements.as_chunks::<CHUNK_SIZE>().0.iter().enumerate()
+        {
             this_chunk.clear();
             this_chunk.extend(chunk_data.iter().map(|e| e.record_id));
 

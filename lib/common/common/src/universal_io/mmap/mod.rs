@@ -118,25 +118,19 @@ impl MmapFile {
         let mmap = open_mmap(path.as_ref(), writeable, populate, advice)?;
         let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
-        let mmap_seq;
-        let len;
-        let ptr_seq;
-
-        if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
-            let mmap_seq_ = open_mmap(
+        let (mmap_seq, len, ptr_seq) = if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
+            let mmap_seq = open_mmap(
                 path.as_ref(),
                 false,
                 false,
                 AdviceSetting::Advice(Advice::Sequential),
             )?;
 
-            len = std::cmp::min(mmap.len(), mmap_seq_.len());
-            ptr_seq = SendSyncPtr(mmap_seq_.as_mut_ptr());
-            mmap_seq = Some(mmap_seq_);
+            let len = std::cmp::min(mmap.len(), mmap_seq.len());
+            let ptr_seq = SendSyncPtr(mmap_seq.as_mut_ptr());
+            (Some(mmap_seq), len, ptr_seq)
         } else {
-            len = mmap.len();
-            ptr_seq = ptr;
-            mmap_seq = None;
+            (None, mmap.len(), ptr)
         };
 
         let mmap = Self {

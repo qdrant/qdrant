@@ -248,7 +248,7 @@ impl PointInsertOperationsInternal {
                     }
 
                     BatchVectorStructPersisted::Named(vectors) => {
-                        for (_, vectors) in vectors.iter_mut() {
+                        for vectors in vectors.values_mut() {
                             retain_with_index(vectors, |index, _| retain_indices.contains(&index));
                         }
                     }

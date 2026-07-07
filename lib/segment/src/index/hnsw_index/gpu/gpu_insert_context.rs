@@ -456,7 +456,7 @@ impl<'a> GpuInsertContext<'a> {
     pub fn log_measurements(&self) {
         log::debug!(
             "Gpu graph patches time: {:?}, count {:?}, avg {:?}",
-            &self.patches_timer,
+            self.patches_timer,
             self.patches_count,
             self.patches_timer
                 .checked_div(self.patches_count as u32)
@@ -464,7 +464,7 @@ impl<'a> GpuInsertContext<'a> {
         );
         log::debug!(
             "Gpu graph update entries time: {:?}, count {:?}, avg {:?}",
-            &self.updates_timer,
+            self.updates_timer,
             self.updates_count,
             self.updates_timer
                 .checked_div(self.updates_count as u32)

@@ -509,7 +509,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
             .unwrap();
     }
 
-    for (_field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
+    for indexes in struct_segment.payload_index.borrow().field_indexes.values() {
         for index in indexes {
             assert!(index.count_indexed_points() <= num_points as usize);
             assert!(

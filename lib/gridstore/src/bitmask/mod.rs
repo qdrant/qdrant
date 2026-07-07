@@ -521,24 +521,22 @@ impl<S: UniversalWrite> Bitmask<S> {
 
         max = max.max(current);
 
-        let leading;
-        let trailing;
-        if max == region_size_blocks as u32 {
-            leading = max;
-            trailing = max;
+        let (leading, trailing) = if max == region_size_blocks as u32 {
+            (max, max)
         } else {
-            leading = raw_region
+            let leading = raw_region
                 .iter()
                 .take_while_inclusive(|chunk| chunk == &&0)
                 .map(|chunk| chunk.trailing_zeros())
                 .sum::<u32>();
-            trailing = raw_region
+            let trailing = raw_region
                 .iter()
                 .rev()
                 .take_while_inclusive(|chunk| chunk == &&0)
                 .map(|chunk| chunk.leading_zeros())
                 .sum::<u32>();
-        }
+            (leading, trailing)
+        };
 
         #[cfg(debug_assertions)]
         {

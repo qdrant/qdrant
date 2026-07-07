@@ -362,14 +362,11 @@ impl<'a> Extractor<'a> {
     }
 
     fn update_from_condition(&mut self, nested_prefix: Option<&JsonPath>, condition: &Condition) {
-        let key;
-        let required_index;
-
-        match condition {
-            Condition::Field(field_condition) => {
-                key = &field_condition.key;
-                required_index = infer_index_from_field_condition(field_condition);
-            }
+        let (key, required_index) = match condition {
+            Condition::Field(field_condition) => (
+                &field_condition.key,
+                infer_index_from_field_condition(field_condition),
+            ),
             Condition::Filter(filter) => {
                 self.update_from_filter(nested_prefix, filter);
                 return;
@@ -385,14 +382,8 @@ impl<'a> Extractor<'a> {
                 return;
             }
             // Any index will suffice to get the satellite null index
-            Condition::IsEmpty(is_empty) => {
-                key = &is_empty.is_empty.key;
-                required_index = all_indexes().collect();
-            }
-            Condition::IsNull(is_null) => {
-                key = &is_null.is_null.key;
-                required_index = all_indexes().collect();
-            }
+            Condition::IsEmpty(is_empty) => (&is_empty.is_empty.key, all_indexes().collect()),
+            Condition::IsNull(is_null) => (&is_null.is_null.key, all_indexes().collect()),
             // No index needed
             Condition::HasId(_) => return,
             Condition::CustomIdChecker(_) => return,

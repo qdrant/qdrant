@@ -36,7 +36,7 @@ pub mod pyro {
 
             log::info!(
                 "Starting pyroscope CPU agent with identifier {}",
-                &config.identifier
+                config.identifier
             );
             // TODO: Add more tags like peerId and peerUrl
             let agent = PyroscopeAgentBuilder::new(
@@ -61,7 +61,7 @@ pub mod pyro {
 
             log::info!(
                 "Starting pyroscope heap agent with identifier {}",
-                &config.identifier
+                config.identifier
             );
             let agent = PyroscopeAgentBuilder::new(
                 config.url.clone(),
