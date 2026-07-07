@@ -79,16 +79,6 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         })
     }
 
-    /// Wrap an already-opened backend file.
-    pub fn from_file(file: S) -> Result<Self> {
-        let storage = TypedStorage::new(file);
-        let element_len = storage.len()?;
-        Ok(Self {
-            storage,
-            element_len,
-        })
-    }
-
     pub fn reopen(&mut self) -> Result<()> {
         self.storage.reopen()?;
         self.element_len = self.storage.len()?;

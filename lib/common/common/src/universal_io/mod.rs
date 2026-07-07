@@ -13,7 +13,7 @@ mod traits;
 mod types;
 mod wrappers;
 
-pub use self::cached_fs::{CachedFs, CachedReadFs, CachedReadFsContext, FileInfo};
+pub use self::cached_fs::{CachedFs, CachedReadFsContext};
 pub use self::error::{IsNotFound, OkNotFound, UniversalIoError};
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra};
@@ -23,8 +23,8 @@ pub use self::simple_disk_cache::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
 pub use self::traits::{
-    Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWrite, UniversalWriteFileOps, UserData,
+    CachedReadFs, Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UniversalWriteFileOps, UserData,
 };
 pub use self::types::{
     ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, ReadBytesItem, ReadRange,

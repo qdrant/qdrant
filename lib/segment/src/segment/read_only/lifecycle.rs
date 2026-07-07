@@ -30,21 +30,16 @@ use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVector
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
-/// Build a per-segment [`CachedReadFs`] over `segment_path`, ready to serve
-/// every open of the segment's files from prefetched handles.
+/// Build a per-segment [`CachedReadFs`] over `segment_path`.
 ///
-/// Order matters for object-storage backends: the files whose names are known
-/// in advance (version file, segment state) are scheduled *before* the listing
-/// snapshot is taken, so their fetch overlaps the listing round-trip. Every
-/// remaining listed file is then scheduled too — a read-only segment opens
-/// essentially all of its files, and prefetching them up front runs the
-/// fetches in parallel instead of serializing them inside each component's
-/// open.
+/// The files whose names are known in advance (version file, segment state)
+/// are scheduled *before* the listing snapshot is taken, so on backends with
+/// background population their fetch overlaps the listing round-trip.
 fn build_cached_fs<Fs: UniversalReadFs>(
     fs: &Fs,
     segment_path: &Path,
-) -> OperationResult<CachedReadFs<Fs>> {
-    let mut cached_fs = CachedReadFs::new(fs.clone(), segment_path)?;
+) -> OperationResult<CachedFs<Fs>> {
+    let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
 
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
@@ -60,9 +55,8 @@ fn build_cached_fs<Fs: UniversalReadFs>(
 
 impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Open the segment over a per-segment [`CachedReadFs`]: known files are
-    /// prefetched before the listing snapshot is taken, the rest right after
-    /// it, and every component open below takes its handles from that pool
-    /// (see [`build_cached_fs`]). Probes for optional files resolve against
+    /// prefetched before the listing snapshot is taken (see
+    /// [`build_cached_fs`]), and probes for optional files resolve against
     /// the snapshot, without inner-filesystem round-trips.
     pub fn open(
         fs: &S::Fs,

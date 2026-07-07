@@ -84,8 +84,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
-        let storage =
-            ReadOnly::from_file(fs.open(path, Self::open_options(), Default::default())?);
+        let storage = ReadOnly::open(fs, path, Self::open_options(), Default::default())?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(

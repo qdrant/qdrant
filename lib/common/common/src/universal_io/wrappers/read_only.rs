@@ -96,12 +96,6 @@ where
         let io = fs.open(path, options, extra)?;
         Ok(Self(io))
     }
-
-    /// Wrap an already-opened backend file.
-    #[inline]
-    pub fn from_file(file: S) -> Self {
-        Self(file)
-    }
 }
 
 impl<S> UniversalRead for ReadOnly<S>

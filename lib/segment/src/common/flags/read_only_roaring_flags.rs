@@ -80,11 +80,12 @@ fn open_flags_storage<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
 ) -> OperationResult<StoredBitSlice<S>> {
-    Ok(StoredBitSlice::<S>::from_file(fs.open(
+    Ok(StoredBitSlice::<S>::open(
+        fs,
         directory.join(FLAGS_FILE),
         READ_ONLY_OPTIONS,
         Default::default(),
-    )?)?)
+    )?)
 }
 
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {

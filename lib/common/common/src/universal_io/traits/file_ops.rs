@@ -118,3 +118,26 @@ pub trait UniversalReadFs: UniversalReadFileOps {
         extra: Self::OpenExtra,
     ) -> Result<Self::File>;
 }
+
+/// Capability extension over [`UniversalReadFs`]: a filesystem that snapshots
+/// its file listing and serves opens from explicitly prefetched handles.
+///
+/// Component-level preload helpers bound on `impl CachedFs<File = S>` are
+/// only callable when the caller opens through a caching filesystem;
+/// plain-`UniversalReadFs` open paths never see these methods.
+pub trait CachedReadFs: UniversalReadFs {
+    /// Take the file listing snapshot. From this point on, listing and
+    /// existence checks are answered locally and opens of unlisted paths
+    /// fail with `NotFound` without touching the underlying filesystem.
+    fn cache_file_info(&mut self) -> Result<()>;
+
+    /// Open `path` in the background and park the handle in the prefetch
+    /// pool, to be consumed by a later [`UniversalReadFs::open`] of the same
+    /// path. Idempotent per path while the handle is unconsumed.
+    fn schedule_prefetch(
+        &self,
+        path: &Path,
+        open_arguments: Option<OpenOptions>,
+        open_extra: Option<Self::OpenExtra>,
+    ) -> Result<()>;
+}

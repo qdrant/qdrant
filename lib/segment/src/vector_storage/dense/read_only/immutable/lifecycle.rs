@@ -55,11 +55,8 @@ fn open_deleted_flags<S: UniversalRead>(
     deleted_path: &Path,
     num_vectors: usize,
 ) -> OperationResult<InMemoryBitvecFlags> {
-    let stored = StoredBitSlice::<S>::from_file(fs.open(
-        deleted_path,
-        READ_ONLY_OPTIONS,
-        Default::default(),
-    )?)?;
+    let stored =
+        StoredBitSlice::<S>::open(fs, deleted_path, READ_ONLY_OPTIONS, Default::default())?;
     let all = stored.read_all()?;
 
     let start = deleted_mmap_data_start() * 8;

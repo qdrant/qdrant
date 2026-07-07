@@ -92,11 +92,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         )?);
         let versions_len = versions.len()?;
 
-        let deleted_file = StoredBitSlice::from_file(fs.open(
-            deleted_path(segment_path),
-            options,
-            Default::default(),
-        )?)?;
+        let deleted_file =
+            StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
 
         Ok(Some(Self {
             path: segment_path.to_path_buf(),

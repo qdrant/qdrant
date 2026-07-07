@@ -49,14 +49,7 @@ where
         options: OpenOptions,
         extra: Fs::OpenExtra,
     ) -> Result<Self> {
-        Self::from_file(fs.open(path, options, extra)?)
-    }
-
-    /// Load the hash map from an already-opened backend file (e.g. taken
-    /// from a [`CachedReadFs`](crate::universal_io::CachedReadFs) prefetch
-    /// pool).
-    pub fn from_file(file: S) -> Result<Self> {
-        let storage = TypedStorage::<S, u8>::new(file);
+        let storage = TypedStorage::<S, u8>::open(fs, path, options, extra)?;
 
         // 1. Read header.
         let header_bytes = storage.read::<Sequential>(ReadRange {
