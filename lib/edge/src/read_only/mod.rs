@@ -43,8 +43,9 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     path: PathBuf,
     /// Read backend handle; passed to segment `open` and `live_reload`.
     fs: S::Fs,
-    /// Config snapshot, derived from the segments (a follower has no `edge_config.json`) and
-    /// re-derived on each refresh. Stored as an `Arc` so a read view can cheaply clone the current
+    /// Config snapshot, derived from the segments (a follower has no `edge_config.json`). At open
+    /// it is overlaid with the tunables of the caller-provided config; each refresh re-derives it
+    /// from the segments alone. Stored as an `Arc` so a read view can cheaply clone the current
     /// snapshot while a refresh swaps in a new one.
     config: RwLock<Arc<EdgeConfig>>,
     segments: RwLock<ReadOnlySegmentHolder<S>>,
@@ -52,8 +53,9 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// backend-specific (see [`SegmentEnumerator`]) until an on-disk manifest exists.
     enumerator: Box<dyn SegmentEnumerator>,
     /// Fixed-size pool used to open segments in parallel on open/refresh and to run per-segment
-    /// reads in parallel. A follower has no `edge_config.json`, so it is always sized from the
-    /// CPU-derived default (see [`EdgeConfig::search_thread_count`]).
+    /// reads in parallel. Segments never carry `max_search_threads`, so it is sized from
+    /// `provided_config` alone: the CPU-derived default unless explicitly set (see
+    /// [`EdgeConfig::search_thread_count`]).
     search_pool: Arc<rayon::ThreadPool>,
 }
 

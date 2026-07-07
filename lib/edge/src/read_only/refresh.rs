@@ -75,11 +75,26 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         };
 
         // 3. Re-derive the config from the current segments — a read-only follower has no
-        //    edge_config.json, so the segments are the source of truth. No-op for an empty shard
+        //    edge_config.json, so the segments are the source of truth. Folded over all segments
+        //    in UUID order, so the derivation is deterministic and a segment carrying no
+        //    information about a parameter never masks one that does. No-op for an empty shard
         //    (the previous snapshot stays in place until segments appear).
-        if let Some(segment) = self.segments.read().read_handles().into_iter().next() {
-            let config = EdgeConfig::from_segment_config(&segment.read().segment_config);
-            *self.config.write() = Arc::new(config);
+        let derived = {
+            let holder = self.segments.read();
+            let mut uuids = holder.uuids();
+            uuids.sort_unstable();
+            uuids
+                .into_iter()
+                .filter_map(|uuid| holder.segment_arc(&uuid))
+                .fold(None, |acc, segment| {
+                    Some(EdgeConfig::fold_from_segment_config(
+                        acc,
+                        &segment.read().segment_config,
+                    ))
+                })
+        };
+        if let Some(derived) = derived {
+            *self.config.write() = Arc::new(derived);
         }
 
         // 4. Live-reload survivors to fold in the leader's flushed in-place appends and deletes.
