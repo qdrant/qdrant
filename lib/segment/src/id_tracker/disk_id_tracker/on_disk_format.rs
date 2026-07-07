@@ -356,7 +356,9 @@ impl E2iHeader {
 /// Decode a numeric run block (`(u64 key, u32 offset)` entries) from raw bytes.
 pub fn decode_num_block(bytes: &[u8]) -> Vec<(u128, PointOffsetType)> {
     bytes
-        .chunks_exact(NUM_ENTRY_SIZE as usize)
+        .as_chunks::<{ NUM_ENTRY_SIZE as usize }>()
+        .0
+        .iter()
         .map(|entry| {
             let key = u64::from_le_bytes(entry[0..8].try_into().unwrap());
             let offset = u32::from_le_bytes(entry[8..12].try_into().unwrap());
@@ -368,7 +370,9 @@ pub fn decode_num_block(bytes: &[u8]) -> Vec<(u128, PointOffsetType)> {
 /// Decode a UUID run block (`(u128 key, u32 offset)` entries) from raw bytes.
 pub fn decode_uuid_block(bytes: &[u8]) -> Vec<(u128, PointOffsetType)> {
     bytes
-        .chunks_exact(UUID_ENTRY_SIZE as usize)
+        .as_chunks::<{ UUID_ENTRY_SIZE as usize }>()
+        .0
+        .iter()
         .map(|entry| {
             let key = u128::from_le_bytes(entry[0..16].try_into().unwrap());
             let offset = u32::from_le_bytes(entry[16..20].try_into().unwrap());

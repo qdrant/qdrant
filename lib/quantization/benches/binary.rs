@@ -179,7 +179,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let native_scorer = |query: &[u128], vector: &[u128]| {
         let mut result = 0;
-        for (&b1, b2_chunk) in vector.iter().zip(query.chunks_exact(8)) {
+        for (&b1, b2_chunk) in vector.iter().zip(query.as_chunks::<8>().0) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
                 result += (b1 ^ b2).count_ones() << i;
             }
@@ -237,7 +237,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let native_scorer = |query: &[u8], vector: &[u8]| {
         let mut result = 0;
-        for (&b1, b2_chunk) in vector.iter().zip(query.chunks_exact(8)) {
+        for (&b1, b2_chunk) in vector.iter().zip(query.as_chunks::<8>().0) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
                 result += (b1 ^ b2).count_ones() << i;
             }
