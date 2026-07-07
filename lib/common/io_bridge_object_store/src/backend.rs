@@ -5,6 +5,8 @@
 use common::universal_io::{Result, UniversalKind};
 use object_store::ObjectStore;
 
+use crate::append::AppendContext;
+
 /// A concrete object-store backend that can be built from a typed [`Config`].
 ///
 /// Each impl provides:
@@ -20,4 +22,12 @@ pub trait BlobBackend: ObjectStore + Send + Sync + Sized + 'static {
     fn build_store(config: &Self::Config) -> Result<Self>;
 
     fn kind() -> UniversalKind;
+
+    /// Context for the native single-request append RPC, for backends that
+    /// support it (see [`crate::append`]). The default — no append support —
+    /// leaves [`ObjectStoreSource`](crate::ObjectStoreSource) without its
+    /// `AsyncAppend` prerequisites for this backend.
+    fn append_context(_config: &Self::Config) -> Result<Option<AppendContext>> {
+        Ok(None)
+    }
 }

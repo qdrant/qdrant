@@ -3800,8 +3800,10 @@ dependencies = [
  "bytes",
  "common",
  "futures",
+ "http 1.4.2",
  "io_bridge",
  "object_store",
+ "url",
 ]
 
 [[package]]

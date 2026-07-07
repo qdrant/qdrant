@@ -26,6 +26,7 @@
 //! let file = BlobFile::<Arc<AmazonS3>>::open(&config, BridgeRuntime::global(), "key")?;
 //! ```
 
+mod append;
 mod backend;
 pub mod backends;
 mod source;
@@ -33,8 +34,11 @@ mod source;
 #[cfg(test)]
 mod tests;
 
+pub use append::AppendContext;
 pub use backend::BlobBackend;
 // Re-export the bridge core so a complete object-store-backed `UniversalRead`
 // stack can be built from this single crate.
-pub use io_bridge::{AsyncRead, BlobFile, BlobFs, BlobReadPipeline, BridgeRuntime};
+pub use io_bridge::{
+    AsyncAppend, AsyncRead, AsyncWrite, BlobFile, BlobFs, BlobReadPipeline, BridgeRuntime,
+};
 pub use source::ObjectStoreSource;

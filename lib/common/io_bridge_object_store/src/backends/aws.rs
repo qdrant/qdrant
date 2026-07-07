@@ -1,9 +1,16 @@
 //! AWS S3 backend.
 
 use common::universal_io::{Result, UniversalIoError, UniversalKind};
+use object_store::ClientOptions;
 use object_store::aws::{AmazonS3, AmazonS3Builder};
+use object_store::client::{HttpConnector as _, ReqwestConnector};
+use url::Url;
 
+use crate::append::AppendContext;
 use crate::backend::BlobBackend;
+
+/// SigV4 signing needs a region even for endpoints that ignore it.
+const DEFAULT_REGION: &str = "us-east-1";
 
 /// Connection parameters for [`AmazonS3`]. Fed into [`AmazonS3Builder`] by
 /// the [`BlobBackend`] impl below.
@@ -73,5 +80,47 @@ impl BlobBackend for AmazonS3 {
 
     fn kind() -> UniversalKind {
         UniversalKind::S3
+    }
+
+    fn append_context(config: &Self::Config) -> Result<Option<AppendContext>> {
+        let s3_config_error = |description: String| UniversalIoError::S3Config { description };
+
+        let mut client_options = ClientOptions::new();
+        if config.endpoint.is_some() {
+            // Mirrors `build_store`: custom endpoints (MinIO & co) are
+            // commonly plain http.
+            client_options = client_options.with_allow_http(true);
+        }
+        let client = ReqwestConnector::default()
+            .connect(&client_options)
+            .map_err(|err| s3_config_error(format!("append http client: {err}")))?;
+
+        let region = config
+            .region
+            .clone()
+            .unwrap_or_else(|| DEFAULT_REGION.to_string());
+
+        let object_url_base = match &config.endpoint {
+            // Path-style addressing, as object_store uses for custom
+            // endpoints.
+            Some(endpoint) => {
+                let mut url = Url::parse(endpoint)
+                    .map_err(|err| s3_config_error(format!("append endpoint url: {err}")))?;
+                url.path_segments_mut()
+                    .map_err(|()| s3_config_error("append endpoint url cannot be a base".into()))?
+                    .pop_if_empty()
+                    .push(&config.bucket);
+                url
+            }
+            // Virtual-hosted-style addressing, as object_store uses for real
+            // AWS.
+            None => {
+                let url = format!("https://{}.s3.{region}.amazonaws.com", config.bucket);
+                Url::parse(&url)
+                    .map_err(|err| s3_config_error(format!("append object url: {err}")))?
+            }
+        };
+
+        Ok(Some(AppendContext::new(client, object_url_base, region)))
     }
 }

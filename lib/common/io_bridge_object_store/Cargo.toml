@@ -12,7 +12,9 @@ common = { path = "../common" }
 io_bridge = { path = "../io_bridge" }
 bytes = { workspace = true }
 futures = { workspace = true }
+http = { workspace = true }
 object_store = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 common = { path = "../common", features = ["testing"] }
