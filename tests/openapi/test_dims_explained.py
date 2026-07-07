@@ -150,10 +150,8 @@ def test_focus_rescore_with_dims_explained(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "query": {
-                "nearest": {
-                    "nearest": QUERY_VECTOR,
-                    "focus": {"dims": [0, 4]},
-                },
+                "nearest": QUERY_VECTOR,
+                "focus": {"dims": [0, 4]},
             },
             "limit": 2,
             "with_dims_explained": True,

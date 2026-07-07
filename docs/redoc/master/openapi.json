@@ -10094,6 +10094,15 @@
                 "nullable": true
               }
             ]
+          },
+          "dims_explained": {
+            "description": "Dimensions of the vector which contributed the most to the score, and how much each of them contributed. Only present if requested with `with_dims_explained`.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "format": "float"
+            },
+            "nullable": true
           }
         }
       },
@@ -16000,6 +16009,17 @@
                 "nullable": true
               }
             ]
+          },
+          "with_dims_explained": {
+            "description": "Options for including per-dimension score explanations into the response. Default is false.\n\nIf enabled, each returned point will contain a `dims_explained` field with the top dimensions which contributed the most to its score. Only supported for `nearest` queries against dense vectors.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithDimsExplained"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -16188,6 +16208,17 @@
                 "nullable": true
               }
             ]
+          },
+          "focus": {
+            "description": "Re-score the results considering only the given dimensions of the vector.\n\nCannot be combined with `mmr`. Only supported for dense vectors.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DimsFocus"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -16205,6 +16236,33 @@
           },
           "candidates_limit": {
             "description": "The maximum number of candidates to consider for re-ranking.\n\nIf not specified, the `limit` value is used.",
+            "type": "integer",
+            "format": "uint",
+            "maximum": 16384,
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "DimsFocus": {
+        "description": "Focus the similarity scoring on a subset of the vector dimensions.\n\nCandidates are preselected with a regular (full-vector) nearest neighbors search, and then re-scored considering only the given dimensions.\n\nOnly supported for dense vectors.",
+        "type": "object",
+        "required": [
+          "dims"
+        ],
+        "properties": {
+          "dims": {
+            "description": "Dimension indexes of the vector to focus the scoring on.",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "minItems": 1
+          },
+          "candidates_limit": {
+            "description": "The maximum number of candidates to preselect with the full-vector search before re-scoring.\n\nIf not specified, the `limit` value is used.",
             "type": "integer",
             "format": "uint",
             "maximum": 16384,
@@ -16854,6 +16912,32 @@
           }
         }
       },
+      "WithDimsExplained": {
+        "description": "Options for including per-dimension score explanations into the search response.",
+        "anyOf": [
+          {
+            "description": "Include or exclude the explanation, with the default number of top dimensions.",
+            "type": "boolean"
+          },
+          {
+            "$ref": "#/components/schemas/DimsExplainedParams"
+          }
+        ]
+      },
+      "DimsExplainedParams": {
+        "description": "Parameters for per-dimension score explanations.",
+        "type": "object",
+        "properties": {
+          "top": {
+            "description": "Max number of top contributing dimensions to return. Default is 10.",
+            "type": "integer",
+            "format": "uint",
+            "maximum": 65536,
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
       "QueryRequestBatch": {
         "type": "object",
         "required": [
@@ -16988,6 +17072,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/LookupLocation"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_dims_explained": {
+            "description": "Options for including per-dimension score explanations into the response. Default is false.\n\nIf enabled, each returned point will contain a `dims_explained` field with the top dimensions which contributed the most to its score. Only supported for `nearest` queries against dense vectors.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithDimsExplained"
               },
               {
                 "nullable": true

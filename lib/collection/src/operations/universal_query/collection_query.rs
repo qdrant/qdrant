@@ -759,6 +759,10 @@ impl CollectionQueryRequest {
 
         let filter = exclude_referenced_ids(referenced_point_ids, self.filter);
 
+        if self.dims_explained.is_some() {
+            Self::validate_dims_explained_query_type(self.query.as_ref())?;
+        }
+
         let query = self
             .query
             .map(|query| {
@@ -794,6 +798,26 @@ impl CollectionQueryRequest {
             with_payload: self.with_payload,
             dims_explained: self.dims_explained,
         })
+    }
+
+    /// Check that the request query type supports per-dimension score explanations.
+    ///
+    /// This is validated before query conversion, so recommend/discover/etc. are rejected
+    /// even when they would be lowered to a nearest search internally.
+    fn validate_dims_explained_query_type(query: Option<&Query>) -> CollectionResult<()> {
+        let supported = matches!(
+            query,
+            Some(Query::Vector(VectorQuery::Nearest(_)))
+                | Some(Query::Vector(VectorQuery::NearestWithFocus(_)))
+        );
+
+        if !supported {
+            return Err(CollectionError::bad_request(
+                "with_dims_explained is only supported for nearest queries against dense vectors.",
+            ));
+        }
+
+        Ok(())
     }
 
     /// Check that the resolved query supports per-dimension score explanations.
