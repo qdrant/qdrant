@@ -185,10 +185,10 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
         }
 
         let Some(files_info) = &self.files_info else {
-            debug_assert!(
-                false,
-                "CachedReadFs::take_file called before cache_file_info"
-            );
+            // Fallback to cache bypass.
+            // If we are here, that means open path is not optimized enough.
+            // After read-only read path is refactored, this should be protected
+            // by debug assertion
             return self.fs.open(path, options, extra);
         };
 
