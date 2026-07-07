@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytemuck::TransparentWrapper;
+use log::debug;
 use parking_lot::Mutex;
 
 use crate::ext::aligned_vec::ACow;
@@ -184,7 +185,13 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
             return Ok(file);
         }
 
-        let files_info = self.files_info.as_ref().unwrap();
+        let Some(files_info) = &self.files_info else {
+            debug_assert!(
+                false,
+                "CachedReadFs::take_file called before cache_file_info"
+            );
+            return self.fs.open(path, options, extra);
+        };
 
         match files_info.get(path) {
             None => Err(UniversalIoError::NotFound {
