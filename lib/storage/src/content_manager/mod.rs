@@ -31,7 +31,7 @@ pub mod consensus_ops {
 
     use super::collection_meta_ops::ReshardingOperation;
     use crate::content_manager::collection_meta_ops::{
-        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations, UpdateCollection,
+        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations,
         UpdateCollectionOperation,
     };
 
@@ -127,19 +127,7 @@ pub mod consensus_ops {
             shard_id: u32,
             peer_id: PeerId,
         ) -> Self {
-            let mut operation = UpdateCollectionOperation::new(
-                collection_name,
-                UpdateCollection {
-                    vectors: None,
-                    optimizers_config: None,
-                    params: None,
-                    hnsw_config: None,
-                    quantization_config: None,
-                    sparse_vectors: None,
-                    strict_mode_config: None,
-                    metadata: None,
-                },
-            );
+            let mut operation = UpdateCollectionOperation::new_empty(collection_name);
             operation
                 .set_shard_replica_changes(vec![replica_set::Change::Remove(shard_id, peer_id)]);
 

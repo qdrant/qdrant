@@ -14,6 +14,7 @@ use collection::operations::config_diff::{
 use collection::operations::types::{
     SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
 };
+use collection::operations::validation;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
@@ -206,6 +207,17 @@ impl CreateCollectionOperation {
         collection_name: String,
         create_collection: CreateCollection,
     ) -> StorageResult<Self> {
+        // Run the derived `Validate` checks here instead of relying on the API
+        // layer: only the REST extractor validates the deserialized request,
+        // while gRPC validates the proto message, whose constraints can lag
+        // behind the internal ones (e.g. rejecting `memory: pinned` for dense
+        // vectors and payload storage). Constructing the operation is the
+        // common chokepoint for all API paths, before the operation is
+        // proposed to consensus.
+        create_collection.validate().map_err(|errs| {
+            StorageError::bad_input(validation::label_errors("Validation error in body", &errs))
+        })?;
+
         // Apply the same vector-name validation that the
         // `PUT /collections/{name}/vectors/{vector_name}` endpoint enforces
         // (length 0..=200, no filesystem-unsafe characters), so both creation
@@ -335,12 +347,20 @@ impl UpdateCollectionOperation {
         }
     }
 
-    pub fn new(collection_name: String, update_collection: UpdateCollection) -> Self {
-        Self {
+    pub fn new(
+        collection_name: String,
+        update_collection: UpdateCollection,
+    ) -> StorageResult<Self> {
+        // API-layer-independent validation, see `CreateCollectionOperation::new`.
+        update_collection.validate().map_err(|errs| {
+            StorageError::bad_input(validation::label_errors("Validation error in body", &errs))
+        })?;
+
+        Ok(Self {
             collection_name,
             update_collection,
             shard_replica_changes: None,
-        }
+        })
     }
 
     pub fn take_shard_replica_changes(&mut self) -> Option<Vec<replica_set::Change>> {

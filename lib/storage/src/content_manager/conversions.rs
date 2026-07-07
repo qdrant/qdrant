@@ -222,7 +222,7 @@ impl TryFrom<grpc::UpdateCollection> for CollectionMetaOperations {
                     Some(json::proto_to_payloads(metadata)?)
                 },
             },
-        )))
+        )?))
     }
 }
 
@@ -383,6 +383,87 @@ impl From<ConsensusThreadStatus> for grpc::ConsensusThreadStatus {
                     grpc::consensus_thread_status::StoppedWithErr { err },
                 )),
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_request(
+        vector_memory: Option<grpc::Memory>,
+        payload_memory: Option<grpc::Memory>,
+    ) -> grpc::CreateCollection {
+        grpc::CreateCollection {
+            collection_name: "test".to_string(),
+            vectors_config: Some(grpc::VectorsConfig {
+                config: Some(grpc::vectors_config::Config::Params(grpc::VectorParams {
+                    size: 4,
+                    distance: grpc::Distance::Cosine as i32,
+                    memory: vector_memory.map(|memory| memory as i32),
+                    ..Default::default()
+                })),
+            }),
+            payload: payload_memory.map(|memory| grpc::PayloadStorageParams {
+                memory: Some(memory as i32),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn update_request(
+        vector_memory: Option<grpc::Memory>,
+        payload_memory: Option<grpc::Memory>,
+    ) -> grpc::UpdateCollection {
+        grpc::UpdateCollection {
+            collection_name: "test".to_string(),
+            vectors_config: vector_memory.map(|memory| grpc::VectorsConfigDiff {
+                config: Some(grpc::vectors_config_diff::Config::Params(
+                    grpc::VectorParamsDiff {
+                        memory: Some(memory as i32),
+                        ..Default::default()
+                    },
+                )),
+            }),
+            params: payload_memory.map(|memory| grpc::CollectionParamsDiff {
+                payload: Some(grpc::PayloadStorageParams {
+                    memory: Some(memory as i32),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn assert_rejected(result: Result<CollectionMetaOperations, Status>) {
+        let status = result.expect_err("`pinned` placement must be rejected");
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("pinned"), "{}", status.message());
+    }
+
+    /// `pinned` placement is invalid for dense vector and payload storage. The
+    /// gRPC layer only validates the proto request, so the rejection must not
+    /// depend on it: constructing the meta operation itself has to fail.
+    #[test]
+    fn test_grpc_create_collection_rejects_pinned_memory() {
+        assert_rejected(create_request(Some(grpc::Memory::Pinned), None).try_into());
+        assert_rejected(create_request(None, Some(grpc::Memory::Pinned)).try_into());
+    }
+
+    #[test]
+    fn test_grpc_update_collection_rejects_pinned_memory() {
+        assert_rejected(update_request(Some(grpc::Memory::Pinned), None).try_into());
+        assert_rejected(update_request(None, Some(grpc::Memory::Pinned)).try_into());
+    }
+
+    #[test]
+    fn test_grpc_create_update_collection_accept_valid_memory() {
+        for memory in [grpc::Memory::Cold, grpc::Memory::Cached] {
+            CollectionMetaOperations::try_from(create_request(Some(memory), Some(memory)))
+                .expect("valid placement must be accepted on create");
+            CollectionMetaOperations::try_from(update_request(Some(memory), Some(memory)))
+                .expect("valid placement must be accepted on update");
         }
     }
 }
