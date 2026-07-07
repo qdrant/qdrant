@@ -151,6 +151,9 @@ async fn append_request(
         .try_authorize(&mut request, None)
         .map_err(UniversalIoError::s3)?;
 
+    // Append operation is currently executed with a custom HTTP client, because the object_store
+    // crate does not support such operation.
+    // See: <https://github.com/apache/arrow-rs-object-store/issues/632>
     let response = context
         .client()?
         .execute(request)
