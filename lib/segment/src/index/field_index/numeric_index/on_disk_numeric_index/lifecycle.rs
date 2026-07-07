@@ -145,7 +145,8 @@ where
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.open(
+        let deleted_payload_mmap = StoredBitSlice::<S>::open(
+            fs,
             &deleted_path,
             OpenOptions {
                 writeable: false,
@@ -154,7 +155,7 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?)?;
+        )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only

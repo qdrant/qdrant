@@ -175,7 +175,7 @@ where
             advice: AdviceSetting::Global,
         };
 
-        let store = ReadOnly::from_file(fs.open(&file_name, open_options, Default::default())?);
+        let store = ReadOnly::open(fs, &file_name, open_options, Default::default())?;
 
         let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
 

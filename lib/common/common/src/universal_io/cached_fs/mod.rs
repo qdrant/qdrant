@@ -6,6 +6,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::mmap::AdviceSetting;
+use crate::universal_io::traits::CachedReadFs;
 use crate::universal_io::{
     ListedFile, OpenOptions, Populate, Result, UniversalIoError, UniversalReadFileOps,
     UniversalReadFs,
@@ -17,31 +18,8 @@ pub struct FileInfo {
     pub size: u64,
 }
 
-/// Capability extension over [`UniversalReadFs`]: a filesystem that snapshots
-/// its file listing and serves opens from explicitly prefetched handles.
-///
-/// Component-level preload helpers bound on `impl CachedFs<File = S>` are
-/// only callable when the caller opens through a caching filesystem;
-/// plain-`UniversalReadFs` open paths never see these methods.
-pub trait CachedFs: UniversalReadFs {
-    /// Take the file listing snapshot. From this point on, listing and
-    /// existence checks are answered locally and opens of unlisted paths
-    /// fail with `NotFound` without touching the underlying filesystem.
-    fn cache_file_info(&mut self) -> Result<()>;
-
-    /// Open `path` in the background and park the handle in the prefetch
-    /// pool, to be consumed by a later [`UniversalReadFs::open`] of the same
-    /// path. Idempotent per path while the handle is unconsumed.
-    fn schedule_prefetch(
-        &self,
-        path: &Path,
-        open_arguments: Option<OpenOptions>,
-        open_extra: Option<Self::OpenExtra>,
-    ) -> Result<()>;
-}
-
 /// Read-only filesystem wrapper that snapshots the file listing and serves
-/// opens from explicitly prefetched handles. The only [`CachedFs`]
+/// opens from explicitly prefetched handles. The only [`CachedReadFs`]
 /// implementation.
 ///
 /// Opens produce the *wrapped* backend's file type (`Fs::File`), so
@@ -57,15 +35,14 @@ pub trait CachedFs: UniversalReadFs {
 /// Once the snapshot is taken, listing and existence checks are answered
 /// from it without touching the inner filesystem, and opens of paths absent
 /// from the snapshot fail with `NotFound` locally — probing for optional
-/// files is free. Opens are expected to hit a handle registered via
-/// [`CachedFs::schedule_prefetch`]; a miss on a path the snapshot does
-/// contain falls back to an inner open (the open path prefetches every
-/// listed file, so this indicates a not-yet-optimized call site).
+/// files is free. Opens first consume any handle registered via
+/// [`CachedFs::schedule_prefetch`]; opens of listed files that were not
+/// scheduled fall back to a plain inner open.
 ///
 /// Prefetched handles are take-once: [`UniversalReadFs::open`] removes the
 /// handle from the pool and returns it owned. The pool is shared across
 /// clones.
-pub struct CachedReadFs<Fs: UniversalReadFs> {
+pub struct CachedFs<Fs: UniversalReadFs> {
     fs: Fs,
     prefix_path: PathBuf,
     /// `None` until [`CachedFs::cache_file_info`] takes the listing
@@ -77,7 +54,7 @@ pub struct CachedReadFs<Fs: UniversalReadFs> {
 /// Manual impl: `derive(Clone)` would add a spurious `Fs::File: Clone`
 /// bound for the projection in `files_prefetched`, even though the
 /// `Arc` field is unconditionally cloneable (rust-lang/rust#26925).
-impl<Fs: UniversalReadFs> Clone for CachedReadFs<Fs> {
+impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
     fn clone(&self) -> Self {
         let Self {
             fs,
@@ -94,7 +71,7 @@ impl<Fs: UniversalReadFs> Clone for CachedReadFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
+impl<Fs: UniversalReadFs> CachedFs<Fs> {
     pub fn new(fs: Fs, prefix_path: &Path) -> Result<Self> {
         Ok(Self {
             fs,
@@ -119,14 +96,15 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
         self.files_info.as_ref()?.get(path)
     }
 
-    /// Files from the snapshot; empty before [`CachedFs::cache_file_info`].
+    /// Files matching `prefix_path` in the snapshot; empty before
+    /// [`CachedFs::cache_file_info`].
     ///
     /// A path matches when its component at the prefix's final position
     /// starts with the prefix's final component (`dir/chunk_` matches
     /// `dir/chunk_1.dat` and everything under `dir/chunk_extra/`) — the
     /// same name-based matching as the local backends, immune to mixed
     /// `/` and `\` separators on Windows.
-    pub fn list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
+    fn cached_list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
         let dir = prefix_path.parent().unwrap_or(Path::new(""));
         let name_prefix = prefix_path
             .file_name()
@@ -153,16 +131,9 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
             })
             .collect()
     }
-
-    /// Existence per the snapshot; `false` before [`CachedFs::cache_file_info`].
-    pub fn exists(&self, path: &Path) -> bool {
-        self.files_info
-            .as_ref()
-            .is_some_and(|files_info| files_info.contains_key(path))
-    }
 }
 
-impl<Fs: UniversalReadFs> CachedFs for CachedReadFs<Fs> {
+impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
     fn cache_file_info(&mut self) -> Result<()> {
         // List all files
         let list = self.fs.list_files(&self.prefix_path)?;
@@ -218,7 +189,7 @@ pub struct CachedReadFsContext<C> {
     pub prefix_path: PathBuf,
 }
 
-impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedReadFs<Fs> {
+impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
     type ContextConfig = CachedReadFsContext<Fs::ContextConfig>;
 
     fn from_context(context: Self::ContextConfig) -> Result<Self> {
@@ -228,7 +199,7 @@ impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedReadFs<Fs> {
 
     fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
         match &self.files_info {
-            Some(_) => Ok(self.list_files(prefix_path)),
+            Some(_) => Ok(self.cached_list_files(prefix_path)),
             None => self.fs.list_files(prefix_path),
         }
     }
@@ -241,7 +212,7 @@ impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedReadFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> Debug for CachedReadFs<Fs> {
+impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let Self {
             fs,
@@ -258,7 +229,7 @@ impl<Fs: UniversalReadFs> Debug for CachedReadFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> UniversalReadFs for CachedReadFs<Fs> {
+impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
     /// The *wrapped* backend's file type: opening through the cache hands
     /// out the very handles the inner filesystem produced (prefetched or
     /// fallback-opened), so the wrapper never appears in stored types.
@@ -285,25 +256,17 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedReadFs<Fs> {
             return Ok(file);
         }
 
-        let Some(files_info) = &self.files_info else {
-            // Fallback to cache bypass.
-            // If we are here, that means open path is not optimized enough.
-            // After read-only read path is refactored, this should be protected
-            // by debug assertion
-            return self.fs.open(path, options, extra);
-        };
-
-        match files_info.get(path) {
-            None => Err(UniversalIoError::NotFound {
+        // With a snapshot, unlisted paths fail locally — probing for
+        // optional files never reaches the inner filesystem.
+        if let Some(files_info) = &self.files_info
+            && !files_info.contains_key(path)
+        {
+            return Err(UniversalIoError::NotFound {
                 path: path.to_path_buf(),
-            }),
-            Some(_file_info) => {
-                // Fallback to cache bypass.
-                // If we are here, that means open path is not optimized enough.
-                // After read-only read path is refactored, this should be protected
-                // by debug assertion
-                self.fs.open(path, options, extra)
-            }
+            });
         }
+
+        // Cache bypass: the path was never scheduled, and no snapshot was taken
+        self.fs.open(path, options, extra)
     }
 }
