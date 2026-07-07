@@ -406,16 +406,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .into_iter()
             .flatten();
 
-        let vector_data_config = self
-            .config
-            .read()
-            .vector_data_config(&focus.using)
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "vector data config for vector {} not found",
-                    focus.using,
-                ))
-            })?;
+        let vector_data_config = self.config.vector_data_config(&focus.using).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "vector data config for vector {} not found",
+                focus.using,
+            ))
+        })?;
 
         // Explanations are not attached here, they are resolved at a higher level
         let mut rescored = dims_focus_rescore(

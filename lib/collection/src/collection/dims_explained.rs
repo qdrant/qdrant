@@ -118,6 +118,7 @@ impl Collection {
                 self.retrieve(
                     retrieve_request,
                     read_consistency,
+                    None,
                     shard_selection,
                     timeout,
                     hw_measurement_acc.clone(),
