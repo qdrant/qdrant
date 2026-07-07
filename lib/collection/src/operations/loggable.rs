@@ -242,12 +242,11 @@ mod tests {
 
         let queries = value.as_array().unwrap();
         assert_eq!(queries.len(), MAX_LOGGED_ARRAY_LEN + 1);
-        assert_eq!(
-            queries[MAX_LOGGED_ARRAY_LEN],
-            json!("... (100 more items)"),
-        );
+        assert_eq!(queries[MAX_LOGGED_ARRAY_LEN], json!("... (100 more items)"));
 
-        let has_id = queries[0]["filter"]["must"][0]["has_id"].as_array().unwrap();
+        let has_id = queries[0]["filter"]["must"][0]["has_id"]
+            .as_array()
+            .unwrap();
         assert_eq!(has_id.len(), MAX_LOGGED_ARRAY_LEN + 1);
         assert_eq!(has_id[MAX_LOGGED_ARRAY_LEN], json!("... (36 more items)"));
     }
