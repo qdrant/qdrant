@@ -1614,3 +1614,102 @@ pub(crate) enum ShardTransferChange {
 pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::not_found(format!("shard {shard_id}"))
 }
+
+/// `register_restart_transfer` is the last durable write of a shard-transfer
+/// restart (finding E). These tests pin its replay-safety: the record is never
+/// removed, so a replay after the method-updating write reports the record
+/// (rather than "no transfer"), and the update is value-idempotent.
+#[cfg(test)]
+mod restart_transfer_tests {
+    use super::*;
+
+    fn make_holder() -> (tempfile::TempDir, ShardHolder) {
+        let dir = tempfile::tempdir().unwrap();
+        let holder = ShardHolder::new(dir.path(), ShardingMethod::Auto).unwrap();
+        (dir, holder)
+    }
+
+    // A replication (sync) wal-delta transfer — the shape that actually gets
+    // restarted (restart is only proposed as a wal-delta fallback).
+    fn wal_delta_transfer() -> ShardTransfer {
+        ShardTransfer {
+            shard_id: 1,
+            to_shard_id: None,
+            from: 10,
+            to: 20,
+            sync: true,
+            method: Some(ShardTransferMethod::WalDelta),
+            filter: None,
+        }
+    }
+
+    #[test]
+    fn test_register_restart_transfer_absent_is_none() {
+        let (_dir, holder) = make_holder();
+        let key = wal_delta_transfer().key();
+
+        // No record: a restart of a transfer that isn't registered is a
+        // stale-duplicate signal, reported as None.
+        let result = holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap();
+        assert_eq!(result, None, "restart of an absent transfer must return None");
+    }
+
+    #[test]
+    fn test_register_restart_transfer_updates_method_in_place() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let key = transfer.key();
+        holder
+            .register_start_shard_transfer(transfer.clone())
+            .unwrap();
+
+        let updated = holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap()
+            .expect("restart must return the updated record");
+
+        assert_eq!(updated.method, Some(ShardTransferMethod::Snapshot));
+        assert_eq!(updated.sync, transfer.sync, "sync flag must be preserved");
+        assert_eq!(updated.to_shard_id, None);
+        assert_eq!(updated.filter, None);
+        assert_eq!(updated.from, transfer.from);
+        assert_eq!(updated.to, transfer.to);
+        assert_eq!(updated.shard_id, transfer.shard_id);
+
+        // The record is replaced in place — still exactly one transfer, now with
+        // the new method (never removed, so a replay can always find it).
+        let transfers = holder.shard_transfers.read();
+        assert_eq!(transfers.len(), 1);
+        assert_eq!(
+            transfers.iter().next().unwrap().method,
+            Some(ShardTransferMethod::Snapshot),
+        );
+    }
+
+    #[test]
+    fn test_register_restart_transfer_replay_is_noop() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let key = transfer.key();
+        holder
+            .register_start_shard_transfer(transfer.clone())
+            .unwrap();
+
+        // Apply the restart, then replay it (as a crash after the method write
+        // would). The replay must report the record (not None) and leave the set
+        // unchanged — a single, idempotent no-op.
+        holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap();
+        let replay = holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap()
+            .expect("replay must still find the record, not treat it as absent");
+
+        assert_eq!(replay.method, Some(ShardTransferMethod::Snapshot));
+        assert_eq!(replay.sync, transfer.sync);
+        assert_eq!(holder.shard_transfers.read().len(), 1);
+    }
+}
