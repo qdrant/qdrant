@@ -106,28 +106,27 @@ impl Collection {
             .map(|point| point.id)
             .collect();
 
-        let retrieved_vectors: AHashMap<PointIdType, VectorStructInternal> = if missing_ids
-            .is_empty()
-        {
-            AHashMap::new()
-        } else {
-            let retrieve_request = PointRequestInternal {
-                ids: missing_ids,
-                with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: WithVector::from(using.clone()),
+        let retrieved_vectors: AHashMap<PointIdType, VectorStructInternal> =
+            if missing_ids.is_empty() {
+                AHashMap::new()
+            } else {
+                let retrieve_request = PointRequestInternal {
+                    ids: missing_ids,
+                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                    with_vector: WithVector::from(using.clone()),
+                };
+                self.retrieve(
+                    retrieve_request,
+                    read_consistency,
+                    shard_selection,
+                    timeout,
+                    hw_measurement_acc.clone(),
+                )
+                .await?
+                .into_iter()
+                .filter_map(|record| record.vector.map(|vector| (record.id, vector)))
+                .collect()
             };
-            self.retrieve(
-                retrieve_request,
-                read_consistency,
-                shard_selection,
-                timeout,
-                hw_measurement_acc.clone(),
-            )
-            .await?
-            .into_iter()
-            .filter_map(|record| record.vector.map(|vector| (record.id, vector)))
-            .collect()
-        };
 
         let distance = self
             .collection_config

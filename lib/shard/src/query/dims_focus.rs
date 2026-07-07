@@ -50,10 +50,8 @@ pub fn dims_focus_rescore(
         .into_iter()
         .unique_by(|point| point.id)
         .filter_map(|mut point| {
-            let Some(VectorRef::Dense(point_vector)) = point
-                .vector
-                .as_ref()
-                .and_then(|vector| vector.get(&using))
+            let Some(VectorRef::Dense(point_vector)) =
+                point.vector.as_ref().and_then(|vector| vector.get(&using))
             else {
                 // Silently ignore points without this named dense vector
                 return None;
@@ -61,11 +59,8 @@ pub fn dims_focus_rescore(
 
             point.score = calculator.score_for_dims(point_vector, &dims);
             if let Some(explain) = dims_explained {
-                point.dims_explained = Some(calculator.top_contributions_for_dims(
-                    point_vector,
-                    &dims,
-                    explain.top,
-                ));
+                point.dims_explained =
+                    Some(calculator.top_contributions_for_dims(point_vector, &dims, explain.top));
             }
 
             Some(point)

@@ -159,6 +159,7 @@ pub fn collect_query_groups_request(request: &QueryGroupsRequestInternal) -> Bat
         with_vector: _,
         with_payload: _,
         lookup_from: _,
+        with_dims_explained: _,
         group_request: _,
     } = request;
 

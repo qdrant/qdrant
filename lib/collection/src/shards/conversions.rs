@@ -587,7 +587,9 @@ pub fn try_scored_point_from_grpc(
             let mut dims: Vec<_> = dims_explained.into_iter().collect();
             // Restore the "sorted by absolute contribution" invariant, lost in the map
             dims.sort_unstable_by(|(_, a), (_, b)| {
-                b.abs().partial_cmp(&a.abs()).unwrap_or(std::cmp::Ordering::Equal)
+                b.abs()
+                    .partial_cmp(&a.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
             Some(dims)
         },

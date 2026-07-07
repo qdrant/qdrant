@@ -94,6 +94,55 @@ def test_dims_explained_rejected_for_non_nearest(collection_name):
     assert "with_dims_explained is only supported for nearest queries" in response.json()["status"]["error"]
 
 
+def test_dims_explained_on_query_groups(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "points": [
+                {
+                    "id": 10,
+                    "vector": POINT_VECTOR,
+                    "payload": {"group": "a"},
+                },
+                {
+                    "id": 11,
+                    "vector": [0.0, 0.0, 0.0, 0.0, 0.0],
+                    "payload": {"group": "a"},
+                },
+                {
+                    "id": 12,
+                    "vector": POINT_VECTOR,
+                    "payload": {"group": "b"},
+                },
+            ],
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {"nearest": QUERY_VECTOR},
+            "group_by": "group",
+            "group_size": 1,
+            "limit": 2,
+            "with_dims_explained": {"top": 3},
+        },
+    )
+    assert response.ok
+    groups = response.json()["result"]["groups"]
+    assert len(groups) >= 1
+    point = groups[0]["hits"][0]
+    explained = point["dims_explained"]
+    assert len(explained) == 3
+    assert explained[TOP_DIM_BY_ABS] == TOP_TERM
+
+
 def test_focus_rescore_with_dims_explained(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",

@@ -6853,6 +6853,10 @@ pub struct QueryPointGroups {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "17")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// Options for including per-dimension score explanations into the response.
+    /// Only supported for nearest queries against dense vectors.
+    #[prost(message, optional, tag = "18")]
+    pub with_dims_explained: ::core::option::Option<WithDimsExplained>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -95,8 +95,9 @@ impl DimsExplainedCalculator {
 
         let top = top.min(contributions.len());
         if top < contributions.len() {
-            contributions
-                .select_nth_unstable_by_key(top, |(_, term)| std::cmp::Reverse(OrderedFloat(term.abs())));
+            contributions.select_nth_unstable_by_key(top, |(_, term)| {
+                std::cmp::Reverse(OrderedFloat(term.abs()))
+            });
             contributions.truncate(top);
         }
         contributions.sort_unstable_by_key(|(_, term)| std::cmp::Reverse(OrderedFloat(term.abs())));
@@ -133,8 +134,9 @@ impl DimsExplainedCalculator {
 
         let top = top.min(contributions.len());
         if top < contributions.len() {
-            contributions
-                .select_nth_unstable_by_key(top, |(_, term)| std::cmp::Reverse(OrderedFloat(term.abs())));
+            contributions.select_nth_unstable_by_key(top, |(_, term)| {
+                std::cmp::Reverse(OrderedFloat(term.abs()))
+            });
             contributions.truncate(top);
         }
         contributions.sort_unstable_by_key(|(_, term)| std::cmp::Reverse(OrderedFloat(term.abs())));
@@ -204,10 +206,7 @@ mod tests {
         let calculator = DimsExplainedCalculator::new(query(), Distance::Cosine);
         let contributions = calculator.top_contributions(&point(), usize::MAX);
         let sum: ScoreType = contributions.iter().map(|(_, term)| term).sum();
-        let expected = dot_similarity(
-            &cosine_preprocess(query()),
-            &cosine_preprocess(point()),
-        );
+        let expected = dot_similarity(&cosine_preprocess(query()), &cosine_preprocess(point()));
         assert!((sum - expected).abs() < EPS);
     }
 

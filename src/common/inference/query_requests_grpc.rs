@@ -51,6 +51,7 @@ pub async fn convert_query_point_groups_from_grpc(
         read_consistency: _,
         timeout: _,
         shard_key_selector: _,
+        with_dims_explained,
     } = query;
 
     let mut batch = BatchAccumGrpc::new();
@@ -104,6 +105,12 @@ pub async fn convert_query_point_groups_from_grpc(
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
         params: params.map(From::from),
         with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
+        dims_explained: with_dims_explained.map(|params| DimsExplainedInternal {
+            top: params
+                .top
+                .map(|top| top as usize)
+                .unwrap_or(DimsExplainedInternal::DEFAULT_TOP),
+        }),
     };
 
     Ok((request, usage.unwrap_or_default().into()))

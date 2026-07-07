@@ -1343,6 +1343,14 @@ pub struct QueryGroupsRequestInternal {
     #[serde(default)]
     pub lookup_from: Option<LookupLocation>,
 
+    /// Options for including per-dimension score explanations into the response. Default is false.
+    ///
+    /// If enabled, each returned point will contain a `dims_explained` field with the top
+    /// dimensions which contributed the most to its score.
+    /// Only supported for `nearest` queries against dense vectors.
+    #[validate(nested)]
+    pub with_dims_explained: Option<WithDimsExplained>,
+
     #[serde(flatten)]
     #[validate(nested)]
     pub group_request: QueryBaseGroupRequest,

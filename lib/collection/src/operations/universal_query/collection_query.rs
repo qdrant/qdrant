@@ -87,6 +87,7 @@ pub struct CollectionQueryGroupsRequest {
     pub group_size: usize,
     pub limit: usize,
     pub with_lookup: Option<WithLookup>,
+    pub dims_explained: Option<DimsExplainedInternal>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

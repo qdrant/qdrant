@@ -1211,6 +1211,9 @@ message QueryPointGroups {
   optional uint64 timeout = 16;
   // Specify in which shards to look for the points, if not specified - look in all shards
   optional ShardKeySelector shard_key_selector = 17;
+  // Options for including per-dimension score explanations into the response.
+  // Only supported for nearest queries against dense vectors.
+  optional WithDimsExplained with_dims_explained = 18;
 }
 
 message FacetCounts {

@@ -50,6 +50,7 @@ pub async fn convert_query_groups_request_from_rest(
         with_vector,
         with_payload,
         lookup_from,
+        with_dims_explained,
         group_request,
     } = request;
 
@@ -88,6 +89,7 @@ pub async fn convert_query_groups_request_from_rest(
             .group_size
             .unwrap_or(CollectionQueryRequest::DEFAULT_GROUP_SIZE),
         with_lookup: group_request.with_lookup.map(WithLookup::from),
+        dims_explained: with_dims_explained.and_then(dims_explained_from_rest),
     };
 
     Ok(CollectionQueryGroupsRequestWithUsage {
