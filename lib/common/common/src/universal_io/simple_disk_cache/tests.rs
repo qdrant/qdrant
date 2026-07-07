@@ -13,8 +13,8 @@ use super::{
 use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenOptions, Populate, ReadPipeline, ReadRange, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend, UniversalFlush,
+    UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs,
 };
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
@@ -61,6 +61,22 @@ impl Scenario {
         R: DiskCacheRemote,
         <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
     {
+        self.open_with(prefill, false)
+    }
+
+    fn open_writeable<R>(&self, prefill: bool) -> DiskCache<R>
+    where
+        R: DiskCacheRemote,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    {
+        self.open_with(prefill, true)
+    }
+
+    fn open_with<R>(&self, prefill: bool, writeable: bool) -> DiskCache<R>
+    where
+        R: DiskCacheRemote,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    {
         let populate = if prefill {
             Populate::PreferBackground
         } else {
@@ -75,7 +91,7 @@ impl Scenario {
         fs.open(
             &self.remote_path,
             OpenOptions {
-                writeable: false,
+                writeable,
                 populate,
                 need_sequential: false,
                 advice: AdviceSetting::Global,
@@ -129,6 +145,20 @@ impl Scenario {
         file.write_all(&new_data[old_len..]).unwrap();
         self.data = new_data.clone();
         new_data
+    }
+
+    /// Overwrite the remote file's content in place (same length) so any read
+    /// that hits the remote instead of the local mirror becomes visible.
+    fn mangle_remote(&self) {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let len = fs::metadata(&self.remote_path).unwrap().len();
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .open(&self.remote_path)
+            .unwrap();
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.write_all(&vec![0xEE; len as usize]).unwrap();
     }
 }
 
@@ -748,5 +778,164 @@ mod tests_mod {
         })
         .unwrap();
         assert!(seen.iter().all(|&s| s));
+    }
+
+    /// Append writes through to both the remote (the single grow+write op)
+    /// and the local mirror: afterwards every byte — old and appended — is
+    /// served locally, which mangling the remote makes observable.
+    #[test]
+    fn append_grows_remote_and_serves_tail_from_mirror() {
+        use std::sync::atomic::Ordering;
+
+        // Non-block-aligned start so the append begins mid-block.
+        let scn = Scenario::new(BLOCK_SIZE + 100);
+        let mut cache = scn.open_writeable::<R>(PREFILL);
+
+        // Fetch everything so the partial tail block is in the mirror.
+        cache.populate().unwrap();
+
+        // The appended range crosses a block boundary.
+        let appended: Vec<u8> = (0..BLOCK_SIZE).map(|i| (i % 251) as u8 ^ 0xAA).collect();
+        let offset = cache.append(&appended).unwrap();
+        assert_eq!(offset, (BLOCK_SIZE + 100) as u64);
+        assert_eq!(cache.len::<u8>().unwrap(), (2 * BLOCK_SIZE + 100) as u64);
+
+        // The remote file received the appended bytes.
+        let mut expected = scn.data.clone();
+        expected.extend_from_slice(&appended);
+        assert_eq!(fs::read(&scn.remote_path).unwrap(), expected);
+
+        // Write-through proof: reads must be served from the mirror, so
+        // mangling the remote must not show through.
+        scn.mangle_remote();
+        let bytes = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 0,
+                length: expected.len() as u64,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, &expected[..]);
+
+        // populate + write-through covers every block.
+        let local = cache.state().unwrap().local;
+        assert!(local.fully_populated.load(Ordering::Acquire));
+    }
+
+    /// Appending while the pre-append tail block was never fetched: the
+    /// block stays unfetched (its prefix is not locally valid), and reads of
+    /// both the old and the appended range remain correct via lazy fetch.
+    #[test]
+    fn append_into_unfetched_tail_block_stays_consistent() {
+        let scn = Scenario::new(BLOCK_SIZE + 100);
+        let mut cache = scn.open_writeable::<R>(PREFILL);
+
+        // Touch only block 0 — without prefill, the partial tail block 1
+        // stays unfetched.
+        let _ = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 0,
+                length: 1,
+            })
+            .unwrap();
+
+        // Stays within block 1.
+        let appended = vec![0xCD_u8; 50];
+        let offset = cache.append(&appended).unwrap();
+        assert_eq!(offset, (BLOCK_SIZE + 100) as u64);
+
+        let bytes = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: BLOCK_SIZE as u64,
+                length: 150,
+            })
+            .unwrap();
+        let mut expected = scn.data[BLOCK_SIZE..].to_vec();
+        expected.extend_from_slice(&appended);
+        assert_eq!(&*bytes, &expected[..]);
+    }
+
+    /// Appending without any prior read materializes the mirror first.
+    #[test]
+    fn append_materializes_uninitialized_cache() {
+        let scn = Scenario::new(100);
+        let mut cache = scn.open_writeable::<R>(PREFILL);
+
+        let offset = cache.append(b"tail".as_slice()).unwrap();
+        assert_eq!(offset, 100);
+        assert_eq!(cache.len::<u8>().unwrap(), 104);
+
+        let bytes = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 100,
+                length: 4,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, b"tail");
+    }
+
+    #[test]
+    fn append_batch_lands_contiguously_and_empty_append_is_noop() {
+        let scn = Scenario::new(10);
+        let mut cache = scn.open_writeable::<R>(PREFILL);
+
+        let batch: [&[u8]; 3] = [b"ab", b"", b"cde"];
+        assert_eq!(cache.append_batch(batch).unwrap(), 10);
+        assert_eq!(cache.append::<u8>(&[]).unwrap(), 15);
+        assert_eq!(cache.len::<u8>().unwrap(), 15);
+
+        let bytes = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 10,
+                length: 5,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, b"abcde");
+
+        // The flusher is a no-op that must still succeed.
+        (cache.flusher())().unwrap();
+    }
+
+    #[test]
+    fn append_requires_writeable_open() {
+        let scn = Scenario::new(10);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let err = cache.append(b"x".as_slice()).unwrap_err();
+        assert_matches!(err, crate::universal_io::UniversalIoError::Io(_));
+    }
+
+    /// Foreign growth between materialization and append: the mirror is
+    /// stale, so append takes the resize-only path and lazy fetches heal the
+    /// gap on the next read.
+    #[test]
+    fn append_after_foreign_growth_heals_lazily() {
+        let mut scn = Scenario::new(100);
+        let mut cache = scn.open_writeable::<R>(PREFILL);
+
+        let _ = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 0,
+                length: 1,
+            })
+            .unwrap();
+
+        // The remote grows behind the cache's back...
+        let grown = scn.grow_remote(50);
+
+        // ...so this append lands at 150, not at the mirror's 100.
+        let offset = cache.append(b"tail".as_slice()).unwrap();
+        assert_eq!(offset, 150);
+        assert_eq!(cache.len::<u8>().unwrap(), 154);
+
+        // Both the foreign bytes and the appended bytes read correctly.
+        let bytes = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 100,
+                length: 54,
+            })
+            .unwrap();
+        let mut expected = grown[100..].to_vec();
+        expected.extend_from_slice(b"tail");
+        assert_eq!(&*bytes, &expected[..]);
     }
 }

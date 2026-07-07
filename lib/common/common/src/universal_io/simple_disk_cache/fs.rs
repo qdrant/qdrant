@@ -11,8 +11,8 @@ use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
+    ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -93,13 +93,14 @@ impl<R: UniversalRead> DiskCacheFs<R> {
     fn open_remote(
         &self,
         path: impl AsRef<Path>,
+        writeable: bool,
         extra: <R::Fs as UniversalReadFs>::OpenExtra,
     ) -> Result<R> {
-        let extra = extra.with_prevent_caching(true);
         self.remote_fs.open(
             path.as_ref(),
             OpenOptions {
-                writeable: false,
+                // Propagated so appendable caches get an appendable remote.
+                writeable,
                 need_sequential: true,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
@@ -187,15 +188,14 @@ where
         options: OpenOptions,
         extra: Self::OpenExtra,
     ) -> Result<DiskCache<R>> {
-        if options.writeable {
-            return Err(UniversalIoError::Uninitialized {
-                description:
-                    "DiskCache only supports immutable files, writeable option is not allowed"
-                        .to_string(),
-            });
-        }
-
-        let remote_extra = extra.remote_extra.with_prevent_caching(true);
+        // `writeable` opens exist solely to enable `UniversalAppend` (when
+        // the remote supports it): `DiskCache` never implements
+        // `UniversalWrite` — random-offset writes stay unsupported.
+        //
+        // Appendable remotes are opened buffered: appends write through the
+        // page cache, which `O_DIRECT` reads on the same fd would fight
+        // (and `IoUringFile` rejects appends on `prevent_caching` handles).
+        let remote_extra = extra.remote_extra.with_prevent_caching(!options.writeable);
         let local_path = unique_local_path(self.config.local_path_for(path.as_ref())?);
 
         let populate = if crate::low_memory::low_memory_mode().skip_populate() {
@@ -208,7 +208,8 @@ where
             (None, Populate::Auto | Populate::No) => State::Uninit,
             // We know file length, initialize local state.
             (Some(len), Populate::Auto | Populate::No) => {
-                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+                let remote =
+                    self.open_remote(path.as_ref(), options.writeable, remote_extra.clone())?;
 
                 let local = LocalState::new(&local_path, len, options)?;
 
@@ -216,7 +217,8 @@ where
             }
             // Even if we know length, we don't need it to do `schedule_whole`.
             (None | Some(_), Populate::Blocking | Populate::PreferBackground) => {
-                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+                let remote =
+                    self.open_remote(path.as_ref(), options.writeable, remote_extra.clone())?;
 
                 let mut pipeline = OwnedPipeline::new(remote)?;
 
@@ -231,7 +233,8 @@ where
             }
             // Schedule a partial block-aligned read.
             (known_len, Populate::Partial(range)) => {
-                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+                let remote =
+                    self.open_remote(path.as_ref(), options.writeable, remote_extra.clone())?;
 
                 // `Partial` must create the local file, so we need the length up front.
                 let file_len = match known_len {

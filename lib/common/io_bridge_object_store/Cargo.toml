@@ -18,3 +18,4 @@ url = { workspace = true }
 
 [dev-dependencies]
 common = { path = "../common", features = ["testing"] }
+tempfile = { workspace = true }

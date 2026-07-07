@@ -114,6 +114,58 @@ impl LocalState {
         unsafe { self.mmap.get().as_ref_unchecked() }
     }
 
+    /// Write-through for bytes just appended to the remote: grow the mirror
+    /// and fill `slices` (contiguously, in order) at `offset`, which must
+    /// equal the current mirror length.
+    ///
+    /// Every block whose in-file extent is fully covered by the appended
+    /// range is marked fetched — including the partial block at the new
+    /// end-of-file, since fetches clamp to it. The pre-append tail block is
+    /// re-marked only if it was fetched before ([`Self::resize`] drops it
+    /// because `set_len` zero-fills its gap; the write below overwrites that
+    /// gap with the real bytes, making the block accurate again iff its
+    /// pre-`offset` prefix was).
+    pub(super) fn append_local(
+        &mut self,
+        local_path: impl AsRef<Path>,
+        offset: u64,
+        slices: &[&[u8]],
+    ) -> Result<()> {
+        let block_size = BLOCK_SIZE as u64;
+        let total: u64 = slices.iter().map(|slice| slice.len() as u64).sum();
+        let new_len = offset + total;
+
+        let pre_append_tail_block =
+            (!offset.is_multiple_of(block_size)).then(|| (offset / block_size) as u32);
+        let was_tail_fetched = pre_append_tail_block
+            .is_some_and(|tail_block| self.fetched.get_mut().contains(tail_block));
+
+        self.resize(&local_path, new_len)?;
+
+        let mmap = self.mmap.get_mut();
+        let mut position = offset;
+        for slice in slices {
+            mmap.write(position, slice)?;
+            position += slice.len() as u64;
+        }
+
+        let fetched = self.fetched.get_mut();
+        let first_covered_block = offset.div_ceil(block_size) as u32;
+        let end_block = new_len.div_ceil(block_size) as u32;
+        fetched.insert_range(first_covered_block..end_block);
+        if was_tail_fetched {
+            fetched.insert(pre_append_tail_block.expect("checked above"));
+        }
+
+        // `resize` cleared `fully_populated`; recompute it.
+        let total_blocks = new_len.div_ceil(block_size);
+        if fetched.len() == total_blocks {
+            *self.fully_populated.get_mut() = true;
+        }
+
+        Ok(())
+    }
+
     /// Whether `blocks_range` is already cached locally.
     ///
     /// Cheap when the file is fully populated (one relaxed atomic load);
@@ -137,14 +189,19 @@ impl LocalState {
     }
 
     /// # Safety
-    /// `DiskCache` is only used in immutable files. Since `blocks_range` can include already-fetched
-    /// data, it is possible that some sections get overwritten; however, it should be the same data,
-    /// so it is fine.
+    /// `DiskCache` is only used for append-only remotes with an immutable
+    /// prefix, so every fetch of `blocks_range` yields the same bytes the
+    /// mirror already holds for it (appends write-through via
+    /// [`Self::append_local`] before any fetch can cover them). Since
+    /// `blocks_range` can include already-fetched data, it is possible that
+    /// some sections get overwritten; however, it is the same data, so it is
+    /// fine.
     ///
     /// Assumes the bytes slice covers the entirety of `blocks_range`.
     pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
         // SAFETY:
-        // 1. The remote file is immutable, so worst case, same data is overwritten.
+        // 1. The remote's existing bytes are immutable, so worst case, same
+        //    data is overwritten.
         // 2. The `fetched` bitmap should track which blocks are already present.
         let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
         if self.fully_populated.load(Ordering::Acquire) {

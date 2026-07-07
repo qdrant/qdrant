@@ -1,4 +1,5 @@
-//! [`DiskCache`]: a lazily-populated local mirror of an immutable remote file.
+//! [`DiskCache`]: a lazily-populated local mirror of an append-only remote
+//! file.
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -13,14 +14,19 @@ use crate::universal_io::{
     OpenOptions, OwnedPipeline, Populate, Result, UniversalRead, UniversalReadFs,
 };
 
+mod append;
 mod init;
 mod read;
 mod reopen;
 
-/// A lazily-populated local mirror of an immutable remote file.
+/// A lazily-populated local mirror of an append-only remote file.
 ///
-/// The remote is assumed to be immutable for the lifetime of the file;
-/// this type implements [`UniversalRead`] only, but not [`UniversalWrite`].
+/// The remote's existing bytes are assumed to be immutable for the lifetime
+/// of the file: it may grow — through this handle's `UniversalAppend` (when
+/// the remote supports it, with write-through into the mirror; see
+/// [`append`]) or externally (picked up by [`reopen`]) — but never shrink or
+/// change in place. This type never implements [`UniversalWrite`]:
+/// random-offset writes stay unsupported.
 ///
 /// The local mirror can either be initialized lazily on first read (filling
 /// blocks on demand from the remote) or eagerly if populate is set. See
@@ -129,7 +135,8 @@ where
 
     pub(super) fn open_remote(&self) -> Result<R> {
         let remote_options = OpenOptions {
-            writeable: false,
+            // Propagated so appendable caches get an appendable remote.
+            writeable: self.open_options.writeable,
             populate: Populate::No,
             need_sequential: false,
             advice: AdviceSetting::Global,
