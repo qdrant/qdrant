@@ -120,7 +120,7 @@ impl TableOfContent {
                     }
                 }
                 VectorsConfig::Multi(m) => {
-                    for (_, vec_params) in m.iter_mut() {
+                    for vec_params in m.values_mut() {
                         if let Some(on_disk_default) = vectors_defaults.on_disk {
                             vec_params.on_disk.get_or_insert(on_disk_default);
                         }

@@ -98,7 +98,7 @@ impl StructPayloadIndex {
         &mut self,
         point_id: PointOffsetType,
     ) -> OperationResult<()> {
-        for (_, field_indexes) in self.field_indexes.iter_mut() {
+        for field_indexes in self.field_indexes.values_mut() {
             for index in field_indexes {
                 index.remove_point(point_id)?;
             }
