@@ -228,7 +228,7 @@ fn disk_cache_read_whole_skips_remote_len() {
                 populate: Populate::No,
                 ..OpenOptions::new_for_test()
             },
-            (),
+            Default::default(),
         )
         .unwrap();
 
@@ -280,7 +280,7 @@ fn disk_cache_prefill_open_uses_whole_get_without_head() {
                 populate: Populate::Blocking,
                 ..OpenOptions::new_for_test()
             },
-            (),
+            Default::default(),
         )
         .unwrap();
 
