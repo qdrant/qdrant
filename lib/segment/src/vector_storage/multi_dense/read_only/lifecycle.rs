@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::AdviceSetting;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -20,7 +20,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
     /// chunks.
     #[allow(dead_code)] // pending: read-only vector storage enum will use this
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         dim: usize,
         distance: Distance,

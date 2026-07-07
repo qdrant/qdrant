@@ -8,8 +8,8 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
+    FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
 
@@ -52,7 +52,12 @@ impl<S: UniversalRead> Pages<S> {
         }
     }
 
-    pub fn open(fs: &S::Fs, dir: &Path, writeable: bool, populate: Populate) -> Result<Self> {
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        writeable: bool,
+        populate: Populate,
+    ) -> Result<Self> {
         let mut pages = Self::new(dir.to_path_buf(), writeable);
 
         let page_files: HashSet<_> = fs
@@ -72,34 +77,12 @@ impl<S: UniversalRead> Pages<S> {
         Ok(pages)
     }
 
-    /// Read-only [`Self::open`] taking page handles from a [`CachedReadFs`]
-    /// prefetch pool. Listing goes through the trait so a snapshot-less
-    /// (passthrough) wrapper behaves like the plain open.
-    pub fn open_cached(fs: &CachedReadFs<S::Fs>, dir: &Path, populate: Populate) -> Result<Self> {
-        let mut pages = Self::new(dir.to_path_buf(), false);
-
-        let page_files: HashSet<_> = UniversalReadFileOps::list_files(fs, &dir.join("page_"))?
-            .into_iter()
-            .map(|listed| listed.path)
-            .collect();
-
-        for page_id in 0.. {
-            let page_path = pages.page_path(page_id);
-            if !page_files.contains(&page_path) {
-                break;
-            }
-            let page = fs.take_file(
-                &page_path,
-                pages.page_open_options(populate),
-                Default::default(),
-            )?;
-            pages.attach_file(page);
-        }
-
-        Ok(pages)
-    }
-
-    pub fn attach_page(&mut self, fs: &S::Fs, path: &Path, populate: Populate) -> Result<()> {
+    pub fn attach_page<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        path: &Path,
+        populate: Populate,
+    ) -> Result<()> {
         let page = fs.open(path, self.page_open_options(populate), Default::default())?;
         self.attach_file(page);
         Ok(())

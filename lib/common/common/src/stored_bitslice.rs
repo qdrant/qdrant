@@ -65,11 +65,11 @@ pub struct StoredBitSlice<S> {
 
 impl<S: UniversalRead> StoredBitSlice<S> {
     /// Open a bitslice storage from the given path using backend `S`.
-    pub fn open(
-        fs: &S::Fs,
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
         path: impl AsRef<Path>,
         options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+        extra: Fs::OpenExtra,
     ) -> Result<Self> {
         let storage = TypedStorage::open(fs, path, options, extra)?;
         let element_len = storage.len()?;
@@ -79,8 +79,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         })
     }
 
-    /// Wrap an already-opened backend file (e.g. taken from a
-    /// [`CachedReadFs`](crate::universal_io::CachedReadFs) prefetch pool).
+    /// Wrap an already-opened backend file.
     pub fn from_file(file: S) -> Result<Self> {
         let storage = TypedStorage::new(file);
         let element_len = storage.len()?;

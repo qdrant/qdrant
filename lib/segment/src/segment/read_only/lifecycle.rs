@@ -5,7 +5,9 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalReadFs, read_json_via};
+use common::universal_io::{
+    CachedFs, CachedReadFs, OkNotFound, Populate, UniversalReadFs, read_json_via,
+};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -69,18 +71,20 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
-        Self::open_via(&cached_fs, segment_path, uuid, deferred_internal_id)
+        Self::open_via(&cached_fs, fs, segment_path, uuid, deferred_internal_id)
     }
 
     /// Read-only mirror of `load_segment`: assembles every read-only component
     /// from `fs` (id tracker, payload storage+index, per-vector storage/index). No writes.
     ///
-    /// Stored handles are taken from the [`CachedReadFs`] pool via
-    /// [`CachedReadFs::take_file`], so component types stay over plain `S`;
-    /// transient reads (state/config JSON) go through its `UniversalReadFs`
-    /// impl and never leak the wrapper.
+    /// `fs` is any filesystem producing `S`-typed handles — in production the
+    /// per-segment [`CachedReadFs`], whose opens are served from its prefetch
+    /// pool. `raw_fs` is the canonical backend, for the one component that
+    /// stores a filesystem handle to re-open appended files later (the
+    /// appendable id tracker): a caching wrapper's snapshot would go stale.
     pub(crate) fn open_via(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &S::Fs,
         segment_path: &Path,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
@@ -115,6 +119,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         // per-file `exists` round-trips — important for object-storage backends).
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
             fs,
+            raw_fs,
             segment_path,
             deferred_internal_id,
         )?));
@@ -203,7 +208,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn open_dense(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         vector_name: &VectorName,
         vector_config: &VectorDataConfig,
@@ -255,7 +260,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Open one sparse vector's index over `fs`, mirroring
     /// `open_sparse_vector_data`. Sparse vectors are never quantized.
     pub(super) fn open_sparse(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         vector_name: &VectorName,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,

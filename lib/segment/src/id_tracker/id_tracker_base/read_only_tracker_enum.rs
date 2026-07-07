@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead};
+use common::universal_io::{UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
@@ -34,8 +34,12 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     ///
     /// The attempts are sequential for now; they are independent and can be
     /// issued concurrently later (the slow-path being remote opens).
+    /// `raw_fs` is the canonical backend for the appendable tracker, which
+    /// stores a filesystem handle to re-open the append-only files on later
+    /// reloads — a caching wrapper's snapshot would go stale.
     pub fn detect_and_load(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &S::Fs,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
@@ -46,7 +50,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             return Ok(Self::Immutable(tracker));
         }
         Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open(
-            fs,
+            raw_fs,
             segment_path,
             deferred_internal_id,
         )?))

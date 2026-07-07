@@ -3,7 +3,7 @@ use std::path::Path;
 use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead};
+use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyImmutableDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -28,7 +28,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorSt
     /// threading every file open through `fs`; reads the existing layout but
     /// creates and writes nothing. `populate` warms the vector data.
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         dim: usize,
         distance: Distance,
@@ -51,11 +51,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorSt
 /// followed by the deletion `BitSlice`; the leading header bits are dropped and
 /// `num_vectors` deletion flags are kept.
 fn open_deleted_flags<S: UniversalRead>(
-    fs: &CachedReadFs<S::Fs>,
+    fs: &impl UniversalReadFs<File = S>,
     deleted_path: &Path,
     num_vectors: usize,
 ) -> OperationResult<InMemoryBitvecFlags> {
-    let stored = StoredBitSlice::<S>::from_file(fs.take_file(
+    let stored = StoredBitSlice::<S>::from_file(fs.open(
         deleted_path,
         READ_ONLY_OPTIONS,
         Default::default(),

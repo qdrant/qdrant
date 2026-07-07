@@ -69,11 +69,7 @@ mod tests {
             storage.flusher()().unwrap();
         }
 
-        let storage = ReadOnlySparseVectorStorage::<MmapFile>::open(
-            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-            dir.path(),
-        )
-        .unwrap();
+        let storage = ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
 
         assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
         assert_eq!(storage.distance(), SPARSE_VECTOR_DISTANCE);
@@ -124,11 +120,8 @@ mod tests {
         }
         writer.flusher()().unwrap();
 
-        let mut reader = ReadOnlySparseVectorStorage::<MmapFile>::open(
-            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-            dir.path(),
-        )
-        .unwrap();
+        let mut reader =
+            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
         assert_eq!(reader.total_vector_count(), first.len());
 
         for (offset, vector) in second.iter().enumerate() {

@@ -131,13 +131,9 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
-            &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
-                .unwrap(),
-            dir.path(),
-        )
-        .unwrap()
-        .unwrap();
+        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+            .unwrap()
+            .unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -201,13 +197,9 @@ mod tests {
         let fs = RoFs::from_context(Default::default()).unwrap();
 
         // Read-only view of points 0..=5, taken before the writer continues.
-        let mut reloaded = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
-            &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
-                .unwrap(),
-            dir.path(),
-        )
-        .unwrap()
-        .unwrap();
+        let mut reloaded = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+            .unwrap()
+            .unwrap();
 
         // Writer's append-only delta: retire points 1 (false) and 2 (both), then
         // append fresh offsets 6 (true), 7 (false) and 1100 (true). Offset 1100
@@ -229,13 +221,9 @@ mod tests {
             )
             .unwrap();
 
-        let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
-            &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
-                .unwrap(),
-            dir.path(),
-        )
-        .unwrap()
-        .unwrap();
+        let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+            .unwrap()
+            .unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw = hw_acc.get_counter_cell();
@@ -312,25 +300,11 @@ mod tests {
         // `trues` present, `falses` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
-        assert!(
-            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
-                &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
-                    .unwrap(),
-                dir.path()
-            )
-            .is_err()
-        );
+        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
 
         // `falses` present, `trues` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
-        assert!(
-            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
-                &common::universal_io::CachedReadFs::new(fs.clone(), std::path::Path::new("."))
-                    .unwrap(),
-                dir.path()
-            )
-            .is_err()
-        );
+        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
     }
 }

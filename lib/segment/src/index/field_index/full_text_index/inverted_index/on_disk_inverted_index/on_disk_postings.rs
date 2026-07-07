@@ -3,10 +3,7 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
-use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, ReadRange, UniversalIoError, UniversalRead,
-    UniversalReadFs,
-};
+use common::universal_io::{OkNotFound, OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs};
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
 
@@ -46,14 +43,14 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
     /// Open the postings file at `path` via the `S` storage backend.
     ///
     /// Returns `Ok(None)` if the file is not found
-    pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
         path: impl Into<PathBuf>,
         options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+        extra: Fs::OpenExtra,
     ) -> OperationResult<Option<Self>> {
         let path = path.into();
-        let Some(storage) = fs.take_file(&path, options, extra).ok_not_found()? else {
+        let Some(storage) = fs.open(&path, options, extra).ok_not_found()? else {
             return Ok(None);
         };
 

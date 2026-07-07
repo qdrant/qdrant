@@ -32,7 +32,7 @@ use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{
-    CachedReadFs, OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalWrite,
+    OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalWrite,
 };
 use fs_err::File;
 
@@ -136,10 +136,7 @@ where
         let internal_to_version_wrapper =
             SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
 
-        // `DiskMappingReader::open` takes a `CachedReadFs`; snapshot-less it is
-        // a passthrough to the raw backend.
-        let reader =
-            DiskMappingReader::open(&CachedReadFs::new(fs.clone(), segment_path)?, segment_path)?;
+        let reader = DiskMappingReader::open(fs, segment_path)?;
 
         Ok(Self {
             path: segment_path.to_path_buf(),
@@ -225,9 +222,7 @@ where
         deleted_wrapper.flusher()()?;
         internal_to_version_wrapper.flusher()()?;
 
-        // `DiskMappingReader::open` takes a `CachedReadFs`; snapshot-less it is
-        // a passthrough to the raw backend.
-        let reader = DiskMappingReader::open(&CachedReadFs::new(fs.clone(), path)?, path)?;
+        let reader = DiskMappingReader::open(fs, path)?;
 
         Ok(Self {
             path: path.to_path_buf(),

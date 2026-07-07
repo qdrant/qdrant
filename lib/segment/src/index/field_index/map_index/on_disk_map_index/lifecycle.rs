@@ -10,7 +10,7 @@ use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite,
+    MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWrite,
     read_json_via,
 };
 use fs_err as fs;
@@ -31,7 +31,7 @@ where
 {
     /// Open and load mmap map index from the given path
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
@@ -47,7 +47,7 @@ where
             return Ok(None);
         };
 
-        let value_to_points = UniversalHashMap::from_file(fs.take_file(
+        let value_to_points = UniversalHashMap::from_file(fs.open(
             &hashmap_path,
             OpenOptions {
                 writeable: false,
@@ -62,7 +62,7 @@ where
 
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.take_file(
+        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.open(
             &deleted_path,
             OpenOptions {
                 writeable: false,
@@ -270,13 +270,7 @@ where
             deleted.flusher()()?;
         }
 
-        Self::open(
-            &CachedReadFs::new(fs.clone(), path)?,
-            path,
-            populate,
-            deleted_points,
-        )?
-        .ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalMapIndex after building it")
         })
     }

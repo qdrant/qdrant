@@ -13,7 +13,7 @@ mod traits;
 mod types;
 mod wrappers;
 
-pub use self::cached_fs::{CachedFile, CachedReadFs, CachedReadFsContext, FileInfo};
+pub use self::cached_fs::{CachedFs, CachedReadFs, CachedReadFsContext, FileInfo};
 pub use self::error::{IsNotFound, OkNotFound, UniversalIoError};
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra};

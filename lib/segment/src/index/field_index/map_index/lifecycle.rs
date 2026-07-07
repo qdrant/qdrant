@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, MmapFs, Populate};
+use common::universal_io::{MmapFs, Populate};
 use gridstore::Blob;
 
 use super::MapIndex;
@@ -31,12 +31,7 @@ where
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
-        let Some(on_disk_index) = OnDiskMapIndex::open(
-            &CachedReadFs::new(MmapFs, path)?,
-            path,
-            populate,
-            deleted_points,
-        )?
+        let Some(on_disk_index) = OnDiskMapIndex::open(&MmapFs, path, populate, deleted_points)?
         else {
             return Ok(None);
         };

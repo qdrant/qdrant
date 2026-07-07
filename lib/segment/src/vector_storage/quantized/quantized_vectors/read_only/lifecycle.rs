@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::{CachedReadFs, OkNotFound, UniversalRead, read_json_via};
+use common::universal_io::{OkNotFound, UniversalRead, UniversalReadFs, read_json_via};
 use quantization::EncodedVectorsPQ;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
@@ -34,7 +34,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     /// `distance`, `datatype`, `multivector_config` and `on_disk_vector_storage` describe
     /// the original (source) vector storage this quantization was built for.
     pub fn open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         distance: Distance,
         datatype: VectorStorageDatatype,
@@ -69,7 +69,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     }
 
     fn open_single(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         config: &QuantizedVectorsConfig,
         on_disk_vector_storage: bool,
@@ -119,7 +119,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     }
 
     fn open_multi(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         config: &QuantizedVectorsConfig,
         multivector_config: &MultiVectorConfig,

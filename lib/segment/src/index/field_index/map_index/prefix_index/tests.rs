@@ -17,13 +17,9 @@ fn build_and_open(entries: &BTreeMap<Vec<u8>, usize>) -> (TempDir, PrefixIndex) 
         entries.iter().map(|(key, &count)| (key.as_slice(), count)),
     )
     .unwrap();
-    let index = PrefixIndex::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        dir.path(),
-        Populate::Blocking,
-    )
-    .unwrap()
-    .unwrap();
+    let index = PrefixIndex::open(&MmapFs, dir.path(), Populate::Blocking)
+        .unwrap()
+        .unwrap();
     (dir, index)
 }
 
@@ -64,12 +60,7 @@ fn check_prefix(index: &PrefixIndex, entries: &BTreeMap<Vec<u8>, usize>, prefix:
 #[test]
 fn missing_file_opens_as_none() {
     let dir = TempDir::with_prefix("prefix_index").unwrap();
-    let index = PrefixIndex::<MmapFile>::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        dir.path(),
-        Populate::Blocking,
-    )
-    .unwrap();
+    let index = PrefixIndex::<MmapFile>::open(&MmapFs, dir.path(), Populate::Blocking).unwrap();
     assert!(index.is_none());
 }
 

@@ -9,7 +9,7 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
+    MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -51,11 +51,7 @@ impl QuantizedStorage<MmapFile> {
     /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
     pub(crate) fn reload(&mut self) -> OperationResult<()> {
         let path = self.path.clone();
-        *self = Self::from_file(
-            &CachedReadFs::new(MmapFs, &path)?,
-            &path,
-            self.quantized_vector_size.get(),
-        )?;
+        *self = Self::from_file(&MmapFs, &path, self.quantized_vector_size.get())?;
         Ok(())
     }
 }
@@ -84,12 +80,12 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 
     pub fn from_file(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
         let storage =
-            ReadOnly::from_file(fs.take_file(path, Self::open_options(), Default::default())?);
+            ReadOnly::from_file(fs.open(path, Self::open_options(), Default::default())?);
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -129,11 +125,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             .truncate(false)
             .open(path)?;
 
-        let storage = Self::from_file(
-            &CachedReadFs::new(fs.clone(), path)?,
-            path,
-            quantized_vector_size,
-        )?;
+        let storage = Self::from_file(fs, path, quantized_vector_size)?;
 
         if prefault {
             storage.populate();
@@ -207,21 +199,14 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     }
 }
 
-impl<S: UniversalRead<Fs = common::universal_io::MmapFs>> quantization::EncodedStorageBuilder
-    for QuantizedStorageBuilder<S>
-{
-    type Storage = QuantizedStorage<S>;
+impl quantization::EncodedStorageBuilder for QuantizedStorageBuilder<MmapFile> {
+    type Storage = QuantizedStorage<MmapFile>;
     type Error = OperationError;
 
-    fn build(self) -> OperationResult<QuantizedStorage<S>> {
+    fn build(self) -> OperationResult<QuantizedStorage<MmapFile>> {
         self.mmap.flush()?;
 
-        let storage = ReadOnly::open(
-            &common::universal_io::MmapFs,
-            &self.path,
-            Self::Storage::open_options(),
-            (),
-        )?;
+        let storage = ReadOnly::open(&MmapFs, &self.path, Self::Storage::open_options(), ())?;
 
         Ok(QuantizedStorage {
             storage,

@@ -22,7 +22,7 @@ use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{
-    CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
 };
 
 use super::mappings::{DiskMappingsSource, log_lookup_err};
@@ -59,7 +59,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     ///
     /// Errors if the segment is not in the on-disk format; use
     /// [`try_open`](Self::try_open) to probe without erroring.
-    pub fn open(fs: &CachedReadFs<S::Fs>, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
         Self::try_open(fs, segment_path)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker not found in segment {}",
@@ -72,7 +72,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// in the on-disk format (`i2e` absent). Probing happens by opening the
     /// mapping directly, so no separate existence check is issued.
     pub fn try_open(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
     ) -> OperationResult<Option<Self>> {
         let Some(reader) = DiskMappingReader::try_open(fs, segment_path)? else {
@@ -85,15 +85,15 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             populate: Populate::No,
             advice: AdviceSetting::Global,
         };
-        let versions = TypedStorage::<S, SeqNumberType>::new(fs.take_file(
-            &version_mapping_path(segment_path),
+        let versions = TypedStorage::<S, SeqNumberType>::new(fs.open(
+            version_mapping_path(segment_path),
             options,
             Default::default(),
         )?);
         let versions_len = versions.len()?;
 
-        let deleted_file = StoredBitSlice::from_file(fs.take_file(
-            &deleted_path(segment_path),
+        let deleted_file = StoredBitSlice::from_file(fs.open(
+            deleted_path(segment_path),
             options,
             Default::default(),
         )?)?;

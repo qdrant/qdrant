@@ -4,7 +4,7 @@ use common::bitvec::{BitSlice, BitVec};
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalRead};
+use common::universal_io::{OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs};
 
 use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -39,12 +39,12 @@ impl InMemoryBitvecFlags {
     /// nothing. The flags file is padded past the logical length (held in the
     /// status file), so the bitvec is truncated to it and `count` is exact.
     pub fn open<S: UniversalRead>(
-        fs: &CachedReadFs<S::Fs>,
+        fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
     ) -> OperationResult<Self> {
         // Length via TypedStorage; StoredStruct is write-bound.
-        let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.take_file(
-            &status_file(directory),
+        let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
+            status_file(directory),
             READ_ONLY_OPTIONS,
             Default::default(),
         )?);
@@ -54,7 +54,7 @@ impl InMemoryBitvecFlags {
             .map_or(0, DynamicFlagsStatus::len);
 
         let flags_path = directory.join(FLAGS_FILE);
-        let flags = StoredBitSlice::<S>::from_file(fs.take_file(
+        let flags = StoredBitSlice::<S>::from_file(fs.open(
             &flags_path,
             READ_ONLY_OPTIONS,
             Default::default(),
@@ -150,11 +150,7 @@ mod tests_mod {
 
         persist(&Fs::default(), dir.path(), &random_flags);
 
-        let flags = InMemoryBitvecFlags::open::<S>(
-            &common::universal_io::CachedReadFs::new(Fs::default(), dir.path()).unwrap(),
-            dir.path(),
-        )
-        .unwrap();
+        let flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
 
         let expected_count = random_flags.iter().filter(|flag| **flag).count();
         assert_eq!(flags.count(), expected_count);
@@ -171,11 +167,7 @@ mod tests_mod {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         persist(&Fs::default(), dir.path(), &random_flags);
-        let mut flags = InMemoryBitvecFlags::open::<S>(
-            &common::universal_io::CachedReadFs::new(Fs::default(), dir.path()).unwrap(),
-            dir.path(),
-        )
-        .unwrap();
+        let mut flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
         let base_count = flags.count();
 
         // One offset already set, one unset in range, one past the end (grows).

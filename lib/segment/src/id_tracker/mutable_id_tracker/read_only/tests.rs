@@ -75,12 +75,7 @@ fn test_open_matches_mutable_tracker() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
     assert_in_sync(&read_only, &mutable);
 
     // Spot check resolved ids
@@ -103,12 +98,7 @@ fn test_open_without_storage_is_empty() {
 
     // No storage exists yet: the files are absent while empty, so a read-only view opens as an
     // empty tracker (matching `MutableIdTracker::open`) rather than erroring.
-    let read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
     assert_eq!(read_only.available_point_count(), 0);
     assert_eq!(read_only.total_point_count(), 0);
 }
@@ -125,12 +115,7 @@ fn test_open_with_missing_versions_is_empty() {
 
     // With no versions file no point is committed (a point becomes visible only once its version is
     // present), so the read-only view opens empty instead of erroring.
-    let read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
     assert_eq!(read_only.available_point_count(), 0);
 }
 
@@ -145,12 +130,7 @@ fn test_live_reload_reports_inserts_and_deletes() {
     insert(&mut mutable, 300.into(), 2, 12);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
     assert_in_sync(&read_only, &mutable);
 
     // A reload with no new changes reports nothing
@@ -186,12 +166,7 @@ fn test_live_reload_insert_then_delete_within_batch() {
     insert(&mut mutable, 100.into(), 0, 10);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
     // Insert a brand-new point and delete it again, all before the read-only view reloads.
     insert(&mut mutable, 200.into(), 1, 11);
@@ -223,12 +198,7 @@ fn test_live_reload_upsert_relinks_to_new_offset() {
     insert(&mut mutable, 100.into(), 0, 10);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
     assert_eq!(
         read_only
             .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
@@ -266,12 +236,7 @@ fn test_live_reload_withholds_insert_until_version_present() {
     insert(&mut mutable, 100.into(), 0, 10);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
     // Insert a point but flush *only* the mapping, mimicking observing storage mid-flush-cycle.
     insert(&mut mutable, 200.into(), 1, 11);
@@ -316,12 +281,7 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
     assert_in_sync(&read_only, &mutable);
 
     // Byte offset of the last fully-consumed mapping entry, the position we expect to resume from.
@@ -385,12 +345,7 @@ fn test_open_and_reload_ignore_partial_trailing_version() {
     }
 
     // Open ignores the partial trailing bytes, versions match the complete entries.
-    let read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
     assert_eq!(read_only.internal_version(0), Some(10));
     assert_eq!(read_only.internal_version(1), Some(11));
     assert_in_sync(&read_only, &mutable);
@@ -407,12 +362,7 @@ fn test_live_reload_withholds_partially_written_version() {
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(
-        &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
-        segment_dir.path(),
-        None,
-    )
-    .unwrap();
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
     // Insert a third point and flush its mapping, then simulate a torn version flush by appending
     // only part of its 8-byte version entry.

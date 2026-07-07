@@ -131,8 +131,7 @@ mod tests {
         let dir = Builder::new().prefix("disp_noop").tempdir().unwrap();
         for storage_type in [VectorStorageType::Memory, VectorStorageType::Empty] {
             let opened = VectorStorageReadEnum::<MmapFile>::open(
-                &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new("."))
-                    .unwrap(),
+                &MmapFs,
                 &dense_config(storage_type, None),
                 dir.path(),
             )
@@ -167,7 +166,7 @@ mod tests {
         }
 
         let storage = VectorStorageReadEnum::<MmapFile>::open(
-            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            &MmapFs,
             &dense_config(VectorStorageType::ChunkedMmap, None),
             dir.path(),
         )
@@ -208,7 +207,7 @@ mod tests {
         }
 
         let storage = VectorStorageReadEnum::<MmapFile>::open(
-            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            &MmapFs,
             &dense_config(VectorStorageType::Mmap, None),
             dir.path(),
         )
@@ -261,7 +260,7 @@ mod tests {
         }
 
         let storage = VectorStorageReadEnum::<MmapFile>::open(
-            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            &MmapFs,
             &dense_config(
                 VectorStorageType::ChunkedMmap,
                 Some(MultiVectorConfig::default()),
@@ -307,7 +306,7 @@ mod tests {
         writer.flusher()().unwrap();
 
         let mut storage = VectorStorageReadEnum::<MmapFile>::open(
-            &common::universal_io::CachedReadFs::new(MmapFs, std::path::Path::new(".")).unwrap(),
+            &MmapFs,
             &dense_config(VectorStorageType::ChunkedMmap, None),
             dir.path(),
         )
