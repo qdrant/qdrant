@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::bitvec::{BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
@@ -7,6 +9,7 @@ use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::InvertedIndex;
+use sparse::index::posting_list_common::PostingListIter as _;
 use sparse::index::search_context::SearchContext;
 
 use super::SparseVectorIndexReadView;
@@ -98,6 +101,77 @@ where
                 Ok(())
             })?;
         Ok(())
+    }
+
+    /// Update statistics for idf-dot similarity within a filtered point set.
+    pub fn fill_idf_statistics_filtered(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        filtered_points: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<usize> {
+        let mut filtered_indexed_vector_ids = BitVec::new();
+        let mut indexed_vectors = 0;
+
+        for &point_id in filtered_points {
+            check_process_stopped(is_stopped)?;
+
+            if self
+                .indexed_vector_ids
+                .get_bit(point_id as usize)
+                .unwrap_or(false)
+            {
+                let was_present =
+                    bitvec_set_deleted(&mut filtered_indexed_vector_ids, point_id, true);
+                if !was_present {
+                    indexed_vectors += 1;
+                }
+            }
+        }
+
+        let iter = idf.iter_mut().filter_map(|(dim_id, count)| {
+            let offset = self.indices_tracker.remap_index(*dim_id)?;
+            Some((count, offset))
+        });
+        let arena = blink_alloc::Blink::new();
+
+        let batch_result =
+            self.inverted_index
+                .get_batch(iter, &arena, hw_counter, |count, posting_list_iter| {
+                    let mut filtered_posting_len = 0;
+
+                    for element in posting_list_iter.into_std_iter() {
+                        if is_stopped.load(Ordering::Relaxed) {
+                            return Err(common::universal_io::UniversalIoError::Io(
+                                std::io::Error::new(
+                                    std::io::ErrorKind::Interrupted,
+                                    "operation stopped",
+                                ),
+                            ));
+                        }
+
+                        if filtered_indexed_vector_ids
+                            .get_bit(element.record_id as usize)
+                            .unwrap_or(false)
+                        {
+                            filtered_posting_len += 1;
+                        }
+                    }
+
+                    *count += filtered_posting_len;
+                    Ok(())
+                });
+
+        if is_stopped.load(Ordering::Relaxed) {
+            check_process_stopped(is_stopped)?;
+        }
+
+        batch_result?;
+
+        check_process_stopped(is_stopped)?;
+
+        Ok(indexed_vectors)
     }
 
     fn get_query_cardinality(

@@ -924,6 +924,24 @@ impl From<segment::types::AcornSearchParams> for AcornSearchParams {
     }
 }
 
+impl From<grpc::IdfSearchScope> for segment::types::IdfSearchScope {
+    fn from(value: grpc::IdfSearchScope) -> Self {
+        match value {
+            grpc::IdfSearchScope::Global => Self::Global,
+            grpc::IdfSearchScope::PerFilter => Self::PerFilter,
+        }
+    }
+}
+
+impl From<segment::types::IdfSearchScope> for grpc::IdfSearchScope {
+    fn from(value: segment::types::IdfSearchScope) -> Self {
+        match value {
+            segment::types::IdfSearchScope::Global => Self::Global,
+            segment::types::IdfSearchScope::PerFilter => Self::PerFilter,
+        }
+    }
+}
+
 impl From<SearchParams> for segment::types::SearchParams {
     fn from(params: SearchParams) -> Self {
         let SearchParams {
@@ -932,13 +950,17 @@ impl From<SearchParams> for segment::types::SearchParams {
             quantization,
             indexed_only,
             acorn,
+            idf,
         } = params;
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as usize),
             exact: exact.unwrap_or(false),
-            quantization: quantization.map(QuantizationSearchParams::into),
+            quantization: quantization.map(segment::types::QuantizationSearchParams::from),
             indexed_only: indexed_only.unwrap_or(false),
             acorn: acorn.map(segment::types::AcornSearchParams::from),
+            idf: idf
+                .and_then(|idf| grpc::IdfSearchScope::try_from(idf).ok())
+                .map(segment::types::IdfSearchScope::from),
         }
     }
 }
@@ -951,13 +973,15 @@ impl From<segment::types::SearchParams> for SearchParams {
             quantization,
             indexed_only,
             acorn,
+            idf,
         } = params;
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as u64),
             exact: Some(exact),
-            quantization: quantization.map(Into::into),
+            quantization: quantization.map(QuantizationSearchParams::from),
             indexed_only: Some(indexed_only),
             acorn: acorn.map(AcornSearchParams::from),
+            idf: idf.map(|idf| i32::from(grpc::IdfSearchScope::from(idf))),
         }
     }
 }

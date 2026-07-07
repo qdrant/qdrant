@@ -5692,6 +5692,9 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "5")]
     #[validate(nested)]
     pub acorn: ::core::option::Option<AcornSearchParams>,
+    /// Scope for IDF statistics used by sparse vector queries with the IDF modifier
+    #[prost(enumeration = "IdfSearchScope", optional, tag = "6")]
+    pub idf: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -7678,6 +7681,33 @@ impl FieldType {
             "FieldTypeBool" => Some(Self::Bool),
             "FieldTypeDatetime" => Some(Self::Datetime),
             "FieldTypeUuid" => Some(Self::Uuid),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IdfSearchScope {
+    Global = 0,
+    PerFilter = 1,
+}
+impl IdfSearchScope {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Global => "Global",
+            Self::PerFilter => "PerFilter",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Global" => Some(Self::Global),
+            "PerFilter" => Some(Self::PerFilter),
             _ => None,
         }
     }

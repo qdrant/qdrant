@@ -8,7 +8,7 @@ use common::types::{DeferredBehavior, ScoredPointOffset};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
-use crate::data_types::query_context::{QueryContext, QueryIdfStats, SegmentQueryContext};
+use crate::data_types::query_context::{IdfStatsKey, QueryContext, SegmentQueryContext};
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
@@ -235,7 +235,8 @@ where
             .vector_data
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_query_context = query_context.get_vector_context(vector_name);
+        let idf_stats_key = IdfStatsKey::for_search(vector_name, filter, params);
+        let vector_query_context = query_context.get_vector_context_for_key(&idf_stats_key);
         let internal_results = vector_data.vector_index().search(
             query_vectors,
             filter,
@@ -266,25 +267,31 @@ where
         query_context.add_available_point_count(self.available_point_count_without_deferred());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
+        let is_stopped = query_context.is_stopped_flag();
 
-        let QueryIdfStats {
-            idf,
-            indexed_vectors,
-        } = query_context.mut_idf_stats();
+        for (idf_key, stats) in query_context.mut_idf_stats().stats.iter_mut() {
+            if let Some(vector_data) = self.vector_data.get(idf_key.vector_name()) {
+                match idf_key.filter() {
+                    None => {
+                        let vector_index = vector_data.vector_index();
 
-        for (vector_name, idf) in idf.iter_mut() {
-            if let Some(vector_data) = self.vector_data.get(vector_name) {
-                let vector_index = vector_data.vector_index();
+                        stats.indexed_vectors += vector_index.indexed_vector_count();
+                        vector_index.fill_idf_statistics(&mut stats.idf, &hw_counter)?;
+                    }
+                    Some(filter) => {
+                        let vector_index = vector_data.vector_index();
+                        let filtered_points =
+                            self.payload_index
+                                .query_points(filter, &hw_counter, &is_stopped)?;
 
-                let indexed_vector_count = vector_index.indexed_vector_count();
-
-                if let Some(count) = indexed_vectors.get_mut(vector_name) {
-                    *count += indexed_vector_count;
-                } else {
-                    indexed_vectors.insert(vector_name.clone(), indexed_vector_count);
+                        stats.indexed_vectors += vector_index.fill_idf_statistics_filtered(
+                            &mut stats.idf,
+                            &filtered_points,
+                            &hw_counter,
+                            is_stopped.as_ref(),
+                        )?;
+                    }
                 }
-
-                vector_index.fill_idf_statistics(idf, &hw_counter)?;
             }
         }
         Ok(())

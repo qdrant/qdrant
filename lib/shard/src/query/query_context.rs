@@ -4,7 +4,7 @@ use std::time::Duration;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::iterator_ext::IteratorExt;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::query_context::{IdfStatsKey, QueryContext};
 use segment::types::VectorName;
 
 use crate::common::stopping_guard::StoppingGuard;
@@ -27,7 +27,12 @@ pub fn init_query_context(
             .query
             .iterate_sparse(|vector_name, sparse_vector| {
                 if check_idf_required(vector_name) {
-                    query_context.init_idf(vector_name, &sparse_vector.indices);
+                    let idf_stats_key = IdfStatsKey::for_search(
+                        vector_name,
+                        search_request.filter.as_ref(),
+                        search_request.params.as_ref(),
+                    );
+                    query_context.init_idf(idf_stats_key, &sparse_vector.indices);
                 }
             })
     }

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
+use common::bitvec::bitvec_set_deleted;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::VERSION_FILE;
@@ -79,6 +81,18 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.with_view(|view| view.fill_idf_statistics(idf, hw_counter))
+    }
+
+    fn fill_idf_statistics_filtered(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        filtered_points: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<usize> {
+        self.with_view(|view| {
+            view.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+        })
     }
 
     fn is_index(&self) -> bool {
@@ -177,12 +191,16 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             let vector = self.indices_tracker.remap_vector(vector);
             let old_vector = old_vector.map(|v| self.indices_tracker.remap_vector(v));
             self.inverted_index.upsert(id, vector, old_vector);
+            bitvec_set_deleted(&mut self.indexed_vector_ids, id, true);
         } else if let Some(old_vector) = old_vector {
             // Make sure empty vectors do not interfere with the index
             if !old_vector.is_empty() {
                 let old_vector = self.indices_tracker.remap_vector(old_vector);
                 self.inverted_index.remove(id, old_vector);
             }
+            bitvec_set_deleted(&mut self.indexed_vector_ids, id, false);
+        } else {
+            bitvec_set_deleted(&mut self.indexed_vector_ids, id, false);
         }
 
         Ok(())

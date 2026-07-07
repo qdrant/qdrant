@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{ScoredPointOffset, TelemetryDetail};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::InvertedIndex;
 
@@ -45,6 +46,18 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex> VectorIndexRead
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.with_view(|view| view.fill_idf_statistics(idf, hw_counter))
+    }
+
+    fn fill_idf_statistics_filtered(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        filtered_points: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<usize> {
+        self.with_view(|view| {
+            view.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+        })
     }
 
     fn is_index(&self) -> bool {

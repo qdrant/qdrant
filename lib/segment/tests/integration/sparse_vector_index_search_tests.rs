@@ -12,9 +12,12 @@ use itertools::Itertools;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::{SegmentEntry, StorageSegmentEntry as _};
+use segment::data_types::query_context::{IdfStatsKey, QueryContext};
+use segment::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
+use segment::entry::entry_point::ReadSegmentEntry as _;
+use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry, StorageSegmentEntry as _};
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_sparse_index, fixture_sparse_index_from_iter};
 use segment::id_tracker::{IdTracker, IdTrackerRead};
@@ -32,9 +35,10 @@ use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, FieldCondition, Filter, ScoredPoint,
-    SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
-    VectorStorageDatatype,
+    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, FieldCondition, Filter, IdfSearchScope, Match,
+    PayloadFieldSchema, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
+    SparseVectorDataConfig, SparseVectorStorageType, VectorName, VectorStorageDatatype,
+    WithPayload, WithVector,
 };
 use segment::vector_storage::{VectorStorage, VectorStorageRead};
 use segment::{fixture_for_all_indices, payload_json};
@@ -457,6 +461,121 @@ fn sparse_vector_index_ram_filtered_search() {
         .unwrap();
     assert_eq!(after_result.len(), 1);
     assert_eq!(after_result[0].len(), half_indexed_count); // expect half of the points
+}
+
+#[test]
+fn sparse_vector_search_can_use_per_filter_idf() {
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let field_name = "tenant";
+
+    let (mut segment, _) = build_segment(
+        data_dir.path(),
+        &SegmentConfig {
+            vector_data: Default::default(),
+            sparse_vector_data: HashMap::from([(
+                SPARSE_VECTOR_NAME.to_owned(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
+                    storage_type: SparseVectorStorageType::default(),
+                    modifier: Some(Modifier::Idf),
+                },
+            )]),
+            payload_storage_type: Default::default(),
+        },
+        None,
+        true,
+    )
+    .unwrap();
+
+    let payload_schema = PayloadFieldSchema::from(Keyword);
+    segment
+        .create_field_index(
+            0,
+            &JsonPath::new(field_name),
+            Some(&payload_schema),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let vectors = [
+        (1_u64, vec![1], "a"),
+        (2_u64, vec![0], "a"),
+        (3_u64, vec![1], "a"),
+        (4_u64, vec![0], "b"),
+        (5_u64, vec![0], "b"),
+        (6_u64, vec![0], "b"),
+        (7_u64, vec![0], "b"),
+        (8_u64, vec![0], "b"),
+        (9_u64, vec![0], "b"),
+        (10_u64, vec![0], "b"),
+    ];
+
+    for (point_id, indices, tenant) in vectors {
+        let values = vec![1.0; indices.len()];
+        let sparse_vector = SparseVector::new(indices, values).unwrap();
+        let payload = payload_json! {field_name: tenant};
+
+        segment
+            .upsert_point(
+                point_id as SeqNumberType,
+                PointIdType::from(point_id),
+                NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&sparse_vector)),
+                &hw_counter,
+            )
+            .unwrap();
+        segment
+            .set_full_payload(
+                point_id as SeqNumberType,
+                PointIdType::from(point_id),
+                &payload,
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new(field_name),
+        Match::from("a".to_owned()),
+    )));
+    let query = SparseVector::new(vec![0, 1], vec![1.0, 1.0]).unwrap();
+    let query_vector = QueryVector::from(query.clone());
+
+    let search_with_params = |params: Option<&SearchParams>| -> Vec<ScoredPoint> {
+        let mut query_context = QueryContext::default();
+        query_context.init_idf(
+            IdfStatsKey::for_search(SPARSE_VECTOR_NAME, Some(&filter), params),
+            &query.indices,
+        );
+        segment.fill_query_context(&mut query_context).unwrap();
+
+        let segment_query_context = query_context.get_segment_query_context();
+        segment
+            .search_batch(
+                SPARSE_VECTOR_NAME,
+                &[&query_vector],
+                &WithPayload::default(),
+                &WithVector::default(),
+                Some(&filter),
+                3,
+                params,
+                &segment_query_context,
+            )
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+    };
+
+    let global_results = search_with_params(None);
+    let per_filter_params = SearchParams {
+        idf: Some(IdfSearchScope::PerFilter),
+        ..Default::default()
+    };
+    let per_filter_results = search_with_params(Some(&per_filter_params));
+
+    assert_ne!(global_results[0].id, PointIdType::from(2_u64));
+    assert_eq!(per_filter_results[0].id, PointIdType::from(2_u64));
 }
 
 #[test]

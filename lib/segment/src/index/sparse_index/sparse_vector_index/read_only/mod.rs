@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::bitvec::BitVec;
 use common::storage_version::StorageVersion as _;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
@@ -15,6 +16,7 @@ use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
+use crate::index::sparse_index::sparse_vector_index::collect_indexed_vector_ids;
 use crate::index::sparse_index::sparse_vector_index::read_view::SparseVectorIndexReadView;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
@@ -34,6 +36,11 @@ pub struct ReadOnlySparseVectorIndex<S: UniversalReadExt, TInvertedIndex: Invert
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
     payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
     inverted_index: TInvertedIndex,
+    /// Internal ids that have at least one sparse posting. Read-only indexes
+    /// build this on open from postings; it costs one bit per sparse vector id
+    /// and lets per-filter IDF compute the filtered `indexed_vectors`
+    /// denominator without reading sparse vector storage.
+    indexed_vector_ids: BitVec,
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
     search_scratch_pool: SearchScratchPool,
@@ -92,6 +99,7 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
         }
 
         let indices_tracker = IndicesTracker::open_universal(fs, path)?;
+        let indexed_vector_ids = collect_indexed_vector_ids(&inverted_index)?;
 
         Ok(Self {
             config,
@@ -99,6 +107,7 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
             vector_storage,
             payload_index,
             inverted_index,
+            indexed_vector_ids,
             searches_telemetry: SparseSearchesTelemetry::new(),
             indices_tracker,
             search_scratch_pool: SearchScratchPool::new(),
@@ -125,6 +134,7 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
                 vector_storage: &*vector_storage,
                 payload_index: payload_index_view,
                 inverted_index: &self.inverted_index,
+                indexed_vector_ids: self.indexed_vector_ids.as_bitslice(),
                 searches_telemetry: &self.searches_telemetry,
                 indices_tracker: &self.indices_tracker,
                 search_scratch_pool: &self.search_scratch_pool,

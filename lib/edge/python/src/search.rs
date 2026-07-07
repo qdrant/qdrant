@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use ordered_float::OrderedFloat;
@@ -124,6 +126,7 @@ impl PySearchParams {
         quantization = None,
         indexed_only = false,
         acorn = None,
+        idf = None,
     ))]
     pub fn new(
         hnsw_ef: Option<usize>,
@@ -131,6 +134,7 @@ impl PySearchParams {
         quantization: Option<PyQuantizationSearchParams>,
         indexed_only: bool,
         acorn: Option<PyAcornSearchParams>,
+        idf: Option<PyIdfSearchScope>,
     ) -> Self {
         Self(SearchParams {
             hnsw_ef,
@@ -138,6 +142,7 @@ impl PySearchParams {
             quantization: quantization.map(QuantizationSearchParams::from),
             indexed_only,
             acorn: acorn.map(AcornSearchParams::from),
+            idf: idf.map(IdfSearchScope::from),
         })
     }
 
@@ -166,6 +171,11 @@ impl PySearchParams {
         self.0.acorn.map(PyAcornSearchParams)
     }
 
+    #[getter]
+    pub fn idf(&self) -> Option<PyIdfSearchScope> {
+        self.0.idf.map(PyIdfSearchScope::from)
+    }
+
     pub fn __repr__(&self) -> String {
         self.repr()
     }
@@ -180,7 +190,51 @@ impl PySearchParams {
             quantization: _,
             indexed_only: _,
             acorn: _,
+            idf: _,
         } = self.0;
+    }
+}
+
+#[pyclass(name = "IdfSearchScope", from_py_object)]
+#[derive(Copy, Clone, Debug)]
+pub enum PyIdfSearchScope {
+    Global,
+    PerFilter,
+}
+
+#[pymethods]
+impl PyIdfSearchScope {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyIdfSearchScope {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Global => "Global",
+            Self::PerFilter => "PerFilter",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
+impl From<IdfSearchScope> for PyIdfSearchScope {
+    fn from(scope: IdfSearchScope) -> Self {
+        match scope {
+            IdfSearchScope::Global => Self::Global,
+            IdfSearchScope::PerFilter => Self::PerFilter,
+        }
+    }
+}
+
+impl From<PyIdfSearchScope> for IdfSearchScope {
+    fn from(scope: PyIdfSearchScope) -> Self {
+        match scope {
+            PyIdfSearchScope::Global => Self::Global,
+            PyIdfSearchScope::PerFilter => Self::PerFilter,
+        }
     }
 }
 

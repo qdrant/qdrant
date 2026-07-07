@@ -631,6 +631,22 @@ pub struct SearchParams {
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acorn: Option<AcornSearchParams>,
+
+    /// Scope for IDF statistics used by sparse vector queries with the IDF modifier.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idf: Option<IdfSearchScope>,
+}
+
+/// Scope for IDF statistics used by sparse vector queries.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum IdfSearchScope {
+    /// Use collection-wide IDF statistics.
+    #[default]
+    Global,
+    /// Use IDF statistics collected over the points matching the request filter.
+    PerFilter,
 }
 
 /// Configuration for vectors.

@@ -3,11 +3,12 @@ mod live_reload;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
-use common::types::{ScoredPointOffset, TelemetryDetail};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -326,6 +327,41 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedStoredF16(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedStoredU8(index) => index.fill_idf_statistics(idf, hw_counter),
+        }
+    }
+
+    fn fill_idf_statistics_filtered(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        filtered_points: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<usize> {
+        match self {
+            Self::Plain(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::Hnsw(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedStoredF32(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedStoredF16(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedStoredU8(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 mod search;
 
+use common::bitvec::BitSlice;
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::InvertedIndex;
 
@@ -30,6 +31,7 @@ where
     pub(crate) vector_storage: &'a V,
     pub(crate) payload_index: P,
     pub(crate) inverted_index: &'a TInvertedIndex,
+    pub(crate) indexed_vector_ids: &'a BitSlice,
     pub(crate) searches_telemetry: &'a SparseSearchesTelemetry,
     pub(crate) indices_tracker: &'a IndicesTracker,
     pub(crate) search_scratch_pool: &'a SearchScratchPool,

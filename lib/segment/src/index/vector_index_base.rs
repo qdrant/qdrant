@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
@@ -54,6 +55,17 @@ pub trait VectorIndexRead {
         idf: &mut HashMap<DimId, usize>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
+
+    /// Augment IDF stats for the given dimensions within a filtered point set.
+    ///
+    /// Returns the number of indexed vectors in the filtered point set.
+    fn fill_idf_statistics_filtered(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        filtered_points: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<usize>;
 
     /// Whether this is a "real" index rather than a plain (full-scan) one.
     ///
@@ -291,6 +303,44 @@ impl VectorIndexRead for VectorIndexEnum {
             Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf, hw_counter),
+        }
+    }
+
+    fn fill_idf_statistics_filtered(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        filtered_points: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<usize> {
+        match self {
+            Self::Plain(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::Hnsw(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseRam(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedMmapF32(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedMmapF16(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
+            Self::SparseCompressedMmapU8(index) => {
+                index.fill_idf_statistics_filtered(idf, filtered_points, hw_counter, is_stopped)
+            }
         }
     }
 }

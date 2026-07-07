@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{ScoredPointOffset, TelemetryDetail};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
 use super::ReadOnlyPlainVectorIndex;
@@ -64,6 +65,17 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
     ) -> OperationResult<()> {
         // Plain (dense) index doesn't track IDF.
         Ok(())
+    }
+
+    fn fill_idf_statistics_filtered(
+        &self,
+        _idf: &mut HashMap<DimId, usize>,
+        _filtered_points: &[PointOffsetType],
+        _hw_counter: &HardwareCounterCell,
+        _is_stopped: &AtomicBool,
+    ) -> OperationResult<usize> {
+        // Plain (dense) index doesn't track IDF.
+        Ok(0)
     }
 
     fn is_index(&self) -> bool {
