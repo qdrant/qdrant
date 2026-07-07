@@ -14,13 +14,14 @@
 //! against this implementation yet.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalIoError};
 use io_bridge::AsyncAppend;
+use object_store::ClientOptions;
 use object_store::aws::{AmazonS3, AwsAuthorizer};
-use object_store::client::{HttpClient, HttpRequestBody};
+use object_store::client::{HttpClient, HttpConnector as _, HttpRequestBody, ReqwestConnector};
 use url::Url;
 
 use crate::source::ObjectStoreSource;
@@ -35,16 +36,21 @@ const WRITE_OFFSET_HEADER: &str = "x-amz-write-offset-bytes";
 /// object size.
 const INVALID_WRITE_OFFSET_CODE: &str = "InvalidWriteOffset";
 
-/// State for issuing native append requests: a shared HTTP client plus the
-/// resolved object-URL base and signing region.
+/// State for issuing native append requests: a lazily-built shared HTTP
+/// client plus the resolved object-URL base and signing region.
 ///
-/// Built once per source by [`BlobBackend::append_context`].
+/// Built once per source by [`BlobBackend::append_context`]; construction is
+/// cheap — the HTTP client (TLS setup, connection pool) is only built on the
+/// first append, so sources that never append pay nothing.
 ///
 /// [`BlobBackend::append_context`]: crate::BlobBackend::append_context
 #[derive(Debug, Clone)]
 pub struct AppendContext {
-    /// Reqwest-backed HTTP client, built once and connection-pooled.
-    client: HttpClient,
+    /// Reqwest-backed HTTP client, built on first use and shared across
+    /// clones of the source (and thus across file handles opened from it).
+    client: Arc<OnceLock<HttpClient>>,
+    /// Whether to allow plain-http endpoints; mirrors `build_store`.
+    allow_http: bool,
     /// Base URL under which object keys live: path-style
     /// `{endpoint}/{bucket}` for custom endpoints, or the virtual-hosted
     /// `https://{bucket}.s3.{region}.amazonaws.com` for real AWS.
@@ -54,12 +60,33 @@ pub struct AppendContext {
 }
 
 impl AppendContext {
-    pub fn new(client: HttpClient, object_url_base: Url, region: String) -> Self {
+    pub fn new(allow_http: bool, object_url_base: Url, region: String) -> Self {
         Self {
-            client,
+            client: Arc::new(OnceLock::new()),
+            allow_http,
             object_url_base,
             region,
         }
+    }
+
+    /// The shared HTTP client, built on first call. Concurrent first calls
+    /// may build a transient extra client; exactly one is kept.
+    fn client(&self) -> Result<HttpClient> {
+        if let Some(client) = self.client.get() {
+            return Ok(client.clone());
+        }
+
+        let mut options = ClientOptions::new();
+        if self.allow_http {
+            options = options.with_allow_http(true);
+        }
+        let client = ReqwestConnector::default()
+            .connect(&options)
+            .map_err(|err| UniversalIoError::S3Config {
+                description: format!("append http client: {err}"),
+            })?;
+
+        Ok(self.client.get_or_init(|| client).clone())
     }
 }
 
@@ -125,7 +152,7 @@ async fn append_request(
         .map_err(UniversalIoError::s3)?;
 
     let response = context
-        .client
+        .client()?
         .execute(request)
         .await
         .map_err(UniversalIoError::s3)?;
@@ -168,5 +195,26 @@ async fn append_request(
                 "append to {key} failed with status {status}: {excerpt}",
             ))))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The HTTP client is built on first use and then reused; building it
+    /// performs no IO.
+    #[test]
+    fn client_is_built_lazily_and_cached() {
+        let context = AppendContext::new(
+            true,
+            Url::parse("http://localhost:9000/bucket").unwrap(),
+            "us-east-1".to_string(),
+        );
+        assert!(context.client.get().is_none());
+
+        context.client().unwrap();
+        assert!(context.client.get().is_some());
+        context.client().unwrap();
     }
 }

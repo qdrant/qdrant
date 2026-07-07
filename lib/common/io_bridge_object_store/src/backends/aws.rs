@@ -1,9 +1,7 @@
 //! AWS S3 backend.
 
 use common::universal_io::{Result, UniversalIoError, UniversalKind};
-use object_store::ClientOptions;
 use object_store::aws::{AmazonS3, AmazonS3Builder};
-use object_store::client::{HttpConnector as _, ReqwestConnector};
 use url::Url;
 
 use crate::append::AppendContext;
@@ -85,16 +83,6 @@ impl BlobBackend for AmazonS3 {
     fn append_context(config: &Self::Config) -> Result<Option<AppendContext>> {
         let s3_config_error = |description: String| UniversalIoError::S3Config { description };
 
-        let mut client_options = ClientOptions::new();
-        if config.endpoint.is_some() {
-            // Mirrors `build_store`: custom endpoints (MinIO & co) are
-            // commonly plain http.
-            client_options = client_options.with_allow_http(true);
-        }
-        let client = ReqwestConnector::default()
-            .connect(&client_options)
-            .map_err(|err| s3_config_error(format!("append http client: {err}")))?;
-
         let region = config
             .region
             .clone()
@@ -121,6 +109,15 @@ impl BlobBackend for AmazonS3 {
             }
         };
 
-        Ok(Some(AppendContext::new(client, object_url_base, region)))
+        // Allowing plain http mirrors `build_store`: custom endpoints
+        // (MinIO & co) are commonly plain http. The HTTP client itself is
+        // built lazily on first append.
+        let allow_http = config.endpoint.is_some();
+
+        Ok(Some(AppendContext::new(
+            allow_http,
+            object_url_base,
+            region,
+        )))
     }
 }
