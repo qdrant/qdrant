@@ -141,7 +141,7 @@ impl HNSWIndex {
                             if payload_schema.enable_hnsw() {
                                 Some((progress_additional_links.subtask(subtask_name), field))
                             } else {
-                                debug!("enable_hnsw=false. Skip building additional index for field {}", &field);
+                                debug!("enable_hnsw=false. Skip building additional index for field {field}");
                                 None
                             }
                         })
@@ -435,7 +435,7 @@ impl HNSWIndex {
             for (index_pos, (field_progress, field)) in indexed_fields.into_iter().enumerate() {
                 field_progress.start();
 
-                debug!("building additional index for field {}", &field);
+                debug!("building additional index for field {field}");
 
                 let is_tenant = payload_index_ref.is_tenant(&field);
 
