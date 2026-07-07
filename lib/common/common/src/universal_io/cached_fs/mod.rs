@@ -184,28 +184,20 @@ impl<Fs: UniversalReadFs> CachedReadFs<Fs> {
             return Ok(file);
         }
 
-        // No snapshot taken: passthrough to the inner filesystem.
-        let Some(files_info) = &self.files_info else {
-            return self.fs.open(path, options, extra);
-        };
+        let files_info = self.files_info.as_ref().unwrap();
 
-        // Known-absent per the listing snapshot: answer locally, without a
-        // round-trip to the inner filesystem. Callers probing for optional
-        // files (e.g. format detection) take this path.
-        if !files_info.contains_key(path) {
-            return Err(UniversalIoError::NotFound {
+        match files_info.get(path) {
+            None => Err(UniversalIoError::NotFound {
                 path: path.to_path_buf(),
-            });
+            }),
+            Some(_file_info) => {
+                // Fallback to cache bypass.
+                // If we are here, that means open path is not optimized enough.
+                // After read-only read path is refactored, this should be protected
+                // by debug assertion
+                self.fs.open(path, options, extra)
+            }
         }
-
-        // Listed but not prefetched: unreachable today — the open path
-        // prefetches every listed file before any component opens, and each
-        // file is opened at most once. Decide the semantics (fallback open
-        // vs hard error) when a real caller appears.
-        todo!(
-            "CachedReadFs: file {} is in the listing snapshot but was not prefetched",
-            path.display(),
-        )
     }
 
     pub fn schedule_prefetch(

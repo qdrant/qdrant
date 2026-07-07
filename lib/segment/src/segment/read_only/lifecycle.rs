@@ -3,22 +3,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::mmap::AdviceSetting;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, ListedFile, OkNotFound, OpenOptions, Populate, UniversalReadFs, read_json_via,
+    read_json_via, CachedReadFs, OkNotFound, Populate, UniversalReadFs,
 };
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
-use crate::index::UniversalReadExt;
 use crate::index::read_only::{ReadOnlyVectorIndexOpenArgs, VectorIndexReadEnum};
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
+use crate::index::UniversalReadExt;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
+use crate::segment::{SegmentVersion, SEGMENT_STATE_FILE};
 use crate::segment_constructor::{
     get_payload_index_path, get_vector_index_path, get_vector_storage_path,
 };
@@ -26,10 +25,10 @@ use crate::types::{
     PayloadStorageType, SegmentConfig, SegmentState, SegmentType, VectorDataConfig, VectorName,
     VectorNameBuf,
 };
-use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
+use crate::vector_storage::VectorStorageRead;
 
 /// Build a per-segment [`CachedReadFs`] over `segment_path`, ready to serve
 /// every open of the segment's files from prefetched handles.
@@ -55,16 +54,6 @@ fn build_cached_fs<Fs: UniversalReadFs>(
     }
 
     cached_fs.cache_file_info()?;
-
-    let open_options = OpenOptions {
-        writeable: false,
-        need_sequential: false,
-        populate: Populate::PreferBackground,
-        advice: AdviceSetting::Global,
-    };
-    for ListedFile { path, size: _ } in cached_fs.list_files(segment_path) {
-        cached_fs.schedule_prefetch(&path, Some(open_options), None)?;
-    }
 
     Ok(cached_fs)
 }
