@@ -59,6 +59,50 @@ impl LocalShard {
     /// read guards on the replica set.
     pub async fn submit_update(
         &self,
+        operation: OperationWithClockTag,
+        wait: WaitUntil,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<SubmitOutcome> {
+        // Filter/condition-resolving operations must never reach the WAL as-is:
+        // resolve them to concrete point ids first (issue #9575). Every replica
+        // resolves against its own state; replicas holding the same data resolve
+        // the same filter to the same point set.
+        if shard::resolve::is_filter_resolving(&operation.operation) {
+            return self
+                .submit_update_filter_resolving(operation, wait, hw_measurement_acc)
+                .await;
+        }
+
+        self.check_wal_disk_space().await?;
+
+        let _update_lock = self.update_lock.read().await;
+
+        self.append_and_dispatch(operation, wait, hw_measurement_acc)
+            .await
+    }
+
+    /// Fail if the disk is too full to safely grow the WAL.
+    pub(super) async fn check_wal_disk_space(&self) -> CollectionResult<()> {
+        if self
+            .disk_usage_watcher
+            .is_disk_full()
+            .await?
+            .unwrap_or(false)
+        {
+            return Err(CollectionError::service_error(
+                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Shared tail of update submission: reserve a worker-channel slot, write
+    /// the operation to the WAL, and dispatch it to the update worker.
+    ///
+    /// The caller must hold `update_lock` (read for regular submits, write
+    /// for the filter-resolving fence) across this call.
+    pub(super) async fn append_and_dispatch(
+        &self,
         mut operation: OperationWithClockTag,
         wait: WaitUntil,
         hw_measurement_acc: HwMeasurementAcc,
@@ -70,18 +114,6 @@ impl LocalShard {
             (None, None)
         };
 
-        if self
-            .disk_usage_watcher
-            .is_disk_full()
-            .await?
-            .unwrap_or(false)
-        {
-            return Err(CollectionError::service_error(
-                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
-            ));
-        }
-
-        let _update_lock = self.update_lock.read().await;
         let pending_operations_count = self.update_queue_length();
 
         let update_sender = self.update_sender.load();
@@ -107,7 +139,7 @@ impl LocalShard {
         // Instead, read operation data from the WAL when processing the operation.
         let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
         let clock_tag = operation.clock_tag;
-        let operation_in_ram = keep_operation_in_ram.then_some(Box::new(operation.operation));
+        let operation_in_ram = keep_operation_in_ram.then(|| Box::new(operation.operation));
 
         channel_permit.send(UpdateSignal::Operation(OperationData {
             op_num: operation_id,
@@ -208,6 +240,10 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+        //
+        // The filter-resolving fallback inside `submit_update` adds more awaits (fence, drain,
+        // resolution scan), but nothing is appended or dispatched until its single WAL write, so
+        // cancelling before that point leaves no partial state and the property still holds.
         let outcome = self
             .submit_update(operation, wait, hw_measurement_acc)
             .await?;
