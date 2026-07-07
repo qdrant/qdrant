@@ -10,6 +10,7 @@ use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::Collection;
+use super::resharding::AbortReshardingScope;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::LocalShard;
@@ -465,9 +466,37 @@ impl Collection {
             }
         };
 
-        // Abort resharding before the transfer to be idempotent
+        // Abort resharding before removing the gating transfer record, excluding
+        // that record from resharding's own transfer sweep (`except_transfer`).
+        // The transfer record is THIS operation's replay gate, so it must outlive
+        // the resharding state clear (which `abort_resharding` does last). Durable
+        // removal order: [other resharding transfers] → [resharding_state cleared]
+        // → [gating transfer removed below]. On replay: gating transfer present +
+        // state `Some` → full re-entry; present + `None` → skip resharding abort,
+        // plain-abort the transfer; absent → already done.
+        #[cfg(feature = "staging")]
+        let is_resharding_abort = resharding_state.is_some();
         if let Some(state) = resharding_state {
-            self.abort_resharding(state.key(), false).await?;
+            self.abort_resharding(
+                state.key(),
+                false,
+                AbortReshardingScope {
+                    except_transfer: Some(transfer_key),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        }
+
+        // Staging-only: pause after clearing resharding state but before aborting
+        // the gating transfer, so a test can kill this peer mid-abort (state
+        // cleared, transfer still present) and verify the replay converges.
+        #[cfg(feature = "staging")]
+        if is_resharding_abort
+            && let Ok(secs) = std::env::var("QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC")
+            && let Ok(secs) = secs.parse::<f64>()
+        {
+            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
         }
 
         // Resharding may already have aborted the transfer so we check it again
