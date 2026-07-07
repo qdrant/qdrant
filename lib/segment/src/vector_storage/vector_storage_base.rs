@@ -177,6 +177,29 @@ pub trait VectorStorageRead {
     ) -> OperationResult<Option<Vec<u8>>> {
         self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
     }
+
+    /// Bulk counterpart of [`Self::vector_bytes_opt`]: calls `callback` with
+    /// the storage-native serialized bytes of each vector. Offsets without a
+    /// stored value are skipped; storage read failures propagate as errors.
+    ///
+    /// The default reads one vector at a time; [`VectorStorageEnum`] routes
+    /// dense storages through their batched
+    /// [`DenseVectorStorageRead::read_dense_bytes`] readers, so bulk raw reads
+    /// keep the same read pipelining as [`Self::read_vectors`] (io_uring
+    /// submission batching for on-disk storages).
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        for (user_data, key) in keys {
+            let Some(bytes) = self.vector_bytes_opt::<P>(key)? else {
+                continue;
+            };
+            callback(user_data, key, bytes);
+        }
+        Ok(())
+    }
 }
 
 /// Trait for vector storage with mutating operations.
@@ -227,6 +250,24 @@ pub trait DenseVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
             let dense = self.get_dense::<P>(key);
             f(bytemuck::cast_slice(&dense))
         })
+    }
+
+    /// Batched byte counterpart of [`VectorStorageRead::read_vectors`]: calls
+    /// `callback` with the raw bytes of each vector.
+    ///
+    /// The default reads one vector at a time; storages with batched readers
+    /// override this so bulk byte reads keep the same read pipelining as
+    /// `read_vectors` (io_uring submission batching for on-disk storages).
+    fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        for (user_data, key) in keys {
+            let dense = self.get_dense::<P>(key);
+            callback(user_data, key, bytemuck::cast_slice(&dense).to_vec());
+        }
+        Ok(())
     }
 
     /// Get layout for a single vector
@@ -729,6 +770,23 @@ impl VectorStorageEnum {
     }
 }
 
+/// Per-key fallback for [`VectorStorageRead::read_vector_bytes`], for storages
+/// without a batched byte reader: one read per offset, no pipelining.
+/// Offsets without a stored value are skipped.
+fn read_vector_bytes_one_by_one<P: AccessPattern, U: Copy + UserData>(
+    storage: &VectorStorageEnum,
+    keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+    mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+) -> OperationResult<()> {
+    for (user_data, key) in keys {
+        let Some(bytes) = storage.vector_bytes_opt::<P>(key)? else {
+            continue;
+        };
+        callback(user_data, key, bytes);
+    }
+    Ok(())
+}
+
 impl VectorStorageRead for VectorStorageEnum {
     fn with_vector_bytes_opt<P: AccessPattern, R>(
         &self,
@@ -826,6 +884,61 @@ impl VectorStorageRead for VectorStorageEnum {
             | VectorStorageEnum::DenseUringByte(_)
             | VectorStorageEnum::DenseUringHalf(_) => {
                 self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+            }
+        }
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        match self {
+            // Dense storages have batched byte readers that keep the read
+            // pipelining of `read_vectors`.
+            VectorStorageEnum::DenseVolatile(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmap(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmapByte(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.read_dense_bytes::<P, U>(keys, callback),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => v.read_dense_bytes::<P, U>(keys, callback),
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => {
+                v.read_dense_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                v.read_dense_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                v.read_dense_bytes::<P, U>(keys, callback)
+            }
+            // No batched byte readers here (yet): turbo, sparse and
+            // multi-dense read one vector at a time.
+            VectorStorageEnum::DenseTurbo(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::MultiDenseTurbo(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => {
+                read_vector_bytes_one_by_one::<P, U>(self, keys, callback)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {
+                read_vector_bytes_one_by_one::<P, U>(self, keys, callback)
             }
         }
     }

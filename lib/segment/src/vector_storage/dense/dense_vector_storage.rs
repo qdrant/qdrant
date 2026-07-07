@@ -245,6 +245,28 @@ where
         let mmap_store = self.vectors.as_ref().unwrap();
         mmap_store.for_each_in_batch(keys, f)
     }
+
+    fn read_dense_bytes<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        // Split into parallel arrays in one pass: `for_each_in_batch` needs an
+        // offsets slice (it chunks it for batched reads), but we still want
+        // `user_data[idx]` available inside the callback.
+        let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
+
+        self.vectors
+            .as_ref()
+            .unwrap()
+            .for_each_in_batch(&point_offsets, |idx, vector| {
+                callback(
+                    user_data[idx],
+                    point_offsets[idx],
+                    bytemuck::cast_slice(vector).to_vec(),
+                );
+            })
+    }
 }
 
 impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
