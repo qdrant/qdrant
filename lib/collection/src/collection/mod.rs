@@ -446,8 +446,17 @@ impl Collection {
             )));
         }
 
-        // 2. Check that `from_state` matches current state
-        if from_state.is_some() && current_state != from_state {
+        // 2. Check that `from_state` matches current state.
+        //
+        // Also accept `current_state == Some(new_state)`: that is a replay of
+        // this same entry whose final (absolute) replica-state write already
+        // landed on a prior attempt (invariant 2). Without this, e.g. a replayed
+        // `FinishMigratingPoints` (`Resharding -> Active`) would read
+        // `current == Active`, mismatch `from_state == Some(Resharding)`, and be
+        // dismissed as `bad_input` — diverging from peers that applied it once.
+        // Treating it as an already-satisfied no-op lets the rest of the handler
+        // re-run idempotently instead.
+        if from_state.is_some() && current_state != from_state && current_state != Some(new_state) {
             return Err(CollectionError::bad_input(format!(
                 "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
             )));
