@@ -19,6 +19,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::Memory;
 
 pub(super) const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 pub(super) const HISTOGRAM_PRECISION: f64 = 0.01;
@@ -30,10 +31,10 @@ where
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_immutable(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let index = NumericIndexInner::new_mmap(path, is_on_disk, deleted_points)?;
+        let index = NumericIndexInner::new_mmap(path, memory, deleted_points)?;
 
         Ok(index.map(|inner| Self {
             inner,

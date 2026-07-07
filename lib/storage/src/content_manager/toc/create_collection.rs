@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -33,6 +37,7 @@ impl TableOfContent {
             shard_number,
             sharding_method,
             on_disk_payload,
+            payload,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
@@ -136,6 +141,7 @@ impl TableOfContent {
                 .ok_or_else(|| StorageError::bad_input("`shard_number` cannot be 0"))?,
             sharding_method,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
+            payload,
             replication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {
                 StorageError::bad_input("`replication_factor` cannot be 0".to_string())
             })?,

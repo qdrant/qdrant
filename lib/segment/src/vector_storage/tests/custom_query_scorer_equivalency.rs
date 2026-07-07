@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -67,6 +71,7 @@ fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
 
 fn scalar_u8() -> WithQuantization {
     let config = ScalarQuantizationConfig {
+        memory: None,
         r#type: crate::types::ScalarType::Int8,
         quantile: Some(0.5),
         always_ram: Some(true),
@@ -82,6 +87,7 @@ fn scalar_u8() -> WithQuantization {
 
 fn product_x4() -> WithQuantization {
     let config = ProductQuantizationConfig {
+        memory: None,
         compression: crate::types::CompressionRatio::X4,
         always_ram: Some(true),
     }
@@ -95,6 +101,7 @@ fn product_x4() -> WithQuantization {
 
 fn binary() -> WithQuantization {
     let config = BinaryQuantizationConfig {
+        memory: None,
         always_ram: Some(true),
         encoding: None,
         query_encoding: None,

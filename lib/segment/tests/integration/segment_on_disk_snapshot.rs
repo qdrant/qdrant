@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
@@ -78,6 +82,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
             &JsonPath::new("names"),
             Some(&PayloadFieldSchema::FieldParams(
                 PayloadSchemaParams::Keyword(KeywordIndexParams {
+                    memory: None,
                     r#type: segment::data_types::index::KeywordIndexType::Keyword,
                     is_tenant: None,
                     on_disk: Some(true),
@@ -94,6 +99,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
             &JsonPath::new("ages"),
             Some(&PayloadFieldSchema::FieldParams(
                 PayloadSchemaParams::Integer(IntegerIndexParams {
+                    memory: None,
                     r#type: segment::data_types::index::IntegerIndexType::Integer,
                     lookup: Some(true),
                     range: Some(true),
@@ -114,6 +120,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                 distance: Distance::Dot,
                 storage_type: VectorStorageType::Mmap, // mmap vectors
                 index: Indexes::Hnsw(HnswConfig {
+                    memory: None,
                     m: 4,
                     ef_construct: 16,
                     full_scan_threshold: 8,

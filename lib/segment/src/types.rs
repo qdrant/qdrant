@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -664,7 +668,7 @@ impl Indexes {
     pub fn is_on_disk(&self) -> bool {
         match self {
             Indexes::Plain {} => false,
-            Indexes::Hnsw(config) => config.on_disk.unwrap_or_default(),
+            Indexes::Hnsw(config) => config.memory_placement().is_on_disk(),
         }
     }
 }
@@ -695,9 +699,15 @@ pub struct HnswConfig {
     /// On small CPUs, less threads are used.
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
+    /// Deprecated: use `memory` instead.
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Memory placement of the HNSW graph. Overrides the deprecated `on_disk` flag if both are
+    /// set. Default: `cached` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    pub memory: Option<Memory>,
     /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
@@ -725,7 +735,10 @@ impl HnswConfig {
             full_scan_threshold,
             max_indexing_threads: _,
             payload_m,
-            on_disk,
+            // Compared through the effective placement below, so that expressing the same
+            // placement through the new `memory` parameter does not trigger a rebuild
+            on_disk: _,
+            memory: _,
             inline_storage,
         } = *self;
 
@@ -736,8 +749,15 @@ impl HnswConfig {
             // Data on disk is the same, we have a unit test for that. We can eventually optimize
             // this to just reload the collection rather than optimizing it again as a whole just
             // to flip this flag
-            || on_disk != other.on_disk
+            || self.memory_placement() != other.memory_placement()
             || inline_storage != other.inline_storage
+    }
+
+    /// Effective memory placement of the HNSW graph, resolving the new `memory` parameter
+    /// against the deprecated `on_disk` flag. Defaults to [`Memory::Cached`].
+    pub fn memory_placement(&self) -> Memory {
+        Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk))
+            .unwrap_or(Memory::Cached)
     }
 }
 
@@ -790,9 +810,15 @@ pub struct ScalarQuantizationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 0.5, max = 1.0))]
     pub quantile: Option<f32>,
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 }
 
 impl ScalarQuantizationConfig {
@@ -804,6 +830,18 @@ impl ScalarQuantizationConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self != other
     }
+
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
+    }
+}
+
+/// `always_ram=true` used to force quantized vectors into RAM, never evicted by placement
+/// config: the pinned placement. `always_ram=false` means "follow storage", same as unset.
+fn legacy_always_ram_placement(always_ram: Option<bool>) -> Option<Memory> {
+    always_ram.and_then(|always_ram| always_ram.then_some(Memory::Pinned))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -817,8 +855,15 @@ pub struct ScalarQuantization {
 pub struct ProductQuantizationConfig {
     pub compression: CompressionRatio,
 
+    /// Deprecated: use `memory` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 }
 
 impl ProductQuantizationConfig {
@@ -829,6 +874,12 @@ impl ProductQuantizationConfig {
     /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self != other
+    }
+
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
     }
 }
 
@@ -841,6 +892,7 @@ pub struct ProductQuantization {
 impl Hash for ScalarQuantizationConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.always_ram.hash(state);
+        self.memory.hash(state);
         self.r#type.hash(state);
     }
 }
@@ -859,8 +911,14 @@ pub enum BinaryQuantizationEncoding {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct BinaryQuantizationConfig {
+    /// Deprecated: use `memory` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encoding: Option<BinaryQuantizationEncoding>,
@@ -870,6 +928,14 @@ pub struct BinaryQuantizationConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
+}
+
+impl BinaryQuantizationConfig {
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -891,12 +957,26 @@ pub enum TurboQuantBitSize {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct TurboQuantQuantizationConfig {
+    /// Deprecated: use `memory` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bits: Option<TurboQuantBitSize>,
+}
+
+impl TurboQuantQuantizationConfig {
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -946,6 +1026,19 @@ impl QuantizationConfig {
             QuantizationConfig::Product(p) => p.product.always_ram == Some(true),
             QuantizationConfig::Binary(b) => b.binary.always_ram == Some(true),
             QuantizationConfig::Turbo(t) => t.turbo.always_ram == Some(true),
+        }
+    }
+
+    /// Requested memory placement of quantized vectors, resolving the new `memory` parameter
+    /// against the deprecated `always_ram` flag.
+    ///
+    /// `None` means the placement follows the original vector storage.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        match self {
+            QuantizationConfig::Scalar(s) => s.scalar.memory_placement(),
+            QuantizationConfig::Product(p) => p.product.memory_placement(),
+            QuantizationConfig::Binary(b) => b.binary.memory_placement(),
+            QuantizationConfig::Turbo(t) => t.turbo.memory_placement(),
         }
     }
 }
@@ -1433,6 +1526,7 @@ impl Default for HnswConfig {
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
             max_indexing_threads: 0,
             on_disk: Some(false),
+            memory: None,
             payload_m: None,
             inline_storage: None,
         }
@@ -1468,6 +1562,25 @@ impl PayloadStorageType {
     /// Returns `Mmap` or `InRamMmap`; for RocksDB-backed variants use collection config.
     pub fn from_on_disk_payload(on_disk: bool) -> Self {
         if on_disk { Self::Mmap } else { Self::InRamMmap }
+    }
+
+    /// Convert memory placement to payload storage type.
+    ///
+    /// `Pinned` is not supported for payload storage and is rejected by API validation;
+    /// it defensively maps to the closest supported placement.
+    pub fn from_memory(memory: Memory) -> Self {
+        match memory {
+            Memory::Cold => Self::Mmap,
+            Memory::Cached | Memory::Pinned => Self::InRamMmap,
+        }
+    }
+
+    /// Memory placement this storage type provides.
+    pub fn memory(&self) -> Memory {
+        match self {
+            PayloadStorageType::Mmap => Memory::Cold,
+            PayloadStorageType::InRamMmap => Memory::Cached,
+        }
     }
 
     pub fn is_on_disk(&self) -> bool {
@@ -1597,6 +1710,117 @@ where
     Ok(())
 }
 
+/// Memory placement of a component's data.
+///
+/// Data is always persisted on disk regardless of this setting; it only controls
+/// how the data is held in RAM.
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Memory {
+    /// Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
+    /// components larger than RAM size. First request might be slow, but data is cached with
+    /// usage.
+    Cold,
+    /// Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be
+    /// evicted if there is not enough memory and some other component's data is used more
+    /// frequently.
+    Cached,
+    /// Data is loaded in RAM and never evicted. First request is fast, but the component must
+    /// fit in RAM at all times. Recommended for frequently queried small components like
+    /// quantized vectors or primary indexes.
+    Pinned,
+}
+
+impl Memory {
+    /// Convert legacy `on_disk`-style flag (true = store on disk) into the memory placement it
+    /// used to mean: on-disk data is loaded lazily, in-RAM data is populated but evictable.
+    pub fn from_on_disk(on_disk: bool) -> Self {
+        if on_disk { Self::Cold } else { Self::Cached }
+    }
+
+    /// Convert legacy `on_disk`-style flag for components whose in-RAM variant is a heap
+    /// structure (payload field indexes, sparse vector index): on-disk data is loaded lazily,
+    /// in-RAM data is fully materialized on heap and never evicted.
+    pub fn from_on_disk_heap(on_disk: bool) -> Self {
+        if on_disk { Self::Cold } else { Self::Pinned }
+    }
+
+    /// Whether this placement corresponds to `on_disk = true` in the legacy options.
+    pub fn is_on_disk(self) -> bool {
+        match self {
+            Self::Cold => true,
+            Self::Cached | Self::Pinned => false,
+        }
+    }
+
+    /// Whether this placement is backed by a heap structure rather than an mmap file, for
+    /// components that have both heap and mmap variants (payload field indexes, sparse index).
+    pub fn is_heap(self) -> bool {
+        match self {
+            Self::Pinned => true,
+            Self::Cold | Self::Cached => false,
+        }
+    }
+
+    /// Whether the backing mmap should be populated on open: the cached placement primes the
+    /// page cache, and the pinned placement reads the whole file into heap right after anyway.
+    pub fn populate_on_open(self) -> bool {
+        match self {
+            Self::Cold => false,
+            Self::Cached | Self::Pinned => true,
+        }
+    }
+
+    /// Resolve the effective memory placement from the new explicit `memory` parameter and a
+    /// legacy parameter translated into placement terms. The explicit parameter always wins.
+    pub fn resolve(memory: Option<Self>, legacy: Option<Self>) -> Option<Self> {
+        memory.or(legacy)
+    }
+
+    /// Same as [`Memory::resolve`], but logs a warning if both parameters are set and disagree.
+    ///
+    /// Use at configuration resolution points (e.g. the optimizer); use the silent
+    /// [`Memory::resolve`] in repeatedly called accessors.
+    pub fn resolve_or_warn(
+        memory: Option<Self>,
+        legacy: Option<Self>,
+        component: &dyn std::fmt::Display,
+    ) -> Option<Self> {
+        if let (Some(memory), Some(legacy)) = (memory, legacy)
+            && memory != legacy
+        {
+            log::warn!(
+                "Component {component} has both `memory={memory:?}` and a deprecated storage \
+                 placement parameter implying {legacy:?} configured; using `memory={memory:?}`"
+            );
+        }
+        Self::resolve(memory, legacy)
+    }
+
+    /// Apply the node-wide low-memory mode to this placement at load time.
+    ///
+    /// Mirrors the legacy behavior: `NoResident` downgrades pinned components to their on-disk
+    /// variants (`prefer_disk`), `NoPopulate` additionally skips cache population, so every
+    /// placement degrades to [`Memory::Cold`].
+    ///
+    /// Never affects the persisted configuration.
+    pub fn clamp_to_low_memory(self) -> Self {
+        let mode = common::low_memory::low_memory_mode();
+        if mode.skip_populate() {
+            return Self::Cold;
+        }
+        if mode.prefer_disk() {
+            return match self {
+                Self::Pinned => Self::Cold,
+                Self::Cold | Self::Cached => self,
+            };
+        }
+        self
+    }
+}
+
 /// Storage types for vectors
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone)]
 pub enum VectorStorageType {
@@ -1693,6 +1917,41 @@ impl VectorStorageType {
             Self::ChunkedMmap
         } else {
             Self::InRamChunkedMmap
+        }
+    }
+
+    /// Convert memory placement to appendable vector storage type.
+    ///
+    /// `Pinned` is not supported for dense vector storage and is rejected by API validation;
+    /// it defensively maps to the closest supported placement.
+    pub fn appendable_from_memory(memory: Memory) -> Self {
+        match memory {
+            Memory::Cold => Self::ChunkedMmap,
+            Memory::Cached | Memory::Pinned => Self::InRamChunkedMmap,
+        }
+    }
+
+    /// Convert memory placement to non-appendable single-file vector storage type.
+    ///
+    /// `Pinned` is not supported for dense vector storage and is rejected by API validation;
+    /// it defensively maps to the closest supported placement.
+    pub fn immutable_from_memory(memory: Memory) -> Self {
+        match memory {
+            Memory::Cold => Self::Mmap,
+            Memory::Cached | Memory::Pinned => Self::InRamMmap,
+        }
+    }
+
+    /// Memory placement this storage type provides.
+    pub fn memory(&self) -> Memory {
+        match self {
+            // Legacy true-heap storage: pinned by construction
+            Self::Memory => Memory::Pinned,
+            Self::Mmap | Self::ChunkedMmap => Memory::Cold,
+            Self::InRamChunkedMmap | Self::InRamMmap => Memory::Cached,
+            // Empty storage has no data; report the safe placement, consistent with
+            // `is_on_disk`
+            Self::Empty => Memory::Cold,
         }
     }
 
@@ -2270,16 +2529,25 @@ impl PayloadSchemaParams {
     }
 
     pub fn is_on_disk(&self) -> bool {
-        match self {
-            PayloadSchemaParams::Keyword(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Integer(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Float(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Datetime(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Uuid(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Text(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Geo(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Bool(i) => i.on_disk.unwrap_or_default(),
-        }
+        self.memory_placement().is_on_disk()
+    }
+
+    /// Effective memory placement of the field index, resolving the new `memory` parameter
+    /// against the deprecated `on_disk` flag.
+    ///
+    /// Defaults to [`Memory::Pinned`]: the legacy in-RAM field indexes are heap structures.
+    pub fn memory_placement(&self) -> Memory {
+        let (memory, on_disk) = match self {
+            PayloadSchemaParams::Keyword(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Integer(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Float(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Datetime(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Uuid(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Text(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Geo(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Bool(i) => (i.memory, i.on_disk),
+        };
+        Memory::resolve(memory, on_disk.map(Memory::from_on_disk_heap)).unwrap_or(Memory::Pinned)
     }
 
     pub fn enable_hnsw(&self) -> bool {
@@ -2432,6 +2700,15 @@ impl PayloadFieldSchema {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
             PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
+        }
+    }
+
+    /// Effective memory placement of the field index, resolving the new `memory` parameter
+    /// against the deprecated `on_disk` flag. Defaults to [`Memory::Pinned`].
+    pub fn memory_placement(&self) -> Memory {
+        match self {
+            PayloadFieldSchema::FieldType(_) => Memory::Pinned,
+            PayloadFieldSchema::FieldParams(params) => params.memory_placement(),
         }
     }
 
@@ -4205,6 +4482,156 @@ mod tests {
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
+
+    #[test]
+    fn test_memory_legacy_mapping() {
+        // Mmap-backed components: on-disk data loads lazily, in-RAM data is populated mmap
+        assert_eq!(Memory::from_on_disk(true), Memory::Cold);
+        assert_eq!(Memory::from_on_disk(false), Memory::Cached);
+        // Heap-backed components: in-RAM data is a heap structure, never evicted
+        assert_eq!(Memory::from_on_disk_heap(true), Memory::Cold);
+        assert_eq!(Memory::from_on_disk_heap(false), Memory::Pinned);
+
+        assert!(Memory::Cold.is_on_disk());
+        assert!(!Memory::Cached.is_on_disk());
+        assert!(!Memory::Pinned.is_on_disk());
+
+        assert!(!Memory::Cold.is_heap());
+        assert!(!Memory::Cached.is_heap());
+        assert!(Memory::Pinned.is_heap());
+
+        assert!(!Memory::Cold.populate_on_open());
+        assert!(Memory::Cached.populate_on_open());
+        assert!(Memory::Pinned.populate_on_open());
+    }
+
+    #[test]
+    fn test_memory_resolve_precedence() {
+        // Explicit `memory` always wins over the legacy parameter
+        assert_eq!(
+            Memory::resolve(Some(Memory::Cached), Some(Memory::Cold)),
+            Some(Memory::Cached),
+        );
+        // Legacy parameter is used when `memory` is not set
+        assert_eq!(
+            Memory::resolve(None, Some(Memory::Cold)),
+            Some(Memory::Cold),
+        );
+        assert_eq!(
+            Memory::resolve(Some(Memory::Pinned), None),
+            Some(Memory::Pinned)
+        );
+        assert_eq!(Memory::resolve(None, None), None);
+    }
+
+    #[test]
+    fn test_hnsw_memory_placement() {
+        let mut config = HnswConfig::default();
+        assert_eq!(config.memory_placement(), Memory::Cached);
+
+        config.on_disk = Some(true);
+        assert_eq!(config.memory_placement(), Memory::Cold);
+
+        // Explicit `memory` overrides the deprecated `on_disk` flag
+        config.memory = Some(Memory::Pinned);
+        assert_eq!(config.memory_placement(), Memory::Pinned);
+    }
+
+    #[test]
+    fn test_hnsw_memory_mismatch_no_rebuild_for_same_placement() {
+        // Expressing the same effective placement through `memory` instead of the deprecated
+        // `on_disk` flag must not trigger a rebuild
+        let legacy = HnswConfig {
+            on_disk: Some(true),
+            ..HnswConfig::default()
+        };
+        let explicit = HnswConfig {
+            on_disk: Some(true),
+            memory: Some(Memory::Cold),
+            ..HnswConfig::default()
+        };
+        assert!(!legacy.mismatch_requires_rebuild(&explicit));
+
+        // Changing the effective placement does require a rebuild
+        let cached = HnswConfig {
+            memory: Some(Memory::Cached),
+            ..legacy
+        };
+        assert!(legacy.mismatch_requires_rebuild(&cached));
+    }
+
+    #[test]
+    fn test_quantization_memory_placement() {
+        let mut scalar = ScalarQuantizationConfig {
+            r#type: ScalarType::Int8,
+            quantile: None,
+            always_ram: None,
+            memory: None,
+        };
+        // Unset: follow the original vector storage placement
+        assert_eq!(scalar.memory_placement(), None);
+        // Legacy `always_ram=false` also means "follow storage"
+        scalar.always_ram = Some(false);
+        assert_eq!(scalar.memory_placement(), None);
+        // Legacy `always_ram=true` means pinned in RAM
+        scalar.always_ram = Some(true);
+        assert_eq!(scalar.memory_placement(), Some(Memory::Pinned));
+        // Explicit `memory` overrides the deprecated flag
+        scalar.memory = Some(Memory::Cached);
+        assert_eq!(scalar.memory_placement(), Some(Memory::Cached));
+    }
+
+    #[test]
+    fn test_storage_type_memory_mapping() {
+        assert_eq!(
+            VectorStorageType::appendable_from_memory(Memory::Cold),
+            VectorStorageType::ChunkedMmap,
+        );
+        assert_eq!(
+            VectorStorageType::appendable_from_memory(Memory::Cached),
+            VectorStorageType::InRamChunkedMmap,
+        );
+        assert_eq!(
+            VectorStorageType::immutable_from_memory(Memory::Cold),
+            VectorStorageType::Mmap,
+        );
+        assert_eq!(
+            VectorStorageType::immutable_from_memory(Memory::Cached),
+            VectorStorageType::InRamMmap,
+        );
+
+        assert_eq!(
+            PayloadStorageType::from_memory(Memory::Cold),
+            PayloadStorageType::Mmap
+        );
+        assert_eq!(
+            PayloadStorageType::from_memory(Memory::Cached),
+            PayloadStorageType::InRamMmap,
+        );
+        assert_eq!(PayloadStorageType::Mmap.memory(), Memory::Cold);
+        assert_eq!(PayloadStorageType::InRamMmap.memory(), Memory::Cached);
+    }
+
+    #[test]
+    fn test_payload_field_index_memory_placement() {
+        let mut params = KeywordIndexParams::default();
+        // Legacy in-RAM field indexes are heap structures: pinned by default
+        assert_eq!(
+            PayloadSchemaParams::Keyword(params.clone()).memory_placement(),
+            Memory::Pinned,
+        );
+        params.on_disk = Some(true);
+        assert_eq!(
+            PayloadSchemaParams::Keyword(params.clone()).memory_placement(),
+            Memory::Cold,
+        );
+        // Explicit `memory` overrides the deprecated `on_disk` flag
+        params.memory = Some(Memory::Cached);
+        assert_eq!(
+            PayloadSchemaParams::Keyword(params).memory_placement(),
+            Memory::Cached,
+        );
+    }
 
     #[test]
     fn test_search_params_rejects_zero_hnsw_ef() {

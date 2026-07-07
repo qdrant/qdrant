@@ -22,7 +22,7 @@ use crate::index::field_index::full_text_index::on_disk_text_index::FullTextMmap
 use crate::index::field_index::full_text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 use crate::json_path::JsonPath;
-use crate::types::{FieldCondition, ValuesCount};
+use crate::types::{FieldCondition, Memory, ValuesCount};
 
 type Database = ();
 
@@ -147,16 +147,26 @@ fn reopen_index(
         }
         IndexType::OnDisk => {
             // Reopen with is_on_disk = true (mmap directly)
-            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, true, &deleted)
-                .unwrap()
-                .expect("Failed to reopen ImmMmap index")
+            FullTextIndex::new_mmap(
+                temp_dir.path().to_path_buf(),
+                config,
+                Memory::Cold,
+                &deleted,
+            )
+            .unwrap()
+            .expect("Failed to reopen ImmMmap index")
         }
         IndexType::Immutable => {
             // Reopen with is_on_disk = false (load into RAM)
             // This is the path that will call ImmutableFullTextIndex::open_mmap
-            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, false, &deleted)
-                .unwrap()
-                .expect("Failed to reopen ImmRamMmap index")
+            FullTextIndex::new_mmap(
+                temp_dir.path().to_path_buf(),
+                config,
+                Memory::Pinned,
+                &deleted,
+            )
+            .unwrap()
+            .expect("Failed to reopen ImmRamMmap index")
         }
     }
 }

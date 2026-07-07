@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -316,6 +320,7 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     }
 
     let config: QuantizationConfig = ScalarQuantizationConfig {
+        memory: None,
         r#type: Default::default(),
         quantile: None,
         always_ram: None,

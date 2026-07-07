@@ -40,7 +40,7 @@ impl QuantizedVectors {
             encoded_vectors_tq::get_quantized_vector_size(vector_parameters, bits, mode);
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
-        let in_ram = Self::is_ram(turbo_config.always_ram, on_disk_vector_storage);
+        let in_ram = Self::is_ram(turbo_config.memory_placement(), on_disk_vector_storage);
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
@@ -133,7 +133,7 @@ impl QuantizedVectors {
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
         let offsets_path = Self::get_offsets_path(path, storage_type);
-        let in_ram = Self::is_ram(turbo_config.always_ram, on_disk_vector_storage);
+        let in_ram = Self::is_ram(turbo_config.memory_placement(), on_disk_vector_storage);
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {

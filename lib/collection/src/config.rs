@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Read, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
@@ -12,13 +16,13 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, Payload, PayloadStorageType, QuantizationConfig, SegmentConfig,
-    SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf,
-    VectorStorageDatatype, VectorStorageType,
+    Distance, HnswConfig, Indexes, Memory, Payload, PayloadStorageType, QuantizationConfig,
+    SegmentConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName,
+    VectorNameBuf, VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 use wal::WalOptions;
 
 use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
@@ -125,6 +129,7 @@ pub struct CollectionParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub read_fan_out_delay_ms: Option<u64>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -132,16 +137,83 @@ pub struct CollectionParams {
     ///
     /// Default: true
     #[serde(default = "default_on_disk_payload")]
+    #[deprecated(since = "1.19.0", note = "Use `payload.memory` instead")]
     pub on_disk_payload: bool,
+    /// Configuration of the payload storage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub payload: Option<PayloadStorageParams>,
     /// Configuration of the sparse vector storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub sparse_vectors: Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
 }
 
+/// Params of the payload storage
+#[derive(
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Anonymize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct PayloadStorageParams {
+    /// Memory placement of the payload storage. Overrides the deprecated `on_disk_payload` flag
+    /// if both are set. `pinned` is not supported for payload storage.
+    /// Default: `cold` (`cached` if `on_disk_payload` is set to false).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_payload_storage_memory"))]
+    pub memory: Option<Memory>,
+}
+
+impl PayloadStorageParams {
+    /// Update this config with fields from `diff`; fields specified in `diff` win.
+    pub fn update(&self, diff: &PayloadStorageParams) -> Self {
+        let PayloadStorageParams { memory } = diff;
+        PayloadStorageParams {
+            memory: memory.or(self.memory),
+        }
+    }
+}
+
+/// Reject memory placements not supported by payload storage.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+fn validate_payload_storage_memory(memory: &Memory) -> Result<(), ValidationError> {
+    match memory {
+        Memory::Cold | Memory::Cached => Ok(()),
+        Memory::Pinned => {
+            let mut error = ValidationError::new("unsupported_memory_placement");
+            error.message = Some(std::borrow::Cow::from(
+                "`pinned` memory placement is not supported for payload storage",
+            ));
+            Err(error)
+        }
+    }
+}
+
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
-        PayloadStorageType::from_on_disk_payload(self.on_disk_payload)
+        PayloadStorageType::from_memory(self.payload_memory_placement())
+    }
+
+    /// Effective memory placement of the payload storage, resolving the new `payload.memory`
+    /// parameter against the deprecated `on_disk_payload` flag.
+    ///
+    /// No conflict warning is logged here: `on_disk_payload` is a plain bool with a default, so
+    /// an explicitly configured `payload.memory` would always "conflict" with it.
+    pub fn payload_memory_placement(&self) -> Memory {
+        let memory = self.payload.and_then(|payload| payload.memory);
+        Memory::resolve(memory, Some(Memory::from_on_disk(self.on_disk_payload)))
+            .unwrap_or(Memory::Cold)
     }
 
     /// All vector names (dense and sparse) currently present in the collection schema.
@@ -170,6 +242,7 @@ impl CollectionParams {
             read_fan_out_factor: _, // May be changed
             read_fan_out_delay_ms: _, // May be changed,
             on_disk_payload: _, // May be changed
+            payload: _,      // May be changed
             sparse_vectors: _, // Sets may differ via named vector CRUD
         } = other;
 
@@ -358,6 +431,7 @@ impl CollectionParams {
             write_consistency_factor: default_write_consistency_factor(),
             read_fan_out_factor: None,
             read_fan_out_delay_ms: None,
+            payload: None,
             on_disk_payload: default_on_disk_payload(),
             sparse_vectors: None,
         }
@@ -486,6 +560,7 @@ impl CollectionParams {
                 hnsw_config,
                 quantization_config,
                 on_disk,
+                memory,
             } = update_params.clone();
 
             if let Some(hnsw_diff) = hnsw_config {
@@ -514,6 +589,10 @@ impl CollectionParams {
 
             if let Some(on_disk) = on_disk {
                 vector_params.on_disk = Some(on_disk);
+            }
+
+            if let Some(memory) = memory {
+                vector_params.memory = Some(memory);
             }
         }
         Ok(())
@@ -568,9 +647,16 @@ impl CollectionParams {
                     hnsw_config: _,
                     quantization_config,
                     on_disk,
+                    memory,
                     datatype,
                     multivector_config,
                 } = params;
+
+                let memory_placement = Memory::resolve(
+                    *memory,
+                    Some(Memory::from_on_disk(on_disk.unwrap_or_default())),
+                )
+                .unwrap_or(Memory::Cached);
 
                 (
                     name.into(),
@@ -585,11 +671,7 @@ impl CollectionParams {
                             .then(|| quantization_fn(quantization_config.as_ref()))
                             .flatten(),
                         // Default to in memory storage
-                        storage_type: if on_disk.unwrap_or_default() {
-                            VectorStorageType::ChunkedMmap
-                        } else {
-                            VectorStorageType::InRamChunkedMmap
-                        },
+                        storage_type: VectorStorageType::appendable_from_memory(memory_placement),
                         multivector_config: *multivector_config,
                         datatype: datatype.map(VectorStorageDatatype::from),
                     },
@@ -619,6 +701,7 @@ impl CollectionParams {
                                     .index
                                     .and_then(|index| index.datatype)
                                     .map(VectorStorageDatatype::from),
+                                memory: params.index.and_then(|index| index.memory),
                             },
                             storage_type: params.storage_type(),
                             modifier: params.modifier,

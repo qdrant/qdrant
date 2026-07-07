@@ -796,7 +796,12 @@ fn create_deferred_segment(
                     "sparse".to_string(),
                     SparseVectorDataConfig {
                         // Don't do full scan unless explicitly enabled so we cover more parts with our tests.
-                        index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
+                        index: SparseIndexConfig::new(
+                            Some(1),
+                            SparseIndexType::MutableRam,
+                            None,
+                            None,
+                        ),
                         storage_type: SparseVectorStorageType::Mmap,
                         modifier: None,
                     },
@@ -807,6 +812,7 @@ fn create_deferred_segment(
                         index: SparseIndexConfig::new(
                             Some(usize::MAX),
                             SparseIndexType::MutableRam,
+                            None,
                             None,
                         ),
                         storage_type: SparseVectorStorageType::Mmap,

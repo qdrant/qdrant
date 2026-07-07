@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::fmt;
 
@@ -155,6 +159,7 @@ impl PyHnswIndexConfig {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory: None,
             payload_m,
             inline_storage,
         })
@@ -209,6 +214,7 @@ impl PyHnswIndexConfig {
             full_scan_threshold: _,
             max_indexing_threads: _, // not relevant for Qdrant Edge
             on_disk: _,
+            memory: _,
             payload_m: _,
             inline_storage: _,
         } = self.0;

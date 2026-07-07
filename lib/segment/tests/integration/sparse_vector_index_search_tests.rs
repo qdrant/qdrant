@@ -599,6 +599,7 @@ fn sparse_vector_index_persistence_test() {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
@@ -687,6 +688,7 @@ fn check_persistence<TInvertedIndex: InvertedIndexReadWrite<MmapFile>>(
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             fs: &MmapFs,
             config: SparseIndexConfig {
+                memory: None,
                 full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                 index_type: SparseIndexType::Mmap,
                 datatype: Some(VectorStorageDatatype::Float32),
@@ -775,6 +777,7 @@ fn sparse_vector_test_large_index() {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),

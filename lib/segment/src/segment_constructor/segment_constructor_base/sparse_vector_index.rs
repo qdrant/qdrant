@@ -6,7 +6,7 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
-use crate::types::VectorStorageDatatype;
+use crate::types::{Memory, VectorStorageDatatype};
 
 #[cfg(feature = "testing")]
 pub fn create_sparse_vector_index_test(
@@ -18,6 +18,11 @@ pub fn create_sparse_vector_index_test(
 pub(crate) fn open_or_create_sparse_vector_index(
     args: SparseVectorIndexOpenArgs<MmapFs, impl FnMut()>,
 ) -> OperationResult<VectorIndexEnum> {
+    // Effective placement of the mmap index at load time, degraded by low-memory mode.
+    // Cold and cached share the mmap index variant; cached additionally primes the page
+    // cache after opening.
+    let memory_placement = args.config.memory_placement().clamp_to_low_memory();
+
     let effective_index_type = match args.config.index_type {
         SparseIndexType::ImmutableRam => {
             // Low-memory mode downgrades `ImmutableRam` (which copies the inverted
@@ -68,6 +73,10 @@ pub(crate) fn open_or_create_sparse_vector_index(
             unreachable!("Sparse index incompatible with turbo. Validated at API level.")
         }
     };
+
+    if memory_placement == Memory::Cached {
+        vector_index.populate()?;
+    }
 
     Ok(vector_index)
 }

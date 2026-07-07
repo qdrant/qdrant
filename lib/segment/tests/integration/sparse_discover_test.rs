@@ -126,6 +126,7 @@ fn sparse_index_discover_test() {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
@@ -176,6 +177,7 @@ fn sparse_index_discover_test() {
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
         fs: &MmapFs,
         config: SparseIndexConfig {
+            memory: None,
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
             datatype: Some(VectorStorageDatatype::Float32),
@@ -265,6 +267,7 @@ fn sparse_index_hardware_measurement_test() {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
@@ -294,6 +297,7 @@ fn sparse_index_hardware_measurement_test() {
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
         fs: &MmapFs,
         config: SparseIndexConfig {
+            memory: None,
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
             datatype: Some(VectorStorageDatatype::Float32),

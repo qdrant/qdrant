@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::assert_matches;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -348,17 +352,20 @@ fn test_quantization_over_typed_storage_hnsw(
 
     let quantization_config = match quantization_variant {
         QuantizationVariant::Scalar => ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
         }
         .into(),
         QuantizationVariant::PQ => ProductQuantizationConfig {
+            memory: None,
             compression: CompressionRatio::X8,
             always_ram: None,
         }
         .into(),
         QuantizationVariant::Binary => BinaryQuantizationConfig {
+            memory: None,
             always_ram: None,
             encoding: None,
             query_encoding: None,
@@ -366,12 +373,14 @@ fn test_quantization_over_typed_storage_hnsw(
         .into(),
         QuantizationVariant::Turbo => QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: None,
                 bits: None,
             },
         }),
         QuantizationVariant::TurboBits1_5 => QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: None,
                 bits: Some(TurboQuantBitSize::Bits1_5),
             },
@@ -396,6 +405,7 @@ fn test_quantization_over_typed_storage_hnsw(
         });
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,

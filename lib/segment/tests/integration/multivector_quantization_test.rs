@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -260,17 +264,20 @@ fn test_multivector_quantization_hnsw(
 
     let quantization_config = match quantization_variant {
         QuantizationVariant::Scalar => ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: Some(false),
         }
         .into(),
         QuantizationVariant::PQ => ProductQuantizationConfig {
+            memory: None,
             compression: CompressionRatio::X8,
             always_ram: Some(false),
         }
         .into(),
         QuantizationVariant::Binary => BinaryQuantizationConfig {
+            memory: None,
             always_ram: Some(false),
             encoding: None,
             query_encoding: None,
@@ -304,6 +311,7 @@ fn test_multivector_quantization_hnsw(
     });
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,

@@ -7,9 +7,9 @@ use segment::common::BYTES_IN_KB;
 use segment::data_types::modifier::Modifier;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, MultiVectorConfig, PayloadStorageType, QuantizationConfig,
-    SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType, VectorDataConfig,
-    VectorNameBuf, VectorStorageDatatype, VectorStorageType,
+    Distance, HnswConfig, Indexes, Memory, MultiVectorConfig, PayloadStorageType,
+    QuantizationConfig, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
+    VectorDataConfig, VectorNameBuf, VectorStorageDatatype, VectorStorageType,
 };
 
 pub const TEMP_SEGMENTS_PATH: &str = "temp_segments";
@@ -22,14 +22,32 @@ pub const DEFAULT_VACUUM_MIN_VECTOR_NUMBER: usize = 1000;
 #[derive(Debug, Clone, PartialEq)]
 pub struct DenseVectorOptimizerConfig {
     pub on_disk: Option<bool>,
+    pub memory: Option<Memory>,
     pub hnsw_config: HnswConfig,
     pub quantization_config: Option<QuantizationConfig>,
+}
+
+impl DenseVectorOptimizerConfig {
+    /// Requested memory placement of the original vector storage, resolving the new `memory`
+    /// parameter against the deprecated `on_disk` flag. `None` if neither is configured.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk))
+    }
 }
 
 /// Extra configuration for sparse vectors, applied on top of the plain config during optimization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SparseVectorOptimizerConfig {
     pub on_disk: Option<bool>,
+    pub memory: Option<Memory>,
+}
+
+impl SparseVectorOptimizerConfig {
+    /// Requested memory placement of the sparse index, resolving the new `memory` parameter
+    /// against the deprecated `on_disk` flag. `None` if neither is configured.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk_heap))
+    }
 }
 
 /// Live read of the vector names currently present in the collection schema.
@@ -99,18 +117,24 @@ impl SegmentOptimizerConfig {
                 size,
                 distance,
                 on_disk,
+                memory,
                 hnsw_config,
                 quantization_config,
                 multivector_config,
                 datatype,
             } = input;
+            let plain_memory = Memory::resolve(
+                memory,
+                Some(Memory::from_on_disk(on_disk.unwrap_or_default())),
+            )
+            .unwrap_or(Memory::Cached);
             plain_dense_vector_config.insert(
                 name.clone(),
                 VectorDataConfig {
                     size,
                     distance,
                     index: Indexes::Plain {},
-                    storage_type: VectorStorageType::from_on_disk(on_disk.unwrap_or_default()),
+                    storage_type: VectorStorageType::appendable_from_memory(plain_memory),
                     quantization_config: QuantizationConfig::for_appendable_segment(
                         quantization_config.as_ref(),
                     ),
@@ -122,6 +146,7 @@ impl SegmentOptimizerConfig {
                 name,
                 DenseVectorOptimizerConfig {
                     on_disk,
+                    memory,
                     hnsw_config,
                     quantization_config,
                 },
@@ -132,6 +157,7 @@ impl SegmentOptimizerConfig {
         for (name, input) in sparse_vectors {
             let SparseVectorOptimizerInput {
                 on_disk,
+                memory,
                 full_scan_threshold,
                 index_datatype,
                 storage_type,
@@ -144,12 +170,13 @@ impl SegmentOptimizerConfig {
                         full_scan_threshold,
                         index_type: SparseIndexType::MutableRam,
                         datatype: index_datatype,
+                        memory,
                     },
                     storage_type,
                     modifier,
                 },
             );
-            sparse_vector.insert(name, SparseVectorOptimizerConfig { on_disk });
+            sparse_vector.insert(name, SparseVectorOptimizerConfig { on_disk, memory });
         }
 
         SegmentOptimizerConfig {
@@ -183,6 +210,7 @@ pub struct DenseVectorOptimizerInput {
     pub size: usize,
     pub distance: Distance,
     pub on_disk: Option<bool>,
+    pub memory: Option<Memory>,
     pub hnsw_config: HnswConfig,
     pub quantization_config: Option<QuantizationConfig>,
     pub multivector_config: Option<MultiVectorConfig>,
@@ -193,6 +221,7 @@ pub struct DenseVectorOptimizerInput {
 #[derive(Debug, Clone)]
 pub struct SparseVectorOptimizerInput {
     pub on_disk: Option<bool>,
+    pub memory: Option<Memory>,
     pub full_scan_threshold: Option<usize>,
     pub index_datatype: Option<VectorStorageDatatype>,
     pub storage_type: SparseVectorStorageType,

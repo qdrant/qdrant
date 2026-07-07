@@ -1,4 +1,9 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::backtrace::Backtrace;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
@@ -25,8 +30,8 @@ use segment::data_types::groups::GroupId;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, DenseVector};
 use segment::types::{
-    Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
-    PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
+    Distance, Filter, HnswConfig, Memory, MultiVectorConfig, Payload, PayloadIndexInfo,
+    PayloadKeyType, PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
     SparseVectorStorageType, StrictModeConfigOutput, VectorName, VectorNameBuf,
     VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
@@ -1357,10 +1362,19 @@ pub struct VectorParams {
     )]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfig>,
+    /// Deprecated: use `memory` instead.
     /// If true, vectors are served from disk, improving RAM usage at the cost of latency
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the original vector storage. Overrides the deprecated `on_disk`
+    /// flag if both are set. `pinned` is not supported for dense vector storage.
+    /// Default: `cached` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_dense_vector_memory"))]
+    pub memory: Option<Memory>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Defines which datatype should be used to represent vectors in the storage.
@@ -1394,6 +1408,21 @@ fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> 
         return Err(common::validation::sparse_turbo4_unsupported_error());
     }
     Ok(())
+}
+
+/// Reject memory placements not supported by dense vector storage.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+fn validate_dense_vector_memory(memory: &Memory) -> Result<(), ValidationError> {
+    match memory {
+        Memory::Cold | Memory::Cached => Ok(()),
+        Memory::Pinned => {
+            let mut error = ValidationError::new("unsupported_memory_placement");
+            error.message = Some(Cow::from(
+                "`pinned` memory placement is not supported for dense vector storage",
+            ));
+            Err(error)
+        }
+    }
 }
 
 /// Is considered empty if `None` or if diff has no field specified
@@ -1447,9 +1476,15 @@ pub struct SparseIndexParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub full_scan_threshold: Option<usize>,
+    /// Deprecated: use `memory` instead.
     /// Store index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
     /// Defines which datatype should be used for the index.
     /// Choosing different datatypes allows to optimize memory usage and performance vs accuracy.
     ///
@@ -1470,12 +1505,14 @@ impl SparseIndexParams {
         let SparseIndexParams {
             full_scan_threshold,
             on_disk,
+            memory,
             datatype,
         } = other;
 
         self.full_scan_threshold
             .replace_if_some(full_scan_threshold);
         self.on_disk.replace_if_some(on_disk);
+        self.memory.replace_if_some(memory);
         self.datatype.replace_if_some(datatype);
     }
 }
@@ -1674,6 +1711,7 @@ impl From<&VectorParams> for VectorParamsBase {
             hnsw_config: _,
             quantization_config: _,
             on_disk: _,
+            memory: _,
             datatype: _,
             multivector_config: _,
         } = params;
@@ -1714,9 +1752,16 @@ pub struct VectorParamsDiff {
     )]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfigDiff>,
+    /// Deprecated: use `memory` instead.
     /// If true, vectors are served from disk, improving RAM usage at the cost of latency
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Memory placement of the original vector storage. Overrides the deprecated `on_disk`
+    /// flag if both are set. `pinned` is not supported for dense vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_dense_vector_memory"))]
+    pub memory: Option<Memory>,
 }
 
 /// Vector update params for multiple vectors

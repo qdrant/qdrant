@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -126,6 +130,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     log::info!("Building HNSW index for {:?}", path.file_name().unwrap());
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m: M,
         ef_construct: EF_CONSTRUCT,
         full_scan_threshold: 1,

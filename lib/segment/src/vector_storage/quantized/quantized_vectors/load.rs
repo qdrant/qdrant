@@ -12,7 +12,7 @@ use super::{
     QuantizedVectorsStorageType, READ_FS, ReadFile,
 };
 use crate::common::operation_error::OperationResult;
-use crate::types::{MultiVectorConfig, QuantizationConfig};
+use crate::types::{Memory, MultiVectorConfig, QuantizationConfig};
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
     MultivectorOffsetsStorageChunked, MultivectorOffsetsStorageMmap, MultivectorOffsetsStorageRam,
@@ -80,13 +80,25 @@ impl QuantizedVectors {
 
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
-        Ok(QuantizedVectors {
+        let quantized_vectors = QuantizedVectors {
             storage_impl: quantized_store,
             config,
             path: path.to_path_buf(),
             distance,
             datatype,
-        })
+        };
+
+        // For the cached placement quantized vectors stay mmap-backed, but the page cache is
+        // primed on load
+        if quantized_vectors
+            .config
+            .memory_placement(on_disk_vector_storage)
+            == Memory::Cached
+        {
+            quantized_vectors.populate()?;
+        }
+
+        Ok(quantized_vectors)
     }
 
     fn load_single(

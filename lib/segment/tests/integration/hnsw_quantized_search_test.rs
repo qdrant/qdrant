@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -140,6 +144,7 @@ fn hnsw_quantized_search_test(
     });
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold: 2 * payloads_count as usize,
@@ -360,6 +365,7 @@ fn hnsw_quantized_search_cosine_test() {
         5003,
         131,
         ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
@@ -378,6 +384,7 @@ fn hnsw_quantized_search_euclid_test() {
         5003,
         131,
         ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
@@ -396,6 +403,7 @@ fn hnsw_quantized_search_manhattan_test() {
         5003,
         131,
         ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
@@ -414,6 +422,7 @@ fn hnsw_product_quantization_cosine_test() {
         1003,
         64,
         ProductQuantizationConfig {
+            memory: None,
             compression: CompressionRatio::X4,
             always_ram: Some(true),
         }
@@ -431,6 +440,7 @@ fn hnsw_product_quantization_euclid_test() {
         1003,
         64,
         ProductQuantizationConfig {
+            memory: None,
             compression: CompressionRatio::X4,
             always_ram: Some(true),
         }
@@ -448,6 +458,7 @@ fn hnsw_product_quantization_manhattan_test() {
         1003,
         64,
         ProductQuantizationConfig {
+            memory: None,
             compression: CompressionRatio::X4,
             always_ram: Some(true),
         }
@@ -469,6 +480,7 @@ fn hnsw_turbo_quantization_cosine_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits4),
             },
@@ -488,6 +500,7 @@ fn hnsw_turbo_quantization_dot_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits4),
             },
@@ -507,6 +520,7 @@ fn hnsw_turbo_quantization_cosine_larger_test() {
         256,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits4),
             },
@@ -528,6 +542,7 @@ fn hnsw_turbo_quantization_cosine_bits2_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits2),
             },
@@ -547,6 +562,7 @@ fn hnsw_turbo_quantization_dot_bits2_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits2),
             },
@@ -566,6 +582,7 @@ fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
         131,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits2),
             },
@@ -589,6 +606,7 @@ fn hnsw_turbo_quantization_euclid_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits4),
             },
@@ -607,6 +625,7 @@ fn hnsw_turbo_quantization_manhattan_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits4),
             },
@@ -626,6 +645,7 @@ fn hnsw_turbo_quantization_euclid_bits2_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits2),
             },
@@ -645,6 +665,7 @@ fn hnsw_turbo_quantization_manhattan_bits2_test() {
         64,
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
+                memory: None,
                 always_ram: Some(true),
                 bits: Some(TurboQuantBitSize::Bits2),
             },
@@ -684,11 +705,13 @@ fn hnsw_quantized_low_bit_compare_test(
 
     let tq_config = QuantizationConfig::Turbo(TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
+            memory: None,
             always_ram: Some(true),
             bits: Some(tq_bits),
         },
     });
     let bq_config: QuantizationConfig = BinaryQuantizationConfig {
+        memory: None,
         always_ram: Some(true),
         encoding: Some(bq_encoding),
         query_encoding: None,
@@ -864,6 +887,7 @@ fn build_quantized_hnsw_for_compare(
     });
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold: 2 * payloads_count as usize,
@@ -1013,6 +1037,7 @@ fn test_build_hnsw_using_quantization() {
     let vector_data_config = config.vector_data.get_mut(DEFAULT_VECTOR_NAME).unwrap();
     vector_data_config.quantization_config = Some(
         ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
@@ -1020,6 +1045,7 @@ fn test_build_hnsw_using_quantization() {
         .into(),
     );
     vector_data_config.index = Indexes::Hnsw(HnswConfig {
+        memory: None,
         m: 16,
         ef_construct: 64,
         full_scan_threshold: 16,

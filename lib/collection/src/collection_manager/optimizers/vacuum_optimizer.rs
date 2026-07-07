@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 /// Optimizer which looks for segments with high amount of soft-deleted points or vectors
 ///
 /// Since the creation of a segment, a lot of points or vectors may have been soft-deleted. This
@@ -312,6 +316,7 @@ mod tests {
         let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config = HnswConfig {
+            memory: None,
             m: 16,
             ef_construct: 100,
             full_scan_threshold: 10, // Force to build HNSW links for payload

@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::BTreeSet;
 use std::fmt;
 use std::str::FromStr;
@@ -5,6 +9,8 @@ use std::str::FromStr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
+
+use crate::types::Memory;
 
 // Keyword
 
@@ -25,9 +31,16 @@ pub struct KeywordIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_tenant: Option<bool>,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Enable HNSW graph building for this payload field.
     /// If true, builds additional HNSW links (Need payload_m > 0).
@@ -69,10 +82,16 @@ pub struct IntegerIndexParams {
     /// Default is false.
     pub is_principal: Option<bool>,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
-    /// Default is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Enable HNSW graph building for this payload field.
     /// If true, builds additional HNSW links (Need payload_m > 0).
@@ -89,6 +108,7 @@ impl Validate for IntegerIndexParams {
             range,
             is_principal: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
         } = &self;
         validate_integer_index_params(lookup, range)
@@ -128,9 +148,16 @@ pub struct UuidIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_tenant: Option<bool>,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Enable HNSW graph building for this payload field.
     /// If true, builds additional HNSW links (Need payload_m > 0).
@@ -158,9 +185,16 @@ pub struct FloatIndexParams {
     /// This option assumes that this key will be used in majority of filtered requests.
     pub is_principal: Option<bool>,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Enable HNSW graph building for this payload field.
     /// If true, builds additional HNSW links (Need payload_m > 0).
@@ -184,9 +218,16 @@ pub struct GeoIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
     pub r#type: GeoIndexType,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Enable HNSW graph building for this payload field.
     /// If true, builds additional HNSW links (Need payload_m > 0).
@@ -247,9 +288,16 @@ pub struct TextIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopwords: Option<StopwordsInterface>,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Algorithm for stemming. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -521,9 +569,16 @@ pub struct BoolIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
     pub r#type: BoolIndexType,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Enable HNSW graph building for this payload field.
     /// If true, builds additional HNSW links (Need payload_m > 0).
@@ -551,9 +606,16 @@ pub struct DatetimeIndexParams {
     /// This option assumes that this key will be used in majority of filtered requests.
     pub is_principal: Option<bool>,
 
+    /// Deprecated: use `memory` instead.
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     /// Enable HNSW graph building for this payload field.
     /// If true, builds additional HNSW links (Need payload_m > 0).

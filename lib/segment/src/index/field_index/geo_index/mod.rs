@@ -25,7 +25,7 @@ pub use self::read_ops::{GeoConditionChecker, GeoIndexRead};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::{IndexMutability, StorageType};
-use crate::types::GeoPoint;
+use crate::types::{GeoPoint, Memory};
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
@@ -43,22 +43,24 @@ pub enum GeoIndex {
 impl GeoIndex {
     pub fn new_immutable(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement at load time (pinned falls back to the
+        // pure-mmap variant). Files are shared between variants; the persisted
+        // configuration is untouched.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let Some(on_disk_index) = OnDiskGeoIndex::open(&MmapFs, path, populate, deleted_points)?
         else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            GeoIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            GeoIndex::OnDisk(on_disk_index)
         };
 
         Ok(Some(index))

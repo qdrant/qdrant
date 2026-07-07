@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, mpsc};
@@ -1694,6 +1698,7 @@ mod tests {
                                 optimizers_config: None,
                                 shard_number: Some(2),
                                 on_disk_payload: None,
+                                payload: None,
                                 replication_factor: None,
                                 write_consistency_factor: None,
                                 quantization_config: None,

@@ -7,13 +7,13 @@ use std::num::NonZeroU32;
 use api::rest::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
-    TurboQuantization,
+    BinaryQuantization, HnswConfig, Memory, ProductQuantization, ScalarQuantization,
+    StrictModeConfig, TurboQuantization,
 };
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
 
-use crate::config::{CollectionParams, WalConfig};
+use crate::config::{CollectionParams, PayloadStorageParams, WalConfig};
 use crate::optimizers_builder::OptimizersConfig;
 
 pub trait DiffConfig<Diff>: Clone {
@@ -62,9 +62,15 @@ pub struct HnswConfigDiff {
     /// On small CPUs, less threads are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_indexing_threads: Option<usize>,
+    /// Deprecated: use `memory` instead.
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Memory placement of the HNSW graph. Overrides the deprecated `on_disk` flag if both are
+    /// set. Default: `cached` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
     /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_m: Option<usize>,
@@ -87,7 +93,7 @@ pub struct WalConfigDiff {
     pub wal_retain_closed: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct CollectionParamsDiff {
     /// Number of replicas for each shard
     pub replication_factor: Option<NonZeroU32>,
@@ -97,12 +103,18 @@ pub struct CollectionParamsDiff {
     pub read_fan_out_factor: Option<u32>,
     ///  Delay in milliseconds before sending read requests to remote nodes
     pub read_fan_out_delay_ms: Option<u64>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
     /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
     #[serde(default)]
+    #[deprecated(since = "1.19.0", note = "Use `payload.memory` instead")]
     pub on_disk_payload: Option<bool>,
+    /// Update params of the payload storage. If none - it is left unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub payload: Option<PayloadStorageParams>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
@@ -212,6 +224,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         } = diff;
@@ -222,6 +235,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             full_scan_threshold: full_scan_threshold.unwrap_or(self.full_scan_threshold),
             max_indexing_threads: max_indexing_threads.unwrap_or(self.max_indexing_threads),
             on_disk: on_disk.or(self.on_disk),
+            memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
         }
@@ -236,6 +250,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         } = diff;
@@ -246,6 +261,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             full_scan_threshold: full_scan_threshold.or(self.full_scan_threshold),
             max_indexing_threads: max_indexing_threads.or(self.max_indexing_threads),
             on_disk: on_disk.or(self.on_disk),
+            memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
         }
@@ -306,6 +322,7 @@ impl DiffConfig<CollectionParamsDiff> for CollectionParams {
             read_fan_out_factor,
             read_fan_out_delay_ms,
             on_disk_payload,
+            payload,
         } = diff;
 
         CollectionParams {
@@ -315,6 +332,10 @@ impl DiffConfig<CollectionParamsDiff> for CollectionParams {
             read_fan_out_factor: read_fan_out_factor.or(self.read_fan_out_factor),
             read_fan_out_delay_ms: read_fan_out_delay_ms.or(self.read_fan_out_delay_ms),
             on_disk_payload: on_disk_payload.unwrap_or(self.on_disk_payload),
+            payload: match (self.payload.as_ref(), payload) {
+                (Some(base), Some(diff)) => Some(base.update(diff)),
+                (base, diff) => diff.or(base.copied()),
+            },
             shard_number: self.shard_number,
             sharding_method: self.sharding_method,
             sparse_vectors: self.sparse_vectors.clone(),
@@ -396,6 +417,7 @@ impl From<HnswConfig> for HnswConfigDiff {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         } = config;
@@ -406,6 +428,7 @@ impl From<HnswConfig> for HnswConfigDiff {
             full_scan_threshold: Some(full_scan_threshold),
             max_indexing_threads: Some(max_indexing_threads),
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         }
@@ -436,6 +459,7 @@ impl From<CollectionParams> for CollectionParamsDiff {
             read_fan_out_factor,
             read_fan_out_delay_ms,
             on_disk_payload,
+            payload,
             shard_number: _,
             sharding_method: _,
             sparse_vectors: _,
@@ -448,6 +472,7 @@ impl From<CollectionParams> for CollectionParamsDiff {
             read_fan_out_factor,
             read_fan_out_delay_ms,
             on_disk_payload: Some(on_disk_payload),
+            payload,
         }
     }
 }
@@ -540,6 +565,7 @@ mod tests {
             read_fan_out_factor: None,
             read_fan_out_delay_ms: None,
             on_disk_payload: None,
+            payload: None,
         };
 
         let new_params = params.update(&diff);
@@ -547,6 +573,43 @@ mod tests {
         assert_eq!(new_params.replication_factor.get(), 1);
         assert_eq!(new_params.write_consistency_factor.get(), 2);
         assert!(new_params.on_disk_payload);
+    }
+
+    #[test]
+    fn test_update_payload_storage_params() {
+        let params = CollectionParams {
+            vectors: VectorParamsBuilder::new(128, Distance::Cosine)
+                .build()
+                .into(),
+            ..CollectionParams::empty()
+        };
+        // Default `on_disk_payload: true` resolves to cold placement
+        assert_eq!(
+            params.payload_memory_placement(),
+            segment::types::Memory::Cold
+        );
+
+        let diff = CollectionParamsDiff {
+            replication_factor: None,
+            write_consistency_factor: None,
+            read_fan_out_factor: None,
+            read_fan_out_delay_ms: None,
+            on_disk_payload: None,
+            payload: Some(PayloadStorageParams {
+                memory: Some(segment::types::Memory::Cached),
+            }),
+        };
+
+        let new_params = params.update(&diff);
+        // The new `payload.memory` parameter wins over the deprecated `on_disk_payload` flag
+        assert_eq!(
+            new_params.payload_memory_placement(),
+            segment::types::Memory::Cached,
+        );
+        assert_eq!(
+            new_params.payload_storage_type(),
+            segment::types::PayloadStorageType::InRamMmap,
+        );
     }
 
     #[test]
