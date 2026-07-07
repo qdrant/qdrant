@@ -275,9 +275,19 @@ impl<S> Tracker<S> {
 impl<S: UniversalRead> Tracker<S> {
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
-    pub fn open(fs: &S::Fs, path: &Path, writeable: bool) -> Result<Self> {
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        writeable: bool,
+    ) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         let storage = Self::open_storage(fs, &path, writeable)?;
+        Self::from_storage(path, storage)
+    }
+
+    /// Build the tracker over an already-opened storage file. `path` must be
+    /// the tracker file path the storage was opened from.
+    fn from_storage(path: PathBuf, storage: S) -> Result<Self> {
         let header: TrackerHeader = Self::read_header(&storage)?;
         let pending_updates = AHashMap::new();
         Ok(Self {
@@ -294,7 +304,11 @@ impl<S: UniversalRead> Tracker<S> {
         Ok(header)
     }
 
-    fn open_storage(fs: &S::Fs, path: &Path, writeable: bool) -> Result<S> {
+    fn open_storage<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        writeable: bool,
+    ) -> Result<S> {
         let storage = match fs.open(path, tracker_open_options(writeable), Default::default()) {
             Err(UniversalIoError::NotFound { .. }) => {
                 // If config exists and storage doesn't,

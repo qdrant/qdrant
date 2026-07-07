@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{OkNotFound, Populate, UniversalRead};
+use common::universal_io::{OkNotFound, Populate, UniversalRead, UniversalReadFs};
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, GridstoreReader};
 
@@ -29,7 +29,10 @@ where
     /// the read path never creates.
     ///
     /// [1]: super::super::MutableMapIndex::open_gridstore
-    pub fn open(fs: &S::Fs, path: PathBuf) -> OperationResult<Option<Self>> {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: PathBuf,
+    ) -> OperationResult<Option<Self>> {
         let Some(storage) = GridstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(
             fs,
             path,

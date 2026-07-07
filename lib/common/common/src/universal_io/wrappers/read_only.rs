@@ -20,9 +20,8 @@ pub struct ReadOnly<S>(S);
 
 /// Phantom filesystem handle whose `File` type is `ReadOnly<F::File>`.
 ///
-/// Exists purely to satisfy the bidirectional
-/// `UniversalReadFs<File = Self>` constraint on `UniversalRead::Fs` for
-/// the `ReadOnly<S>` wrapper. It wraps an inner `F: UniversalReadFs`
+/// Exists purely to satisfy the `UniversalReadFs<File = Self>` constraint
+/// on `UniversalRead::Fs` for the `ReadOnly<S>` wrapper. It wraps an inner `F: UniversalReadFs`
 /// and asserts read-only semantics on `open`. In practice this Fs is
 /// rarely instantiated; callers use [`ReadOnly::open`] with the
 /// underlying `&S::Fs` directly.
@@ -79,21 +78,29 @@ impl<S> ReadOnly<S>
 where
     S: UniversalRead,
 {
-    /// Open a read-only file through the given filesystem handle.
+    /// Open a read-only file through the given filesystem handle — the
+    /// canonical `S::Fs` or any other filesystem producing `S`-typed
+    /// handles (e.g. [`CachedReadFs`](crate::universal_io::CachedReadFs)).
     ///
     /// Asserts the request is read-only (panics in debug builds on a writeable
     /// `OpenOptions`); the wrapper itself does not enforce write protection
     /// beyond not exposing `UniversalWrite`.
     #[inline]
-    pub fn open(
-        fs: &S::Fs,
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
         path: impl AsRef<Path>,
         options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+        extra: Fs::OpenExtra,
     ) -> Result<Self> {
         debug_assert!(!options.writeable);
         let io = fs.open(path, options, extra)?;
         Ok(Self(io))
+    }
+
+    /// Wrap an already-opened backend file.
+    #[inline]
+    pub fn from_file(file: S) -> Self {
+        Self(file)
     }
 }
 

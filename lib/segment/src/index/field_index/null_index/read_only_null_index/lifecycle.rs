@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalReadFs};
 
 use super::super::mutable_null_index::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME};
 use super::{ReadOnlyNullIndex, ReadOnlyStorage};
@@ -25,7 +25,7 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
     ///
     /// [1]: super::super::mutable_null_index::MutableNullIndex::open
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         total_point_count: usize,
     ) -> OperationResult<Option<Self>> {

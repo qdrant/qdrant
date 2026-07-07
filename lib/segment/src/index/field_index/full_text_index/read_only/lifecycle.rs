@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::bitvec::BitSlice;
-use common::universal_io::{Populate, UniversalRead};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 use super::super::on_disk_text_index::OnDiskFullTextIndex;
@@ -24,7 +24,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     ///
     /// [1]: super::super::FullTextIndex::new_gridstore
     pub fn open_appendable(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
@@ -44,7 +44,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     ///
     /// [1]: super::super::FullTextIndex::new_mmap
     pub fn open_immutable(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         config: TextIndexParams,
         is_on_disk: bool,

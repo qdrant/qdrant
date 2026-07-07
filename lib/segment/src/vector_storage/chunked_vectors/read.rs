@@ -48,11 +48,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         directory.join(STATUS_FILE_NAME)
     }
 
-    pub(super) fn load_config(
-        fs: &S::Fs,
+    pub(super) fn load_config<Fs: UniversalReadFs>(
+        fs: &Fs,
         config_file: &Path,
     ) -> OperationResult<Option<ChunkedVectorsConfig>> {
-        match read_json_via::<S::Fs, ChunkedVectorsConfig>(fs, config_file) {
+        match read_json_via::<Fs, ChunkedVectorsConfig>(fs, config_file) {
             Ok(config) => Ok(Some(config)),
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
@@ -64,7 +64,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     /// Both `config.json` and `status.dat` must already exist; this function
     /// will not create them.
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
         dim: usize,
         advice: AdviceSetting,

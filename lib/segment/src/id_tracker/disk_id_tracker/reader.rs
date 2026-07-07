@@ -54,7 +54,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     ///
     /// Errors if the segment is not in the on-disk format (`i2e` absent). Use
     /// [`try_open`](Self::try_open) to probe without erroring.
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
         Self::try_open(fs, segment_path)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker mapping ({}) not found",
@@ -67,7 +67,10 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// file is absent — i.e. the segment is not in the on-disk format. Any other
     /// missing/corrupt file is a hard error. Opening the `i2e` handle also serves
     /// as the format probe, so no separate existence check is issued.
-    pub fn try_open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Option<Self>> {
+    pub fn try_open(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<Option<Self>> {
         let options = OpenOptions {
             writeable: false,
             need_sequential: false,

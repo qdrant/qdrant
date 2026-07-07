@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalReadFs};
 use gridstore::Blob;
 
 use super::super::Encodable;
@@ -23,7 +23,10 @@ where
     /// the typed payload-value phantom `P`.
     ///
     /// [1]: super::super::NumericIndex::new_gridstore
-    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+    pub fn open_appendable(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<Option<Self>> {
         Ok(
             ReadOnlyNumericIndexInner::open_appendable(fs, dir)?.map(|inner| Self {
                 inner,
@@ -39,7 +42,7 @@ where
     ///
     /// [1]: super::super::NumericIndex::new_mmap
     pub fn open_immutable(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,

@@ -28,6 +28,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
+        // The tracker keeps a filesystem handle to re-open the append-only
+        // files on later reloads, so it must retain the *raw* backend — a
+        // caching wrapper's snapshot goes stale as soon as the writer
+        // appends. The bootstrap below consequently opens through the raw
+        // fs too, bypassing any prefetch pool.
         let mut tracker = Self {
             segment_path: segment_path.into(),
             fs: fs.clone(),

@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::universal_io::UniversalReadFs;
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -19,7 +20,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// Read-only mirror of `StructPayloadIndex::open`: loads the payload config
     /// and each persisted field index through `fs` (never builds/migrates/writes).
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         payload: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageReadEnum<S>>>>,

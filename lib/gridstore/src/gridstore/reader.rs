@@ -61,7 +61,16 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Open an existing read-only storage at the given path.
     ///
     /// Infers page count by scanning for page files on disk.
-    pub fn open(fs: &S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
+    ///
+    /// `fs` may be the raw backend or a caching wrapper producing the same
+    /// `S`-typed handles (e.g. `CachedReadFs`). Live reload keeps taking a
+    /// raw `&S::Fs` — a caching wrapper's snapshot goes stale the moment
+    /// the leader writes.
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        base_path: PathBuf,
+        populate: Populate,
+    ) -> Result<Self> {
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
         // writable `Gridstore` opens these same files writable instead.
@@ -209,7 +218,7 @@ pub(super) fn read_config_and_tracker<Fs, S>(
 ) -> Result<(StorageConfig, Tracker<S>)>
 where
     Fs: UniversalReadFs<File = S>,
-    S: UniversalRead<Fs = Fs>,
+    S: UniversalRead,
 {
     let config_path = base_path.join(CONFIG_FILENAME);
     let config: StorageConfig =

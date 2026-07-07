@@ -29,27 +29,65 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Resu
     })
 }
 
+/// List files matching `prefix_path`, recursing into subdirectories —
+/// mirroring the flat key-prefix semantics of object-store backends, so a
+/// directory prefix lists the whole tree beneath it.
+///
+/// An entry matches when its name at the prefix's final position starts with
+/// the prefix's final component: `dir/chunk_` matches `dir/chunk_1.dat` and
+/// everything under `dir/chunk_extra/`. Matching is name-based, never a
+/// whole-path string comparison — a joined prefix may mix `/` and `\` on
+/// Windows, where entry paths use `\` throughout.
 pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<ListedFile>> {
     let dir = prefix_path.parent().unwrap_or(Path::new("."));
-    let file_prefix = prefix_path
+    let name_prefix = prefix_path
         .file_name()
-        .map(|str| str.to_string_lossy().into_owned())
+        .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
 
     let mut results = Vec::new();
+    // Directories whose name matched the prefix: the whole tree beneath each
+    // of them matches.
+    let mut matched_dirs = Vec::new();
+
     let entries =
         fs_err::read_dir(dir).map_err(|err| UniversalIoError::extract_not_found(err, dir))?;
-
     for entry in entries {
         let entry = entry?;
-        if let Some(name) = entry.file_name().to_str()
-            && name.starts_with(&file_prefix)
-            && entry.file_type()?.is_file()
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(&name_prefix)
         {
-            let path = dir.join(name);
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            matched_dirs.push(entry.path());
+        } else if file_type.is_file() {
             let size = entry.metadata()?.len();
+            results.push(ListedFile {
+                path: entry.path(),
+                size,
+            });
+        }
+    }
 
-            results.push(ListedFile { path, size });
+    while let Some(dir) = matched_dirs.pop() {
+        let entries =
+            fs_err::read_dir(&dir).map_err(|err| UniversalIoError::extract_not_found(err, &dir))?;
+        for entry in entries {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                matched_dirs.push(entry.path());
+            } else if file_type.is_file() {
+                let size = entry.metadata()?.len();
+                results.push(ListedFile {
+                    path: entry.path(),
+                    size,
+                });
+            }
         }
     }
 

@@ -46,7 +46,7 @@ impl StorageVersion for Version {
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     for InvertedIndexCompressedMmap<W, S>
 {
-    fn open_ro_impl(fs: &S::Fs, path: &Path) -> Result<Self> {
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<Self> {
         let file_header: InvertedIndexFileHeader =
             read_json_via(fs, Self::index_config_file_path(path))?;
 

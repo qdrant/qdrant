@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
     UniversalWrite,
 };
 
@@ -19,7 +19,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
 }
 
 pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
-    fs: &S::Fs,
+    fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
     advice: AdviceSetting,
     populate: Populate,
@@ -30,7 +30,7 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
 
 /// Open chunk files with id `>= start_chunk_id`, in ascending order.
 pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
-    fs: &S::Fs,
+    fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
     start_chunk_id: usize,
     advice: AdviceSetting,

@@ -57,11 +57,11 @@ where
 
     /// Open through the provided filesystem handle and wrap the result.
     #[inline]
-    pub fn open(
-        fs: &S::Fs,
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
         path: impl AsRef<Path>,
         options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+        extra: Fs::OpenExtra,
     ) -> Result<Self> {
         fs.open(path, options, extra).map(Self::new)
     }

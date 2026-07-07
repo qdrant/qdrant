@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, Populate, UniversalRead};
+use common::universal_io::{MmapFs, Populate, UniversalRead, UniversalReadFs};
 use fs_err as fs;
 use serde_json::Value;
 
@@ -22,7 +22,7 @@ use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 impl<S: UniversalRead> OnDiskFullTextIndex<S> {
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         config: TextIndexParams,
         populate: Populate,

@@ -11,7 +11,8 @@ use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UserData,
+    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
@@ -153,7 +154,7 @@ impl OnDiskInvertedIndex<MmapFile> {
 
 impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         populate: Populate,
         has_positions: bool,
@@ -190,8 +191,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             // If postings don't exist, assume the index doesn't exist on disk
             return Ok(None);
         };
-        let vocab = UniversalHashMap::<str, TokenId, S>::open(
-            fs,
+        let vocab = UniversalHashMap::<str, TokenId, S>::from_file(fs.open(
             &vocab_path,
             OpenOptions {
                 writeable: false,
@@ -200,10 +200,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?)?;
 
-        let point_to_tokens_count = TypedStorage::<S, usize>::open(
-            fs,
+        let point_to_tokens_count = TypedStorage::<S, usize>::new(fs.open(
             &point_to_tokens_count_path,
             OpenOptions {
                 writeable: false,
@@ -212,10 +211,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?);
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
+        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.open(
             &deleted_points_path,
             OpenOptions {
                 writeable: false,
@@ -224,7 +222,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?)?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_tokens_count.len()` because it

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion;
-use common::universal_io::read_json_via;
+use common::universal_io::{UniversalReadFs, read_json_via};
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -90,6 +90,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Covers added/removed dense vectors, sparse vectors and payload field
     /// indexes. Vectors whose config changed are reloaded (drop + load).
     pub fn config_reload_diff(&self, fs: &S::Fs) -> OperationResult<SegmentConfigReloadDiff<S>> {
+        // Component opens go straight to the raw backend — per-reload
+        // caching/prefetch is a later iteration.
         let new_config = self.read_new_config(fs)?;
         let (added_vectors, removed_vectors) = self.diff_vectors(fs, &new_config)?;
         let payload = self.diff_payload(fs)?;
@@ -124,7 +126,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// loading every new or changed vector. Returns `(added, removed)`.
     fn diff_vectors(
         &self,
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         new_config: &SegmentConfig,
     ) -> OperationResult<(AddedVectors<S>, Vec<VectorNameBuf>)> {
         let mut added = HashMap::new();
@@ -155,7 +157,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Open one dense vector's storage, index and quantized vectors from disk.
     fn load_dense_vector(
         &self,
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         name: &VectorName,
         config: &VectorDataConfig,
         new_config: &SegmentConfig,
@@ -182,7 +184,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Open one sparse vector's storage and index from disk (never quantized).
     fn load_sparse_vector(
         &self,
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         name: &VectorName,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
@@ -201,7 +203,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
 
     /// Load the payload field-index diff (delegates to the payload index, which
     /// loads its own new/changed field indexes under a shared borrow).
-    fn diff_payload(&self, fs: &S::Fs) -> OperationResult<PayloadIndexReloadDiff<S>> {
+    fn diff_payload(
+        &self,
+        fs: &impl UniversalReadFs<File = S>,
+    ) -> OperationResult<PayloadIndexReloadDiff<S>> {
         let payload_index_path = get_payload_index_path(&self.segment_path);
         let payload_config_path = PayloadConfig::get_config_path(&payload_index_path);
         let new_payload_config = PayloadConfig::load_universal(fs, &payload_config_path)?

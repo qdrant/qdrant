@@ -21,7 +21,7 @@ pub struct OneshotFile<S: UniversalRead> {
 
 impl<S: UniversalRead> OneshotFile<S> {
     /// Open `path` read-only through `fs` for a single sequential read.
-    pub fn open(fs: &S::Fs, path: impl AsRef<Path>) -> Result<Self> {
+    pub fn open<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: impl AsRef<Path>) -> Result<Self> {
         let inner = fs.open(
             path,
             OpenOptions {

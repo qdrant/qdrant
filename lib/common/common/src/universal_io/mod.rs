@@ -1,3 +1,4 @@
+mod cached_fs;
 #[cfg(not(target_os = "windows"))]
 #[expect(dead_code, reason = "Not yet used")]
 mod disk_cache;
@@ -12,6 +13,7 @@ mod traits;
 mod types;
 mod wrappers;
 
+pub use self::cached_fs::{CachedFs, CachedReadFs, CachedReadFsContext, FileInfo};
 pub use self::error::{IsNotFound, OkNotFound, UniversalIoError};
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra};

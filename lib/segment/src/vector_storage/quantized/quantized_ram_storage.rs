@@ -3,9 +3,9 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{OneshotFile, UniversalRead};
+use common::universal_io::{OneshotFile, OpenOptions, Populate, UniversalRead, UniversalReadFs};
 use fs_err as fs;
 use fs_err::File;
 
@@ -28,7 +28,7 @@ impl QuantizedRamStorage {
     /// object storage, …) and evicted from the RAM/page cache afterwards via
     /// [`OneshotFile`], since we keep our own heap copy.
     pub fn from_file<S: UniversalRead>(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<Self> {
@@ -38,7 +38,16 @@ impl QuantizedRamStorage {
             ));
         }
 
-        let storage = OneshotFile::<S>::open(fs, path)?;
+        let storage = OneshotFile::new(fs.open(
+            path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: true,
+                populate: Populate::No,
+                advice: AdviceSetting::Advice(Advice::Sequential),
+            },
+            Default::default(),
+        )?);
 
         // Read the whole file in a single access and validate against the returned
         // buffer's length, rather than querying `len()` separately. Avoids an extra
