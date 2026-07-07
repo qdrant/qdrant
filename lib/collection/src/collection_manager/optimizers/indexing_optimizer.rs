@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 /// Looks for the segments, which require to be indexed.
 ///
 /// If segment is too large, but still does not have indexes - it is time to create some indexes.
@@ -235,6 +239,7 @@ mod tests {
             vectors: VectorsConfig::Multi(BTreeMap::from([(
                 VECTOR_NAME.to_owned(),
                 VectorParams {
+                    memory: None,
                     size: NonZeroU64::new(DIM as u64).unwrap(),
                     distance: Distance::Dot,
                     hnsw_config: None,
@@ -824,6 +829,7 @@ mod tests {
         let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config = HnswConfig {
+            memory: None,
             m: 16,
             ef_construct: 100,
             full_scan_threshold: 10,

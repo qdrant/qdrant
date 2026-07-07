@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr as _;
 use std::time::Instant;
@@ -32,7 +36,7 @@ use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads,
+    KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads, Memory,
     MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
     ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
@@ -193,12 +197,53 @@ impl From<segment::data_types::index::TokenizerType> for TokenizerType {
     }
 }
 
+impl From<segment::types::Memory> for Memory {
+    fn from(memory: segment::types::Memory) -> Self {
+        match memory {
+            segment::types::Memory::Cold => Memory::Cold,
+            segment::types::Memory::Cached => Memory::Cached,
+            segment::types::Memory::Pinned => Memory::Pinned,
+        }
+    }
+}
+
+/// Convert an optional proto `Memory` enum value into the segment memory placement.
+/// The `MemoryUnknown` sentinel maps to `None`.
+pub fn convert_memory_from_proto(
+    memory: Option<i32>,
+) -> Result<Option<segment::types::Memory>, Status> {
+    let Some(memory_int) = memory else {
+        return Ok(None);
+    };
+    let grpc_memory = Memory::try_from(memory_int).map_err(|_| {
+        Status::invalid_argument(format!("Cannot convert memory placement: {memory_int}"))
+    })?;
+    Ok(match grpc_memory {
+        Memory::Unknown => None,
+        Memory::Cold => Some(segment::types::Memory::Cold),
+        Memory::Cached => Some(segment::types::Memory::Cached),
+        Memory::Pinned => Some(segment::types::Memory::Pinned),
+    })
+}
+
+/// Convert an optional segment memory placement into the proto enum value.
+pub fn convert_memory_to_proto(memory: Option<segment::types::Memory>) -> Option<i32> {
+    memory.map(|memory| Memory::from(memory) as i32)
+}
+
+/// Infallible variant of [`convert_memory_from_proto`] for `From` conversions that cannot
+/// fail: invalid values are silently converted to `None`.
+pub fn convert_memory_from_proto_lossy(memory: Option<i32>) -> Option<segment::types::Memory> {
+    convert_memory_from_proto(memory).ok().flatten()
+}
+
 impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams {
     fn from(params: segment::data_types::index::KeywordIndexParams) -> Self {
         let segment::data_types::index::KeywordIndexParams {
             r#type: _,
             is_tenant,
             on_disk,
+            memory,
             enable_hnsw,
             prefix,
         } = params;
@@ -208,6 +253,7 @@ impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams
                 on_disk,
                 enable_hnsw,
                 prefix: prefix.unwrap_or_default().then_some(KeywordPrefixParams {}),
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -220,6 +266,7 @@ impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams
             lookup,
             range,
             on_disk,
+            memory,
             is_principal,
             enable_hnsw,
         } = params;
@@ -230,6 +277,7 @@ impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams
                 is_principal,
                 on_disk,
                 enable_hnsw,
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -240,6 +288,7 @@ impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
         let segment::data_types::index::FloatIndexParams {
             r#type: _,
             on_disk,
+            memory,
             is_principal,
             enable_hnsw,
         } = params;
@@ -248,6 +297,7 @@ impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
                 on_disk,
                 is_principal,
                 enable_hnsw,
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -258,12 +308,14 @@ impl From<segment::data_types::index::GeoIndexParams> for PayloadIndexParams {
         let segment::data_types::index::GeoIndexParams {
             r#type: _,
             on_disk,
+            memory,
             enable_hnsw,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::GeoIndexParams(GeoIndexParams {
                 on_disk,
                 enable_hnsw,
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -280,6 +332,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             ascii_folding,
             phrase_matching,
             on_disk,
+            memory,
             stopwords,
             stemmer,
             enable_hnsw,
@@ -303,6 +356,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 stopwords: stopwords_set,
                 stemmer: stemming_algo,
                 enable_hnsw,
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -313,12 +367,14 @@ impl From<segment::data_types::index::BoolIndexParams> for PayloadIndexParams {
         let segment::data_types::index::BoolIndexParams {
             r#type: _,
             on_disk,
+            memory,
             enable_hnsw,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::BoolIndexParams(BoolIndexParams {
                 on_disk,
                 enable_hnsw,
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -330,6 +386,7 @@ impl From<segment::data_types::index::UuidIndexParams> for PayloadIndexParams {
             r#type: _,
             is_tenant,
             on_disk,
+            memory,
             enable_hnsw,
         } = params;
         PayloadIndexParams {
@@ -337,6 +394,7 @@ impl From<segment::data_types::index::UuidIndexParams> for PayloadIndexParams {
                 is_tenant,
                 on_disk,
                 enable_hnsw,
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -347,6 +405,7 @@ impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParam
         let segment::data_types::index::DatetimeIndexParams {
             r#type: _,
             on_disk,
+            memory,
             is_principal,
             enable_hnsw,
         } = params;
@@ -355,6 +414,7 @@ impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParam
                 on_disk,
                 is_principal,
                 enable_hnsw,
+                memory: convert_memory_to_proto(memory),
             })),
         }
     }
@@ -495,11 +555,13 @@ impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexPar
             on_disk,
             enable_hnsw,
             prefix,
+            memory,
         } = params;
         Ok(segment::data_types::index::KeywordIndexParams {
             r#type: KeywordIndexType::Keyword,
             is_tenant,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
             // Presence of the (currently empty) message enables prefix
             // matching.
@@ -517,6 +579,7 @@ impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexPar
             is_principal,
             on_disk,
             enable_hnsw,
+            memory,
         } = params;
         Ok(segment::data_types::index::IntegerIndexParams {
             r#type: IntegerIndexType::Integer,
@@ -524,6 +587,7 @@ impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexPar
             range,
             is_principal,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
         })
     }
@@ -536,10 +600,12 @@ impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams 
             on_disk,
             is_principal,
             enable_hnsw,
+            memory,
         } = params;
         Ok(segment::data_types::index::FloatIndexParams {
             r#type: FloatIndexType::Float,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             is_principal,
             enable_hnsw,
         })
@@ -552,10 +618,12 @@ impl TryFrom<GeoIndexParams> for segment::data_types::index::GeoIndexParams {
         let GeoIndexParams {
             on_disk,
             enable_hnsw,
+            memory,
         } = params;
         Ok(segment::data_types::index::GeoIndexParams {
             r#type: GeoIndexType::Geo,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
         })
     }
@@ -602,6 +670,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             stopwords,
             stemmer,
             enable_hnsw,
+            memory,
         } = params;
 
         // Convert stopwords if present
@@ -629,6 +698,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             max_token_len: max_token_len.map(|x| x as usize),
             phrase_matching,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             stopwords: stopwords_converted,
             stemmer,
             enable_hnsw,
@@ -669,10 +739,12 @@ impl TryFrom<BoolIndexParams> for segment::data_types::index::BoolIndexParams {
         let BoolIndexParams {
             on_disk,
             enable_hnsw,
+            memory,
         } = params;
         Ok(segment::data_types::index::BoolIndexParams {
             r#type: BoolIndexType::Bool,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
         })
     }
@@ -685,10 +757,12 @@ impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexP
             on_disk,
             is_principal,
             enable_hnsw,
+            memory,
         } = params;
         Ok(segment::data_types::index::DatetimeIndexParams {
             r#type: DatetimeIndexType::Datetime,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             is_principal,
             enable_hnsw,
         })
@@ -702,11 +776,13 @@ impl TryFrom<UuidIndexParams> for segment::data_types::index::UuidIndexParams {
             is_tenant,
             on_disk,
             enable_hnsw,
+            memory,
         } = params;
         Ok(segment::data_types::index::UuidIndexParams {
             r#type: UuidIndexType::Uuid,
             is_tenant,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
         })
     }
@@ -1204,6 +1280,7 @@ impl From<segment::types::ScalarQuantization> for ScalarQuantization {
             },
             quantile: config.quantile,
             always_ram: config.always_ram,
+            memory: convert_memory_to_proto(config.memory),
         }
     }
 }
@@ -1216,6 +1293,7 @@ impl TryFrom<ScalarQuantization> for segment::types::ScalarQuantization {
             r#type,
             quantile,
             always_ram,
+            memory,
         } = value;
         Ok(segment::types::ScalarQuantization {
             scalar: segment::types::ScalarQuantizationConfig {
@@ -1227,6 +1305,7 @@ impl TryFrom<ScalarQuantization> for segment::types::ScalarQuantization {
                 },
                 quantile,
                 always_ram,
+                memory: convert_memory_from_proto(memory)?,
             },
         })
     }
@@ -1238,6 +1317,7 @@ impl From<segment::types::ProductQuantization> for ProductQuantization {
         let segment::types::ProductQuantizationConfig {
             compression,
             always_ram,
+            memory,
         } = product;
         ProductQuantization {
             compression: match compression {
@@ -1248,6 +1328,7 @@ impl From<segment::types::ProductQuantization> for ProductQuantization {
                 segment::types::CompressionRatio::X64 => CompressionRatio::X64 as i32,
             },
             always_ram,
+            memory: convert_memory_to_proto(memory),
         }
     }
 }
@@ -1259,6 +1340,7 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
         let ProductQuantization {
             compression,
             always_ram,
+            memory,
         } = value;
         Ok(segment::types::ProductQuantization {
             product: segment::types::ProductQuantizationConfig {
@@ -1275,6 +1357,7 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
                     Ok(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
                 },
                 always_ram,
+                memory: convert_memory_from_proto(memory)?,
             },
         })
     }
@@ -1317,6 +1400,7 @@ impl From<segment::types::BinaryQuantization> for BinaryQuantization {
         let segment::types::BinaryQuantization { binary } = value;
         let segment::types::BinaryQuantizationConfig {
             always_ram,
+            memory,
             encoding,
             query_encoding,
         } = binary;
@@ -1325,6 +1409,7 @@ impl From<segment::types::BinaryQuantization> for BinaryQuantization {
             encoding: encoding
                 .map(|encoding| i32::from(BinaryQuantizationEncoding::from(encoding))),
             query_encoding: query_encoding.map(BinaryQuantizationQueryEncoding::from),
+            memory: convert_memory_to_proto(memory),
         }
     }
 }
@@ -1337,6 +1422,7 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
             always_ram,
             encoding,
             query_encoding,
+            memory,
         } = value;
         let encoding = encoding
             .map(BinaryQuantizationEncoding::try_from)
@@ -1345,6 +1431,7 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
         Ok(segment::types::BinaryQuantization {
             binary: segment::types::BinaryQuantizationConfig {
                 always_ram,
+                memory: convert_memory_from_proto(memory)?,
                 encoding: encoding.map(segment::types::BinaryQuantizationEncoding::from),
                 query_encoding: query_encoding
                     .map(segment::types::BinaryQuantizationQueryEncoding::try_from)
@@ -1382,11 +1469,16 @@ fn turbo_quant_bit_size_from_i32(value: i32) -> Result<segment::types::TurboQuan
 impl From<segment::types::TurboQuantization> for TurboQuantization {
     fn from(value: segment::types::TurboQuantization) -> Self {
         let segment::types::TurboQuantization { turbo } = value;
-        let segment::types::TurboQuantQuantizationConfig { always_ram, bits } = turbo;
+        let segment::types::TurboQuantQuantizationConfig {
+            always_ram,
+            memory,
+            bits,
+        } = turbo;
 
         TurboQuantization {
             always_ram,
             bits: bits.map(|b| i32::from(TurboQuantBitSize::from(b))),
+            memory: convert_memory_to_proto(memory),
         }
     }
 }
@@ -1395,11 +1487,19 @@ impl TryFrom<TurboQuantization> for segment::types::TurboQuantization {
     type Error = Status;
 
     fn try_from(value: TurboQuantization) -> Result<Self, Self::Error> {
-        let TurboQuantization { always_ram, bits } = value;
+        let TurboQuantization {
+            always_ram,
+            bits,
+            memory,
+        } = value;
         let bits = bits.map(turbo_quant_bit_size_from_i32).transpose()?;
 
         Ok(segment::types::TurboQuantization {
-            turbo: segment::types::TurboQuantQuantizationConfig { always_ram, bits },
+            turbo: segment::types::TurboQuantQuantizationConfig {
+                always_ram,
+                memory: convert_memory_from_proto(memory)?,
+                bits,
+            },
         })
     }
 }
@@ -2343,6 +2443,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         } = hnsw_config;
@@ -2352,6 +2453,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             full_scan_threshold: full_scan_threshold.unwrap_or_default() as usize,
             max_indexing_threads: max_indexing_threads.unwrap_or_default() as usize,
             on_disk,
+            memory: convert_memory_from_proto_lossy(memory),
             payload_m: payload_m.map(|x| x as usize),
             inline_storage,
         }

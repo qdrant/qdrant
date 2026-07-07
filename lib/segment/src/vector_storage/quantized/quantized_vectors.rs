@@ -39,7 +39,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding,
-    CompressionRatio, Distance, ProductQuantization, QuantizationConfig, ScalarType,
+    CompressionRatio, Distance, Memory, ProductQuantization, QuantizationConfig, ScalarType,
     TurboQuantBitSize, TurboQuantization, VectorStorageDatatype,
 };
 use crate::vector_storage::RawScorer;
@@ -117,17 +117,30 @@ impl QuantizedVectors {
         }
     }
 
+    /// Effective memory placement of quantized vectors at load time.
+    ///
+    /// `requested` is the placement from the quantization config (the new `memory` parameter
+    /// resolved against the deprecated `always_ram` flag); when unset, the placement follows
+    /// the original vector storage: pinned in RAM alongside an in-RAM storage, cold alongside
+    /// an on-disk storage. The node-wide low-memory mode degrades the result; the on-disk byte
+    /// layout is identical for all placements, so flipping back later works without rebuild.
+    pub(in crate::vector_storage::quantized) fn memory_placement(
+        requested: Option<Memory>,
+        on_disk_vector_storage: bool,
+    ) -> Memory {
+        let follow_storage = if on_disk_vector_storage {
+            Memory::Cold
+        } else {
+            Memory::Pinned
+        };
+        requested.unwrap_or(follow_storage).clamp_to_low_memory()
+    }
+
     pub(in crate::vector_storage::quantized) fn is_ram(
-        always_ram: Option<bool>,
+        requested: Option<Memory>,
         on_disk_vector_storage: bool,
     ) -> bool {
-        // Low-memory mode forces the mmap (on-disk) backend regardless of the
-        // persisted `always_ram` flag. The on-disk byte layout is identical,
-        // so flipping back later still works without rebuild.
-        if common::low_memory::low_memory_mode().prefer_disk() {
-            return false;
-        }
-        !on_disk_vector_storage || always_ram == Some(true)
+        Self::memory_placement(requested, on_disk_vector_storage) == Memory::Pinned
     }
 
     pub(in crate::vector_storage::quantized) fn convert_binary_encoding(

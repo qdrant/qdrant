@@ -10,6 +10,10 @@
 //! via the derived `PartialEq`, so a newly added field is accounted for
 //! automatically: any difference outside `on_disk` yields `Incompatible`.
 
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +107,7 @@ mod tests {
 
     fn keyword(on_disk: Option<bool>, is_tenant: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Keyword(KeywordIndexParams {
+            memory: None,
             r#type: KeywordIndexType::Keyword,
             is_tenant,
             on_disk,
@@ -113,6 +118,7 @@ mod tests {
 
     fn integer(on_disk: Option<bool>, lookup: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Integer(IntegerIndexParams {
+            memory: None,
             r#type: IntegerIndexType::Integer,
             lookup,
             range: Some(true),
@@ -124,6 +130,7 @@ mod tests {
 
     fn float(on_disk: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Float(FloatIndexParams {
+            memory: None,
             r#type: FloatIndexType::Float,
             is_principal: None,
             on_disk,
@@ -133,6 +140,7 @@ mod tests {
 
     fn geo(on_disk: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Geo(GeoIndexParams {
+            memory: None,
             r#type: GeoIndexType::Geo,
             on_disk,
             enable_hnsw: None,
@@ -141,6 +149,7 @@ mod tests {
 
     fn text(on_disk: Option<bool>, tokenizer: TokenizerType) -> PayloadSchemaParams {
         PayloadSchemaParams::Text(TextIndexParams {
+            memory: None,
             r#type: TextIndexType::Text,
             tokenizer,
             min_token_len: None,
@@ -157,6 +166,7 @@ mod tests {
 
     fn bool_p(on_disk: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Bool(BoolIndexParams {
+            memory: None,
             r#type: BoolIndexType::Bool,
             on_disk,
             enable_hnsw: None,
@@ -165,6 +175,7 @@ mod tests {
 
     fn datetime(on_disk: Option<bool>, is_principal: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Datetime(DatetimeIndexParams {
+            memory: None,
             r#type: DatetimeIndexType::Datetime,
             is_principal,
             on_disk,
@@ -174,6 +185,7 @@ mod tests {
 
     fn uuid(on_disk: Option<bool>, is_tenant: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Uuid(UuidIndexParams {
+            memory: None,
             r#type: UuidIndexType::Uuid,
             is_tenant,
             on_disk,
@@ -216,6 +228,7 @@ mod tests {
         // the sorted key dictionary — a full rebuild, never an in-place swap.
         let plain = wrap(keyword(Some(false), None));
         let with_prefix = wrap(PayloadSchemaParams::Keyword(KeywordIndexParams {
+            memory: None,
             r#type: KeywordIndexType::Keyword,
             is_tenant: None,
             on_disk: Some(false),

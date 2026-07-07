@@ -28,6 +28,7 @@ use crate::json_path::JsonPath;
 use crate::types::test_utils::build_polygon;
 use crate::types::{
     CheckGeoPoint, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint, GeoPolygon, GeoRadius,
+    Memory,
 };
 
 /// Generous default size for the deleted-points bitslice used in tests.
@@ -667,12 +668,16 @@ fn load_from_disk(#[case] index_type: IndexType) {
         IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &empty_deleted())
-            .unwrap()
-            .unwrap(),
-        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), false, &empty_deleted())
-            .unwrap()
-            .unwrap(),
+        IndexType::OnDisk => {
+            GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &empty_deleted())
+                .unwrap()
+                .unwrap()
+        }
+        IndexType::Immutable => {
+            GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &empty_deleted())
+                .unwrap()
+                .unwrap()
+        }
     };
 
     let berlin_geo_radius = GeoRadius {
@@ -740,11 +745,13 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
         IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &deleted_with(&[1]))
-            .unwrap()
-            .unwrap(),
+        IndexType::OnDisk => {
+            GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &deleted_with(&[1]))
+                .unwrap()
+                .unwrap()
+        }
         IndexType::Immutable => {
-            GeoIndex::new_immutable(temp_dir.path(), false, &deleted_with(&[1]))
+            GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &deleted_with(&[1]))
                 .unwrap()
                 .unwrap()
         }
@@ -1316,10 +1323,10 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
         IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &deleted)
+        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
             .unwrap()
             .unwrap(),
-        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), false, &deleted)
+        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &deleted)
             .unwrap()
             .unwrap(),
     };
@@ -1398,12 +1405,14 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     let mut short_deleted = BitVec::repeat(false, 2);
     short_deleted.set(1, true);
     let new_index = match index_type {
-        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), true, &short_deleted)
+        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &short_deleted)
             .unwrap()
             .unwrap(),
-        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), false, &short_deleted)
-            .unwrap()
-            .unwrap(),
+        IndexType::Immutable => {
+            GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &short_deleted)
+                .unwrap()
+                .unwrap()
+        }
         IndexType::Mutable => unreachable!(),
     };
 

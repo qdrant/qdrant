@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 mod test_congruence;
 
 use common::bitvec::BitVec;
@@ -159,6 +163,7 @@ fn movie_titles() -> Vec<String> {
 fn test_prefix_search() {
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
+        memory: None,
         r#type: TextIndexType::Text,
         tokenizer: TokenizerType::Prefix,
         min_token_len: None,
@@ -218,6 +223,7 @@ fn test_phrase_matching() {
     // Create a text index with phrase matching enabled
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
+        memory: None,
         r#type: TextIndexType::Text,
         tokenizer: TokenizerType::default(),
         min_token_len: None,
@@ -351,6 +357,7 @@ fn test_ascii_folding_in_full_text_index_word() {
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config_enabled = TextIndexParams {
+        memory: None,
         r#type: TextIndexType::Text,
         tokenizer: TokenizerType::Word,
         min_token_len: None,
@@ -463,6 +470,7 @@ fn test_special_check_condition_match_text_any() {
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
+        memory: None,
         r#type: TextIndexType::Text,
         tokenizer: TokenizerType::Word,
         min_token_len: None,

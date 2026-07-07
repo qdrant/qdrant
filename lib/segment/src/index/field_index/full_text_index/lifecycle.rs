@@ -17,33 +17,33 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl FullTextIndex {
     pub fn new_mmap(
         path: PathBuf,
         config: TextIndexParams,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        // Low-memory mode downgrades the in-RAM `Immutable` wrapper to the
-        // pure-mmap variant at load time. Files are shared between variants;
-        // the persisted `is_on_disk` flag in `mmap_index` is untouched.
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement at load time (pinned falls back to the
+        // pure-mmap variant). Files are shared between variants; the persisted
+        // configuration is untouched.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let Some(on_disk_index) =
             OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
         else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            // Use on-disk directly
-            Self::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             // Load into RAM, use mmap as backing storage
             Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            // Use on-disk directly
+            Self::OnDisk(on_disk_index)
         };
         Ok(Some(index))
     }

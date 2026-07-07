@@ -7453,9 +7453,21 @@
             "nullable": true
           },
           "on_disk_payload": {
-            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
+            "description": "Deprecated: use `payload.memory` instead. If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
             "default": true,
+            "deprecated": true,
             "type": "boolean"
+          },
+          "payload": {
+            "description": "Configuration of the payload storage",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayloadStorageParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "sparse_vectors": {
             "description": "Configuration of the sparse vector storage",
@@ -7521,9 +7533,21 @@
             ]
           },
           "on_disk": {
-            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency Default: false",
+            "description": "Deprecated: use `memory` instead. If true, vectors are served from disk, improving RAM usage at the cost of latency Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the original vector storage. Overrides the deprecated `on_disk` flag if both are set. `pinned` is not supported for dense vector storage. Default: `cached` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "datatype": {
             "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm.",
@@ -7590,9 +7614,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "description": "Deprecated: use `memory` instead. Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the HNSW graph. Overrides the deprecated `on_disk` flag if both are set. Default: `cached` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "payload_m": {
             "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
@@ -7607,6 +7643,32 @@
             "nullable": true
           }
         }
+      },
+      "Memory": {
+        "description": "Memory placement of a component's data.\n\nData is always persisted on disk regardless of this setting; it only controls how the data is held in RAM.",
+        "oneOf": [
+          {
+            "description": "Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or components larger than RAM size. First request might be slow, but data is cached with usage.",
+            "type": "string",
+            "enum": [
+              "cold"
+            ]
+          },
+          {
+            "description": "Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be evicted if there is not enough memory and some other component's data is used more frequently.",
+            "type": "string",
+            "enum": [
+              "cached"
+            ]
+          },
+          {
+            "description": "Data is loaded in RAM and never evicted. First request is fast, but the component must fit in RAM at all times. Recommended for frequently queried small components like quantized vectors or primary indexes.",
+            "type": "string",
+            "enum": [
+              "pinned"
+            ]
+          }
+        ]
       },
       "QuantizationConfig": {
         "anyOf": [
@@ -7653,9 +7715,21 @@
             "nullable": true
           },
           "always_ram": {
-            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "description": "Deprecated: use `memory` instead. If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7686,8 +7760,21 @@
             "$ref": "#/components/schemas/CompressionRatio"
           },
           "always_ram": {
+            "description": "Deprecated: use `memory` instead.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7716,8 +7803,21 @@
         "type": "object",
         "properties": {
           "always_ram": {
+            "description": "Deprecated: use `memory` instead.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "encoding": {
             "anyOf": [
@@ -7774,8 +7874,21 @@
         "type": "object",
         "properties": {
           "always_ram": {
+            "description": "Deprecated: use `memory` instead.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "bits": {
             "anyOf": [
@@ -7831,6 +7944,23 @@
           "custom"
         ]
       },
+      "PayloadStorageParams": {
+        "description": "Params of the payload storage",
+        "type": "object",
+        "properties": {
+          "memory": {
+            "description": "Memory placement of the payload storage. Overrides the deprecated `on_disk_payload` flag if both are set. `pinned` is not supported for payload storage. Default: `cold` (`cached` if `on_disk_payload` is set to false).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
       "SparseVectorParams": {
         "description": "Params of single sparse vector data storage",
         "type": "object",
@@ -7871,9 +8001,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "description": "Deprecated: use `memory` instead. Store index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "datatype": {
             "description": "Defines which datatype should be used for the index. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are quantized to unsigned 8-bit integers, 1 byte. Quantization to fit byte range `[0, 255]` happens during indexing automatically, so the actual vector data does not need to conform to this range.",
@@ -7931,9 +8073,21 @@
             "minimum": 0
           },
           "on_disk": {
-            "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
+            "description": "Deprecated: use `memory` instead. Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the HNSW graph. Overrides the deprecated `on_disk` flag if both are set. Default: `cached` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "payload_m": {
             "description": "Custom M param for hnsw graph built for payload index. If not set, default M will be used.",
@@ -8341,9 +8495,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
@@ -8388,9 +8554,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false. Default is false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
@@ -8420,9 +8598,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
@@ -8447,9 +8637,21 @@
             "$ref": "#/components/schemas/GeoIndexType"
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
@@ -8517,9 +8719,21 @@
             ]
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "stemmer": {
             "description": "Algorithm for stemming. Default: disabled.",
@@ -8707,9 +8921,21 @@
             "$ref": "#/components/schemas/BoolIndexType"
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
@@ -8739,9 +8965,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
@@ -8771,9 +9009,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
@@ -10559,10 +10809,23 @@
             "nullable": true
           },
           "on_disk_payload": {
-            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
+            "description": "Deprecated: use `payload.memory` instead. If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
             "default": null,
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "payload": {
+            "description": "Configuration of the payload storage",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayloadStorageParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "hnsw_config": {
             "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
@@ -11081,9 +11344,21 @@
             ]
           },
           "on_disk": {
-            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency",
+            "description": "Deprecated: use `memory` instead. If true, vectors are served from disk, improving RAM usage at the cost of latency",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the original vector storage. Overrides the deprecated `on_disk` flag if both are set. `pinned` is not supported for dense vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11144,10 +11419,22 @@
             "nullable": true
           },
           "on_disk_payload": {
-            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
+            "description": "Deprecated: use `payload.memory` instead. If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": null,
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "payload": {
+            "description": "Update params of the payload storage. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayloadStorageParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -13609,6 +13896,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorStorageDatatype"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "memory": {
+            "description": "Requested memory placement of the index.\n\nThe structural decision is carried by `index_type`; this field additionally distinguishes `cold` from `cached` for the mmap index variant.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
               },
               {
                 "nullable": true

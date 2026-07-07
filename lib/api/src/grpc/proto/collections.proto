@@ -14,6 +14,19 @@ enum Datatype {
   Turbo4 = 4;
 }
 
+// Memory placement of a component's data.
+// Data is always persisted on disk regardless of this setting;
+// it only controls how the data is held in RAM.
+enum Memory {
+  MemoryUnknown = 0;
+  // Data is not pre-loaded from disk to RAM; cached with usage.
+  Cold = 1;
+  // Data is pre-loaded into disk-cache RAM on start, but may be evicted under memory pressure.
+  Cached = 2;
+  // Data is loaded in RAM and never evicted.
+  Pinned = 3;
+}
+
 // ---------------------------------------------
 // ------------- Collection Config -------------
 // ---------------------------------------------
@@ -29,13 +42,18 @@ message VectorParams {
   // Configuration of vector quantization config.
   // If omitted - the collection configuration will be used
   optional QuantizationConfig quantization_config = 4;
+  // Deprecated: use `memory` instead.
   // If true - serve vectors from disk.
   // If set to false, the vectors will be loaded in RAM.
-  optional bool on_disk = 5;
+  optional bool on_disk = 5 [deprecated = true];
   // Data type of the vectors
   optional Datatype datatype = 6;
   // Configuration for multi-vector search
   optional MultiVectorConfig multivector_config = 7;
+  // Memory placement of the original vector storage.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  // `Pinned` is not supported for dense vector storage.
+  optional Memory memory = 8;
 }
 
 message VectorParamsDiff {
@@ -44,9 +62,14 @@ message VectorParamsDiff {
   optional HnswConfigDiff hnsw_config = 1;
   // Update quantization params. If none - it is left unchanged.
   optional QuantizationConfigDiff quantization_config = 2;
+  // Deprecated: use `memory` instead.
   // If true - serve vectors from disk.
   // If set to false, the vectors will be loaded in RAM.
-  optional bool on_disk = 3;
+  optional bool on_disk = 3 [deprecated = true];
+  // Memory placement of the original vector storage.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  // `Pinned` is not supported for dense vector storage.
+  optional Memory memory = 4;
 }
 
 message VectorParamsMap {
@@ -219,8 +242,9 @@ message HnswConfigDiff {
   // Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
   // On small CPUs, less threads are used.
   optional uint64 max_indexing_threads = 4;
+  // Deprecated: use `memory` instead.
   // Store HNSW index on disk. If set to false, the index will be stored in RAM.
-  optional bool on_disk = 5;
+  optional bool on_disk = 5 [deprecated = true];
   // Number of additional payload-aware links per node in the index graph.
   // If not set - regular M parameter will be used.
   optional uint64 payload_m = 6;
@@ -229,16 +253,23 @@ message HnswConfigDiff {
   // random seeks during the search.
   // Requires quantized vectors to be enabled. Multi-vectors are not supported.
   optional bool inline_storage = 7;
+  // Memory placement of the HNSW graph.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 8;
 }
 
 message SparseIndexConfig {
   // Prefer a full scan search upto (excluding) this number of vectors.
   // Note: this is number of vectors, not KiloBytes.
   optional uint64 full_scan_threshold = 1;
+  // Deprecated: use `memory` instead.
   // Store inverted index on disk. If set to false, the index will be stored in RAM.
-  optional bool on_disk = 2;
+  optional bool on_disk = 2 [deprecated = true];
   // Datatype used to store weights in the index.
   optional Datatype datatype = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message WalConfigDiff {
@@ -325,15 +356,23 @@ message ScalarQuantization {
   QuantizationType type = 1;
   // Number of bits to use for quantization
   optional float quantile = 2;
+  // Deprecated: use `memory` instead.
   // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-  optional bool always_ram = 3;
+  optional bool always_ram = 3 [deprecated = true];
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message ProductQuantization {
   // Compression ratio
   CompressionRatio compression = 1;
+  // Deprecated: use `memory` instead.
   // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-  optional bool always_ram = 2;
+  optional bool always_ram = 2 [deprecated = true];
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 3;
 }
 
 enum BinaryQuantizationEncoding {
@@ -356,19 +395,27 @@ message BinaryQuantizationQueryEncoding {
 }
 
 message BinaryQuantization {
+  // Deprecated: use `memory` instead.
   // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-  optional bool always_ram = 1;
+  optional bool always_ram = 1 [deprecated = true];
   // Binary quantization encoding method
   optional BinaryQuantizationEncoding encoding = 2;
   // Asymmetric quantization configuration allows a query to have different
   // quantization than stored vectors.
   // It can increase the accuracy of search at the cost of performance.
   optional BinaryQuantizationQueryEncoding query_encoding = 3;
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message TurboQuantization{
-  optional bool always_ram = 1;
+  // Deprecated: use `memory` instead.
+  optional bool always_ram = 1 [deprecated = true];
   optional TurboQuantBitSize bits = 2;
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 3;
 }
 
 enum TurboQuantBitSize{
@@ -473,6 +520,14 @@ message StrictModeMultivector {
   optional uint64 max_vectors = 1;
 }
 
+// Params of the payload storage
+message PayloadStorageParams {
+  // Memory placement of the payload storage.
+  // Overrides the deprecated `on_disk_payload` flag if both are set.
+  // `Pinned` is not supported for payload storage.
+  optional Memory memory = 1;
+}
+
 message CreateCollection {
   // Name of the collection
   string collection_name = 1;
@@ -489,8 +544,9 @@ message CreateCollection {
   // Number of shards in the collection, default is 1 for standalone, otherwise
   // equal to the number of nodes. Minimum is 1
   optional uint32 shard_number = 7;
+  // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
-  optional bool on_disk_payload = 8;
+  optional bool on_disk_payload = 8 [deprecated = true];
   // Wait timeout for operation commit in seconds, if not specified - default
   // value will be supplied
   optional uint64 timeout = 9;
@@ -512,6 +568,8 @@ message CreateCollection {
   optional StrictModeConfig strict_mode_config = 17;
   // Arbitrary JSON metadata for the collection
   map<string, Value> metadata = 18;
+  // Configuration of the payload storage
+  optional PayloadStorageParams payload = 19;
 }
 
 message UpdateCollection {
@@ -563,8 +621,9 @@ message CollectionParams {
   reserved 2;
   // Number of shards in collection
   uint32 shard_number = 3;
+  // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
-  bool on_disk_payload = 4;
+  bool on_disk_payload = 4 [deprecated = true];
   // Configuration for vectors
   optional VectorsConfig vectors_config = 5;
   // Number of replicas of each shard that network tries to maintain
@@ -579,6 +638,8 @@ message CollectionParams {
   optional SparseVectorConfig sparse_vectors_config = 10;
   // Define number of milliseconds to wait before attempting to read from another replica.
   optional uint64 read_fan_out_delay_ms = 11;
+  // Configuration of the payload storage
+  optional PayloadStorageParams payload = 12;
 }
 
 message CollectionParamsDiff {
@@ -586,12 +647,15 @@ message CollectionParamsDiff {
   optional uint32 replication_factor = 1;
   // How many replicas should apply the operation for us to consider it successful
   optional uint32 write_consistency_factor = 2;
+  // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
-  optional bool on_disk_payload = 3;
+  optional bool on_disk_payload = 3 [deprecated = true];
   // Fan-out every read request to these many additional remote nodes (and return first available response)
   optional uint32 read_fan_out_factor = 4;
   // Define number of milliseconds to wait before attempting to read from another replica.
   optional uint64 read_fan_out_delay_ms = 5;
+  // Update params of the payload storage
+  optional PayloadStorageParams payload = 6;
 }
 
 message CollectionConfig {
@@ -622,14 +686,18 @@ enum TokenizerType {
 message KeywordIndexParams {
   // If true - used for tenant optimization.
   optional bool is_tenant = 1;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 2;
+  optional bool on_disk = 2 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
   // If set, enable prefix matching (`match: { "prefix": ... }`) on this field.
   optional KeywordPrefixParams prefix = 4;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 5;
 }
 
 // Prefix matching options for the keyword index. Has no options yet:
@@ -646,17 +714,22 @@ message IntegerIndexParams {
   // This option assumes that this key will be used in majority of filtered requests.
   // Default is false.
   optional bool is_principal = 3;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk. Default is false.
-  optional bool on_disk = 4;
+  optional bool on_disk = 4 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 5;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 6;
 }
 
 message FloatIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // If true - use this key to organize storage of the collection data.
   // This option assumes that this key will be used in majority of filtered requests.
   optional bool is_principal = 2;
@@ -664,15 +737,22 @@ message FloatIndexParams {
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message GeoIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 2;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 3;
 }
 
 message StopwordsSet {
@@ -691,8 +771,9 @@ message TextIndexParams {
   optional uint64 min_token_len = 3;
   // Maximal token length
   optional uint64 max_token_len = 4;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 5;
+  optional bool on_disk = 5 [deprecated = true];
   // Stopwords for the text index
   optional StopwordsSet stopwords = 6;
   // If true - support phrase matching.
@@ -706,6 +787,9 @@ message TextIndexParams {
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 10;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 11;
 }
 
 message StemmingAlgorithm {
@@ -726,17 +810,22 @@ message SnowballParams {
 message DisabledStemmer {}
 
 message BoolIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 2;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 3;
 }
 
 message DatetimeIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // If true - use this key to organize storage of the collection data.
   // This option assumes that this key will be used in majority of filtered requests.
   optional bool is_principal = 2;
@@ -744,17 +833,24 @@ message DatetimeIndexParams {
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message UuidIndexParams {
   // If true - used for tenant optimization.
   optional bool is_tenant = 1;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 2;
+  optional bool on_disk = 2 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message PayloadIndexParams {

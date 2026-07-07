@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -76,6 +80,7 @@ pub(super) async fn fixture(
                                 r#type: ScalarType::Int8,
                                 quantile: None,
                                 always_ram: None,
+                                memory: None,
                             },
                         }))
                         .with_hnsw_config(HnswConfigDiff {
@@ -118,6 +123,7 @@ pub(super) async fn fixture(
         read_fan_out_factor: None,
         read_fan_out_delay_ms: None,
         on_disk_payload: false,
+        payload: None,
     };
 
     // Optimizer config — `max_segment_size_kb` / `indexing_threshold_kb` are caller-supplied

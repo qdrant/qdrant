@@ -17,6 +17,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
+use crate::types::Memory;
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> NumericIndexInner<T>
 where
@@ -25,17 +26,15 @@ where
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        // Low-memory mode downgrades the in-RAM `Immutable` wrapper to the
-        // pure-mmap `Storage` variant at load time. Files are shared between
-        // variants; the persisted `is_on_disk` flag in `mmap_index` is
-        // untouched.
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement at load time (pinned falls back to the
+        // pure-mmap `Storage` variant). Files are shared between variants; the persisted
+        // configuration is untouched.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let Some(on_disk_index) =
             OnDiskNumericIndex::open(&MmapFs, path, populate, deleted_points)?
         else {
@@ -43,14 +42,14 @@ where
             return Ok(None);
         };
 
-        if effective_is_on_disk {
-            // Use on-disk directly
-            Ok(Some(NumericIndexInner::OnDisk(on_disk_index)))
-        } else {
+        if memory.is_heap() {
             // Load into RAM, use on-disk as backing storage
             Ok(Some(NumericIndexInner::Immutable(
                 ImmutableNumericIndex::load_from_on_disk(on_disk_index),
             )))
+        } else {
+            // Use on-disk directly
+            Ok(Some(NumericIndexInner::OnDisk(on_disk_index)))
         }
     }
 

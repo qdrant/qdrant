@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 /// Looks for segments having a mismatch between configured and actual parameters
 ///
 /// For example, a user may change the HNSW parameters for a collection. A segment that was already
@@ -43,6 +47,7 @@ mod tests {
                     .get(name)
                     .cloned()
                     .unwrap_or(DenseVectorOptimizerConfig {
+                        memory: None,
                         on_disk: None,
                         hnsw_config: HnswConfig::default(),
                         quantization_config: None,
@@ -78,7 +83,15 @@ mod tests {
             sparse_vector: segment_config
                 .sparse_vector_data
                 .keys()
-                .map(|name| (name.clone(), SparseVectorOptimizerConfig { on_disk: None }))
+                .map(|name| {
+                    (
+                        name.clone(),
+                        SparseVectorOptimizerConfig {
+                            memory: None,
+                            on_disk: None,
+                        },
+                    )
+                })
                 .collect(),
             live_vector_names: None,
         }
@@ -121,6 +134,7 @@ mod tests {
         let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config = HnswConfig {
+            memory: None,
             m: 16,
             ef_construct: 100,
             full_scan_threshold: 10,
@@ -134,6 +148,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(DEFAULT_VECTOR_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: None,
                 hnsw_config,
                 quantization_config: None,
@@ -181,6 +196,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(DEFAULT_VECTOR_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: None,
                 hnsw_config: changed_hnsw_config,
                 quantization_config: None,
@@ -267,6 +283,7 @@ mod tests {
         let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config_collection = HnswConfig {
+            memory: None,
             m: 16,
             ef_construct: 100,
             full_scan_threshold: 10,
@@ -287,6 +304,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(VECTOR1_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: Some(true),
                 hnsw_config: hnsw_config_vector1,
                 quantization_config: None,
@@ -295,6 +313,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: None,
                 hnsw_config: hnsw_config_vector2,
                 quantization_config: None,
@@ -341,6 +360,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: None,
                 hnsw_config: hnsw_config_vector2_changed,
                 quantization_config: None,
@@ -416,6 +436,7 @@ mod tests {
         let quantization_config_vector1 =
             QuantizationConfig::Scalar(segment::types::ScalarQuantization {
                 scalar: ScalarQuantizationConfig {
+                    memory: None,
                     r#type: ScalarType::Int8,
                     quantile: Some(0.99),
                     always_ram: Some(true),
@@ -442,6 +463,7 @@ mod tests {
         let quantization_config_collection =
             QuantizationConfig::Scalar(segment::types::ScalarQuantization {
                 scalar: ScalarQuantizationConfig {
+                    memory: None,
                     r#type: ScalarType::Int8,
                     quantile: Some(0.91),
                     always_ram: None,
@@ -452,6 +474,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(VECTOR1_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),
                 quantization_config: Some(quantization_config_vector1.clone()),
@@ -460,6 +483,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),
                 quantization_config: Some(quantization_config_collection.clone()),
@@ -502,6 +526,7 @@ mod tests {
         // Create changed quantization config for vector2, update it in the optimizer
         let quantization_config_vector2 = QuantizationConfig::Product(ProductQuantization {
             product: ProductQuantizationConfig {
+                memory: None,
                 compression: CompressionRatio::X32,
                 always_ram: Some(true),
             },
@@ -509,6 +534,7 @@ mod tests {
         dense_overrides.insert(
             VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
+                memory: None,
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),
                 quantization_config: Some(quantization_config_vector2.clone()),

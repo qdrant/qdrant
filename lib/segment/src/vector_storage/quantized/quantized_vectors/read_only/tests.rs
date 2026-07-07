@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -48,6 +52,7 @@ fn build_on_disk_storage(dir: &std::path::Path, rng: &mut StdRng) -> VectorStora
 
 fn scalar_config(always_ram: bool) -> QuantizationConfig {
     ScalarQuantizationConfig {
+        memory: None,
         r#type: crate::types::ScalarType::Int8,
         quantile: Some(0.99),
         always_ram: Some(always_ram),
@@ -57,6 +62,7 @@ fn scalar_config(always_ram: bool) -> QuantizationConfig {
 
 fn binary_config(always_ram: bool) -> QuantizationConfig {
     BinaryQuantizationConfig {
+        memory: None,
         always_ram: Some(always_ram),
         encoding: None,
         query_encoding: None,
@@ -66,6 +72,7 @@ fn binary_config(always_ram: bool) -> QuantizationConfig {
 
 fn product_config(always_ram: bool) -> QuantizationConfig {
     ProductQuantizationConfig {
+        memory: None,
         compression: crate::types::CompressionRatio::X4,
         always_ram: Some(always_ram),
     }
@@ -75,6 +82,7 @@ fn product_config(always_ram: bool) -> QuantizationConfig {
 fn turbo_config(always_ram: bool) -> QuantizationConfig {
     QuantizationConfig::Turbo(crate::types::TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
+            memory: None,
             always_ram: Some(always_ram),
             bits: None,
         },

@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -89,6 +93,7 @@ fn hnsw_discover_precision() {
     let payload_index_ptr = segment.payload_index.clone();
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,
@@ -217,6 +222,7 @@ fn filtered_hnsw_discover_precision() {
         .unwrap();
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,

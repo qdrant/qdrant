@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -544,6 +548,7 @@ impl Validate for super::qdrant::IntegerIndexParams {
             is_principal: _,
             on_disk: _,
             enable_hnsw: _,
+            memory: _,
         } = &self;
         validate_integer_index_params(lookup, range)
     }

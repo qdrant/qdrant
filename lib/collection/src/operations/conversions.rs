@@ -1,9 +1,14 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
 use api::conversions::json::json_path_from_proto;
 use api::grpc::conversions::{
+    convert_memory_from_proto, convert_memory_from_proto_lossy, convert_memory_to_proto,
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
     from_grpc_dist,
 };
@@ -36,7 +41,7 @@ use super::types::{
     VectorsConfigDiff,
 };
 use crate::config::{
-    CollectionParams, ShardingMethod, WalConfig, default_replication_factor,
+    CollectionParams, PayloadStorageParams, ShardingMethod, WalConfig, default_replication_factor,
     default_write_consistency_factor,
 };
 use crate::lookup::WithLookup;
@@ -241,6 +246,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         } = value;
@@ -250,6 +256,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             full_scan_threshold: full_scan_threshold.map(|v| v as usize),
             max_indexing_threads: max_indexing_threads.map(|v| v as usize),
             on_disk,
+            memory: convert_memory_from_proto_lossy(memory),
             payload_m: payload_m.map(|v| v as usize),
             inline_storage,
         }
@@ -264,6 +271,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         } = value;
@@ -273,6 +281,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             full_scan_threshold: full_scan_threshold.map(|v| v as u64),
             max_indexing_threads: max_indexing_threads.map(|v| v as u64),
             on_disk,
+            memory: convert_memory_to_proto(memory),
             payload_m: payload_m.map(|v| v as u64),
             inline_storage,
         }
@@ -294,6 +303,26 @@ impl From<api::grpc::qdrant::WalConfigDiff> for WalConfigDiff {
     }
 }
 
+impl TryFrom<api::grpc::qdrant::PayloadStorageParams> for PayloadStorageParams {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::PayloadStorageParams) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::PayloadStorageParams { memory } = value;
+        Ok(Self {
+            memory: convert_memory_from_proto(memory)?,
+        })
+    }
+}
+
+impl From<PayloadStorageParams> for api::grpc::qdrant::PayloadStorageParams {
+    fn from(value: PayloadStorageParams) -> Self {
+        let PayloadStorageParams { memory } = value;
+        Self {
+            memory: convert_memory_to_proto(memory),
+        }
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
     type Error = Status;
 
@@ -304,6 +333,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             read_fan_out_factor,
             on_disk_payload,
             read_fan_out_delay_ms,
+            payload,
         } = value;
         Ok(Self {
             replication_factor: replication_factor
@@ -322,6 +352,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             read_fan_out_factor,
             read_fan_out_delay_ms,
             on_disk_payload,
+            payload: payload.map(PayloadStorageParams::try_from).transpose()?,
         })
     }
 }
@@ -425,6 +456,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory,
             payload_m,
             inline_storage,
         } = hnsw_config;
@@ -435,6 +467,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             replication_factor,
             read_fan_out_delay_ms,
             on_disk_payload,
+            payload,
             write_consistency_factor,
             read_fan_out_factor,
             sharding_method,
@@ -502,6 +535,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         }
                     }),
                     read_fan_out_delay_ms,
+                    payload: payload.map(api::grpc::qdrant::PayloadStorageParams::from),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(m as u64),
@@ -509,6 +543,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     full_scan_threshold: Some(full_scan_threshold as u64),
                     max_indexing_threads: Some(max_indexing_threads as u64),
                     on_disk,
+                    memory: convert_memory_to_proto(memory),
                     payload_m: payload_m.map(|v| v as u64),
                     inline_storage,
                 }),
@@ -727,6 +762,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             hnsw_config,
             quantization_config,
             on_disk,
+            memory,
             datatype,
             multivector_config,
         } = vector_params;
@@ -740,6 +776,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 .map(grpc_to_segment_quantization_config)
                 .transpose()?,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
             datatype: convert_datatype_from_proto(datatype)?,
             multivector_config: multivector_config
                 .map(MultiVectorConfig::try_from)
@@ -777,11 +814,13 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
             hnsw_config,
             quantization_config,
             on_disk,
+            memory,
         } = vector_params;
         Ok(Self {
             hnsw_config: hnsw_config.map(Into::into),
             quantization_config: quantization_config.map(TryInto::try_into).transpose()?,
             on_disk,
+            memory: convert_memory_from_proto(memory)?,
         })
     }
 }
@@ -799,6 +838,7 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                     Ok(SparseIndexParams {
                         full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
                         on_disk: index_config.on_disk,
+                        memory: convert_memory_from_proto(index_config.memory)?,
                         datatype: convert_datatype_from_proto(index_config.datatype)?,
                     })
                 })
@@ -820,11 +860,13 @@ impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
                 let SparseIndexParams {
                     full_scan_threshold,
                     on_disk,
+                    memory,
                     datatype,
                 } = index_config;
                 api::grpc::qdrant::SparseIndexConfig {
                     full_scan_threshold: full_scan_threshold.map(|v| v as u64),
                     on_disk,
+                    memory: convert_memory_to_proto(memory),
                     datatype: datatype.map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
                 }
             }),
@@ -1399,6 +1441,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             hnsw_config,
             quantization_config,
             on_disk,
+            memory,
             datatype,
             multivector_config,
         } = value;
@@ -1414,6 +1457,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             hnsw_config: hnsw_config.map(HnswConfigDiff::into),
             quantization_config: quantization_config.map(QuantizationConfig::into),
             on_disk,
+            memory: convert_memory_to_proto(memory),
             datatype: datatype.map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
             multivector_config: multivector_config.map(api::grpc::qdrant::MultiVectorConfig::from),
         }
@@ -1869,6 +1913,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     let api::grpc::qdrant::CollectionParams {
                         shard_number,
                         on_disk_payload,
+                        payload,
                         vectors_config,
                         replication_factor,
                         write_consistency_factor,
@@ -1933,6 +1978,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             .map(sharding_method_from_proto)
                             .transpose()?,
                         read_fan_out_delay_ms,
+                        payload: payload.map(PayloadStorageParams::try_from).transpose()?,
                     }
                 }
             },
