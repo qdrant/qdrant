@@ -103,6 +103,35 @@ where
     (file.flusher())().unwrap();
 }
 
+/// Appending grows the underlying regular file itself, preserving existing
+/// content — verified with plain fs reads, on both local backends.
+#[test]
+fn append_grows_regular_file() {
+    fn check<Fs>(fs: &Fs, path: &Path)
+    where
+        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs::File: UniversalAppend,
+        Fs::OpenExtra: Default,
+    {
+        fs_err::write(path, b"existing ").unwrap();
+
+        let mut file = fs
+            .open(path, open_options(true), Fs::OpenExtra::default())
+            .unwrap();
+        assert_eq!(file.append(b"appended".as_slice()).unwrap(), 9);
+
+        assert_eq!(fs_err::read(path).unwrap(), b"existing appended".as_slice());
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    check(&MmapFs, &dir.path().join("mmap.dat"));
+    #[cfg(target_os = "linux")]
+    check(
+        &IoUringFs::from_context(Default::default()).unwrap(),
+        &dir.path().join("uring.dat"),
+    );
+}
+
 #[test]
 fn mmap_append_conformance() {
     let dir = tempfile::tempdir().unwrap();
