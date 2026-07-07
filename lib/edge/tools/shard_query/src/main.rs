@@ -529,7 +529,7 @@ where
 
     // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
     // them via the manifest. `prefix` is passed only as the shard's (logical) path label.
-    let shard = ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix)
+    let shard = ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, None)
         .context("failed to open read-only edge shard over object storage")?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 

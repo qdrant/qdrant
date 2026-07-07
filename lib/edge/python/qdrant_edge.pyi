@@ -254,7 +254,7 @@ class EdgeConfig:
             Union["EdgeVectorParams", Dict[str, "EdgeVectorParams"]]
         ] = None,
         sparse_vectors: Optional[Dict[str, "EdgeSparseVectorParams"]] = None,
-        on_disk_payload: bool = True,
+        on_disk_payload: Optional[bool] = None,
         hnsw_config: Optional["HnswIndexConfig"] = None,
         quantization_config: Optional[QuantizationConfigType] = None,
         optimizers: Optional["EdgeOptimizersConfig"] = None,
@@ -263,12 +263,19 @@ class EdgeConfig:
         """
         Create an EdgeConfig.
 
+        Parameters left as None are "not specified": when loading an existing shard each
+        one resolves through provided -> persisted -> derived from segments -> default,
+        so an unspecified parameter keeps the shard as it is. vectors and sparse_vectors
+        define the stored data: if provided they are validated for compatibility against
+        the existing segments, if omitted they are inherited from the shard.
+
         Args:
             vectors: Dense vector configuration. Can be a single EdgeVectorParams for
                      the default vector (name "") or a dict of name -> EdgeVectorParams.
                      Optional if sparse_vectors is provided (sparse-only config).
             sparse_vectors: Optional sparse vector configurations.
             on_disk_payload: If True, store payload on disk (mmap); otherwise in RAM.
+                             None keeps the shard's current value (defaults to on-disk).
             hnsw_config: Optional global HNSW config (used when building HNSW index).
             quantization_config: Optional global quantization config.
             optimizers: Optional optimizer settings.
@@ -290,13 +297,13 @@ class EdgeConfig:
         ...
 
     @property
-    def on_disk_payload(self) -> bool:
-        """Whether payload is stored on disk."""
+    def on_disk_payload(self) -> Optional[bool]:
+        """Whether payload is stored on disk, or None if not specified."""
         ...
 
     @property
-    def hnsw_config(self) -> "HnswIndexConfig":
-        """Global HNSW config."""
+    def hnsw_config(self) -> Optional["HnswIndexConfig"]:
+        """Global HNSW config, or None if not specified."""
         ...
 
     @property
@@ -305,8 +312,8 @@ class EdgeConfig:
         ...
 
     @property
-    def optimizers(self) -> "EdgeOptimizersConfig":
-        """Optimizer settings."""
+    def optimizers(self) -> Optional["EdgeOptimizersConfig"]:
+        """Optimizer settings, or None if not specified."""
         ...
 
     @property

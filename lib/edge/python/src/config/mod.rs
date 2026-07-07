@@ -25,13 +25,13 @@ pub struct PyEdgeConfig(pub EdgeConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=true, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None))]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None))]
     pub fn new(
         #[pyo3(from_py_with = option_edge_vectors_helper)] vectors: Option<
             HashMap<String, PyEdgeVectorParams>,
         >,
         sparse_vectors: Option<HashMap<String, PyEdgeSparseVectorParams>>,
-        on_disk_payload: bool,
+        on_disk_payload: Option<bool>,
         hnsw_config: Option<PyHnswIndexConfig>,
         quantization_config: Option<PyQuantizationConfig>,
         optimizers: Option<PyEdgeOptimizersConfig>,
@@ -52,9 +52,9 @@ impl PyEdgeConfig {
             on_disk_payload,
             vectors,
             sparse_vectors,
-            hnsw_config: hnsw_config.map(|h| h.0).unwrap_or_default(),
+            hnsw_config: hnsw_config.map(|h| h.0),
             quantization_config: quantization_config.map(QuantizationConfig::from),
-            optimizers: optimizers.map(|o| o.0).unwrap_or_default(),
+            optimizers: optimizers.map(|o| o.0),
             wal_options: None,
             max_search_threads,
         }))
@@ -71,13 +71,13 @@ impl PyEdgeConfig {
     }
 
     #[getter]
-    pub fn on_disk_payload(&self) -> bool {
+    pub fn on_disk_payload(&self) -> Option<bool> {
         self.0.on_disk_payload
     }
 
     #[getter]
-    pub fn hnsw_config(&self) -> PyHnswIndexConfig {
-        PyHnswIndexConfig(self.0.hnsw_config)
+    pub fn hnsw_config(&self) -> Option<PyHnswIndexConfig> {
+        self.0.hnsw_config.map(PyHnswIndexConfig)
     }
 
     #[getter]
@@ -86,8 +86,8 @@ impl PyEdgeConfig {
     }
 
     #[getter]
-    pub fn optimizers(&self) -> PyEdgeOptimizersConfig {
-        PyEdgeOptimizersConfig(self.0.optimizers.clone())
+    pub fn optimizers(&self) -> Option<PyEdgeOptimizersConfig> {
+        self.0.optimizers.clone().map(PyEdgeOptimizersConfig)
     }
 
     #[getter]

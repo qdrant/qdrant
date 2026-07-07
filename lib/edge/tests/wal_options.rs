@@ -147,8 +147,19 @@ fn reload_with_larger_wal_capacity_after_upsert() {
         assert_eq!(shard.info().points_count, 1);
     }
 
-    // Phase 2: reload with default 32 MiB WAL (overwrites persisted config).
-    let shard = EdgeShard::load(dir.path(), Some(default_config())).unwrap();
+    // Phase 2: reload with explicit default 32 MiB WAL options, overwriting the
+    // persisted small ones. (Leaving wal_options unspecified would keep them.)
+    let config = base_builder().wal_options(WalOptions::default()).build();
+    let shard = EdgeShard::load(dir.path(), Some(config)).unwrap();
+    assert_eq!(
+        shard
+            .config()
+            .wal_options
+            .as_ref()
+            .unwrap()
+            .segment_capacity,
+        WalOptions::default().segment_capacity,
+    );
     assert_eq!(
         shard.info().points_count,
         1,
