@@ -99,6 +99,26 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for AppendableMmapDens
     {
         self.vectors.for_each_in_batch(keys, callback)
     }
+
+    fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        let keys = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
+
+        self.vectors
+            .for_each_vector::<P, _>(keys, |(user_data, point_offset), vector| {
+                callback(
+                    user_data,
+                    point_offset,
+                    bytemuck::cast_slice(vector.as_ref()).to_vec(),
+                );
+                Ok(())
+            })
+    }
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVectorStorage<T> {
