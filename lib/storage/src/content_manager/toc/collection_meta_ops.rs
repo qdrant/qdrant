@@ -537,6 +537,10 @@ impl TableOfContent {
 
                 let transfer_key = transfer_restart.key();
 
+                // The record must exist. A restart updates the record in place, never
+                // removing it, so a missing record means a stale duplicate restart —
+                // reject it. A restart to an unchanged method is not rejected here; it
+                // is an idempotent no-op inside `restart_shard_transfer`.
                 let Some(old_transfer) = transfer::helpers::get_transfer(&transfer_key, &transfers)
                 else {
                     return Err(StorageError::bad_request(format!(
@@ -545,40 +549,68 @@ impl TableOfContent {
                     )));
                 };
 
-                if old_transfer.method == Some(transfer_restart.method) {
-                    return Err(StorageError::bad_request(format!(
-                        "Cannot restart transfer for shard {} from {} to {}, its configuration did not change",
-                        transfer_restart.shard_id, transfer_restart.from, transfer_restart.to,
-                    )));
-                }
-
-                // Abort and start transfer
-                Box::pin(self.handle_transfer(
-                    collection_id.clone(),
-                    ShardTransferOperations::Abort {
-                        transfer: transfer_restart.key(),
-                        reason: "restart transfer".into(),
-                    },
-                ))
-                .await?;
-
+                // The replacement record: preserve the old sync flag, drop
+                // to_shard_id and any filter, switch to the new method.
                 let new_transfer = ShardTransfer {
                     shard_id: transfer_restart.shard_id,
                     to_shard_id: None,
                     from: transfer_restart.from,
                     to: transfer_restart.to,
-                    sync: old_transfer.sync, // Preserve sync flag from the old transfer
+                    sync: old_transfer.sync,
                     method: Some(transfer_restart.method),
                     filter: None,
                 };
 
-                Box::pin(
-                    self.handle_transfer(
-                        collection_id,
-                        ShardTransferOperations::Start(new_transfer),
-                    ),
-                )
-                .await?;
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let transfer = new_transfer.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation =
+                            ConsensusOperations::finish_transfer(collection_id, transfer);
+
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        };
+                    }
+                };
+
+                let on_failure = {
+                    let collection_id = collection_id.clone();
+                    let transfer = new_transfer.clone();
+                    async move {
+                        if let Err(error) =
+                            proposal_sender.send(ConsensusOperations::abort_transfer(
+                                collection_id,
+                                transfer,
+                                "transmission failed",
+                            ))
+                        {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        };
+                    }
+                };
+
+                let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
+                    Some(consensus) => Box::new(consensus.clone()),
+                    None => {
+                        return Err(StorageError::service_error(
+                            "Can't handle transfer, this is a single node deployment",
+                        ));
+                    }
+                };
+
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
+                collection
+                    .restart_shard_transfer(
+                        transfer_key,
+                        new_transfer,
+                        shard_consensus,
+                        temp_dir,
+                        on_finish,
+                        on_failure,
+                    )
+                    .await?;
             }
             ShardTransferOperations::Finish(transfer) => {
                 // Validate transfer exists to prevent double handling
