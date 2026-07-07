@@ -410,13 +410,40 @@ impl Collection {
         new_state: ReplicaState,
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
-        let mut replica_set = self
-            .shards_holder
-            .read()
-            .await
-            .get_shard(shard_id)
-            .ok_or_else(|| shard_not_found_error(shard_id))?
-            .clone();
+        let replica_set = self.shards_holder.read().await.get_shard(shard_id).cloned();
+
+        let Some(mut replica_set) = replica_set else {
+            // The shard may not exist.
+            //
+            // If we set replica `Dead`, and resharding targeting this shard is in progress,
+            // then scale-up resharding abort might have dropped the shard (and this replica)
+            // but crashed before clearing resharding state. This is the only code path that
+            // might lead to this state.
+            //
+            // Finish the abort to clear the state, then return: the replica is already gone,
+            // same as the early return below once the abort drops the shard.
+
+            if new_state == ReplicaState::Dead {
+                let reshard_key = self
+                    .shards_holder
+                    .read()
+                    .await
+                    .resharding_state
+                    .read()
+                    .as_ref()
+                    .filter(|state| state.shard_id == shard_id)
+                    .map(|state| state.key());
+
+                if let Some(reshard_key) = reshard_key {
+                    self.abort_resharding(reshard_key, false, AbortReshardingScope::default())
+                        .await?;
+
+                    return Ok(());
+                }
+            }
+
+            return Err(shard_not_found_error(shard_id));
+        };
 
         log::debug!(
             "Changing shard {}:{shard_id} replica state from {:?} to {new_state:?}",
@@ -462,23 +489,21 @@ impl Collection {
             )));
         }
 
-        // Abort resharding *before* persisting the new replica state.
+        // Setting a resharding replica `Dead` aborts the resharding first, then
+        // writes `Dead` last (see `AbortReshardingScope::skip_replica` for why the
+        // abort must leave this replica untouched, and why this ordering converges
+        // on replay).
         //
-        // If we did this after the persist, a crash between the durable
-        // `replica_state.json` write and `abort_resharding` would leave
-        // `resharding_state.json` stuck `Some` on the replaying peer (a
-        // `current_state`-based gate reads `Dead` from disk on replay and
-        // skips the abort). Doing it first means a partial-apply crash
-        // either re-runs the whole entry (replica state still reads as a
-        // resharding state, gate fires, the idempotent abort re-runs) or no
-        // longer needs the abort to fire at all (resharding_state already
-        // cleared by the prior attempt). Either way, every peer converges.
+        // The trigger is the replica's own state (`is_resharding()`), not
+        // `resharding_state` alone, on purpose:
+        // - It stays true across replays: the abort skips this replica, so a crash
+        //   mid-abort re-runs the whole handler and converges.
+        // - A stale duplicate `Dead`, arriving after a new resharding started, reads
+        //   this replica as `Dead` already, so it aborts no unrelated resharding.
         //
-        // Covers both directions: up (`Resharding`) and down (`ReshardingScaleDown`).
-        // For up, `abort_resharding` drops the shard entirely; we detect the
-        // missing shard below and skip the persist. For down, the shard
-        // stays, abort just reverts the receiver back to `Active`, and the
-        // persist below overwrites that with `Dead`.
+        // Scale-up aborts drop the shard entirely (early return below); scale-down
+        // aborts keep the shard and leave this replica untouched, so `Dead` is
+        // written below.
         if new_state == ReplicaState::Dead && current_state.is_some_and(|s| s.is_resharding()) {
             let reshard_key = self
                 .shards_holder
@@ -493,8 +518,16 @@ impl Collection {
                 // Drop replica set `Arc`, so that `abort_resharding` can drop shard cleanly
                 drop(replica_set);
 
-                self.abort_resharding(reshard_key, false, AbortReshardingScope::default())
-                    .await?;
+                self.abort_resharding(
+                    reshard_key,
+                    false,
+                    AbortReshardingScope {
+                        // The abort must leave this replica untouched (see field doc).
+                        skip_replica: Some((shard_id, peer_id)),
+                        ..Default::default()
+                    },
+                )
+                .await?;
 
                 // Check if shard was dropped (when resharding up), and return early if so
                 let Some(rs) = self.shards_holder.read().await.get_shard(shard_id).cloned() else {
