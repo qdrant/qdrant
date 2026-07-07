@@ -52,9 +52,6 @@ use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::vector_storage::RawScorer;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 
-pub type LinkContainer = Vec<PointOffsetType>;
-pub type LayersContainer = Vec<LinkContainer>;
-
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
 pub const HNSW_LINKS_FILE: &str = "links.bin";

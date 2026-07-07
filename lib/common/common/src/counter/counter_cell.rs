@@ -47,12 +47,6 @@ impl CounterCell {
         self.set(self.get() + delta);
     }
 
-    /// Multiply the counters value by `amount`.
-    #[inline]
-    pub fn multiplied(&self, amount: usize) {
-        self.set(self.get() * amount)
-    }
-
     /// Resets the counter to 0.
     pub fn clear(&self) {
         self.counter.set(0);

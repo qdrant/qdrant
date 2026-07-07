@@ -8372,7 +8372,6 @@ dependencies = [
 name = "trififo"
 version = "0.0.0"
 dependencies = [
- "ahash",
  "cap",
  "criterion",
  "foyer",
