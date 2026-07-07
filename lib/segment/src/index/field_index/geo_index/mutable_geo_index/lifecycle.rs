@@ -74,14 +74,6 @@ impl MutableGeoIndex {
         }))
     }
 
-    #[expect(dead_code)] // FIXME(rocksdb): leftover after removing rocksdb
-    #[inline]
-    pub(in super::super) fn clear(&mut self) -> OperationResult<()> {
-        self.storage.clear().map_err(|err| {
-            OperationError::service_error(format!("Failed to clear mutable geo index: {err}"))
-        })
-    }
-
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
         self.storage.wipe().map_err(|err| {

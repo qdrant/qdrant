@@ -169,8 +169,4 @@ impl TableOfContent {
         }
         Ok(upload_dir)
     }
-
-    pub fn clear_all_tmp_directories(&self) -> CollectionResult<()> {
-        clear_tmp_directories(&self.storage_config)
-    }
 }

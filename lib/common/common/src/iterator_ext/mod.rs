@@ -14,7 +14,7 @@ mod fallible;
 pub mod ordering_iterator;
 pub mod stoppable_iter;
 
-pub use fallible::{FallibleIteratorExt, TransposeResultIter};
+pub use fallible::FallibleIteratorExt;
 
 pub trait IteratorExt: Iterator {
     /// Periodically check if the iteration should be stopped.

@@ -2428,23 +2428,6 @@ impl<'a> From<&'a Map<String, Value>> for OwnedPayloadRef<'a> {
     }
 }
 
-/// Payload interface structure which ensures that user is allowed to pass payload in
-/// both - array and single element forms.
-///
-/// Example:
-///
-/// Both versions should work:
-/// ```json
-/// {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
-/// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
-/// ```
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Clone)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum PayloadVariant<T> {
-    List(Vec<T>),
-    Value(T),
-}
-
 /// All possible names of payload types
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Hash, Eq, EnumIter,
