@@ -24,11 +24,11 @@ where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
-    pub fn open(
-        fs: &S::Fs,
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
         path: impl AsRef<Path>,
         options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+        extra: Fs::OpenExtra,
     ) -> universal_io::Result<Self> {
         let storage = TypedStorage::<S, T>::open(fs, path, options, extra)?;
         let inner = storage.read_whole()?[0];

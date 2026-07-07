@@ -10,7 +10,8 @@ use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite, read_json_via,
+    MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWrite,
+    read_json_via,
 };
 use fs_err as fs;
 
@@ -30,7 +31,7 @@ where
 {
     /// Open and load mmap map index from the given path
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
@@ -46,8 +47,7 @@ where
             return Ok(None);
         };
 
-        let value_to_points = UniversalHashMap::open(
-            fs,
+        let value_to_points = UniversalHashMap::from_file(fs.open(
             &hashmap_path,
             OpenOptions {
                 writeable: false,
@@ -56,14 +56,13 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?)?;
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let prefix_index = PrefixIndex::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
+        let deleted_payload_mmap = StoredBitSlice::<S>::from_file(fs.open(
             &deleted_path,
             OpenOptions {
                 writeable: false,
@@ -72,7 +71,7 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
-        )?;
+        )?)?;
 
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 

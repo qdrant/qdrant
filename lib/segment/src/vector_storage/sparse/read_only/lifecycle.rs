@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::{Populate, UniversalRead};
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::ReadOnlySparseVectorStorage;
@@ -15,7 +15,7 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
     /// creates and writes nothing. `next_point_offset` is reconstructed like the
     /// writable storage on reopen: the highest deleted id or the Gridstore
     /// pointer count, whichever is larger.
-    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
         // Sparse vector storage is not used during search
         let populate = Populate::No;
         let storage = GridstoreReader::<StoredSparseVector, S>::open(

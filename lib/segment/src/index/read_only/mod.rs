@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::types::{ScoredPointOffset, TelemetryDetail};
+use common::universal_io::UniversalReadFs;
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -61,8 +62,12 @@ pub enum VectorIndexReadEnum<S: UniversalReadExt + 'static> {
 }
 
 /// Shared read-only backends plus the `fs`/`path` an index opens its files from.
-pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalReadExt + 'static> {
-    pub fs: &'a S::Fs,
+pub struct ReadOnlyVectorIndexOpenArgs<
+    'a,
+    S: UniversalReadExt + 'static,
+    Fs: UniversalReadFs<File = S>,
+> {
+    pub fs: &'a Fs,
     pub path: &'a Path,
     pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
@@ -72,9 +77,9 @@ pub struct ReadOnlyVectorIndexOpenArgs<'a, S: UniversalReadExt + 'static> {
 
 impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     /// Open the read-only dense vector index from its config (sparse: follow-up).
-    pub fn open(
+    pub fn open<Fs: UniversalReadFs<File = S>>(
         vector_config: &VectorDataConfig,
-        args: ReadOnlyVectorIndexOpenArgs<'_, S>,
+        args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
     ) -> OperationResult<Self>
     where
         // The HNSW graph keeps its universal-IO storage handle alive behind a
@@ -111,7 +116,9 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     /// Open the read-only sparse vector index from its persisted [`SparseIndexConfig`],
     /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
     /// `MutableRam` has no read-only representation.
-    pub fn open_sparse(args: ReadOnlyVectorIndexOpenArgs<'_, S>) -> OperationResult<Self> {
+    pub fn open_sparse<Fs: UniversalReadFs<File = S>>(
+        args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
+    ) -> OperationResult<Self> {
         let ReadOnlyVectorIndexOpenArgs {
             fs,
             path,
@@ -143,9 +150,14 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             path,
         };
 
-        fn open<S: UniversalReadExt + 'static, TInvertedIndex: InvertedIndexReadOnly<S>>(
-            args: ReadOnlySparseVectorIndexOpenArgs<'_, S>,
-        ) -> OperationResult<Box<ReadOnlySparseVectorIndex<S, TInvertedIndex>>> {
+        fn open<S, Fs, TInvertedIndex>(
+            args: ReadOnlySparseVectorIndexOpenArgs<'_, S, Fs>,
+        ) -> OperationResult<Box<ReadOnlySparseVectorIndex<S, TInvertedIndex>>>
+        where
+            S: UniversalReadExt + 'static,
+            Fs: UniversalReadFs<File = S>,
+            TInvertedIndex: InvertedIndexReadOnly<S>,
+        {
             Ok(Box::new(ReadOnlySparseVectorIndex::open(args)?))
         }
 

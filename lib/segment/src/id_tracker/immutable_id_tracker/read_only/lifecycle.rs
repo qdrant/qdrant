@@ -6,7 +6,8 @@ use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
-    OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
+    OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs,
 };
 
 use super::ReadOnlyImmutableIdTracker;
@@ -27,31 +28,21 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     /// [`ImmutableIdTracker::open`]: crate::id_tracker::immutable_id_tracker::ImmutableIdTracker::open
     ///
     /// Returns `Ok(None)` when the defining `id_tracker.mappings` file is absent
-    /// (i.e. the segment is not in the immutable format). The probe reuses the
-    /// existing `open` flow, so no separate existence check is issued.
-    pub fn try_open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Option<Self>> {
-        // Probe the defining mappings file without a separate `exists` call.
-        let probe_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Global,
-        };
-        if fs
-            .open(
-                mappings_path(segment_path),
-                probe_options,
-                Default::default(),
-            )
-            .ok_not_found()?
-            .is_none()
-        {
+    /// (i.e. the segment is not in the immutable format). The probe uses
+    /// `exists`, which a caching `fs` answers from its listing snapshot — a
+    /// probe-by-open would consume the file's prefetched take-once handle
+    /// that [`Self::open`] needs right after.
+    pub fn try_open(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<Option<Self>> {
+        if !UniversalReadFileOps::exists(fs, &mappings_path(segment_path))? {
             return Ok(None);
         }
         Ok(Some(Self::open(fs, segment_path)?))
     }
 
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
         let options = OpenOptions {
             writeable: false,
             need_sequential: false,
@@ -59,17 +50,19 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
             advice: AdviceSetting::Global,
         };
 
-        let deleted =
-            StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
+        let deleted = StoredBitSlice::from_file(fs.open(
+            deleted_path(segment_path),
+            options,
+            Default::default(),
+        )?)?;
         let mut deleted_bitvec = BitVec::new();
         deleted_bitvec.extend_from_bitslice(deleted.read_all()?.as_ref());
 
-        let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
-            fs,
+        let internal_to_version_file = TypedStorage::<S, SeqNumberType>::new(fs.open(
             version_mapping_path(segment_path),
             options,
             Default::default(),
-        )?;
+        )?);
         let internal_to_version =
             CompressedVersions::from_slice(&internal_to_version_file.read_whole()?);
 

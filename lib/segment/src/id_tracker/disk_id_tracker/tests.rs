@@ -132,7 +132,8 @@ fn detect_and_load_selects_disk_format() {
     let _disk =
         DiskIdTracker::<MmapFile>::new(&MmapFs, disk_dir.path(), &versions, mappings).unwrap();
     let loaded =
-        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, disk_dir.path(), None).unwrap();
+        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, &MmapFs, disk_dir.path(), None)
+            .unwrap();
     assert_eq!(loaded.name(), "read-only disk id tracker");
     assert_read_parity(&immutable, &loaded);
 
@@ -142,14 +143,19 @@ fn detect_and_load_selects_disk_format() {
     let _imm = ImmutableIdTracker::<MmapFile>::new(&MmapFs, imm_dir.path(), &versions2, mappings2)
         .unwrap();
     let loaded =
-        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, imm_dir.path(), None).unwrap();
+        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, &MmapFs, imm_dir.path(), None)
+            .unwrap();
     assert_eq!(loaded.name(), "read-only immutable id tracker");
 
     // An empty segment (no mapping files) falls back to the appendable reader.
     let empty_dir = Builder::new().prefix("empty").tempdir().unwrap();
-    let loaded =
-        ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(&MmapFs, empty_dir.path(), None)
-            .unwrap();
+    let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(
+        &MmapFs,
+        &MmapFs,
+        empty_dir.path(),
+        None,
+    )
+    .unwrap();
     assert_eq!(loaded.name(), "read-only appendable id tracker");
 }
 

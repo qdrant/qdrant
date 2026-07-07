@@ -28,7 +28,7 @@ pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
 pub trait InvertedIndexReadOnly<S: UniversalRead>: InvertedIndex {
     /// See [`InvertedIndex::open_ro`].
-    fn open_ro_impl(fs: &S::Fs, path: &Path) -> Result<Self>;
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<Self>;
 }
 
 pub trait InvertedIndexReadWrite<S: UniversalWrite>: InvertedIndex {

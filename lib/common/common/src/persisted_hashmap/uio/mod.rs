@@ -43,13 +43,20 @@ where
     S: UniversalRead,
 {
     /// Load the hash map from file.
-    pub fn open(
-        fs: &S::Fs,
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
         path: impl AsRef<Path>,
         options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
+        extra: Fs::OpenExtra,
     ) -> Result<Self> {
-        let storage = TypedStorage::<S, u8>::open(fs, path, options, extra)?;
+        Self::from_file(fs.open(path, options, extra)?)
+    }
+
+    /// Load the hash map from an already-opened backend file (e.g. taken
+    /// from a [`CachedReadFs`](crate::universal_io::CachedReadFs) prefetch
+    /// pool).
+    pub fn from_file(file: S) -> Result<Self> {
+        let storage = TypedStorage::<S, u8>::new(file);
 
         // 1. Read header.
         let header_bytes = storage.read::<Sequential>(ReadRange {

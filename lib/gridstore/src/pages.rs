@@ -52,7 +52,12 @@ impl<S: UniversalRead> Pages<S> {
         }
     }
 
-    pub fn open(fs: &S::Fs, dir: &Path, writeable: bool, populate: Populate) -> Result<Self> {
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        writeable: bool,
+        populate: Populate,
+    ) -> Result<Self> {
         let mut pages = Self::new(dir.to_path_buf(), writeable);
 
         let page_files: HashSet<_> = fs
@@ -72,18 +77,30 @@ impl<S: UniversalRead> Pages<S> {
         Ok(pages)
     }
 
-    pub fn attach_page(&mut self, fs: &S::Fs, path: &Path, populate: Populate) -> Result<()> {
-        let options = OpenOptions {
+    pub fn attach_page<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        path: &Path,
+        populate: Populate,
+    ) -> Result<()> {
+        let page = fs.open(path, self.page_open_options(populate), Default::default())?;
+        self.attach_file(page);
+        Ok(())
+    }
+
+    /// Attach an already-opened page file. Pages must be attached in page-id
+    /// order, matching what [`Self::page_path`] maps ids to.
+    pub fn attach_file(&mut self, page: S) {
+        self.pages.push(page);
+    }
+
+    fn page_open_options(&self, populate: Populate) -> OpenOptions {
+        OpenOptions {
             writeable: self.writeable,
             need_sequential: true,
             populate,
             advice: AdviceSetting::Advice(Advice::Random),
-        };
-
-        let page = fs.open(path, options, Default::default())?;
-        self.pages.push(page);
-
-        Ok(())
+        }
     }
 
     pub fn num_pages(&self) -> usize {
