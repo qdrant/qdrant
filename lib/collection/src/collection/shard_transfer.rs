@@ -66,6 +66,36 @@ impl Collection {
             .unwrap_or(ShardTransferMethod::Snapshot)
     }
 
+    /// The initial replica state of a transfer's destination for the given
+    /// transfer `method`. For resharding transfers this depends on the current
+    /// resharding direction (up -> `Resharding`, down -> `ReshardingScaleDown`),
+    /// so it errors if no resharding is in progress.
+    async fn initial_replica_state_for_transfer(
+        &self,
+        method: ShardTransferMethod,
+    ) -> CollectionResult<ReplicaState> {
+        let initial_state = match method {
+            ShardTransferMethod::StreamRecords => ReplicaState::Partial,
+            ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => ReplicaState::Recovery,
+            ShardTransferMethod::ReshardingStreamRecords => {
+                let direction = self.resharding_state().await.map(|state| state.direction);
+
+                let Some(direction) = direction else {
+                    return Err(CollectionError::bad_input(
+                        "can't start resharding transfer, because resharding is not in progress",
+                    ));
+                };
+
+                match direction {
+                    ReshardingDirection::Up => ReplicaState::Resharding,
+                    ReshardingDirection::Down => ReplicaState::ReshardingScaleDown,
+                }
+            }
+        };
+
+        Ok(initial_state)
+    }
+
     pub async fn start_shard_transfer<T, F>(
         &self,
         mut shard_transfer: ShardTransfer,
@@ -136,28 +166,9 @@ impl Collection {
             // Checked at the top of the function — the method is always set by the
             // peer that submitted this transfer to consensus.
             let transfer_method = shard_transfer.method.expect("transfer method must be set");
-            let initial_state = match transfer_method {
-                ShardTransferMethod::StreamRecords => ReplicaState::Partial,
-
-                ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
-                    ReplicaState::Recovery
-                }
-
-                ShardTransferMethod::ReshardingStreamRecords => {
-                    let direction = self.resharding_state().await.map(|state| state.direction);
-
-                    let Some(direction) = direction else {
-                        return Err(CollectionError::bad_input(
-                            "can't start resharding transfer, because resharding is not in progress",
-                        ));
-                    };
-
-                    match direction {
-                        ReshardingDirection::Up => ReplicaState::Resharding,
-                        ReshardingDirection::Down => ReplicaState::ReshardingScaleDown,
-                    }
-                }
-            };
+            let initial_state = self
+                .initial_replica_state_for_transfer(transfer_method)
+                .await?;
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
             // (on all peers, regardless if shard is local or remote on that peer).
