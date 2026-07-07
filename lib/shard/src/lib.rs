@@ -10,6 +10,7 @@ pub mod optimizers;
 pub mod payload_index_schema;
 pub mod proxy_segment;
 pub mod query;
+pub mod resolve;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;
