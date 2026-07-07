@@ -18,7 +18,7 @@ use shard::search::CoreSearchRequestBatch;
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::collection::Collection;
-use crate::common::batching::batch_requests;
+use crate::common::batching::{batch_requests, empty_batch_results};
 use crate::common::fetch_vectors::{
     ReferencedVectors, convert_to_vectors, convert_to_vectors_owned,
     resolve_referenced_vectors_batch,
@@ -263,7 +263,7 @@ where
 
     // shortcuts batch if all requests with limit=0
     if request_batch.iter().all(|(s, _)| s.limit == 0) {
-        return Ok(vec![]);
+        return Ok(empty_batch_results(request_batch.len()));
     }
 
     // Validate amount of examples

@@ -11,7 +11,7 @@ use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
 
 use crate::collection::Collection;
-use crate::common::batching::batch_requests;
+use crate::common::batching::{batch_requests, empty_batch_results};
 use crate::common::fetch_vectors::{
     ReferencedVectors, convert_to_vectors, resolve_referenced_vectors_batch,
 };
@@ -175,7 +175,7 @@ where
     let start = std::time::Instant::now();
     // shortcuts batch if all requests with limit=0
     if request_batch.iter().all(|(s, _)| s.limit == 0) {
-        return Ok(vec![]);
+        return Ok(empty_batch_results(request_batch.len()));
     }
 
     // Validate context_pairs and/or target have value(s)
