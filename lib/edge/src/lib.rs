@@ -110,10 +110,15 @@ impl EdgeShard {
 
     /// Load an edge shard from existing files at `path`.
     ///
-    /// * If `config` is `Some`: check compatibility with loaded segments, then overwrite
-    ///   `edge_config.json` with it.
-    /// * If `config` is `None`: load config from `edge_config.json`, or infer from segments;
-    ///   check compatibility, then persist so future loads have it.
+    /// Every tunable parameter resolves through the fallback chain
+    /// **provided → persisted (`edge_config.json`) → derived from segments → default**, so a
+    /// parameter left unspecified (`None`) keeps whatever the shard already has, while an
+    /// explicitly provided value overwrites it and existing segments converge to it through the
+    /// optimizers. The resolved config is persisted to `edge_config.json`.
+    ///
+    /// `vectors` and `sparse_vectors` define the stored data and cannot be changed here: if
+    /// provided (non-empty), they are validated for compatibility against the loaded segments;
+    /// if not, they are taken from the persisted config or the segments themselves.
     ///
     /// Fails if no segments exist and no config can be loaded or inferred.
     ///
@@ -121,30 +126,40 @@ impl EdgeShard {
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
-        let mut config = resolve_initial_config(path, config)?;
+        let resolved = resolve_initial_config(path, config)?;
 
-        let wal_options = config
+        let wal_options = resolved
             .as_ref()
             .and_then(|c| c.wal_options.clone())
             .unwrap_or_default();
         let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
 
-        let mut segments = load_segments(path, &segments_path, &mut config)?;
+        let (mut segments, derived) = load_segments(&segments_path)?;
 
-        ensure_appendable_segment(
-            &mut segments,
-            path,
-            &segments_path,
-            config.as_ref().ok_or_else(|| {
-                OperationError::service_error(
+        let config = match (resolved, derived) {
+            (Some(resolved), Some(derived)) => {
+                let merged = resolved.fill_unspecified_from(&derived);
+                // The tunables converge to the merged config via the optimizers, but the vector
+                // definitions must actually match the stored data.
+                merged
+                    .check_compatible_with_segment_config(&derived.plain_segment_config())
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "config is incompatible with existing segments: {err}"
+                        ))
+                    })?;
+                merged
+            }
+            (Some(resolved), None) => resolved,
+            (None, Some(derived)) => derived,
+            (None, None) => {
+                return Err(OperationError::service_error(
                     "edge config is not provided and no segments were loaded",
-                )
-            })?,
-        )?;
+                ));
+            }
+        };
 
-        let config = config.ok_or_else(|| {
-            OperationError::service_error("edge config is not provided and no segments were loaded")
-        })?;
+        ensure_appendable_segment(&mut segments, path, &segments_path, &config)?;
 
         let search_pool = pool::build_search_pool(config.search_thread_count())?;
 
@@ -305,17 +320,22 @@ fn ensure_dirs_and_open_wal(
     Ok((wal, segments_path))
 }
 
+/// The provided → persisted layers of the config fallback chain (the derived-from-segments layer
+/// is applied by [`EdgeShard::load`] once the segments are loaded).
 fn resolve_initial_config(
     path: &Path,
     config: Option<EdgeConfig>,
 ) -> OperationResult<Option<EdgeConfig>> {
-    Ok(match config {
-        Some(c) => Some(c),
-        None => match EdgeConfig::load(path) {
-            Some(Ok(c)) => Some(c),
-            Some(Err(e)) => return Err(e),
-            None => None,
-        },
+    let persisted = match EdgeConfig::load(path) {
+        Some(Ok(c)) => Some(c),
+        Some(Err(e)) => return Err(e),
+        None => None,
+    };
+    Ok(match (config, persisted) {
+        // Provided config wins, but parameters it leaves unspecified keep their persisted values
+        (Some(provided), Some(persisted)) => Some(provided.fill_unspecified_from(&persisted)),
+        (Some(provided), None) => Some(provided),
+        (None, persisted) => persisted,
     })
 }
 
@@ -370,14 +390,18 @@ pub(crate) fn scan_segment_dirs(segments_path: &Path) -> OperationResult<HashMap
     Ok(result)
 }
 
-fn load_segments(
-    _path: &Path,
-    segments_path: &Path,
-    config: &mut Option<EdgeConfig>,
-) -> OperationResult<SegmentHolder> {
+/// Load all segments and fold their configs into a single derived [`EdgeConfig`] — the
+/// derived-from-segments layer of the config fallback chain. Segments are folded in UUID order so
+/// the derivation is deterministic, and each segment is checked for compatibility against the
+/// previously loaded ones.
+fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option<EdgeConfig>)> {
     let mut segments = SegmentHolder::default();
+    let mut derived: Option<EdgeConfig> = None;
 
-    for (segment_uuid, segment_path) in scan_segment_dirs(segments_path)? {
+    let mut segment_dirs: Vec<_> = scan_segment_dirs(segments_path)?.into_iter().collect();
+    segment_dirs.sort_unstable_by_key(|(segment_uuid, _)| *segment_uuid);
+
+    for (segment_uuid, segment_path) in segment_dirs {
         let mut segment = load_segment(&segment_path, segment_uuid, None, &AtomicBool::new(false))
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -387,16 +411,16 @@ fn load_segments(
             })?;
 
         let segment_cfg = segment.config();
-        if let Some(cfg) = config.as_ref() {
-            cfg.check_compatible_with_segment_config(segment_cfg).map_err(
-                |err| OperationError::service_error(format!(
-                    "segment {} is incompatible with provided config or previously loaded segments: {err}",
-                    segment_path.display(),
-                ))
-            )?;
-        } else {
-            *config = Some(EdgeConfig::from_segment_config(segment_cfg));
+        if let Some(acc) = derived.as_ref() {
+            acc.check_compatible_with_segment_config(segment_cfg)
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "segment {} is incompatible with previously loaded segments: {err}",
+                        segment_path.display(),
+                    ))
+                })?;
         }
+        derived = Some(EdgeConfig::fold_from_segment_config(derived, segment_cfg));
 
         segment.check_consistency_and_repair().map_err(|err| {
             OperationError::service_error(format!(
@@ -408,7 +432,7 @@ fn load_segments(
         segments.add_new(segment);
     }
 
-    Ok(segments)
+    Ok((segments, derived))
 }
 
 fn ensure_appendable_segment(

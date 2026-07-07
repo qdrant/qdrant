@@ -15,9 +15,10 @@ use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
 /// Fluent builder for [`EdgeConfig`].
 ///
-/// All fields are optional and fall back to [`EdgeConfig::default`] values
-/// at [`Self::build`] time; at minimum supply at least one dense or sparse
-/// vector via [`Self::vector`] / [`Self::sparse_vector`].
+/// All fields are optional; at minimum supply at least one dense or sparse
+/// vector via [`Self::vector`] / [`Self::sparse_vector`]. Fields left unset
+/// stay unspecified (`None`) in the built config: loading an existing shard
+/// keeps their persisted values, otherwise defaults apply.
 #[derive(Debug, Default)]
 pub struct EdgeConfigBuilder {
     on_disk_payload: Option<bool>,
@@ -113,16 +114,15 @@ impl EdgeConfigBuilder {
             wal_options,
             max_search_threads,
         } = self;
-        let defaults = EdgeConfig::default();
         EdgeConfig {
-            on_disk_payload: on_disk_payload.unwrap_or(defaults.on_disk_payload),
+            on_disk_payload,
             vectors,
             sparse_vectors,
-            hnsw_config: hnsw_config.unwrap_or(defaults.hnsw_config),
-            quantization_config: quantization_config.or(defaults.quantization_config),
-            optimizers: optimizers.unwrap_or(defaults.optimizers),
-            wal_options: wal_options.or(defaults.wal_options),
-            max_search_threads: max_search_threads.or(defaults.max_search_threads),
+            hnsw_config,
+            quantization_config,
+            optimizers,
+            wal_options,
+            max_search_threads,
         }
     }
 }

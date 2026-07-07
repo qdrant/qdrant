@@ -31,7 +31,7 @@ const VECTOR_NAME: &str = "edge-ro-test-vector";
 
 fn test_config() -> EdgeConfig {
     EdgeConfig {
-        on_disk_payload: false,
+        on_disk_payload: Some(false),
         vectors: HashMap::from([(
             VECTOR_NAME.to_string(),
             EdgeVectorParams {
@@ -45,9 +45,9 @@ fn test_config() -> EdgeConfig {
             },
         )]),
         sparse_vectors: HashMap::new(),
-        hnsw_config: Default::default(),
+        hnsw_config: None,
         quantization_config: None,
-        optimizers: Default::default(),
+        optimizers: None,
         wal_options: None,
         max_search_threads: None,
     }
@@ -83,6 +83,7 @@ fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
         MmapFs,
         path,
         LocalSegmentEnumerator::new(path),
+        None,
     )
     .unwrap()
 }
@@ -308,6 +309,63 @@ fn open_without_config_derives_from_segments() {
     assert_eq!(expected, 10);
 }
 
+/// A caller-provided config overrides tunables at open only: `vectors` still derive from the
+/// segments (so reads work with a vectors-less provided config), while [`refresh`] re-derives the
+/// config from the segments alone.
+///
+/// [`refresh`]: ReadOnlyEdgeShard::refresh
+#[test]
+fn provided_config_overrides_tunables_at_open() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-provided-config")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush();
+
+    // Tunables only — no vector params. Those must come from the segments.
+    let provided = EdgeConfig {
+        on_disk_payload: None,
+        vectors: HashMap::new(),
+        sparse_vectors: HashMap::new(),
+        hnsw_config: None,
+        quantization_config: None,
+        optimizers: None,
+        wal_options: None,
+        max_search_threads: Some(2),
+    };
+
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        dir.path(),
+        LocalSegmentEnumerator::new(dir.path()),
+        Some(provided),
+    )
+    .unwrap();
+
+    let config = follower.config_snapshot();
+    assert!(config.vectors.contains_key(VECTOR_NAME));
+    // Unspecified tunable: falls back to the segment-derived value.
+    assert_eq!(config.on_disk_payload, Some(false));
+    // Explicitly provided tunable: wins over the derived config.
+    assert_eq!(config.max_search_threads, Some(2));
+    assert_eq!(exact_count(&follower), 10);
+
+    // Refresh re-derives the config from the segments alone: the provided tunables are dropped
+    // (segments never carry `max_search_threads`), the segment-derived values remain.
+    upsert(&leader, 11..=15);
+    leader.flush();
+    follower.refresh().unwrap();
+
+    let config = follower.config_snapshot();
+    assert!(config.vectors.contains_key(VECTOR_NAME));
+    assert_eq!(config.on_disk_payload, Some(false));
+    assert_eq!(config.max_search_threads, None);
+    assert_eq!(exact_count(&follower), 15);
+}
+
 /// A [`SegmentEnumerator`] that scans the local `segments/` directory but hides a chosen UUID,
 /// standing in for a non-local enumerator (e.g. S3 / a future manifest) to exercise the injection
 /// seam: the follower must track exactly what the enumerator reports.
@@ -353,6 +411,7 @@ fn follower_uses_injected_enumerator() {
             segments_path,
             exclude: hidden,
         },
+        None,
     )
     .unwrap();
     assert_eq!(follower.segments_count(), all_segments.len() - 1);

@@ -100,11 +100,12 @@ impl EdgeShard {
         let segment_optimizer_config = cfg
             .segment_optimizer_config()
             .with_live_vector_names(live_vector_names);
-        let global_hnsw_config = cfg.hnsw_config;
+        let global_hnsw_config = cfg.hnsw_config();
+        let optimizers_config = cfg.optimizers();
         let hnsw_global_config = HnswGlobalConfig::default();
         let num_indexing_threads = max_num_indexing_threads(&segment_optimizer_config);
         let threshold_config = cfg.optimizer_thresholds(num_indexing_threads);
-        let default_segments_number = cfg.optimizers.get_number_segments();
+        let default_segments_number = optimizers_config.get_number_segments();
 
         vec![
             Arc::new(MergeOptimizer::new(
@@ -124,10 +125,10 @@ impl EdgeShard {
                 hnsw_global_config.clone(),
             )),
             Arc::new(VacuumOptimizer::new(
-                cfg.optimizers
+                optimizers_config
                     .deleted_threshold
                     .unwrap_or(DEFAULT_DELETED_THRESHOLD),
-                cfg.optimizers
+                optimizers_config
                     .vacuum_min_vector_number
                     .unwrap_or(DEFAULT_VACUUM_MIN_VECTOR_NUMBER),
                 threshold_config,
@@ -867,7 +868,7 @@ mod tests {
 
     fn test_config() -> EdgeConfig {
         EdgeConfig {
-            on_disk_payload: false,
+            on_disk_payload: Some(false),
             vectors: HashMap::from([(
                 VECTOR_NAME.to_string(),
                 EdgeVectorParams {
@@ -881,9 +882,9 @@ mod tests {
                 },
             )]),
             sparse_vectors: HashMap::new(),
-            hnsw_config: Default::default(),
+            hnsw_config: None,
             quantization_config: None,
-            optimizers: Default::default(),
+            optimizers: None,
             wal_options: None,
             max_search_threads: None,
         }
