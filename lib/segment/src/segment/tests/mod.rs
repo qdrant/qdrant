@@ -39,7 +39,7 @@ use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::JsonPath;
 use crate::segment_constructor::simple_segment_constructor::{
-    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
+    VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
@@ -557,7 +557,8 @@ fn test_point_vector_count_multivec() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
-    let mut segment = build_multivec_segment(dir.path(), dim, dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -1280,7 +1281,7 @@ fn test_vector_compatibility_checks() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut segment = build_multivec_segment(dir.path(), 4, 2, Distance::Dot).unwrap();
+    let mut segment = build_segment_with_two_named_vecs(dir.path(), 4, 2, Distance::Dot).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

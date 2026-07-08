@@ -78,7 +78,9 @@ pub fn build_simple_segment_with_payload_storage(
     .map(|(segment, _token)| segment)
 }
 
-pub fn build_multivec_segment(
+/// Builds a new segment with plain index and two named dense vectors:
+/// [`VECTOR1_NAME`] with `dim1` and [`VECTOR2_NAME`] with `dim2`.
+pub fn build_segment_with_two_named_vecs(
     path: &Path,
     dim1: usize,
     dim2: usize,

@@ -8,7 +8,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::{
-    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
+    VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs,
 };
 use segment::types::{Distance, HnswGlobalConfig};
 use segment::vector_storage::VectorStorageRead;
@@ -21,8 +21,8 @@ fn test_rebuild_with_removed_vectors() {
 
     let stopped = AtomicBool::new(false);
 
-    let mut segment1 = build_multivec_segment(dir.path(), 4, 6, Distance::Dot).unwrap();
-    let mut segment2 = build_multivec_segment(dir.path(), 4, 6, Distance::Dot).unwrap();
+    let mut segment1 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
+    let mut segment2 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
