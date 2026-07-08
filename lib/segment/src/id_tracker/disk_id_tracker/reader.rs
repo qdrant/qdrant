@@ -20,7 +20,8 @@ use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
 };
 use itertools::Itertools as _;
 use rand::distr::{Distribution as _, Uniform};
@@ -49,6 +50,38 @@ pub struct DiskMappingReader<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> DiskMappingReader<S> {
+    fn open_options() -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            // TODO(uio): files have headers, we should use Populate::BackgroundPartial
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of the `i2e`/`e2i` handles that
+    /// [`try_open`](Self::try_open) will open, without reading any bytes.
+    ///
+    /// Returns `false` (nothing scheduled) when the mapping is
+    /// not in the on-disk format.
+    pub fn try_preopen(
+        fs: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<bool> {
+        let i2e_path = i2e_path(segment_path);
+        if !UniversalReadFileOps::exists(fs, &i2e_path)? {
+            return Ok(false);
+        }
+
+        let options = Self::open_options();
+
+        fs.schedule_prefetch(&i2e_path, Some(options), None)?;
+        fs.schedule_prefetch(&e2i_path(segment_path), Some(options), None)?;
+
+        Ok(true)
+    }
+
     /// Open the `i2e`/`e2i` handles and read the headers + sparse index. No
     /// per-point data is read.
     ///
@@ -71,12 +104,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
     ) -> OperationResult<Option<Self>> {
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Global,
-        };
+        let options = Self::open_options();
 
         let Some(i2e) = fs
             .open(i2e_path(segment_path), options, Default::default())

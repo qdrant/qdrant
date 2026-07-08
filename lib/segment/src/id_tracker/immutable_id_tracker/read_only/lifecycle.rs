@@ -6,8 +6,8 @@ use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs,
+    CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
 };
 
 use super::ReadOnlyImmutableIdTracker;
@@ -19,6 +19,37 @@ use crate::id_tracker::immutable_id_tracker::versions_storage::version_mapping_p
 use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
+    fn open_options() -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::PreferBackground,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of every file [`open`](Self::open) will
+    /// read
+    ///
+    /// Returns `false` (nothing scheduled) when the segment is not in the
+    /// immutable format.
+    pub fn try_preopen(
+        fs: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<bool> {
+        if !UniversalReadFileOps::exists(fs, &mappings_path(segment_path))? {
+            return Ok(false);
+        }
+
+        let options = Self::open_options();
+
+        fs.schedule_prefetch(&deleted_path(segment_path), Some(options), None)?;
+        fs.schedule_prefetch(&version_mapping_path(segment_path), Some(options), None)?;
+        fs.schedule_prefetch(&mappings_path(segment_path), Some(options), None)?;
+
+        Ok(true)
+    }
+
     /// Open a read-only view over immutable ID tracker data at `segment_path`, threading every file
     /// open through `fs`. Read-only mirror of [`ImmutableIdTracker::open`]; it never writes.
     ///
@@ -43,12 +74,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     }
 
     pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::Blocking,
-            advice: AdviceSetting::Global,
-        };
+        let options = Self::open_options();
 
         let deleted =
             StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
