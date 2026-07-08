@@ -8,12 +8,12 @@ use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::forward_proxy_shard::{ForwardProxyShard, PreparedTransferBatch};
+use crate::shards::local_shard::LocalShard;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::Shard;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
-use crate::shards::local_shard::LocalShard;
 
 // Whitebox hook for stopping in the cancellation window after `local.take()`.
 #[cfg(test)]
@@ -23,11 +23,7 @@ static QUEUE_PROXIFY_LOCAL_AFTER_TAKE_HOOK: std::sync::Mutex<
 
 #[cfg(test)]
 fn notify_queue_proxify_local_after_take() {
-    if let Some(sender) = QUEUE_PROXIFY_LOCAL_AFTER_TAKE_HOOK
-        .lock()
-        .unwrap()
-        .take()
-    {
+    if let Some(sender) = QUEUE_PROXIFY_LOCAL_AFTER_TAKE_HOOK.lock().unwrap().take() {
         let _ = sender.send(());
     }
 }
@@ -220,7 +216,8 @@ impl ShardReplicaSet {
             Some(version) => {
                 // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
                 // Allow it to be one higher than the last index to only send new updates
-                let (first_idx, last_idx) = (_wal_lock.first_closed_index(), _wal_lock.last_index());
+                let (first_idx, last_idx) =
+                    (_wal_lock.first_closed_index(), _wal_lock.last_index());
                 if !(first_idx..=last_idx + 1).contains(&version) {
                     return Err(CollectionError::service_error(format!(
                         "Cannot create queue proxy shard from version {version} because it is out of WAL bounds ({first_idx}..={last_idx})",
@@ -712,7 +709,10 @@ mod tests {
 
     fn install_queue_proxify_local_after_take_hook(sender: oneshot::Sender<()>) {
         let mut hook = QUEUE_PROXIFY_LOCAL_AFTER_TAKE_HOOK.lock().unwrap();
-        assert!(hook.is_none(), "queue-proxify test hook is already installed");
+        assert!(
+            hook.is_none(),
+            "queue-proxify test hook is already installed"
+        );
         *hook = Some(sender);
     }
 
@@ -747,9 +747,8 @@ mod tests {
         };
 
         let payload_index_schema_file = collection_dir.path().join("payload-schema.json");
-        let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> = Arc::new(
-            SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap(),
-        );
+        let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
         let shared_config = Arc::new(RwLock::new(config));
 
         ShardReplicaSet::build(
