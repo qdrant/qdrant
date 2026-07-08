@@ -15,13 +15,14 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalIoError};
 use io_bridge::AsyncAppend;
-use object_store::ClientOptions;
 use object_store::aws::{AmazonS3, AwsAuthorizer};
 use object_store::client::{HttpClient, HttpConnector as _, HttpRequestBody, ReqwestConnector};
+use object_store::{ClientOptions, ObjectStoreExt as _};
 use url::Url;
 
 use crate::source::ObjectStoreSource;
@@ -115,7 +116,17 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
     }
 }
 
-/// Issue one signed `PutObject` request with `x-amz-write-offset-bytes`,
+/// Total attempts for one append: transient failures (connection errors,
+/// 5xx, 429) are retried with a short linear backoff, like `object_store`
+/// does for its own requests. Retrying is safe: the write offset acts as a
+/// compare-and-swap, and a conflict caused by a lost-acknowledgement
+/// attempt is reconciled in [`append_request`].
+const MAX_ATTEMPTS: u32 = 3;
+
+/// Backoff before retry attempt `n` is `n * RETRY_BACKOFF`.
+const RETRY_BACKOFF: Duration = Duration::from_millis(100);
+
+/// Issue a signed `PutObject` request with `x-amz-write-offset-bytes`,
 /// atomically growing the object at `key` by `data`. Returns the new total
 /// object size.
 async fn append_request(
@@ -130,6 +141,7 @@ async fn append_request(
         .get_credential()
         .await
         .map_err(UniversalIoError::s3)?;
+    let client = context.client()?;
 
     let mut url = context.object_url_base.clone();
     url.path_segments_mut()
@@ -138,81 +150,114 @@ async fn append_request(
         .extend(key.parts().map(|part| part.as_ref().to_string()));
 
     let data_len = data.len() as u64;
-    let mut request = http::Request::builder()
-        .method(http::Method::PUT)
-        .uri(url.as_str())
-        .header(WRITE_OFFSET_HEADER, offset.to_string())
-        .body(HttpRequestBody::from(data))
-        .expect("statically valid request parts");
 
-    // Signs all headers present on the request (including the write-offset
-    // header) plus the payload SHA-256, and adds host/date/token headers.
-    AwsAuthorizer::new(&credential, "s3", &context.region)
-        .try_authorize(&mut request, None)
-        .map_err(UniversalIoError::s3)?;
-
-    // Append operation is currently executed with a custom HTTP client, because the object_store
-    // crate does not support such operation.
+    // The request is executed with a custom HTTP client, because the
+    // object_store crate does not support the append operation.
     // See: <https://github.com/apache/arrow-rs-object-store/issues/632>
-    let response = context
-        .client()?
-        .execute(request)
-        .await
-        .map_err(UniversalIoError::s3)?;
-    let status = response.status();
+    let mut attempt = 1;
+    loop {
+        // Built and signed per attempt: the SigV4 signature embeds the
+        // request date.
+        let mut request = http::Request::builder()
+            .method(http::Method::PUT)
+            .uri(url.as_str())
+            .header(WRITE_OFFSET_HEADER, offset.to_string())
+            .body(HttpRequestBody::from(data.clone()))
+            .expect("statically valid request parts");
 
-    if status.is_success() {
-        let object_size = response
-            .headers()
-            .get(OBJECT_SIZE_HEADER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok());
+        // Signs all headers present on the request (including the
+        // write-offset header) plus the payload SHA-256, and adds
+        // host/date/token headers.
+        AwsAuthorizer::new(&credential, "s3", &context.region)
+            .try_authorize(&mut request, None)
+            .map_err(UniversalIoError::s3)?;
 
-        return match object_size {
-            Some(new_len) => Ok(new_len),
-            // At offset 0 the append is equivalent to a whole-object write,
-            // so even a store without write-offset support produced the
-            // right object.
-            None if offset == 0 => Ok(data_len),
-            // A store without write-offset support may accept the PUT as a
-            // plain PutObject — REPLACING the object with just `data`. The
-            // size header is the only success signal that distinguishes a
-            // true append (AWS and MinIO AiStor return it); treat its
-            // absence as an error instead of risking silent data loss on
-            // every subsequent append.
-            None => Err(UniversalIoError::s3(std::io::Error::other(format!(
-                "append to {key} was accepted without the {OBJECT_SIZE_HEADER} response \
-                 header; the store likely does not support write-offset appends and may \
-                 have replaced the object instead",
-            )))),
+        let response = match client.execute(request).await {
+            Ok(response) => response,
+            Err(_) if attempt < MAX_ATTEMPTS => {
+                tokio::time::sleep(RETRY_BACKOFF * attempt).await;
+                attempt += 1;
+                continue;
+            }
+            Err(err) => return Err(UniversalIoError::s3(err)),
         };
-    }
+        let status = response.status();
 
-    // Read the body for the S3 error code (best-effort).
-    let body = response.into_body().bytes().await.unwrap_or_default();
-    let body_text = String::from_utf8_lossy(&body);
+        if (status.is_server_error() || status == http::StatusCode::TOO_MANY_REQUESTS)
+            && attempt < MAX_ATTEMPTS
+        {
+            tokio::time::sleep(RETRY_BACKOFF * attempt).await;
+            attempt += 1;
+            continue;
+        }
 
-    let conflict = || UniversalIoError::AppendOffsetConflict {
-        path: PathBuf::from(key.to_string()),
-        offset,
-    };
+        if status.is_success() {
+            let object_size = response
+                .headers()
+                .get(OBJECT_SIZE_HEADER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok());
 
-    match status {
+            return match object_size {
+                Some(new_len) => Ok(new_len),
+                // At offset 0 the append is equivalent to a whole-object
+                // write, so even a store without write-offset support
+                // produced the right object.
+                None if offset == 0 => Ok(data_len),
+                // A store without write-offset support may accept the PUT
+                // as a plain PutObject — REPLACING the object with just
+                // `data`. The size header is the only success signal that
+                // distinguishes a true append (AWS and MinIO AiStor return
+                // it); treat its absence as an error instead of risking
+                // silent data loss on every subsequent append.
+                None => Err(UniversalIoError::s3(std::io::Error::other(format!(
+                    "append to {key} was accepted without the {OBJECT_SIZE_HEADER} response \
+                     header; the store likely does not support write-offset appends and may \
+                     have replaced the object instead",
+                )))),
+            };
+        }
+
+        // Read the body for the S3 error code (best-effort).
+        let body = response.into_body().bytes().await.unwrap_or_default();
+        let body_text = String::from_utf8_lossy(&body);
+
         // AWS reports a write-offset mismatch as 400 InvalidWriteOffset;
         // some S3-compatibles use 412 instead.
-        http::StatusCode::BAD_REQUEST if body_text.contains(INVALID_WRITE_OFFSET_CODE) => {
-            Err(conflict())
+        let write_offset_conflict = match status {
+            http::StatusCode::BAD_REQUEST => body_text.contains(INVALID_WRITE_OFFSET_CODE),
+            http::StatusCode::PRECONDITION_FAILED => true,
+            _ => false,
+        };
+
+        if write_offset_conflict {
+            // A conflict on a retried attempt may just mean the earlier,
+            // lost-acknowledgement attempt landed; under the single-writer
+            // contract a matching object size proves the tail is ours.
+            if attempt > 1
+                && let Ok(meta) = store.head(key).await
+                && meta.size == offset + data_len
+            {
+                return Ok(meta.size);
+            }
+
+            return Err(UniversalIoError::AppendOffsetConflict {
+                path: PathBuf::from(key.to_string()),
+                offset,
+            });
         }
-        http::StatusCode::PRECONDITION_FAILED => Err(conflict()),
-        http::StatusCode::NOT_FOUND => Err(UniversalIoError::NotFound {
-            path: PathBuf::from(key.to_string()),
-        }),
-        _ => {
-            let excerpt: String = body_text.chars().take(512).collect();
-            Err(UniversalIoError::s3(std::io::Error::other(format!(
-                "append to {key} failed with status {status}: {excerpt}",
-            ))))
-        }
+
+        return match status {
+            http::StatusCode::NOT_FOUND => Err(UniversalIoError::NotFound {
+                path: PathBuf::from(key.to_string()),
+            }),
+            _ => {
+                let excerpt: String = body_text.chars().take(512).collect();
+                Err(UniversalIoError::s3(std::io::Error::other(format!(
+                    "append to {key} failed with status {status}: {excerpt}",
+                ))))
+            }
+        };
     }
 }
 

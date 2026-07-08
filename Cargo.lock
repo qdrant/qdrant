@@ -3804,6 +3804,7 @@ dependencies = [
  "io_bridge",
  "object_store",
  "tempfile",
+ "tokio",
  "url",
 ]
 
