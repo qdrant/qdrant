@@ -168,23 +168,41 @@ fn mmap_append_requires_writeable() {
 }
 
 /// Append is the only growth path: positioned writes beyond the end-of-file
-/// keep failing with `OutOfBounds` after the file has grown via appends.
+/// keep failing with `OutOfBounds` after the file has grown via appends, on
+/// both local backends.
 #[test]
-fn mmap_write_beyond_eof_still_errors() {
+fn write_beyond_eof_still_errors() {
+    fn check<Fs>(fs: &Fs, path: &Path)
+    where
+        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs::File: UniversalAppend + UniversalWrite,
+        Fs::OpenExtra: Default,
+    {
+        fs.create(path, 0).unwrap();
+        let mut file = fs
+            .open(path, open_options(true), Fs::OpenExtra::default())
+            .unwrap();
+        assert_eq!(file.append(b"abc".as_slice()).unwrap(), 0);
+
+        // Within bounds: fine.
+        file.write(0, b"xyz".as_slice()).unwrap();
+        // Straddling and past the end-of-file: rejected.
+        let err = file.write(2, b"xy".as_slice()).unwrap_err();
+        assert!(matches!(err, UniversalIoError::OutOfBounds { .. }));
+        let err = file.write(3, b"x".as_slice()).unwrap_err();
+        assert!(matches!(err, UniversalIoError::OutOfBounds { .. }));
+        // Batched writes are bounds-checked too.
+        let err = file.write_batch([(2u64, b"xy".as_slice())]).unwrap_err();
+        assert!(matches!(err, UniversalIoError::OutOfBounds { .. }));
+    }
+
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("write_oob.dat");
-    MmapFs.create(&path, 0).unwrap();
-
-    let mut file = MmapFs.open(&path, open_options(true), ()).unwrap();
-    assert_eq!(file.append(b"abc".as_slice()).unwrap(), 0);
-
-    // Within bounds: fine.
-    file.write(0, b"xyz".as_slice()).unwrap();
-    // Straddling and past the end-of-file: rejected.
-    let err = file.write(2, b"xy".as_slice()).unwrap_err();
-    assert!(matches!(err, UniversalIoError::OutOfBounds { .. }));
-    let err = file.write(3, b"x".as_slice()).unwrap_err();
-    assert!(matches!(err, UniversalIoError::OutOfBounds { .. }));
+    check(&MmapFs, &dir.path().join("mmap.dat"));
+    #[cfg(target_os = "linux")]
+    check(
+        &IoUringFs::from_context(Default::default()).unwrap(),
+        &dir.path().join("uring.dat"),
+    );
 }
 
 /// `O_DIRECT` handles have block-aligned I/O requirements that appends of

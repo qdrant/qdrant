@@ -221,9 +221,25 @@ impl UniversalRead for IoUringFile {
         UniversalKind::IoUring
     }
 }
+/// Reject positioned writes reaching beyond `file_len`: growth is reserved
+/// for [`UniversalAppend`] on every backend — without this check, `pwrite`
+/// would silently extend the file with a zero-filled hole.
+fn check_write_bounds<T>(file_len: u64, byte_offset: ByteOffset, bytes: &[u8]) -> Result<()> {
+    let end = byte_offset.checked_add(bytes.len() as u64);
+    if end.is_none_or(|end| end > file_len) {
+        return Err(UniversalIoError::OutOfBounds {
+            start: byte_offset,
+            end: end.unwrap_or(u64::MAX),
+            elements: file_len as usize / size_of::<T>(),
+        });
+    }
+    Ok(())
+}
+
 impl UniversalWrite for IoUringFile {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let bytes = bytemuck::cast_slice(items);
+        check_write_bounds::<T>(self.file.metadata()?.len(), byte_offset, bytes)?;
         self.file.write_all_at(bytes, byte_offset)?;
         Ok(())
     }
@@ -232,6 +248,8 @@ impl UniversalWrite for IoUringFile {
         &mut self,
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
+        let file_len = self.file.metadata()?.len();
+
         let mut rt = IoUringWriteRuntime::new()?;
         let mut items = items.into_iter().peekable();
 
@@ -241,7 +259,10 @@ impl UniversalWrite for IoUringFile {
                     return Ok(None);
                 };
 
-                let entry = state.write((), self.fd(), byte_offset, bytemuck::cast_slice(items));
+                let bytes = bytemuck::cast_slice(items);
+                check_write_bounds::<T>(file_len, byte_offset, bytes)?;
+
+                let entry = state.write((), self.fd(), byte_offset, bytes);
                 Ok(Some(entry))
             })?;
 
@@ -259,6 +280,11 @@ impl UniversalWrite for IoUringFile {
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {
+        let file_lens = files
+            .iter()
+            .map(|file| Ok(file.file.metadata()?.len()))
+            .collect::<Result<Vec<_>>>()?;
+
         let mut rt = IoUringWriteRuntime::new()?;
         let mut writes = writes.into_iter().peekable();
 
@@ -275,7 +301,10 @@ impl UniversalWrite for IoUringFile {
                     }
                 })?;
 
-                let entry = state.write((), file.fd(), byte_offset, bytemuck::cast_slice(items));
+                let bytes = bytemuck::cast_slice(items);
+                check_write_bounds::<T>(file_lens[file_index], byte_offset, bytes)?;
+
+                let entry = state.write((), file.fd(), byte_offset, bytes);
                 Ok(Some(entry))
             })?;
 
