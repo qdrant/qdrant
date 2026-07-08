@@ -269,7 +269,15 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
             });
         }
 
-        // Cache bypass: the path was never scheduled, and no snapshot was taken
+        // The path was never scheduled for prefetch. If a snapshot was taken it
+        // still carries the file's size, so thread it into the open as a known
+        // length — this lets the backend skip a remote `len`/HEAD round-trip
+        // (e.g. `DiskCacheFs` opens straight into `State::Ready`). Without a
+        // snapshot this is a plain cache-bypass open.
+        let extra = match self.file_info(path) {
+            Some(info) => extra.with_known_len(info.size),
+            None => extra,
+        };
         self.fs.open(path, options, extra)
     }
 }
