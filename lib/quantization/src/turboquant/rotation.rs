@@ -67,12 +67,14 @@ impl HadamardRotation {
     }
 
     pub fn apply(&self, x: &mut [f64]) {
-        debug_assert_eq!(x.len(), self.dim);
+        // Hard assert: fail fast before the WHT mutates a wrong-length slice
+        // (the gather's own hard asserts would only fire after that).
+        assert_eq!(x.len(), self.dim);
         wht_and_gather_rounds(x, self.forward_maps.iter());
     }
 
     pub fn apply_inverse(&self, y: &mut [f64]) {
-        debug_assert_eq!(y.len(), self.dim);
+        assert_eq!(y.len(), self.dim);
         wht_and_gather_rounds(y, self.backward_maps.iter().rev());
     }
 }
