@@ -11,17 +11,26 @@ use common::universal_io::UniversalIoError;
 pub(crate) struct BridgeResponse {
     pub slot: usize,
     pub result: Result<AVec<u8, RuntimeAlign>, UniversalIoError>,
+    /// Wall-clock time the read future itself took to resolve (measured on the
+    /// worker thread, so it reflects the actual I/O latency of this request
+    /// regardless of how the caller interleaves `schedule`/`wait`).
+    pub duration: std::time::Duration,
 }
 
 impl BridgeResponse {
-    /// Build a reply for the given slot with the future's output. Provided so
-    /// the spawned task doesn't have to reach into the struct layout when
-    /// constructing the response.
+    /// Build a reply for the given slot with the future's output and the time
+    /// it took. Provided so the spawned task doesn't have to reach into the
+    /// struct layout when constructing the response.
     pub(crate) fn new(
         slot: usize,
         result: Result<AVec<u8, RuntimeAlign>, UniversalIoError>,
+        duration: std::time::Duration,
     ) -> Self {
-        Self { slot, result }
+        Self {
+            slot,
+            result,
+            duration,
+        }
     }
 }
 
