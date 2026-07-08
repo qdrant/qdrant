@@ -95,15 +95,23 @@ thread_local! {
 fn wht_and_gather_rounds<'a>(x: &mut [f64], maps: impl Iterator<Item = &'a Vec<u32>>) {
     GATHER_SCRATCH.with(|cell| {
         let mut scratch = cell.borrow_mut();
-        scratch.resize(x.len(), 0.0);
+        // Grow-only: every gather fully overwrites its destination, so the
+        // zero-fill only matters for capacity. Shrinking here would force a
+        // re-zeroing regrow on every call when a thread alternates between
+        // dims.
+        if scratch.len() < x.len() {
+            scratch.resize(x.len(), 0.0);
+        }
 
         wht_normalized_chunks(x);
 
         let mut src: &mut [f64] = x;
-        let mut dst: &mut [f64] = scratch.as_mut_slice();
+        let mut dst: &mut [f64] = &mut scratch[..src.len()];
         let mut rounds = 0;
         for map in maps {
-            gather_permuted(dst, src, map);
+            // SAFETY: `map` comes from `HadamardRotation::new`, which builds
+            // it as a permutation of `0..dim`.
+            unsafe { gather_permuted(dst, src, map) };
             wht_normalized_chunks(dst);
             std::mem::swap(&mut src, &mut dst);
             rounds += 1;
@@ -120,16 +128,21 @@ fn wht_and_gather_rounds<'a>(x: &mut [f64], maps: impl Iterator<Item = &'a Vec<u
 
 /// Out-of-place gather `dst[k] = src[map[k]]`: the materialized form of one
 /// permutation pass.
-fn gather_permuted(dst: &mut [f64], src: &[f64], map: &[u32]) {
+///
+/// # Safety
+/// `map` must only contain indices in `0..map.len()` (it is a permutation in
+/// practice); the length asserts inside then guarantee every index is in
+/// bounds for `src`.
+unsafe fn gather_permuted(dst: &mut [f64], src: &[f64], map: &[u32]) {
     // Hard asserts: the unchecked gather below would otherwise turn a
     // length-mismatched call into an out-of-bounds read.
     assert_eq!(dst.len(), src.len());
     assert_eq!(dst.len(), map.len());
     for (d, &s) in dst.iter_mut().zip(map) {
         debug_assert!((s as usize) < src.len());
-        // SAFETY: `map` is a permutation of `0..map.len()` built in
-        // `HadamardRotation::new`, and `src.len() == map.len()` is asserted
-        // above, so every index is in bounds.
+        // SAFETY: `map` only holds indices in `0..map.len()` (caller
+        // contract), and `src.len() == map.len()` is asserted above, so every
+        // index is in bounds.
         *d = unsafe { *src.get_unchecked(s as usize) };
     }
 }
@@ -393,10 +406,12 @@ mod test {
     /// `random_vector_rotation_inverse`) matches the struct API bit-for-bit
     /// and is its own inverse. Without this, a wrong seed index, a forgotten
     /// `.rev()`, or a swapped helper in either free function would slip past
-    /// `hadamard_roundtrip` (which only exercises the struct).
+    /// `hadamard_roundtrip` (which only exercises the struct). Small dims
+    /// (5, 50) pin the map path where the chunk split degenerates into
+    /// several tiny power-of-two chunks.
     #[test]
     fn static_rotation_matches_struct_and_roundtrips() {
-        for &dim in &[128, 300, 1024, 1536] {
+        for &dim in &[5, 50, 128, 300, 1024, 1536] {
             let mut rng = StdRng::seed_from_u64(7);
             let input: Vec<f64> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
 
