@@ -148,20 +148,18 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
 
     fn retrieve_raw(
         &self,
-        point_ids: &[PointIdType],
+        point_id: PointIdType,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
+    ) -> OperationResult<Option<SegmentRecordRaw>> {
         self.with_view(|view| {
             view.retrieve_raw(
-                point_ids,
+                point_id,
                 with_payload,
                 with_vector,
                 hw_counter,
-                is_stopped,
                 deferred_behavior,
             )
         })

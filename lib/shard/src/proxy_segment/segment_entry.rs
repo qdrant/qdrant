@@ -28,28 +28,6 @@ use uuid::Uuid;
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
 
-impl ProxySegment {
-    /// Shared preamble of `retrieve` and `retrieve_raw`: strip any vector
-    /// names that the proxy intends to delete or replace with a different
-    /// schema, and drop proxy-deleted points, before delegating to the
-    /// wrapped segment.
-    fn redact_and_filter_for_retrieve<'a>(
-        &self,
-        with_vector: &'a WithVector,
-        point_ids: &[PointIdType],
-    ) -> (std::borrow::Cow<'a, WithVector>, Vec<PointIdType>) {
-        let with_vector = self
-            .changed_vector_names
-            .redact_with_vector(with_vector, &self.wrapped_config);
-        let filtered_point_ids = point_ids
-            .iter()
-            .copied()
-            .filter(|id| !self.deleted_points.contains_key(id))
-            .collect();
-        (with_vector, filtered_point_ids)
-    }
-}
-
 impl ReadSegmentEntry for ProxySegment {
     fn is_proxy(&self) -> bool {
         true
@@ -285,8 +263,17 @@ impl ReadSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        let (with_vector, filtered_point_ids) =
-            self.redact_and_filter_for_retrieve(with_vector, point_ids);
+        // Strip any vector names that the proxy intends to delete or replace
+        // with a different schema, and drop proxy-deleted points, before
+        // delegating to the wrapped segment.
+        let with_vector = self
+            .changed_vector_names
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let filtered_point_ids: Vec<_> = point_ids
+            .iter()
+            .copied()
+            .filter(|id| !self.deleted_points.contains_key(id))
+            .collect();
         self.wrapped_segment.get().read().retrieve(
             &filtered_point_ids,
             with_payload,
@@ -299,21 +286,26 @@ impl ReadSegmentEntry for ProxySegment {
 
     fn retrieve_raw(
         &self,
-        point_ids: &[PointIdType],
+        point_id: PointIdType,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
-        let (with_vector, filtered_point_ids) =
-            self.redact_and_filter_for_retrieve(with_vector, point_ids);
+    ) -> OperationResult<Option<SegmentRecordRaw>> {
+        if self.deleted_points.contains_key(&point_id) {
+            return Ok(None);
+        }
+        // Strip any vector names that the proxy intends to delete or replace
+        // with a different schema, so the wrapped segment doesn't return
+        // stale data for them.
+        let with_vector = self
+            .changed_vector_names
+            .redact_with_vector(with_vector, &self.wrapped_config);
         self.wrapped_segment.get().read().retrieve_raw(
-            &filtered_point_ids,
+            point_id,
             with_payload,
             with_vector.as_ref(),
             hw_counter,
-            is_stopped,
             deferred_behavior,
         )
     }

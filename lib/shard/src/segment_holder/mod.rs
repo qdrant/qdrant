@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -25,14 +25,14 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::segment_record::RawNamedVectors;
 use segment::entry::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
 };
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf,
-    WithPayload, WithVector,
+    ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType, WithPayload, WithVector,
 };
 use smallvec::SmallVec;
 
@@ -992,12 +992,7 @@ impl SegmentHolder {
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
-        G: FnMut(
-            PointIdType,
-            &mut Vec<(VectorNameBuf, Vec<u8>)>,
-            &mut NamedVectors<'static>,
-            &mut Payload,
-        ),
+        G: FnMut(PointIdType, &mut RawNamedVectors, &mut NamedVectors<'static>, &mut Payload),
     {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
@@ -1039,25 +1034,23 @@ impl SegmentHolder {
                         // operation does not touch travel verbatim, avoiding
                         // the lossy dequantize→requantize round-trip of
                         // TurboQuant-as-datatype storages.
-                        let mut record = write_segment
+                        let record = write_segment
                             .retrieve_raw(
-                                &[point_id],
+                                point_id,
                                 &WithPayload {
                                     enable: true,
                                     payload_selector: None,
                                 },
                                 &WithVector::Bool(true),
                                 hw_counter,
-                                &AtomicBool::new(false),
                                 DeferredBehavior::WithDeferred,
                             )?
-                            .remove(&point_id)
                             .ok_or(OperationError::PointIdError {
                                 missed_point_id: point_id,
                             })?;
 
-                        let mut raw_vectors = record.vectors.take().unwrap_or_default();
-                        let mut payload = record.payload.take().unwrap_or_default();
+                        let mut raw_vectors = record.vectors.unwrap_or_default();
+                        let mut payload = record.payload.unwrap_or_default();
                         let mut updated_vectors = NamedVectors::default();
 
                         point_cow_operation(

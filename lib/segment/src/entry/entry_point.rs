@@ -102,20 +102,20 @@ pub trait ReadSegmentEntry {
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
-    /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors as
-    /// storage-native bytes ([`SegmentRecordRaw`]) to avoid a lossy round-trip
-    /// when relocating points (copy-on-write moves, shard transfer).
+    /// Single-point byte-blob analogue of [`ReadSegmentEntry::retrieve`]:
+    /// returns vectors as storage-native bytes ([`SegmentRecordRaw`]) to avoid
+    /// a lossy round-trip when relocating points (copy-on-write moves, shard
+    /// transfer).
     ///
-    /// Like `retrieve`, may return fewer records than requested and in any order.
+    /// Returns `None` if the point is not found.
     fn retrieve_raw(
         &self,
-        point_ids: &[PointIdType],
+        point_id: PointIdType,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>>;
+    ) -> OperationResult<Option<SegmentRecordRaw>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload

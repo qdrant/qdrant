@@ -678,19 +678,16 @@ fn test_retrieve_raw_dense_bytes() {
         .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
         .unwrap();
 
-    let is_stopped = AtomicBool::new(false);
-    let raw = segment
+    let record = segment
         .retrieve_raw(
-            &[7.into()],
+            7.into(),
             &WithPayload::default(),
             &true.into(),
             &hw_counter,
-            &is_stopped,
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
-
-    let record = raw.get(&7.into()).expect("point 7 must be retrieved");
+        .unwrap()
+        .expect("point 7 must be retrieved");
     let vectors = record.vectors.as_ref().expect("vectors requested");
     let (_, bytes) = vectors
         .iter()
@@ -746,19 +743,16 @@ fn test_retrieve_raw_multivec_bytes() {
         )
         .unwrap();
 
-    let is_stopped = AtomicBool::new(false);
-    let raw = segment
+    let record = segment
         .retrieve_raw(
-            &[4.into()],
+            4.into(),
             &WithPayload::default(),
             &true.into(),
             &hw_counter,
-            &is_stopped,
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
-
-    let record = raw.get(&4.into()).expect("point 4 must be retrieved");
+        .unwrap()
+        .expect("point 4 must be retrieved");
     let vectors = record.vectors.as_ref().expect("vectors requested");
     let (_, bytes) = vectors
         .iter()
@@ -811,19 +805,16 @@ fn test_retrieve_raw_sparse_bytes() {
         .upsert_point(100, 7.into(), vectors, &hw_counter)
         .unwrap();
 
-    let is_stopped = AtomicBool::new(false);
-    let raw = segment
+    let record = segment
         .retrieve_raw(
-            &[7.into()],
+            7.into(),
             &WithPayload::default(),
             &true.into(),
             &hw_counter,
-            &is_stopped,
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
-
-    let record = raw.get(&7.into()).expect("point 7 must be retrieved");
+        .unwrap()
+        .expect("point 7 must be retrieved");
     let vectors = record.vectors.as_ref().expect("vectors requested");
     let (_, bytes) = vectors
         .iter()
@@ -837,23 +828,21 @@ fn test_retrieve_raw_sparse_bytes() {
 /// Fetch one named vector of one point via `retrieve_raw`.
 fn retrieve_raw_vector(segment: &Segment, point_id: PointIdType, name: &str) -> Vec<u8> {
     let hw_counter = HardwareCounterCell::new();
-    let is_stopped = AtomicBool::new(false);
-    let raw = segment
+    let record = segment
         .retrieve_raw(
-            &[point_id],
+            point_id,
             &WithPayload::default(),
             &true.into(),
             &hw_counter,
-            &is_stopped,
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
-    let record = raw.get(&point_id).expect("point must be retrieved");
-    let vectors = record.vectors.as_ref().expect("vectors requested");
+        .unwrap()
+        .expect("point must be retrieved");
+    let vectors = record.vectors.expect("vectors requested");
     vectors
-        .iter()
+        .into_iter()
         .find(|(n, _)| n == name)
-        .map(|(_, bytes)| bytes.clone())
+        .map(|(_, bytes)| bytes)
         .expect("vector must be present")
 }
 
