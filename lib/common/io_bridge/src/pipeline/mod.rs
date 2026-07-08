@@ -67,7 +67,8 @@ where
             let (tx, rx) = PipelineInner::<U>::default_channel();
             PipelineInner::new(tx, rx)
         });
-        log::warn!(
+        log::trace!(
+            target: crate::LATENCY_LOG_TARGET,
             "schedule read for {user_data:?} of {} range {:?}",
             file.path.display(),
             range
@@ -86,7 +87,8 @@ where
             let (tx, rx) = PipelineInner::<U>::default_channel();
             PipelineInner::new(tx, rx)
         });
-        log::warn!(
+        log::trace!(
+            target: crate::LATENCY_LOG_TARGET,
             "schedule_whole read of {} from {}",
             file.path.display(),
             from
@@ -104,13 +106,14 @@ where
         let res = inner.wait()?;
 
         if let Some((u, v, took)) = res {
-            log::warn!(
+            log::trace!(
+                target: crate::LATENCY_LOG_TARGET,
                 "awaited read for {u:?} returned {} bytes in {took:?}",
                 v.len(),
             );
             Ok(Some((u, ACow::Owned(v))))
         } else {
-            log::warn!("awaited read returned None");
+            log::trace!(target: crate::LATENCY_LOG_TARGET, "awaited read returned None");
             Ok(None)
         }
     }

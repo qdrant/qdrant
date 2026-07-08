@@ -41,13 +41,33 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     }
 
     fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
-        self.runtime.block_on(self.inner.list_files(prefix_path))
+        let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+        let start_time = enabled.then(std::time::Instant::now);
+        let result = self.runtime.block_on(self.inner.list_files(prefix_path));
+        if let Some(start_time) = start_time {
+            log::trace!(
+                target: crate::LATENCY_LOG_TARGET,
+                "list_files({}) took {:?} and returned {} files",
+                prefix_path.display(),
+                start_time.elapsed(),
+                result.as_ref().map_or(0, |files| files.len()),
+            );
+        }
+        result
     }
 
     fn exists(&self, path: &Path) -> Result<bool> {
-        let start_time = std::time::Instant::now();
+        let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+        let start_time = enabled.then(std::time::Instant::now);
         let result = self.runtime.block_on(self.inner.exists(path));
-        log::warn!("exists({}) took {:?}", path.display(), start_time.elapsed());
+        if let Some(start_time) = start_time {
+            log::trace!(
+                target: crate::LATENCY_LOG_TARGET,
+                "exists({}) took {:?}",
+                path.display(),
+                start_time.elapsed(),
+            );
+        }
         result
     }
 

@@ -105,6 +105,13 @@ mod pipeline;
 mod read;
 mod runtime;
 
+/// Dedicated log target for the blob-backend latency traces emitted across this
+/// crate. All of them are `trace!` under this single target, so they are silent
+/// by default and can be toggled as one group at runtime without a rebuild — e.g.
+/// `POST /logger {"log_level": "io_bridge::latency=trace"}` or
+/// `RUST_LOG=io_bridge::latency=trace`.
+pub(crate) const LATENCY_LOG_TARGET: &str = "io_bridge::latency";
+
 #[cfg(test)]
 mod tests;
 
