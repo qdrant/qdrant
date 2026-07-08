@@ -82,6 +82,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         };
         ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_populate)?;
 
+        ReadOnlyIdTrackerEnum::preopen(fs, segment_path)?;
+
         Ok(())
     }
 

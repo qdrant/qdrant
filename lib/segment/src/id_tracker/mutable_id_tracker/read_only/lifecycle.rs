@@ -3,13 +3,37 @@ use std::path::{Path, PathBuf};
 use common::mmap::Advice::Normal;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+};
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
+use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
 use crate::id_tracker::point_mappings::PointMappings;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
+    fn open_options() -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::PreferBackground,
+            advice: AdviceSetting::Advice(Normal),
+        }
+    }
+
+    /// Schedule background prefetch of the mappings log and versions file that
+    /// [`open`](Self::open) reads via [`live_reload`](Self::live_reload).
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
+        let options = Self::open_options();
+
+        fs.schedule_prefetch(&mappings_path(segment_path), Some(options), None)?;
+        fs.schedule_prefetch(&versions_path(segment_path), Some(options), None)?;
+
+        Ok(())
+    }
+
     /// Open a read-only view over the appendable ID tracker data at `segment_path`, threading every
     /// file open through the filesystem handle `fs`.
     ///
@@ -70,12 +94,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// first read, so a missing object can instead surface as `NotFound` from a later `len`/`read`
     /// — `live_reload` tolerates that case too.
     pub(super) fn try_open(fs: &S::Fs, path: &Path) -> OperationResult<Option<S>> {
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Normal),
-        };
+        let options = Self::open_options();
         Ok(fs.open(path, options, Default::default()).ok_not_found()?)
     }
 }
