@@ -825,9 +825,17 @@ fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
         fs::remove_dir_all(&payload_index_db_backup)?;
     }
 
+    // Hoist the segment files out of the nested `files/` directory into the segment directory.
+    //
+    // Streamable snapshots historically wrap all segment files in a nested `files/` sub-directory.
+    // To allow recovering snapshots that place the files directly in the segment directory (without
+    // the `files/` wrapper), only perform the hoisting when the `files/` directory is actually
+    // present. When it is absent, the files are assumed to already be in their final location.
     let files_path = segment_path.join(SNAPSHOT_FILES_PATH);
-    utils::fs::move_all(&files_path, segment_path)?;
-    fs::remove_dir(&files_path)?;
+    if files_path.is_dir() {
+        utils::fs::move_all(&files_path, segment_path)?;
+        fs::remove_dir(&files_path)?;
+    }
 
     Ok(())
 }
