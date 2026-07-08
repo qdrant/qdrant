@@ -217,7 +217,7 @@ where
             |id, _raw_vectors, updated_vectors, old_payload| {
                 let point = points_map[&id];
                 for (name, vec) in point.get_vectors() {
-                    updated_vectors.insert(name.into(), vec.to_owned());
+                    updated_vectors.insert(VectorNameBuf::from(name), vec.to_owned());
                 }
                 if let Some(payload) = &point.payload {
                     *old_payload = payload.clone();

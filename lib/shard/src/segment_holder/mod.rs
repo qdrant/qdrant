@@ -1071,17 +1071,32 @@ impl SegmentHolder {
                         raw_vectors
                             .retain(|(name, _)| updated_vectors.get(name).is_none());
 
-                        // Byte portability requires identical vector configs on
-                        // both sides; within one shard this always holds.
+                        // Byte portability requires encoding-compatible vector
+                        // configs on both sides (size, distance, datatype,
+                        // multivector config). Segment-role fields — storage
+                        // type, index, quantization — legitimately differ
+                        // between an optimized source and an appendable
+                        // destination; `check_compatible` ignores them.
                         debug_assert!(
                             raw_vectors.iter().all(|(name, _)| {
                                 let src = write_segment.config();
                                 let dst = appendable_write_segment.config();
-                                src.vector_data.get(name) == dst.vector_data.get(name)
-                                    && src.sparse_vector_data.get(name)
-                                        == dst.sparse_vector_data.get(name)
+                                let dense = (src.vector_data.get(name), dst.vector_data.get(name));
+                                let sparse = (
+                                    src.sparse_vector_data.get(name),
+                                    dst.sparse_vector_data.get(name),
+                                );
+                                match (dense, sparse) {
+                                    ((Some(src), Some(dst)), (None, None)) => {
+                                        src.check_compatible(dst).is_ok()
+                                    }
+                                    ((None, None), (Some(src), Some(dst))) => {
+                                        src.check_compatible(dst).is_ok()
+                                    }
+                                    _ => false,
+                                }
                             }),
-                            "CoW raw move requires matching vector configs on source and destination",
+                            "CoW raw move requires encoding-compatible vector configs on source and destination",
                         );
 
                         appendable_write_segment.upsert_point_raw(

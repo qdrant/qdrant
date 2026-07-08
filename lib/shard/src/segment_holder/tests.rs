@@ -645,6 +645,103 @@ fn test_cow_move_delete_name_preserves_survivor() {
     );
 }
 
+/// A CoW move between segments whose vector configs differ only in segment
+/// role fields (storage type, index, quantization) must succeed — that is the
+/// normal shape of a move out of an optimizer-built segment into an appendable
+/// one. Only encoding-relevant fields (size, distance, datatype, multivector
+/// config) must match for raw bytes to be portable.
+///
+/// Regression test: the CoW arm's config guard compared full
+/// `VectorDataConfig` structs and panicked (debug builds) on every move out of
+/// an optimized segment.
+#[test]
+fn test_cow_move_allows_role_config_differences() {
+    use segment::types::{Indexes, VectorDataConfig, VectorStorageType};
+
+    const DIM: usize = 128;
+
+    let make_config = |storage_type: VectorStorageType| SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: DIM,
+                distance: Distance::Dot,
+                storage_type,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    // Source and destination differ in storage type only; the byte encoding
+    // (f32 dense) is identical on both sides.
+    let (mut source, _) = build_segment(
+        dir.path(),
+        &make_config(VectorStorageType::InRamChunkedMmap),
+        None,
+        true,
+    )
+    .unwrap();
+    let (destination, _) = build_segment(
+        dir.path(),
+        &make_config(VectorStorageType::ChunkedMmap),
+        None,
+        true,
+    )
+    .unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let point_id: PointIdType = 7.into();
+    let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
+    source
+        .upsert_point(
+            100,
+            point_id,
+            segment::data_types::vectors::only_default_vector(&original),
+            &hw_counter,
+        )
+        .unwrap();
+
+    // Own Arc handles, as in test_cow_move_does_not_degrade_turbo_vectors.
+    source.appendable_flag = false;
+    let source = Arc::new(RwLock::new(source));
+    let destination = Arc::new(RwLock::new(destination));
+    let mut holder = SegmentHolder::default();
+    holder.add_new_locked(LockedSegment::Original(source.clone()));
+    holder.add_new_locked(LockedSegment::Original(destination.clone()));
+
+    holder
+        .apply_points_with_conditional_move(
+            101,
+            &[point_id],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {}, // no-op: a pure move
+            &hw_counter,
+        )
+        .unwrap();
+
+    let destination = destination.read();
+    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+    match destination
+        .vector(DEFAULT_VECTOR_NAME, point_id, &hw_counter)
+        .unwrap()
+        .unwrap()
+    {
+        VectorInternal::Dense(vector) => assert_eq!(
+            vector, original,
+            "f32 dense vector must travel losslessly across role-config differences",
+        ),
+        VectorInternal::Sparse(_) | VectorInternal::MultiDense(_) => {
+            panic!("expected a dense vector")
+        }
+    }
+}
+
 #[test]
 fn test_points_deduplication() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
