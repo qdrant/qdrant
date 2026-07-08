@@ -16,6 +16,13 @@ impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
+    pub fn preopen_appendable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<bool> {
+        ReadOnlyAppendableMapIndex::<N, S>::preopen(fs, dir)
+    }
+
     /// Read-only mirror of [`MapIndex::new_gridstore`][1]: open the appendable
     /// (Gridstore-backed) map index read-only, threading every file open
     /// through the filesystem handle `fs`.

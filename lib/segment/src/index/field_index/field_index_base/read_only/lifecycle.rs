@@ -51,7 +51,9 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
 
         let preopened = match index_type.index_type {
             PayloadIndexType::KeywordIndex => match mode {
-                ReadMode::Appendable => false,
+                ReadMode::Appendable => {
+                    ReadOnlyMapIndex::<str, S>::preopen_appendable(fs, map_dir(dir, field))?
+                }
                 ReadMode::Immutable { is_on_disk } => {
                     ReadOnlyMapIndex::<str, S>::preopen_immutable(
                         fs,
