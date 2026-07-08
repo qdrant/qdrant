@@ -1951,6 +1951,9 @@ pub struct CollectionClusterInfoResponse {
     /// Resharding operations
     #[prost(message, repeated, tag = "6")]
     pub resharding_operations: ::prost::alloc::vec::Vec<ReshardingInfo>,
+    /// Time spent to process
+    #[prost(double, tag = "7")]
+    pub time: f64,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2103,10 +2106,13 @@ pub mod update_collection_cluster_setup_request {
     }
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionClusterSetupResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2145,16 +2151,22 @@ pub struct ListShardKeysRequest {
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CreateShardKeyResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct DeleteShardKeyResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
