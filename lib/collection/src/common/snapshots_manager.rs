@@ -1,10 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use common::defaults::APP_USER_AGENT;
 use common::tempfile_ext::MaybeTempPath;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
-use object_store::ObjectStoreExt;
+use http::HeaderValue;
 use object_store::aws::AmazonS3Builder;
+use object_store::{ClientOptions, ObjectStoreExt};
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -57,6 +59,10 @@ pub enum SnapshotStorageManager {
 }
 
 impl SnapshotStorageManager {
+    /// Create a snapshot storage manager from the configured backend.
+    ///
+    /// S3-compatible storage clients identify themselves with the Qdrant user
+    /// agent so object-store providers can attribute snapshot traffic.
     pub fn new(snapshots_config: &SnapshotsConfig) -> CollectionResult<Self> {
         match snapshots_config.snapshots_storage {
             SnapshotsStorageConfig::Local => {
@@ -64,6 +70,11 @@ impl SnapshotStorageManager {
             }
             SnapshotsStorageConfig::S3 => {
                 let mut builder = AmazonS3Builder::from_env();
+                // Identify Qdrant to Amazon S3 and other S3-compatible backends.
+                if let Ok(user_agent) = HeaderValue::from_str(APP_USER_AGENT.as_str()) {
+                    builder = builder
+                        .with_client_options(ClientOptions::new().with_user_agent(user_agent));
+                }
                 if let Some(s3_config) = &snapshots_config.s3_config {
                     builder = builder.with_bucket_name(&s3_config.bucket);
 
