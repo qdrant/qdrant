@@ -7645,29 +7645,12 @@
         }
       },
       "Memory": {
-        "description": "Memory placement of a component's data.\n\nData is always persisted on disk regardless of this setting; it only controls how the data is held in RAM.",
-        "oneOf": [
-          {
-            "description": "Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or components larger than RAM size. First request might be slow, but data is cached with usage.",
-            "type": "string",
-            "enum": [
-              "cold"
-            ]
-          },
-          {
-            "description": "Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be evicted if there is not enough memory and some other component's data is used more frequently.",
-            "type": "string",
-            "enum": [
-              "cached"
-            ]
-          },
-          {
-            "description": "Data is loaded in RAM and never evicted. First request is fast, but the component must fit in RAM at all times. Recommended for frequently queried small components like quantized vectors or primary indexes.",
-            "type": "string",
-            "enum": [
-              "pinned"
-            ]
-          }
+        "description": "Memory placement of a component's data.\n\nData is always persisted on disk regardless of this setting; it only controls how the data is held in RAM.\n\nOptions:\n\n* `Cold` - Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or components larger than RAM size. First request might be slow, but data is cached with usage.\n\n* `Cached` - Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be evicted if there is not enough memory and some other component's data is used more frequently.\n\n* `Pinned` - Data is loaded in RAM and never evicted. First request is fast, but the component must fit in RAM at all times. Recommended for frequently queried small components like quantized vectors or primary indexes.",
+        "type": "string",
+        "enum": [
+          "cold",
+          "cached",
+          "pinned"
         ]
       },
       "QuantizationConfig": {
