@@ -146,6 +146,17 @@ fn io_uring_append_conformance() {
     run_append_conformance(&fs, dir.path());
 }
 
+/// The durability flusher is reachable through `TypedStorage` for
+/// append-only storages too (`S: UniversalFlush`, not just `UniversalWrite`).
+#[test]
+fn typed_storage_forwards_flusher_for_append_only_storages() {
+    fn flusher_of<S: UniversalAppend>(storage: &TypedStorage<S, u8>) -> Flusher {
+        storage.flusher()
+    }
+    // Compiling against the append-only bound is the assertion.
+    let _ = flusher_of::<MmapFile>;
+}
+
 #[test]
 fn mmap_append_requires_writeable() {
     let dir = tempfile::tempdir().unwrap();

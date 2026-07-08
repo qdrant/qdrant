@@ -8,7 +8,7 @@ use bytemuck::TransparentWrapper;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalAppend,
-    UniversalKind, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    UniversalFlush, UniversalKind, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -147,11 +147,6 @@ where
     }
 
     #[inline]
-    pub fn flusher(&self) -> Flusher {
-        self.inner.flusher()
-    }
-
-    #[inline]
     pub fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
@@ -160,6 +155,18 @@ where
         T: 'a,
     {
         S::write_multi::<T>(Self::peel_slice_mut(files), writes)
+    }
+}
+
+// On `UniversalFlush` rather than `UniversalWrite` so append-only storages
+// can run their durability flusher through the wrapper too.
+impl<S, T> TypedStorage<S, T>
+where
+    S: UniversalFlush,
+{
+    #[inline]
+    pub fn flusher(&self) -> Flusher {
+        self.inner.flusher()
     }
 }
 
