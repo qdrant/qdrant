@@ -212,10 +212,9 @@ impl Collections for CollectionsService {
         )
         .await?;
 
-        let response = CollectionClusterInfoResponse {
-            time: timing.elapsed().as_secs_f64(),
-            ..result.into()
-        };
+        let mut response = CollectionClusterInfoResponse::from(result);
+        response.time = timing.elapsed().as_secs_f64();
+
         Ok(Response::new(response))
     }
 
