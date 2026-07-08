@@ -63,12 +63,29 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 }
             },
             PayloadIndexType::IntMapIndex => match mode {
-                ReadMode::Appendable => false,
-                ReadMode::Immutable { is_on_disk: _ } => false,
+                ReadMode::Appendable => ReadOnlyMapIndex::<IntPayloadType, S>::preopen_appendable(
+                    fs,
+                    map_dir(dir, field),
+                )?,
+                ReadMode::Immutable { is_on_disk } => {
+                    ReadOnlyMapIndex::<IntPayloadType, S>::preopen_immutable(
+                        fs,
+                        &map_dir(dir, field),
+                        is_on_disk,
+                    )?
+                }
             },
             PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => match mode {
-                ReadMode::Appendable => false,
-                ReadMode::Immutable { is_on_disk: _ } => false,
+                ReadMode::Appendable => {
+                    ReadOnlyMapIndex::<UuidIntType, S>::preopen_appendable(fs, map_dir(dir, field))?
+                }
+                ReadMode::Immutable { is_on_disk } => {
+                    ReadOnlyMapIndex::<UuidIntType, S>::preopen_immutable(
+                        fs,
+                        &map_dir(dir, field),
+                        is_on_disk,
+                    )?
+                }
             },
             PayloadIndexType::IntIndex => match mode {
                 ReadMode::Appendable => false,

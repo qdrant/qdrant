@@ -37,6 +37,7 @@ where
             advice: AdviceSetting::Global,
         }
     }
+
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
