@@ -7,7 +7,7 @@ use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
     ByteOffset, Flusher, IsNotFound as _, Item, Result, UniversalAppend, UniversalFlush,
-    UniversalKind, UniversalRead, UserData,
+    UniversalIoError, UniversalKind, UniversalRead, UserData,
 };
 
 use crate::fs::BlobFs;
@@ -27,6 +27,10 @@ pub struct BlobFile<A: AsyncRead> {
     pub(crate) inner: A,
     pub(crate) runtime: BridgeRuntime,
     pub(crate) path: PathBuf,
+    /// Whether this handle accepts appends. Directly-constructed handles
+    /// are writeable; [`BlobFs::open`] feeds `OpenOptions::writeable`
+    /// through [`Self::with_writeable`].
+    writeable: bool,
     /// Object size cached for [`UniversalAppend`]: the end-of-file offset
     /// this handle believes to be current. `None` until the first append
     /// (or after [`UniversalRead::reopen`]), then maintained locally under
@@ -39,12 +43,14 @@ impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
         let Self {
             runtime,
             path,
+            writeable,
             append_len,
             inner: _,
         } = self;
         f.debug_struct("BlobFile")
             .field("runtime", runtime)
             .field("path", path)
+            .field("writeable", writeable)
             .field("append_len", append_len)
             .finish_non_exhaustive()
     }
@@ -56,8 +62,15 @@ impl<A: AsyncRead> BlobFile<A> {
             inner,
             runtime,
             path: path.into(),
+            writeable: true,
             append_len: None,
         }
+    }
+
+    /// Set whether this handle accepts appends.
+    pub fn with_writeable(mut self, writeable: bool) -> Self {
+        self.writeable = writeable;
+        self
     }
 
     /// Build the backend handle from its config and pin it to `path`. Performs
@@ -194,6 +207,13 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
     }
 
     fn append_bytes(&mut self, data: Bytes) -> Result<ByteOffset> {
+        if !self.writeable {
+            return Err(UniversalIoError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "append requires a handle opened with writeable=true",
+            )));
+        }
+
         let offset = self.append_offset()?;
         if data.is_empty() {
             return Ok(offset);
@@ -601,6 +621,23 @@ mod tests {
         first.reopen().unwrap();
         assert_eq!(first.append(b"ccc".as_slice()).unwrap(), 6);
         assert_eq!(source.content().unwrap(), b"aaabbbccc");
+    }
+
+    #[test]
+    fn append_requires_writeable_open() {
+        let fs = BlobFs::new(MutableMockSource::default(), BridgeRuntime::global());
+        let mut file = fs
+            .open(
+                "obj",
+                OpenOptions {
+                    writeable: false,
+                    ..OpenOptions::new_for_test()
+                },
+                (),
+            )
+            .unwrap();
+
+        assert!(file.append(b"x".as_slice()).is_err());
     }
 
     #[test]

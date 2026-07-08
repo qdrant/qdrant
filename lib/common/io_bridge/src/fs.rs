@@ -105,16 +105,17 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
     type File = BlobFile<A>;
     type OpenExtra = ();
 
+    /// Open a per-object handle. Blob handles have no other open-time knobs:
+    /// of [`OpenOptions`], only `writeable` is honored (it gates appends).
     fn open(
         &self,
         path: impl AsRef<Path>,
-        _options: OpenOptions,
+        options: OpenOptions,
         _extra: (),
     ) -> Result<BlobFile<A>> {
-        Ok(BlobFile::new(
-            self.inner.clone(),
-            self.runtime.clone(),
-            path.as_ref(),
-        ))
+        Ok(
+            BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
+                .with_writeable(options.writeable),
+        )
     }
 }

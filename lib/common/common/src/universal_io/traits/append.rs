@@ -30,9 +30,8 @@ use crate::universal_io::{ByteOffset, Result};
 ///   the operation may have durably completed (a lost acknowledgement, or a
 ///   cache layer failing after its remote committed). [`reopen`] and
 ///   re-check the length before retrying, or the retry may duplicate data.
-/// - Requires a handle opened with `writeable: true` where the backend
-///   enforces open modes. Not supported on `prevent_caching` (`O_DIRECT`)
-///   handles.
+/// - Requires a handle opened with `writeable: true`. Not supported on
+///   `prevent_caching` (`O_DIRECT`) handles.
 /// - Appending no bytes is a no-op returning the current end-of-file offset.
 /// - Returned offsets are plain byte offsets; no `T`-alignment of the
 ///   returned offset is guaranteed — record framing is the caller's concern.
