@@ -1607,6 +1607,8 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
                 .flatten()
                 .map(ReshardingInfo::into)
                 .collect(),
+            // Overwritten with the real processing time by the API handler
+            time: 0.0,
         }
     }
 }
