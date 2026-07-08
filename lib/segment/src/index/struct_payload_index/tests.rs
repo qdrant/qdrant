@@ -10,14 +10,20 @@ use tempfile::Builder;
 use uuid::Uuid;
 
 use crate::data_types::vectors::only_default_vector;
-use crate::entry::{NonAppendableSegmentEntry, SegmentEntry};
+use crate::entry::{
+    NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
+};
+use crate::index::PayloadIndexRead;
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadConfig, PayloadIndexType,
 };
 use crate::json_path::JsonPath;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-use crate::types::{Distance, Payload, PayloadFieldSchema, PayloadSchemaType};
+use crate::types::{
+    Condition, Distance, FieldCondition, Filter, Match, Payload, PayloadFieldSchema,
+    PayloadSchemaType, ValueVariants,
+};
 
 #[test]
 fn test_load_payload_index() {
@@ -53,6 +59,10 @@ fn test_load_payload_index() {
                 &HardwareCounterCell::new(),
             )
             .unwrap();
+
+        // Config persistence is deferred to the flush pipeline; flush so the
+        // on-disk config below lists the freshly created index.
+        segment.flush(true).unwrap();
 
         segment.segment_path.clone()
     };
@@ -94,6 +104,74 @@ fn test_load_payload_index() {
 
     let schema = payload_config.indices.get(&key).unwrap();
     assert!(check_index_types(&schema.types));
+}
+
+/// Failure-direction regression test for the payload index inconsistency fixed by
+/// deferring config persistence into the flush pipeline: an index built while a
+/// payload change was still pending must be rebuilt when `CreateFieldIndex` is
+/// re-applied (WAL replay) after a restart lost that pending change. With the config
+/// saved synchronously at build time, the re-application hit `AlreadyBuilt` and the
+/// resurrected row stayed invisible to filtered reads forever.
+#[test]
+fn create_field_index_replay_covers_rows_resurrected_by_lost_flush() {
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let key = JsonPath::from_str("name").unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    let payload: Payload = serde_json::from_str(r#"{ "name": "John Doe" }"#).unwrap();
+
+    let segment_path = {
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        segment
+            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+            .unwrap();
+        segment
+            .set_full_payload(2, 0.into(), &payload, &hw_counter)
+            .unwrap();
+        segment.flush(true).unwrap();
+
+        // Pending payload clear: never flushed, lost at the "crash" below.
+        segment.clear_payload(3, 0.into(), &hw_counter).unwrap();
+
+        // The build correctly omits the cleared row.
+        segment
+            .create_field_index(4, &key, Some(&schema), &hw_counter)
+            .unwrap();
+
+        segment.segment_path.clone()
+        // Dropped without a flush: everything after the explicit flush is lost.
+    };
+
+    let mut segment = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false))
+        .expect("segment must load after simulated crash");
+
+    // The clear was pending only: the durable payload row resurrected.
+    let resurrected = segment.payload(0.into(), &hw_counter).unwrap();
+    assert!(
+        resurrected.0.contains_key("name"),
+        "the unflushed payload clear must be lost on reload",
+    );
+
+    // WAL replay re-applies the CreateFieldIndex op; it must rebuild over the
+    // resurrected row instead of trusting a prematurely persisted config.
+    segment
+        .create_field_index(4, &key, Some(&schema), &hw_counter)
+        .unwrap();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        key,
+        Match::new_value(ValueVariants::String("John Doe".to_string())),
+    )));
+    let hits = segment
+        .payload_index
+        .borrow()
+        .with_view(|view| view.query_points(&filter, &hw_counter, &AtomicBool::new(false)))
+        .unwrap();
+    assert_eq!(
+        hits,
+        vec![0],
+        "the field index must cover the resurrected payload row",
+    );
 }
 
 #[test]

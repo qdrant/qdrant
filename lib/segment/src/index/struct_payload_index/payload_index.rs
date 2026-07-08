@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -57,7 +58,9 @@ impl PayloadIndex for StructPayloadIndex {
             PayloadFieldSchemaWithIndexType::new(payload_schema, index_types),
         );
 
-        self.save_config()?;
+        // Persistence of the config is deferred to the flush pipeline: see
+        // `mark_config_dirty` for the durability invariant this preserves.
+        self.mark_config_dirty();
 
         Ok(())
     }
@@ -104,7 +107,10 @@ impl PayloadIndex for StructPayloadIndex {
             }
         }
 
-        self.save_config()?;
+        // Deferred to the flush pipeline (see `mark_config_dirty`). If a crash leaves
+        // the durable config still listing this field with its files wiped, the load
+        // path rebuilds it from payload and WAL replay re-applies the drop.
+        self.mark_config_dirty();
 
         Ok(is_removed)
     }
@@ -236,6 +242,15 @@ impl PayloadIndex for StructPayloadIndex {
         }
         let payload_flusher = self.payload.borrow().flusher();
 
+        // Config persistence rides the flush pipeline, after the index data it
+        // describes (see `mark_config_dirty` for the durability invariant). The
+        // snapshot is captured together with the field flushers, so what gets
+        // written always describes data flushed in this (or an earlier) cycle.
+        let config_snapshot = self.config.clone();
+        let config_gen = self.config_gen;
+        let persisted_config_gen = Arc::clone(&self.persisted_config_gen);
+        let config_path = self.config_path();
+
         Box::new(move || {
             for flusher in field_flushers {
                 match flusher() {
@@ -253,6 +268,17 @@ impl PayloadIndex for StructPayloadIndex {
                 }
             }
             payload_flusher()?;
+
+            {
+                let mut persisted_gen = persisted_config_gen.lock();
+                // `>` (not `>=`): skips rewrites when nothing changed and stops a
+                // stale flusher from overwriting a newer persisted config.
+                if config_gen > *persisted_gen {
+                    config_snapshot.save(&config_path)?;
+                    *persisted_gen = config_gen;
+                }
+            }
+
             Ok(())
         })
     }

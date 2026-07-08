@@ -5,6 +5,7 @@ use super::StructPayloadIndex;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::BuildIndexResult;
+use crate::index::field_index::index_selector::wipe_field_dirs;
 use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait as _};
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{PayloadContainer, PayloadFieldSchema, PayloadKeyTypeRef};
@@ -16,6 +17,12 @@ impl StructPayloadIndex {
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
+        // Start from a clean slate: leftover files from a build whose config entry
+        // never became durable (or from an index that failed to load) would be
+        // opened by the appendable builders and leak stale postings into the
+        // fresh build.
+        wipe_field_dirs(&self.path, field)?;
+
         let payload_storage = self.payload.borrow();
         let id_tracker_borrow = self.id_tracker.borrow();
         let selector = self.selector(payload_schema);

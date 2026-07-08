@@ -1381,9 +1381,9 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
             .set_indexed(&field, FieldType(PayloadSchemaType::Bool), &hw_counter)
             .unwrap();
 
-        for field_index in index.field_indexes.get(&field).unwrap() {
-            field_index.flusher()().unwrap();
-        }
+        // The full flusher, not per-field storage flushers: config persistence
+        // (which the reopen below relies on) rides the flush pipeline.
+        index.flusher()().unwrap();
     }
 
     let payload_storage = Arc::new(AtomicRefCell::new(InMemoryPayloadStorage::default().into()));
@@ -1443,9 +1443,9 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
             .set_indexed(&field, FieldType(Keyword), &hw_counter)
             .unwrap();
 
-        for field_index in index.field_indexes.get(&field).unwrap() {
-            field_index.flusher()().unwrap();
-        }
+        // The full flusher, not per-field storage flushers: config persistence
+        // (which the reopen below relies on) rides the flush pipeline.
+        index.flusher()().unwrap();
     }
 
     // Reopen with a fresh (empty) payload storage — same pattern as the bool

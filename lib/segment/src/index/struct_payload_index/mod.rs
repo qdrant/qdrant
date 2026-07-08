@@ -54,6 +54,13 @@ pub struct StructPayloadIndex {
     pub(super) visited_pool: VisitedPool,
     /// Desired storage type for payload indices, used in builder to pick correct type
     storage_type: StorageType,
+    /// Bumped on every in-memory `config` mutation (index created/dropped). Paired with
+    /// [`Self::persisted_config_gen`] so the flusher writes the config file only when it
+    /// changed, and a stale (earlier-captured) flusher never overwrites a newer persisted
+    /// config.
+    config_gen: u64,
+    /// Generation of the config that was last persisted by a flusher.
+    persisted_config_gen: Arc<parking_lot::Mutex<u64>>,
 }
 
 impl StructPayloadIndex {
@@ -64,6 +71,20 @@ impl StructPayloadIndex {
     pub(super) fn save_config(&self) -> OperationResult<()> {
         let config_path = self.config_path();
         self.config.save(&config_path)
+    }
+
+    /// Record an in-memory config mutation (index created or dropped) for deferred
+    /// persistence by the flusher.
+    ///
+    /// The config file must never durably list an index whose data (and the payload
+    /// state it was built from) is not itself durable: WAL replay of `CreateFieldIndex`
+    /// short-circuits on `AlreadyBuilt` when the config lists the field, skipping the
+    /// rebuild that re-derives postings for rows replay resurrects. Persisting the
+    /// config inside the flush pipeline (after the index data, before the segment
+    /// version) keeps config, index data, payload state, and version mutually
+    /// consistent at every crash point.
+    pub(super) fn mark_config_dirty(&mut self) {
+        self.config_gen += 1;
     }
 
     fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
@@ -172,6 +193,9 @@ impl StructPayloadIndex {
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
             log::debug!("Rebuilding payload index for field `{field}`...");
+            // Close any partially-loaded index storages first: the rebuild wipes
+            // their directories before building fresh.
+            indexes.clear();
             indexes = self.build_field_indexes(
                 field,
                 &payload_schema.schema,
@@ -217,6 +241,8 @@ impl StructPayloadIndex {
             path: path.to_owned(),
             visited_pool: Default::default(),
             storage_type,
+            config_gen: 0,
+            persisted_config_gen: Arc::new(parking_lot::Mutex::new(0)),
         };
 
         if !index.config_path().exists() {

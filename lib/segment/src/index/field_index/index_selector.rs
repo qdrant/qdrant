@@ -564,6 +564,27 @@ impl IndexSelector<'_> {
     }
 }
 
+/// Remove all on-disk leftovers of `field`'s indexes under the payload index root `dir`.
+///
+/// A full rebuild must start from a clean slate: files can be left behind by a build
+/// whose config entry never became durable (config persistence is deferred to the
+/// flush pipeline) or by an index that failed to load. Appendable builders open
+/// existing storages, so leftovers would leak stale postings into the fresh build.
+pub(crate) fn wipe_field_dirs(dir: &Path, field: &JsonPath) -> std::io::Result<()> {
+    for candidate in [
+        map_dir(dir, field),
+        numeric_dir(dir, field),
+        text_dir(dir, field),
+        bool_dir(dir, field),
+        null_dir(dir, field),
+    ] {
+        if candidate.exists() {
+            fs_err::remove_dir_all(&candidate)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn map_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-map", field.filename()))
 }
