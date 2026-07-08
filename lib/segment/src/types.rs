@@ -1714,22 +1714,36 @@ where
 ///
 /// Data is always persisted on disk regardless of this setting; it only controls
 /// how the data is held in RAM.
+///
+/// Options:
+///
+/// * `Cold` - Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
+///   components larger than RAM size. First request might be slow, but data is cached with
+///   usage.
+///
+/// * `Cached` - Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be
+///   evicted if there is not enough memory and some other component's data is used more
+///   frequently.
+/// 
+/// * `Pinned` - Data is loaded in RAM and never evicted. First request is fast, but the component must
+///   fit in RAM at all times. Recommended for frequently queried small components like
+///   quantized vectors or primary indexes.
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Memory {
-    /// Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
-    /// components larger than RAM size. First request might be slow, but data is cached with
-    /// usage.
+    // Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
+    // components larger than RAM size. First request might be slow, but data is cached with
+    // usage.
     Cold,
-    /// Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be
-    /// evicted if there is not enough memory and some other component's data is used more
-    /// frequently.
+    // Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be
+    // evicted if there is not enough memory and some other component's data is used more
+    // frequently.
     Cached,
-    /// Data is loaded in RAM and never evicted. First request is fast, but the component must
-    /// fit in RAM at all times. Recommended for frequently queried small components like
-    /// quantized vectors or primary indexes.
+    // Data is loaded in RAM and never evicted. First request is fast, but the component must
+    // fit in RAM at all times. Recommended for frequently queried small components like
+    // quantized vectors or primary indexes.
     Pinned,
 }
 
