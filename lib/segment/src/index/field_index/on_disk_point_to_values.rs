@@ -8,7 +8,9 @@ use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
+};
 use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -97,6 +99,15 @@ where
     T: StoredValue + ?Sized,
     S: UniversalRead,
 {
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
     pub fn build_from_iter<'a>(
         path: &Path,
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = &'a T>)> + Clone,
@@ -161,12 +172,25 @@ where
         Ok(())
     }
 
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        let file_name = dir.join(POINT_TO_VALUES_PATH);
+
+        // TODO(uio): Turn Populate::No into Populate::BackgroundPartial(0..header_size)
+        fs.schedule_prefetch(&file_name, Some(Self::open_options(populate)), None)?;
+
+        Ok(())
+    }
+
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
-        path: &Path,
+        dir: &Path,
         populate: Populate,
     ) -> OperationResult<Self> {
-        let file_name = path.join(POINT_TO_VALUES_PATH);
+        let file_name = dir.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
             writeable: false,

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use gridstore::Blob;
 
 use super::super::MapIndexKey;
@@ -34,6 +34,18 @@ where
         Ok(ReadOnlyAppendableMapIndex::open(fs, dir)?.map(Self::Appendable))
     }
 
+    pub fn preopen_immutable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: &Path,
+        is_on_disk: bool,
+    ) -> OperationResult<bool> {
+        let populate = match is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
+        OnDiskMapIndex::<N, S>::preopen(fs, dir, populate)
+    }
+
     /// Read-only mirror of [`MapIndex::new_mmap`][1]: open the immutable
     /// (mmap-format) map index read-only through [`UniversalMapIndex::open`],
     /// threading every file open through the filesystem handle `fs`.
@@ -55,7 +67,10 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
         let Some(on_disk_index) = OnDiskMapIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
