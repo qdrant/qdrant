@@ -133,6 +133,10 @@ impl Segment {
     /// are storage-native bytes (the `retrieve_raw` form). Semantics are the
     /// same — named vectors not present in `vectors` are deleted.
     ///
+    /// Unlike its decoded twin, `internal_id` may also be a fresh id one past
+    /// the current end: the raw insert paths reuse this loop and the storages
+    /// grow as needed.
+    ///
     /// # Warning
     ///
     /// Available for appendable segments only.
@@ -168,12 +172,7 @@ impl Segment {
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
-        for (vector_name, vector_data) in self.vector_data.iter_mut() {
-            let bytes = find_raw_vector(vectors, vector_name);
-            let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector_raw(new_index, bytes, hw_counter)?;
-            self.version_tracker.set_vector(vector_name, Some(op_num));
-        }
+        self.replace_all_vectors_raw(new_index, op_num, vectors, hw_counter)?;
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
     }
@@ -189,10 +188,9 @@ impl Segment {
     /// survives the move; it is rewritten at the new id — always, even when
     /// empty, for the same null-index `total_point_count` bump reason.
     ///
-    /// The payload lands after `set_link`, unlike `clone_and_mutate_point`'s
-    /// order. Not observable: callers hold exclusive segment access, and on a
-    /// mid-way failure the wrapping version handler parks the segment in a
-    /// failed state for replay either way.
+    /// Step order matches `clone_and_mutate_point`: vectors, then payload,
+    /// then `set_link` last — so a mid-way failure leaves the id tracker
+    /// still pointing at the intact `old_id`.
     ///
     /// # Warning
     ///
@@ -210,10 +208,12 @@ impl Segment {
             .payload_index
             .borrow()
             .with_view(|view| view.get_payload(old_id, hw_counter))?;
-        let new_id = self.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
+        let new_id = self.id_tracker.borrow().total_point_count() as PointOffsetType;
+        self.replace_all_vectors_raw(new_id, op_num, vectors, hw_counter)?;
         self.payload_index
             .borrow_mut()
             .overwrite_payload(new_id, &payload, hw_counter)?;
+        self.id_tracker.borrow_mut().set_link(point_id, new_id)?;
         Ok(new_id)
     }
 

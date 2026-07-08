@@ -972,6 +972,85 @@ fn test_upsert_raw_sparse_roundtrip() {
     assert_eq!(retrieve_raw_vector(&dst, 7.into(), sparse_name), bytes);
 }
 
+/// Byte/half dense raw round-trip: the packed `[T]` blob must survive
+/// `retrieve_raw` → `upsert_point_raw` byte-identically for the narrow
+/// element types too — the `T` → `f32` → `T` hop through the regular insert
+/// path is lossless.
+#[test]
+fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
+    init_logger();
+    let dim = 4;
+    for datatype in [VectorStorageDatatype::Uint8, VectorStorageDatatype::Float16] {
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: Some(datatype),
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        };
+        let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+        let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+        let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+        let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        // Values exactly representable in both u8 and f16.
+        let vec = vec![0.0_f32, 1.0, 128.0, 255.0];
+        src.upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+            .unwrap();
+        let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+        dst.upsert_point_raw(
+            100,
+            7.into(),
+            &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+            &hw_counter,
+        )
+        .unwrap();
+
+        assert_eq!(
+            retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+            bytes,
+            "raw bytes must round-trip for {datatype:?}",
+        );
+        assert_eq!(
+            dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+                .unwrap(),
+            src.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+                .unwrap(),
+            "decoded vector must round-trip for {datatype:?}",
+        );
+    }
+}
+
+/// A raw blob whose size doesn't match the storage layout must be rejected
+/// with an error, not silently mis-written.
+#[test]
+fn test_upsert_raw_malformed_blob_rejected() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // 3 bytes is not a valid packed-[f32; 4] blob.
+    let result = segment.upsert_point_raw(
+        100,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), vec![0_u8, 1, 2])],
+        &hw_counter,
+    );
+    assert!(result.is_err(), "malformed blob must be rejected");
+}
+
 /// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested
 /// verbatim — byte-identical after `upsert_point_raw` → `retrieve_raw`, with
 /// no dequantize/requantize drift (destination decodes exactly like the
