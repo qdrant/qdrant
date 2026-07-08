@@ -5,8 +5,8 @@ use common::tempfile_ext::MaybeTempPath;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use http::HeaderValue;
-use object_store::ClientOptions;
 use object_store::aws::AmazonS3Builder;
+use object_store::{ClientOptions, ObjectStoreExt};
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -483,14 +483,12 @@ impl SnapshotStorageCloud {
     ) -> CollectionResult<SnapshotStream> {
         let snapshot_path = snapshot_storage_ops::trim_dot_slash(snapshot_path)?;
         #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
-        let download = object_store::ObjectStoreExt::get(self.client.as_ref(), &snapshot_path)
-            .await
-            .map_err(|e| match e {
-                object_store::Error::NotFound { path, source } => {
-                    CollectionError::not_found(format!("Snapshot {path} does not exist: {source}"))
-                }
-                _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
-            })?;
+        let download = self.client.get(&snapshot_path).await.map_err(|e| match e {
+            object_store::Error::NotFound { path, source } => {
+                CollectionError::not_found(format!("Snapshot {path} does not exist: {source}"))
+            }
+            _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
+        })?;
         Ok(SnapshotStream::new_stream(download.into_stream(), None))
     }
 }
