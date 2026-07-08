@@ -312,6 +312,112 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     }
 }
 
+/// Streamable snapshots historically wrap all segment files in a nested `files/` directory.
+/// Recovery must also support streamable snapshots where the files are placed directly in the
+/// segment directory, without the `files/` wrapper.
+#[test]
+fn test_snapshot_streamable_without_files_wrapper() {
+    use crate::entry::StorageSegmentEntry as _;
+
+    init_logger();
+
+    let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "metadata": {
+                "height": 50,
+                "width": 60
+            }
+        }"#;
+
+    let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
+
+    segment
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+        .unwrap();
+
+    segment
+        .set_full_payload(
+            1,
+            0.into(),
+            &serde_json::from_str(data).unwrap(),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let parent_snapshot_tar = Builder::new()
+        .prefix("parent_snapshot")
+        .suffix(".tar")
+        .tempfile()
+        .unwrap();
+    let segment_id = segment
+        .segment_path
+        .file_stem()
+        .and_then(|f| f.to_str())
+        .unwrap()
+        .to_string();
+
+    segment.flush(true).unwrap();
+
+    // Take a streamable snapshot, which produces a `<segment_id>/files/...` layout.
+    let tar =
+        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    segment
+        .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)
+        .unwrap();
+    tar.blocking_finish().unwrap();
+
+    let parent_snapshot_unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
+    tar_unpack_file(parent_snapshot_tar.path(), parent_snapshot_unpacked.path()).unwrap();
+
+    let segment_path = parent_snapshot_unpacked.path().join(&segment_id);
+    assert!(segment_path.is_dir());
+
+    // Simulate a streamable snapshot without the nested `files/` wrapper by hoisting the files
+    // out of `files/` and removing it.
+    let files_path = segment_path.join("files");
+    assert!(files_path.is_dir(), "expected nested `files/` directory");
+    crate::utils::fs::move_all(&files_path, &segment_path).unwrap();
+    fs::remove_dir(&files_path).unwrap();
+
+    // Restore snapshot from the flattened layout.
+    Segment::restore_snapshot_in_place(&segment_path).unwrap();
+
+    assert!(segment_path.is_dir());
+
+    let restored_segment =
+        load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+
+    assert_eq!(
+        segment.total_point_count(),
+        restored_segment.total_point_count(),
+    );
+    assert_eq!(
+        segment.available_point_count(),
+        restored_segment.available_point_count(),
+    );
+    assert_eq!(
+        segment.deleted_point_count(),
+        restored_segment.deleted_point_count(),
+    );
+
+    for id in segment.iter_points() {
+        let vectors = segment.all_vectors(id, &hw_counter).unwrap();
+        let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
+        assert_eq!(vectors, restored_vectors);
+
+        let payload = segment.payload(id, &hw_counter).unwrap();
+        let restored_payload = restored_segment.payload(id, &hw_counter).unwrap();
+        assert_eq!(payload, restored_payload);
+    }
+}
+
 #[test]
 fn test_check_consistency() {
     init_logger();
