@@ -50,6 +50,7 @@ fn build_tenant_segment(path: &std::path::Path) -> Segment {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
@@ -222,6 +223,7 @@ fn sparse_idf_statistics_corpus_strategies() {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
