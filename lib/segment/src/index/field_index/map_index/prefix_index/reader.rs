@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
+    CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
     UniversalReadFs,
 };
 
@@ -53,28 +53,44 @@ pub struct PrefixIndex<S: UniversalRead = MmapFile> {
 }
 
 impl<S: UniversalRead> PrefixIndex<S> {
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        let file_path = dir.join(PREFIX_INDEX_PATH);
+        if !UniversalReadFileOps::exists(fs, &file_path)? {
+            return Ok(());
+        }
+
+        // TODO(uio): Turn Populate::No into Populate::BackgroundPartial(0..header + header.block_index_size)
+        fs.schedule_prefetch(&file_path, Some(Self::open_options(populate)), None)?;
+
+        Ok(())
+    }
+
     /// Open the prefix index if its file exists; `Ok(None)` when the backing
     /// map index was built without prefix support.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
-        path: &Path,
+        dir: &Path,
         populate: Populate,
     ) -> OperationResult<Option<Self>> {
-        let file_path = path.join(PREFIX_INDEX_PATH);
+        let file_path = dir.join(PREFIX_INDEX_PATH);
         if !UniversalReadFileOps::exists(fs, &file_path)? {
             return Ok(None);
         }
 
-        let storage = fs.open(
-            &file_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
-            Default::default(),
-        )?;
+        let storage = fs.open(&file_path, Self::open_options(populate), Default::default())?;
 
         let header_size = size_of::<Header>() as u64;
         let header_bytes = storage.read_bytes::<Random>(0..header_size, align_of::<Header>())?;

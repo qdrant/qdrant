@@ -10,8 +10,8 @@ use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWrite,
-    read_json_via,
+    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+    UniversalWrite, read_json_via,
 };
 use fs_err as fs;
 
@@ -29,6 +29,52 @@ where
     N: MapIndexKey + Key + ?Sized,
     S: UniversalRead,
 {
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Config
+        let config_path = path.join(CONFIG_PATH);
+        if fs
+            .schedule_prefetch(&config_path, None, None)
+            .ok_not_found()?
+            .is_none()
+        {
+            // If config doesn't exist, assume the index doesn't exist on disk
+            return Ok(false);
+        }
+
+        // Value to points
+        let hashmap_path = path.join(HASHMAP_PATH);
+        fs.schedule_prefetch(&hashmap_path, Some(Self::open_options(populate)), None)?;
+
+        // Point to values
+        OnDiskPointToValues::<N, S>::preopen(fs, path, populate)?;
+
+        // Prefix index
+        PrefixIndex::preopen(fs, path, populate)?;
+
+        // Deleted bitslice
+        let deleted_path = path.join(DELETED_PATH);
+        fs.schedule_prefetch(
+            &deleted_path,
+            Some(Self::open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
+        Ok(true)
+    }
+
     /// Open and load mmap map index from the given path
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
@@ -50,12 +96,7 @@ where
         let value_to_points = UniversalHashMap::open(
             fs,
             &hashmap_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(populate),
             Default::default(),
         )?;
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
@@ -66,12 +107,7 @@ where
         let deleted_payload_mmap = StoredBitSlice::<S>::open(
             fs,
             &deleted_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(Populate::No),
             Default::default(),
         )?;
 
