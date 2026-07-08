@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{OkNotFound, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, GridstoreReader};
 
@@ -14,6 +14,19 @@ impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
+        // Gridstore reader
+        Ok(
+            GridstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::preopen(
+                fs,
+                dir,
+                Populate::PreferBackground,
+            )
+            .ok_not_found()?
+            .is_some(),
+        )
+    }
+
     /// Open the appendable (Gridstore) map index read-only, threading every
     /// file open through the filesystem handle `fs`.
     ///

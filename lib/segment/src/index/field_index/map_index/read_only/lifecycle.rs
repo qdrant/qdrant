@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use gridstore::Blob;
 
 use super::super::MapIndexKey;
@@ -16,6 +16,13 @@ impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
+    pub fn preopen_appendable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<bool> {
+        ReadOnlyAppendableMapIndex::<N, S>::preopen(fs, dir)
+    }
+
     /// Read-only mirror of [`MapIndex::new_gridstore`][1]: open the appendable
     /// (Gridstore-backed) map index read-only, threading every file open
     /// through the filesystem handle `fs`.
@@ -32,6 +39,22 @@ where
         dir: PathBuf,
     ) -> OperationResult<Option<Self>> {
         Ok(ReadOnlyAppendableMapIndex::open(fs, dir)?.map(Self::Appendable))
+    }
+
+    pub fn preopen_immutable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: &Path,
+        is_on_disk: bool,
+    ) -> OperationResult<bool> {
+        let effective_is_on_disk =
+            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
+
+        OnDiskMapIndex::<N, S>::preopen(fs, dir, populate)
     }
 
     /// Read-only mirror of [`MapIndex::new_mmap`][1]: open the immutable
@@ -55,7 +78,10 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
         let Some(on_disk_index) = OnDiskMapIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
