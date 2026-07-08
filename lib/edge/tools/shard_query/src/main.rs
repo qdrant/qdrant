@@ -61,7 +61,7 @@ use common::universal_io::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
 };
 use edge::{
-    Condition, EdgeShardRead, FieldCondition, Filter, JsonPath, Match, NamedQuery,
+    Condition, EdgeConfig, EdgeShardRead, FieldCondition, Filter, JsonPath, Match, NamedQuery,
     OrderByInterface, PointId, QueryEnum, ReadOnlyEdgeShard, Record, ScoredPoint, ScrollRequest,
     SearchParams, SearchRequest, ValueVariants, VectorInternal, WithPayloadInterface,
 };
@@ -148,6 +148,12 @@ struct ConnectionArgs {
     /// dir, so the cache persists across runs.
     #[arg(long)]
     cache_dir: Option<PathBuf>,
+
+    /// Number of threads in the shard's search thread pool (used to read
+    /// segments in parallel at open and to run searches). `0` derives the count
+    /// from the number of available CPUs. Omit to use the default.
+    #[arg(long)]
+    search_threads: Option<usize>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -528,8 +534,14 @@ where
     log::info!("caching segment reads under {}", cache_dir.display());
 
     // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
-    // them via the manifest. `prefix` is passed only as the shard's (logical) path label.
-    let shard = ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, None)
+    // them via the manifest. `prefix` is passed only as the shard's (logical) path label. A
+    // caller-provided `--search-threads` overrides the derived search-pool size (segments never
+    // carry `max_search_threads`, so this is the only way to set it here).
+    let config = cli
+        .connection
+        .search_threads
+        .map(|n| EdgeConfig::builder().max_search_threads(n).build());
+    let shard = ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, config)
         .context("failed to open read-only edge shard over object storage")?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
