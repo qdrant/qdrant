@@ -768,6 +768,65 @@ impl SegmentEntry for Segment {
         }
     }
 
+    fn upsert_point_raw(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: &[(VectorNameBuf, Vec<u8>)],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        debug_assert!(self.is_appendable());
+        for (vector_name, _) in vectors {
+            check_vector_name(vector_name, &self.segment_config)?;
+        }
+        // No `preprocess` here on purpose: raw bytes are the stored form,
+        // already preprocessed (e.g. cosine-normalized) on first ingestion.
+        let stored_internal_point = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        match stored_internal_point {
+            // Not `handle_point_mutate`: its append-only arm snapshots the old
+            // vectors into decoded `NamedVectors`, which cannot carry
+            // storage-native bytes (and would be a lossy read for TurboQuant).
+            // The raw clone path skips the vector snapshot entirely — upsert
+            // discards all old vectors anyway.
+            Some(existing_internal_id) => {
+                let append_only = self.is_append_only();
+                self.handle_point_version_and_failure(
+                    op_num,
+                    point_id,
+                    Some(existing_internal_id),
+                    |segment| {
+                        if append_only {
+                            let new_id = segment.clone_and_replace_point_raw(
+                                op_num,
+                                point_id,
+                                existing_internal_id,
+                                vectors,
+                                hw_counter,
+                            )?;
+                            Ok((true, Some(new_id)))
+                        } else {
+                            segment.replace_all_vectors_raw(
+                                existing_internal_id,
+                                op_num,
+                                vectors,
+                                hw_counter,
+                            )?;
+                            Ok((true, Some(existing_internal_id)))
+                        }
+                    },
+                )
+            }
+            None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
+                let new_index =
+                    segment.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
+                Ok((false, Some(new_index)))
+            }),
+        }
+    }
+
     fn update_vectors(
         &mut self,
         op_num: SeqNumberType,

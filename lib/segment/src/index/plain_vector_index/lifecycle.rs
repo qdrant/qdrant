@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 
 use super::PlainVectorIndex;
@@ -38,6 +39,31 @@ impl VectorIndex for PlainVectorIndex {
                 vector_storage.insert_vector(id, VectorRef::from(&default_vector), hw_counter)?;
             }
             vector_storage.delete_vector(id)?;
+        }
+
+        Ok(())
+    }
+
+    fn update_vector_raw(
+        &mut self,
+        id: PointOffsetType,
+        vector: Option<&[u8]>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(bytes) = vector else {
+            // Removal doesn't touch the vector value; reuse the decoded path.
+            return self.update_vector(id, None, hw_counter);
+        };
+
+        let mut vector_storage = self.vector_storage.borrow_mut();
+        vector_storage.insert_vector_bytes(id, bytes, hw_counter)?;
+
+        let mut quantized_vectors = self.quantized_vectors.borrow_mut();
+        if let Some(quantized_vectors) = quantized_vectors.as_mut() {
+            // Build-time quantized copies can't ingest storage-native bytes;
+            // feed them the decoded vector read back from the storage.
+            let vector = vector_storage.get_vector::<Random>(id).to_owned();
+            quantized_vectors.upsert_vector(id, VectorRef::from(&vector), hw_counter)?;
         }
 
         Ok(())

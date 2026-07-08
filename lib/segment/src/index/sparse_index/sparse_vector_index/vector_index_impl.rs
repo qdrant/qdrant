@@ -20,6 +20,7 @@ use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseI
 use crate::index::{VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::sparse::StoredSparseVector;
 use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -186,5 +187,20 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
 
         Ok(())
+    }
+
+    fn update_vector_raw(
+        &mut self,
+        id: PointOffsetType,
+        vector: Option<&[u8]>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // The raw form is the lossless `StoredSparseVector` encoding; the
+        // inverted index needs the decoded values anyway, so decode and
+        // delegate to the regular path.
+        let sparse = vector
+            .map(|bytes| SparseVector::try_from(StoredSparseVector::try_from_bytes(bytes)?))
+            .transpose()?;
+        self.update_vector(id, sparse.as_ref().map(VectorRef::from), hw_counter)
     }
 }

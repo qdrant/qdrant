@@ -46,7 +46,8 @@ use crate::types::{
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
     MultiVectorConfig, Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType,
     PointIdType, SearchParams, SnapshotFormat, SparseVectorDataConfig, SparseVectorStorageType,
-    ValueVariants, VectorDataConfig, VectorStorageType, WithPayload, WithVector,
+    ValueVariants, VectorDataConfig, VectorStorageDatatype, VectorStorageType, WithPayload,
+    WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
 use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
@@ -830,6 +831,447 @@ fn test_retrieve_raw_sparse_bytes() {
 
     let decoded = SparseVector::try_from(StoredSparseVector::from_bytes(bytes)).unwrap();
     assert_eq!(decoded, sparse);
+}
+
+/// Fetch one named vector of one point via `retrieve_raw`.
+fn retrieve_raw_vector(segment: &Segment, point_id: PointIdType, name: &str) -> Vec<u8> {
+    let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[point_id],
+            &WithPayload::default(),
+            &true.into(),
+            &hw_counter,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    let record = raw.get(&point_id).expect("point must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+    vectors
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, bytes)| bytes.clone())
+        .expect("vector must be present")
+}
+
+/// `upsert_point_raw` with `retrieve_raw` bytes must reproduce the point: the
+/// destination decodes to the original vector and re-serializes to identical
+/// bytes. Also covers the replace path (raw upsert over an existing point).
+#[test]
+fn test_upsert_raw_dense_roundtrip() {
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    src.upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+    // Insert path: the point does not exist in the destination yet.
+    dst.upsert_point_raw(
+        100,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        &hw_counter,
+    )
+    .unwrap();
+
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::Dense(vec)),
+    );
+    assert_eq!(
+        retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+
+    // Replace path: raw upsert over the existing point with different bytes.
+    let vec2 = vec![1.0_f32, 2.0, 3.0, 4.0];
+    src.upsert_point(101, 8.into(), only_default_vector(&vec2), &hw_counter)
+        .unwrap();
+    let bytes2 = retrieve_raw_vector(&src, 8.into(), DEFAULT_VECTOR_NAME);
+    dst.upsert_point_raw(
+        101,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes2)],
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::Dense(vec2)),
+    );
+}
+
+/// Raw upsert over an existing point on an append-only segment must go
+/// through the clone-and-tombstone path: vectors are replaced from the raw
+/// bytes at a fresh internal id, the payload survives the move.
+#[test]
+fn test_upsert_raw_append_only_replace() {
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    dst.append_only_mutations = true;
+    let hw_counter = HardwareCounterCell::new();
+
+    let old_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    dst.upsert_point(100, 7.into(), only_default_vector(&old_vec), &hw_counter)
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    dst.set_full_payload(101, 7.into(), &payload, &hw_counter)
+        .unwrap();
+    let old_internal_id = dst
+        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly))
+        .unwrap();
+
+    let new_vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    src.upsert_point(100, 7.into(), only_default_vector(&new_vec), &hw_counter)
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        102,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        &hw_counter,
+    )
+    .unwrap();
+
+    // The point moved to a fresh internal id (old slot tombstoned)...
+    let new_internal_id = dst
+        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly))
+        .unwrap();
+    assert_ne!(old_internal_id, new_internal_id);
+    // ...carrying the replaced vector (byte-identical) and the old payload.
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::Dense(new_vec)),
+    );
+    assert_eq!(
+        retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+    assert_eq!(dst.payload(7.into(), &hw_counter).unwrap(), payload);
+}
+
+/// Multi-dense raw round-trip: the flattened inner-vector blob must survive
+/// `retrieve_raw` → `upsert_point_raw` byte-identically and decode to the
+/// original multivector.
+#[test]
+fn test_upsert_raw_multivec_roundtrip() {
+    init_logger();
+    let dim = 3;
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::default(),
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: Some(MultiVectorConfig::default()),
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Two inner vectors of `dim` elements each, flattened.
+    let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
+    let multi_vec = MultiDenseVectorInternal::new(flattened, dim);
+    src.upsert_point(
+        100,
+        4.into(),
+        only_default_multi_vector(&multi_vec),
+        &hw_counter,
+    )
+    .unwrap();
+    let bytes = retrieve_raw_vector(&src, 4.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        100,
+        4.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        &hw_counter,
+    )
+    .unwrap();
+
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 4.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::MultiDense(multi_vec)),
+    );
+    assert_eq!(
+        retrieve_raw_vector(&dst, 4.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+}
+
+/// Sparse raw round-trip: the `StoredSparseVector` bincode blob must insert
+/// back and decode to the original sparse vector.
+#[test]
+fn test_upsert_raw_sparse_roundtrip() {
+    init_logger();
+    let sparse_name = "sparse";
+    let config = SegmentConfig {
+        vector_data: HashMap::new(),
+        sparse_vector_data: HashMap::from_iter([(
+            sparse_name.to_string(),
+            SparseVectorDataConfig {
+                index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None, None),
+                storage_type: SparseVectorStorageType::Mmap,
+                modifier: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(
+        sparse_name.to_string(),
+        VectorInternal::Sparse(sparse.clone()),
+    );
+    src.upsert_point(100, 7.into(), vectors, &hw_counter)
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), sparse_name);
+
+    dst.upsert_point_raw(
+        100,
+        7.into(),
+        &[(sparse_name.to_string(), bytes.clone())],
+        &hw_counter,
+    )
+    .unwrap();
+
+    assert_eq!(
+        dst.vector(sparse_name, 7.into(), &hw_counter).unwrap(),
+        Some(VectorInternal::Sparse(sparse)),
+    );
+    assert_eq!(retrieve_raw_vector(&dst, 7.into(), sparse_name), bytes);
+}
+
+/// Byte/half dense raw round-trip: the packed `[T]` blob must survive
+/// `retrieve_raw` → `upsert_point_raw` byte-identically for the narrow
+/// element types too — the `T` → `f32` → `T` hop through the regular insert
+/// path is lossless.
+#[test]
+fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
+    init_logger();
+    let dim = 4;
+    for datatype in [VectorStorageDatatype::Uint8, VectorStorageDatatype::Float16] {
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: Some(datatype),
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        };
+        let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+        let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+        let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+        let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        // Values exactly representable in both u8 and f16.
+        let vec = vec![0.0_f32, 1.0, 128.0, 255.0];
+        src.upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+            .unwrap();
+        let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+        dst.upsert_point_raw(
+            100,
+            7.into(),
+            &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+            &hw_counter,
+        )
+        .unwrap();
+
+        assert_eq!(
+            retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+            bytes,
+            "raw bytes must round-trip for {datatype:?}",
+        );
+        assert_eq!(
+            dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+                .unwrap(),
+            src.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+                .unwrap(),
+            "decoded vector must round-trip for {datatype:?}",
+        );
+    }
+}
+
+/// A raw blob whose size doesn't match the storage layout must be rejected
+/// with an error, not silently mis-written.
+#[test]
+fn test_upsert_raw_malformed_blob_rejected() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // 3 bytes is not a valid packed-[f32; 4] blob.
+    let result = segment.upsert_point_raw(
+        100,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), vec![0_u8, 1, 2])],
+        &hw_counter,
+    );
+    assert!(result.is_err(), "malformed blob must be rejected");
+}
+
+/// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested
+/// verbatim — byte-identical after `upsert_point_raw` → `retrieve_raw`, with
+/// no dequantize/requantize drift (destination decodes exactly like the
+/// source).
+#[test]
+fn test_upsert_raw_dense_turbo_bytes() {
+    init_logger();
+    let dim = 64;
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let vec: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
+    src.upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        100,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        &hw_counter,
+    )
+    .unwrap();
+
+    // Encoded bytes survive verbatim — no requantization round-trip.
+    assert_eq!(
+        retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+    // And both segments dequantize to exactly the same vector.
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+        src.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+    );
+}
+
+/// TurboQuant multivector raw round-trip: the concatenated encoded inner
+/// records must be ingested verbatim.
+#[test]
+fn test_upsert_raw_multivec_turbo_bytes() {
+    init_logger();
+    let dim = 64;
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: Some(MultiVectorConfig::default()),
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Three inner vectors of `dim` elements each, flattened.
+    let flattened: Vec<f32> = (0..3 * dim).map(|i| (i as f32).cos()).collect();
+    let multi_vec = MultiDenseVectorInternal::new(flattened, dim);
+    src.upsert_point(
+        100,
+        4.into(),
+        only_default_multi_vector(&multi_vec),
+        &hw_counter,
+    )
+    .unwrap();
+    let bytes = retrieve_raw_vector(&src, 4.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        100,
+        4.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        &hw_counter,
+    )
+    .unwrap();
+
+    assert_eq!(
+        retrieve_raw_vector(&dst, 4.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 4.into(), &hw_counter)
+            .unwrap(),
+        src.vector(DEFAULT_VECTOR_NAME, 4.into(), &hw_counter)
+            .unwrap(),
+    );
 }
 
 /// Tests segment functions to ensure invalid requests do error
