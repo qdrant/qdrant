@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::bitvec::BitVec;
+use common::bitvec::DeletedBitVec;
 use common::universal_io::{MmapFile, TypedStorage, UniversalRead};
 
 use super::Encodable;
@@ -35,7 +35,6 @@ pub struct OnDiskNumericIndex<
     pub(super) path: PathBuf,
     pub(super) storage: Storage<T, S>,
     pub(super) histogram: Histogram<T>,
-    pub(super) deleted_count: usize,
     pub(super) max_values_per_point: usize,
 }
 
@@ -43,7 +42,7 @@ pub(in super::super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
     S: UniversalRead = MmapFile,
 > {
-    pub(super) deleted: BitVec,
+    pub(super) deleted: DeletedBitVec,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pub(super) pairs: TypedStorage<S, Point<T>>,
     pub(in super::super) point_to_values: OnDiskPointToValues<T, S>,
@@ -57,8 +56,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
             point_to_values,
         } = self;
 
-        deleted.capacity().div_ceil(u8::BITS as usize)
-            + pairs.ram_usage_bytes()
-            + point_to_values.ram_usage_bytes()
+        deleted.ram_usage_bytes() + pairs.ram_usage_bytes() + point_to_values.ram_usage_bytes()
     }
 }

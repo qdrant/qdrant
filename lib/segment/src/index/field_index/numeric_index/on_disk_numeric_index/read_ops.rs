@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::ops::Bound;
 
-use common::bitvec::BitSliceExt as _;
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -32,7 +31,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         // [`NumericIndexRead::check_values_any`] returns `OperationResult`.
         let hw_counter = ConditionedCounter::always(hw_counter);
 
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
                 .check_values_any(idx, |v| check_fn(v), &hw_counter)
@@ -43,7 +42,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             Some(Box::new(
                 self.storage
                     .point_to_values
@@ -58,7 +57,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             self.storage.point_to_values.get_values_count(idx).ok()?
         } else {
             None
@@ -118,7 +117,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn get_points_count(&self) -> usize {
-        self.storage.point_to_values.len() - self.deleted_count
+        self.storage.point_to_values.len() - self.storage.deleted.deleted_count()
     }
 
     fn get_max_values_per_point(&self) -> usize {
@@ -231,7 +230,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
 
         let deleted = &self.storage.deleted;
 
-        Ok(iter.filter(move |point| !deleted.get_bit(point.idx as usize).unwrap_or(true)))
+        Ok(iter.filter(move |point| deleted.is_active(point.idx)))
     }
 
     pub fn is_on_disk(&self) -> bool {

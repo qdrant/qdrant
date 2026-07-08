@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use ahash::AHashMap;
-use common::bitvec::BitSliceExt;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -529,7 +528,11 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
             .read_whole()?
             .into_owned();
         for (idx, count) in point_to_tokens_count.iter_mut().enumerate() {
-            if index.storage.deleted_points.get_bit(idx).unwrap_or(false) {
+            if !index
+                .storage
+                .deleted_points
+                .is_active(idx as PointOffsetType)
+            {
                 *count = 0;
             }
         }

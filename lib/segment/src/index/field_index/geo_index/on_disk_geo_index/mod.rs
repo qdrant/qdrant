@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::bitvec::BitVec;
+use common::bitvec::DeletedBitVec;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, TypedStorage, UniversalRead};
 use serde::{Deserialize, Serialize};
@@ -64,7 +64,6 @@ pub(in super::super) struct PointKeyValue {
 pub struct OnDiskGeoIndex<S: UniversalRead = MmapFile> {
     pub(super) path: PathBuf,
     pub(in super::super) storage: Storage<S>,
-    pub(in super::super) deleted_count: usize,
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
 }
@@ -83,7 +82,7 @@ pub(in super::super) struct Storage<S: UniversalRead = MmapFile> {
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
     /// the build-time empty-payload bits read from `deleted.bin` and the
     /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
-    pub(in super::super) deleted: BitVec,
+    pub(in super::super) deleted: DeletedBitVec,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -100,7 +99,7 @@ impl<S: UniversalRead> Storage<S> {
             + points_map.ram_usage_bytes()
             + points_map_ids.ram_usage_bytes()
             + point_to_values.ram_usage_bytes()
-            + deleted.capacity().div_ceil(u8::BITS as usize)
+            + deleted.ram_usage_bytes()
     }
 }
 

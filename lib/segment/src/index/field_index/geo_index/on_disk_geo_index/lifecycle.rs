@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::binary_search::binary_search_by;
-use common::bitvec::{BitSlice, BitSliceExt};
+use common::bitvec::{BitSlice, DeletedBitVec};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
@@ -216,8 +216,6 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         deleted.resize(point_to_values.len(), false);
         deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
 
-        let deleted_count = deleted.count_ones();
-
         Ok(Some(Self {
             path: path.to_owned(),
             storage: Storage {
@@ -225,9 +223,8 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 points_map,
                 points_map_ids,
                 point_to_values,
-                deleted,
+                deleted: DeletedBitVec::new(deleted),
             },
-            deleted_count,
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
         }))
@@ -240,7 +237,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
         let hw_counter = ConditionedCounter::always(hw_counter);
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
                 .check_values_any(idx, |v| check_fn(v), &hw_counter)
@@ -259,7 +256,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
                 .get_values_count(idx)
@@ -388,11 +385,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     /// Not persisted: on reopen, deletions must be re-supplied via the
     /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let idx = idx as usize;
-        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
-            self.storage.deleted.set(idx, true);
-            self.deleted_count += 1;
-        }
+        self.storage.deleted.mark_deleted(idx);
     }
 
     /// Return all unique point IDs which have any of the geo-hash prefixes.
@@ -493,15 +486,11 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // Step 3: read the collected ranges and accumulate unique,
         // non-deleted point ids.
         let mut points = AHashSet::new();
+        let deleted = &self.storage.deleted;
         self.storage.points_map_ids.read_batch::<Random, _>(
             point_map_ranges.into_iter().enumerate(),
             |_idx, values| {
-                points.extend(
-                    values
-                        .iter()
-                        .copied()
-                        .filter(|&id| !self.storage.deleted.get_bit(id as usize).unwrap_or(true)),
-                );
+                points.extend(values.iter().copied().filter(|&id| deleted.is_active(id)));
                 Ok(())
             },
         )?;
@@ -513,7 +502,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         self.storage
             .point_to_values
             .len()
-            .saturating_sub(self.deleted_count)
+            .saturating_sub(self.storage.deleted.deleted_count())
     }
 
     pub fn points_values_count(&self) -> usize {
@@ -539,7 +528,6 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         let Self {
             path,
             storage,
-            deleted_count: _,
             points_values_count: _,
             max_values_per_point: _,
         } = self;

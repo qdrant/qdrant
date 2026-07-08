@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::bitvec::BitVec;
+use common::bitvec::DeletedBitVec;
 use common::persisted_hashmap::{Key, UniversalHashMap};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
@@ -33,7 +33,6 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 pub struct OnDiskMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) path: PathBuf,
     pub(super) storage: Storage<N, S>,
-    pub(super) deleted_count: usize,
     pub(super) total_key_value_pairs: usize,
 }
 
@@ -43,7 +42,7 @@ pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
     /// the build-time empty-payload bits read from `deleted.bin` and the
     /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
-    pub(super) deleted: BitVec,
+    pub(super) deleted: DeletedBitVec,
     /// Sorted key dictionary for prefix queries. Present only when the index
     /// was built with the `prefix` option (signalled by the presence of its
     /// file on disk).
@@ -61,7 +60,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> Storage<N, S> {
 
         // `value_to_points` is a storage-backed hashmap with no in-memory state.
         point_to_values.ram_usage_bytes()
-            + deleted.capacity().div_ceil(u8::BITS as usize)
+            + deleted.ram_usage_bytes()
             + prefix_index
                 .as_ref()
                 .map_or(0, |prefix_index| prefix_index.ram_usage_bytes())

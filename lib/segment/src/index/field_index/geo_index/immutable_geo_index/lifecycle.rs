@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::bitvec::BitSliceExt;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead};
@@ -46,12 +45,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
                 points_map_hashes.push(points_map_entries[i].hash.normalize());
                 points_map_offsets.push(points_map_ids.len() as u32);
                 for &id in ids {
-                    if !index
-                        .storage
-                        .deleted
-                        .get_bit(id as usize)
-                        .unwrap_or_default()
-                    {
+                    if index.storage.deleted.is_active(id) {
                         points_map_ids.push(id);
                     }
                 }
@@ -64,7 +58,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         // Get point values and filter deleted points
         // Track deleted points to adjust point and value counts after loading
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
-            Vec::with_capacity(index.deleted_count);
+            Vec::with_capacity(index.storage.deleted.deleted_count());
         // Batched reads only report non-empty points and may arrive out of
         // order, so we pre-fill with empty value lists and index by point id.
         let mut point_to_values: Vec<Vec<GeoPoint>> =
@@ -74,12 +68,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
             .point_to_values
             .for_all_points_values(|id, values| {
                 let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
-                let is_deleted = index
-                    .storage
-                    .deleted
-                    .get_bit(id as usize)
-                    .unwrap_or_default();
-                if is_deleted {
+                if !index.storage.deleted.is_active(id) {
                     deleted_points.push((id, geo_points));
                 } else {
                     point_to_values[id as usize] = geo_points;
