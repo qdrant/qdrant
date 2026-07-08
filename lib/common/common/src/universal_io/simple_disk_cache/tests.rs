@@ -878,6 +878,9 @@ mod tests_mod {
         let scn = Scenario::new(10);
         let mut cache = scn.open_writeable::<R>(PREFILL);
 
+        // The flusher must succeed before materialization too.
+        (cache.flusher())().unwrap();
+
         let batch: [&[u8]; 3] = [b"ab", b"", b"cde"];
         assert_eq!(cache.append_batch(batch).unwrap(), 10);
         assert_eq!(cache.append::<u8>(&[]).unwrap(), 15);
@@ -891,7 +894,7 @@ mod tests_mod {
             .unwrap();
         assert_eq!(&*bytes, b"abcde");
 
-        // The flusher is a no-op that must still succeed.
+        // After appends the flusher delegates to the remote's flusher.
         (cache.flusher())().unwrap();
     }
 

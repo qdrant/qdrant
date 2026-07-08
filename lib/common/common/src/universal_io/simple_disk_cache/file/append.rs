@@ -16,11 +16,21 @@ where
     R: DiskCacheRemote + UniversalAppend,
 {
     fn flusher(&self) -> Flusher {
-        // Remote appends are durable once acknowledged (the remote's own
-        // flusher is a no-op for object stores), and the local mirror is
-        // rebuilt from scratch on every open (`LocalState::new` truncates),
-        // so there is nothing worth flushing locally.
-        Box::new(|| Ok(()))
+        // The remote is the durable source of truth: delegate to its
+        // flusher, which covers remotes whose appends are not durable on
+        // acknowledgement (local files need their fsync; object-store
+        // flushers are no-ops). The local mirror is rebuilt from scratch on
+        // every open (`LocalState::new` truncates), so there is nothing
+        // worth flushing locally. A never-materialized cache has made no
+        // appends — nothing to flush either.
+        if !self.is_ready() {
+            return Box::new(|| Ok(()));
+        }
+
+        self.state()
+            .expect("`is_ready` guarantees the `Ready` state")
+            .remote
+            .flusher()
     }
 }
 
