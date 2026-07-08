@@ -11,7 +11,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
-    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
+    VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
 use segment::types::{Distance, HnswGlobalConfig, Payload, PointIdType, SeqNumberType};
 use shard::operations::optimization::OptimizerThresholds;
@@ -66,7 +66,7 @@ pub fn random_multi_vec_segment(
     dim2: usize,
 ) -> Segment {
     let mut id_gen = PointIdGenerator::default();
-    let mut segment = build_multivec_segment(path, dim1, dim2, Distance::Dot).unwrap();
+    let mut segment = build_segment_with_two_named_vecs(path, dim1, dim2, Distance::Dot).unwrap();
     let mut rnd = rand::rng();
     let payload_key = "number";
     let keyword_key = "keyword";
