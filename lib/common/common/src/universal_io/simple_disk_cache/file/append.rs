@@ -83,13 +83,26 @@ where
         if offset == local_len {
             // Write-through: the appended bytes are in memory already, so
             // fill the mirror instead of re-fetching them from the remote.
-            local.append_local(&self.local_path, offset, slices)?;
-        } else {
-            // The mirror is out of sync (the remote grew behind our back).
-            // Extend to the new length and let the lazy fetch machinery heal
-            // the gap on the next read.
-            local.resize(&self.local_path, offset + total)?;
+            match local.append_local(&self.local_path, offset, slices) {
+                Ok(()) => return Ok(offset),
+                Err(err) => {
+                    // The remote append already committed, so a failing
+                    // mirror must not fail the append. A partial
+                    // write-through is safe: blocks are only marked fetched
+                    // after their bytes landed. Fall through to bare growth.
+                    log::warn!(
+                        "failed to write appended bytes through to the local mirror {path}: {err}",
+                        path = self.local_path.display(),
+                    );
+                }
+            }
         }
+
+        // The mirror is out of sync (the remote grew behind our back) or the
+        // write-through failed. Grow to the new length (a no-op if the
+        // write-through got that far) and let the lazy fetch machinery heal
+        // unmarked blocks on the next read.
+        local.resize(&self.local_path, offset + total)?;
 
         Ok(offset)
     }
