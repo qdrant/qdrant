@@ -26,15 +26,15 @@ impl SnapshotMapping {
 
         assert!(
             !path.is_empty(),
-            "Snapshot path is missing: {snapshot_params}"
+            "Snapshot path is missing: {snapshot_params}",
         );
         assert!(
             !collection_name.is_empty(),
-            "Collection name is missing: {snapshot_params}"
+            "Collection name is missing: {snapshot_params}",
         );
         assert!(
             !collection_name.contains(['/', '\\']),
-            "Collection name is missing: {snapshot_params}"
+            "Collection name must not contain slashes: {snapshot_params}",
         );
 
         Self {
@@ -196,42 +196,45 @@ mod tests {
     use super::SnapshotMapping;
 
     #[test]
-    fn snapshot_mapping_accepts_windows_absolute_path() {
-        let mapping = SnapshotMapping::from_cli_arg(r"C:\tmp\collection.snapshot:test_collection");
-
-        assert_eq!(
-            mapping.snapshot_path,
-            PathBuf::from(r"C:\tmp\collection.snapshot")
-        );
-        assert_eq!(mapping.collection_name, "test_collection");
-    }
-
-    #[test]
-    fn snapshot_mapping_accepts_posix_absolute_path() {
+    fn snapshot_mapping_absolute_paths() {
+        // Unix path
         let mapping = SnapshotMapping::from_cli_arg("/tmp/collection.snapshot:test_collection");
-
         assert_eq!(
             mapping.snapshot_path,
-            PathBuf::from("/tmp/collection.snapshot")
+            PathBuf::from("/tmp/collection.snapshot"),
+        );
+        assert_eq!(mapping.collection_name, "test_collection");
+
+        // Windows path
+        // See: <https://github.com/qdrant/qdrant/pull/9723>
+        let mapping = SnapshotMapping::from_cli_arg(r"C:\tmp\collection.snapshot:test_collection");
+        assert_eq!(
+            mapping.snapshot_path,
+            PathBuf::from(r"C:\tmp\collection.snapshot"),
         );
         assert_eq!(mapping.collection_name, "test_collection");
     }
 
     #[test]
-    fn snapshot_mapping_accepts_relative_path() {
+    fn snapshot_mapping_relative_path() {
         let mapping = SnapshotMapping::from_cli_arg("collection.snapshot:test_collection");
-
         assert_eq!(mapping.snapshot_path, PathBuf::from("collection.snapshot"));
+        assert_eq!(mapping.collection_name, "test_collection");
+
+        let mapping = SnapshotMapping::from_cli_arg("./collection.snapshot:test_collection");
+        assert_eq!(
+            mapping.snapshot_path,
+            PathBuf::from("./collection.snapshot")
+        );
         assert_eq!(mapping.collection_name, "test_collection");
     }
 
     #[test]
     fn snapshot_mapping_splits_on_last_colon() {
         let mapping = SnapshotMapping::from_cli_arg("/tmp/snapshots/a:b.snapshot:test_collection");
-
         assert_eq!(
             mapping.snapshot_path,
-            PathBuf::from("/tmp/snapshots/a:b.snapshot")
+            PathBuf::from("/tmp/snapshots/a:b.snapshot"),
         );
         assert_eq!(mapping.collection_name, "test_collection");
     }
@@ -255,7 +258,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Collection name is missing")]
+    #[should_panic(
+        expected = "Collection name must not contain slashes: C:\\tmp\\collection.snapshot"
+    )]
     fn snapshot_mapping_rejects_windows_path_without_collection_name() {
         SnapshotMapping::from_cli_arg(r"C:\tmp\collection.snapshot");
     }
