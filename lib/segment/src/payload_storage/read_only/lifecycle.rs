@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::ReadOnlyPayloadStorage;
@@ -9,6 +9,16 @@ use crate::payload_storage::payload_storage_impl::storage_dir;
 use crate::types::Payload;
 
 impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: PathBuf,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        let path = storage_dir(path);
+        GridstoreReader::<Payload, S>::preopen(fs, path, populate)?;
+        Ok(())
+    }
+
     /// Open the payload storage read-only over the generic filesystem `fs` —
     /// the read-only counterpart of [`PayloadStorageImpl::open_or_create`][1].
     ///

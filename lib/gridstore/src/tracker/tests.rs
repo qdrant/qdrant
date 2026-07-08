@@ -179,7 +179,7 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
     drop(tracker);
 
     // reopen the tracker
-    let tracker = TestTracker::open(&MmapFs, path, true).unwrap();
+    let tracker = TestTracker::open(&MmapFs, path, Populate::No, true).unwrap();
     assert_eq!(tracker.mapping_len().unwrap(), value_count / 2);
     assert_eq!(tracker.pointer_count(), value_count as u32 - 1);
 
