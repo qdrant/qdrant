@@ -1724,7 +1724,7 @@ where
 /// * `Cached` - Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be
 ///   evicted if there is not enough memory and some other component's data is used more
 ///   frequently.
-/// 
+///
 /// * `Pinned` - Data is loaded in RAM and never evicted. First request is fast, but the component must
 ///   fit in RAM at all times. Recommended for frequently queried small components like
 ///   quantized vectors or primary indexes.
