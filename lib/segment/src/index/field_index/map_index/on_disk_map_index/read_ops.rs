@@ -1,7 +1,6 @@
 use std::borrow::{Borrow, Cow};
 use std::iter;
 
-use common::bitvec::BitSliceExt;
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -34,13 +33,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
             .payload_index_io_read_counter()
             .incr_delta(size_of::<bool>());
 
-        let is_deleted = self
-            .storage
-            .deleted
-            .get_bit(idx as usize)
-            .is_some_and(|b| b);
-
-        if is_deleted {
+        if !self.storage.deleted.is_active(idx) {
             return Ok(false);
         }
 
@@ -59,7 +52,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         // We can account cost of reading `bool`, but it will likely be more expensive, than
         // actually reading bool itself.
 
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
                 .values_iter(idx, hw_counter)
@@ -71,7 +64,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
     }
 
     fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             self.storage.point_to_values.get_values_count(idx).ok()?
         } else {
             None
@@ -82,7 +75,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         self.storage
             .point_to_values
             .len()
-            .saturating_sub(self.deleted_count)
+            .saturating_sub(self.storage.deleted.deleted_count())
     }
 
     /// Returns the number of key-value pairs in the index.
@@ -132,10 +125,11 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
                     .payload_index_io_read_counter()
                     .incr_delta(size_of_val(values.as_slice()) + READ_ENTRY_OVERHEAD);
 
+                let deleted = &self.storage.deleted;
                 Box::new(
-                    values.into_iter().filter(|idx| {
-                        !self.storage.deleted.get_bit(*idx as usize).unwrap_or(false)
-                    }),
+                    values
+                        .into_iter()
+                        .filter(move |idx| deleted.is_active(*idx)),
                 )
             }
             Ok(None) => {
@@ -186,13 +180,12 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
                     .payload_index_io_read_counter()
                     .incr_delta(io_read);
 
-                let mut ids = point_ids.unwrap_or(&[]).iter().copied().filter(|point| {
-                    !self
-                        .storage
-                        .deleted
-                        .get_bit(*point as usize)
-                        .unwrap_or(false)
-                });
+                let deleted = &self.storage.deleted;
+                let mut ids = point_ids
+                    .unwrap_or(&[])
+                    .iter()
+                    .copied()
+                    .filter(move |point| deleted.is_active(*point));
 
                 f(key, &mut ids)
             })
@@ -224,11 +217,12 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(&N, usize) -> OperationResult<()>,
     ) -> OperationResult<()> {
+        let deleted = &self.storage.deleted;
         self.storage.value_to_points.for_each_entry(|k, v| {
             let count = v
                 .iter()
                 .filter(|&&idx| {
-                    !self.storage.deleted.get_bit(idx as usize).unwrap_or(true)
+                    deleted.is_active(idx)
 
                     // TODO(deferred): Maybe we can improve this filter and use take_while instead. For this we
                     // need to make sure that `v` is always sorted which we _can_ enforce when finalizing the index.
@@ -257,7 +251,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
             let mut iter = v
                 .iter()
                 .copied()
-                .filter(|idx| !deleted.get_bit(*idx as usize).unwrap_or(true))
+                .filter(|idx| deleted.is_active(*idx))
                 .measure_hw_with_acc(
                     hw_counter.new_accumulator(),
                     size_of::<PointOffsetType>(),
@@ -291,8 +285,7 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> OnDiskMapIndex<N, S> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
         // Skip deleted points
-        let points =
-            points.filter(|&idx| self.storage.deleted.get_bit(idx as usize) == Some(false));
+        let points = points.filter(|&idx| self.storage.deleted.is_active(idx));
 
         self.storage
             .point_to_values

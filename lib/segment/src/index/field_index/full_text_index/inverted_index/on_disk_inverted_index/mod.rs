@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::BitOrAssign;
 use std::path::PathBuf;
 
-use common::bitvec::{BitSlice, BitSliceExt, BitVec};
+use common::bitvec::{BitSlice, BitVec, DeletedBitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
@@ -59,8 +59,6 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
     pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
-    /// Number of points which are not deleted
-    pub(in crate::index::field_index::full_text_index) active_points_count: usize,
 }
 
 pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRead = MmapFile> {
@@ -68,7 +66,7 @@ pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRe
     pub(in crate::index::field_index::full_text_index) vocab: UniversalHashMap<str, TokenId, S>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count:
         TypedStorage<S, usize>,
-    pub(in crate::index::field_index::full_text_index) deleted_points: BitVec,
+    pub(in crate::index::field_index::full_text_index) deleted_points: DeletedBitVec,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -80,7 +78,7 @@ impl<S: UniversalRead> Storage<S> {
             deleted_points,
         } = self;
 
-        deleted_points.capacity().div_ceil(u8::BITS as usize)
+        deleted_points.ram_usage_bytes()
     }
 }
 
@@ -238,8 +236,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         deleted.resize(total_count, false);
         deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
 
-        let num_deleted_points = deleted.count_ones();
-        let points_count = total_count - num_deleted_points;
+        let deleted = DeletedBitVec::new(deleted);
 
         Ok(Some(Self {
             path,
@@ -249,7 +246,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 point_to_tokens_count,
                 deleted_points: deleted,
             },
-            active_points_count: points_count,
         }))
     }
 
@@ -264,12 +260,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
 
     /// Returns whether the point id is valid and active.
     pub fn is_active(&self, point_id: PointOffsetType) -> bool {
-        let is_deleted = self
-            .storage
-            .deleted_points
-            .get_bit(point_id as usize)
-            .unwrap_or(true);
-        !is_deleted
+        self.storage.deleted_points.is_active(point_id)
     }
 
     /// Iterate over point ids whose documents contain all given tokens.
@@ -501,11 +492,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        let Self {
-            path,
-            storage,
-            active_points_count: _,
-        } = self;
+        let Self { path, storage } = self;
         let Storage {
             postings,
             vocab,
@@ -548,17 +535,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     }
 
     fn remove(&mut self, idx: PointOffsetType) -> bool {
-        let Some(is_deleted) = self.storage.deleted_points.get_bit(idx as usize) else {
-            return false; // Never existed
-        };
-
-        if is_deleted {
-            return false; // Already removed
-        }
-
-        self.storage.deleted_points.set(idx as usize, true);
-        self.active_points_count = self.active_points_count.saturating_sub(1);
-        true
+        self.storage.deleted_points.mark_deleted(idx)
     }
 
     fn filter<'a>(
@@ -608,12 +585,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        if self
-            .storage
-            .deleted_points
-            .get_bit(point_id as usize)
-            .unwrap_or(true)
-        {
+        if !self.storage.deleted_points.is_active(point_id) {
             return true;
         }
         // If the read fails or the point does not exist, treat as empty.
@@ -623,12 +595,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
-        if self
-            .storage
-            .deleted_points
-            .get_bit(point_id as usize)
-            .unwrap_or(true)
-        {
+        if !self.storage.deleted_points.is_active(point_id) {
             return 0;
         }
 
@@ -637,7 +604,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     }
 
     fn points_count(&self) -> usize {
-        self.active_points_count
+        self.storage.deleted_points.active_count()
     }
 
     fn for_each_token_id<'a, U: UserData>(

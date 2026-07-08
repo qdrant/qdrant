@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
-use common::bitvec::{BitSlice, BitSliceExt};
+use common::bitvec::{BitSlice, DeletedBitVec};
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
@@ -166,17 +166,14 @@ where
         deleted.resize(point_to_values.len(), false);
         deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
 
-        let deleted_count = deleted.count_ones();
-
         Ok(Some(Self {
             path: path.to_path_buf(),
             storage: Storage {
-                deleted,
+                deleted: DeletedBitVec::new(deleted),
                 pairs,
                 point_to_values,
             },
             histogram,
-            deleted_count,
             max_values_per_point: config.max_values_per_point,
         }))
     }
@@ -232,11 +229,7 @@ where
     /// Not persisted: on reopen, deletions must be re-supplied via the
     /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let idx = idx as usize;
-        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
-            self.storage.deleted.set(idx, true);
-            self.deleted_count += 1;
-        }
+        self.storage.deleted.mark_deleted(idx);
     }
 
     /// Populate all pages in the mmap.
@@ -253,7 +246,6 @@ where
             path,
             storage,
             histogram: _,
-            deleted_count: _,
             max_values_per_point: _,
         } = self;
         let Storage {
@@ -272,7 +264,6 @@ where
             path: _,
             storage,
             histogram,
-            deleted_count: _,
             max_values_per_point: _,
         } = self;
 
