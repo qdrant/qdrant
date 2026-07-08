@@ -10,6 +10,10 @@ use tokio::sync::mpsc;
 use super::BLOB_PIPELINE_CAPACITY;
 use crate::runtime::{BridgeResponse, BridgeRuntime};
 
+/// A completed read drained from a pipeline: the caller `user_data`, the
+/// destination buffer, and the time the read took (see [`BridgeResponse::duration`]).
+type CompletedRead<U> = (U, AVec<u8, RuntimeAlign>, std::time::Duration);
+
 /// Best-effort extraction of a human-readable message from a caught panic
 /// payload. `panic!` payloads are most commonly `&'static str` or `String`;
 /// anything else is reported generically.
@@ -116,6 +120,12 @@ where
         // pipeline capacity, so the send never blocks on backpressure — the
         // only `send` error is the pipeline being dropped before collecting,
         // in which case discarding the buffer is correct.
+        // Stamp the request at enqueue time so the measured latency spans the
+        // full life of the request — including any time it waits for a free
+        // runtime worker — not just the read future's execution. This matters
+        // when a caller schedules a burst of reads at once (e.g. a batched
+        // scroll), where queueing delay is part of the real per-request cost.
+        let started = std::time::Instant::now();
         let reply_tx = self.tx.clone();
         runtime.handle().spawn(async move {
             // Catch a panic in the read future and turn it into an error reply,
@@ -129,12 +139,17 @@ where
                 Ok(result) => result,
                 Err(panic) => Err(UniversalIoError::TaskPanicked(panic_message(&*panic))),
             };
-            let _ = reply_tx.send(BridgeResponse::new(slot, result)).await;
+            let duration = started.elapsed();
+            let _ = reply_tx
+                .send(BridgeResponse::new(slot, result, duration))
+                .await;
         });
         Ok(())
     }
 
-    pub(crate) fn wait(&mut self) -> Result<Option<(U, AVec<u8, RuntimeAlign>)>> {
+    /// Block until any in-flight read completes, returning its caller
+    /// `user_data`, destination buffer, and the time the read itself took.
+    pub(crate) fn wait(&mut self) -> Result<Option<CompletedRead<U>>> {
         if self.slots.is_empty() {
             return Ok(None);
         }
@@ -146,8 +161,9 @@ where
             .slots
             .try_remove(response.slot)
             .expect("response slot must be in pending");
+        let duration = response.duration;
         let buf = response.result?;
-        Ok(Some((user_data, buf)))
+        Ok(Some((user_data, buf, duration)))
     }
 }
 
@@ -196,7 +212,7 @@ mod tests {
         inner
             .schedule(&runtime, 111, async { Ok(avec(b"hello")) })
             .expect("schedule");
-        let (user, bytes) = inner.wait().expect("wait ok").expect("some");
+        let (user, bytes, _took) = inner.wait().expect("wait ok").expect("some");
         assert_eq!(user, 111);
         assert_eq!(&bytes[..], b"hello");
     }
@@ -217,7 +233,7 @@ mod tests {
         }
         let mut seen = std::collections::HashSet::new();
         for _ in 0..3 {
-            let (user, _bytes) = inner.wait().unwrap().unwrap();
+            let (user, _bytes, _took) = inner.wait().unwrap().unwrap();
             assert!(seen.insert(user), "user_data {user} seen twice");
         }
         assert_eq!(seen, [0u32, 1, 2].into_iter().collect());
@@ -256,7 +272,7 @@ mod tests {
         inner.schedule(&rt_b, 2, async { Ok(avec(b"BB")) }).unwrap();
         let mut seen: AHashMap<u32, Vec<u8>> = AHashMap::new();
         for _ in 0..2 {
-            let (user, bytes) = inner.wait().unwrap().unwrap();
+            let (user, bytes, _took) = inner.wait().unwrap().unwrap();
             seen.insert(user, bytes.to_vec());
         }
         assert_eq!(seen[&1], b"AAAA");
