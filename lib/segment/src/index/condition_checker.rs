@@ -49,6 +49,8 @@ pub enum ConditionCheckerEnum<'a> {
     Ids(IdsConditionChecker),
     #[cfg(feature = "testing")]
     Plain(PlainFilterContext<'a>),
+    #[cfg(feature = "testing")]
+    TestBitOfId(TestBitOfId),
 
     // bool index
     BoolImmutable(BoolCC<'a, ImmutableBoolIndex>),
@@ -136,6 +138,8 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Ids(c) => c.check_batched(ids, select, rest),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check_batched(ids, select, rest),
+            #[cfg(feature = "testing")]
+            Self::TestBitOfId(c) => c.check_batched(ids, select, rest),
             Self::BoolImmutable(c) => c.check_batched(ids, select, rest),
             Self::BoolMutable(c) => c.check_batched(ids, select, rest),
             #[cfg(target_os = "linux")]
@@ -198,6 +202,8 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Ids(c) => c.check(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check(point_id),
+            #[cfg(feature = "testing")]
+            Self::TestBitOfId(c) => c.check(point_id),
             Self::BoolImmutable(c) => c.check(point_id),
             Self::BoolMutable(c) => c.check(point_id),
             #[cfg(target_os = "linux")]
@@ -260,6 +266,8 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Ids(c) => c.check_infallible(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check_infallible(point_id),
+            #[cfg(feature = "testing")]
+            Self::TestBitOfId(c) => c.check_infallible(point_id),
             Self::BoolImmutable(c) => c.check_infallible(point_id),
             Self::BoolMutable(c) => c.check_infallible(point_id),
             #[cfg(target_os = "linux")]
@@ -311,5 +319,40 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::MapStrRoMmap(c) => c.check_infallible(point_id),
             Self::MapUuidRoMmap(c) => c.check_infallible(point_id),
         }
+    }
+}
+
+/// Point matches when its ID has specified bit set.
+#[cfg(feature = "testing")]
+pub struct TestBitOfId(pub u32);
+
+#[cfg(feature = "testing")]
+impl ConditionChecker for TestBitOfId {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(point_id >> self.0 & 1 == 1)
+    }
+
+    fn check_batched<K: CheckItem>(
+        &mut self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        let (mut left, mut right): (Vec<K>, Vec<K>) = ids
+            .iter()
+            .copied()
+            .partition(|item| (item.point_id() >> self.0 & 1 == 1) == select.is_match());
+        left.reverse();
+        right.reverse();
+        if rest == Rest::Discard
+            && let Some(&poison) = left.first().or(right.first())
+        {
+            right.fill(poison);
+        }
+        ids[..left.len()].copy_from_slice(&left);
+        ids[left.len()..].copy_from_slice(&right);
+        Ok(left.len())
     }
 }

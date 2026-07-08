@@ -2,6 +2,11 @@ use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
 
+#[cfg(feature = "testing")]
+use rand::RngExt;
+#[cfg(feature = "testing")]
+use rand::rngs::StdRng;
+
 use crate::types::{PointOffsetType, ScoredPointOffset};
 
 /// A check that tests whether points satisfy a condition.
@@ -319,5 +324,52 @@ impl<T: Copy> Iterator for PartitionerIter<'_, T> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         let unread = self.0.right_start.get() - self.0.unread_start.get();
         (unread, Some(unread))
+    }
+}
+
+/// Assert that [`ConditionChecker::check_batched`] returns the same values as
+/// [`ConditionChecker::check`].
+#[cfg(feature = "testing")]
+pub fn assert_congruence<C>(checker: &mut C, num_points: usize, rng: &mut StdRng)
+where
+    C: ConditionChecker<Error: std::fmt::Debug>,
+{
+    let num_points = num_points as u32;
+    let far_ids = [num_points, num_points + 100, u32::MAX / 2, u32::MAX - 1];
+    let rand_id = |rng: &mut StdRng| match rng.random_bool(0.9) {
+        true => rng.random_range(0..num_points.max(1)),
+        false => far_ids[rng.random_range(0..far_ids.len())],
+    };
+
+    let mut check = |mut input: Vec<PointOffsetType>| {
+        input.sort_unstable();
+
+        for select in [Select::Matches, Select::NonMatches] {
+            let want = input
+                .iter()
+                .copied()
+                .filter(|&id| checker.check(id).unwrap() == select.is_match())
+                .collect::<Vec<_>>();
+
+            for rest in [Rest::Keep, Rest::Discard] {
+                let mut buf = input.clone();
+                let split = checker.check_batched(&mut buf, select, rest).unwrap();
+                buf[..split].sort_unstable();
+                assert_eq!(&buf[..split], want, "left, {select:?} {rest:?}");
+                if rest == Rest::Keep {
+                    buf.sort_unstable();
+                    assert_eq!(&buf, &input, "kept, {select:?}");
+                }
+            }
+        }
+    };
+
+    check(vec![]);
+    check(vec![rng.random_range(0..num_points.max(1))]);
+    check((0..num_points).chain(far_ids).collect());
+    check((0..2048).map(|_| rand_id(rng)).collect());
+    for _ in 0..5 {
+        let len = rng.random_range(0..300);
+        check((0..len).map(|_| rand_id(rng)).collect());
     }
 }

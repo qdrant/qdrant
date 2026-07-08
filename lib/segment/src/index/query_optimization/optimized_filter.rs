@@ -251,3 +251,76 @@ fn at_least<C: ConditionChecker, K: CheckItem>(
     }
     Ok(scratch[0])
 }
+
+#[cfg(test)]
+mod tests {
+    use common::condition_checker::assert_congruence;
+    use itertools::iproduct;
+    use rand::rngs::StdRng;
+    use rand::{RngExt, SeedableRng};
+
+    use super::*;
+    use crate::index::condition_checker::{ConditionCheckerEnum, TestBitOfId};
+
+    #[test]
+    fn flat() {
+        let mut rng = StdRng::seed_from_u64(1);
+        for (should, min_should, must, must_not) in iproduct!(0..=3, 0..=3usize, 0..=3, 0..=3) {
+            for min_should_count in 0..=min_should + 1 {
+                let mut total = 0;
+                let mut next = || {
+                    total += 1;
+                    ConditionCheckerEnum::TestBitOfId(TestBitOfId(total - 1))
+                };
+                let mut filter = OptimizedFilter::new(
+                    (0..should).map(|_| next()).collect(),
+                    (0..min_should).map(|_| next()).collect(),
+                    min_should_count,
+                    (0..must).map(|_| next()).collect(),
+                    (0..must_not).map(|_| next()).collect(),
+                );
+                assert_congruence(&mut filter, 1 << total, &mut rng);
+            }
+        }
+    }
+
+    #[test]
+    fn nested() {
+        for seed in 0..20 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut bits = 0;
+            let mut filter = generate(&mut rng, 3, &mut bits);
+            assert_congruence(&mut filter, 1 << bits, &mut rng);
+        }
+
+        fn generate(rng: &mut StdRng, depth: usize, bits: &mut u32) -> OptimizedFilter<'static> {
+            let mut gen_clause = || -> Vec<ConditionCheckerEnum<'static>> {
+                (0..rng.random_range(0..=2))
+                    .map(|_| {
+                        if depth > 0 && rng.random_bool(0.4) {
+                            return ConditionCheckerEnum::Filter(generate(rng, depth - 1, bits));
+                        }
+                        // Reuse bits once 8 are claimed: keeps the universe small, and
+                        // repeated bits add correlated-leaf coverage.
+                        let bit = match *bits < 8 {
+                            true => {
+                                *bits += 1;
+                                *bits - 1
+                            }
+                            false => rng.random_range(0..8),
+                        };
+                        ConditionCheckerEnum::TestBitOfId(TestBitOfId(bit))
+                    })
+                    .collect()
+            };
+
+            let should = gen_clause();
+            let min_should = gen_clause();
+            let must = gen_clause();
+            let must_not = gen_clause();
+
+            let count = rng.random_range(0..=min_should.len() + 1);
+            OptimizedFilter::new(should, min_should, count, must, must_not)
+        }
+    }
+}
