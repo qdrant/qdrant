@@ -46,10 +46,14 @@ where
         dir: &Path,
         is_on_disk: bool,
     ) -> OperationResult<bool> {
-        let populate = match is_on_disk {
+        let effective_is_on_disk =
+            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+
+        let populate = match effective_is_on_disk {
             true => Populate::No,
             false => Populate::PreferBackground,
         };
+
         OnDiskMapIndex::<N, S>::preopen(fs, dir, populate)
     }
 
