@@ -8,8 +8,8 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
-    read_json_via,
+    CachedReadFs, MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead,
+    UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -114,6 +114,56 @@ where
         })
     }
 
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of every file [`open`](Self::open) will read.
+    ///
+    /// Returns `false` (nothing scheduled) when the segment is not in the
+    /// on-disk format.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Config
+        let config_path = path.join(CONFIG_PATH);
+        if fs
+            .schedule_prefetch(&config_path, None, None)
+            .ok_not_found()?
+            .is_none()
+        {
+            // If config doesn't exist, assume the index doesn't exist on disk
+            return Ok(false);
+        }
+
+        // Histogram
+        Histogram::<T>::preopen(fs, path)?;
+
+        // Value pairs
+        let pairs_path = path.join(PAIRS_PATH);
+        fs.schedule_prefetch(&pairs_path, Some(Self::open_options(populate)), None)?;
+
+        // Point to values
+        OnDiskPointToValues::<T, S>::preopen(fs, path, populate)?;
+
+        // Deleted bitslice
+        let deleted_path = path.join(DELETED_PATH);
+        fs.schedule_prefetch(
+            &deleted_path,
+            Some(Self::open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
+        Ok(true)
+    }
+
     /// Open and load mmap numeric index from the given path
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
@@ -132,15 +182,13 @@ where
             return Ok(None);
         };
 
-        let histogram = Histogram::<T>::load_universal(fs, path)?;
+        let histogram = Histogram::<T>::open(fs, path)?;
 
-        let pairs_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate,
-            advice: AdviceSetting::Global,
-        };
-        let pairs = TypedStorage::new(fs.open(&pairs_path, pairs_options, Default::default())?);
+        let pairs = TypedStorage::new(fs.open(
+            &pairs_path,
+            Self::open_options(populate),
+            Default::default(),
+        )?);
 
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
@@ -148,12 +196,7 @@ where
         let deleted_payload_mmap = StoredBitSlice::<S>::open(
             fs,
             &deleted_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::Auto,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(Populate::Auto),
             Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
