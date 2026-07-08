@@ -214,10 +214,10 @@ where
                     hw_counter,
                 )
             },
-            |id, vectors, old_payload| {
+            |id, _raw_vectors, updated_vectors, old_payload| {
                 let point = points_map[&id];
                 for (name, vec) in point.get_vectors() {
-                    vectors.insert(name.into(), vec.to_owned());
+                    updated_vectors.insert(name.into(), vec.to_owned());
                 }
                 if let Some(payload) = &point.payload {
                     *old_payload = payload.clone();
@@ -670,9 +670,9 @@ fn update_vectors(
                 let vectors = points_map[&id].clone();
                 write_segment.update_vectors(op_num, id, vectors, hw_counter)
             },
-            |id, owned_vectors, _| {
+            |id, _raw_vectors, updated_vectors, _| {
                 for (vector_name, vector_ref) in points_map[&id].iter() {
-                    owned_vectors.insert(vector_name.to_owned(), vector_ref.to_owned());
+                    updated_vectors.insert(vector_name.to_owned(), vector_ref.to_owned());
                 }
             },
             hw_counter,
@@ -711,10 +711,8 @@ pub fn delete_vectors(
                 }
                 Ok(res)
             },
-            |_, owned_vectors, _| {
-                for name in vector_names {
-                    owned_vectors.remove_ref(name);
-                }
+            |_, raw_vectors, _, _| {
+                raw_vectors.retain(|(name, _)| !vector_names.contains(name));
             },
             hw_counter,
         )?;
@@ -770,7 +768,7 @@ pub fn set_payload(
             op_num,
             chunk,
             |id, write_segment| write_segment.set_payload(op_num, id, payload, key, hw_counter),
-            |_, _, old_payload| match key {
+            |_, _, _, old_payload| match key {
                 Some(key) => old_payload.merge_by_key(payload, key),
                 None => old_payload.merge(payload),
             },
@@ -830,7 +828,7 @@ pub fn delete_payload(
                 }
                 Ok(res)
             },
-            |_, _, payload| {
+            |_, _, _, payload| {
                 for key in keys {
                     payload.remove(key);
                 }
@@ -883,7 +881,7 @@ pub fn clear_payload(
             op_num,
             batch,
             |id, write_segment| write_segment.clear_payload(op_num, id, hw_counter),
-            |_, _, payload| payload.0.clear(),
+            |_, _, _, payload| payload.0.clear(),
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -932,7 +930,7 @@ pub fn overwrite_payload(
             op_num,
             batch,
             |id, write_segment| write_segment.set_full_payload(op_num, id, payload, hw_counter),
-            |_, _, old_payload| {
+            |_, _, _, old_payload| {
                 *old_payload = payload.clone();
             },
             hw_counter,

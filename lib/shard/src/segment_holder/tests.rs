@@ -61,7 +61,7 @@ fn test_apply_to_appendable() {
                 assert!(segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred));
                 Ok(true)
             },
-            |point_id, _, _| {
+            |point_id, _, _, _| {
                 moved_to_appendable.push(point_id);
             },
             &HardwareCounterCell::new(),
@@ -187,7 +187,7 @@ fn test_apply_and_move_old_versions(
                 assert!(segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred));
                 Ok(true)
             },
-            |point_id, _, _| processed_points2.push(point_id),
+            |point_id, _, _, _| processed_points2.push(point_id),
             &hw_counter,
         )
         .unwrap();
@@ -272,7 +272,7 @@ fn test_cow_operation() {
             1010,
             &[123.into()],
             |_, _| unreachable!(),
-            |_point_id, vectors, payload| {
+            |_point_id, _raw_vectors, vectors, payload| {
                 vectors.insert(
                     DEFAULT_VECTOR_NAME.to_owned(),
                     VectorInternal::Dense(vec![9.0; 4]),
@@ -297,6 +297,351 @@ fn test_cow_operation() {
     assert_eq!(
         new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
         &Value::from(2)
+    );
+}
+
+/// TurboQuant-as-datatype vectors must survive repeated CoW moves between
+/// segments without degrading.
+///
+/// The CoW arm of [`SegmentHolder::apply_points_with_conditional_move`] reads
+/// the point's vectors decoded to `f32` and re-inserts them with
+/// `upsert_point`, so a TQ-datatype vector is dequantized and requantized on
+/// every move. TurboQuant requantization is not idempotent — for Dot/L2 the
+/// stored per-vector scale factor picks up the centroid-norm bias on every
+/// cycle — so each move degrades the vector a little further beyond the
+/// initial (expected, one-off) quantization loss.
+///
+/// This test ping-pongs one point between two TQ segments, and asserts the
+/// decoded vector never drifts from its first-generation value (the read-back
+/// right after initial ingestion). The holder classifies segments as
+/// (non-)appendable once, at insertion, so each round uses a fresh holder with
+/// the segment roles swapped instead of flipping flags under a live holder.
+#[test]
+fn test_cow_move_does_not_degrade_turbo_vectors() {
+    use segment::data_types::vectors::only_default_vector;
+    use segment::types::{Indexes, VectorDataConfig, VectorStorageDatatype, VectorStorageType};
+
+    const DIM: usize = 128;
+    const ROUNDTRIPS: u64 = 32;
+
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: DIM,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (mut segment_a, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (segment_b, _) = build_segment(dir.path(), &config, None, true).unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let point_id: PointIdType = 7.into();
+    let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
+    segment_a
+        .upsert_point(100, point_id, only_default_vector(&original), &hw_counter)
+        .unwrap();
+
+    let read_dense = |segment: &dyn SegmentEntry| -> Vec<f32> {
+        match segment
+            .vector(DEFAULT_VECTOR_NAME, point_id, &hw_counter)
+            .unwrap()
+            .unwrap()
+        {
+            VectorInternal::Dense(vector) => vector,
+            VectorInternal::Sparse(_) | VectorInternal::MultiDense(_) => {
+                panic!("expected a dense vector")
+            }
+        }
+    };
+
+    // First-generation read-back: the original vector after its initial
+    // (expected, one-off) quantization. Moves must preserve it exactly.
+    let first_generation = read_dense(&segment_a);
+
+    let segment_a = Arc::new(RwLock::new(segment_a));
+    let segment_b = Arc::new(RwLock::new(segment_b));
+
+    // L2 distance of each round's read-back from the first generation.
+    let mut drift = Vec::new();
+    for round in 0..ROUNDTRIPS {
+        let (source, destination) = if round % 2 == 0 {
+            (&segment_a, &segment_b)
+        } else {
+            (&segment_b, &segment_a)
+        };
+
+        // The segment holding the point is non-appendable and the other one is
+        // the only appendable destination, so the call must take the CoW-move
+        // arm.
+        source.write().appendable_flag = false;
+        destination.write().appendable_flag = true;
+        let mut holder = SegmentHolder::default();
+        holder.add_new_locked(LockedSegment::Original(source.clone()));
+        holder.add_new_locked(LockedSegment::Original(destination.clone()));
+
+        holder
+            .apply_points_with_conditional_move(
+                101 + round,
+                &[point_id],
+                |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+                |_, _, _, _| {}, // no-op: a pure move
+                &hw_counter,
+            )
+            .unwrap();
+
+        let source = source.read();
+        let destination = destination.read();
+        assert!(!source.has_point(point_id, DeferredBehavior::WithDeferred));
+        assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+
+        let read_back = read_dense(&*destination);
+        drift.push(
+            first_generation
+                .iter()
+                .zip(&read_back)
+                .map(|(&a, &b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt(),
+        );
+    }
+
+    assert!(
+        drift.iter().all(|&distance| distance == 0.0),
+        "TurboQuant vector degraded across CoW moves; L2 distance from the \
+         first-generation read-back after each move: {drift:?}",
+    );
+}
+
+/// A CoW move where the operation overlays one named vector must re-encode
+/// only that name: the untouched sibling TQ vector travels as verbatim bytes
+/// (bit-identical read-back), and the overlaid name reads back exactly like a
+/// fresh direct ingest of the same data.
+#[test]
+fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
+    use segment::types::{Indexes, VectorDataConfig, VectorStorageDatatype, VectorStorageType};
+
+    const DIM: usize = 128;
+    const KEEP: &str = "keep";
+    const REPLACE: &str = "replace";
+
+    let vector_config = VectorDataConfig {
+        size: DIM,
+        distance: Distance::Dot,
+        storage_type: VectorStorageType::ChunkedMmap,
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config: None,
+        datatype: Some(VectorStorageDatatype::Turbo4),
+    };
+    let config = SegmentConfig {
+        vector_data: HashMap::from([
+            (KEEP.to_owned(), vector_config.clone()),
+            (REPLACE.to_owned(), vector_config),
+        ]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (destination, _) = build_segment(dir.path(), &config, None, true).unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let point_id: PointIdType = 7.into();
+    let keep_vec: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
+    let old_replace: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.11).cos()).collect();
+    let fresh_replace: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.73).sin()).collect();
+
+    source
+        .upsert_point(
+            100,
+            point_id,
+            NamedVectors::from_pairs([
+                (KEEP.to_owned(), keep_vec.clone()),
+                (REPLACE.to_owned(), old_replace.clone()),
+            ]),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let read_dense = |segment: &dyn SegmentEntry, name: &str| -> Vec<f32> {
+        match segment
+            .vector(name, point_id, &hw_counter)
+            .unwrap()
+            .unwrap()
+        {
+            VectorInternal::Dense(vector) => vector,
+            VectorInternal::Sparse(_) | VectorInternal::MultiDense(_) => {
+                panic!("expected a dense vector")
+            }
+        }
+    };
+
+    // First-generation read-back of the untouched name: must survive the move
+    // bit-identically.
+    let first_generation_keep = read_dense(&source, KEEP);
+
+    // Oracle for the overlaid name: a fresh direct ingest into a same-config
+    // segment (TQ encoding is deterministic for equal configs).
+    let (mut oracle, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    oracle
+        .upsert_point(
+            100,
+            point_id,
+            NamedVectors::from_pairs([
+                (KEEP.to_owned(), keep_vec.clone()),
+                (REPLACE.to_owned(), fresh_replace.clone()),
+            ]),
+            &hw_counter,
+        )
+        .unwrap();
+    let expected_replace = read_dense(&oracle, REPLACE);
+
+    // Same pattern as test_cow_move_does_not_degrade_turbo_vectors: keep own
+    // Arc handles so the read-back guard derefs to &Segment (→ &dyn SegmentEntry).
+    source.appendable_flag = false;
+    let source = Arc::new(RwLock::new(source));
+    let destination = Arc::new(RwLock::new(destination));
+    let mut holder = SegmentHolder::default();
+    holder.add_new_locked(LockedSegment::Original(source.clone()));
+    holder.add_new_locked(LockedSegment::Original(destination.clone()));
+
+    holder
+        .apply_points_with_conditional_move(
+            101,
+            &[point_id],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _raw_vectors, updated_vectors, _| {
+                updated_vectors.insert(
+                    REPLACE.to_owned(),
+                    VectorInternal::Dense(fresh_replace.clone()),
+                );
+            },
+            &hw_counter,
+        )
+        .unwrap();
+
+    let destination = destination.read();
+    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+
+    assert_eq!(
+        read_dense(&*destination, KEEP),
+        first_generation_keep,
+        "untouched named vector must travel as verbatim bytes",
+    );
+    assert_eq!(
+        read_dense(&*destination, REPLACE),
+        expected_replace,
+        "overlaid named vector must equal a fresh direct ingest",
+    );
+}
+
+/// A CoW move where the operation deletes one named vector must drop exactly
+/// that name at the destination while the surviving TQ vector travels as
+/// verbatim bytes (bit-identical read-back).
+#[test]
+fn test_cow_move_delete_name_preserves_survivor() {
+    use segment::types::{Indexes, VectorDataConfig, VectorStorageDatatype, VectorStorageType};
+
+    const DIM: usize = 128;
+    const KEEP: &str = "keep";
+    const DROP: &str = "drop";
+
+    let vector_config = VectorDataConfig {
+        size: DIM,
+        distance: Distance::Dot,
+        storage_type: VectorStorageType::ChunkedMmap,
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config: None,
+        datatype: Some(VectorStorageDatatype::Turbo4),
+    };
+    let config = SegmentConfig {
+        vector_data: HashMap::from([
+            (KEEP.to_owned(), vector_config.clone()),
+            (DROP.to_owned(), vector_config),
+        ]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (destination, _) = build_segment(dir.path(), &config, None, true).unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let point_id: PointIdType = 7.into();
+    let keep_vec: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
+    let drop_vec: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.11).cos()).collect();
+
+    source
+        .upsert_point(
+            100,
+            point_id,
+            NamedVectors::from_pairs([
+                (KEEP.to_owned(), keep_vec.clone()),
+                (DROP.to_owned(), drop_vec.clone()),
+            ]),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let read_dense = |segment: &dyn SegmentEntry, name: &str| -> Vec<f32> {
+        match segment
+            .vector(name, point_id, &hw_counter)
+            .unwrap()
+            .unwrap()
+        {
+            VectorInternal::Dense(vector) => vector,
+            VectorInternal::Sparse(_) | VectorInternal::MultiDense(_) => {
+                panic!("expected a dense vector")
+            }
+        }
+    };
+    let first_generation_keep = read_dense(&source, KEEP);
+
+    // Own Arc handles, as in test_cow_move_does_not_degrade_turbo_vectors.
+    source.appendable_flag = false;
+    let source = Arc::new(RwLock::new(source));
+    let destination = Arc::new(RwLock::new(destination));
+    let mut holder = SegmentHolder::default();
+    holder.add_new_locked(LockedSegment::Original(source.clone()));
+    holder.add_new_locked(LockedSegment::Original(destination.clone()));
+
+    holder
+        .apply_points_with_conditional_move(
+            101,
+            &[point_id],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, raw_vectors, _, _| {
+                raw_vectors.retain(|(name, _)| name != DROP);
+            },
+            &hw_counter,
+        )
+        .unwrap();
+
+    let destination = destination.read();
+    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+
+    assert_eq!(
+        read_dense(&*destination, KEEP),
+        first_generation_keep,
+        "surviving named vector must travel as verbatim bytes",
+    );
+    assert!(
+        destination
+            .vector(DROP, point_id, &hw_counter)
+            .unwrap()
+            .is_none(),
+        "deleted named vector must not exist at the destination",
     );
 }
 
@@ -1498,7 +1843,7 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
             20,
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
-            |_, _, _| {},
+            |_, _, _, _| {},
             &hw_counter,
         )
         .unwrap();
@@ -1665,7 +2010,7 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
             20,
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
-            |_, _, _| {},
+            |_, _, _, _| {},
             &hw_counter,
         )
         .unwrap();
