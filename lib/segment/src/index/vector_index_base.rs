@@ -84,6 +84,20 @@ pub trait VectorIndex: VectorIndexRead {
         vector: Option<VectorRef>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
+
+    /// Byte-blob analogue of [`VectorIndex::update_vector`]: `vector` is the
+    /// storage-native serialized form (the [`retrieve_raw`] format), letting
+    /// requantized storages ingest bytes verbatim instead of a lossy
+    /// decode/re-encode round-trip. `None` behaves exactly like
+    /// `update_vector(id, None, _)`.
+    ///
+    /// [`retrieve_raw`]: crate::entry::entry_point::ReadSegmentEntry::retrieve_raw
+    fn update_vector_raw(
+        &mut self,
+        id: PointOffsetType,
+        vector: Option<&[u8]>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 }
 
 #[derive(Debug)]
@@ -346,6 +360,31 @@ impl VectorIndex for VectorIndexEnum {
             Self::SparseCompressedMmapF32(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseCompressedMmapF16(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseCompressedMmapU8(index) => index.update_vector(id, vector, hw_counter),
+        }
+    }
+
+    fn update_vector_raw(
+        &mut self,
+        id: PointOffsetType,
+        vector: Option<&[u8]>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Plain(index) => index.update_vector_raw(id, vector, hw_counter),
+            Self::Hnsw(index) => index.update_vector_raw(id, vector, hw_counter),
+            Self::SparseRam(index) => index.update_vector_raw(id, vector, hw_counter),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.update_vector_raw(id, vector, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.update_vector_raw(id, vector, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.update_vector_raw(id, vector, hw_counter)
+            }
+            Self::SparseCompressedMmapF32(index) => index.update_vector_raw(id, vector, hw_counter),
+            Self::SparseCompressedMmapF16(index) => index.update_vector_raw(id, vector, hw_counter),
+            Self::SparseCompressedMmapU8(index) => index.update_vector_raw(id, vector, hw_counter),
         }
     }
 }

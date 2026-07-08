@@ -830,6 +830,18 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
+    fn upsert_point_raw(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _vectors: &[(VectorNameBuf, Vec<u8>)],
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
     fn update_vectors(
         &mut self,
         op_num: SeqNumberType,

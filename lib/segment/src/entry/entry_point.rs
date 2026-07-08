@@ -459,6 +459,23 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
+    /// Byte-blob analogue of [`SegmentEntry::upsert_point`]: vector values are
+    /// storage-native bytes in the exact form returned by
+    /// [`ReadSegmentEntry::retrieve_raw`], so requantized (e.g. TurboQuant)
+    /// vectors relocate without a lossy decode/re-encode round-trip.
+    ///
+    /// The bytes carry no encoding/version tag: the target segment must have
+    /// the same vector configuration (kind, datatype, dim) as the source. The
+    /// bytes are inserted as-is, without preprocessing — they were already
+    /// preprocessed (e.g. cosine-normalized) when first ingested.
+    fn upsert_point_raw(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: &[(VectorNameBuf, Vec<u8>)],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
     fn update_vectors(
         &mut self,
         op_num: SeqNumberType,

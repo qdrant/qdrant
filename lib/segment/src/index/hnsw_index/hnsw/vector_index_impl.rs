@@ -92,4 +92,13 @@ impl VectorIndex for HNSWIndex {
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }
+
+    fn update_vector_raw(
+        &mut self,
+        _id: PointOffsetType,
+        _vector: Option<&[u8]>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error("Cannot update HNSW index"))
+    }
 }
