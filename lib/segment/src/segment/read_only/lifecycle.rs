@@ -65,7 +65,24 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
+        Self::first_preopen(&cached_fs, segment_path)?;
         Self::open_via(&cached_fs, fs, segment_path, uuid, deferred_internal_id)
+    }
+
+    fn first_preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
+        let SegmentState {
+            initial_version: _,
+            version: _,
+            config,
+        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
+
+        let payload_populate = match config.payload_storage_type {
+            PayloadStorageType::InRamMmap => Populate::PreferBackground,
+            PayloadStorageType::Mmap => Populate::No,
+        };
+        ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_populate)?;
+
+        Ok(())
     }
 
     /// Read-only mirror of `load_segment`: assembles every read-only component
@@ -77,7 +94,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// stores a filesystem handle to re-open appended files later (the
     /// appendable id tracker): a caching wrapper's snapshot would go stale.
     pub(crate) fn open_via(
-        fs: &impl UniversalReadFs<File = S>,
+        fs: &impl CachedReadFs<File = S>,
         raw_fs: &S::Fs,
         segment_path: &Path,
         uuid: Uuid,

@@ -8,8 +8,8 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
+    CachedReadFs, FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange,
+    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
 
@@ -20,6 +20,15 @@ use crate::tracker::{PageId, ValuePointer};
 
 pub fn page_path(base_path: &Path, page_id: PageId) -> PathBuf {
     base_path.join(format!("page_{page_id}.dat"))
+}
+
+pub fn page_open_options(populate: Populate, writeable: bool) -> OpenOptions {
+    OpenOptions {
+        writeable,
+        need_sequential: true,
+        populate,
+        advice: AdviceSetting::Advice(Advice::Random),
+    }
 }
 
 #[derive(Debug)]
@@ -50,6 +59,27 @@ impl<S: UniversalRead> Pages<S> {
             pages: Vec::new(),
             writeable,
         }
+    }
+
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+    ) -> Result<()> {
+        let page_files: HashSet<_> = fs
+            .list_files(&dir.join("page_"))?
+            .into_iter()
+            .map(|listed| listed.path)
+            .collect();
+
+        for page_id in 0.. {
+            let page_path = page_path(dir, page_id);
+            if !page_files.contains(&page_path) {
+                break;
+            }
+            fs.schedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+        }
+        Ok(())
     }
 
     pub fn open<Fs: UniversalReadFs<File = S>>(
@@ -83,18 +113,13 @@ impl<S: UniversalRead> Pages<S> {
         path: &Path,
         populate: Populate,
     ) -> Result<()> {
-        let page = fs.open(path, self.page_open_options(populate), Default::default())?;
+        let page = fs.open(
+            path,
+            page_open_options(populate, self.writeable),
+            Default::default(),
+        )?;
         self.pages.push(page);
         Ok(())
-    }
-
-    fn page_open_options(&self, populate: Populate) -> OpenOptions {
-        OpenOptions {
-            writeable: self.writeable,
-            need_sequential: true,
-            populate,
-            advice: AdviceSetting::Advice(Advice::Random),
-        }
     }
 
     pub fn num_pages(&self) -> usize {

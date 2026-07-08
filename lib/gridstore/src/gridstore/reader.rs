@@ -5,7 +5,9 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs, UserData, read_json_via};
+use common::universal_io::{
+    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
+};
 
 use super::view::GridstoreView;
 use crate::Result;
@@ -58,6 +60,22 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         self.view().max_point_offset()
     }
 
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        base_path: PathBuf,
+        populate: Populate,
+    ) -> Result<()> {
+        // schedule config file
+        let config_path = base_path.join(CONFIG_FILENAME);
+        fs.schedule_prefetch(&config_path, None, None)?;
+
+        // schedule tracker
+        Tracker::<S>::preopen(fs, &base_path, populate)?;
+
+        // schedule pages
+        Pages::preopen(fs, &base_path, populate)
+    }
+
     /// Open an existing read-only storage at the given path.
     ///
     /// Infers page count by scanning for page files on disk.
@@ -74,7 +92,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
         // writable `Gridstore` opens these same files writable instead.
-        let (config, tracker) = read_config_and_tracker(fs, &base_path, false)?;
+        let (config, tracker) = read_config_and_tracker(fs, &base_path, populate, false)?;
 
         let pages = Pages::<S>::open(fs, &base_path, false, populate)?;
 
@@ -214,6 +232,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
 pub(super) fn read_config_and_tracker<Fs, S>(
     fs: &Fs,
     base_path: &std::path::Path,
+    populate: Populate,
     writeable: bool,
 ) -> Result<(StorageConfig, Tracker<S>)>
 where
@@ -224,7 +243,7 @@ where
     let config: StorageConfig =
         read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
 
-    let tracker = Tracker::<S>::open(fs, base_path, writeable)?;
+    let tracker = Tracker::<S>::open(fs, base_path, populate, writeable)?;
 
     Ok((config, tracker))
 }

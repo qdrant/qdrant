@@ -9,8 +9,8 @@ use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
-    UniversalWrite, UserData,
+    CachedReadFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFs, UniversalWrite, UserData,
 };
 use smallvec::SmallVec;
 
@@ -27,11 +27,11 @@ pub type PageId = u32;
 /// `writeable` is `false` for read-only readers (so the backend may be
 /// write-enforced, e.g. `ReadOnly<MmapFile>`) and `true` for the writable
 /// tracker that appends pointers.
-fn tracker_open_options(writeable: bool) -> OpenOptions {
+fn tracker_open_options(populate: Populate, writeable: bool) -> OpenOptions {
     OpenOptions {
         writeable,
         need_sequential: false,
-        populate: Populate::No,
+        populate,
         advice: AdviceSetting::Advice(Advice::Random),
     }
 }
@@ -273,21 +273,29 @@ impl<S> Tracker<S> {
 
 // Read operations -- only require UniversalRead
 impl<S: UniversalRead> Tracker<S> {
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        populate: Populate,
+    ) -> Result<()> {
+        let path = Self::tracker_file_name(path);
+        // TODO(uio): use Populate::BackgroundPartial when Populate::No
+        fs.schedule_prefetch(&path, Some(tracker_open_options(populate, false)), None)?;
+        Ok(())
+    }
+
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
     pub fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         path: &Path,
+        populate: Populate,
         writeable: bool,
     ) -> Result<Self> {
         let path = Self::tracker_file_name(path);
-        let storage = Self::open_storage(fs, &path, writeable)?;
-        Self::from_storage(path, storage)
-    }
 
-    /// Build the tracker over an already-opened storage file. `path` must be
-    /// the tracker file path the storage was opened from.
-    fn from_storage(path: PathBuf, storage: S) -> Result<Self> {
+        let storage = Self::open_storage(fs, &path, populate, writeable)?;
+
         let header: TrackerHeader = Self::read_header(&storage)?;
         let pending_updates = AHashMap::new();
         Ok(Self {
@@ -307,9 +315,14 @@ impl<S: UniversalRead> Tracker<S> {
     fn open_storage<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         path: &Path,
+        populate: Populate,
         writeable: bool,
     ) -> Result<S> {
-        let storage = match fs.open(path, tracker_open_options(writeable), Default::default()) {
+        let storage = match fs.open(
+            path,
+            tracker_open_options(populate, writeable),
+            Default::default(),
+        ) {
             Err(UniversalIoError::NotFound { .. }) => {
                 // If config exists and storage doesn't,
                 // it should be treated as inconsistent storage rather than a missing one
@@ -424,7 +437,11 @@ where
             "Size hint is too small"
         );
         create_and_ensure_length(&path, size)?;
-        let storage = fs.open(&path, tracker_open_options(true), Default::default())?;
+        let storage = fs.open(
+            &path,
+            tracker_open_options(Populate::No, true),
+            Default::default(),
+        )?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
