@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::UniversalReadFs;
+use common::universal_io::{CachedReadFs, UniversalReadFs};
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -17,6 +17,29 @@ use crate::types::VectorNameBuf;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+    ) -> OperationResult<PayloadConfig> {
+        // Config
+        let config_path = PayloadConfig::get_config_path(path);
+        let config = PayloadConfig::load_universal(fs, &config_path)?.ok_or_else(|| {
+            OperationError::service_error(format!(
+                "Read-only payload index missing config at {}",
+                config_path.display()
+            ))
+        })?;
+
+        // Payload indexes
+        for (field, indexed) in config.indices.iter() {
+            for index_type in &indexed.types {
+                ReadOnlyFieldIndex::preopen(fs, path, field, index_type)?;
+            }
+        }
+
+        Ok(config)
+    }
+
     /// Read-only mirror of `StructPayloadIndex::open`: loads the payload config
     /// and each persisted field index through `fs` (never builds/migrates/writes).
     pub fn open(

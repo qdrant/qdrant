@@ -14,6 +14,7 @@ use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
+use crate::index::payload_config::PayloadConfig;
 use crate::index::read_only::{ReadOnlyVectorIndexOpenArgs, VectorIndexReadEnum};
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -48,6 +49,15 @@ fn build_cached_fs<Fs: UniversalReadFs>(
             .ok_not_found()?;
     }
 
+    // Payload index config
+    cached_fs
+        .schedule_prefetch(
+            &PayloadConfig::get_config_path(&get_payload_index_path(segment_path)),
+            None,
+            None,
+        )
+        .ok_not_found()?;
+
     cached_fs.cache_file_info()?;
 
     Ok(cached_fs)
@@ -69,22 +79,31 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         Self::open_via(&cached_fs, fs, segment_path, uuid, deferred_internal_id)
     }
 
-    fn first_preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
+    fn first_preopen(
+        fs: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<PayloadConfig> {
         let SegmentState {
             initial_version: _,
             version: _,
             config,
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
 
+        // Payload storage
         let payload_populate = match config.payload_storage_type {
             PayloadStorageType::InRamMmap => Populate::PreferBackground,
             PayloadStorageType::Mmap => Populate::No,
         };
         ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_populate)?;
 
+        // Id tracker
         ReadOnlyIdTrackerEnum::preopen(fs, segment_path)?;
 
-        Ok(())
+        // Payload indexes
+        let payload_index_config =
+            ReadOnlyStructPayloadIndex::preopen(fs, &get_payload_index_path(segment_path))?;
+
+        Ok(payload_index_config)
     }
 
     /// Read-only mirror of `load_segment`: assembles every read-only component
