@@ -162,15 +162,30 @@ async fn append_request(
     let status = response.status();
 
     if status.is_success() {
-        // Prefer the size reported by the backend; fall back to the size
-        // implied by the acknowledged write.
-        let new_len = response
+        let object_size = response
             .headers()
             .get(OBJECT_SIZE_HEADER)
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(offset + data_len);
-        return Ok(new_len);
+            .and_then(|value| value.parse::<u64>().ok());
+
+        return match object_size {
+            Some(new_len) => Ok(new_len),
+            // At offset 0 the append is equivalent to a whole-object write,
+            // so even a store without write-offset support produced the
+            // right object.
+            None if offset == 0 => Ok(data_len),
+            // A store without write-offset support may accept the PUT as a
+            // plain PutObject — REPLACING the object with just `data`. The
+            // size header is the only success signal that distinguishes a
+            // true append (AWS and MinIO AiStor return it); treat its
+            // absence as an error instead of risking silent data loss on
+            // every subsequent append.
+            None => Err(UniversalIoError::s3(std::io::Error::other(format!(
+                "append to {key} was accepted without the {OBJECT_SIZE_HEADER} response \
+                 header; the store likely does not support write-offset appends and may \
+                 have replaced the object instead",
+            )))),
+        };
     }
 
     // Read the body for the S3 error code (best-effort).
