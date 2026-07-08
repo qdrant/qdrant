@@ -199,24 +199,28 @@ impl ShardHolder {
     }
 
     pub async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> CollectionResult<()> {
-        if let Some(replica_set) = self.shards.remove(&shard_id) {
-            let shard_path = replica_set.shard_path.clone();
-            replica_set.stop_gracefully().await;
+        let Some(replica_set) = self.shards.remove(&shard_id) else {
+            return Ok(());
+        };
 
-            // Explicitly drop shard config file first
-            // If removing all shard files at once, it may be possible for the shard configuration
-            // file to be left behind if the process is killed in the middle. We must avoid this so
-            // we don't attempt to load this shard anymore on restart.
-            let shard_config_path = ShardConfig::get_config_path(&shard_path);
-            if let Err(err) = tokio_fs::remove_file(&shard_config_path).await {
-                log::error!(
-                    "Failed to remove shard config file before removing the rest of the files: {err}",
-                );
-            }
-            sync_parent_dir_async(&shard_config_path).await?;
+        let shard_path = replica_set.shard_path.clone();
+        replica_set.stop_gracefully().await;
 
-            tokio_fs::remove_dir_all(shard_path).await?;
+        // Remove shard config file first.
+        //
+        // Shard is only loaded, if config file is present in shard dir. Directories are
+        // removed recursively, so it may be possible for shard config file to be left
+        // behind if we delete shard dir at once and process is killed during deletion.
+        let shard_config_path = ShardConfig::get_config_path(&shard_path);
+        if let Err(err) = tokio_fs::remove_file(&shard_config_path).await {
+            log::error!(
+                "Failed to remove shard config file before removing the rest of the files: {err}",
+            );
         }
+        sync_parent_dir_async(&shard_config_path).await?;
+
+        tokio_fs::remove_dir_all(shard_path).await?;
+
         Ok(())
     }
 
@@ -1653,7 +1657,10 @@ mod restart_transfer_tests {
         let result = holder
             .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
             .unwrap();
-        assert_eq!(result, None, "restart of an absent transfer must return None");
+        assert_eq!(
+            result, None,
+            "restart of an absent transfer must return None"
+        );
     }
 
     #[test]
