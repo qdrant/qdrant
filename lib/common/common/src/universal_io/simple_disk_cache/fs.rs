@@ -6,6 +6,7 @@ use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
 use crate::mmap::AdviceSetting;
+use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
     UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
@@ -18,6 +19,27 @@ use crate::universal_io::{
 pub struct DiskCacheFsContext<C> {
     pub config: Arc<DiskCacheConfig>,
     pub remote: C,
+}
+
+#[derive(Default, Debug)]
+pub struct DiskCacheFsOpenExtra<RemoteExtra: OpenExtra> {
+    /// Extra options passed to the remote
+    remote_extra: RemoteExtra,
+    /// The length of the file, if known
+    known_len: Option<u64>,
+}
+
+impl<RemoteExtra: OpenExtra> OpenExtra for DiskCacheFsOpenExtra<RemoteExtra> {
+    fn with_prevent_caching(self, _prevent_caching: bool) -> Self {
+        self
+    }
+
+    fn with_known_len(self, known_len: u64) -> Self {
+        Self {
+            remote_extra: self.remote_extra,
+            known_len: Some(known_len),
+        }
+    }
 }
 
 /// Filesystem handle for the simple disk cache. Carries the remote-side
@@ -61,6 +83,26 @@ where
             .field("config", config)
             .field("remote_fs", remote_fs)
             .finish()
+    }
+}
+
+impl<R: UniversalRead> DiskCacheFs<R> {
+    fn open_remote(
+        &self,
+        path: impl AsRef<Path>,
+        extra: <R::Fs as UniversalReadFs>::OpenExtra,
+    ) -> Result<R> {
+        let extra = extra.with_prevent_caching(true);
+        self.remote_fs.open(
+            path.as_ref(),
+            OpenOptions {
+                writeable: false,
+                need_sequential: true,
+                populate: Populate::No,
+                advice: AdviceSetting::Global,
+            },
+            extra,
+        )
     }
 }
 
@@ -118,7 +160,7 @@ where
     R: DiskCacheRemote,
 {
     type File = DiskCache<R>;
-    type OpenExtra = <R::Fs as UniversalReadFs>::OpenExtra;
+    type OpenExtra = DiskCacheFsOpenExtra<<R::Fs as UniversalReadFs>::OpenExtra>;
 
     fn open(
         &self,
@@ -134,7 +176,7 @@ where
             });
         }
 
-        let extra = extra.with_prevent_caching(true);
+        let remote_extra = extra.remote_extra.with_prevent_caching(true);
         let local_path = self.config.local_path_for(path.as_ref())?;
 
         let populate = if crate::low_memory::low_memory_mode().skip_populate() {
@@ -143,19 +185,19 @@ where
             options.populate
         };
 
-        let state = match populate {
-            Populate::Auto | Populate::No => State::Uninit,
-            Populate::Blocking | Populate::PreferBackground => {
-                let remote = self.remote_fs.open(
-                    path.as_ref(),
-                    OpenOptions {
-                        writeable: false,
-                        need_sequential: true,
-                        populate: Populate::No,
-                        advice: AdviceSetting::Global,
-                    },
-                    extra.clone(),
-                )?;
+        let state = match (extra.known_len, populate) {
+            (None, Populate::Auto | Populate::No) => State::Uninit,
+            // We know file length, initialize local state.
+            (Some(len), Populate::Auto | Populate::No) => {
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+
+                let local = LocalState::new(&local_path, len, options)?;
+
+                State::Ready { remote, local }
+            }
+            // Even if we know length, we don't need it to do `schedule_whole`.
+            (None | Some(_), Populate::Blocking | Populate::PreferBackground) => {
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
 
                 let mut pipeline = OwnedPipeline::new(remote)?;
 
@@ -168,7 +210,7 @@ where
 
         let cache = DiskCache::new(
             self.remote_fs.clone(),
-            extra,
+            remote_extra,
             path.as_ref(),
             local_path,
             options,

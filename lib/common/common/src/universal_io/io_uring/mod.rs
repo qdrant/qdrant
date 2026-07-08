@@ -106,6 +106,10 @@ impl OpenExtra for IoUringOpenExtra {
         let Self { prevent_caching: _ } = self;
         Self { prevent_caching }
     }
+
+    fn with_known_len(self, _known_len: u64) -> Self {
+        self
+    }
 }
 
 impl UniversalReadFs for IoUringFs {

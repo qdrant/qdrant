@@ -15,8 +15,13 @@ pub trait OpenExtra: Default + Debug {
     /// where it's meaningless (mmap, block-cache) treat this as a no-op.
     #[must_use]
     fn with_prevent_caching(self, prevent_caching: bool) -> Self;
+
+    /// Hint about the length of the file.
+    fn with_known_len(self, known_len: u64) -> Self;
 }
 
 impl OpenExtra for () {
     fn with_prevent_caching(self, _prevent_caching: bool) -> Self {}
+
+    fn with_known_len(self, _known_len: u64) -> Self {}
 }

@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::traits::CachedReadFs;
 use crate::universal_io::{
-    ListedFile, OpenOptions, Populate, Result, UniversalIoError, UniversalReadFileOps,
+    ListedFile, OpenExtra, OpenOptions, Populate, Result, UniversalIoError, UniversalReadFileOps,
     UniversalReadFs,
 };
 
@@ -172,7 +172,10 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
 
         open_options.populate = Populate::PreferBackground;
 
-        let open_extra = open_extra.unwrap_or_default();
+        let mut open_extra = open_extra.unwrap_or_default();
+        if let Some(info) = self.file_info(path) {
+            open_extra = open_extra.with_known_len(info.size);
+        }
 
         let file = self.fs.open(path, open_options, open_extra)?;
         files_prefetched.insert(path.to_path_buf(), file);
