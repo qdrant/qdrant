@@ -145,7 +145,9 @@ async fn append_request(
 
     let mut url = context.object_url_base.clone();
     url.path_segments_mut()
-        .expect("http(s) URLs can be a base")
+        .map_err(|()| UniversalIoError::S3Config {
+            description: "append object url cannot be a base".to_string(),
+        })?
         .pop_if_empty()
         .extend(key.parts().map(|part| part.as_ref().to_string()));
 
@@ -157,13 +159,16 @@ async fn append_request(
     let mut attempt = 1;
     loop {
         // Built and signed per attempt: the SigV4 signature embeds the
-        // request date.
+        // request date. Building can fail — `url` accepts URIs the `http`
+        // crate rejects (e.g. longer than u16::MAX bytes).
         let mut request = http::Request::builder()
             .method(http::Method::PUT)
             .uri(url.as_str())
             .header(WRITE_OFFSET_HEADER, offset.to_string())
             .body(HttpRequestBody::from(data.clone()))
-            .expect("statically valid request parts");
+            .map_err(|err| UniversalIoError::S3Config {
+                description: format!("append request for {key}: {err}"),
+            })?;
 
         // Signs all headers present on the request (including the
         // write-offset header) plus the payload SHA-256, and adds
@@ -263,7 +268,40 @@ async fn append_request(
 
 #[cfg(test)]
 mod tests {
+    use object_store::aws::AmazonS3Builder;
+
     use super::*;
+
+    /// Request building failures (URIs the `http` crate rejects) surface as
+    /// errors instead of panics. Fails before any network IO.
+    #[test]
+    fn unbuildable_request_is_an_error_not_a_panic() {
+        let store = Arc::new(
+            AmazonS3Builder::new()
+                .with_bucket_name("bucket")
+                .with_region("us-east-1")
+                .with_access_key_id("id")
+                .with_secret_access_key("secret")
+                .build()
+                .unwrap(),
+        );
+        let context = AppendContext::new(
+            true,
+            Url::parse("http://localhost:9000/bucket").unwrap(),
+            "us-east-1".to_string(),
+        );
+        // `url` accepts this; `http` caps URIs at u16::MAX bytes.
+        let key = object_store::path::Path::from("k".repeat(70_000));
+
+        let result = io_bridge::BridgeRuntime::global().block_on(append_request(
+            &store,
+            &context,
+            &key,
+            0,
+            Bytes::from_static(b"data"),
+        ));
+        assert!(matches!(result, Err(UniversalIoError::S3Config { .. })));
+    }
 
     /// The HTTP client is built on first use and then reused; building it
     /// performs no IO.
