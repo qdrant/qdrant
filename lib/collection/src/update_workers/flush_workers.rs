@@ -7,6 +7,7 @@ use std::time::Duration;
 use common::panic;
 use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
+use shard::segment_holder::FlushMode;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::WalError;
 use tokio::sync::oneshot;
@@ -22,7 +23,7 @@ impl UpdateWorkers {
     /// Returns an error on flush failure
     fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<SeqNumberType> {
         let read_segments = segments.read();
-        let flushed_version = read_segments.flush_all(false, false)?;
+        let flushed_version = read_segments.flush_all(FlushMode::Background, false)?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),

@@ -1554,17 +1554,17 @@ fn test_post_flush_action_retry_keeps_ack_pin() {
     });
 
     // While the action is pending, the ack pin caps the returned version.
-    let version = holder.flush_all(true, true).unwrap();
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
     assert_eq!(version, ACK_PIN, "ack pin must cap the WAL acknowledge");
     assert_eq!(runs.load(Ordering::SeqCst), 1);
 
     // Still pending after the second retry: the pin remains in effect.
-    let version = holder.flush_all(true, true).unwrap();
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
     assert_eq!(version, ACK_PIN);
     assert_eq!(runs.load(Ordering::SeqCst), 2);
 
     // The third flush completes the action, lifting the cap.
-    let version = holder.flush_all(true, true).unwrap();
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
     assert_eq!(
         version, WATERLINE,
         "cap is lifted once the action completes"
@@ -1572,7 +1572,7 @@ fn test_post_flush_action_retry_keeps_ack_pin() {
     assert_eq!(runs.load(Ordering::SeqCst), 3);
 
     // The completed action is gone and is not run again.
-    let version = holder.flush_all(true, true).unwrap();
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
     assert_eq!(version, WATERLINE);
     assert_eq!(runs.load(Ordering::SeqCst), 3);
 }
@@ -1601,7 +1601,7 @@ fn test_post_flush_action_in_flight_pin_stays_visible() {
         Ok(PostFlushOutcome::Done)
     });
 
-    let version = holder.flush_all(true, true).unwrap();
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
 
     assert_eq!(
         *observed.lock(),
@@ -1628,11 +1628,11 @@ fn test_post_flush_action_hard_failure_is_dropped() {
     holder.register_post_flush_action(0, 5, move || Err(OperationError::service_error("boom")));
 
     // The flush surfaces the action's error.
-    let err = holder.flush_all(true, true).unwrap_err();
+    let err = holder.flush_all(FlushMode::Sync, true).unwrap_err();
     assert!(format!("{err}").contains("boom"));
 
     // The failed action is gone, so the next flush is clean and uncapped.
-    let version = holder.flush_all(true, true).unwrap();
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
     assert_eq!(version, WATERLINE);
 }
 

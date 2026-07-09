@@ -11,6 +11,16 @@ use segment::types::SeqNumberType;
 
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
+/// How [`SegmentHolder::flush_all`] performs the flush.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlushMode {
+    /// Flush all segments on the current thread and wait for completion.
+    Sync,
+    /// Spawn a background flush thread. If one is already running, skip this pass and return the
+    /// current persisted version.
+    Background,
+}
+
 impl SegmentHolder {
     /// Flushes all segments and returns maximum version to persist
     ///
@@ -19,7 +29,8 @@ impl SegmentHolder {
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
-    pub fn flush_all(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+    pub fn flush_all(&self, mode: FlushMode, force: bool) -> OperationResult<SeqNumberType> {
+        let sync = mode == FlushMode::Sync;
         let lock_order: Vec<_> = self.non_appendable_then_appendable_segments_ids().collect();
 
         // Grab and keep to segment RwLock's until the end of this function

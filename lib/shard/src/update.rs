@@ -1139,7 +1139,7 @@ mod test {
     use crate::fixtures::{
         build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
     };
-    use crate::segment_holder::SegmentHolder;
+    use crate::segment_holder::{FlushMode, SegmentHolder};
     use crate::update::{
         clear_payload_by_filter, delete_payload_by_filter, delete_points_by_filter,
         delete_vectors_by_filter, overwrite_payload_by_filter, set_payload_by_filter,
@@ -1168,7 +1168,7 @@ mod test {
         );
 
         let old_version = holder
-            .flush_all(true, false)
+            .flush_all(FlushMode::Sync, false)
             .expect("Failed to flush test segment holder");
 
         let segments = Arc::new(RwLock::new(holder));
@@ -1187,7 +1187,7 @@ mod test {
 
         let new_version = segments
             .read()
-            .flush_all(true, false)
+            .flush_all(FlushMode::Sync, false)
             .expect("Failed to flush test segment holder");
 
         // Flushing again inrceases by 1 and is now equal to `DELETE_OP_NUM` as we want to acknowledge the empty

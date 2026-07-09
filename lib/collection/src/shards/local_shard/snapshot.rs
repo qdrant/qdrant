@@ -16,8 +16,8 @@ use shard::files::{APPLIED_SEQ_FILE, SEGMENT_MANIFEST_FILE, SEGMENTS_PATH, WAL_P
 use shard::locked_segment::LockedSegment;
 use shard::operations::OperationWithClockTag;
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::{FlushMode, SegmentHolder};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::snapshots::snapshot_utils::SnapshotUtils;
 use shard::wal::SerdeWal;
@@ -420,7 +420,7 @@ where
     )?;
 
     // Flush all pending changes of each segment, now wrapped segments won't change anymore
-    segments_lock.flush_all(true, true)?;
+    segments_lock.flush_all(FlushMode::Sync, true)?;
 
     // Apply provided function
     log::trace!("Applying function on all proxied shard segments");
