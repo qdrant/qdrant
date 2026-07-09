@@ -136,8 +136,12 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             },
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
-                ReadMode::Appendable => false,
-                ReadMode::Immutable { is_on_disk: _ } => false,
+                ReadMode::Appendable => {
+                    ReadOnlyGeoIndex::<S>::preopen_appendable(fs, map_dir(dir, field))?
+                }
+                ReadMode::Immutable { is_on_disk } => {
+                    ReadOnlyGeoIndex::<S>::preopen_immutable(fs, &map_dir(dir, field), is_on_disk)?
+                }
             },
             PayloadIndexType::FullTextIndex => match mode {
                 ReadMode::Appendable => false,

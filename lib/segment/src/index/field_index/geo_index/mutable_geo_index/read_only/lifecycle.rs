@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{OkNotFound, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::super::inner::InMemoryGeoIndex;
@@ -10,6 +10,19 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoPoint, RawGeoPoint};
 
 impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
+    /// Schedule background prefetch of the Gridstore files [`open`](Self::open)
+    /// will read.
+    ///
+    /// Returns whether the on-disk directory exists.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
+        // Gridstore reader
+        Ok(
+            GridstoreReader::<Vec<RawGeoPoint>, S>::preopen(fs, dir, Populate::PreferBackground)
+                .ok_not_found()?
+                .is_some(),
+        )
+    }
+
     /// Open the appendable (Gridstore) geo index read-only, threading every
     /// file open through the filesystem handle `fs`.
     ///
