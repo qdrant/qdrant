@@ -222,11 +222,7 @@ fn test_polygon_interior_exceeds_exterior_cardinality(#[case] index_type: IndexT
 
     // A single indexed point in New York.
     builder
-        .add_point(
-            0,
-            &[&json!([{ "lon": NYC.lon, "lat": NYC.lat }])],
-            &HardwareCounterCell::new(),
-        )
+        .add_point(0, &[&json!([NYC])], &HardwareCounterCell::new())
         .unwrap();
     let index = builder.finalize().unwrap();
 
@@ -513,16 +509,7 @@ fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexT
     let (mut builder, _, _) = create_builder(index_type);
 
     let r_meters = 100.0;
-    let geo_values = json!([
-        {
-            "lon": BERLIN.lon,
-            "lat": BERLIN.lat
-        },
-        {
-            "lon": NYC.lon,
-            "lat": NYC.lat
-        }
-    ]);
+    let geo_values = json!([BERLIN, NYC]);
     let hw_counter = HardwareCounterCell::new();
     builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
     let index = builder.finalize().unwrap();
@@ -602,16 +589,7 @@ fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexT
 #[case(IndexType::Immutable)]
 fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: IndexType) {
     let (mut builder, _, _) = create_builder(index_type);
-    let geo_values = json!([
-        {
-            "lon": BERLIN.lon,
-            "lat": BERLIN.lat
-        },
-        {
-            "lon": POTSDAM.lon,
-            "lat": POTSDAM.lat
-        }
-    ]);
+    let geo_values = json!([BERLIN, POTSDAM]);
     let hw_counter = HardwareCounterCell::new();
     builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
     let index = builder.finalize().unwrap();
@@ -649,16 +627,7 @@ fn load_from_disk(#[case] index_type: IndexType) {
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
-        let geo_values = json!([
-            {
-                "lon": BERLIN.lon,
-                "lat": BERLIN.lat
-            },
-            {
-                "lon": POTSDAM.lon,
-                "lat": POTSDAM.lat
-            }
-        ]);
+        let geo_values = json!([BERLIN, POTSDAM]);
         let hw_counter = HardwareCounterCell::new();
         builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
         builder.finalize().unwrap();
@@ -715,16 +684,7 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
-        let geo_values = json!([
-            {
-                "lon": BERLIN.lon,
-                "lat": BERLIN.lat
-            },
-            {
-                "lon": POTSDAM.lon,
-                "lat": POTSDAM.lat
-            }
-        ]);
+        let geo_values = json!([BERLIN, POTSDAM]);
         let hw_counter = HardwareCounterCell::new();
         let payload = [&geo_values];
         builder.add_point(1, &payload, &hw_counter).unwrap();
@@ -845,30 +805,15 @@ fn test_empty_index_cardinality(#[case] index_type: IndexType) {
 #[case(IndexType::Immutable)]
 fn query_across_antimeridian(#[case] index_type: IndexType) {
     let (mut builder, _, _) = create_builder(index_type);
-    let geo_values = json!([
-        {
-            "lon": BERLIN.lon,
-            "lat": BERLIN.lat
-        }
-    ]);
+    let geo_values = json!([BERLIN]);
     let hw_counter = HardwareCounterCell::new();
 
     builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
 
-    let geo_values = json!([
-        {
-            "lon": LOS_ANGELES.lon,
-            "lat": LOS_ANGELES.lat
-        }
-    ]);
+    let geo_values = json!([LOS_ANGELES]);
     builder.add_point(2, &[&geo_values], &hw_counter).unwrap();
 
-    let geo_values = json!([
-        {
-            "lon": TOKYO.lon,
-            "lat": TOKYO.lat
-        }
-    ]);
+    let geo_values = json!([TOKYO]);
     builder.add_point(3, &[&geo_values], &hw_counter).unwrap();
 
     let new_index = builder.finalize().unwrap();
@@ -899,15 +844,12 @@ fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
     let (mut builder, _temp_dir, _db) = create_builder(index_type);
     let hw_counter = HardwareCounterCell::new();
 
-    let duplicate_geo = json!([
-        {"lon": BERLIN.lon, "lat": BERLIN.lat},
-        {"lon": BERLIN.lon, "lat": BERLIN.lat}
-    ]);
+    let duplicate_geo = json!([BERLIN, BERLIN]);
     builder
         .add_point(0, &[&duplicate_geo], &hw_counter)
         .unwrap();
 
-    let single_geo = json!({"lon": NYC.lon, "lat": NYC.lat});
+    let single_geo = json!(NYC);
     builder.add_point(1, &[&single_geo], &hw_counter).unwrap();
 
     let mut index = builder.finalize().unwrap();
@@ -950,11 +892,7 @@ fn test_values_per_hash_drift_on_duplicate_geo_removal() {
     let hw_counter = HardwareCounterCell::new();
 
     // Point 0 has 3 identical geo values (same geohash produced 3 times).
-    let triple_duplicate = json!([
-        {"lon": BERLIN.lon, "lat": BERLIN.lat},
-        {"lon": BERLIN.lon, "lat": BERLIN.lat},
-        {"lon": BERLIN.lon, "lat": BERLIN.lat}
-    ]);
+    let triple_duplicate = json!([BERLIN, BERLIN, BERLIN]);
     builder
         .add_point(0, &[&triple_duplicate], &hw_counter)
         .unwrap();
@@ -1007,14 +945,14 @@ fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
     let (mut builder, _temp_dir, _db) = create_builder(index_type);
     let hw_counter = HardwareCounterCell::new();
 
-    let berlin_geo = json!({"lon": BERLIN.lon, "lat": BERLIN.lat});
+    let berlin_geo = json!(BERLIN);
     builder.add_point(0, &[&berlin_geo], &hw_counter).unwrap();
 
     let mut index = builder.finalize().unwrap();
     assert_eq!(index.points_count(), 1);
 
     for i in 1u32..20 {
-        let geo = json!({"lon": NYC.lon, "lat": NYC.lat});
+        let geo = json!(NYC);
         index.add_point(i, &[&geo], &hw_counter).unwrap();
         assert_eq!(index.points_count(), 2);
 
@@ -1022,7 +960,7 @@ fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
         assert_eq!(index.points_count(), 1);
     }
 
-    let tokyo_geo = json!({"lon": TOKYO.lon, "lat": TOKYO.lat});
+    let tokyo_geo = json!(TOKYO);
     index.add_point(0, &[&tokyo_geo], &hw_counter).unwrap();
     assert_eq!(index.points_count(), 1);
     assert_eq!(index.points_values_count(), 1);
@@ -1295,10 +1233,10 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let berlin = json!({ "lon": BERLIN.lon, "lat": BERLIN.lat });
-        let potsdam = json!({ "lon": POTSDAM.lon, "lat": POTSDAM.lat });
-        let tokyo = json!({ "lon": TOKYO.lon, "lat": TOKYO.lat });
-        let nyc = json!({ "lon": NYC.lon, "lat": NYC.lat });
+        let berlin = json!(BERLIN);
+        let potsdam = json!(POTSDAM);
+        let tokyo = json!(TOKYO);
+        let nyc = json!(NYC);
 
         builder.add_point(1, &[&berlin], &hw_counter).unwrap();
         builder.add_point(2, &[&berlin], &hw_counter).unwrap();
@@ -1392,7 +1330,7 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let berlin = json!({ "lon": BERLIN.lon, "lat": BERLIN.lat });
+        let berlin = json!(BERLIN);
 
         builder.add_point(1, &[&berlin], &hw_counter).unwrap();
         builder.add_point(2, &[&berlin], &hw_counter).unwrap();
