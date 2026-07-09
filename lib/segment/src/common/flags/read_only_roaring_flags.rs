@@ -100,9 +100,8 @@ fn open_flags_storage<S: UniversalRead>(
 }
 
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
-    /// Schedule background prefetch of the two files [`open`](Self::open) reads,
-    /// with the same open options it will use, so the prefetch pool can serve
-    /// them.
+    /// Schedule background prefetch of the two files this storage reads, with
+    /// the same open options they will use, so the prefetch pool can serve them.
     ///
     /// Returns whether the flag directory exists, probed — as in [`Self::open`]
     /// — through the status file: `false` means [`Self::open`] would return
@@ -117,7 +116,8 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             return Ok(false);
         }
 
-        // Flags bitslice. `open` scans it end to end to build the bitmap.
+        // Flags bitslice. `open` does not read it — [`Self::bitmap`] scans it end
+        // to end on first use — so this warms the pages that scan will need.
         fs.schedule_prefetch(&directory.join(FLAGS_FILE), Some(READ_ONLY_OPTIONS), None)?;
 
         Ok(true)
