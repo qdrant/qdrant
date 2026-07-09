@@ -121,7 +121,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::sorted_slice::SortedSlice;
     use common::universal_io::{
-        CachedFs, CachedReadFs, MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps,
+        CachedFs, CachedReadFs, MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFileOps,
     };
     use itertools::Itertools as _;
     use serde_json::json;

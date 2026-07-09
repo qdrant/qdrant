@@ -42,11 +42,21 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         field: &JsonPath,
+        payload_schema: &PayloadFieldSchema,
         index_type: &FullPayloadIndexType,
     ) -> OperationResult<bool> {
         let mode = match index_type.storage_type {
             StorageType::Gridstore => ReadMode::Appendable,
             StorageType::Mmap { is_on_disk } => ReadMode::Immutable { is_on_disk },
+        };
+
+        // Derive whether how to populate from the payload schema
+        let schema_populate = || {
+            if payload_schema.memory_placement().populate_on_open() {
+                Populate::PreferBackground
+            } else {
+                Populate::No
+            }
         };
 
         let preopened = match index_type.index_type {
@@ -143,22 +153,14 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => false,
                 ReadMode::Immutable { is_on_disk: _ } => false,
             },
+            // Bool and null keep a single roaring-flag format, but we can choose populate
+            // param based on schema placement.
             PayloadIndexType::BoolIndex => {
-                let populate = match mode {
-                    ReadMode::Immutable { is_on_disk: false } | ReadMode::Appendable => {
-                        Populate::PreferBackground
-                    }
-                    ReadMode::Immutable { is_on_disk: true } => Populate::No,
-                };
+                let populate = schema_populate();
                 ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field), populate)?
             }
             PayloadIndexType::NullIndex => {
-                let populate = match mode {
-                    ReadMode::Immutable { is_on_disk: false } | ReadMode::Appendable => {
-                        Populate::PreferBackground
-                    }
-                    ReadMode::Immutable { is_on_disk: true } => Populate::No,
-                };
+                let populate = schema_populate();
                 ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field), populate)?
             }
         };
@@ -176,7 +178,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// [`UniversalRead`](common::universal_io::UniversalRead) handle `fs` (the map, numeric, geo and full-text leaves
     /// are all fs-generic), so the dispatcher needn't fix a concrete backend.
     ///
-    /// `payload_schema` is consulted only by the full-text arm (it carries the
+    /// `` is consulted only by the full-text arm (it carries the
     /// [`TextIndexParams`] the leaf open needs) and `total_point_count` only by
     /// the null arm (it is segment-wide, not recoverable from the index files);
     /// the other arms ignore both, mirroring the writable selector.
