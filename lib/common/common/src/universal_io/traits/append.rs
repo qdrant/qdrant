@@ -20,9 +20,10 @@ use crate::universal_io::{ByteOffset, Result};
 ///   unreliable; object-store backends fail with
 ///   [`AppendOffsetConflict`]. To recover, [`reopen`] the handle and retry.
 /// - After `Ok`, this handle's [`len`]/reads observe the appended bytes.
-///   Other handles (including clones) must [`reopen`] first; do not read
-///   through clones of an mmap-backed handle concurrently with `append`
-///   (same constraint as [`reopen`]).
+///   Other handles (including clones) must [`reopen`] first. For mmap-backed
+///   handles this is a hard requirement rather than staleness: an append may
+///   move the shared mapping, so any later read through a clone that has not
+///   [`reopen`]ed is undefined behavior (see [`MmapFile`]).
 /// - Durability: local backends require running [`UniversalFlush::flusher`];
 ///   object-store backends are durable when `append` returns `Ok` (their
 ///   flusher is a no-op).
@@ -40,6 +41,7 @@ use crate::universal_io::{ByteOffset, Result};
 ///   the only growth path.
 ///
 /// [`AppendOffsetConflict`]: crate::universal_io::UniversalIoError::AppendOffsetConflict
+/// [`MmapFile`]: crate::universal_io::MmapFile
 /// [`UniversalWrite`]: super::UniversalWrite
 /// [`UniversalWrite::write`]: super::UniversalWrite::write
 /// [`len`]: UniversalRead::len

@@ -68,6 +68,17 @@ impl UniversalReadFs for MmapFs {
     }
 }
 
+/// A memory-mapped local file handle.
+///
+/// # Clones share the mapping
+///
+/// Clones share the underlying mapping but keep their own raw `ptr`/`len`
+/// copies. Growing the file through one handle ([`UniversalAppend::append`],
+/// or [`UniversalRead::reopen`] after external growth) remaps the shared
+/// mapping, which may move or replace it — the sibling clones' cached
+/// pointers then dangle. Reading through such a clone is undefined behavior
+/// (not merely a stale view), even long after the growing call returned,
+/// until that clone calls [`UniversalRead::reopen`] itself.
 #[derive(Debug, Clone)]
 pub struct MmapFile {
     path: PathBuf,
@@ -376,7 +387,11 @@ impl MmapFile {
 
                 // SAFETY:
                 // We use may_move = true, since `remap` can fail if we don't allow it.
-                // It is safe to allow moving since we are holding `&mut self`
+                // Moving is sound for *this* handle: `&mut self` keeps its reads out
+                // while the cached pointers below are refreshed. Clones share this
+                // mapping but keep their own pointer copies — per the contract
+                // documented on `MmapFile` they must `reopen()` before reading after
+                // any growth, so no live reference into the old location exists.
                 let remap_options = memmap2::RemapOptions::new().may_move(true);
                 unsafe {
                     mmap.remap(new_len, remap_options)?;
@@ -549,10 +564,14 @@ impl MmapFile {
         } else {
             self.ptr
         };
+        // SAFETY: `ptr`/`len` match the shared mapping unless this handle
+        // missed a growth through a sibling clone — excluded by the
+        // reopen-before-read contract documented on `MmapFile`.
         unsafe { slice::from_raw_parts(ptr.0, self.len) }
     }
 
     fn as_bytes_mut(&mut self) -> &mut [u8] {
+        // SAFETY: see `as_bytes`.
         unsafe { slice::from_raw_parts_mut(self.ptr.0, self.len) }
     }
 }
