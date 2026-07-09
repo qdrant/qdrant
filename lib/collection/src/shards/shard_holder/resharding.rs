@@ -18,7 +18,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
-use crate::shards::shard::ShardId;
+use crate::shards::shard::{PeerId, ShardId};
 
 impl ShardHolder {
     pub fn resharding_state(&self) -> Option<ReshardState> {
@@ -361,6 +361,159 @@ impl ShardHolder {
         )))
     }
 
+    /// Scale-down resharding only. Returns replicas in `ReshardingScaleDown` state,
+    /// that require cleanup on abort.
+    pub fn scale_down_replicas(&self, resharding_key: &ReshardKey) -> Vec<(ShardId, PeerId)> {
+        if resharding_key.direction != ReshardingDirection::Down {
+            return Vec::new();
+        }
+
+        let mut replicas = Vec::new();
+
+        for (&id, shard) in self.shards.iter() {
+            // Skip shards that do not belong to the resharding shard key
+            if self.shard_id_to_key_mapping.get(&id) != resharding_key.shard_key.as_ref() {
+                continue;
+            }
+
+            // Skip target shard
+            if id == resharding_key.shard_id {
+                continue;
+            }
+
+            for (peer, state) in shard.peers() {
+                if state.is_resharding() {
+                    replicas.push((id, peer));
+                }
+            }
+        }
+
+        replicas
+    }
+
+    /// Scale-down resharding only. Delete points that were transferred from target
+    /// shard during scale-down resharding.
+    pub async fn scale_down_cleanup_points(
+        &self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<()> {
+        if resharding_key.direction != ReshardingDirection::Down {
+            return Ok(());
+        }
+
+        for (&id, shard) in self.shards.iter() {
+            // Skip shards that do not belong to the resharding shard key
+            if self.shard_id_to_key_mapping.get(&id) != resharding_key.shard_key.as_ref() {
+                continue;
+            }
+
+            // Skip target shard
+            if id == resharding_key.shard_id {
+                continue;
+            }
+
+            // We only cleanup local shards
+            if !shard.is_local().await {
+                continue;
+            }
+
+            // Remove any points that might have been transferred from target shard
+            // Replica may be dead, so we force the delete operation
+            let filter = self.hash_ring_filter(id).expect("hash ring filter");
+            let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
+            shard
+                .delete_local_points(
+                    filter,
+                    // Internal operation, no performance tracking needed
+                    HwMeasurementAcc::disposable(),
+                    true,
+                    DeferredBehavior::WithDeferred,
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Revert resharding hash-ring into regular mode.
+    pub fn revert_resharding_hashring(&mut self, resharding_key: &ReshardKey) {
+        let Some(ring) = self.rings.get_mut(&resharding_key.shard_key) else {
+            log::warn!(
+                "aborting resharding {resharding_key}, \
+                 but {:?} hashring does not exist",
+                resharding_key.shard_key,
+            );
+
+            return;
+        };
+
+        log::debug!(
+            "reverting resharding hashring for shard {}",
+            resharding_key.shard_id,
+        );
+
+        ring.abort_resharding(resharding_key.shard_id, resharding_key.direction);
+    }
+
+    /// Scale-up resharding only. Drop the target shard that scale-up resharding created.
+    pub async fn scale_up_drop_target_shard(
+        &mut self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<()> {
+        let ReshardKey {
+            direction,
+            shard_id,
+            ref shard_key,
+            ..
+        } = *resharding_key;
+
+        if direction != ReshardingDirection::Up {
+            return Ok(());
+        }
+
+        if !self.shards.contains_key(&shard_id) {
+            log::warn!(
+                "aborting resharding {resharding_key}, \
+                 but shard holder does not contain {shard_id} replica set",
+            );
+
+            return Ok(());
+        }
+
+        log::debug!("removing replica set {shard_id}");
+
+        if let Some(shard_key) = shard_key {
+            self.key_mapping.write_optional(|key_mapping| {
+                if !key_mapping.get(shard_key)?.contains(&shard_id) {
+                    return None;
+                }
+
+                let mut key_mapping = key_mapping.clone();
+                key_mapping.get_mut(shard_key)?.remove(&shard_id);
+                Some(key_mapping)
+            })?;
+        }
+
+        // No need to remove individual replicas from replica set one-by-one,
+        // because replica set directory (and `replica_set.json` that it contains)
+        // would be removed at once
+
+        self.drop_and_remove_shard(shard_id).await?;
+        self.shard_id_to_key_mapping.remove(&shard_id);
+
+        Ok(())
+    }
+
+    /// Clear `resharding_state.json` file, if persisted state matches `resharding_key`.
+    pub fn clear_resharding_state(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        self.resharding_state.write_optional(|state| match state {
+            Some(state) if state.matches(resharding_key) => Some(None),
+            _ => None,
+        })?;
+
+        Ok(())
+    }
+
     pub async fn abort_resharding(
         &mut self,
         resharding_key: ReshardKey,
@@ -368,119 +521,24 @@ impl ShardHolder {
     ) -> CollectionResult<()> {
         log::warn!("Aborting resharding {resharding_key} (force: {force})");
 
-        let ReshardKey {
-            uuid: _,
-            direction,
-            peer_id: _,
-            shard_id,
-            ref shard_key,
-        } = resharding_key;
-
-        // Cleanup existing shards if resharding down
-        if direction == ReshardingDirection::Down {
-            for (&id, shard) in self.shards.iter() {
-                // Skip shards that does not belong to resharding shard key
-                if self.shard_id_to_key_mapping.get(&id) != shard_key.as_ref() {
-                    continue;
-                }
-
-                // Skip target shard
-                if id == shard_id {
-                    continue;
-                }
-
-                // Revert replicas in `Resharding` state back into `Active` state
-                for (peer, state) in shard.peers() {
-                    if state.is_resharding() {
-                        shard.set_replica_state(peer, ReplicaState::Active).await?;
-                    }
-                }
-
-                // We only cleanup local shards
-                if !shard.is_local().await {
-                    continue;
-                }
-
-                // Remove any points that might have been transferred from target shard
-                // Replica may be dead, so we force the delete operation
-                let filter = self.hash_ring_filter(id).expect("hash ring filter");
-                let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
-                shard
-                    .delete_local_points(
-                        filter,
-                        // Internal operation, no performance tracking needed
-                        HwMeasurementAcc::disposable(),
-                        true,
-                        DeferredBehavior::WithDeferred,
-                    )
-                    .await?;
+        // Scale-down: revert replicas in `ReshardingScaleDown` state back to `Active`.
+        for (shard_id, peer_id) in self.scale_down_replicas(&resharding_key) {
+            if let Some(shard) = self.shards.get(&shard_id) {
+                shard.set_replica_state(peer_id, ReplicaState::Active).await?;
             }
         }
 
-        if let Some(ring) = self.rings.get_mut(shard_key) {
-            log::debug!("reverting resharding hashring for shard {shard_id}");
-            ring.abort_resharding(shard_id, direction);
-        } else {
-            log::warn!(
-                "aborting resharding {resharding_key}, \
-                 but {shard_key:?} hashring does not exist"
-            );
-        }
+        // Scale-down: delete points transferred from target shard during resharding
+        self.scale_down_cleanup_points(&resharding_key).await?;
 
-        // Remove new shard if resharding up
-        if direction == ReshardingDirection::Up {
-            if let Some(shard) = self.get_shard(shard_id) {
-                // Remove all replicas from shard
-                for (peer_id, replica_state) in shard.peers() {
-                    log::debug!(
-                        "removing peer {peer_id} with state {replica_state:?} from replica set {shard_id}",
-                    );
-                    shard.remove_peer(peer_id).await?;
-                }
+        // Roll hash ring back
+        self.revert_resharding_hashring(&resharding_key);
 
-                debug_assert!(
-                    shard.peers().is_empty(),
-                    "replica set {shard_id} must be empty after removing all peers",
-                );
+        // Scale-up: drop target shard that resharding created
+        self.scale_up_drop_target_shard(&resharding_key).await?;
 
-                log::debug!("removing replica set {shard_id}");
-
-                // Drop the shard
-                if let Some(shard_key) = shard_key {
-                    // Idempotent: only rewrite the mapping if the shard id is
-                    // actually present under this key. A replay after a
-                    // successful abort finds nothing to remove and skips the
-                    // unnecessary disk write.
-                    self.key_mapping.write_optional(|key_mapping| {
-                        let shard_ids = key_mapping.get(shard_key)?;
-                        if !shard_ids.contains(&shard_id) {
-                            return None;
-                        }
-
-                        let mut key_mapping = key_mapping.clone();
-                        key_mapping.get_mut(shard_key).unwrap().remove(&shard_id);
-
-                        Some(key_mapping)
-                    })?;
-                }
-
-                self.drop_and_remove_shard(shard_id).await?;
-                self.shard_id_to_key_mapping.remove(&shard_id);
-            } else {
-                log::warn!(
-                    "aborting resharding {resharding_key}, \
-                     but shard holder does not contain {shard_id} replica set",
-                );
-            }
-        }
-
-        // Idempotent: if state is already cleared, or holds a different
-        // resharding (already superseded), leave it alone. Only clear a state
-        // that matches the resharding_key we are aborting.
-        self.resharding_state.write_optional(|state| match state {
-            Some(state) if state.matches(&resharding_key) => Some(None),
-            _ => None,
-        })?;
+        // Clear persisted resharding state
+        self.clear_resharding_state(&resharding_key)?;
 
         Ok(())
     }
