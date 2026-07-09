@@ -1,12 +1,13 @@
 use std::backtrace::Backtrace;
 use std::collections::TryReserveError;
 use std::io::{Error as IoError, ErrorKind};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
 use common::mmap::Error as MmapError;
-use common::universal_io::UniversalIoError;
+use common::universal_io::{IsNotFound, UniversalIoError};
 use gridstore::error::GridstoreError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
@@ -46,6 +47,11 @@ pub enum OperationError {
     },
     #[error("Inconsistent storage: {description}")]
     InconsistentStorage { description: String },
+    /// An essential storage file is missing. Distinguished from `ServiceError` so a
+    /// read-only follower can tell "segment removed by the leader mid-reload"
+    /// (re-check the manifest) from real corruption (escalate).
+    #[error("Storage file not found: {}", path.display())]
+    FileNotFound { path: PathBuf },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
@@ -130,6 +136,35 @@ impl OperationError {
     }
 }
 
+/// `FileNotFound` only ever originates from sources that carry a structured path
+/// ([`UniversalIoError::NotFound`], [`MmapError::MissingFile`]); a raw io NotFound is a
+/// plain `ServiceError` — universal-io wraps not-found at the call site
+/// (`UniversalIoError::extract_not_found`), so classify there, not here.
+impl IsNotFound for OperationError {
+    fn is_not_found(&self) -> bool {
+        match self {
+            Self::FileNotFound { .. } => true,
+            Self::WrongVectorDimension { .. }
+            | Self::VectorNameNotExists { .. }
+            | Self::PointIdError { .. }
+            | Self::TypeError { .. }
+            | Self::TypeInferenceError { .. }
+            | Self::ServiceError { .. }
+            | Self::InconsistentStorage { .. }
+            | Self::OutOfMemory { .. }
+            | Self::Cancelled { .. }
+            | Self::Timeout { .. }
+            | Self::ValidationError { .. }
+            | Self::WrongSparse
+            | Self::WrongMulti
+            | Self::MissingRangeIndexForOrderBy { .. }
+            | Self::MissingMapIndexForFacet { .. }
+            | Self::VariableTypeError { .. }
+            | Self::NonFiniteNumber { .. } => false,
+        }
+    }
+}
+
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
 #[derive(Debug, Clone)]
 pub struct SegmentFailedState {
@@ -146,7 +181,15 @@ impl From<ThreadPoolBuildError> for OperationError {
 
 impl From<MmapError> for OperationError {
     fn from(err: MmapError) -> Self {
-        Self::service_error(err.to_string())
+        match err {
+            // `MissingFile` is the only mmap error with a structured path; an io NotFound
+            // is deliberately left as a service error (see `IsNotFound for OperationError`).
+            MmapError::MissingFile(path) => Self::FileNotFound { path: path.into() },
+            err @ (MmapError::SizeExact(..)
+            | MmapError::SizeLess(..)
+            | MmapError::SizeMultiple(..)
+            | MmapError::Io(_)) => Self::service_error(err.to_string()),
+        }
     }
 }
 
@@ -156,11 +199,12 @@ impl From<UniversalIoError> for OperationError {
             UniversalIoError::Io(err) => Self::from(err),
             UniversalIoError::Mmap(err) => Self::from(err),
 
+            UniversalIoError::NotFound { path } => Self::FileNotFound { path },
+
             UniversalIoError::Bincode(_)
             | UniversalIoError::BytemuckCast(_)
             | UniversalIoError::ZerocopySize(_)
             | UniversalIoError::IoUringNotSupported(_)
-            | UniversalIoError::NotFound { .. }
             | UniversalIoError::OutOfBounds { .. }
             | UniversalIoError::InvalidFileIndex { .. }
             | UniversalIoError::Uninitialized { .. }
@@ -275,9 +319,24 @@ impl From<GridstoreError> for OperationError {
                 Self::service_error(err.to_string())
             }
             GridstoreError::ValidationError { message } => Self::validation_error(message),
-            GridstoreError::UniversalIo(err) => {
-                Self::service_error(format!("Gridstore IO error: {err}"))
-            }
+            GridstoreError::UniversalIo(err) => match err {
+                UniversalIoError::NotFound { path } => Self::FileNotFound { path },
+                err @ (UniversalIoError::Io(_)
+                | UniversalIoError::Mmap(_)
+                | UniversalIoError::Bincode(_)
+                | UniversalIoError::BytemuckCast(_)
+                | UniversalIoError::ZerocopySize(_)
+                | UniversalIoError::IoUringNotSupported(_)
+                | UniversalIoError::OutOfBounds { .. }
+                | UniversalIoError::InvalidFileIndex { .. }
+                | UniversalIoError::Uninitialized { .. }
+                | UniversalIoError::QueueIsFull
+                | UniversalIoError::S3(_)
+                | UniversalIoError::S3Config { .. }
+                | UniversalIoError::TaskPanicked(_)) => {
+                    Self::service_error(format!("Gridstore IO error: {err}"))
+                }
+            },
             GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
             GridstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
         }
@@ -327,6 +386,36 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn test_not_found_classification() {
+        // Structured not-found sources classify as `FileNotFound` and keep the path.
+        let err = OperationError::from(UniversalIoError::NotFound {
+            path: "segments/0/deleted.bin".into(),
+        });
+        assert!(err.is_not_found());
+        assert!(err.to_string().contains("segments/0/deleted.bin"));
+
+        let err = OperationError::from(MmapError::MissingFile("matrix.dat".to_string()));
+        assert!(err.is_not_found());
+        assert!(err.to_string().contains("matrix.dat"));
+
+        let err = OperationError::from(GridstoreError::UniversalIo(UniversalIoError::NotFound {
+            path: "page_0.dat".into(),
+        }));
+        assert!(err.is_not_found());
+        assert!(err.to_string().contains("page_0.dat"));
+
+        // A raw io NotFound has no structured path; it stays a service error —
+        // universal-io wraps not-found at the call site (`extract_not_found`).
+        let io_err = IoError::new(ErrorKind::NotFound, "no such file");
+        assert!(!OperationError::from(io_err).is_not_found());
+
+        // Non-not-found io errors are unaffected.
+        let io_err = IoError::new(ErrorKind::PermissionDenied, "denied");
+        let err = OperationError::from(UniversalIoError::Io(io_err));
+        assert!(!err.is_not_found());
+    }
 
     #[test]
     fn test_timeout_error_formatting() {

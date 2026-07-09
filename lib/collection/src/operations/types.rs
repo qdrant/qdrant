@@ -1142,6 +1142,12 @@ impl From<OperationError> for CollectionError {
                 error: err.to_string(),
                 backtrace: None,
             },
+            // Internal classification for read-only followers (live-reload vs manifest);
+            // externally it stays a service error.
+            OperationError::FileNotFound { .. } => Self::ServiceError {
+                error: err.to_string(),
+                backtrace: None,
+            },
             OperationError::ValidationError { .. } => Self::BadInput {
                 description: err.to_string(),
             },
