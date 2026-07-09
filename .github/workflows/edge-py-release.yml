@@ -26,22 +26,20 @@ jobs:
 
     strategy:
       matrix:
-        target: [x86_64, aarch64]
-        manylinux: [manylinux_2_17, manylinux_2_28]
-        python:
-          - python3.10
-          - pypy3.11
+        # On `push` to `dev`, only build the single most popular flavor:
+        # x86_64 manylinux_2_17 (widest glibc compatibility). Thanks to
+        # abi3, that one wheel covers every CPython >= 3.10, including the
+        # latest. The full matrix (aarch64, manylinux_2_28, musl, PyPy)
+        # only runs on manual `workflow_dispatch` releases.
+        target: ${{ github.event_name == 'push' && fromJSON('["x86_64"]') || fromJSON('["x86_64", "aarch64"]') }}
+        manylinux: ${{ github.event_name == 'push' && fromJSON('["manylinux_2_17"]') || fromJSON('["manylinux_2_17", "manylinux_2_28"]') }}
+        python: ${{ github.event_name == 'push' && fromJSON('["python3.10"]') || fromJSON('["python3.10", "pypy3.11"]') }}
 
-        include:
-          - arch: x86_64
-            target: x86_64-unknown-linux-musl
-            manylinux: musllinux_1_2
-            python: python3.10
-
-          - arch: aarch64
-            target: aarch64-unknown-linux-musl
-            manylinux: musllinux_1_2
-            python: python3.10
+        include: >-
+          ${{ github.event_name == 'push' && fromJSON('[]') || fromJSON('[
+          {"arch": "x86_64", "target": "x86_64-unknown-linux-musl", "manylinux": "musllinux_1_2", "python": "python3.10"},
+          {"arch": "aarch64", "target": "aarch64-unknown-linux-musl", "manylinux": "musllinux_1_2", "python": "python3.10"}
+          ]') }}
 
         exclude:
           - target: aarch64
@@ -100,6 +98,10 @@ jobs:
     name: Build Python wheels [macOS]
 
     runs-on: macos-latest
+
+    # Dev pushes only build Linux x86_64; the full platform matrix is
+    # reserved for manual `workflow_dispatch` releases.
+    if: github.event_name != 'push'
 
     strategy:
       matrix:
@@ -162,6 +164,10 @@ jobs:
     name: Build Python wheels [Windows]
 
     runs-on: windows-latest
+
+    # Dev pushes only build Linux x86_64; the full platform matrix is
+    # reserved for manual `workflow_dispatch` releases.
+    if: github.event_name != 'push'
 
     strategy:
       matrix:
@@ -229,17 +235,22 @@ jobs:
       - edge-py-macos
       - edge-py-windows
 
+    # macOS/Windows builds are intentionally skipped on `push`, which by
+    # default would skip this job too — override with `!cancelled()` and
+    # only require the jobs that were supposed to run.
+    if: >-
+      ${{ !cancelled()
+      && needs.edge-py-linux.result == 'success'
+      && (github.event_name == 'push' || (needs.edge-py-macos.result == 'success' && needs.edge-py-windows.result == 'success')) }}
+
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
-          - ubuntu-24.04-arm
-          - ubuntu-latest
-          - windows-latest
-        python:
-          - '3.10'
-          - 'pypy3.11'
+        # Dev pushes test the single x86_64 Linux wheel on the latest
+        # stable Python only. Production releases (workflow_dispatch)
+        # verify the abi3 wheel against every stable CPython plus PyPy.
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["macos-latest", "ubuntu-24.04-arm", "ubuntu-latest", "windows-latest"]') }}
+        python: ${{ github.event_name == 'push' && fromJSON('["3.14"]') || fromJSON('["3.10", "3.11", "3.12", "3.13", "3.14", "pypy3.11"]') }}
 
     steps:
       - name: Checkout Qdrant
@@ -285,7 +296,9 @@ jobs:
       - edge-py-windows
       - edge-py-test
 
-    if: inputs.publish || github.event_name == 'push'
+    # `!cancelled()` because macOS/Windows builds are skipped on `push`;
+    # `edge-py-test` succeeding already implies every required build passed.
+    if: ${{ !cancelled() && needs.edge-py-test.result == 'success' && (inputs.publish || github.event_name == 'push') }}
 
     steps:
       - name: Merge release artifacts
