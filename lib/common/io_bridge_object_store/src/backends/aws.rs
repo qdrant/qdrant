@@ -160,6 +160,7 @@ mod tests {
             bucket: "bucket".to_string(),
             region: None,
             endpoint: None,
+            s3_express: false,
             credentials,
         }
     }
