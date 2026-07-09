@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::bitvec::BitSlice;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::ReadOnlyFieldIndex;
 use crate::common::operation_error::OperationResult;
@@ -143,14 +143,23 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => false,
                 ReadMode::Immutable { is_on_disk: _ } => false,
             },
-            // Bool and null are roaring-flag backed: a single read-only `preopen`
-            // serves both modes (neither consumes the immutable-only
-            // `is_on_disk` / `deleted_points`).
             PayloadIndexType::BoolIndex => {
-                ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field))?
+                let populate = match mode {
+                    ReadMode::Immutable { is_on_disk: false } | ReadMode::Appendable => {
+                        Populate::PreferBackground
+                    }
+                    ReadMode::Immutable { is_on_disk: true } => Populate::No,
+                };
+                ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field), populate)?
             }
             PayloadIndexType::NullIndex => {
-                ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field))?
+                let populate = match mode {
+                    ReadMode::Immutable { is_on_disk: false } | ReadMode::Appendable => {
+                        Populate::PreferBackground
+                    }
+                    ReadMode::Immutable { is_on_disk: true } => Populate::No,
+                };
+                ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field), populate)?
             }
         };
 
