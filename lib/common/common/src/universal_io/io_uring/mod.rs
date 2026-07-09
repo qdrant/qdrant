@@ -12,10 +12,10 @@ use std::os::fd::AsRawFd as _;
 use std::path::Path;
 use std::sync::Arc;
 
-use ::io_uring::types::Fd;
 use aligned_vec::avec_rt;
 use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt as _, OpenOptionsExt as _};
+use io_uring::types::Fd;
 
 use self::error::*;
 use self::pipeline::IoUringPipeline;
@@ -395,18 +395,18 @@ impl IoUringFile {
     /// report a spurious `WriteZero` error). Returns the byte offset at
     /// which the first byte was appended.
     fn append_slices(&self, slices: &mut [io::IoSlice<'_>], total: usize) -> Result<ByteOffset> {
-        if self.direct_io {
-            return Err(UniversalIoError::Io(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "append is not supported on O_DIRECT (prevent_caching) handles",
-            )));
-        }
-
         // Exact under the single-writer contract: nothing else grows the
         // file between this fstat and the writes below.
         let offset = self.file.metadata()?.len();
         if total == 0 {
             return Ok(offset);
+        }
+
+        if self.direct_io {
+            return Err(UniversalIoError::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "append is not supported on O_DIRECT (prevent_caching) handles",
+            )));
         }
 
         local_file_ops::write_all_vectored(AppendWriter { file: &self.file }, slices)?;
