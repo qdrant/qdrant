@@ -63,6 +63,14 @@ fn build_cached_fs<Fs: UniversalReadFs>(
     Ok(cached_fs)
 }
 
+/// How the payload storage of a segment with `config` is brought into memory.
+fn payload_populate(config: &SegmentConfig) -> Populate {
+    match config.payload_storage_type {
+        PayloadStorageType::InRamMmap => Populate::PreferBackground,
+        PayloadStorageType::Mmap => Populate::No,
+    }
+}
+
 impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Open the segment over a per-segment [`CachedReadFs`]: known files are
     /// prefetched before the listing snapshot is taken (see
@@ -75,14 +83,25 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
-        Self::first_preopen(&cached_fs, segment_path)?;
-        Self::open_via(&cached_fs, fs, segment_path, uuid, deferred_internal_id)
+        let (segment_config, payload_config) = Self::first_preopen(&cached_fs, segment_path)?;
+        Self::open_via(
+            &cached_fs,
+            fs,
+            segment_path,
+            segment_config,
+            payload_config,
+            uuid,
+            deferred_internal_id,
+        )
     }
 
+    /// Schedule the prefetch of every file the segment's components will open,
+    /// returning the configs parsed along the way so [`open_via`](Self::open_via)
+    /// does not have to read them a second time.
     fn first_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
-    ) -> OperationResult<PayloadConfig> {
+    ) -> OperationResult<(SegmentConfig, PayloadConfig)> {
         let SegmentState {
             initial_version: _,
             version: _,
@@ -90,20 +109,16 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
 
         // Payload storage
-        let payload_populate = match config.payload_storage_type {
-            PayloadStorageType::InRamMmap => Populate::PreferBackground,
-            PayloadStorageType::Mmap => Populate::No,
-        };
-        ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_populate)?;
+        ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_populate(&config))?;
 
         // Id tracker
         ReadOnlyIdTrackerEnum::preopen(fs, segment_path)?;
 
         // Payload indexes
-        let payload_index_config =
+        let payload_config =
             ReadOnlyStructPayloadIndex::preopen(fs, &get_payload_index_path(segment_path))?;
 
-        Ok(payload_index_config)
+        Ok((config, payload_config))
     }
 
     /// Read-only mirror of `load_segment`: assembles every read-only component
@@ -114,10 +129,15 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// pool. `raw_fs` is the canonical backend, for the one component that
     /// stores a filesystem handle to re-open appended files later (the
     /// appendable id tracker): a caching wrapper's snapshot would go stale.
+    ///
+    /// `config` and `payload_config` are the ones [`first_preopen`](Self::first_preopen)
+    /// already parsed off `fs`.
     pub(crate) fn open_via(
         fs: &impl CachedReadFs<File = S>,
         raw_fs: &S::Fs,
         segment_path: &Path,
+        config: SegmentConfig,
+        payload_config: PayloadConfig,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
@@ -128,23 +148,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             )));
         }
 
-        let SegmentState {
-            initial_version: _,
-            version: _,
-            config,
-        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
-
         let is_appendable = config.is_appendable();
         let deferred_internal_id = deferred_internal_id.filter(|_| is_appendable);
 
-        let payload_populate = match config.payload_storage_type {
-            PayloadStorageType::InRamMmap => Populate::PreferBackground,
-            PayloadStorageType::Mmap => Populate::No,
-        };
         let payload_storage = Arc::new(AtomicRefCell::new(ReadOnlyPayloadStorage::open(
             fs,
             segment_path.to_path_buf(),
-            payload_populate,
+            payload_populate(&config),
         )?));
 
         // Detect the persisted format by attempting each format's open (no
@@ -185,6 +195,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             id_tracker.clone(),
             vector_storages.clone(),
             &get_payload_index_path(segment_path),
+            payload_config,
         )?));
 
         let mut vector_data = HashMap::new();
