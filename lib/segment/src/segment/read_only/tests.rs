@@ -253,6 +253,7 @@ fn read_only_segment_over_s3() {
         endpoint: Some(
             std::env::var("RUSTFS_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".into()),
         ),
+        s3_express: false,
         credentials: AwsCredentials::Static {
             access_key_id: std::env::var("RUSTFS_ACCESS_KEY")
                 .unwrap_or_else(|_| "rustfsadmin".into()),
