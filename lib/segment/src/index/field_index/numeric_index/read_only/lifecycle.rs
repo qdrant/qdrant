@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 use gridstore::Blob;
 
 use super::super::Encodable;
@@ -18,6 +18,25 @@ impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P, S: Uni
 where
     Vec<T>: Blob,
 {
+    /// Schedule background prefetch for the appendable (Gridstore) format,
+    /// forwarding to [`ReadOnlyNumericIndexInner::preopen_appendable`].
+    pub fn preopen_appendable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<bool> {
+        ReadOnlyNumericIndexInner::preopen_appendable(fs, dir)
+    }
+
+    /// Schedule background prefetch for the immutable (mmap) format, forwarding
+    /// to [`ReadOnlyNumericIndexInner::preopen_immutable`].
+    pub fn preopen_immutable(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        is_on_disk: bool,
+    ) -> OperationResult<bool> {
+        ReadOnlyNumericIndexInner::preopen_immutable(fs, path, is_on_disk)
+    }
+
     /// Read-only mirror of [`NumericIndex::new_gridstore`][1]: forwards to
     /// [`ReadOnlyNumericIndexInner::open_appendable`] and wraps the inner with
     /// the typed payload-value phantom `P`.

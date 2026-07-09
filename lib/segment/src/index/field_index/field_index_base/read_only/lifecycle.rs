@@ -88,16 +88,51 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 }
             },
             PayloadIndexType::IntIndex => match mode {
-                ReadMode::Appendable => false,
-                ReadMode::Immutable { is_on_disk: _ } => false,
+                ReadMode::Appendable => {
+                    ReadOnlyNumericIndex::<IntPayloadType, IntPayloadType, S>::preopen_appendable(
+                        fs,
+                        numeric_dir(dir, field),
+                    )?
+                }
+                ReadMode::Immutable { is_on_disk } => {
+                    ReadOnlyNumericIndex::<IntPayloadType, IntPayloadType, S>::preopen_immutable(
+                        fs,
+                        &numeric_dir(dir, field),
+                        is_on_disk,
+                    )?
+                }
             },
             PayloadIndexType::DatetimeIndex => match mode {
-                ReadMode::Appendable => false,
-                ReadMode::Immutable { is_on_disk: _ } => false,
+                ReadMode::Appendable => ReadOnlyNumericIndex::<
+                    IntPayloadType,
+                    DateTimePayloadType,
+                    S,
+                >::preopen_appendable(
+                    fs, numeric_dir(dir, field)
+                )?,
+                ReadMode::Immutable { is_on_disk } => ReadOnlyNumericIndex::<
+                    IntPayloadType,
+                    DateTimePayloadType,
+                    S,
+                >::preopen_immutable(
+                    fs, &numeric_dir(dir, field), is_on_disk
+                )?,
             },
             PayloadIndexType::FloatIndex => match mode {
-                ReadMode::Appendable => false,
-                ReadMode::Immutable { is_on_disk: _ } => false,
+                ReadMode::Appendable => ReadOnlyNumericIndex::<
+                    FloatPayloadType,
+                    FloatPayloadType,
+                    S,
+                >::preopen_appendable(
+                    fs, numeric_dir(dir, field)
+                )?,
+                ReadMode::Immutable { is_on_disk } => ReadOnlyNumericIndex::<
+                    FloatPayloadType,
+                    FloatPayloadType,
+                    S,
+                >::preopen_immutable(
+                    fs, &numeric_dir(dir, field), is_on_disk
+                )?,
             },
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
