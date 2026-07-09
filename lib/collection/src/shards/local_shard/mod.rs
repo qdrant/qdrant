@@ -81,8 +81,8 @@ use crate::config::CollectionConfigInternal;
 use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
-    ShardUpdateQueueInfo,
+    CollectionError, CollectionResult, OptimizersStatus, RateLimiterKind, ShardInfoInternal,
+    ShardStatus, ShardUpdateQueueInfo,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;
@@ -1374,7 +1374,7 @@ impl LocalShard {
                 .try_consume(cost as f64)
                 .map_err(|err| {
                     log::debug!("Read rate limit error on {context} with {err:?}");
-                    CollectionError::rate_limit_error(err, cost, false)
+                    CollectionError::rate_limit_error(err, cost, RateLimiterKind::Read)
                 })?;
         }
         Ok(())
@@ -1402,7 +1402,9 @@ impl LocalShard {
             rate_limiter
                 .lock()
                 .try_consume(cost as f64)
-                .map_err(|err| CollectionError::rate_limit_error(err, cost, true))?;
+                .map_err(|err| {
+                    CollectionError::rate_limit_error(err, cost, RateLimiterKind::Write)
+                })?;
         }
         Ok(())
     }
