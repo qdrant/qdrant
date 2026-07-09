@@ -102,20 +102,20 @@ pub trait ReadSegmentEntry {
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
-    /// Single-point byte-blob analogue of [`ReadSegmentEntry::retrieve`]:
-    /// returns vectors as storage-native bytes ([`SegmentRecordRaw`]) to avoid
-    /// a lossy round-trip when relocating points (copy-on-write moves, shard
-    /// transfer).
+    /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors as
+    /// storage-native bytes ([`SegmentRecordRaw`]) to avoid a lossy round-trip
+    /// when relocating points (copy-on-write moves, shard transfer).
     ///
-    /// Returns `None` if the point is not found.
-    fn retrieve_raw_one(
+    /// Like `retrieve`, may return fewer records than requested and in any order.
+    fn retrieve_raw(
         &self,
-        point_id: PointIdType,
+        point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<Option<SegmentRecordRaw>>;
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
@@ -435,7 +435,7 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
 
     /// Byte-blob analogue of [`SegmentEntry::upsert_point`]: vector values are
     /// storage-native bytes in the exact form returned by
-    /// [`ReadSegmentEntry::retrieve_raw_one`], so requantized (e.g. TurboQuant)
+    /// [`ReadSegmentEntry::retrieve_raw`], so requantized (e.g. TurboQuant)
     /// vectors relocate without a lossy decode/re-encode round-trip.
     ///
     /// The bytes carry no encoding/version tag: the target segment must have

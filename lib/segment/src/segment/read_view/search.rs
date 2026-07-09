@@ -9,7 +9,7 @@ use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
 use crate::data_types::query_context::{QueryContext, QueryIdfStats, SegmentQueryContext};
-use crate::data_types::segment_record::{RawNamedVectors, SegmentRecord, SegmentRecordRaw};
+use crate::data_types::segment_record::{SegmentRecord, SegmentRecordGeneric, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
@@ -39,6 +39,67 @@ where
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        self.retrieve_generic(
+            point_ids,
+            with_payload,
+            with_vector,
+            is_stopped,
+            deferred_behavior,
+            hw_counter,
+            |vector_name, keys, push| {
+                self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
+                    push(id, vec)
+                })
+            },
+        )
+    }
+
+    /// Byte-blob analogue of [`Self::retrieve`]: vectors are read as
+    /// storage-native bytes (`Vec<u8>`) to avoid a lossy round-trip.
+    pub fn retrieve_raw(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
+        self.retrieve_generic(
+            point_ids,
+            with_payload,
+            with_vector,
+            is_stopped,
+            deferred_behavior,
+            hw_counter,
+            |vector_name, keys, push| {
+                self.vector_bytes_by_offsets(vector_name, keys, hw_counter, |id, _offset, bytes| {
+                    push(id, bytes)
+                })
+            },
+        )
+    }
+
+    /// Shared body of [`Self::retrieve`] and [`Self::retrieve_raw`]; only the
+    /// vector representation `V` and the storage read differ. `read_name` gets
+    /// each vector name, the resolved `(id, offset)` keys (already wired to the
+    /// stop signal) and a `push` sink for the `(id, value)`s it reads — it owns
+    /// the storage reader choice.
+    #[allow(clippy::too_many_arguments)]
+    fn retrieve_generic<V>(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+        mut read_name: impl FnMut(
+            &VectorNameBuf,
+            &mut dyn Iterator<Item = (ExtendedPointId, PointOffsetType)>,
+            &mut dyn FnMut(ExtendedPointId, V),
+        ) -> OperationResult<()>,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordGeneric<V>>> {
         // Stage 1: resolve external → internal ids once, with deferred filtering.
         let (resolved_ids, resolved_offsets) = self
             .id_tracker
@@ -51,10 +112,10 @@ where
             WithVector::Bool(true) | WithVector::Selector(_) => true,
             WithVector::Bool(false) => false,
         };
-        let mut records: AHashMap<ExtendedPointId, SegmentRecord> = resolved_ids
+        let mut records: AHashMap<ExtendedPointId, SegmentRecordGeneric<V>> = resolved_ids
             .iter()
             .map(|&id| {
-                let record = SegmentRecord {
+                let record = SegmentRecordGeneric {
                     id,
                     vectors: needs_vectors.then(Vec::new),
                     payload: None,
@@ -63,23 +124,21 @@ where
             })
             .collect();
 
-        // Stage 3: vectors. The external id rides along as the read's user
-        // data — it comes back unchanged in the callback, so no extra
-        // `offset → id` lookup is needed.
+        // Stage 3: vectors, delegated to `read_name` per requested vector name.
         if needs_vectors {
             let mut process_vectors = |vector_name: &VectorNameBuf| -> OperationResult<()> {
-                let keys = resolved_ids
+                let mut keys = resolved_ids
                     .iter()
                     .zip(&resolved_offsets)
                     .map(|(&id, &offset)| (id, offset))
                     .stop_if(is_stopped);
-                self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
+                read_name(vector_name, &mut keys, &mut |id, value| {
                     if let Some(record) = records.get_mut(&id) {
                         record
                             .vectors
                             .as_mut()
                             .expect("needs_vectors path keeps vectors as Some")
-                            .push((vector_name.clone(), vec));
+                            .push((vector_name.clone(), value));
                     }
                 })
             };
@@ -124,68 +183,6 @@ where
         }
 
         Ok(records)
-    }
-
-    /// Single-point byte-blob analogue of [`Self::retrieve`]: vectors are read
-    /// as storage-native bytes (`Vec<u8>`) to avoid a lossy round-trip when
-    /// relocating points. Returns `None` if the point is not found.
-    pub fn retrieve_raw_one(
-        &self,
-        point_id: PointIdType,
-        with_payload: &WithPayload,
-        with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
-        deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<Option<SegmentRecordRaw>> {
-        let Some(offset) = self
-            .id_tracker
-            .internal_id_with_behavior(point_id, deferred_behavior)
-        else {
-            return Ok(None);
-        };
-
-        let vectors = match with_vector {
-            WithVector::Bool(false) => None,
-            WithVector::Bool(true) => {
-                Some(self.retrieve_raw_vectors(self.vector_data.keys(), offset, hw_counter)?)
-            }
-            WithVector::Selector(names) => {
-                Some(self.retrieve_raw_vectors(names.iter(), offset, hw_counter)?)
-            }
-        };
-
-        let payload = if with_payload.enable {
-            let payload = self.payload_by_offset(offset, hw_counter)?;
-            Some(match &with_payload.payload_selector {
-                Some(selector) => selector.process(payload),
-                None => payload,
-            })
-        } else {
-            None
-        };
-
-        Ok(Some(SegmentRecordRaw { vectors, payload }))
-    }
-
-    /// Vector-reading body of [`Self::retrieve_raw_one`]: the storage-native bytes
-    /// of the named vectors of one point. Names whose vector is absent or
-    /// deleted are skipped, like in [`Self::vector_bytes_by_offsets`].
-    fn retrieve_raw_vectors<'a>(
-        &self,
-        vector_names: impl Iterator<Item = &'a VectorNameBuf>,
-        offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<RawNamedVectors> {
-        let mut vectors = RawNamedVectors::new();
-        for vector_name in vector_names {
-            self.vector_bytes_by_offsets(
-                vector_name,
-                std::iter::once(((), offset)),
-                hw_counter,
-                |(), _offset, bytes| vectors.push((vector_name.clone(), bytes)),
-            )?;
-        }
-        Ok(vectors)
     }
 
     /// Converts raw `ScoredPointOffset` search results into user-facing

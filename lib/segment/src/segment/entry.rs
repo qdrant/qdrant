@@ -150,20 +150,22 @@ impl ReadSegmentEntry for Segment {
         })
     }
 
-    fn retrieve_raw_one(
+    fn retrieve_raw(
         &self,
-        point_id: PointIdType,
+        point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<Option<SegmentRecordRaw>> {
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
         self.with_view(|view| {
-            view.retrieve_raw_one(
-                point_id,
+            view.retrieve_raw(
+                point_ids,
                 with_payload,
                 with_vector,
                 hw_counter,
+                is_stopped,
                 deferred_behavior,
             )
         })

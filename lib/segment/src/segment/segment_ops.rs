@@ -30,7 +30,7 @@ use crate::types::{
 use crate::utils;
 use crate::vector_storage::VectorStorageRead;
 
-/// Look up a named vector in the `retrieve_raw_one`-shaped `(name, bytes)` list.
+/// Look up a named vector in the `retrieve_raw`-shaped `(name, bytes)` list.
 fn find_raw_vector<'a>(
     vectors: &'a [(VectorNameBuf, Vec<u8>)],
     vector_name: &VectorName,
@@ -130,7 +130,7 @@ impl Segment {
     }
 
     /// Byte-blob analogue of [`Segment::replace_all_vectors`]: vector values
-    /// are storage-native bytes (the `retrieve_raw_one` form). Semantics are the
+    /// are storage-native bytes (the `retrieve_raw` form). Semantics are the
     /// same — named vectors not present in `vectors` are deleted.
     ///
     /// Unlike its decoded twin, `internal_id` may also be a fresh id one past
@@ -158,7 +158,7 @@ impl Segment {
     }
 
     /// Byte-blob analogue of [`Segment::insert_new_vectors`]: vector values
-    /// are storage-native bytes (the `retrieve_raw_one` form).
+    /// are storage-native bytes (the `retrieve_raw` form).
     ///
     /// # Warning
     ///

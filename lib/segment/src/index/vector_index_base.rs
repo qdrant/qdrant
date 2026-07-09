@@ -86,12 +86,12 @@ pub trait VectorIndex: VectorIndexRead {
     ) -> OperationResult<()>;
 
     /// Byte-blob analogue of [`VectorIndex::update_vector`]: `vector` is the
-    /// storage-native serialized form (the [`retrieve_raw_one`] format), letting
+    /// storage-native serialized form (the [`retrieve_raw`] format), letting
     /// requantized storages ingest bytes verbatim instead of a lossy
     /// decode/re-encode round-trip. `None` behaves exactly like
     /// `update_vector(id, None, _)`.
     ///
-    /// [`retrieve_raw_one`]: crate::entry::entry_point::ReadSegmentEntry::retrieve_raw_one
+    /// [`retrieve_raw`]: crate::entry::entry_point::ReadSegmentEntry::retrieve_raw
     fn update_vector_raw(
         &mut self,
         id: PointOffsetType,
