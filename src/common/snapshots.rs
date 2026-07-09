@@ -11,6 +11,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use collection::shards::transfer::RecoveryStage;
+use common::tempfile_ext::MaybeTempPath;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::StorageError;
@@ -23,6 +24,17 @@ use tokio::sync::OwnedRwLockWriteGuard;
 
 use super::auth::Auth;
 use super::http_client::HttpClient;
+
+async fn hash_materialized_snapshot_if_requested(
+    snapshot_file: &MaybeTempPath,
+    compute_checksum: bool,
+) -> Result<Option<String>, StorageError> {
+    if compute_checksum {
+        Ok(Some(sha_256::hash_file(snapshot_file).await?))
+    } else {
+        Ok(None)
+    }
+}
 
 /// # Cancel safety
 ///
@@ -252,11 +264,9 @@ pub async fn recover_shard_snapshot(
                         .get_snapshot_file(&snapshot_path, &download_dir)
                         .await?;
 
-                    let hash = if checksum.is_some() {
-                        Some(sha_256::hash_file(&snapshot_path).await?)
-                    } else {
-                        None
-                    };
+                    let hash =
+                        hash_materialized_snapshot_if_requested(&snapshot_file, checksum.is_some())
+                            .await?;
 
                     DownloadResult {
                         snapshot: SnapshotData::Packed(snapshot_file),
@@ -307,6 +317,55 @@ pub async fn recover_shard_snapshot(
     .await??;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn hash_materialized_snapshot_uses_materialized_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage_path = dir.path().join("storage-key.snapshot");
+        let materialized_file = tempfile::Builder::new()
+            .prefix("materialized")
+            .suffix(".snapshot")
+            .tempfile_in(dir.path())
+            .unwrap()
+            .into_temp_path();
+        let materialized_path = materialized_file.to_path_buf();
+        let snapshot_file = MaybeTempPath::Temporary(materialized_file);
+
+        tokio::fs::write(&storage_path, b"storage bytes")
+            .await
+            .unwrap();
+        tokio::fs::write(&materialized_path, b"materialized bytes")
+            .await
+            .unwrap();
+
+        let actual = hash_materialized_snapshot_if_requested(&snapshot_file, true)
+            .await
+            .unwrap()
+            .unwrap();
+        let storage_hash = sha_256::hash_file(&storage_path).await.unwrap();
+        let materialized_hash = sha_256::hash_file(&materialized_path).await.unwrap();
+
+        assert_ne!(actual, storage_hash);
+        assert_eq!(actual, materialized_hash);
+    }
+
+    #[tokio::test]
+    async fn hash_materialized_snapshot_skips_hash_when_not_requested() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing_path = dir.path().join("missing.snapshot");
+        let snapshot_file = MaybeTempPath::Persistent(missing_path);
+
+        let actual = hash_materialized_snapshot_if_requested(&snapshot_file, false)
+            .await
+            .unwrap();
+
+        assert_eq!(actual, None);
+    }
 }
 
 /// # Cancel safety
