@@ -214,14 +214,17 @@ where
                     hw_counter,
                 )
             },
-            |id, _raw_vectors, updated_vectors, old_payload| {
+            |id, raw_vectors, updated_vectors, old_payload| {
                 let point = points_map[&id];
+                // Upsert replaces the whole point: old named vectors and
+                // payload must not survive the move, matching the in-place
+                // `upsert_with_payload` path (`replace_all_vectors` +
+                // clear/set payload).
+                raw_vectors.clear();
                 for (name, vec) in point.get_vectors() {
                     updated_vectors.insert(VectorNameBuf::from(name), vec.to_owned());
                 }
-                if let Some(payload) = &point.payload {
-                    *old_payload = payload.clone();
-                }
+                *old_payload = point.payload.clone().unwrap_or_default();
             },
             hw_counter,
         )?;
@@ -1681,5 +1684,114 @@ mod test {
             app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
             "Deferred copy must be kept"
         );
+    }
+
+    /// Upsert of a point that lives in a non-appendable segment takes the
+    /// CoW-move arm of `apply_points_with_conditional_move`. The moved record
+    /// must match in-place upsert semantics (`upsert_with_payload`): named
+    /// vectors and payload absent from the incoming point are dropped, not
+    /// carried over from the old record.
+    #[test]
+    fn test_upsert_cow_move_replaces_whole_point() {
+        use std::collections::HashMap;
+
+        use common::types::DeferredBehavior;
+        use segment::data_types::named_vectors::NamedVectors;
+        use segment::entry::entry_point::SegmentEntry;
+        use segment::segment_constructor::simple_segment_constructor::{
+            VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs,
+        };
+        use segment::types::{Distance, PointIdType};
+
+        use crate::operations::point_ops::{
+            PointStructPersisted, VectorPersisted, VectorStructPersisted,
+        };
+        use crate::update::upsert_points;
+
+        const DIM: usize = 4;
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        let point_id: PointIdType = 7.into();
+
+        // Old record: both named vectors plus a payload.
+        let seed = |segment: &mut segment::segment::Segment| {
+            segment
+                .upsert_point(
+                    100,
+                    point_id,
+                    NamedVectors::from_pairs([
+                        (VECTOR1_NAME.to_owned(), vec![0.1, 0.2, 0.3, 0.4]),
+                        (VECTOR2_NAME.to_owned(), vec![0.5, 0.6, 0.7, 0.8]),
+                    ]),
+                    &hw_counter,
+                )
+                .unwrap();
+            segment
+                .set_payload(
+                    100,
+                    point_id,
+                    &payload_json! {"city": "Berlin"},
+                    &None,
+                    &hw_counter,
+                )
+                .unwrap();
+        };
+
+        // Incoming upsert: only `vector1`, no payload.
+        let incoming = PointStructPersisted {
+            id: point_id,
+            vector: VectorStructPersisted::Named(HashMap::from([(
+                VECTOR1_NAME.to_owned(),
+                VectorPersisted::Dense(vec![1.0, 1.0, 1.0, 1.0]),
+            )])),
+            payload: None,
+        };
+
+        let check = |segment: &dyn SegmentEntry, path: &str| {
+            assert!(segment.has_point(point_id, DeferredBehavior::WithDeferred));
+            assert!(
+                segment
+                    .vector(VECTOR1_NAME, point_id, &hw_counter)
+                    .unwrap()
+                    .is_some(),
+                "{path}: upserted vector must be present",
+            );
+            assert!(
+                segment
+                    .vector(VECTOR2_NAME, point_id, &hw_counter)
+                    .unwrap()
+                    .is_none(),
+                "{path}: named vector absent from the upsert must be dropped",
+            );
+            assert!(
+                segment.payload(point_id, &hw_counter).unwrap().is_empty(),
+                "{path}: payload absent from the upsert must be cleared",
+            );
+        };
+
+        // Oracle: in-place upsert into an appendable segment.
+        let mut in_place =
+            build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+        seed(&mut in_place);
+        let mut holder = SegmentHolder::default();
+        let sid = holder.add_new(in_place);
+        upsert_points(&holder, 101, [&incoming], &hw_counter).unwrap();
+        let segment = holder.get(sid).unwrap().get();
+        check(&*segment.read(), "in-place");
+
+        // CoW move: the point's segment is non-appendable, so the upsert must
+        // move it into the appendable destination with the same semantics.
+        let mut source =
+            build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+        seed(&mut source);
+        source.appendable_flag = false;
+        let destination =
+            build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+        let mut holder = SegmentHolder::default();
+        holder.add_new(source);
+        let sid = holder.add_new(destination);
+        upsert_points(&holder, 101, [&incoming], &hw_counter).unwrap();
+        let segment = holder.get(sid).unwrap().get();
+        check(&*segment.read(), "CoW move");
     }
 }
