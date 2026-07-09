@@ -12,10 +12,10 @@ use std::os::fd::AsRawFd as _;
 use std::path::Path;
 use std::sync::Arc;
 
+use ::io_uring::types::Fd;
 use aligned_vec::avec_rt;
 use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt as _, OpenOptionsExt as _};
-use io_uring::types::Fd;
 
 use self::error::*;
 use self::pipeline::IoUringPipeline;
