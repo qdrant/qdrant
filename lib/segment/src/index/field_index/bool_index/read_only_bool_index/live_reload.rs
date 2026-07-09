@@ -3,7 +3,6 @@ use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 
 use super::ReadOnlyBoolIndex;
-use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
 use crate::index::field_index::LiveReload;
@@ -26,19 +25,13 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyBoolIndex<S> {
             .falses_flags
             .live_reload(fs, deleted_points, new_points, hw_counter)?;
 
-        // Refresh the derived counts from the reloaded bitmaps, as `open` does.
+        // Re-derive the counts from the just-reloaded bitmaps, but only if they
+        // were computed before: an untouched index must not pay for the bitmap
+        // scan that deriving them would force.
         //
         // possible opt: update this using deleted_points and new_points separately,
         //               so we only process the delta
-        self.indexed_count =
-            self.storage
-                .trues_flags
-                .get_bitmap()
-                .union_len(self.storage.falses_flags.get_bitmap()) as usize;
-
-        // possible opt: track num_trues within `RoaringFlags`.
-        self.trues_count = self.storage.trues_flags.count_trues();
-        self.falses_count = self.storage.falses_flags.count_trues();
+        self.refresh_counts()?;
 
         Ok(())
     }

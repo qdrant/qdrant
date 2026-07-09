@@ -68,7 +68,7 @@ fn test_full_text_indexing() {
                 .unwrap();
         }
 
-        assert_eq!(index.count_indexed_points(), payloads.len());
+        assert_eq!(index.count_indexed_points().unwrap(), payloads.len());
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -110,7 +110,7 @@ fn test_full_text_indexing() {
                 .is_none()
         );
 
-        assert_eq!(index.count_indexed_points(), payloads.len() - 2);
+        assert_eq!(index.count_indexed_points().unwrap(), payloads.len() - 2);
 
         let payload = serde_json::json!([
             "The last question was asked for the first time, half in jest, on May 21, 2061,",
@@ -123,7 +123,7 @@ fn test_full_text_indexing() {
         ]);
         index.add_point(4, &[&payload], &hw_cell).unwrap();
 
-        assert_eq!(index.count_indexed_points(), payloads.len() - 1);
+        assert_eq!(index.count_indexed_points().unwrap(), payloads.len() - 1);
 
         index.flusher()().unwrap();
     }
@@ -133,7 +133,7 @@ fn test_full_text_indexing() {
             .unwrap()
             .unwrap();
 
-        assert_eq!(index.count_indexed_points(), 4);
+        assert_eq!(index.count_indexed_points().unwrap(), 4);
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -163,7 +163,7 @@ fn test_full_text_indexing() {
             .unwrap()
             .collect();
         assert!(search_res.is_empty());
-        assert_eq!(index.count_indexed_points(), 3);
+        assert_eq!(index.count_indexed_points().unwrap(), 3);
 
         index.remove_point(3).unwrap();
         let filter_condition = filter_request("the");
@@ -173,10 +173,10 @@ fn test_full_text_indexing() {
             .unwrap()
             .collect();
         assert_eq!(search_res, vec![1, 4]);
-        assert_eq!(index.count_indexed_points(), 2);
+        assert_eq!(index.count_indexed_points().unwrap(), 2);
 
         // check deletion of non-existing point
         index.remove_point(3).unwrap();
-        assert_eq!(index.count_indexed_points(), 2);
+        assert_eq!(index.count_indexed_points().unwrap(), 2);
     }
 }

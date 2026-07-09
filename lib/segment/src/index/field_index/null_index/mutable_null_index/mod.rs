@@ -103,10 +103,10 @@ mod tests {
             .collect();
 
         let is_empty_values: Vec<_> = (0..n)
-            .filter(|&id| null_index.values_is_empty(id))
+            .filter(|&id| null_index.values_is_empty(id).unwrap())
             .collect();
         let not_null_values: Vec<_> = (0..n)
-            .filter(|&id| !null_index.values_is_null(id))
+            .filter(|&id| !null_index.values_is_null(id).unwrap())
             .collect();
 
         for i in 0..n {
@@ -173,8 +173,8 @@ mod tests {
         index.flusher()().unwrap();
 
         for i in 0..10 {
-            assert!(!index.values_is_empty(i as PointOffsetType));
-            assert!(!index.values_is_null(i as PointOffsetType));
+            assert!(!index.values_is_empty(i as PointOffsetType).unwrap());
+            assert!(!index.values_is_null(i as PointOffsetType).unwrap());
         }
     }
 }

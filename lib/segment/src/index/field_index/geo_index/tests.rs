@@ -412,7 +412,8 @@ fn geo_indexed_filtering(#[case] index_type: IndexType) {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
 
         let hw_counter = HardwareCounterCell::new();
-        let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
+        let mut matched_points = (0..field_index.count_indexed_points().unwrap()
+            as PointOffsetType)
             .filter_map(|idx| {
                 if field_index
                     .check_values_any(idx, &hw_counter, &check_fn.clone())

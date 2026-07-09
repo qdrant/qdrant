@@ -423,7 +423,7 @@ fn sparse_vector_index_ram_filtered_search() {
 
     let field_indexes = &payload_index.field_indexes;
     let field_index = field_indexes.get(&JsonPath::new(field_name)).unwrap();
-    assert_eq!(field_index[0].count_indexed_points(), 0);
+    assert_eq!(field_index[0].count_indexed_points().unwrap(), 0);
     drop(payload_index);
 
     // add payload on the first half of the points
@@ -442,7 +442,10 @@ fn sparse_vector_index_ram_filtered_search() {
     let payload_index = sparse_vector_index.payload_index().borrow();
     let field_indexes = &payload_index.field_indexes;
     let field_index = field_indexes.get(&JsonPath::new(field_name)).unwrap();
-    assert_eq!(field_index[0].count_indexed_points(), half_indexed_count);
+    assert_eq!(
+        field_index[0].count_indexed_points().unwrap(),
+        half_indexed_count
+    );
     drop(payload_index);
 
     // request all points with payload

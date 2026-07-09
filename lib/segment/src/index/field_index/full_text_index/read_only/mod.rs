@@ -122,7 +122,7 @@ mod tests {
         // Trait dispatch on the parent enum forwards into the leaf:
         // every document was indexed (3 points), and `brown` matches the two
         // that contain it while `lazy` matches only the second.
-        assert_eq!(index.count_indexed_points(), payloads.len());
+        assert_eq!(index.count_indexed_points().unwrap(), payloads.len());
 
         let key = JsonPath::new("test");
         let brown = FieldCondition::new_match(key.clone(), Match::new_text("brown"));

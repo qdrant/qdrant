@@ -11,9 +11,9 @@ mod read_ops;
 
 /// Read-only counterpart of [`MutableNullIndex`][1] / [`ImmutableNullIndex`][2].
 ///
-/// All flags are loaded into in-memory roaring bitmaps on open. The backing
-/// storage is bound to [`UniversalRead`][3] only — no buffer, no flusher,
-/// no write path. Query logic (filter / cardinality / condition checker) is
+/// Flags are materialized into in-memory roaring bitmaps on first use, not on
+/// open — nothing this index needs at open touches them. The backing storage is
+/// bound to [`UniversalRead`][3] only — no buffer, no flusher, no write path. Query logic (filter / cardinality / condition checker) is
 /// shared with the writable variant via the [`NullIndexRead`][4] trait.
 ///
 /// Each [`ReadOnlyRoaringFlags`] retains its backend `S` so a [`LiveReload`][5]
@@ -160,16 +160,16 @@ mod tests {
             vec![0, 2],
         );
         // Length read straight from the status file.
-        assert_eq!(index.count_indexed_points(), 4);
+        assert_eq!(index.count_indexed_points().unwrap(), 4);
 
-        assert!(index.values_is_empty(0));
-        assert!(!index.values_is_empty(1));
-        assert!(index.values_is_empty(2));
-        assert!(!index.values_is_empty(3));
+        assert!(index.values_is_empty(0).unwrap());
+        assert!(!index.values_is_empty(1).unwrap());
+        assert!(index.values_is_empty(2).unwrap());
+        assert!(!index.values_is_empty(3).unwrap());
 
-        assert!(index.values_is_null(0));
-        assert!(index.values_is_null(1));
-        assert!(!index.values_is_null(3));
+        assert!(index.values_is_null(0).unwrap());
+        assert!(index.values_is_null(1).unwrap());
+        assert!(!index.values_is_null(3).unwrap());
     }
 
     /// The incremental `LiveReload` path must land on exactly the same in-memory
@@ -180,8 +180,21 @@ mod tests {
     /// null point is appended. `live_reload` is handed only that delta, yet its
     /// bitmaps and the `total_point_count`-driven `is_empty` results must match
     /// the authoritative re-open.
+    /// The bitmaps are lazy, so `live_reload` has two distinct paths: patch the
+    /// in-memory bitmap in place, or — when nothing has materialized it yet —
+    /// leave it alone and let the eventual scan read the updated file. Both must
+    /// land on the same state, so both are exercised.
     #[test]
-    fn live_reload_matches_fresh_open() {
+    fn live_reload_matches_fresh_open_materialized() {
+        live_reload_matches_fresh_open(true);
+    }
+
+    #[test]
+    fn live_reload_matches_fresh_open_lazy() {
+        live_reload_matches_fresh_open(false);
+    }
+
+    fn live_reload_matches_fresh_open(materialize_before_reload: bool) {
         let dir = TempDir::with_prefix("read_only_null_index_live_reload").unwrap();
         let hw_counter = HardwareCounterCell::new();
 
@@ -203,6 +216,13 @@ mod tests {
         let mut reloaded = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 4)
             .unwrap()
             .unwrap();
+
+        if materialize_before_reload {
+            // Pull both bitmaps into memory, so the reload below takes its
+            // in-place delta path rather than deferring to a later scan.
+            reloaded.values_is_null(0).unwrap();
+            reloaded.values_is_empty(0).unwrap();
+        }
 
         // Writer's delta: drop point 1, flip point 2 (empty -> value), append a
         // null point 4 (which grows `total_point_count` to 5).
@@ -286,8 +306,8 @@ mod tests {
         assert_eq!(reloaded_not_empty, fresh_not_empty);
         assert_eq!(reloaded_empty, fresh_empty);
         assert_eq!(
-            reloaded.count_indexed_points(),
-            fresh.count_indexed_points()
+            reloaded.count_indexed_points().unwrap(),
+            fresh.count_indexed_points().unwrap()
         );
 
         // … and the concrete expected sets. Point 2's flip moves it from empty
@@ -296,7 +316,7 @@ mod tests {
         assert_eq!(reloaded_null, vec![0, 4]);
         assert_eq!(reloaded_not_empty, vec![2, 3]);
         assert_eq!(reloaded_empty, vec![0, 1, 4]);
-        assert_eq!(reloaded.count_indexed_points(), 5);
+        assert_eq!(reloaded.count_indexed_points().unwrap(), 5);
     }
 
     /// A partial on-disk layout — exactly one of the `has_values` / `is_null`

@@ -69,7 +69,11 @@ pub trait PayloadIndexRead {
     ) -> OperationResult<Vec<PointOffsetType>>;
 
     /// Return number of points, indexed by this field
-    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
+    ///
+    /// Fallible: see [`PayloadFieldIndexRead::count_indexed_points`].
+    ///
+    /// [`PayloadFieldIndexRead::count_indexed_points`]: crate::index::field_index::PayloadFieldIndexRead::count_indexed_points
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize>;
 
     fn filter_context<'a>(
         &'a self,
@@ -91,7 +95,7 @@ pub trait PayloadIndexRead {
     fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_>;
 
     /// Per-field-index telemetry data.
-    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry>;
+    fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>>;
 
     /// Build a per-query formula scorer that evaluates the given parsed
     /// formula against this index's payload, using the prefetch scores as

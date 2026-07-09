@@ -4,6 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
@@ -17,25 +18,32 @@ pub(super) fn variable_retriever<'a, 'q, P, F>(
     json_path: &JsonPath,
     payload_provider: PayloadProvider<P>,
     hw_counter: &'q HardwareCounterCell,
-) -> VariableRetrieverFn<'q>
+) -> OperationResult<VariableRetrieverFn<'q>>
 where
     P: PayloadStorageRead + 'q,
     F: FieldIndexRead,
     'a: 'q,
 {
-    indices
-        .get(json_path)
-        .and_then(|indices| {
-            indices
-                .iter()
-                .find_map(|index| index.value_retriever(hw_counter))
-        })
-        // TODO(scoreboost): optimize by reusing the same payload for all variables?
-        .unwrap_or_else(|| {
-            // if the variable is not found in the index, try to find it in the payload
-            let key = json_path.clone();
-            payload_variable_retriever(payload_provider, key, hw_counter)
-        })
+    let indexed = match indices.get(json_path) {
+        Some(indices) => {
+            let mut found = None;
+            for index in indices {
+                if let Some(retriever) = index.value_retriever(hw_counter)? {
+                    found = Some(retriever);
+                    break;
+                }
+            }
+            found
+        }
+        None => None,
+    };
+
+    // TODO(scoreboost): optimize by reusing the same payload for all variables?
+    Ok(indexed.unwrap_or_else(|| {
+        // if the variable is not found in the index, try to find it in the payload
+        let key = json_path.clone();
+        payload_variable_retriever(payload_provider, key, hw_counter)
+    }))
 }
 
 fn payload_variable_retriever<'a, P: PayloadStorageRead + 'a>(
@@ -161,7 +169,8 @@ mod tests {
             &"value".try_into().unwrap(),
             payload_provider.clone(),
             &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=3 {
             let value = retriever(id);
             match id {
@@ -179,7 +188,8 @@ mod tests {
             &"location".try_into().unwrap(),
             payload_provider.clone(),
             &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=3 {
             let value = retriever(id);
             match id {
@@ -259,7 +269,8 @@ mod tests {
             &"value".try_into().unwrap(),
             payload_provider.clone(),
             &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=2 {
             let value = retriever(id);
             match id {
@@ -276,7 +287,8 @@ mod tests {
             &"location".try_into().unwrap(),
             payload_provider.clone(),
             &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=2 {
             let value = retriever(id);
             match id {
@@ -293,7 +305,8 @@ mod tests {
             &"creation".try_into().unwrap(),
             payload_provider.clone(),
             &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=2 {
             let value = retriever(id);
             match id {

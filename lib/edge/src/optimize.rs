@@ -195,11 +195,11 @@ mod tests {
         duplicate_single_segment(dir.path());
 
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
-        assert_eq!(reopened.info().segments_count, 2);
+        assert_eq!(reopened.info().unwrap().segments_count, 2);
 
         let optimized = reopened.optimize().unwrap();
         assert!(!optimized, "optimizer should not force-merge all segments");
-        assert_eq!(reopened.info().segments_count, 2);
+        assert_eq!(reopened.info().unwrap().segments_count, 2);
 
         assert_points_retrievable_with_vectors(&reopened, &[1]);
     }
@@ -257,8 +257,8 @@ mod tests {
 
         let optimized = shard.optimize().unwrap();
         assert!(!optimized, "single clean segment should not be optimized");
-        assert_eq!(shard.info().points_count, 100);
-        assert_eq!(shard.info().segments_count, 1);
+        assert_eq!(shard.info().unwrap().points_count, 100);
+        assert_eq!(shard.info().unwrap().segments_count, 1);
 
         assert_points_retrievable_with_vectors(&shard, &[1, 50, 100]);
     }
@@ -276,7 +276,7 @@ mod tests {
 
         let optimized = shard.optimize().unwrap();
         assert!(!optimized, "empty shard should not trigger optimization");
-        assert_eq!(shard.info().points_count, 0);
+        assert_eq!(shard.info().unwrap().points_count, 0);
     }
 
     /// Creating more segments than `default_segment_number` should trigger
@@ -301,7 +301,7 @@ mod tests {
 
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize().unwrap();
-        let info = reopened.info();
+        let info = reopened.info().unwrap();
         assert!(
             info.segments_count <= default_segment_number() + 1,
             "segments should be reduced after merge: got {} segments, \
@@ -348,7 +348,7 @@ mod tests {
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
         // First explicit optimization triggers merge.
         reopened.optimize().unwrap();
-        let segments_after_first = reopened.info().segments_count;
+        let segments_after_first = reopened.info().unwrap().segments_count;
 
         // Second explicit optimization should be a no-op.
         let optimized = reopened.optimize().unwrap();
@@ -356,7 +356,10 @@ mod tests {
             !optimized,
             "second optimization run should be idle after merge"
         );
-        assert_eq!(reopened.info().segments_count, segments_after_first);
+        assert_eq!(
+            reopened.info().unwrap().segments_count,
+            segments_after_first
+        );
 
         assert_points_retrievable_with_vectors(&reopened, &[1]);
     }
@@ -632,7 +635,7 @@ mod tests {
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize().unwrap();
 
-        let info = reopened.info();
+        let info = reopened.info().unwrap();
         assert!(
             info.segments_count <= default_segment_number() + 1,
             "excess segments should be merged: got {}",
@@ -748,7 +751,7 @@ mod tests {
             .expect("optimize must prune the deleted vector data, not cancel the merge");
         assert!(optimized, "excess segments should have been merged");
 
-        let info = reopened.info();
+        let info = reopened.info().unwrap();
         assert!(
             info.segments_count <= default_segment_number() + 1,
             "segments should be reduced after merge: got {} segments",

@@ -21,7 +21,11 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// `F: FieldIndexRead` consumers get these methods directly.
 pub trait PayloadFieldIndexRead {
     /// Return number of points with at least one value indexed in here
-    fn count_indexed_points(&self) -> usize;
+    ///
+    /// Fallible: an index whose backing data is materialized on demand (the
+    /// read-only bool index) has to read it to count. See
+    /// [`RoaringFlagsRead::get_bitmap`](crate::common::flags::roaring_flags::RoaringFlagsRead::get_bitmap).
+    fn count_indexed_points(&self) -> OperationResult<usize>;
 
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type

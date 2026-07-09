@@ -98,7 +98,7 @@ mod tests {
         // Trait dispatch on the parent enum forwards into the leaf:
         // every point with at least one value is counted, and `red` matches
         // the two that contain it while `blue` matches only the third.
-        assert_eq!(index.count_indexed_points(), 3);
+        assert_eq!(index.count_indexed_points().unwrap(), 3);
 
         let key = JsonPath::new("color");
         let red = FieldCondition::new_match(key.clone(), Match::from("red".to_string()));
