@@ -36,7 +36,9 @@ use fs_err as fs;
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
-use storage::content_manager::consensus::persistent::Persistent;
+use storage::content_manager::consensus::persistent::{
+    ConsensusInitMode, PeerBootstrap, Persistent,
+};
 use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::dispatcher::TocDispatcher;
@@ -478,10 +480,20 @@ fn main() -> anyhow::Result<()> {
     let bootstrap = resolve_bootstrap_uri(args.bootstrap, args.uri.as_ref());
 
     // Saved state of the consensus.
+    let peer_bootstrap = if bootstrap.is_none() {
+        PeerBootstrap::FirstPeer
+    } else {
+        PeerBootstrap::JoiningCluster
+    };
+    let consensus_init_mode = if args.reinit {
+        ConsensusInitMode::Reinit
+    } else {
+        ConsensusInitMode::Load
+    };
     let persistent_consensus_state = Persistent::load_or_init(
         &settings.storage.storage_path,
-        bootstrap.is_none(),
-        args.reinit,
+        peer_bootstrap,
+        consensus_init_mode,
         settings.cluster.peer_id,
     )?;
 
@@ -831,7 +843,13 @@ mod tests {
     #[test]
     fn empty_api_keys_are_not_forwarded_on_internal_requests() {
         let dir = tempfile::tempdir().unwrap();
-        let persistent = Persistent::load_or_init(dir.path(), true, false, None).unwrap();
+        let persistent = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::FirstPeer,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         let mut settings = Settings::new(None).unwrap();
 
         settings.service.api_key = Some(String::new());

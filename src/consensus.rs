@@ -1589,7 +1589,9 @@ mod tests {
         CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     };
     use storage::content_manager::consensus::operation_sender::OperationSender;
-    use storage::content_manager::consensus::persistent::Persistent;
+    use storage::content_manager::consensus::persistent::{
+        ConsensusInitMode, PeerBootstrap, Persistent,
+    };
     use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
@@ -1607,8 +1609,13 @@ mod tests {
         settings.storage.storage_path = storage_dir.path().to_path_buf();
         tracing_subscriber::fmt::init();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-        let persistent_state =
-            Persistent::load_or_init(&settings.storage.storage_path, true, false, None).unwrap();
+        let persistent_state = Persistent::load_or_init(
+            &settings.storage.storage_path,
+            PeerBootstrap::FirstPeer,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,

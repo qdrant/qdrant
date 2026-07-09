@@ -56,6 +56,26 @@ pub struct Persistent {
     pub dirty: AtomicBool,
 }
 
+/// Whether this peer starts a new deployment or joins an existing cluster.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeerBootstrap {
+    /// First peer of a new deployment (it does not bootstrap from anyone); starts as the sole
+    /// voter.
+    FirstPeer,
+    /// Peer joining an existing cluster; leaves the network topology empty until it joins
+    /// consensus.
+    JoiningCluster,
+}
+
+/// Whether [`Persistent::load_or_init`] loads the existing raft state as-is or re-initializes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsensusInitMode {
+    /// Load persisted raft state if present, initialize it otherwise.
+    Load,
+    /// Re-initialize raft state, dropping the known cluster topology (`--reinit`).
+    Reinit,
+}
+
 impl Persistent {
     pub fn state(&self) -> &RaftState {
         &self.state
@@ -114,8 +134,8 @@ impl Persistent {
     /// `peer_id` is used only when raft state is not found.
     pub fn load_or_init(
         storage_path: impl AsRef<Path>,
-        first_peer: bool,
-        reinit: bool,
+        bootstrap: PeerBootstrap,
+        init_mode: ConsensusInitMode,
         peer_id: Option<PeerId>,
     ) -> Result<Self, StorageError> {
         fs::create_dir_all(storage_path.as_ref())?;
@@ -136,11 +156,11 @@ impl Persistent {
             if let Some(peer_id) = peer_id {
                 log::debug!("Using peer ID: {peer_id}");
             };
-            Self::init(path_json.clone(), first_peer, peer_id)?
+            Self::init(path_json.clone(), bootstrap, peer_id)?
         };
 
-        let state = if reinit {
-            if first_peer {
+        let state = if init_mode == ConsensusInitMode::Reinit {
+            if bootstrap == PeerBootstrap::FirstPeer {
                 // Re-initialize consensus of the first peer is different from the rest
                 // Effectively, we should remove all other peers from voters and learners
                 // assuming that other peers would need to join consensus again.
@@ -155,7 +175,7 @@ impl Persistent {
                 // We want to re-initialize consensus while preserve the peer ID
                 // which is needed for migration from one cluster to another
                 let keep_peer_id = state.this_peer_id;
-                Self::init(path_json, first_peer, Some(keep_peer_id))?
+                Self::init(path_json, bootstrap, Some(keep_peer_id))?
             }
         } else {
             state
@@ -319,23 +339,21 @@ impl Persistent {
     /// ## Arguments
     /// `path` - full name of the file where state will be saved
     ///
-    /// `first_peer` - if this is a first peer in a new deployment (e.g. it does not bootstrap from anyone)
-    /// It is `None` if distributed deployment is disabled
+    /// `peer_id` - it is `None` if distributed deployment is disabled
     fn init(
         path: PathBuf,
-        first_peer: bool,
+        bootstrap: PeerBootstrap,
         peer_id: Option<PeerId>,
     ) -> Result<Self, StorageError> {
         // Do not generate too big peer ID, to avoid problems with serialization
         // (especially in json format)
         let this_peer_id = peer_id.unwrap_or_else(|| rand::random::<PeerId>() % (1 << 53) + 1);
-        let voters = if first_peer {
-            vec![this_peer_id]
-        } else {
-            // `Some(false)` - Leave empty the network topology for the peer, if it is not starting a network itself.
+        let voters = match bootstrap {
+            PeerBootstrap::FirstPeer => vec![this_peer_id],
+            // Leave the network topology empty for a peer that is not starting a network itself.
             // This way it will not be able to become a leader and commit data
             // until it joins an existing network.
-            vec![]
+            PeerBootstrap::JoiningCluster => vec![],
         };
         let state = Self {
             state: RaftState {
@@ -345,7 +363,7 @@ impl Persistent {
                 conf_state: ConfState::from((voters, vec![])),
             },
             apply_progress_queue: Default::default(),
-            first_voter: first_peer.then_some(this_peer_id),
+            first_voter: (bootstrap == PeerBootstrap::FirstPeer).then_some(this_peer_id),
             peer_address_by_id: Default::default(),
             peer_metadata_by_id: Default::default(),
             cluster_metadata: Default::default(),

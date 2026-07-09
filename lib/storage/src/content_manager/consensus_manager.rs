@@ -1241,12 +1241,20 @@ mod tests {
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
     use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
     use crate::content_manager::consensus::operation_sender::OperationSender;
-    use crate::content_manager::consensus::persistent::Persistent;
+    use crate::content_manager::consensus::persistent::{
+        ConsensusInitMode, PeerBootstrap, Persistent,
+    };
 
     #[test]
     fn update_is_applied() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
+        let mut state = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::JoiningCluster,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -1270,13 +1278,25 @@ mod tests {
     #[test]
     fn state_is_loaded() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
+        let mut state = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::JoiningCluster,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
             .unwrap();
         assert_eq!(state.state().hard_state.commit, 1);
 
-        let state_loaded = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
+        let state_loaded = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::JoiningCluster,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         assert_eq!(state_loaded.state().hard_state.commit, 1);
     }
 
@@ -1284,10 +1304,22 @@ mod tests {
     fn default_peer_id_is_persisted() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
         let peer_id = Some(101);
-        let state = Persistent::load_or_init(dir.path(), false, false, peer_id).unwrap();
+        let state = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::JoiningCluster,
+            ConsensusInitMode::Load,
+            peer_id,
+        )
+        .unwrap();
         assert_eq!(state.this_peer_id, 101);
 
-        let state_loaded = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
+        let state_loaded = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::JoiningCluster,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         assert_eq!(state_loaded.this_peer_id, 101);
     }
 
@@ -1385,7 +1417,13 @@ mod tests {
         entries: Vec<Entry>,
         path: &std::path::Path,
     ) -> (ConsensusManager<NoCollections>, MemStorage) {
-        let persistent = Persistent::load_or_init(path, true, false, None).unwrap();
+        let persistent = Persistent::load_or_init(
+            path,
+            PeerBootstrap::FirstPeer,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         let (sender, _) = mpsc::channel();
         let consensus_state = ConsensusManager::new(
             persistent,
@@ -1521,7 +1559,13 @@ mod tests {
         use crate::types::{PeerAddressById, PeerMetadataById};
 
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let persistent = Persistent::load_or_init(dir.path(), true, false, None).unwrap();
+        let persistent = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::FirstPeer,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         let (sender, _) = mpsc::channel();
         let consensus = ConsensusManager::new(
             persistent,
@@ -1598,7 +1642,13 @@ mod tests {
         use crate::types::{PeerAddressById, PeerMetadataById};
 
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let persistent = Persistent::load_or_init(dir.path(), true, false, None).unwrap();
+        let persistent = Persistent::load_or_init(
+            dir.path(),
+            PeerBootstrap::FirstPeer,
+            ConsensusInitMode::Load,
+            None,
+        )
+        .unwrap();
         let (sender, _) = mpsc::channel();
         let consensus = ConsensusManager::new(
             persistent,
