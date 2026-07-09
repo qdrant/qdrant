@@ -14,8 +14,8 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs, read_json_via,
+    CachedReadFs, MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    UniversalRead, UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -160,6 +160,54 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         })
     }
 
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of every file [`open`](Self::open) will read.
+    ///
+    /// Returns `false` when the segment is not in the
+    /// on-disk format.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Stats
+        let stats_path = path.join(STATS_PATH);
+        if fs
+            .schedule_prefetch(&stats_path, None, None)
+            .ok_not_found()?
+            .is_none()
+        {
+            // If stats file doesn't exist, assume the index doesn't exist on disk
+            return Ok(false);
+        }
+
+        // Geohash counts, points map, and point-id list
+        let options = Self::open_options(populate);
+        fs.schedule_prefetch(&path.join(COUNTS_PER_HASH), Some(options), None)?;
+        fs.schedule_prefetch(&path.join(POINTS_MAP), Some(options), None)?;
+        fs.schedule_prefetch(&path.join(POINTS_MAP_IDS), Some(options), None)?;
+
+        // Point to values
+        OnDiskPointToValues::<GeoPoint, S>::preopen(fs, path, populate)?;
+
+        // Deleted bitslice
+        fs.schedule_prefetch(
+            &path.join(DELETED_PATH),
+            Some(Self::open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
+        Ok(true)
+    }
+
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
@@ -178,12 +226,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             return Ok(None);
         };
 
-        let open_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate,
-            advice: AdviceSetting::Global,
-        };
+        let open_options = Self::open_options(populate);
 
         let counts_per_hash =
             TypedStorage::new(fs.open(&counts_per_hash_path, open_options, Default::default())?);
@@ -198,12 +241,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         let deleted_payload_mmap = StoredBitSlice::<S>::open(
             fs,
             &deleted_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(populate),
             Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
