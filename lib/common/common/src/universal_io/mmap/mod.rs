@@ -331,13 +331,7 @@ impl UniversalAppend for MmapFile {
         &mut self,
         items: impl IntoIterator<Item = &'a [T]>,
     ) -> Result<ByteOffset> {
-        let mut slices: Vec<io::IoSlice<'_>> = items
-            .into_iter()
-            .map(|item| bytemuck::cast_slice(item))
-            .filter(|bytes: &&[u8]| !bytes.is_empty())
-            .map(io::IoSlice::new)
-            .collect();
-        let total: usize = slices.iter().map(|slice| slice.len()).sum();
+        let (mut slices, total) = local_file_ops::collect_append_slices(items);
         if total == 0 {
             return Ok(self.len as ByteOffset);
         }

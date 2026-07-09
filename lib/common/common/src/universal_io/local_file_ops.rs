@@ -7,7 +7,24 @@ use crate::universal_io::{ListedFile, UniversalIoError};
 
 /// `writev(2)`-family syscalls accept at most this many iovecs per call
 /// (`IOV_MAX`, 1024 on Linux).
-pub(super) const IOV_MAX: usize = 1024;
+const IOV_MAX: usize = 1024;
+
+/// Collect `items` into non-empty [`io::IoSlice`]s for a vectored append,
+/// alongside their total byte length. Empty slices are dropped — they would
+/// trip [`write_all_vectored`]'s `WriteZero` check.
+pub(super) fn collect_append_slices<'a, T: bytemuck::Pod>(
+    items: impl IntoIterator<Item = &'a [T]>,
+) -> (Vec<io::IoSlice<'a>>, usize) {
+    let slices: Vec<io::IoSlice<'_>> = items
+        .into_iter()
+        .map(|item| bytemuck::cast_slice(item))
+        .filter(|bytes: &&[u8]| !bytes.is_empty())
+        .map(io::IoSlice::new)
+        .collect();
+    let total = slices.iter().map(|slice| slice.len()).sum();
+
+    (slices, total)
+}
 
 /// Write all `slices` with vectored writes, handling short writes and the
 /// [`IOV_MAX`] limit.

@@ -337,14 +337,43 @@ impl UniversalAppend for IoUringFile {
         &mut self,
         items: impl IntoIterator<Item = &'a [T]>,
     ) -> Result<ByteOffset> {
-        let mut slices: Vec<io::IoSlice<'_>> = items
-            .into_iter()
-            .map(|item| bytemuck::cast_slice(item))
-            .filter(|bytes: &&[u8]| !bytes.is_empty())
-            .map(io::IoSlice::new)
-            .collect();
-        let total = slices.iter().map(|slice| slice.len()).sum();
+        let (mut slices, total) = local_file_ops::collect_append_slices(items);
         self.append_slices(&mut slices, total)
+    }
+}
+
+/// [`io::Write`] adapter issuing `pwritev2(2)` with `RWF_APPEND`: every
+/// write is an atomic grow+write at the file's current end, regardless of
+/// the fd's offset or flags. Lets appends reuse
+/// [`local_file_ops::write_all_vectored`].
+struct AppendWriter<'a> {
+    file: &'a fs::File,
+}
+
+impl io::Write for AppendWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write_vectored(&[io::IoSlice::new(buf)])
+    }
+
+    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+        // SAFETY: `IoSlice` is guaranteed ABI-compatible with `iovec`, and
+        // `bufs` outlives the call. The caller keeps `bufs.len()` within
+        // `IOV_MAX`.
+        let written = unsafe {
+            nix::libc::pwritev2(
+                self.file.as_raw_fd(),
+                bufs.as_ptr().cast(),
+                bufs.len() as i32,
+                0,
+                nix::libc::RWF_APPEND,
+            )
+        };
+
+        usize::try_from(written).map_err(|_| io::Error::last_os_error())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -365,11 +394,7 @@ impl IoUringFile {
     /// `slices` must not contain empty slices (an all-empty head would
     /// report a spurious `WriteZero` error). Returns the byte offset at
     /// which the first byte was appended.
-    fn append_slices(
-        &self,
-        mut slices: &mut [io::IoSlice<'_>],
-        total: usize,
-    ) -> Result<ByteOffset> {
+    fn append_slices(&self, slices: &mut [io::IoSlice<'_>], total: usize) -> Result<ByteOffset> {
         if self.direct_io {
             return Err(UniversalIoError::Io(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -384,39 +409,7 @@ impl IoUringFile {
             return Ok(offset);
         }
 
-        while !slices.is_empty() {
-            let chunk = slices.len().min(local_file_ops::IOV_MAX);
-            let written = loop {
-                let written = unsafe {
-                    nix::libc::pwritev2(
-                        self.file.as_raw_fd(),
-                        slices.as_ptr().cast(),
-                        chunk as i32,
-                        0,
-                        nix::libc::RWF_APPEND,
-                    )
-                };
-
-                match usize::try_from(written) {
-                    Ok(written) => break written,
-                    Err(_) => {
-                        let err = io::Error::last_os_error();
-                        if err.kind() != io::ErrorKind::Interrupted {
-                            return Err(err.into());
-                        }
-                    }
-                }
-            };
-
-            if written == 0 {
-                return Err(UniversalIoError::Io(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "failed to write whole buffer",
-                )));
-            }
-
-            io::IoSlice::advance_slices(&mut slices, written);
-        }
+        local_file_ops::write_all_vectored(AppendWriter { file: &self.file }, slices)?;
 
         Ok(offset)
     }
