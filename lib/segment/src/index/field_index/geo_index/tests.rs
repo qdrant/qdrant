@@ -303,31 +303,6 @@ fn test_polygon_interior_exceeds_exterior_cardinality(#[case] index_type: IndexT
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn test_polygon_with_exclusion(#[case] index_type: IndexType) {
-    fn check_cardinality_match(
-        hashes: Vec<GeoHash>,
-        field_condition: FieldCondition,
-        index_type: IndexType,
-    ) {
-        let (field_index, _, _) = build_random_index(500, 20, index_type);
-        let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
-        let real_cardinality = exact_points_for_hashes.len();
-
-        let hw_counter = HardwareCounterCell::new();
-        let card = field_index
-            .estimate_cardinality(&field_condition, &hw_counter)
-            .unwrap();
-        let card = card.unwrap();
-
-        eprintln!("real_cardinality = {real_cardinality:#?}");
-        eprintln!("card = {card:#?}");
-
-        assert!(card.min <= real_cardinality);
-        assert!(card.max >= real_cardinality);
-
-        assert!(card.exp >= card.min);
-        assert!(card.exp <= card.max);
-    }
-
     let europe = GeoLineString {
         points: vec![
             GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
@@ -377,32 +352,6 @@ fn test_polygon_with_exclusion(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn match_cardinality(#[case] index_type: IndexType) {
-    fn check_cardinality_match(
-        hashes: Vec<GeoHash>,
-        field_condition: FieldCondition,
-        index_type: IndexType,
-    ) {
-        let (field_index, _, _) = build_random_index(500, 20, index_type);
-        let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
-        let real_cardinality = exact_points_for_hashes.len();
-
-        let hw_counter = HardwareCounterCell::new();
-
-        let card = field_index
-            .estimate_cardinality(&field_condition, &hw_counter)
-            .unwrap();
-        let card = card.unwrap();
-
-        eprintln!("real_cardinality = {real_cardinality:#?}");
-        eprintln!("card = {card:#?}");
-
-        assert!(card.min <= real_cardinality);
-        assert!(card.max >= real_cardinality);
-
-        assert!(card.exp >= card.min);
-        assert!(card.exp <= card.max);
-    }
-
     let r_meters = 500_000.0;
     let geo_radius = GeoRadius {
         center: NYC,
@@ -422,6 +371,32 @@ fn match_cardinality(#[case] index_type: IndexType) {
         condition_for_geo_polygon("test", geo_polygon),
         index_type,
     );
+}
+
+/// Assert the estimated cardinality brackets the exact hash-iterator count.
+fn check_cardinality_match(
+    hashes: Vec<GeoHash>,
+    field_condition: FieldCondition,
+    index_type: IndexType,
+) {
+    let (field_index, _, _) = build_random_index(500, 20, index_type);
+    let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
+    let real_cardinality = exact_points_for_hashes.len();
+
+    let hw_counter = HardwareCounterCell::new();
+    let card = field_index
+        .estimate_cardinality(&field_condition, &hw_counter)
+        .unwrap();
+    let card = card.unwrap();
+
+    eprintln!("real_cardinality = {real_cardinality:#?}");
+    eprintln!("card = {card:#?}");
+
+    assert!(card.min <= real_cardinality);
+    assert!(card.max >= real_cardinality);
+
+    assert!(card.exp >= card.min);
+    assert!(card.exp <= card.max);
 }
 
 #[rstest]
