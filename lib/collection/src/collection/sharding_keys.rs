@@ -150,12 +150,12 @@ impl Collection {
         let state = self.state().await;
 
         match state.config.params.sharding_method.unwrap_or_default() {
+            ShardingMethod::Custom => {}
             ShardingMethod::Auto => {
                 return Err(CollectionError::bad_request(format!(
-                    "Shard Key {shard_key} cannot be removed with Auto sharding method"
+                    "shard key {shard_key} cannot be removed with Auto sharding method"
                 )));
             }
-            ShardingMethod::Custom => {}
         }
 
         // Abort resharding and propagate abort error, so we don't leave active resharding
@@ -169,19 +169,21 @@ impl Collection {
             self.abort_resharding(state.key(), true).await?;
         }
 
-        // Invalidate local shard cleaning tasks
-        match self
+        // Invalidate local shard cleanup tasks
+        let shard_ids = self
             .shards_holder
             .read()
             .await
-            .get_shard_ids_by_key(&shard_key)
-        {
+            .get_shard_ids_by_key(&shard_key);
+
+        match shard_ids {
             Ok(shard_ids) => self.invalidate_clean_local_shards(shard_ids).await,
             Err(err) => {
-                log::warn!("Failed to invalidate local shard cleaning task, ignoring: {err}");
+                log::warn!("Failed to invalidate local shard cleanup task, ignoring: {err}");
             }
         }
 
+        // Remove shard key
         self.shards_holder
             .write()
             .await
