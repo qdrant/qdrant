@@ -144,8 +144,16 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 }
             },
             PayloadIndexType::FullTextIndex => match mode {
-                ReadMode::Appendable => false,
-                ReadMode::Immutable { is_on_disk: _ } => false,
+                ReadMode::Appendable => {
+                    ReadOnlyFullTextIndex::<S>::preopen_appendable(fs, text_dir(dir, field))?
+                }
+                ReadMode::Immutable { is_on_disk } => {
+                    ReadOnlyFullTextIndex::<S>::preopen_immutable(
+                        fs,
+                        &text_dir(dir, field),
+                        is_on_disk,
+                    )?
+                }
             },
             // Bool and null are roaring-flag backed: a single read-only `preopen`
             // serves both modes (neither consumes the immutable-only

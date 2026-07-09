@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 use super::super::on_disk_text_index::OnDiskFullTextIndex;
@@ -12,6 +12,16 @@ use crate::index::field_index::full_text_index::immutable_text_index::ImmutableF
 use crate::index::payload_config::IndexMutability;
 
 impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
+    /// Schedule background prefetch for the appendable (Gridstore) format.
+    ///
+    /// Returns `false` when nothing was scheduled (directory absent).
+    pub fn preopen_appendable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<bool> {
+        ReadOnlyAppendableFullTextIndex::preopen(fs, dir)
+    }
+
     /// Read-only mirror of [`FullTextIndex::new_gridstore`][1]: open the
     /// appendable (Gridstore-backed) full-text index read-only, threading
     /// every file open through the filesystem handle `fs`.
@@ -29,6 +39,25 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
         Ok(ReadOnlyAppendableFullTextIndex::open(fs, dir, config)?.map(Self::Appendable))
+    }
+
+    /// Schedule background prefetch for the immutable (mmap) format.
+    ///
+    /// Returns `false` when the on-disk index doesn't exist.
+    pub fn preopen_immutable(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        is_on_disk: bool,
+    ) -> OperationResult<bool> {
+        let effective_is_on_disk =
+            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
+
+        OnDiskFullTextIndex::preopen(fs, path, populate)
     }
 
     /// Read-only mirror of [`FullTextIndex::new_mmap`][1]: open the immutable

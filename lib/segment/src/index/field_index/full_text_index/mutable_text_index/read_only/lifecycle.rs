@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{OkNotFound, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::super::inner::MutableFullTextIndexInner;
@@ -13,6 +13,19 @@ use crate::index::field_index::full_text_index::inverted_index::mutable_inverted
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 
 impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
+    /// Schedule background prefetch of the Gridstore files [`open`](Self::open)
+    /// will read.
+    ///
+    /// Returns whether the on-disk directory exists.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
+        // Gridstore reader
+        Ok(
+            GridstoreReader::<Vec<u8>, S>::preopen(fs, dir, Populate::PreferBackground)
+                .ok_not_found()?
+                .is_some(),
+        )
+    }
+
     /// Open the appendable (Gridstore) full-text index read-only, threading
     /// every file open through the filesystem handle `fs`.
     ///

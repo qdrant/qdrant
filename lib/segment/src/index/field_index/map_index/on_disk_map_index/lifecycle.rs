@@ -56,7 +56,11 @@ where
 
         // Value to points
         let hashmap_path = path.join(HASHMAP_PATH);
-        fs.schedule_prefetch(&hashmap_path, Some(Self::open_options(populate)), None)?;
+        UniversalHashMap::<N, PointOffsetType, S>::preopen(
+            fs,
+            &hashmap_path,
+            Self::open_options(populate),
+        )?;
 
         // Point to values
         OnDiskPointToValues::<N, S>::preopen(fs, path, populate)?;
