@@ -126,6 +126,24 @@ fn filtered_points(index: &GeoIndex, condition: &FieldCondition) -> Vec<PointOff
     points
 }
 
+/// Assert that both the geo-radius query and its polygon approximation
+/// estimate exactly `expected` matches.
+fn assert_radius_cardinality(index: &GeoIndex, center: GeoPoint, meters: f64, expected: usize) {
+    let radius = GeoRadius {
+        center,
+        radius: OrderedFloat(meters),
+    };
+    let polygon = radius_to_polygon(&radius);
+    let hw = HardwareCounterCell::new();
+    let check = |cond: FieldCondition| {
+        let c = index.estimate_cardinality(&cond, &hw).unwrap().unwrap();
+        assert_eq!((c.min, c.exp, c.max), (expected, expected, expected));
+    };
+
+    check(condition_for_geo_radius("test", radius));
+    check(condition_for_geo_polygon("test", polygon));
+}
+
 #[cfg(feature = "testing")]
 fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Database) {
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
@@ -514,73 +532,9 @@ fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexT
     builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
     let index = builder.finalize().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-
-    let nyc_geo_radius = GeoRadius {
-        center: NYC,
-        radius: OrderedFloat(r_meters),
-    };
-    let field_condition = condition_for_geo_radius("test", nyc_geo_radius);
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 1);
-    assert_eq!(card.max, 1);
-    assert_eq!(card.exp, 1);
-
-    let field_condition = condition_for_geo_polygon("test", radius_to_polygon(&nyc_geo_radius));
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 1);
-    assert_eq!(card.max, 1);
-    assert_eq!(card.exp, 1);
-
-    let berlin_geo_radius = GeoRadius {
-        center: BERLIN,
-        radius: OrderedFloat(r_meters),
-    };
-    let field_condition = condition_for_geo_radius("test", berlin_geo_radius);
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 1);
-    assert_eq!(card.max, 1);
-    assert_eq!(card.exp, 1);
-
-    let field_condition = condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 1);
-    assert_eq!(card.max, 1);
-    assert_eq!(card.exp, 1);
-
-    let tokyo_geo_radius = GeoRadius {
-        center: TOKYO,
-        radius: OrderedFloat(r_meters),
-    };
-    let field_condition = condition_for_geo_radius("test", tokyo_geo_radius);
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 0);
-    assert_eq!(card.max, 0);
-    assert_eq!(card.exp, 0);
-
-    let field_condition = condition_for_geo_polygon("test", radius_to_polygon(&tokyo_geo_radius));
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 0);
-    assert_eq!(card.max, 0);
-    assert_eq!(card.exp, 0);
+    assert_radius_cardinality(&index, NYC, r_meters, 1);
+    assert_radius_cardinality(&index, BERLIN, r_meters, 1);
+    assert_radius_cardinality(&index, TOKYO, r_meters, 0);
 }
 
 #[rstest]
@@ -594,29 +548,7 @@ fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: Inde
     builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
     let index = builder.finalize().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-
-    let berlin_geo_radius = GeoRadius {
-        center: BERLIN,
-        radius: OrderedFloat(50_000.0),
-    };
-    let field_condition = condition_for_geo_radius("test", berlin_geo_radius);
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 1);
-    assert_eq!(card.max, 1);
-    assert_eq!(card.exp, 1);
-
-    let field_condition = condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
-    let card = index
-        .estimate_cardinality(&field_condition, &hw_counter)
-        .unwrap();
-    let card = card.unwrap();
-    assert_eq!(card.min, 1);
-    assert_eq!(card.max, 1);
-    assert_eq!(card.exp, 1);
+    assert_radius_cardinality(&index, BERLIN, 50_000.0, 1);
 }
 
 #[rstest]
