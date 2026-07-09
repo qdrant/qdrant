@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    IsNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs, UniversalWrite,
-    UniversalWriteFileOps,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+    UniversalWrite, UniversalWriteFileOps,
 };
 
 use crate::Result;
@@ -52,6 +52,14 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Random),
         }
+    }
+
+    /// Schedule a prefetch of the page file, so a subsequent open is served from the prefetch
+    /// pool.
+    pub(super) fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, dir: &Path) -> Result<()> {
+        let path = Self::page_file_name(dir);
+        fs.schedule_prefetch(&path, Some(Self::open_options(false)), None)?;
+        Ok(())
     }
 
     /// Open an existing page in the given directory.
