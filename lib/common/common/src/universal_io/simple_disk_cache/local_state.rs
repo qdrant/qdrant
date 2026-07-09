@@ -92,7 +92,9 @@ impl LocalState {
 
         file.set_len(new_len)?;
 
-        mmap.reopen()?;
+        // We just sized the file ourselves — no need for a full `reopen`
+        // that stats it again.
+        mmap.grow_mapping(new_len)?;
 
         *self.fully_populated.get_mut() = false;
 

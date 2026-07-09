@@ -73,7 +73,6 @@ pub struct MmapFile {
     path: PathBuf,
 
     writeable: bool,
-    #[cfg_attr(target_os = "linux", expect(dead_code))]
     populate: bool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
@@ -182,60 +181,7 @@ impl UniversalRead for MmapFile {
             return Ok(());
         }
 
-        let mut mmap = self.mmap.lock();
-        let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
-        cfg_select! {
-            // in linux, we can use `MmapRaw::remap`
-            target_os = "linux" => {
-                // SAFETY:
-                // We use may_move = true, since `remap` can fail if we don't allow it.
-                // It is safe to allow moving since we are holding `&mut self`
-                let remap_options = memmap2::RemapOptions::new().may_move(true);
-                unsafe {
-                    mmap.remap(new_len as usize, remap_options)?;
-                    mmap_seq.as_mut().map(|m| m.remap(new_len as usize, remap_options)).transpose()?;
-                };
-
-                // Whether or not `remap` moved the memory region let's update the pointers
-                let ptr = SendSyncPtr(mmap.as_mut_ptr());
-                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(ptr);
-                let len = new_len as usize;
-            }
-            // otherwise, let's open again
-            _ => {
-                *mmap = open_mmap(
-                    self.path.as_ref(),
-                    self.writeable,
-                    self.populate,
-                    self.advice,
-                )?;
-                let ptr = SendSyncPtr(mmap.as_mut_ptr());
-
-                let ptr_seq;
-                let len;
-                if let Some(mmap_seq) = mmap_seq.as_mut() {
-                    let mmap_seq_ = open_mmap(
-                        self.path(),
-                        false,
-                        false,
-                        AdviceSetting::Advice(Advice::Sequential),
-                    )?;
-                    **mmap_seq = mmap_seq_;
-
-                    len = std::cmp::min(mmap.len(), mmap_seq.len());
-                    ptr_seq = SendSyncPtr(mmap_seq.as_mut_ptr());
-                } else {
-                    len = mmap.len();
-                    ptr_seq = ptr;
-                }
-            }
-        }
-
-        self.ptr = ptr;
-        self.ptr_seq = ptr_seq;
-        self.len = len;
-
-        Ok(())
+        self.remap_to(new_len as usize, self.populate)
     }
 
     fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, _align: usize) -> Result<ACow<'_>> {
@@ -351,13 +297,19 @@ impl UniversalAppend for MmapFile {
             return Ok(self.len as ByteOffset);
         }
 
-        let mut fd = self.append_fd()?;
-        io::Write::write_all(&mut fd, bytes)?;
+        let new_len = {
+            let mut fd = self.append_fd()?;
+            io::Write::write_all(&mut fd, bytes)?;
+            // One fstat on the already-open fd (not the open+fstat+close of
+            // a full reopen): the mapping length can be stale when the file
+            // grew externally, while the fd sees where the bytes landed.
+            fd.metadata()?.len()
+        };
 
         // Remap so reads and `len` through this handle see the growth.
-        self.reopen()?;
+        self.grow_mapping(new_len)?;
 
-        Ok((self.len - bytes.len()) as ByteOffset)
+        Ok(new_len - bytes.len() as u64)
     }
 
     fn append_batch<'a, T: bytemuck::Pod>(
@@ -375,16 +327,100 @@ impl UniversalAppend for MmapFile {
             return Ok(self.len as ByteOffset);
         }
 
-        let fd = self.append_fd()?;
-        local_file_ops::write_all_vectored(fd, &mut slices)?;
+        let new_len = {
+            let fd = self.append_fd()?;
+            local_file_ops::write_all_vectored(fd, &mut slices)?;
+            // See `append` on why the fd is statted rather than trusting
+            // the mapping length.
+            fd.metadata()?.len()
+        };
 
-        self.reopen()?;
+        self.grow_mapping(new_len)?;
 
-        Ok((self.len - total) as ByteOffset)
+        Ok(new_len - total as u64)
     }
 }
 
 impl MmapFile {
+    /// Grow the mapping to `new_len` without consulting the filesystem: the
+    /// caller already knows the file's new length (an append it just made,
+    /// or a `set_len` it just issued), so the `open`+`fstat`+`close` of a
+    /// full [`reopen`](UniversalRead::reopen) is skipped. Unlike a reopen,
+    /// the non-Linux re-mmap never re-populates: growth is mapping
+    /// maintenance, and re-faulting the whole file would make each append
+    /// O(file size) for handles opened with [`Populate::Blocking`].
+    pub(crate) fn grow_mapping(&mut self, new_len: u64) -> Result<()> {
+        debug_assert!(new_len as usize >= self.len, "grow_mapping cannot shrink");
+        if new_len as usize == self.len {
+            return Ok(());
+        }
+
+        self.remap_to(new_len as usize, false)
+    }
+
+    /// Remap both mmaps to `new_len` and refresh the cached pointers.
+    ///
+    /// `populate` only applies to the non-Linux path, which rebuilds the
+    /// mapping from scratch; the Linux `mremap` keeps residency as is.
+    fn remap_to(&mut self, new_len: usize, populate: bool) -> Result<()> {
+        let mut mmap = self.mmap.lock();
+        let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
+        cfg_select! {
+            // in linux, we can use `MmapRaw::remap`
+            target_os = "linux" => {
+                let _ = populate;
+
+                // SAFETY:
+                // We use may_move = true, since `remap` can fail if we don't allow it.
+                // It is safe to allow moving since we are holding `&mut self`
+                let remap_options = memmap2::RemapOptions::new().may_move(true);
+                unsafe {
+                    mmap.remap(new_len, remap_options)?;
+                    mmap_seq.as_mut().map(|m| m.remap(new_len, remap_options)).transpose()?;
+                };
+
+                // Whether or not `remap` moved the memory region let's update the pointers
+                let ptr = SendSyncPtr(mmap.as_mut_ptr());
+                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(ptr);
+                let len = new_len;
+            }
+            // otherwise, let's open again
+            _ => {
+                *mmap = open_mmap(
+                    self.path.as_ref(),
+                    self.writeable,
+                    populate,
+                    self.advice,
+                )?;
+                let ptr = SendSyncPtr(mmap.as_mut_ptr());
+
+                let ptr_seq;
+                let len;
+                if let Some(mmap_seq) = mmap_seq.as_mut() {
+                    let mmap_seq_ = open_mmap(
+                        self.path(),
+                        false,
+                        false,
+                        AdviceSetting::Advice(Advice::Sequential),
+                    )?;
+                    **mmap_seq = mmap_seq_;
+
+                    len = std::cmp::min(mmap.len(), mmap_seq.len());
+                    ptr_seq = SendSyncPtr(mmap_seq.as_mut_ptr());
+                } else {
+                    len = mmap.len();
+                    ptr_seq = ptr;
+                }
+            }
+        }
+
+        self.ptr = ptr;
+        self.ptr_seq = ptr_seq;
+        self.len = len;
+
+        Ok(())
+    }
+
     /// Lazily open (and cache) a dedicated `O_APPEND` fd used exclusively for
     /// appends. Every `write(2)`/`writev(2)` through it is an atomic
     /// grow+write at the file's current end, so growth cannot leave a
