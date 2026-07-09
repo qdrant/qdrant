@@ -71,13 +71,16 @@ where
             unreachable!("`state()` materializes `Ready`")
         };
 
-        // The single remote grow+write operation.
-        let offset = remote.append_batch(slices.iter().copied())?;
-
         let total: u64 = slices.iter().map(|slice| slice.len() as u64).sum();
         if total == 0 {
-            return Ok(offset);
+            // A pure no-op: answer with this handle's view of the end of
+            // file (the mirror length) without touching the remote —
+            // consistent with what `len()` and reads observe.
+            return local.mmap().len::<u8>();
         }
+
+        // The single remote grow+write operation.
+        let offset = remote.append_batch(slices.iter().copied())?;
 
         let local_len = local.mmap().len::<u8>()?;
         if offset == local_len {

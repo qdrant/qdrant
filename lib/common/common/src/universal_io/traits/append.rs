@@ -32,7 +32,8 @@ use crate::universal_io::{ByteOffset, Result};
 ///   re-check the length before retrying, or the retry may duplicate data.
 /// - Requires a handle opened with `writeable: true`. Not supported on
 ///   `prevent_caching` (`O_DIRECT`) handles.
-/// - Appending no bytes is a no-op returning the current end-of-file offset.
+/// - Appending no bytes is a no-op returning this handle's view of the
+///   end-of-file offset, without growth I/O.
 /// - Returned offsets are plain byte offsets; no `T`-alignment of the
 ///   returned offset is guaranteed — record framing is the caller's concern.
 /// - [`UniversalWrite::write`] beyond the end-of-file still fails; append is

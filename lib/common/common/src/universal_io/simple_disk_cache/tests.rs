@@ -925,6 +925,10 @@ mod tests_mod {
         // The remote grows behind the cache's back...
         let grown = scn.grow_remote(50);
 
+        // An empty append answers from the mirror without consulting the
+        // (grown) remote.
+        assert_eq!(cache.append::<u8>(&[]).unwrap(), 100);
+
         // ...so this append lands at 150, not at the mirror's 100.
         let offset = cache.append(b"tail".as_slice()).unwrap();
         assert_eq!(offset, 150);
