@@ -26,6 +26,7 @@ pub fn rustfs_aws_config() -> AwsConfig {
         bucket: rustfs_bucket(),
         region: Some("us-east-1".into()),
         endpoint: Some(rustfs_endpoint()),
+        s3_express: false,
         credentials: AwsCredentials::Static {
             access_key_id: env::var("RUSTFS_ACCESS_KEY").unwrap_or_else(|_| "rustfsadmin".into()),
             secret_access_key: env::var("RUSTFS_SECRET_KEY")

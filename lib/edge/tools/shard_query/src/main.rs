@@ -127,6 +127,10 @@ struct ConnectionArgs {
     #[arg(long, env = "S3_SESSION_TOKEN")]
     session_token: Option<String>,
 
+    /// [AWS] Use S3 Express One Zone (directory buckets, named `*--x-s3`).
+    #[arg(long, env = "S3_EXPRESS")]
+    s3_express: bool,
+
     /// [GCS] Path to a service-account JSON key file. Takes precedence over
     /// `--gcs-service-account-key`; if neither is set, application default
     /// credentials (ADC) are used.
@@ -351,6 +355,7 @@ fn build_aws_config(conn: &ConnectionArgs) -> Result<AwsConfig> {
         bucket: conn.bucket.clone(),
         region: conn.region.clone(),
         endpoint: conn.endpoint.clone(),
+        s3_express: conn.s3_express,
         credentials,
     })
 }

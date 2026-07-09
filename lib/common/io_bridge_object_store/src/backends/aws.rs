@@ -17,6 +17,8 @@ pub struct AwsConfig {
     /// Custom endpoint URL — set this for MinIO / RustFS / LocalStack.
     /// `with_allow_http(true)` is enabled when this is set.
     pub endpoint: Option<String>,
+    /// Enable S3 Express One Zone (`*--x-s3` directory buckets).
+    pub s3_express: bool,
     /// How to authenticate to S3.
     pub credentials: AwsCredentials,
 }
@@ -55,7 +57,9 @@ impl BlobBackend for AmazonS3 {
                 b
             }
         };
-        builder = builder.with_bucket_name(&config.bucket);
+        builder = builder
+            .with_bucket_name(&config.bucket)
+            .with_s3_express(config.s3_express);
         if let Some(region) = &config.region {
             builder = builder.with_region(region);
         }
