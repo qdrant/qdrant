@@ -509,6 +509,19 @@ mod tests {
         assert_universal_read::<ReadOnly<BlobFile<InMemorySource>>>();
     }
 
+    /// The backend-generic append battery from `common`, run over the S3
+    /// stack (`BlobFs`/`BlobFile` over an object store) via the in-memory
+    /// append emulation. The real write-offset RPC is covered by the gated
+    /// `test_native_append_flow` integration test.
+    #[test]
+    fn append_conformance_over_object_store() {
+        let fs = io_bridge::BlobFs::new(
+            ObjectStoreSource::new(Arc::new(InMemory::new())),
+            BridgeRuntime::global(),
+        );
+        common::universal_io::conformance::run_append_conformance(&fs, Path::new("conformance"));
+    }
+
     #[test]
     fn append_through_blob_file() {
         let runtime = BridgeRuntime::global();

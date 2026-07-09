@@ -14,6 +14,8 @@ mod traits;
 mod types;
 mod wrappers;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod conformance;
 #[cfg(test)]
 mod tests;
 
