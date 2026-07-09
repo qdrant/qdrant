@@ -751,8 +751,9 @@ impl SegmentEntry for Segment {
                     segment.replace_all_vectors(internal_id, op_num, &vectors, hw_counter)?;
                     Ok(true)
                 },
-                |snapshot_vectors, _payload| {
-                    *snapshot_vectors = vectors.clone().into_owned();
+                |raw_vectors, updated_vectors, _payload| {
+                    raw_vectors.clear();
+                    *updated_vectors = vectors.clone().into_owned();
                     Ok(true)
                 },
             ),
@@ -921,8 +922,8 @@ impl SegmentEntry for Segment {
                 segment.update_vectors(internal_id, op_num, vectors.clone(), hw_counter)?;
                 Ok(true)
             },
-            |snapshot_vectors, _payload| {
-                snapshot_vectors.merge(vectors.clone().into_owned());
+            |_raw_vectors, updated_vectors, _payload| {
+                *updated_vectors = vectors.clone().into_owned();
                 Ok(true)
             },
         )
@@ -967,8 +968,8 @@ impl SegmentEntry for Segment {
                 let mut vector_storage = vector_data.vector_storage.borrow_mut();
                 vector_storage.delete_vector(internal_id)
             },
-            |snapshot_vectors, _payload| {
-                snapshot_vectors.remove_ref(vector_name);
+            |raw_vectors, _updated_vectors, _payload| {
+                raw_vectors.retain(|(name, _)| name != vector_name);
                 Ok(was_present)
             },
         )?;
@@ -1013,7 +1014,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 *snapshot_payload = full_payload.clone();
                 Ok(true)
             },
@@ -1052,7 +1053,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 match key {
                     Some(k) => snapshot_payload.merge_by_key(payload, k),
                     None => snapshot_payload.merge(payload),
@@ -1091,7 +1092,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 snapshot_payload.remove(key);
                 Ok(true)
             },
@@ -1126,7 +1127,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 *snapshot_payload = Payload::default();
                 Ok(true)
             },

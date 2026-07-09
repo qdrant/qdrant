@@ -271,22 +271,28 @@ impl Segment {
         Ok(())
     }
 
-    /// Append-only update: snapshot the point at `old_id` into owned vectors
-    /// and payload, hand them to `mutate` for in-memory modification, then
-    /// write the result at a fresh internal id and repoint the id tracker.
+    /// Append-only update: snapshot the point at `old_id` into owned raw
+    /// vectors and payload, hand them to `mutate` for in-memory modification,
+    /// then write the result at a fresh internal id and repoint the id
+    /// tracker.
     ///
     /// Step order:
     ///
-    /// 1. Read all named vectors at `old_id` into an owned `NamedVectors`,
-    ///    and the full payload at `old_id` into an owned `Payload`.
-    /// 2. Call `mutate(&mut NamedVectors, &mut Payload)` to apply the
-    ///    op-specific change in memory; its return value is propagated to
-    ///    the caller alongside the new internal id.
+    /// 1. Read all named vectors at `old_id` as storage-native bytes into an
+    ///    owned `(name, bytes)` list, and the full payload at `old_id` into
+    ///    an owned `Payload`.
+    /// 2. Call `mutate(&mut raw_vectors, &mut updated_vectors, &mut payload)`
+    ///    to apply the op-specific change in memory: drop raw entries to
+    ///    delete names, insert decoded vectors into the (initially empty)
+    ///    `updated_vectors` overlay to overwrite names. The return value is
+    ///    propagated to the caller alongside the new internal id.
     /// 3. Allocate `new_id = total_point_count()`.
-    /// 4. Write the mutated vectors at `new_id`. Every configured named
-    ///    vector storage gets touched: present entries are written, absent
-    ///    ones are inserted as `None` (so the slot is grown and marked
-    ///    deleted, matching `insert_new_vectors`'s behavior).
+    /// 4. Write every configured named vector at `new_id`, overlay first:
+    ///    overlaid names are written decoded, remaining raw entries are
+    ///    ingested verbatim — lossless for requantizing storages
+    ///    (TurboQuant-as-datatype) — and names in neither are inserted as
+    ///    `None` (so the slot is grown and marked deleted, matching
+    ///    `insert_new_vectors`'s behavior).
     /// 5. Write the mutated payload at `new_id` (skipped if empty).
     /// 6. `set_link(point_id, new_id)` — auto-tombstones `old_id` in the id
     ///    tracker so it becomes invisible to queries.
@@ -316,45 +322,61 @@ impl Segment {
         mutate: F,
     ) -> OperationResult<(R, PointOffsetType)>
     where
-        F: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<R>,
+        F: FnOnce(
+            &mut Vec<(VectorNameBuf, Vec<u8>)>,
+            &mut NamedVectors<'static>,
+            &mut Payload,
+        ) -> OperationResult<R>,
     {
         debug_assert!(self.is_appendable());
 
         // 1. Snapshot vectors and payload at old_id into owned containers,
-        //    dropping all storage borrows before we start writing. Slots
-        //    that are marked deleted in the per-vector bitslice carry
-        //    leftover default-vector bytes from the original
+        //    dropping all storage borrows before we start writing. Vectors
+        //    are read as storage-native bytes: names the operation does not
+        //    overwrite travel to new_id verbatim, avoiding the lossy
+        //    dequantize→requantize round-trip of TurboQuant-as-datatype
+        //    storages. Slots that are marked deleted in the per-vector
+        //    bitslice carry leftover default-vector bytes from the original
         //    `update_vector(_, None, _)` insert — including those would
         //    promote phantom data into the fresh slot, so we skip them
         //    and write `None` at new_id (re-tombstoning the slot).
-        let mut vectors: NamedVectors<'static> = NamedVectors::default();
+        let mut raw_vectors: Vec<(VectorNameBuf, Vec<u8>)> = Vec::new();
         for (vector_name, vector_data) in self.vector_data.iter() {
             let storage = vector_data.vector_storage.borrow();
             if storage.is_deleted_vector(old_id) {
                 continue;
             }
-            if let Some(existing) = storage.get_vector_opt::<Random>(old_id) {
-                vectors.insert(vector_name.clone(), existing.to_owned());
+            if let Some(bytes) = storage.vector_bytes_opt::<Random>(old_id)? {
+                raw_vectors.push((vector_name.clone(), bytes));
             }
         }
+        let mut updated_vectors: NamedVectors<'static> = NamedVectors::default();
         let mut payload = self
             .payload_index
             .borrow()
             .with_view(|view| view.get_payload(old_id, hw_counter))?;
 
         // 2. Let the caller apply the op-specific change in memory.
-        let mutate_result = mutate(&mut vectors, &mut payload)?;
+        let mutate_result = mutate(&mut raw_vectors, &mut updated_vectors, &mut payload)?;
 
         // 3. Allocate the fresh internal id.
         let new_id = self.id_tracker.borrow().total_point_count() as PointOffsetType;
 
-        // 4. Write every configured named vector at new_id. Absent entries
+        // 4. Write every configured named vector at new_id, overlay first:
+        //    names the closure overwrote are written decoded, the rest are
+        //    ingested as their snapshotted bytes. Names in neither container
         //    are written as None so the storage slot grows in lockstep and
         //    is marked deleted, matching insert_new_vectors's contract.
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
-            let vector_opt = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(new_id, vector_opt, hw_counter)?;
+            match updated_vectors.get(vector_name) {
+                Some(vector) => vector_index.update_vector(new_id, Some(vector), hw_counter)?,
+                None => vector_index.update_vector_raw(
+                    new_id,
+                    find_raw_vector(&raw_vectors, vector_name),
+                    hw_counter,
+                )?,
+            }
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
 
@@ -392,11 +414,12 @@ impl Segment {
     ///   benefit from being moved), runs `in_place(&mut Segment, old_id)`.
     /// - On an [`Segment::is_append_only`] segment, routes through
     ///   [`Segment::clone_and_mutate_point`] with `snapshot_mutate`, which
-    ///   sees an owned snapshot of the point's vectors and payload and
-    ///   modifies it in memory; the helper writes the result at a fresh
-    ///   internal id and tombstones the old one. Exception: a slot written
-    ///   by the current operation (its version equals `op_num`) is mutated
-    ///   in place — it is not durable yet, so cloning it would only chain
+    ///   sees the point's vectors as a raw-bytes snapshot plus an empty
+    ///   decoded overlay, and the payload as an owned snapshot, and modifies
+    ///   them in memory; the helper writes the result at a fresh internal id
+    ///   and tombstones the old one. Exception: a slot written by the
+    ///   current operation (its version equals `op_num`) is mutated in
+    ///   place — it is not durable yet, so cloning it would only chain
     ///   dead slots for multi-step point writes.
     ///
     /// Both closures return the op-specific result bool (e.g. "was anything
@@ -417,7 +440,11 @@ impl Segment {
     ) -> OperationResult<bool>
     where
         InPlace: FnOnce(&mut Segment, PointOffsetType) -> OperationResult<bool>,
-        SnapshotMutate: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<bool>,
+        SnapshotMutate: FnOnce(
+            &mut Vec<(VectorNameBuf, Vec<u8>)>,
+            &mut NamedVectors<'static>,
+            &mut Payload,
+        ) -> OperationResult<bool>,
     {
         // A slot whose version already equals `op_num` was written by the
         // current operation (an earlier step of a multi-step point write,
