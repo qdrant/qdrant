@@ -76,6 +76,16 @@ impl Populate {
             Populate::Blocking | Populate::PreferBackground => true,
         }
     }
+
+    /// Default a non-populate (`Auto`/`No`) to partially populating `range`.
+    pub fn or_partial(self, range: Range<u64>) -> Populate {
+        match self {
+            Populate::Auto | Populate::No => {
+                Populate::Partial(ReadRange::new(range.start, range.end - range.start))
+            }
+            Populate::Blocking | Populate::PreferBackground | Populate::Partial(_) => self,
+        }
+    }
 }
 
 /// Options for [`UniversalReadFs::open`].

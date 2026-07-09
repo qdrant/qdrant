@@ -20,6 +20,8 @@ mod random_reader;
 /// If entries are smaller than that, it's likely more efficient to read them sequentially.
 const SEQUENTIAL_READ_THRESHOLD: u64 = 8 * 1024;
 
+const HEADER_AND_BASIC_PHF_SIZE: u64 = size_of::<Header>() as u64 + 16 * 1024; // header + 16KB
+
 /// On-disk hash map accessed via [`UniversalRead`].
 pub struct UniversalHashMap<K, V, S>
 where
@@ -47,9 +49,12 @@ where
     pub fn preopen<Fs: CachedReadFs<File = S>>(
         fs: &Fs,
         path: impl AsRef<Path>,
-        options: OpenOptions,
+        mut options: OpenOptions,
     ) -> Result<()> {
-        // TODO(uio): Turn `Populate::No` into `Populate::BackgroundPartial(0..header + phf)
+        // Default a lazy open to partially populating the header + a slice of
+        // the perfect-hash table, so the map can be opened without a full read.
+        options.populate = options.populate.or_partial(0..HEADER_AND_BASIC_PHF_SIZE);
+
         fs.schedule_prefetch(path.as_ref(), Some(options), None)
     }
 
