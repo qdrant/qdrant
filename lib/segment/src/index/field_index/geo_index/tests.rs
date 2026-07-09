@@ -113,6 +113,19 @@ fn condition_for_geo_box(key: &str, geo_bounding_box: GeoBoundingBox) -> FieldCo
     FieldCondition::new_geo_bounding_box(JsonPath::new(key), geo_bounding_box)
 }
 
+/// Run a filter query and return the matching point offsets, sorted.
+fn filtered_points(index: &GeoIndex, condition: &FieldCondition) -> Vec<PointOffsetType> {
+    let hw_acc = HwMeasurementAcc::new();
+    let hw_counter = hw_acc.get_counter_cell();
+    let mut points: Vec<PointOffsetType> = index
+        .filter(condition, &hw_counter)
+        .unwrap()
+        .unwrap()
+        .collect();
+    points.sort_unstable();
+    points
+}
+
 #[cfg(feature = "testing")]
 fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Database) {
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
@@ -424,16 +437,9 @@ fn geo_indexed_filtering(#[case] index_type: IndexType) {
 
         assert!(!matched_points.is_empty());
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
-        let mut indexed_matched_points = field_index
-            .filter(&field_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
+        let indexed_matched_points = filtered_points(&field_index, &field_condition);
 
         matched_points.sort_unstable();
-        indexed_matched_points.sort_unstable();
 
         assert_eq!(matched_points, indexed_matched_points);
     }
@@ -490,13 +496,7 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
         })
         .unwrap();
     blocks.iter().for_each(|block| {
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
-        let block_points = field_index
-            .filter(&block.condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
+        let block_points = filtered_points(&field_index, &block.condition);
         assert_eq!(block_points.len(), block.cardinality);
     });
 }
@@ -656,23 +656,11 @@ fn load_from_disk(#[case] index_type: IndexType) {
     };
 
     let field_condition = condition_for_geo_radius("test", berlin_geo_radius);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let point_offsets = new_index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect_vec();
+    let point_offsets = filtered_points(&new_index, &field_condition);
     assert_eq!(point_offsets, vec![1]);
 
     let field_condition = condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let point_offsets = new_index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect_vec();
+    let point_offsets = filtered_points(&new_index, &field_condition);
     assert_eq!(point_offsets, vec![1]);
 }
 
@@ -826,13 +814,7 @@ fn query_across_antimeridian(#[case] index_type: IndexType) {
     };
 
     let field_condition = condition_for_geo_box("test", bounding_box);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let point_offsets = new_index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect_vec();
+    let point_offsets = filtered_points(&new_index, &field_condition);
     assert_eq!(point_offsets, vec![2]);
 }
 
@@ -867,13 +849,7 @@ fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
         radius: OrderedFloat(100.0),
     };
     let field_condition = condition_for_geo_radius("test", geo_radius);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let results = index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect_vec();
+    let results = filtered_points(&index, &field_condition);
     assert_eq!(results, vec![1]);
 
     index.remove_point(1).unwrap();
@@ -970,13 +946,7 @@ fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
         radius: OrderedFloat(100.0),
     };
     let field_condition = condition_for_geo_radius("test", geo_radius);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let results = index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect_vec();
+    let results = filtered_points(&index, &field_condition);
     assert_eq!(results, vec![0]);
 
     index.remove_point(0).unwrap();
@@ -1277,14 +1247,7 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
         radius: OrderedFloat(50_000.0),
     };
     let field_condition = condition_for_geo_radius("test", berlin_radius);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let mut hits: Vec<PointOffsetType> = new_index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect();
-    hits.sort();
+    let hits = filtered_points(&new_index, &field_condition);
     assert_eq!(hits, vec![1, 4]);
 
     let tokyo_radius = GeoRadius {
@@ -1292,14 +1255,7 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
         radius: OrderedFloat(50_000.0),
     };
     let field_condition = condition_for_geo_radius("test", tokyo_radius);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let mut hits: Vec<PointOffsetType> = new_index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect();
-    hits.sort();
+    let hits = filtered_points(&new_index, &field_condition);
     assert_eq!(hits, vec![5]);
 
     let nyc_radius = GeoRadius {
@@ -1307,14 +1263,7 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
         radius: OrderedFloat(50_000.0),
     };
     let field_condition = condition_for_geo_radius("test", nyc_radius);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let mut hits: Vec<PointOffsetType> = new_index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect();
-    hits.sort();
+    let hits = filtered_points(&new_index, &field_condition);
     assert_eq!(hits, vec![7]);
 }
 
@@ -1360,13 +1309,6 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
         radius: OrderedFloat(50_000.0),
     };
     let field_condition = condition_for_geo_radius("test", berlin_radius);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let mut hits: Vec<PointOffsetType> = new_index
-        .filter(&field_condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect();
-    hits.sort();
+    let hits = filtered_points(&new_index, &field_condition);
     assert_eq!(hits, vec![2, 4]);
 }
