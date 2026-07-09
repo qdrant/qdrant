@@ -11,8 +11,8 @@ use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Sequential;
 use crate::iterator_ext::ordering_iterator::OrderingIterator;
 use crate::universal_io::{
-    OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
-    UserData,
+    CachedReadFs, OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalReadFs, UserData,
 };
 
 mod random_reader;
@@ -42,6 +42,17 @@ where
     V: Sized + Copy + FromBytes + Immutable + IntoBytes + KnownLayout,
     S: UniversalRead,
 {
+    /// Schedule background prefetch of the backing file, ahead of
+    /// [`Self::open`].
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+    ) -> Result<()> {
+        // TODO(uio): Turn `Populate::No` into `Populate::BackgroundPartial(0..header + phf)
+        fs.schedule_prefetch(path.as_ref(), Some(options), None)
+    }
+
     /// Load the hash map from file.
     pub fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
