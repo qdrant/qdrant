@@ -36,7 +36,7 @@ use segment::fixtures::payload_fixtures::{
 };
 use segment::id_tracker::IdTrackerRead;
 use segment::index::field_index::{FieldIndex, PayloadFieldIndexRead, PrimaryCondition};
-use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
@@ -1313,8 +1313,8 @@ fn test_update_payload_index_type() {
         id_tracker,
         HashMap::new(),
         dir.path(),
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 
@@ -1372,8 +1372,8 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
             id_tracker,
             HashMap::new(),
             dir.path(),
-            true,
-            true,
+            StorageType::Appendable,
+            IndexLoadMode::CreateIfMissing,
         )
         .unwrap();
 
@@ -1393,8 +1393,8 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
         id_tracker,
         HashMap::new(),
         dir.path(),
-        true,
-        false,
+        StorageType::Appendable,
+        IndexLoadMode::LoadExisting,
     )
     .unwrap();
 
@@ -1434,8 +1434,8 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
             id_tracker,
             HashMap::new(),
             dir.path(),
-            true,
-            true,
+            StorageType::Appendable,
+            IndexLoadMode::CreateIfMissing,
         )
         .unwrap();
 
@@ -1457,8 +1457,8 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
         id_tracker,
         HashMap::new(),
         dir.path(),
-        true,
-        false,
+        StorageType::Appendable,
+        IndexLoadMode::LoadExisting,
     )
     .unwrap();
 
