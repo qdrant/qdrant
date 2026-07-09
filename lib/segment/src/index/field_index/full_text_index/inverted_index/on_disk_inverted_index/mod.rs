@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::BitOrAssign;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec, DeletedBitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -11,8 +11,8 @@ use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs, UserData,
+    CachedReadFs, MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    UniversalRead, UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
@@ -151,6 +151,68 @@ impl OnDiskInvertedIndex<MmapFile> {
 }
 
 impl<S: UniversalRead> OnDiskInvertedIndex<S> {
+    fn open_options(populate: Populate, advice: AdviceSetting) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice,
+        }
+    }
+
+    /// Schedule background prefetch of every file [`open`](Self::open) will read.
+    ///
+    /// Returns `false` when the index is not in the on-disk format.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Postings.
+        let postings_path = path.join(POSTINGS_FILE);
+        if fs
+            .schedule_prefetch(
+                &postings_path,
+                Some(Self::open_options(
+                    populate,
+                    AdviceSetting::Advice(Advice::Normal),
+                )),
+                None,
+            )
+            .ok_not_found()?
+            .is_none()
+        {
+            // If postings don't exist, assume the index doesn't exist on disk
+            return Ok(false);
+        }
+
+        // Vocabulary
+        UniversalHashMap::<str, TokenId, S>::preopen(
+            fs,
+            &path.join(VOCAB_FILE),
+            Self::open_options(populate, AdviceSetting::Global),
+        )?;
+
+        // Point to tokens count
+        fs.schedule_prefetch(
+            &path.join(POINT_TO_TOKENS_COUNT_FILE),
+            Some(Self::open_options(populate, AdviceSetting::Global)),
+            None,
+        )?;
+
+        // Deleted points
+        fs.schedule_prefetch(
+            &path.join(DELETED_POINTS_FILE),
+            Some(Self::open_options(
+                Populate::PreferBackground,
+                AdviceSetting::Global,
+            )),
+            None,
+        )?;
+
+        Ok(true)
+    }
+
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
@@ -163,12 +225,8 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
-        let postings_open_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate,
-            advice: AdviceSetting::Advice(Advice::Normal),
-        };
+        let postings_open_options =
+            Self::open_options(populate, AdviceSetting::Advice(Advice::Normal));
 
         let Some(postings) = (match has_positions {
             false => OnDiskPostings::<(), S>::open(
@@ -192,35 +250,20 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let vocab = UniversalHashMap::<str, TokenId, S>::open(
             fs,
             &vocab_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(populate, AdviceSetting::Global),
             Default::default(),
         )?;
 
         let point_to_tokens_count = TypedStorage::<S, usize>::new(fs.open(
             &point_to_tokens_count_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(populate, AdviceSetting::Global),
             Default::default(),
         )?);
 
         let deleted_payload_mmap = StoredBitSlice::<S>::open(
             fs,
             &deleted_points_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(populate, AdviceSetting::Global),
             Default::default(),
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;

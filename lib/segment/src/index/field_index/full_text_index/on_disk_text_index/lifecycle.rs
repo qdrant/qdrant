@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, MmapFs, Populate, UniversalRead, UniversalReadFs};
 use fs_err as fs;
 use serde_json::Value;
 
@@ -21,6 +21,18 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 impl<S: UniversalRead> OnDiskFullTextIndex<S> {
+    /// Schedule background prefetch of every file [`open`](Self::open) will read.
+    ///
+    /// Returns `false` when the index is not in the on-disk format.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Inverted index
+        OnDiskInvertedIndex::<S>::preopen(fs, path, populate)
+    }
+
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
