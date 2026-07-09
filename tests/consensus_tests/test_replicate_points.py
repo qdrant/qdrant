@@ -176,6 +176,11 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     upload_process_1.join(timeout=60)
     assert upload_process_1.exitcode == 0
 
+    # The count consistency checks below are only valid if all writes went
+    # through the transfer proxy: fail loudly if the transfer finished first
+    assert get_shard_transfer_count(peer_api_uris[0], COLLECTION_NAME) > 0, \
+        "writer outlived the transfer; count consistency checks are not valid"
+
     # Wait for end of transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
