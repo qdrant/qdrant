@@ -153,8 +153,12 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     assert initial_dest_count == 0 # no points in tenant shard key before transfer
 
     # Start pushing new points to the cluster in parallel (update some old ones + insert new ones)
+    #
+    # The workload is kept small so the writer finishes well before the 10k
+    # point transfer does: points written to "default" after the transfer ends
+    # are not replicated to "tenant" and would break count consistency.
     num_points_to_override = 10 if override_points else 0
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000-num_points_to_override, num_points=250, num_cities=2, throttle=False)
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000-num_points_to_override, num_points=60, num_cities=2, throttle=False)
 
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
@@ -168,10 +172,9 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     )
     assert_http_ok(r)
 
-    # Stop upserts before transfer finishes so we don't push extra points to "default" after transfer
-    # TODO: Use "fallback" once PR is merged and kill after transfer is done
-    sleep(1)
-    upload_process_1.kill()
+    # Wait for the writer to finish all its points while the transfer is still running
+    upload_process_1.join(timeout=60)
+    assert upload_process_1.exitcode == 0
 
     # Wait for end of transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
@@ -186,10 +189,10 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     src_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     dest_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True, filter=filter)
 
-    # Concurrent upserts during the transfer may or may not add *new* matching
-    # points to the destination depending on timing, so we only require that the
-    # destination did not lose any points relative to the original snapshot.
-    assert dest_filtered_count >= original_filtered_count # at least as many points, plus any upserts caught during transfer
+    # Concurrent upserts re-roll the city of overridden points, so up to
+    # `num_points_to_override` points may legitimately stop matching the filter
+    # and drop out of both shards; new points may or may not add matching ones.
+    assert dest_filtered_count >= original_filtered_count - num_points_to_override
     assert dest_filtered_count == src_filtered_count # new shard should also have the same points
 
     if override_points is False:
