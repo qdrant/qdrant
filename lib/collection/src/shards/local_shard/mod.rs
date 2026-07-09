@@ -914,6 +914,31 @@ impl LocalShard {
 
         // Send remaining pending WAL elements to the update channel
         if to < last_wal_index {
+            // The update worker applies these queued tail entries but discards their clock tags
+            // (it deserializes only the operation), so advance the newest clocks here, exactly
+            // like the synchronous replay above. These operations are durably in the WAL, which
+            // is what the recovery point tracks; skipping them would let the recovery point
+            // regress across a restart, and the first post-restart updates would then reuse
+            // clock ticks that earlier WAL entries already carry for different operations.
+            //
+            // This tail is queued whenever the persisted `applied_seq` lags the WAL end, so it
+            // runs independently of the `prevent_unoptimized` flag's value: the flag only gates
+            // the worker's deferred-points wait, not whether the tail is queued here.
+            //
+            // `last_wal_index` is one past the last entry (`first_index + len`), so this range is
+            // end-*exclusive* (`..`) even though the send loop below is `..=`: `read_range` errors
+            // on a missing index, and `..=last_wal_index` would try to read that non-existent entry.
+            for entry in wal.read_range(to..last_wal_index) {
+                let (_op_num, update) = entry.map_err(|e| {
+                    CollectionError::service_error(format!(
+                        "Failed to read WAL tail during recovery of {}: {e}",
+                        self.path.display(),
+                    ))
+                })?;
+                if let Some(clock_tag) = update.clock_tag {
+                    newest_clocks.advance_clock(clock_tag);
+                }
+            }
             log::info!(
                 "Loading remaining {} WAL entries from:{to} into update queue",
                 last_wal_index - to
