@@ -11,12 +11,14 @@ use common::types::PointOffsetType;
 pub(crate) use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
-use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
+use crate::index::field_index::bool_index::{BoolIndexRead, ReadOnlyBoolIndex};
+use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
 use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex;
-use crate::index::field_index::geo_index::ReadOnlyGeoIndex;
+use crate::index::field_index::geo_index::{GeoIndexRead, ReadOnlyGeoIndex};
 use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
-use crate::index::field_index::null_index::ReadOnlyNullIndex;
-use crate::index::field_index::numeric_index::ReadOnlyNumericIndex;
+use crate::index::field_index::map_index::read_ops::MapIndexRead;
+use crate::index::field_index::null_index::{NullIndexRead, ReadOnlyNullIndex};
+use crate::index::field_index::numeric_index::{NumericIndexRead, ReadOnlyNumericIndex};
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
 };
@@ -81,20 +83,9 @@ impl<S: UniversalReadExt> Debug for ReadOnlyFieldIndex<S> {
 /// - [`Self::get_full_index_type`] / [`Self::get_mutability_type`] /
 ///   [`Self::get_storage_type`] — payload-config round-tripping.
 ///
-/// **Skeleton state.** Most arms are still `todo!` placeholders because the
-/// per-index parent enums don't yet expose the matching inherent methods
-/// in the branches that supply their `open_*`:
-/// - [`ReadOnlyMapIndex`] only has `get_mutability_type` (added with the
-///   map open PR), so the map-backed variants of `get_mutability_type` /
-///   `get_full_index_type` are wired here.
-/// - Every other lifecycle method (`populate`, `files`, ...) needs a small
-///   follow-up that adds the corresponding method on each
-///   `ReadOnly*Index` parent, dispatching to the leaf variant. That
-///   follow-up lifts every arm in this block out of `todo!`.
-///
-/// The `todo!` arms are intentional skeleton placeholders, not soft
-/// failures — they panic if hit at runtime so the missing wiring surfaces
-/// immediately rather than degrading silently.
+/// The `todo!` arms are intentional placeholders, not soft failures — they
+/// panic if hit at runtime so the missing wiring surfaces immediately rather
+/// than degrading silently.
 ///
 /// [1]: crate::index::field_index::FieldIndex
 #[allow(dead_code)] // skeleton: no caller in the lib yet; surface is here for follow-ups
@@ -104,26 +95,20 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::IntMapIndex(_)
             | ReadOnlyFieldIndex::KeywordIndex(_)
             | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: add `ReadOnlyMapIndex::files` and dispatch")
+                todo!("follow-up: forward `files` through `ReadOnlyMapIndex`")
             }
             ReadOnlyFieldIndex::IntIndex(_)
             | ReadOnlyFieldIndex::DatetimeIndex(_)
             | ReadOnlyFieldIndex::FloatIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric parent) + `files` on it")
-            }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo parent) + `files` on it")
+                todo!("follow-up: forward `files` through `ReadOnlyNumericIndex`")
             }
             ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text parent) + `files` on it")
+                todo!("follow-up: forward `files` through `ReadOnlyFullTextIndex`")
             }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool parent) + `files` on it")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null parent) + `files` on it")
-            }
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::files(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::files(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::files(index),
         }
     }
 
@@ -132,54 +117,40 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::IntMapIndex(_)
             | ReadOnlyFieldIndex::KeywordIndex(_)
             | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: add `ReadOnlyMapIndex::immutable_files` and dispatch")
+                todo!("follow-up: forward `immutable_files` through `ReadOnlyMapIndex`")
             }
             ReadOnlyFieldIndex::IntIndex(_)
             | ReadOnlyFieldIndex::DatetimeIndex(_)
             | ReadOnlyFieldIndex::FloatIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric parent) + `immutable_files` on it")
-            }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo parent) + `immutable_files` on it")
+                todo!("follow-up: forward `immutable_files` through `ReadOnlyNumericIndex`")
             }
             ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text parent) + `immutable_files` on it")
+                todo!("follow-up: forward `immutable_files` through `ReadOnlyFullTextIndex`")
             }
             ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool parent) + `immutable_files` on it")
+                todo!("follow-up: add `immutable_files` to `BoolIndexRead`")
             }
             ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null parent) + `immutable_files` on it")
+                todo!("follow-up: add `immutable_files` to `NullIndexRead`")
             }
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::immutable_files(index),
         }
     }
 
     pub fn ram_usage_bytes(&self) -> usize {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: add `ReadOnlyMapIndex::ram_usage_bytes` and dispatch")
-            }
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric parent) + `ram_usage_bytes` on it")
-            }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo parent) + `ram_usage_bytes` on it")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text parent) + `ram_usage_bytes` on it")
-            }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool parent) + `ram_usage_bytes` on it")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null parent) + `ram_usage_bytes` on it")
-            }
+            ReadOnlyFieldIndex::IntIndex(index) => NumericIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => NumericIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::IntMapIndex(index) => MapIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::KeywordIndex(index) => MapIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::FloatIndex(index) => NumericIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::UuidIndex(index) => NumericIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => MapIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::ram_usage_bytes(index),
         }
     }
 
@@ -188,26 +159,18 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::IntMapIndex(_)
             | ReadOnlyFieldIndex::KeywordIndex(_)
             | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: add `ReadOnlyMapIndex::is_on_disk` and dispatch")
+                todo!("follow-up: forward `is_on_disk` through `ReadOnlyMapIndex`")
             }
             ReadOnlyFieldIndex::IntIndex(_)
             | ReadOnlyFieldIndex::DatetimeIndex(_)
             | ReadOnlyFieldIndex::FloatIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric parent) + `is_on_disk` on it")
+                todo!("follow-up: forward `is_on_disk` through `ReadOnlyNumericIndex`")
             }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo parent) + `is_on_disk` on it")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text parent) + `is_on_disk` on it")
-            }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool parent) + `is_on_disk` on it")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null parent) + `is_on_disk` on it")
-            }
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::is_on_disk(index),
+            ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::is_on_disk(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_on_disk(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::is_on_disk(index),
         }
     }
 
@@ -217,26 +180,20 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::IntMapIndex(_)
             | ReadOnlyFieldIndex::KeywordIndex(_)
             | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: add `ReadOnlyMapIndex::populate` and dispatch")
+                todo!("follow-up: forward `populate` through `ReadOnlyMapIndex`")
             }
             ReadOnlyFieldIndex::IntIndex(_)
             | ReadOnlyFieldIndex::DatetimeIndex(_)
             | ReadOnlyFieldIndex::FloatIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric parent) + `populate` on it")
-            }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo parent) + `populate` on it")
+                todo!("follow-up: forward `populate` through `ReadOnlyNumericIndex`")
             }
             ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text parent) + `populate` on it")
+                todo!("follow-up: forward `populate` through `ReadOnlyFullTextIndex`")
             }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool parent) + `populate` on it")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null parent) + `populate` on it")
-            }
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::populate(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::populate(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::populate(index),
         }
     }
 
@@ -246,26 +203,20 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::IntMapIndex(_)
             | ReadOnlyFieldIndex::KeywordIndex(_)
             | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: add `ReadOnlyMapIndex::clear_cache` and dispatch")
+                todo!("follow-up: forward `clear_cache` through `ReadOnlyMapIndex`")
             }
             ReadOnlyFieldIndex::IntIndex(_)
             | ReadOnlyFieldIndex::DatetimeIndex(_)
             | ReadOnlyFieldIndex::FloatIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric parent) + `clear_cache` on it")
-            }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo parent) + `clear_cache` on it")
+                todo!("follow-up: forward `clear_cache` through `ReadOnlyNumericIndex`")
             }
             ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text parent) + `clear_cache` on it")
+                todo!("follow-up: forward `clear_cache` through `ReadOnlyFullTextIndex`")
             }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool parent) + `clear_cache` on it")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null parent) + `clear_cache` on it")
-            }
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::clear_cache(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::clear_cache(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::clear_cache(index),
         }
     }
 
@@ -293,64 +244,35 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         }
     }
 
-    /// Map-backed variants dispatch to the wired
-    /// [`ReadOnlyMapIndex::get_mutability_type`][1]; the rest are blocked
-    /// on the per-index parent `get_mutability_type`, added with each
-    /// per-index PR listed in [`Self::populate`].
-    ///
-    /// [1]: crate::index::field_index::map_index::read_only::ReadOnlyMapIndex::get_mutability_type
     fn get_mutability_type(&self) -> IndexMutability {
         match self {
+            ReadOnlyFieldIndex::IntIndex(index) => index.get_mutability_type(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.get_mutability_type(),
             ReadOnlyFieldIndex::IntMapIndex(index) => index.get_mutability_type(),
             ReadOnlyFieldIndex::KeywordIndex(index) => index.get_mutability_type(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.get_mutability_type(),
+            ReadOnlyFieldIndex::GeoIndex(index) => index.get_mutability_type(),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.get_mutability_type(),
+            ReadOnlyFieldIndex::BoolIndex(index) => index.get_mutability_type(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.get_mutability_type(),
             ReadOnlyFieldIndex::UuidMapIndex(index) => index.get_mutability_type(),
-
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric `get_mutability_type`)")
-            }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo `get_mutability_type`)")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text `get_mutability_type`)")
-            }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool `get_mutability_type`)")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null `get_mutability_type`)")
-            }
+            ReadOnlyFieldIndex::NullIndex(index) => index.get_mutability_type(),
         }
     }
 
     fn get_storage_type(&self) -> StorageType {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: add `ReadOnlyMapIndex::get_storage_type` and dispatch")
-            }
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("blocked on #9213 (numeric `get_storage_type`)")
-            }
-            ReadOnlyFieldIndex::GeoIndex(_) => {
-                todo!("blocked on #9211 (geo `get_storage_type`)")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("blocked on #9222 (full-text `get_storage_type`)")
-            }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("blocked on #9200 (bool `get_storage_type`)")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("blocked on #9197 (null `get_storage_type`)")
-            }
+            ReadOnlyFieldIndex::IntIndex(index) => NumericIndexRead::storage_type(index),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => NumericIndexRead::storage_type(index),
+            ReadOnlyFieldIndex::IntMapIndex(index) => MapIndexRead::storage_type(index),
+            ReadOnlyFieldIndex::KeywordIndex(index) => MapIndexRead::storage_type(index),
+            ReadOnlyFieldIndex::FloatIndex(index) => NumericIndexRead::storage_type(index),
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::get_storage_type(index),
+            ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::get_storage_type(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::get_storage_type(index),
+            ReadOnlyFieldIndex::UuidIndex(index) => NumericIndexRead::storage_type(index),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => MapIndexRead::storage_type(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::get_storage_type(index),
         }
     }
 }
