@@ -5,6 +5,7 @@ use super::StructPayloadIndex;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::BuildIndexResult;
+use crate::index::field_index::index_selector::wipe_field_dirs;
 use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait as _};
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{PayloadContainer, PayloadFieldSchema, PayloadKeyTypeRef};
@@ -16,6 +17,19 @@ impl StructPayloadIndex {
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
+        // A build must start from a clean slate: files can be left behind by a build
+        // that crashed before its config entry was written, or by an index that
+        // failed to load. Appendable builders open existing storages, so leftovers
+        // would leak stale postings into the fresh build.
+        wipe_field_dirs(&self.path, field)?;
+
+        // Note: durability of the state this build reads (id tracker, payload storage)
+        // is the caller's responsibility. Component flushers must not be invoked here:
+        // flusher executions are serialized end-to-end with their capture by the shard
+        // flush pipeline, and an extra flush run between another flusher's capture and
+        // execution corrupts storage (Gridstore double-frees superseded blocks). The
+        // live update path pins the observed state by flushing the whole segment under
+        // that serialization before building (`shard::update::create_field_index`).
         let payload_storage = self.payload.borrow();
         let id_tracker_borrow = self.id_tracker.borrow();
         let selector = self.selector(payload_schema);

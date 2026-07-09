@@ -172,11 +172,23 @@ impl StructPayloadIndex {
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
             log::debug!("Rebuilding payload index for field `{field}`...");
+            // Close any partially-loaded index storages first: the rebuild wipes
+            // their directories before building fresh.
+            indexes.clear();
             indexes = self.build_field_indexes(
                 field,
                 &payload_schema.schema,
                 &HardwareCounterCell::disposable(), // Internal operation
             )?;
+
+            // The durable config keeps listing this field: persist the rebuilt data
+            // now, or a crash before the next flush cycle would leave the config
+            // pointing at empty index storages that silently load as a complete
+            // index. Safe here: the segment is still being opened, so no flush
+            // pipeline capture of these storages can exist yet.
+            for index in &indexes {
+                index.flusher()()?;
+            }
 
             // Persist exact payload index types of newly built indices
             is_dirty = true;

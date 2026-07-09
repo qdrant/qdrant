@@ -46,6 +46,15 @@ impl PayloadIndex for StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<()> {
+        // Persist the built index before the config that lists it. The config is the
+        // durable commit marker for the index (loading and WAL replay trust it), while
+        // mutable indexes buffer their postings in memory until flushed. Flushing here
+        // guarantees a crash right after the config write cannot leave a durable
+        // config entry pointing at index data that never reached disk.
+        for index in &field_index {
+            index.flusher()()?;
+        }
+
         let index_types: Vec<_> = field_index
             .iter()
             .map(|i| i.get_full_index_type())
