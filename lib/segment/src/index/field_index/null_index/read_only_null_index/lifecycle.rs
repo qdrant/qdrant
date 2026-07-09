@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_null_index::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME};
 use super::{ReadOnlyNullIndex, ReadOnlyStorage};
@@ -8,6 +8,19 @@ use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<S: UniversalRead> ReadOnlyNullIndex<S> {
+    /// Schedule background prefetch of the files [`open`](Self::open) reads, in
+    /// both flag directories.
+    ///
+    /// Returns whether the index exists on disk. Mirrors [`Self::open`]'s
+    /// absence check: only a missing *pair* of flag directories means no index,
+    /// so a half-present (corrupt) layout is reported as existing here and left
+    /// for `open` to reject.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<bool> {
+        let has_values = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(HAS_VALUES_DIRNAME))?;
+        let is_null = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(IS_NULL_DIRNAME))?;
+        Ok(has_values || is_null)
+    }
+
     /// Open a read-only null index at `path`, threading every file open through
     /// the filesystem handle `fs`.
     ///
