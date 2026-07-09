@@ -1,8 +1,6 @@
 import pathlib
-import multiprocessing
-from time import sleep
 
-from .fixtures import upsert_random_points, create_collection
+from .fixtures import upsert_random_points, create_collection, random_dense_vector, random_sparse_vector
 from .utils import *
 
 from .test_custom_sharding import create_shard
@@ -13,32 +11,57 @@ N_REPLICA = 1
 COLLECTION_NAME = "test_collection"
 
 
-def update_points_in_loop(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, offset=0, throttle=False, duration=None):
-    start = time.time()
-    limit = 3
-    counter = 0
+def city_by_id(point_id):
+    # City is a pure function of the point ID, so the set of points matching
+    # a city filter is known exactly at any moment, no matter how points are
+    # overwritten concurrently.
+    return "London" if point_id % 2 == 0 else "Berlin"
 
+
+def upsert_points_by_id(peer_url, ids, collection_name=COLLECTION_NAME, shard_key=None, batch_size=5):
+    for batch_start in range(0, len(ids), batch_size):
+        batch = ids[batch_start:batch_start + batch_size]
+        r = requests.put(
+            f"{peer_url}/collections/{collection_name}/points?wait=true",
+            json={
+                "points": [
+                    {
+                        "id": point_id,
+                        "vector": {
+                            "": random_dense_vector(),
+                            "sparse-text": random_sparse_vector(),
+                        },
+                        "payload": {"city": city_by_id(point_id)},
+                    }
+                    for point_id in batch
+                ],
+                "shard_key": shard_key,
+            },
+        )
+        assert_http_ok(r)
+
+
+def scroll_all_ids(peer_url, collection_name, shard_key, filter=None):
+    ids = set()
+    offset = None
     while True:
-        if num_points is not None:
-            if counter >= num_points:
-                break
-            if (num_points - counter) < limit:
-                limit = num_points - counter
-
-        upsert_random_points(peer_url, limit, collection_name, num_cities=num_cities, shard_key=shard_key, offset=offset)
-        offset += limit
-        counter += limit
-
-        if throttle:
-            sleep(0.1)
-        if duration is not None and (time.time() - start) > duration:
-            break
-
-
-def run_update_points_in_background(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, init_offset=0, throttle=False, duration=None):
-    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, num_points, num_cities, shard_key, init_offset, throttle, duration))
-    p.start()
-    return p
+        r = requests.post(
+            f"{peer_url}/collections/{collection_name}/points/scroll",
+            json={
+                "limit": 10000,
+                "offset": offset,
+                "with_payload": False,
+                "with_vector": False,
+                "shard_key": shard_key,
+                "filter": filter,
+            },
+        )
+        assert_http_ok(r)
+        result = r.json()["result"]
+        ids.update(point["id"] for point in result["points"])
+        offset = result["next_page_offset"]
+        if offset is None:
+            return ids
 
 
 # Transfer points from one shard to another
@@ -110,12 +133,19 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     assert tenant_count == expected_count # new shard should also have the points
     assert tenant_inverse_count == 0 # new shard should have only the points matching the filter
 
-# Replicate points from one shard to another while applying throttled updates in parallel
+# Replicate points from one shard to another while applying updates in parallel
 #
-# Updates are throttled to prevent sending updates faster than the queue proxy
-# can handle. The transfer must therefore finish in 30 seconds without issues.
+# Points are assigned a city deterministically by ID parity, so the exact set
+# of points matching the city filter is known at all times and all assertions
+# are exact set comparisons: no slack for concurrent filter membership changes
+# is needed.
 #
-# Test that data on the both sides is consistent
+# The transfer streams the source shard in ascending point ID order. Initial
+# points occupy IDs [100, 10100), leaving low IDs unoccupied: points inserted
+# at IDs [0, 30) during the transfer are behind the stream cursor and can only
+# reach the destination through live update forwarding, so this test fails if
+# forwarding silently stops working. Overridden and appended points cover the
+# update-to-streamed-point and insert-ahead-of-cursor paths respectively.
 @pytest.mark.parametrize("override_points", [True, False])
 def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, override_points: bool):
     assert_project_root()
@@ -141,20 +171,13 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
         peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", shard_number=N_SHARDS
     )
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10000, num_cities=2, shard_key="default")
+    # Insert initial points in a single request, like a regular bulk upload
+    initial_ids = list(range(100, 10100))
+    upsert_points_by_id(peer_api_uris[0], initial_ids, shard_key="default", batch_size=len(initial_ids))
 
     filter = {"must": {"key": "city", "match": {"value": "London"}}}
-    inverse_filter = {"must_not": {"key": "city", "match": {"value": "London"}}}
 
-    original_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
-    initial_dest_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
-    assert original_filtered_count > 0
-    assert initial_dest_count == 0 # no points in tenant shard key before transfer
-
-    # Start pushing new points to the cluster in parallel (update some old ones + insert new ones)
-    num_points_to_override = 10 if override_points else 0
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000-num_points_to_override, num_points=250, num_cities=2, throttle=False)
+    assert get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True) == 0
 
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
@@ -168,10 +191,24 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     )
     assert_http_ok(r)
 
-    # Stop upserts before transfer finishes so we don't push extra points to "default" after transfer
-    # TODO: Use "fallback" once PR is merged and kill after transfer is done
-    sleep(1)
-    upload_process_1.kill()
+    # Concurrent updates, applied synchronously with wait=true while the
+    # transfer streams the 10k initial points:
+    # - overrides at the stream head: the stream passes IDs 100..109 within the
+    #   first batch, so these updates reach the destination through forwarding
+    # - inserts below the stream cursor: deliverable only through forwarding
+    # - inserts above the stream cursor: delivered by the stream or forwarding
+    override_ids = list(range(100, 110)) if override_points else []
+    low_insert_ids = list(range(0, 30))
+    high_insert_ids = list(range(10100, 10130))
+    written_ids = override_ids + low_insert_ids + high_insert_ids
+    upsert_points_by_id(peer_api_uris[0], written_ids, shard_key="default")
+
+    # Precondition for the exact assertions below: every write above must have
+    # gone through the transfer proxy. A handful of small requests cannot
+    # realistically outlast streaming 10k points on the same node; if this
+    # ever fires, the test did not exercise concurrent updates at all.
+    assert get_shard_transfer_count(peer_api_uris[0], COLLECTION_NAME) > 0, \
+        "transfer finished before the concurrent writes completed; increase the initial point count"
 
     # Wait for end of transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
@@ -182,16 +219,18 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     number_local_shards = len(receiver_collection_cluster_info["local_shards"])
     assert number_local_shards == 2
 
-    # Point counts must be consistent across shard keys for given filter
-    src_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
-    dest_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True, filter=filter)
+    all_ids = set(initial_ids) | set(written_ids)
+    expected_london_ids = {point_id for point_id in all_ids if city_by_id(point_id) == "London"}
 
-    # Concurrent upserts during the transfer may or may not add *new* matching
-    # points to the destination depending on timing, so we only require that the
-    # destination did not lose any points relative to the original snapshot.
-    assert dest_filtered_count >= original_filtered_count # at least as many points, plus any upserts caught during transfer
-    assert dest_filtered_count == src_filtered_count # new shard should also have the same points
+    src_ids = scroll_all_ids(peer_api_uris[0], COLLECTION_NAME, shard_key="default")
+    src_london_ids = scroll_all_ids(peer_api_uris[0], COLLECTION_NAME, shard_key="default", filter=filter)
+    dest_ids = scroll_all_ids(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant")
 
-    if override_points is False:
-        dest_inverse_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True, filter=inverse_filter)
-        assert dest_inverse_count == 0 # new shard should have only the points matching the filter
+    # Source contains every written point, and its filtered view is exact
+    assert src_ids == all_ids
+    assert src_london_ids == expected_london_ids
+
+    # Destination contains exactly the matching points and nothing else:
+    # no point lost (streamed, forwarded override, forwarded low-ID insert),
+    # no non-matching point leaked through the stream or forwarding
+    assert dest_ids == expected_london_ids
