@@ -38,8 +38,8 @@ mod tests {
     };
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::segment_optimizer::SegmentOptimizer;
-    use shard::segment_holder::SegmentId;
     use shard::segment_holder::locked::LockedSegmentHolder;
+    use shard::segment_holder::{FlushMode, SegmentId};
     use shard::update::{process_field_index_operation, process_point_operation};
     use tempfile::Builder;
 
@@ -578,7 +578,7 @@ mod tests {
         // `SegmentHolder::register_post_flush_action`). Flush to run the action before counting dirs.
         locked_holder
             .read()
-            .flush_all(true, true)
+            .flush_all(FlushMode::Sync, true)
             .expect("failed to flush segment holder");
 
         let segment_dirs = fs::read_dir(segments_dir.path()).unwrap().collect_vec();

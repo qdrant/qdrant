@@ -43,6 +43,7 @@ mod tests {
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::config::{DenseVectorOptimizerConfig, SegmentOptimizerConfig};
     use shard::optimizers::segment_optimizer::SegmentOptimizer;
+    use shard::segment_holder::FlushMode;
     use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
@@ -202,7 +203,7 @@ mod tests {
         // `SegmentHolder::register_post_flush_action`). Flush to run the action before asserting.
         locked_holder
             .read()
-            .flush_all(true, true)
+            .flush_all(FlushMode::Sync, true)
             .expect("failed to flush segment holder");
 
         // Check if optimized segments removed from disk
