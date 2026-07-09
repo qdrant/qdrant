@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::{fs, io, slice};
 
 use memmap2::MmapRaw;
@@ -77,10 +77,12 @@ pub struct MmapFile {
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
 
-    /// Dedicated `O_APPEND` fd, lazily opened on first
+    /// Dedicated `O_APPEND` fd, lazily opened on the first
     /// [`UniversalAppend::append`]. Kept separate from the mmap so appends
-    /// cannot disturb the mapping, and `Arc`-shared so clones stay cheap.
-    append_file: Option<Arc<fs_err::File>>,
+    /// cannot disturb the mapping, and shared across clones so every
+    /// handle's flusher fdatasyncs appended growth — regardless of which
+    /// clone appended, or in which order clones and flushers were created.
+    append_file: Arc<OnceLock<fs_err::File>>,
 
     // `mmap` and `mmap_seq` own the mmaps.
     mmap: Arc<Mutex<MmapRaw>>,
@@ -142,7 +144,7 @@ impl MmapFile {
             writeable,
             populate,
             advice,
-            append_file: None,
+            append_file: Arc::new(OnceLock::new()),
             mmap: Arc::new(Mutex::new(mmap)),
             mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
             len,
@@ -277,9 +279,11 @@ impl UniversalFlush for MmapFile {
             }
 
             // Appends change the file size, and `msync` alone does not
-            // persist size metadata — also fdatasync when this handle has
-            // appended.
-            if let Some(file) = append_file {
+            // persist size metadata — also fdatasync when any handle of
+            // this file has appended. The shared cell is read at flush
+            // time, so appends through clones, or appends made after this
+            // flusher was created, are covered too.
+            if let Some(file) = append_file.get() {
                 file.sync_data()?;
             }
 
@@ -425,7 +429,7 @@ impl MmapFile {
     /// appends. Every `write(2)`/`writev(2)` through it is an atomic
     /// grow+write at the file's current end, so growth cannot leave a
     /// zero-filled window behind.
-    fn append_fd(&mut self) -> Result<&fs_err::File> {
+    fn append_fd(&self) -> Result<&fs_err::File> {
         if !self.writeable {
             return Err(UniversalIoError::Io(io::Error::new(
                 ErrorKind::PermissionDenied,
@@ -433,15 +437,19 @@ impl MmapFile {
             )));
         }
 
-        if self.append_file.is_none() {
-            let file = fs_err::OpenOptions::new()
-                .append(true)
-                .open(&self.path)
-                .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
-            self.append_file = Some(Arc::new(file));
+        if let Some(file) = self.append_file.get() {
+            return Ok(file);
         }
 
-        Ok(self.append_file.as_ref().expect("just set"))
+        let file = fs_err::OpenOptions::new()
+            .append(true)
+            .open(&self.path)
+            .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
+
+        // A clone may have raced the initialization (concurrent appenders
+        // are out of contract, but stay sound): exactly one fd is kept, a
+        // losing one is dropped.
+        Ok(self.append_file.get_or_init(|| file))
     }
 }
 
@@ -605,4 +613,35 @@ where
     mmap.copy_from_slice(bytes);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The append fd is shared across clones, so a flusher from any clone —
+    /// even one created before the first append — fdatasyncs the growth.
+    #[test]
+    fn clone_flusher_sees_appends() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("append.dat");
+        MmapFs.create(&path, 0).unwrap();
+
+        let options = OpenOptions {
+            writeable: true,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mut file = MmapFs.open(&path, options, ()).unwrap();
+        let clone = file.clone();
+        let flusher = clone.flusher();
+
+        file.append(b"tail".as_slice()).unwrap();
+
+        // The append fd is visible through the sibling clone, and the
+        // pre-created flusher takes the fdatasync path.
+        assert!(clone.append_file.get().is_some());
+        flusher().unwrap();
+    }
 }
