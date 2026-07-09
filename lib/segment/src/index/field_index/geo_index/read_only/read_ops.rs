@@ -211,8 +211,8 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
 }
 
 impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
-    fn count_indexed_points(&self) -> usize {
-        GeoIndexRead::points_count(self)
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(GeoIndexRead::points_count(self))
     }
 
     fn filter<'a>(

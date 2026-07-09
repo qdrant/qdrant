@@ -89,7 +89,7 @@ impl EdgeShard {
         EdgeShardRead::facet(self, request)
     }
 
-    pub fn info(&self) -> ShardInfo {
+    pub fn info(&self) -> OperationResult<ShardInfo> {
         EdgeShardRead::info(self)
     }
 

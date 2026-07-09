@@ -266,7 +266,7 @@ pub trait ReadSegmentEntry {
     fn segment_type(&self) -> SegmentType;
 
     /// Get current stats of the segment
-    fn info(&self) -> SegmentInfo;
+    fn info(&self) -> OperationResult<SegmentInfo>;
 
     /// Get size related stats of the segment.
     /// This returns `SegmentInfo` with some non size-related data (like `schema`) unset to improve performance.
@@ -285,7 +285,7 @@ pub trait ReadSegmentEntry {
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
     // Get collected telemetry data of segment
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry>;
 
     fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()>;
 

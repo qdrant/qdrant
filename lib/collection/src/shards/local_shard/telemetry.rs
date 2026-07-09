@@ -50,7 +50,7 @@ impl LocalShard {
                         return Err(CollectionError::timeout(timeout, "shard telemetry"));
                     };
 
-                    segments_telemetry.push(segment_guard.get_telemetry_data(detail))
+                    segments_telemetry.push(segment_guard.get_telemetry_data(detail)?)
                 }
 
                 let collection_config = locked_collection_config.blocking_read();
@@ -155,7 +155,9 @@ impl LocalShard {
             } = SizeStats::default();
 
             for (_, segment) in segments.iter() {
-                let info = segment.get().read().info();
+                // `size_info`, not `info`: only size fields are read here, and it
+                // does not materialize the lazily-built payload index bitmaps.
+                let info = segment.get().read().size_info();
                 num_points += info.num_points;
                 num_vectors += info.num_vectors;
                 vectors_size_bytes += info.vectors_size_bytes;

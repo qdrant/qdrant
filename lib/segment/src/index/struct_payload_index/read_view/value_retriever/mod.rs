@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 
 use self::helpers::variable_retriever;
 use super::StructPayloadIndexReadView;
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
@@ -26,7 +27,7 @@ where
         &'b self,
         variables: HashSet<JsonPath>,
         hw_counter: &'q HardwareCounterCell,
-    ) -> HashMap<JsonPath, VariableRetrieverFn<'q>>
+    ) -> OperationResult<HashMap<JsonPath, VariableRetrieverFn<'q>>>
     where
         'b: 'q,
     {
@@ -42,11 +43,11 @@ where
                 &key,
                 payload_provider.clone(),
                 hw_counter,
-            );
+            )?;
 
             var_retrievers.insert(key, retriever);
         }
 
-        var_retrievers
+        Ok(var_retrievers)
     }
 }

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use common::types::TelemetryDetail;
 use uuid::Uuid;
 
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
@@ -102,19 +103,18 @@ where
         uuid: Uuid,
         segment_type: SegmentType,
         is_appendable: bool,
-    ) -> SegmentInfo {
+    ) -> OperationResult<SegmentInfo> {
         let mut info = self.build_size_info(uuid, segment_type, is_appendable);
         info.index_schema = self
             .payload_index
             .indexed_fields()
             .into_iter()
             .map(|(key, index_schema)| {
-                let points_count = self.payload_index.indexed_points(&key);
-                let index_info = PayloadIndexInfo::new(index_schema, points_count);
-                (key, index_info)
+                let points_count = self.payload_index.indexed_points(&key)?;
+                Ok((key, PayloadIndexInfo::new(index_schema, points_count)))
             })
-            .collect();
-        info
+            .collect::<OperationResult<_>>()?;
+        Ok(info)
     }
 
     /// Build the segment-level telemetry payload.
@@ -125,7 +125,7 @@ where
         is_appendable: bool,
         config: &SegmentConfig,
         detail: TelemetryDetail,
-    ) -> SegmentTelemetry {
+    ) -> OperationResult<SegmentTelemetry> {
         let vector_index_searches = self
             .vector_data
             .iter()
@@ -136,11 +136,11 @@ where
             })
             .collect();
 
-        SegmentTelemetry {
-            info: self.build_info(uuid, segment_type, is_appendable),
+        Ok(SegmentTelemetry {
+            info: self.build_info(uuid, segment_type, is_appendable)?,
             config: config.clone(),
             vector_index_searches,
-            payload_field_indices: self.payload_index.get_telemetry_data(),
-        }
+            payload_field_indices: self.payload_index.get_telemetry_data()?,
+        })
     }
 }

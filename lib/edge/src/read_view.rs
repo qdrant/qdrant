@@ -189,7 +189,7 @@ pub trait EdgeShardRead {
         view(self).facet(request)
     }
 
-    fn info(&self) -> ShardInfo {
+    fn info(&self) -> OperationResult<ShardInfo> {
         view(self).info()
     }
 

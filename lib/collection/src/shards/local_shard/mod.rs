@@ -1120,7 +1120,8 @@ impl LocalShard {
                 // TODO: snapshotting also creates temp proxy segments. should differentiate.
                 let has_special_segment = segments
                     .iter()
-                    .map(|(_, segment)| segment.get().read().info().segment_type)
+                    // `size_info` carries `segment_type` and cannot fail.
+                    .map(|(_, segment)| segment.get().read().size_info().segment_type)
                     .any(|segment_type| segment_type == SegmentType::Special);
                 if has_special_segment {
                     Some((ShardStatus::Yellow, OptimizersStatus::Ok))
@@ -1190,7 +1191,7 @@ impl LocalShard {
                 for segment in segments {
                     segments_count += 1;
 
-                    let segment_info = segment.get().read().info();
+                    let segment_info = segment.get().read().info()?;
 
                     indexed_vectors_count += segment_info.num_indexed_vectors;
                     points_count += segment_info.num_points;
@@ -1201,9 +1202,14 @@ impl LocalShard {
                             .or_insert(val);
                     }
                 }
-                (schema, indexed_vectors_count, points_count, segments_count)
+                OperationResult::Ok((schema, indexed_vectors_count, points_count, segments_count))
             })
             .await;
+
+        // Flatten the join error and the per-segment info error into one.
+        let segment_info = segment_info
+            .map_err(CollectionError::from)
+            .and_then(|info| info.map_err(CollectionError::from));
 
         if let Err(err) = &segment_info {
             log::error!("Failed to get local shard info: {err}");

@@ -182,7 +182,7 @@ impl PyEdgeShard {
     }
 
     pub fn info(&self) -> Result<PyShardInfo> {
-        let info = self.get_shard()?.info();
+        let info = self.get_shard()?.info()?;
         let info = PyShardInfo(info);
         Ok(info)
     }

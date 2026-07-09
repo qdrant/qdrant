@@ -44,15 +44,15 @@ pub trait NullIndexRead {
     /// Per-variant telemetry tag (e.g. `"mutable_null_index"`).
     fn telemetry_index_type(&self) -> &'static str;
 
-    fn values_count(&self, id: PointOffsetType) -> usize {
-        usize::from(self.has_values_flags().get(id))
+    fn values_count(&self, id: PointOffsetType) -> OperationResult<usize> {
+        Ok(usize::from(self.has_values_flags().get(id)?))
     }
 
-    fn values_is_empty(&self, id: PointOffsetType) -> bool {
-        !self.has_values_flags().get(id)
+    fn values_is_empty(&self, id: PointOffsetType) -> OperationResult<bool> {
+        Ok(!self.has_values_flags().get(id)?)
     }
 
-    fn values_is_null(&self, id: PointOffsetType) -> bool {
+    fn values_is_null(&self, id: PointOffsetType) -> OperationResult<bool> {
         self.is_null_flags().get(id)
     }
 
@@ -60,13 +60,14 @@ pub trait NullIndexRead {
         self.has_values_flags().len()
     }
 
+    /// Zero while neither bitmap is materialized — nothing is held in RAM yet.
     fn ram_usage_bytes(&self) -> usize {
-        self.has_values_flags().get_bitmap().serialized_size()
-            + self.is_null_flags().get_bitmap().serialized_size()
+        self.has_values_flags().ram_usage_bytes() + self.is_null_flags().ram_usage_bytes()
     }
 
     /// Whether the index keeps its primary data on disk. Default `false` —
-    /// the bitmap is in RAM after open for every current variant.
+    /// every current variant serves reads from an in-RAM bitmap (the read-only
+    /// one materializes it on first use).
     fn is_on_disk(&self) -> bool {
         false
     }
@@ -94,6 +95,8 @@ pub trait NullIndexRead {
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        // `indexed_points_count` is the status file's `len`, so telemetry never
+        // forces a bitmap scan.
         let points_count = self.indexed_points_count();
         PayloadIndexTelemetry {
             field_name: None,
@@ -108,7 +111,7 @@ pub trait NullIndexRead {
 pub(super) fn filter<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &'a FieldCondition,
-) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
     let FieldCondition {
         key: _,
         r#match: _,
@@ -125,37 +128,39 @@ pub(super) fn filter<'a, N: NullIndexRead>(
     let is_null_flags = null_index.is_null_flags();
     let total_point_count = null_index.total_point_count();
 
-    if let Some(is_empty) = is_empty {
+    let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = if let Some(is_empty) = is_empty {
         if *is_empty {
             // Return points that don't have values
-            Some(Box::new(has_values_flags.iter_falses().chain({
+            Box::new(has_values_flags.iter_falses()?.chain({
                 let end = has_values_flags.len() as PointOffsetType;
                 end..total_point_count as u32
-            })))
+            }))
         } else {
             // Return points that have values
-            Some(Box::new(has_values_flags.iter_trues()))
+            Box::new(has_values_flags.iter_trues()?)
         }
     } else if let Some(is_null) = is_null {
         if *is_null {
             // Return points that have null values
-            Some(Box::new(is_null_flags.iter_trues()))
+            Box::new(is_null_flags.iter_trues()?)
         } else {
             // Return points that don't have null values
-            Some(Box::new(is_null_flags.iter_falses().chain({
+            Box::new(is_null_flags.iter_falses()?.chain({
                 let end = is_null_flags.len() as PointOffsetType;
                 end..total_point_count as u32
-            })))
+            }))
         }
     } else {
-        None
-    }
+        return Ok(None);
+    };
+
+    Ok(Some(iter))
 }
 
 pub(super) fn estimate_cardinality<N: NullIndexRead>(
     null_index: &N,
     condition: &FieldCondition,
-) -> Option<CardinalityEstimation> {
+) -> OperationResult<Option<CardinalityEstimation>> {
     let FieldCondition {
         key,
         r#match: _,
@@ -172,12 +177,12 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
     let is_null_flags = null_index.is_null_flags();
     let total_point_count = null_index.total_point_count();
 
-    if let Some(is_empty) = is_empty {
+    let estimation = if let Some(is_empty) = is_empty {
         if *is_empty {
-            let has_values_count = has_values_flags.count_trues();
+            let has_values_count = has_values_flags.count_trues()?;
             let estimated = total_point_count.saturating_sub(has_values_count);
 
-            Some(CardinalityEstimation {
+            CardinalityEstimation {
                 min: 0,
                 exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
                 max: estimated,
@@ -185,28 +190,24 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
                     key.clone(),
                     true,
                 ))],
-            })
+            }
         } else {
-            let count = has_values_flags.count_trues();
-            Some(
-                CardinalityEstimation::exact(count).with_primary_clause(PrimaryCondition::from(
-                    FieldCondition::new_is_empty(key.clone(), false),
-                )),
-            )
+            let count = has_values_flags.count_trues()?;
+            CardinalityEstimation::exact(count).with_primary_clause(PrimaryCondition::from(
+                FieldCondition::new_is_empty(key.clone(), false),
+            ))
         }
     } else if let Some(is_null) = is_null {
         if *is_null {
-            let count = is_null_flags.count_trues();
-            Some(
-                CardinalityEstimation::exact(count).with_primary_clause(PrimaryCondition::from(
-                    FieldCondition::new_is_null(key.clone(), true),
-                )),
-            )
+            let count = is_null_flags.count_trues()?;
+            CardinalityEstimation::exact(count).with_primary_clause(PrimaryCondition::from(
+                FieldCondition::new_is_null(key.clone(), true),
+            ))
         } else {
-            let is_null_count = is_null_flags.count_trues();
+            let is_null_count = is_null_flags.count_trues()?;
             let estimated = total_point_count.saturating_sub(is_null_count);
 
-            Some(CardinalityEstimation {
+            CardinalityEstimation {
                 min: 0,
                 exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
                 max: estimated,
@@ -214,11 +215,13 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
                     key.clone(),
                     false,
                 ))],
-            })
+            }
         }
     } else {
-        None
-    }
+        return Ok(None);
+    };
+
+    Ok(Some(estimation))
 }
 
 pub(super) fn condition_checker<'a, N: NullIndexRead>(
@@ -273,8 +276,8 @@ impl<N: NullIndexRead> ConditionChecker for NullConditionChecker<'_, N> {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         let actual = match self.kind {
-            CheckKind::IsEmpty => self.null_index.values_is_empty(point_id),
-            CheckKind::IsNull => self.null_index.values_is_null(point_id),
+            CheckKind::IsEmpty => self.null_index.values_is_empty(point_id)?,
+            CheckKind::IsNull => self.null_index.values_is_null(point_id)?,
         };
         Ok(actual == self.expected)
     }

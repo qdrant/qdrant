@@ -306,7 +306,7 @@ impl ReadSegmentEntry for Segment {
         })
     }
 
-    fn info(&self) -> SegmentInfo {
+    fn info(&self) -> OperationResult<SegmentInfo> {
         self.with_view(|view| view.build_info(self.uuid, self.segment_type, self.appendable_flag))
     }
 
@@ -327,7 +327,7 @@ impl ReadSegmentEntry for Segment {
         self.vector_data.keys().cloned().collect()
     }
 
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry> {
         self.with_view(|view| {
             view.build_telemetry(
                 self.uuid,

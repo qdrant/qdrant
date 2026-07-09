@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
@@ -17,11 +18,12 @@ use crate::common::operation_error::OperationResult;
 
 /// Read-only counterpart of [`RoaringFlags`][1].
 ///
-/// Loads the persisted flags into an in-memory roaring bitmap on open and keeps
-/// the backing [`StoredBitSlice`] handle so [`LiveReload::live_reload`] can
-/// reopen it to read the points the writer appended, rather than re-scanning the
-/// whole file. There is no write path: no buffer, no [`BufferedDynamicFlags`][2],
-/// no [`DynamicStoredFlags`][3]. The retained `S` is the one [`Self::open`] was
+/// Materializes the persisted flags into an in-memory roaring bitmap on first
+/// use — *not* on open, unlike the writable variant — and keeps the backing
+/// [`StoredBitSlice`] handle so [`LiveReload::live_reload`] can reopen it to
+/// read the points the writer appended, rather than re-scanning the whole file.
+/// There is no write path: no buffer, no [`BufferedDynamicFlags`][2], no
+/// [`DynamicStoredFlags`][3]. The retained `S` is the one [`Self::open`] was
 /// called with, mirroring the other read-only field indexes, which likewise
 /// hold their backing storage across reloads.
 ///
@@ -30,8 +32,16 @@ use crate::common::operation_error::OperationResult;
 /// [3]: super::dynamic_stored_flags::DynamicStoredFlags
 pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     /// In-memory bitmap of true flags, materialized from the backing file on
-    /// open and patched in place on [`LiveReload::live_reload`].
-    bitmap: RoaringBitmap,
+    /// first access and patched in place on [`LiveReload::live_reload`].
+    ///
+    /// Lazy so that opening the flags reads only the (tiny) status file: a
+    /// segment open would otherwise scan every flags file end to end, which
+    /// defeats prefetching only the bytes a query actually needs.
+    ///
+    /// [`OnceLock`] rather than a plain cell because the index is queried
+    /// through `&self` from many threads. On a race both threads may build a
+    /// bitmap; the first to finish wins and the loser's copy is dropped.
+    bitmap: OnceLock<RoaringBitmap>,
     /// Backing bitslice. A reload reopens this handle so points the writer
     /// appended become readable, then reads only those new positions.
     storage: StoredBitSlice<S>,
@@ -74,8 +84,9 @@ fn read_status_len<S: UniversalRead>(
     Ok(Some(status.read_whole()?[0].len()))
 }
 
-/// Open the flags bitslice read-only for [`ReadOnlyRoaringFlags::open`]'s full
-/// scan into a fresh bitmap. `live_reload` instead reopens the retained handle.
+/// Open the flags bitslice read-only. The handle is retained, not read: the
+/// bitmap scan happens lazily in [`ReadOnlyRoaringFlags::bitmap`], and
+/// `live_reload` reopens this same handle.
 fn open_flags_storage<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
@@ -112,14 +123,14 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         Ok(true)
     }
 
-    /// Open persisted flags read-only and materialize them into an in-memory
-    /// roaring bitmap, retaining the bitslice handle for [`LiveReload`].
+    /// Open persisted flags read-only, retaining the bitslice handle for
+    /// [`Self::bitmap`] and [`LiveReload`].
     ///
     /// Read-only counterpart of [`RoaringFlags::new`][1]: every file is opened
     /// through `fs` non-writable, nothing is created and nothing is written.
     /// The logical length comes from the status file (the flags file is padded
-    /// past it), and the set positions from the flags file — shared with the
-    /// writable path via [`StoredBitSlice::iter_ones`].
+    /// past it). Unlike the writable path, the flags file itself is *not* read
+    /// here — see [`Self::bitmap`]; opening touches only the status file.
     ///
     /// Returns [`Ok(None)`] when the flag directory doesn't exist (the status
     /// file is absent), matching the read path's never-create contract.
@@ -134,19 +145,39 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             return Ok(None);
         };
 
-        // Build the bitmap from the set positions. The bitslice handle is kept
-        // for the live-reload path, which reopens it to read appended points.
+        // The bitslice handle is opened but not read: the bitmap is built on
+        // first use, and `live_reload` reopens this handle to see appended points.
         let storage = open_flags_storage::<S>(fs, directory)?;
-        let bitmap =
-            RoaringBitmap::from_sorted_iter(storage.iter_ones()?.map(|i| i as PointOffsetType))
-                .expect("iter_ones iterates in sorted order");
 
         Ok(Some(Self {
-            bitmap,
+            bitmap: OnceLock::new(),
             storage,
             len,
             directory: directory.to_path_buf(),
         }))
+    }
+
+    /// The in-memory bitmap of set positions, scanning the flags file to build
+    /// it on the first call and returning the cached one afterwards.
+    ///
+    /// This is the whole-file read that [`Self::open`] avoids. It is deferred
+    /// to the first query rather than paid per segment open — many segments
+    /// hold flag indexes (every payload field carries a null index) that no
+    /// query ever touches.
+    fn bitmap(&self) -> OperationResult<&RoaringBitmap> {
+        // `OnceLock::get_or_try_init` is still unstable, so build outside the
+        // lock and let `get_or_init` arbitrate. A racing thread's bitmap is
+        // simply dropped: both are built from the same bytes.
+        if let Some(bitmap) = self.bitmap.get() {
+            return Ok(bitmap);
+        }
+
+        let bitmap = RoaringBitmap::from_sorted_iter(
+            self.storage.iter_ones()?.map(|i| i as PointOffsetType),
+        )
+        .expect("iter_ones iterates in sorted order");
+
+        Ok(self.bitmap.get_or_init(|| bitmap))
     }
 }
 
@@ -165,7 +196,12 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
     ///
     /// `hw_counter` is unused: the per-position reads go through the reopened
     /// [`StoredBitSlice`], which takes no hardware counter — mirroring
-    /// [`Self::open`], which also doesn't account its scan.
+    /// [`Self::bitmap`], which also doesn't account its scan.
+    ///
+    /// While the bitmap is still unmaterialized there is nothing to patch: the
+    /// eventual scan reads the current on-disk flags, which the writer has
+    /// already brought up to date (it clears a retired point's flag). The
+    /// bitslice is still reopened, so that scan sees the grown file.
     fn live_reload(
         &mut self,
         fs: &S::Fs,
@@ -173,8 +209,10 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
         new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for &point in deleted_points {
-            self.bitmap.remove(point);
+        if let Some(bitmap) = self.bitmap.get_mut() {
+            for &point in deleted_points {
+                bitmap.remove(point);
+            }
         }
 
         // Nothing appended → no on-disk delta to fetch, skip all I/O.
@@ -185,14 +223,14 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
         // Live reload is append-only, so we only need to process the new range of
         // the bitslice.
         self.storage.reopen()?;
-        if let Some(new_range) = new_points.range_u64() {
+        if let (Some(bitmap), Some(new_range)) = (self.bitmap.get_mut(), new_points.range_u64()) {
             let start = new_range.start as usize;
             let bitslice = self.storage.read_bit_range(new_range)?;
             for point in bitslice
                 .iter_ones()
                 .map(|idx| (idx + start) as PointOffsetType)
             {
-                self.bitmap.insert(point);
+                bitmap.insert(point);
             }
         }
 
@@ -211,8 +249,12 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
         self.len
     }
 
-    fn get_bitmap(&self) -> &RoaringBitmap {
-        &self.bitmap
+    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap> {
+        self.bitmap()
+    }
+
+    fn bitmap_if_materialized(&self) -> Option<&RoaringBitmap> {
+        self.bitmap.get()
     }
 
     fn files(&self) -> Vec<PathBuf> {

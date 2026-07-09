@@ -148,8 +148,8 @@ impl FullTextIndexRead for FullTextIndex {
 }
 
 impl PayloadFieldIndexRead for FullTextIndex {
-    fn count_indexed_points(&self) -> usize {
-        FullTextIndexRead::points_count(self)
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(FullTextIndexRead::points_count(self))
     }
 
     fn filter<'a>(

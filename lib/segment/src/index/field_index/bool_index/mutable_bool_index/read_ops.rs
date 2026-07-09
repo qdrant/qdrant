@@ -24,8 +24,8 @@ impl BoolIndexRead for MutableBoolIndex {
         &self.storage.falses_flags
     }
 
-    fn indexed_count(&self) -> usize {
-        self.indexed_count
+    fn indexed_count(&self) -> OperationResult<usize> {
+        Ok(self.indexed_count)
     }
 
     fn telemetry_index_type(&self) -> &'static str {
@@ -34,17 +34,17 @@ impl BoolIndexRead for MutableBoolIndex {
 
     // Override the default impls to use precomputed counts maintained by the
     // write path, avoiding a bitmap scan on every read.
-    fn trues_count(&self) -> usize {
-        self.trues_count
+    fn trues_count(&self) -> OperationResult<usize> {
+        Ok(self.trues_count)
     }
 
-    fn falses_count(&self) -> usize {
-        self.falses_count
+    fn falses_count(&self) -> OperationResult<usize> {
+        Ok(self.falses_count)
     }
 }
 
 impl PayloadFieldIndexRead for MutableBoolIndex {
-    fn count_indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> OperationResult<usize> {
         self.indexed_count()
     }
 
@@ -53,7 +53,7 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        Ok(read_ops::filter(self, condition, hw_counter))
+        read_ops::filter(self, condition, hw_counter)
     }
 
     fn estimate_cardinality(
@@ -61,7 +61,7 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(read_ops::estimate_cardinality(self, condition, hw_counter))
+        read_ops::estimate_cardinality(self, condition, hw_counter)
     }
 
     fn for_each_payload_block(

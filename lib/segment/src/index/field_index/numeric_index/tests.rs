@@ -875,7 +875,7 @@ fn test_remove_reopen() {
     let index = open_index_from_disk(temp_dir.path(), IndexType::RamMmap, &deleted);
 
     // Deletions reflected in the indexed-point count.
-    assert_eq!(index.inner().count_indexed_points(), 2);
+    assert_eq!(index.inner().count_indexed_points().unwrap(), 2);
 
     // Range query covering all four original values returns only the live
     // ones; deleted points must be filtered out by the immutable index.
