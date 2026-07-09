@@ -143,17 +143,17 @@ impl Collection {
                 }
 
                 ShardTransferMethod::ReshardingStreamRecords => {
-                    let resharding_direction =
-                        self.resharding_state().await.map(|state| state.direction);
+                    let direction = self.resharding_state().await.map(|state| state.direction);
 
-                    match resharding_direction {
-                        Some(ReshardingDirection::Up) => ReplicaState::Resharding,
-                        Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
-                        None => {
-                            return Err(CollectionError::bad_input(
-                                "can't start resharding transfer, because resharding is not in progress",
-                            ));
-                        }
+                    let Some(direction) = direction else {
+                        return Err(CollectionError::bad_input(
+                            "can't start resharding transfer, because resharding is not in progress",
+                        ));
+                    };
+
+                    match direction {
+                        ReshardingDirection::Up => ReplicaState::Resharding,
+                        ReshardingDirection::Down => ReplicaState::ReshardingScaleDown,
                     }
                 }
             };

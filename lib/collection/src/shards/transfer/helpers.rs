@@ -79,7 +79,7 @@ where
 ///
 /// For resharding transfers this also checks:
 /// 1. If the source and target shards are different
-/// 2. If the source and target shardsd share the same shard key
+/// 2. If the source and target shards share the same shard key
 ///
 /// If validation fails, return `BadRequest` error.
 pub fn validate_transfer(
