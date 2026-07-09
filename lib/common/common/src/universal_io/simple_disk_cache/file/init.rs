@@ -1,5 +1,6 @@
 //! Lazy first-use initialization of a [`DiskCache`]'s [`State`].
 
+use std::ops::Range;
 use std::sync::atomic::Ordering;
 
 use super::{DiskCache, State};
@@ -57,6 +58,9 @@ where
             State::OpenPrefill { pipeline } => self.init_from_open_prefill(pipeline)?,
             State::ReopenPrefill { pipeline, local } => {
                 self.init_from_reopen_prefill(pipeline, local)?
+            }
+            State::PartialPrefill { pipeline, len } => {
+                self.init_from_partial_prefill(pipeline, len)?
             }
             State::Ready { .. } => {
                 unreachable!("We just observed `!ready` while holding the mutex lock")
@@ -119,6 +123,33 @@ where
             }
             // There is nothing to apply.
             // TODO: double check that the remote didn't shrink?
+            Some(_) | None => {}
+        }
+
+        Ok((pipeline.into_inner(), local))
+    }
+
+    /// Resolve a [`State::PartialPrefill`] read: size the mirror from `len` and
+    /// write only the fetched (block-aligned) range; the remainder faults in
+    /// lazily on later reads. See [`Populate::Partial`].
+    ///
+    /// [`Populate::Partial`]: crate::universal_io::Populate::Partial
+    pub(super) fn init_from_partial_prefill(
+        &self,
+        mut pipeline: OwnedPipeline<R, Range<u32>>,
+        len: u64,
+    ) -> Result<(R, LocalState)> {
+        let local = LocalState::new(&self.local_path, len, self.open_options)?;
+
+        match pipeline.wait()? {
+            Some((blocks_range, bytes)) if !bytes.is_empty() => {
+                // SAFETY: `start` is block-aligned and `bytes` covers
+                // `blocks_range` exactly (up to EOF), and the remote is
+                // immutable, so the mmap range is filled once with correct data.
+                unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
+            }
+            // Nothing was scheduled (empty range) or the read came back empty:
+            // leave the mirror empty and fault blocks in lazily.
             Some(_) | None => {}
         }
 

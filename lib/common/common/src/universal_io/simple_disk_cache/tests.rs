@@ -81,6 +81,31 @@ impl Scenario {
         .unwrap()
     }
 
+    /// Open with [`Populate::Partial`] over `range`, prefetching just that
+    /// (block-aligned) byte range at open.
+    fn open_partial<R>(&self, range: std::ops::Range<u64>) -> DiskCache<R>
+    where
+        R: DiskCacheRemote,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    {
+        let fs = DiskCacheFs::<R>::from_context(DiskCacheFsContext {
+            config: self.config.clone(),
+            remote: Default::default(),
+        })
+        .unwrap();
+        fs.open(
+            &self.remote_path,
+            OpenOptions {
+                writeable: false,
+                populate: Populate::Partial(ReadRange::new(range.start, range.end - range.start)),
+                need_sequential: false,
+                advice: AdviceSetting::Global,
+            },
+            Default::default(),
+        )
+        .unwrap()
+    }
+
     /// Append `additional_bytes` bytes to the remote file in-place.
     /// Returns the full new remote contents.
     fn grow_remote(&mut self, additional_bytes: usize) -> Vec<u8> {
@@ -379,5 +404,86 @@ mod tests_mod {
             })
             .unwrap();
         assert_eq!(&*bytes, &new_data[BLOCK_SIZE..BLOCK_SIZE * 2]);
+    }
+
+    /// `Populate::Partial` prefetches only the requested (block-aligned) range;
+    /// blocks outside it stay unfetched until read, then fault in lazily.
+    #[test]
+    fn partial_populate_fetches_only_requested_range() {
+        // 4 blocks: 0, 1, 2, and a partial tail block 3.
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        // Request blocks 0 and 1 (range spills 50 bytes into block 1).
+        let file = scn.open_partial::<R>(0..(BLOCK_SIZE as u64 + 50));
+
+        // The mirror is materialized lazily; nothing exists before the first read.
+        let expected_local = scn.expected_local_path();
+        assert!(!expected_local.exists());
+        assert!(!file.is_ready());
+
+        // A read within the prefetched range is served from the local mirror.
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 10,
+                length: 20,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, &scn.data[10..30]);
+
+        // The mirror now exists, and exactly the requested blocks {0, 1} are
+        // cached — not the whole file, proving the populate was partial.
+        assert!(expected_local.exists());
+        {
+            let local = file.state().unwrap().local;
+            assert!(!local.fully_populated.load(Ordering::Acquire));
+            assert!(local.fetched.lock().contains_range(0..2));
+            assert!(!local.fetched.lock().contains(2));
+            assert!(!local.fetched.lock().contains(3));
+        }
+
+        // A read outside the prefetched range faults its block in on demand.
+        let start = (BLOCK_SIZE * 2) as u64;
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: start,
+                length: 30,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, &scn.data[start as usize..start as usize + 30]);
+        assert!(file.state().unwrap().local.fetched.lock().contains(2));
+    }
+
+    /// An empty `Populate::Partial` range prefetches nothing but still opens a
+    /// correctly-sized mirror that serves reads by faulting blocks in lazily.
+    #[test]
+    fn partial_populate_empty_range_is_lazy() {
+        let scn = Scenario::new(BLOCK_SIZE * 2 + 100);
+        let file = scn.open_partial::<R>(10..10);
+
+        // Nothing prefetched, so the first read must fault its block in.
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 0,
+                length: 16,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, &scn.data[0..16]);
+        assert_eq!(file.len::<u8>().unwrap(), scn.data.len() as u64);
+    }
+
+    /// A `Populate::Partial` range starting past EOF has nothing valid to
+    /// prefetch; the mirror is still sized correctly and serves reads lazily.
+    #[test]
+    fn partial_populate_range_past_eof_is_lazy() {
+        let scn = Scenario::new(100);
+        let file = scn.open_partial::<R>(BLOCK_SIZE as u64 * 4..BLOCK_SIZE as u64 * 5);
+
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 0,
+                length: 100,
+            })
+            .unwrap();
+        assert_eq!(&*bytes, &scn.data[..]);
+        assert_eq!(file.len::<u8>().unwrap(), 100);
     }
 }
