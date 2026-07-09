@@ -527,8 +527,11 @@ mod tests {
             self.append_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut guard = self.store.lock().unwrap();
-            let object = guard.get_or_insert_with(Vec::new);
-            let result = if object.len() as u64 == offset {
+            // Validate the offset before materializing anything: a rejected
+            // append must not leave an empty object behind.
+            let current_len = guard.as_ref().map_or(0, |object| object.len() as u64);
+            let result = if current_len == offset {
+                let object = guard.get_or_insert_with(Vec::new);
                 object.extend_from_slice(&data);
                 Ok(object.len() as u64)
             } else {
@@ -549,6 +552,13 @@ mod tests {
     fn append_creates_missing_object() {
         let source = MutableMockSource::default();
         let mut file = mutable_file(&source);
+
+        // A rejected stale append must not materialize the object.
+        let err = BridgeRuntime::global()
+            .block_on(source.append(Path::new("obj"), 5, Bytes::from_static(b"x")))
+            .unwrap_err();
+        assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
+        assert!(source.content().is_none());
 
         assert_eq!(file.append(b"abc".as_slice()).unwrap(), 0);
         assert_eq!(file.append(b"de".as_slice()).unwrap(), 3);
