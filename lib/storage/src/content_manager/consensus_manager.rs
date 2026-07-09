@@ -50,6 +50,16 @@ pub mod prelude {
 /// Allow us updating our peer metadata once every 60 seconds
 const CONSENSUS_PEER_METADATA_UPDATE_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Whether the consensus loop should keep running after handling an event.
+#[must_use]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsensusRun {
+    /// Keep the consensus loop running.
+    Continue,
+    /// Exit the consensus loop and stop consensus (e.g. this peer was removed from the cluster).
+    Stop,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotData {
     pub collections_data: CollectionsSnapshot,
@@ -291,13 +301,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// 3. Report to the listeners
     ///
     /// Return if consensus should be stopped.
-    pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
-        let mut stop_consensus: bool = false;
+    pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<ConsensusRun, StorageError> {
+        let mut stop_consensus = ConsensusRun::Continue;
 
         let report = match self.remove_peer(peer_id) {
             Ok(()) => {
                 if self.this_peer_id() == peer_id {
-                    stop_consensus = true;
+                    stop_consensus = ConsensusRun::Stop;
                 }
                 Ok(true)
             }
@@ -334,9 +344,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     /// Process the consensus operation, which are already committed.
     /// If return Error - consensus should be stopped with error.
-    /// Return `true` if consensus should be stopped (peer removed)
-    /// Return `false` if everything is ok.
-    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
+    /// Return [`ConsensusRun::Stop`] if consensus should be stopped (peer removed).
+    pub fn apply_entries<T: Storage>(
+        &self,
+        raw_node: &mut RawNode<T>,
+    ) -> anyhow::Result<ConsensusRun> {
         use raft::eraftpb::EntryType;
 
         self.persistent
@@ -355,9 +367,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .lock()
                 .entry(entry_index)
                 .context(format!("Failed to get entry at index {entry_index}"))?;
-            let stop_consensus: bool = if entry.data.is_empty() {
+            let stop_consensus = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
-                false
+                ConsensusRun::Continue
             } else {
                 match entry.get_entry_type() {
                     EntryType::EntryNormal => {
@@ -368,7 +380,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                                     "Successfully applied consensus operation entry. Index: {}. Result: {result}",
                                     entry.index,
                                 );
-                                false
+                                ConsensusRun::Continue
                             }
                             Err(err @ StorageError::ServiceError { .. }) => {
                                 // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
@@ -380,7 +392,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                                     "Failed to apply collection meta operation entry with user error: {err}",
                                 );
                                 // This is a user error so we can safely consider it applied but with error as it was incorrect.
-                                false
+                                ConsensusRun::Continue
                             }
                         }
                     }
@@ -391,7 +403,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         log::debug!(
                             "Successfully applied configuration change entry. Index: {}. Stop consensus: {}",
                             entry.index,
-                            stop_consensus
+                            stop_consensus == ConsensusRun::Stop,
                         );
                         stop_consensus
                     }
@@ -400,7 +412,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     }
                 }
             };
-            if stop_consensus {
+            if stop_consensus == ConsensusRun::Stop {
                 return Ok(stop_consensus);
             }
             self.persistent
@@ -408,7 +420,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
         }
-        Ok(false) // do not stop consensus
+        Ok(ConsensusRun::Continue)
     }
 
     /// Process the consensus operation, which are already committed.
@@ -420,7 +432,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         &self,
         entry: &RaftEntry,
         raw_node: &mut RawNode<T>,
-    ) -> Result<bool, StorageError> {
+    ) -> Result<ConsensusRun, StorageError> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
         let conf_state = raw_node.apply_conf_change(&change)?;
@@ -429,7 +441,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .write()
             .apply_state_update(|state| state.conf_state = conf_state)?;
 
-        let mut stop_consensus: bool = false;
+        let mut stop_consensus = ConsensusRun::Continue;
         for single_change in &change.changes {
             match single_change.change_type() {
                 ConfChangeType::AddNode => {
@@ -460,7 +472,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
-                    stop_consensus |= self.on_peer_remove(single_change.node_id)?;
+                    if self.on_peer_remove(single_change.node_id)? == ConsensusRun::Stop {
+                        stop_consensus = ConsensusRun::Stop;
+                    }
                 }
                 ConfChangeType::AddLearnerNode => {
                     log::debug!("Adding learner node {}", single_change.node_id);

@@ -22,7 +22,7 @@ use common::cpu::linux_high_thread_priority;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{INVALID_ID, SoftState, StateRole};
-use storage::content_manager::consensus_manager::ConsensusStateRef;
+use storage::content_manager::consensus_manager::{ConsensusRun, ConsensusStateRef};
 use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Handle;
@@ -55,6 +55,26 @@ const CONSENSUS_RESTART_BACKOFF_RESET_UPTIME: Duration = Duration::from_secs(300
 pub enum Message {
     FromClient(ConsensusOperations),
     FromPeer(Box<RaftMessage>),
+}
+
+/// Whether a pass over raft's ready state updated any on-disk Raft state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RaftActivity {
+    /// No on-disk Raft state was updated during this pass (e.g. only messages were sent).
+    Idle,
+    /// Raft state changed during this pass.
+    StateChanged,
+}
+
+impl RaftActivity {
+    /// Idle only if both passes were idle.
+    fn combine(self, other: RaftActivity) -> RaftActivity {
+        if self == RaftActivity::Idle && other == RaftActivity::Idle {
+            RaftActivity::Idle
+        } else {
+            RaftActivity::StateChanged
+        }
+    }
 }
 
 /// Aka Consensus Thread
@@ -640,15 +660,15 @@ impl Consensus {
             }
 
             // Append new entries to the WAL, apply committed entries, etc...
-            let (stop_consensus, is_idle) = self.on_ready()?;
+            let (stop_consensus, activity) = self.on_ready()?;
 
-            if stop_consensus {
+            if stop_consensus == ConsensusRun::Stop {
                 return Ok(());
             }
 
             // If we only sent outgoing Raft messages, but did not change any state during `on_ready`,
             // we consider Raft node to be "idle"
-            if is_idle {
+            if activity == RaftActivity::Idle {
                 // If current node is the only peer in the cluster, or if we received new Raft messages
                 // (i.e., we are still connected to Raft leader/peers), and Raft node is idle,
                 // count "idle cycle"
@@ -985,13 +1005,12 @@ impl Consensus {
             .map(|(id, _)| *id)
     }
 
-    /// Returns two boolean flags: `stop_consensus` and `is_idle`.
-    /// If `stop_consensus` is true, then we should exit consensus loop and stop consensus.
-    /// If `is_idle` is true, it means that no on-disk state was updated during this `on_ready` call.
-    fn on_ready(&mut self) -> anyhow::Result<(bool, bool)> {
+    /// Returns whether the consensus loop should stop, and whether any on-disk state was updated
+    /// during this `on_ready` call.
+    fn on_ready(&mut self) -> anyhow::Result<(ConsensusRun, RaftActivity)> {
         if !self.node.has_ready() {
             // No updates to process
-            return Ok((false, true));
+            return Ok((ConsensusRun::Continue, RaftActivity::Idle));
         }
 
         self.store().record_consensus_working();
@@ -999,12 +1018,12 @@ impl Consensus {
         // Get the `Ready` with `RawNode::ready` interface.
         let ready = self.node.ready();
 
-        let (Some(light_ready), role_change, is_idle_ready) = self.process_ready(ready)? else {
+        let (Some(light_ready), role_change, activity_ready) = self.process_ready(ready)? else {
             // No light ready, so we need to stop consensus.
-            return Ok((true, false));
+            return Ok((ConsensusRun::Stop, RaftActivity::StateChanged));
         };
 
-        let (stop_consensus, is_idle_light_ready) = self.process_light_ready(light_ready)?;
+        let (stop_consensus, activity_light_ready) = self.process_light_ready(light_ready)?;
 
         if let Some(role_change) = role_change {
             self.process_role_change(role_change);
@@ -1012,7 +1031,7 @@ impl Consensus {
 
         self.store().compact_wal(self.config.compact_wal_entries)?;
 
-        Ok((stop_consensus, is_idle_ready && is_idle_light_ready))
+        Ok((stop_consensus, activity_ready.combine(activity_light_ready)))
     }
 
     fn process_role_change(&self, role_change: StateRole) {
@@ -1040,7 +1059,7 @@ impl Consensus {
     fn process_ready(
         &mut self,
         mut ready: raft::Ready,
-    ) -> anyhow::Result<(Option<raft::LightReady>, Option<StateRole>, bool)> {
+    ) -> anyhow::Result<(Option<raft::LightReady>, Option<StateRole>, RaftActivity)> {
         let store = self.store();
 
         // We consider Raft node to be idle if we don't change Raft state during `process_ready`.
@@ -1048,7 +1067,7 @@ impl Consensus {
         // E.g.:
         // - sending messages does not change Raft state, so it's considered idle
         // - but anything else does, and so is not idle
-        let mut is_idle = true;
+        let mut activity = RaftActivity::Idle;
 
         if !ready.messages().is_empty() {
             log::trace!("Handling {} messages", ready.messages().len());
@@ -1059,7 +1078,7 @@ impl Consensus {
             // This is a snapshot, we need to apply the snapshot at first.
             let snapshot = ready.snapshot().clone();
             log::debug!("Applying snapshot {:?}", snapshot.get_metadata());
-            is_idle = false;
+            activity = RaftActivity::StateChanged;
 
             if let Err(err) = store.apply_snapshot(&snapshot)? {
                 log::error!("Failed to apply snapshot: {err}");
@@ -1069,7 +1088,7 @@ impl Consensus {
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
-            is_idle = false;
+            activity = RaftActivity::StateChanged;
 
             store
                 .append_entries(ready.take_entries())
@@ -1079,7 +1098,7 @@ impl Consensus {
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
             log::debug!("Changing hard state. New hard state: {hs:?}");
-            is_idle = false;
+            activity = RaftActivity::StateChanged;
 
             store
                 .set_hard_state(hs.clone())
@@ -1090,7 +1109,7 @@ impl Consensus {
 
         if let Some(ss) = ready.ss() {
             log::debug!("Changing soft state. New soft state: {ss:?}");
-            is_idle = false;
+            activity = RaftActivity::StateChanged;
 
             self.handle_soft_state(ss);
         }
@@ -1105,19 +1124,21 @@ impl Consensus {
         }
 
         let committed_entries = ready.take_committed_entries();
-        is_idle &= committed_entries.is_empty();
+        if !committed_entries.is_empty() {
+            activity = RaftActivity::StateChanged;
+        }
 
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
         let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
             .context("Failed to handle committed entries")?;
 
-        if stop_consensus {
-            return Ok((None, None, false));
+        if stop_consensus == ConsensusRun::Stop {
+            return Ok((None, None, RaftActivity::StateChanged));
         }
 
         // Advance the Raft.
         let light_rd = self.node.advance(ready);
-        Ok((Some(light_rd), role_change, is_idle))
+        Ok((Some(light_rd), role_change, activity))
     }
 
     /// Tries to process raft's light ready state.
@@ -1125,11 +1146,11 @@ impl Consensus {
     /// The order of operations in this functions is critical, changing it might lead to bugs.
     ///
     /// Returns with err on failure to apply the state.
-    /// If it receives message to stop the consensus - returns `true`, otherwise `false`.
+    /// If it receives message to stop the consensus - returns [`ConsensusRun::Stop`].
     fn process_light_ready(
         &mut self,
         mut light_rd: raft::LightReady,
-    ) -> anyhow::Result<(bool, bool)> {
+    ) -> anyhow::Result<(ConsensusRun, RaftActivity)> {
         let store = self.store();
 
         // We consider Raft node to be idle, if we don't change Raft state during `process_light_ready`.
@@ -1137,12 +1158,12 @@ impl Consensus {
         // E.g.:
         // - sending messages does not change Raft state, so it's considered idle
         // - but anything else does, and so is not idle
-        let mut is_idle = true;
+        let mut activity = RaftActivity::Idle;
 
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
             log::debug!("Updating commit index to {commit}");
-            is_idle = false;
+            activity = RaftActivity::StateChanged;
 
             store
                 .set_commit_index(commit)
@@ -1152,7 +1173,9 @@ impl Consensus {
         self.send_messages(light_rd.take_messages());
 
         let committed_entries = light_rd.take_committed_entries();
-        is_idle &= committed_entries.is_empty();
+        if !committed_entries.is_empty() {
+            activity = RaftActivity::StateChanged;
+        }
 
         // Apply all committed entries.
         let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
@@ -1160,7 +1183,7 @@ impl Consensus {
 
         // Advance the apply index.
         self.node.advance_apply();
-        Ok((stop_consensus, is_idle))
+        Ok((stop_consensus, activity))
     }
 
     fn store(&self) -> ConsensusStateRef {
@@ -1199,14 +1222,13 @@ enum TryAddOriginError {
 }
 
 /// This function actually applies the committed entries to the state machine.
-/// Return `true` if consensus should be stopped.
-/// `false` otherwise.
+/// Return [`ConsensusRun::Stop`] if consensus should be stopped.
 fn handle_committed_entries(
     entries: &[Entry],
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
-) -> anyhow::Result<bool> {
-    let mut stop_consensus = false;
+) -> anyhow::Result<ConsensusRun> {
+    let mut stop_consensus = ConsensusRun::Continue;
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
         stop_consensus = state.apply_entries(raw_node)?;
