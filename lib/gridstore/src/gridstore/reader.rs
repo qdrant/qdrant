@@ -39,20 +39,31 @@ enum ReaderVariant<V, S: UniversalRead> {
 }
 
 impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
+    /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads.
+    ///
+    /// Reads the config first to select the operating mode, like `open`: the mode decides which
+    /// files exist, and scheduling a prefetch for a missing file fails immediately.
     pub fn preopen<Fs: CachedReadFs<File = S>>(
         fs: &Fs,
         base_path: PathBuf,
         populate: Populate,
     ) -> Result<()> {
-        // schedule config file
+        let config = read_config(fs, &base_path)?;
+
+        // schedule config file, so the config read in `open` is served from the prefetch pool
         let config_path = base_path.join(CONFIG_FILENAME);
         fs.schedule_prefetch(&config_path, None, None)?;
 
-        // schedule tracker
-        Tracker::<S>::preopen(fs, &base_path, populate)?;
+        match config.mode {
+            Mode::Dynamic => {
+                // schedule tracker
+                Tracker::<S>::preopen(fs, &base_path, populate)?;
 
-        // schedule pages
-        Pages::preopen(fs, &base_path, populate)
+                // schedule pages
+                Pages::preopen(fs, &base_path, populate)
+            }
+            Mode::AppendOnly => AppendOnlyGridstoreReader::<V, S>::preopen(fs, &base_path),
+        }
     }
 
     /// Open an existing read-only storage at the given path.

@@ -1742,6 +1742,62 @@ fn test_batch_read_honors_pending_unset_of_flushed_value() {
     );
 }
 
+/// Preopen must schedule every file `open` reads through the backend, in both operating modes.
+///
+/// Merely opening after a preopen proves nothing: `CachedFs` falls back to a regular open for
+/// paths that were never scheduled. Instead, delete the backend-read files after the preopen —
+/// the open can then only succeed if it is served from the prefetch pool.
+#[rstest]
+fn test_preopen_schedules_files_for_open(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+    use common::universal_io::{
+        CachedFs, CachedReadFs, Populate, ReadOnly, UniversalRead, UniversalReadFileOps,
+    };
+
+    let hw_counter = HardwareCounterCell::new();
+
+    // Build a storage, write one value, flush, then drop it.
+    let (dir, mut storage) = empty_storage_mode(mode);
+    let payload = minimal_payload();
+    storage
+        .put_value(0, &payload, hw_counter.ref_payload_io_write_counter())
+        .unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Same order as the segment open path: snapshot the file listing, preopen, then open.
+    type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let mut cached_fs = CachedFs::new(fs, dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    GridstoreReader::<Payload, ReadOnly<MmapFile>>::preopen(
+        &cached_fs,
+        dir.path().to_path_buf(),
+        Populate::No,
+    )
+    .unwrap();
+
+    // Delete everything `open` reads through the backend. The append-only tracker is read
+    // directly from disk, not through the backend, so it must stay.
+    let backend_read_files: &[&str] = match mode {
+        Mode::Dynamic => &["config.json", "tracker.dat", "page_0.dat"],
+        Mode::AppendOnly => &["config.json", "append_only_page_0.dat"],
+    };
+    for file in backend_read_files {
+        fs::remove_file(dir.path().join(file)).unwrap();
+    }
+
+    let reader = GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(
+        &cached_fs,
+        dir.path().to_path_buf(),
+        Populate::No,
+    )
+    .unwrap();
+    assert_eq!(
+        reader.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(payload),
+    );
+}
+
 /// Opening a [`GridstoreReader`] must not require a writable backend: a reader
 /// only reads. Backing it with the write-enforced `ReadOnly<MmapFile>` (which
 /// `debug_assert!`s every open is non-writable) only succeeds if the reader

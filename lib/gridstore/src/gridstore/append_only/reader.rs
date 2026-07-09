@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs, UserData};
 
 use super::page::AppendOnlyPage;
 use super::validate_consistency;
@@ -34,6 +34,16 @@ pub(crate) struct AppendOnlyGridstoreReader<V, S: UniversalRead> {
 }
 
 impl<V: Blob, S: UniversalRead> AppendOnlyGridstoreReader<V, S> {
+    /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads through the
+    /// universal IO backend, which is only the page file.
+    ///
+    /// The tracker file is read directly, not through the backend, so there is nothing to
+    /// schedule for it. The config file is scheduled by the mode dispatching reader, which reads
+    /// it first to select the operating mode.
+    pub(crate) fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, base_path: &Path) -> Result<()> {
+        AppendOnlyPage::<S>::preopen(fs, base_path)
+    }
+
     /// Open an existing read-only storage at the given path, with the already read config.
     pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
