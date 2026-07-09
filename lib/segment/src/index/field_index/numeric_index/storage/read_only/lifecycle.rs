@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use gridstore::Blob;
 
 use super::super::super::Encodable;
@@ -19,6 +19,35 @@ impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, S: Univer
 where
     Vec<T>: Blob,
 {
+    /// Schedule background prefetch for the appendable (Gridstore) format.
+    ///
+    /// Returns `false` when nothing was scheduled (directory absent).
+    pub fn preopen_appendable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<bool> {
+        ReadOnlyAppendableNumericIndex::preopen(fs, dir)
+    }
+
+    /// Schedule background prefetch for the immutable (mmap) format.
+    ///
+    /// Returns `false` when the on-disk index doesn't exist.
+    pub fn preopen_immutable(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        is_on_disk: bool,
+    ) -> OperationResult<bool> {
+        let effective_is_on_disk =
+            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+
+        let populate = match effective_is_on_disk {
+            true => Populate::No,
+            false => Populate::PreferBackground,
+        };
+
+        OnDiskNumericIndex::<T, S>::preopen(fs, path, populate)
+    }
+
     /// Read-only mirror of [`NumericIndexInner::new_gridstore`][1]: open the
     /// appendable (Gridstore-backed) numeric index read-only, threading every
     /// file open through the filesystem handle `fs`.
