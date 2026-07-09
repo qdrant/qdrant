@@ -40,23 +40,17 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
         Ok(config)
     }
 
-    /// Read-only mirror of `StructPayloadIndex::open`: loads the payload config
-    /// and each persisted field index through `fs` (never builds/migrates/writes).
+    /// Read-only mirror of `StructPayloadIndex::open`: loads each persisted field
+    /// index through `fs` (never builds/migrates/writes). `config` is the one
+    /// [`preopen`](Self::preopen) already read.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         payload: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageReadEnum<S>>>>,
         path: &Path,
+        config: PayloadConfig,
     ) -> OperationResult<Self> {
-        let config_path = PayloadConfig::get_config_path(path);
-        let config = PayloadConfig::load_universal(fs, &config_path)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Read-only payload index missing config at {}",
-                config_path.display()
-            ))
-        })?;
-
         let field_indexes = {
             let id_tracker = id_tracker.borrow();
             let total_point_count = id_tracker.total_point_count();
