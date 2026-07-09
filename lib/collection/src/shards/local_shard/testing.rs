@@ -1,4 +1,5 @@
 use segment::id_tracker::IdTracker;
+use shard::segment_holder::FlushMode;
 
 use crate::shards::local_shard::LocalShard;
 
@@ -15,6 +16,6 @@ impl LocalShard {
 
     pub fn full_flush(&self) {
         let segments = self.segments.read();
-        segments.flush_all(true, true).unwrap();
+        segments.flush_all(FlushMode::Sync, true).unwrap();
     }
 }

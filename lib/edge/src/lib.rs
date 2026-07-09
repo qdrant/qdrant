@@ -41,8 +41,8 @@ use segment::entry::ReadSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations;
-use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::{FlushMode, SegmentHolder};
 use shard::segment_manifest::SegmentsManifest;
 use shard::wal::SerdeWal;
 use uuid::Uuid;
@@ -245,7 +245,7 @@ impl EdgeShard {
         self.segments
             .try_read()
             .expect("segment holder lock acquired")
-            .flush_all(true, true)
+            .flush_all(FlushMode::Sync, true)
             .expect("segments flushed");
     }
 }

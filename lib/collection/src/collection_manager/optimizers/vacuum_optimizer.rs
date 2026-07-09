@@ -32,6 +32,7 @@ mod tests {
     use shard::locked_segment::LockedSegment;
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::segment_optimizer::SegmentOptimizer;
+    use shard::segment_holder::FlushMode;
     use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
@@ -242,7 +243,7 @@ mod tests {
         drop(holder_guard);
         locked_holder
             .read()
-            .flush_all(true, true)
+            .flush_all(FlushMode::Sync, true)
             .expect("failed to flush segment holder");
 
         // Check old segment data is removed from disk

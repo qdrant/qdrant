@@ -58,6 +58,7 @@ use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimization};
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
+use shard::segment_holder::FlushMode;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
@@ -897,7 +898,7 @@ impl LocalShard {
             // Force a flush after re-applying WAL operations, to ensure we maintain on-disk data
             // consistency, if we happened to only apply *past* operations to a segment with newer
             // version.
-            segments.flush_all(true, true)?;
+            segments.flush_all(FlushMode::Sync, true)?;
         }
 
         bar.finish();
