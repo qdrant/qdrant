@@ -6,7 +6,7 @@ use common::sorted_slice::SortedSlice;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
 };
 use roaring::RoaringBitmap;
 
@@ -89,6 +89,29 @@ fn open_flags_storage<S: UniversalRead>(
 }
 
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
+    /// Schedule background prefetch of the two files [`open`](Self::open) reads,
+    /// with the same open options it will use, so the prefetch pool can serve
+    /// them.
+    ///
+    /// Returns whether the flag directory exists, probed — as in [`Self::open`]
+    /// — through the status file: `false` means [`Self::open`] would return
+    /// [`Ok(None)`], and the flags file is then not scheduled.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, directory: &Path) -> OperationResult<bool> {
+        // Status file. A missing one means the index isn't present on disk.
+        if fs
+            .schedule_prefetch(&status_file(directory), Some(READ_ONLY_OPTIONS), None)
+            .ok_not_found()?
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        // Flags bitslice. `open` scans it end to end to build the bitmap.
+        fs.schedule_prefetch(&directory.join(FLAGS_FILE), Some(READ_ONLY_OPTIONS), None)?;
+
+        Ok(true)
+    }
+
     /// Open persisted flags read-only and materialize them into an in-memory
     /// roaring bitmap, retaining the bitslice handle for [`LiveReload`].
     ///

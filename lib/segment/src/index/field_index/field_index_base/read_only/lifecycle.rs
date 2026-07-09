@@ -143,11 +143,15 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => false,
                 ReadMode::Immutable { is_on_disk: _ } => false,
             },
-            // Bool and null are roaring-flag backed: a single read-only `open`
+            // Bool and null are roaring-flag backed: a single read-only `preopen`
             // serves both modes (neither consumes the immutable-only
             // `is_on_disk` / `deleted_points`).
-            PayloadIndexType::BoolIndex => false,
-            PayloadIndexType::NullIndex => false,
+            PayloadIndexType::BoolIndex => {
+                ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field))?
+            }
+            PayloadIndexType::NullIndex => {
+                ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field))?
+            }
         };
 
         Ok(preopened)

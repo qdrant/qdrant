@@ -70,7 +70,9 @@ mod tests {
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::sorted_slice::SortedSlice;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{
+        CachedFs, CachedReadFs, MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps,
+    };
     use itertools::Itertools as _;
     use serde_json::json;
     use tempfile::TempDir;
@@ -306,5 +308,79 @@ mod tests {
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
         assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
+    }
+
+    /// `preopen` must schedule exactly the files `open` goes on to consume.
+    ///
+    /// Merely opening after a `preopen` proves nothing: `CachedFs` falls back to
+    /// a plain inner open for any path that was never scheduled, so a
+    /// scheduled-vs-opened path mismatch would still yield a correct index. To
+    /// make the prefetch pool the *only* possible source, the flag files are
+    /// unlinked between `preopen` and `open`: the already-open handles parked in
+    /// the pool stay readable, while any fallback open hits `NotFound`.
+    #[test]
+    fn preopen_then_open_through_cached_fs() {
+        let dir = TempDir::with_prefix("read_only_bool_index_preopen").unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        // Points 0..=2: true, false, both.
+        let fixture = [json!(true), json!(false), json!([true, false])];
+        let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+        for (i, value) in fixture.iter().enumerate() {
+            builder.add_point(i as u32, &[value], &hw_counter).unwrap();
+        }
+        let index = builder.finalize().unwrap();
+        index.flusher()().unwrap();
+        drop(index);
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        // Same order as the segment open path: snapshot, then preopen, then open.
+        let mut cached_fs = CachedFs::new(fs.clone(), dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(&cached_fs, dir.path()).unwrap());
+
+        // Everything `open` reads must now come from the prefetch pool.
+        fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
+        fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
+
+        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&cached_fs, dir.path())
+            .unwrap()
+            .unwrap();
+
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        assert_eq!(
+            index
+                .filter(&match_bool(true), &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec(),
+            vec![0, 2],
+        );
+        assert_eq!(
+            index
+                .filter(&match_bool(false), &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec(),
+            vec![1, 2],
+        );
+        assert_eq!(index.count_indexed_points(), 3);
+
+        // An absent index: `preopen` reports it rather than erroring on the
+        // missing status file, and schedules nothing for `open` to consume.
+        let empty = TempDir::with_prefix("read_only_bool_index_preopen_empty").unwrap();
+        let mut empty_fs = CachedFs::new(fs, empty.path()).unwrap();
+        empty_fs.cache_file_info().unwrap();
+        assert!(
+            !ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(&empty_fs, empty.path()).unwrap()
+        );
+        assert!(
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&empty_fs, empty.path())
+                .unwrap()
+                .is_none()
+        );
     }
 }

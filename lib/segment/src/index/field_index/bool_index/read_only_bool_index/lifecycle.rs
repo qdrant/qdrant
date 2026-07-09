@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::UniversalReadFs;
+use common::universal_io::{CachedReadFs, UniversalReadFs};
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};
@@ -10,6 +10,19 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::UniversalReadExt;
 
 impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
+    /// Schedule background prefetch of the files [`open`](Self::open) reads, in
+    /// both flag directories.
+    ///
+    /// Returns whether the index exists on disk. Mirrors [`Self::open`]'s
+    /// absence check: only a missing *pair* of flag directories means no index,
+    /// so a half-present (corrupt) layout is reported as existing here and left
+    /// for `open` to reject.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<bool> {
+        let trues = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME))?;
+        let falses = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME))?;
+        Ok(trues || falses)
+    }
+
     /// Open a read-only bool index at `path`, threading every file open through
     /// the filesystem handle `fs`.
     ///
