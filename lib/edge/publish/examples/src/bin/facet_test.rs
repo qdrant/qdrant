@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Load shard ----");
     let shard = EdgeShard::load(&shard_data, None)?;
-    println!("Shard loaded. Points: {}", shard.info().points_count);
+    println!("Shard loaded. Points: {}", shard.info()?.points_count);
 
     println!("---- Test Facet on 'color' field ----");
     let response = shard.facet(FacetRequest {

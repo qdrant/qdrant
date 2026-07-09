@@ -59,7 +59,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         ])),
     ))?;
 
-    println!("Points after initial insert: {}", shard.info().points_count);
+    println!(
+        "Points after initial insert: {}",
+        shard.info()?.points_count
+    );
 
     // Verify search works on the default vector
     let results = shard.query(QueryRequest {
@@ -126,7 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ])),
     ))?;
 
-    println!("Points after adding v2: {}", shard.info().points_count);
+    println!("Points after adding v2: {}", shard.info()?.points_count);
 
     // Search on the new vector - only points 4 and 5 have 'v2'
     let results = shard.query(QueryRequest {
@@ -181,7 +184,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!(
         "Points after adding keywords: {}",
-        shard.info().points_count
+        shard.info()?.points_count
     );
 
     // Search on sparse vector
@@ -213,7 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }),
     ))?;
 
-    println!("Points after deleting v2: {}", shard.info().points_count);
+    println!("Points after deleting v2: {}", shard.info()?.points_count);
 
     // Search on the default vector still works
     let results = shard.query(QueryRequest {
@@ -244,7 +247,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(shard);
     let shard = EdgeShard::load(&path, None)?;
 
-    let info = shard.info();
+    let info = shard.info()?;
     println!("Reopened shard: {} points", info.points_count);
 
     let results = shard.query(QueryRequest {
