@@ -111,8 +111,8 @@ impl PayloadFieldIndex for GeoIndex {
 }
 
 impl PayloadFieldIndexRead for GeoIndex {
-    fn count_indexed_points(&self) -> usize {
-        self.points_count()
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(self.points_count())
     }
 
     fn filter<'a>(

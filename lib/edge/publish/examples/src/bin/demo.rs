@@ -251,7 +251,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Info ----");
 
-    let info = shard.info();
+    let info = shard.info()?;
     println!("{info:?}");
 
     println!("---- Close and reopen shard ----");
@@ -261,7 +261,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let reopened_shard = EdgeShard::load(Path::new(TMP_DIR), None)?;
     println!(
         "Edge shard reopened. Approx Points: {}",
-        reopened_shard.info().points_count
+        reopened_shard.info()?.points_count
     );
 
     Ok(())

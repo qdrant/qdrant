@@ -126,8 +126,8 @@ impl PayloadIndexRead for PlainPayloadIndex {
             .collect()
     }
 
-    fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {
-        0 // No points are indexed in the plain index
+    fn indexed_points(&self, _field: PayloadKeyTypeRef) -> OperationResult<usize> {
+        Ok(0) // No points are indexed in the plain index
     }
 
     fn filter_context<'a>(
@@ -188,9 +188,9 @@ impl PayloadIndexRead for PlainPayloadIndex {
         None::<FacetIndexEnum<'_>>
     }
 
-    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
+    fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>> {
         // Plain index has no field indexes to report telemetry for.
-        Vec::new()
+        Ok(Vec::new())
     }
 
     fn formula_scorer<'q>(

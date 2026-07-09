@@ -95,11 +95,15 @@ fn range_filtering(c: &mut Criterion) {
 
     // make sure all points are indexed
     assert_eq!(
-        index.with_view(|v| v.indexed_points(&FLT_KEY.parse().unwrap())),
+        index
+            .with_view(|v| v.indexed_points(&FLT_KEY.parse().unwrap()))
+            .unwrap(),
         NUM_POINTS,
     );
     assert_eq!(
-        index.with_view(|v| v.indexed_points(&INT_KEY.parse().unwrap())),
+        index
+            .with_view(|v| v.indexed_points(&INT_KEY.parse().unwrap()))
+            .unwrap(),
         NUM_POINTS,
     );
 

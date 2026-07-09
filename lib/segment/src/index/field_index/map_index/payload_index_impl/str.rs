@@ -48,8 +48,8 @@ impl PayloadFieldIndex for MapIndex<str> {
 }
 
 impl PayloadFieldIndexRead for MapIndex<str> {
-    fn count_indexed_points(&self) -> usize {
-        MapIndexRead::get_indexed_points(self)
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(MapIndexRead::get_indexed_points(self))
     }
 
     fn filter<'a>(
@@ -91,8 +91,8 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyMapIndex<str, S>
 where
     Vec<<str as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    fn count_indexed_points(&self) -> usize {
-        MapIndexRead::get_indexed_points(self)
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(MapIndexRead::get_indexed_points(self))
     }
 
     fn filter<'a>(

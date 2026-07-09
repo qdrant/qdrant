@@ -25,8 +25,8 @@ impl<T: NumericIndexValue, S: UniversalReadExt> PayloadFieldIndexRead
 where
     Vec<T>: Blob,
 {
-    fn count_indexed_points(&self) -> usize {
-        self.get_points_count()
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(self.get_points_count())
     }
 
     fn filter<'a>(

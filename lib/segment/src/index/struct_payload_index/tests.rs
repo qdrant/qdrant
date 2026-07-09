@@ -241,7 +241,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         .get(&field)
         .unwrap()
         .iter()
-        .map(|i| i.count_indexed_points())
+        .map(|i| i.count_indexed_points().unwrap())
         .sum();
     assert!(before_count > 0, "fixture should index some integer points");
 
@@ -261,7 +261,10 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
                 indexes.iter().any(|i| i.is_on_disk()),
                 "an on_disk-only change must reload the existing index in on-disk mode",
             );
-            let after_count: usize = indexes.iter().map(|i| i.count_indexed_points()).sum();
+            let after_count: usize = indexes
+                .iter()
+                .map(|i| i.count_indexed_points().unwrap())
+                .sum();
             assert_eq!(
                 after_count, before_count,
                 "reloading in the new mode must preserve the indexed points",

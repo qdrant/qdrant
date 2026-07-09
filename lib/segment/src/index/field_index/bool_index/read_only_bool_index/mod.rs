@@ -1,6 +1,11 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+use roaring::RoaringBitmap;
 
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::common::flags::roaring_flags::RoaringFlagsRead;
+use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
 use crate::index::payload_config::IndexMutability;
 
@@ -10,9 +15,9 @@ mod read_ops;
 
 /// Read-only counterpart of [`MutableBoolIndex`][1] / [`ImmutableBoolIndex`][2].
 ///
-/// All flags are loaded into in-memory roaring bitmaps on open. The backing
-/// storage is bound to [`UniversalRead`][3] only — no buffer, no flusher,
-/// no write path. Query logic (filter / cardinality / payload blocks /
+/// Flags are materialized into in-memory roaring bitmaps on first use, not on
+/// open. The backing storage is bound to [`UniversalRead`][3] only — no buffer,
+/// no flusher, no write path. Query logic (filter / cardinality / payload blocks /
 /// condition checker / faceting) is shared with the writable variants via
 /// [`BoolIndexRead`][4].
 ///
@@ -28,9 +33,28 @@ mod read_ops;
 pub struct ReadOnlyBoolIndex<S: UniversalReadExt> {
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage<S>,
-    pub(super) indexed_count: usize,
-    pub(super) trues_count: usize,
-    pub(super) falses_count: usize,
+    /// Counts derived from both bitmaps, computed on first use and cached.
+    ///
+    /// Deriving them eagerly would force both bitmaps to materialize at open,
+    /// scanning each flags file end to end — exactly what the lazy
+    /// [`ReadOnlyRoaringFlags`] bitmap exists to avoid. [`LiveReload`][1]
+    /// refreshes them in place if they are present, and leaves them unset
+    /// otherwise.
+    ///
+    /// [1]: crate::index::field_index::LiveReload
+    pub(super) counts: OnceLock<BoolCounts>,
+}
+
+/// The three point counts the bool index reports, all derived from the same
+/// pair of bitmaps and therefore computed together in one pass.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BoolCounts {
+    /// `|trues ∪ falses|` — points with at least one indexed bool value.
+    pub indexed: usize,
+    /// Points with at least one `true` value.
+    pub trues: usize,
+    /// Points with at least one `false` value.
+    pub falses: usize,
 }
 
 pub(super) struct ReadOnlyStorage<S: UniversalReadExt> {
@@ -41,6 +65,50 @@ pub(super) struct ReadOnlyStorage<S: UniversalReadExt> {
 }
 
 impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
+    /// The cached counts, materializing both bitmaps to derive them on the
+    /// first call.
+    pub(super) fn counts(&self) -> OperationResult<&BoolCounts> {
+        if let Some(counts) = self.counts.get() {
+            return Ok(counts);
+        }
+
+        let counts = Self::derive_counts(&self.storage)?;
+
+        Ok(self.counts.get_or_init(|| counts))
+    }
+
+    /// Recompute the counts straight from the bitmaps, materializing them.
+    fn derive_counts(storage: &ReadOnlyStorage<S>) -> OperationResult<BoolCounts> {
+        let trues: &RoaringBitmap = storage.trues_flags.get_bitmap()?;
+        let falses: &RoaringBitmap = storage.falses_flags.get_bitmap()?;
+
+        Ok(BoolCounts {
+            indexed: trues.union_len(falses) as usize,
+            trues: trues.len() as usize,
+            falses: falses.len() as usize,
+        })
+    }
+
+    /// Bring the cached counts back in line with the bitmaps after a reload.
+    ///
+    /// A no-op while the counts are unset: recomputing them would materialize
+    /// both bitmaps, and a reload must not force work no query has asked for.
+    /// When they *are* set the bitmaps are materialized too (deriving the
+    /// counts is what materialized them), so this rereads them for free.
+    pub(super) fn refresh_counts(&mut self) -> OperationResult<()> {
+        if self.counts.get().is_none() {
+            return Ok(());
+        }
+
+        let counts = Self::derive_counts(&self.storage)?;
+        *self
+            .counts
+            .get_mut()
+            .expect("counts are set, just checked above") = counts;
+
+        Ok(())
+    }
+
     /// Reports the on-disk format's mutability, mirroring
     /// [`BoolIndex::get_mutability_type`][1].
     ///
@@ -78,7 +146,9 @@ mod tests {
     use tempfile::TempDir;
 
     use super::super::mutable_bool_index::{FALSES_DIRNAME, MutableBoolIndex, TRUES_DIRNAME};
+    use super::super::read_ops::BoolIndexRead;
     use super::ReadOnlyBoolIndex;
+    use crate::common::flags::roaring_flags::RoaringFlagsRead;
     use crate::index::field_index::{
         FieldIndexBuilderTrait, LiveReload, PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer,
     };
@@ -157,7 +227,7 @@ mod tests {
             vec![0, 2, 3, 4, 6, 11],
         );
         // `indexed_count = |trues ∪ falses|`, derived from the two bitmaps on open.
-        assert_eq!(index.count_indexed_points(), 9);
+        assert_eq!(index.count_indexed_points().unwrap(), 9);
     }
 
     /// The incremental `LiveReload` path must land on exactly the same in-memory
@@ -174,8 +244,21 @@ mod tests {
     /// Offset 1100 lands past the 128-byte minimum mmap (1024 flags), growing the
     /// flags file, so it is observed only because `live_reload` reopens the
     /// bitslice — a stale mapping cannot see the grown region.
+    /// The bitmaps are lazy, so `live_reload` has two distinct paths: patch the
+    /// in-memory bitmap in place, or — when nothing has materialized it yet —
+    /// leave it alone and let the eventual scan read the updated file. Both must
+    /// land on the same state, so both are exercised.
     #[test]
-    fn live_reload_matches_fresh_open() {
+    fn live_reload_matches_fresh_open_materialized() {
+        live_reload_matches_fresh_open(true);
+    }
+
+    #[test]
+    fn live_reload_matches_fresh_open_lazy() {
+        live_reload_matches_fresh_open(false);
+    }
+
+    fn live_reload_matches_fresh_open(materialize_before_reload: bool) {
         let dir = TempDir::with_prefix("read_only_bool_index_live_reload").unwrap();
         let hw_counter = HardwareCounterCell::new();
 
@@ -203,6 +286,16 @@ mod tests {
             .unwrap()
             .unwrap();
 
+        if materialize_before_reload {
+            // Pull both bitmaps into memory, so the reload below takes its
+            // in-place delta path rather than deferring to a later scan. This
+            // also populates the counts cache.
+            reloaded.count_indexed_points().unwrap();
+            assert!(reloaded.counts.get().is_some());
+        } else {
+            assert!(reloaded.counts.get().is_none());
+        }
+
         // Writer's append-only delta: retire points 1 (false) and 2 (both), then
         // append fresh offsets 6 (true), 7 (false) and 1100 (true). Offset 1100
         // grows the flags file past its 128-byte minimum, so the reload sees it
@@ -222,6 +315,10 @@ mod tests {
                 &hw_counter,
             )
             .unwrap();
+
+        // Counts already computed are refreshed in place, never invalidated;
+        // counts never computed stay that way, so the reload forced no scan.
+        assert_eq!(reloaded.counts.get().is_some(), materialize_before_reload);
 
         let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
             .unwrap()
@@ -264,8 +361,8 @@ mod tests {
         assert_eq!(reloaded_true, fresh_true);
         assert_eq!(reloaded_false, fresh_false);
         assert_eq!(
-            reloaded.count_indexed_points(),
-            fresh.count_indexed_points()
+            reloaded.count_indexed_points().unwrap(),
+            fresh.count_indexed_points().unwrap()
         );
         assert_eq!(card(&reloaded, true), card(&fresh, true));
         assert_eq!(card(&reloaded, false), card(&fresh, false));
@@ -275,7 +372,7 @@ mod tests {
         // as `false` — 1100 only via the reopened, freshly-grown bitslice.
         assert_eq!(reloaded_true, vec![0, 3, 5, 6, 1100]);
         assert_eq!(reloaded_false, vec![4, 5, 7]);
-        assert_eq!(reloaded.count_indexed_points(), 7);
+        assert_eq!(reloaded.count_indexed_points().unwrap(), 7);
         assert_eq!(card(&reloaded, true), 5);
         assert_eq!(card(&reloaded, false), 3);
     }
@@ -308,6 +405,57 @@ mod tests {
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
         assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
+    }
+
+    /// Opening must not read the flags files — that whole-file scan is the cost
+    /// laziness exists to defer. Asserted through `ram_usage_bytes`, which is 0
+    /// exactly while no bitmap is materialized, and through the counts cache.
+    ///
+    /// Nothing else in this module would notice an eager `open`: every other
+    /// test reads the index, which materializes the bitmaps anyway.
+    #[test]
+    fn open_does_not_materialize_bitmaps() {
+        let dir = TempDir::with_prefix("read_only_bool_index_lazy").unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+        let value = json!(true);
+        builder.add_point(0, &[&value], &hw_counter).unwrap();
+        let index = builder.finalize().unwrap();
+        index.flusher()().unwrap();
+        drop(index);
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+            .unwrap()
+            .unwrap();
+
+        // Neither bitmap is in RAM, and the derived counts are not computed.
+        assert!(index.storage.trues_flags.bitmap_if_materialized().is_none());
+        assert!(
+            index
+                .storage
+                .falses_flags
+                .bitmap_if_materialized()
+                .is_none()
+        );
+        assert_eq!(BoolIndexRead::ram_usage_bytes(&index), 0);
+        assert!(index.counts.get().is_none());
+
+        // The first count materializes both, and caches what it derived.
+        assert_eq!(index.count_indexed_points().unwrap(), 1);
+        assert!(index.storage.trues_flags.bitmap_if_materialized().is_some());
+        assert!(
+            index
+                .storage
+                .falses_flags
+                .bitmap_if_materialized()
+                .is_some()
+        );
+        assert!(BoolIndexRead::ram_usage_bytes(&index) > 0);
+        assert!(index.counts.get().is_some());
     }
 
     /// `preopen` must schedule exactly the files `open` goes on to consume.
@@ -367,7 +515,7 @@ mod tests {
                 .collect_vec(),
             vec![1, 2],
         );
-        assert_eq!(index.count_indexed_points(), 3);
+        assert_eq!(index.count_indexed_points().unwrap(), 3);
 
         // An absent index: `preopen` reports it rather than erroring on the
         // missing status file, and schedules nothing for `open` to consume.

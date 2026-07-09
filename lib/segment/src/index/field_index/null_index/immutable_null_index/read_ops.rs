@@ -35,8 +35,8 @@ impl NullIndexRead for ImmutableNullIndex {
 
 impl PayloadFieldIndexRead for ImmutableNullIndex {
     #[inline]
-    fn count_indexed_points(&self) -> usize {
-        self.indexed_points_count()
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(self.indexed_points_count())
     }
 
     #[inline]
@@ -45,7 +45,7 @@ impl PayloadFieldIndexRead for ImmutableNullIndex {
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        Ok(read_ops::filter(self, condition))
+        read_ops::filter(self, condition)
     }
 
     #[inline]
@@ -54,7 +54,7 @@ impl PayloadFieldIndexRead for ImmutableNullIndex {
         condition: &FieldCondition,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(read_ops::estimate_cardinality(self, condition))
+        read_ops::estimate_cardinality(self, condition)
     }
 
     #[inline]

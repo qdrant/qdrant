@@ -255,10 +255,10 @@ impl TestSegments {
 
         for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
             for index in indexes {
-                assert!(index.count_indexed_points() <= num_points as usize);
+                assert!(index.count_indexed_points().unwrap() <= num_points as usize);
                 if field.to_string() != FLICKING_KEY {
                     assert!(
-                        index.count_indexed_points()
+                        index.count_indexed_points().unwrap()
                             >= (num_points as usize - points_to_delete - points_to_clear)
                     );
                 }
@@ -511,9 +511,9 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for indexes in struct_segment.payload_index.borrow().field_indexes.values() {
         for index in indexes {
-            assert!(index.count_indexed_points() <= num_points as usize);
+            assert!(index.count_indexed_points().unwrap() <= num_points as usize);
             assert!(
-                index.count_indexed_points()
+                index.count_indexed_points().unwrap()
                     > (num_points as usize - points_to_delete - points_to_clear)
             );
         }
@@ -1327,8 +1327,8 @@ fn test_update_payload_index_type() {
         FieldType(Integer)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
-    assert_eq!(field_index[0].count_indexed_points(), point_num);
-    assert_eq!(field_index[1].count_indexed_points(), point_num);
+    assert_eq!(field_index[0].count_indexed_points().unwrap(), point_num);
+    assert_eq!(field_index[1].count_indexed_points().unwrap(), point_num);
 
     // update field to Keyword type
     index.set_indexed(&field, Keyword, &hw_counter).unwrap();
@@ -1337,7 +1337,7 @@ fn test_update_payload_index_type() {
         FieldType(Keyword)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
-    assert_eq!(field_index[0].count_indexed_points(), 0); // only one field index for Keyword
+    assert_eq!(field_index[0].count_indexed_points().unwrap(), 0); // only one field index for Keyword
 
     // set field to Integer type (again)
     index.set_indexed(&field, Integer, &hw_counter).unwrap();
@@ -1346,8 +1346,8 @@ fn test_update_payload_index_type() {
         FieldType(Integer)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
-    assert_eq!(field_index[0].count_indexed_points(), point_num);
-    assert_eq!(field_index[1].count_indexed_points(), point_num);
+    assert_eq!(field_index[0].count_indexed_points().unwrap(), point_num);
+    assert_eq!(field_index[1].count_indexed_points().unwrap(), point_num);
 }
 
 /// An appendable segment with a bool payload index must still accept updates
@@ -1407,7 +1407,7 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
         .iter()
         .find(|fi| matches!(fi, FieldIndex::BoolIndex(_)))
         .expect("bool index present after reopen");
-    assert_eq!(bool_index.count_indexed_points(), 2);
+    assert_eq!(bool_index.count_indexed_points().unwrap(), 2);
 }
 
 /// An appendable segment with a payload field index carries a companion null

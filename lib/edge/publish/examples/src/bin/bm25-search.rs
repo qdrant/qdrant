@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         PointOperations::UpsertPoints(PointInsertOperations::PointsList(points)),
     ))?;
     shard.optimize()?;
-    println!("Info: {:?}", shard.info());
+    println!("Info: {:?}", shard.info()?);
 
     let query = bm25.embed_query("clever fox");
     let results = shard.query(QueryRequest {

@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{point:?}");
     }
 
-    let info = shard.info();
+    let info = shard.info()?;
 
     println!("{info:?}");
 

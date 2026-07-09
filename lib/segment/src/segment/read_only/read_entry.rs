@@ -304,7 +304,7 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.segment_type
     }
 
-    fn info(&self) -> SegmentInfo {
+    fn info(&self) -> OperationResult<SegmentInfo> {
         // A read-only segment is never appendable.
         self.with_view(|view| view.build_info(self.uuid, self.segment_type, false))
     }
@@ -328,7 +328,7 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
             .with_view(|v| v.indexed_fields())
     }
 
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry> {
         self.with_view(|view| {
             // A read-only segment is never appendable.
             view.build_telemetry(

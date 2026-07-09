@@ -526,19 +526,19 @@ fn test_point_vector_count() {
     segment
         .upsert_point(101, 6.into(), only_default_vector(&[0.6]), &hw_counter)
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete nonexistent point, counts should remain the same
     segment.delete_point(102, 1.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete point 4, counts should decrease by 1
     segment.delete_point(103, 4.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 1);
     assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
 
@@ -546,7 +546,7 @@ fn test_point_vector_count() {
     // segment
     //     .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
     //     .unwrap();
-    // let segment_info = segment.info();
+    // let segment_info = segment.info().unwrap();
     // assert_eq!(segment_info.num_points, 1);
     // assert_eq!(segment_info.num_vectors, 1);
 }
@@ -601,31 +601,31 @@ fn test_point_vector_count_multivec() {
             &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete nonexistent point, counts should remain the same
     segment.delete_point(104, 1.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete point 4, counts should decrease by 1
     segment.delete_point(105, 4.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
     // Delete vector 'a' of point 6, vector count should decrease by 1
     segment.delete_vector(106, 6.into(), VECTOR1_NAME).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
     // Deleting it again shouldn't chain anything
     segment.delete_vector(107, 6.into(), VECTOR1_NAME).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
@@ -641,7 +641,7 @@ fn test_point_vector_count_multivec() {
             &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
@@ -657,7 +657,7 @@ fn test_point_vector_count_multivec() {
             &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6);
 }

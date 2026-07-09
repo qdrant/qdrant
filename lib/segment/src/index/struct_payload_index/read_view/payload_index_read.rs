@@ -98,15 +98,11 @@ where
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
     }
 
-    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
+    fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>> {
         self.field_indexes
             .iter()
-            .flat_map(|(name, field)| -> Vec<PayloadIndexTelemetry> {
-                field
-                    .iter()
-                    .map(|field| field.get_telemetry_data().set_name(name.to_string()))
-                    .collect()
-            })
+            .flat_map(|(name, field)| field.iter().map(move |field| (name, field)))
+            .map(|(name, field)| Ok(field.get_telemetry_data()?.set_name(name.to_string())))
             .collect()
     }
 
@@ -129,7 +125,7 @@ where
             formula,
         } = parsed_formula;
 
-        let payload_retrievers = self.retrievers_map(payload_vars.clone(), hw_counter);
+        let payload_retrievers = self.retrievers_map(payload_vars.clone(), hw_counter)?;
 
         let payload_provider = PayloadProvider::new(self.payload.clone());
         let total = self.available_point_count();
@@ -240,17 +236,20 @@ where
         }
     }
 
-    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
-        self.field_indexes.get(field).map_or(0, |indexes| {
-            // Assume that multiple field indexes are applied to the same data type,
-            // so the points indexed with those indexes are the same.
-            // We will return minimal number as a worst case, to highlight possible errors in the index early.
-            indexes
-                .iter()
-                .map(|index| index.count_indexed_points())
-                .min()
-                .unwrap_or(0)
-        })
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize> {
+        let Some(indexes) = self.field_indexes.get(field) else {
+            return Ok(0);
+        };
+
+        // Assume that multiple field indexes are applied to the same data type,
+        // so the points indexed with those indexes are the same.
+        // We will return minimal number as a worst case, to highlight possible errors in the index early.
+        let counts = indexes
+            .iter()
+            .map(|index| index.count_indexed_points())
+            .collect::<OperationResult<Vec<_>>>()?;
+
+        Ok(counts.into_iter().min().unwrap_or(0))
     }
 
     fn filter_context<'b>(

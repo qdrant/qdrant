@@ -34,8 +34,8 @@ impl NullIndexRead for MutableNullIndex {
 }
 
 impl PayloadFieldIndexRead for MutableNullIndex {
-    fn count_indexed_points(&self) -> usize {
-        self.indexed_points_count()
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(self.indexed_points_count())
     }
 
     fn filter<'a>(
@@ -43,7 +43,7 @@ impl PayloadFieldIndexRead for MutableNullIndex {
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        Ok(read_ops::filter(self, condition))
+        read_ops::filter(self, condition)
     }
 
     fn estimate_cardinality(
@@ -51,7 +51,7 @@ impl PayloadFieldIndexRead for MutableNullIndex {
         condition: &FieldCondition,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(read_ops::estimate_cardinality(self, condition))
+        read_ops::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(

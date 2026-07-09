@@ -20,7 +20,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl PayloadFieldIndexRead for FieldIndex {
-    fn count_indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> OperationResult<usize> {
         match self {
             FieldIndex::IntIndex(idx) => idx.count_indexed_points(),
             FieldIndex::DatetimeIndex(idx) => idx.count_indexed_points(),
@@ -162,58 +162,58 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
-    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        match self {
+    fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
+        Ok(match self {
             FieldIndex::IntIndex(index) => index.get_telemetry_data(),
             FieldIndex::DatetimeIndex(index) => index.get_telemetry_data(),
             FieldIndex::IntMapIndex(index) => index.get_telemetry_data(),
             FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
             FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
-            FieldIndex::BoolIndex(index) => index.get_telemetry_data(),
+            FieldIndex::BoolIndex(index) => index.get_telemetry_data()?,
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidMapIndex(index) => index.get_telemetry_data(),
             FieldIndex::NullIndex(index) => index.get_telemetry_data(),
-        }
+        })
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
-        match self {
+    fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize> {
+        Ok(match self {
             FieldIndex::IntIndex(index) => index.values_count(point_id),
             FieldIndex::DatetimeIndex(index) => index.values_count(point_id),
             FieldIndex::IntMapIndex(index) => index.values_count(point_id),
             FieldIndex::KeywordIndex(index) => index.values_count(point_id),
             FieldIndex::FloatIndex(index) => index.values_count(point_id),
             FieldIndex::GeoIndex(index) => index.values_count(point_id),
-            FieldIndex::BoolIndex(index) => index.values_count(point_id),
+            FieldIndex::BoolIndex(index) => index.values_count(point_id)?,
             FieldIndex::FullTextIndex(index) => index.values_count(point_id),
             FieldIndex::UuidIndex(index) => index.values_count(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_count(point_id),
-            FieldIndex::NullIndex(index) => index.values_count(point_id),
-        }
+            FieldIndex::NullIndex(index) => index.values_count(point_id)?,
+        })
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        match self {
+    fn values_is_empty(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(match self {
             FieldIndex::IntIndex(index) => index.values_is_empty(point_id),
             FieldIndex::DatetimeIndex(index) => index.values_is_empty(point_id),
             FieldIndex::IntMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FloatIndex(index) => index.values_is_empty(point_id),
             FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::BoolIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::BoolIndex(index) => index.values_is_empty(point_id)?,
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::NullIndex(index) => index.values_is_empty(point_id),
-        }
+            FieldIndex::NullIndex(index) => index.values_is_empty(point_id)?,
+        })
     }
 
     fn value_retriever<'a, 'q>(
         &'a self,
         hw_counter: &'q HardwareCounterCell,
-    ) -> Option<VariableRetrieverFn<'q>>
+    ) -> OperationResult<Option<VariableRetrieverFn<'q>>>
     where
         'a: 'q,
     {
@@ -222,14 +222,14 @@ impl FieldIndexRead for FieldIndex {
         // `NumericIndex<IntPayloadType, DateTimePayloadType>::value_retriever`).
         // This dispatch is mechanical — adding a `FieldIndex` variant
         // forces a compile error here.
-        match self {
+        Ok(match self {
             FieldIndex::IntIndex(index) => Some(index.value_retriever(hw_counter)),
             FieldIndex::DatetimeIndex(index) => Some(index.value_retriever(hw_counter)),
             FieldIndex::IntMapIndex(index) => Some(index.value_retriever(hw_counter)),
             FieldIndex::KeywordIndex(index) => Some(index.value_retriever(hw_counter)),
             FieldIndex::FloatIndex(index) => Some(index.value_retriever(hw_counter)),
             FieldIndex::GeoIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::BoolIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::BoolIndex(index) => Some(index.value_retriever(hw_counter)?),
             FieldIndex::UuidIndex(index) => Some(index.value_retriever(hw_counter)),
             FieldIndex::UuidMapIndex(index) => Some(index.value_retriever(hw_counter)),
             // FullTextIndex: caller falls back to payload — text values
@@ -239,7 +239,7 @@ impl FieldIndexRead for FieldIndex {
             // NullIndex: no underlying values to return; another index
             // on the same field is expected to provide them.
             FieldIndex::NullIndex(_) => None,
-        }
+        })
     }
 
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_> {

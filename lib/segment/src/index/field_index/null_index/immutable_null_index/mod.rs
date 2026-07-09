@@ -267,11 +267,11 @@ mod tests {
                 .collect_vec(),
             vec![0, 2],
         );
-        assert_eq!(reopened_index.count_indexed_points(), 3);
+        assert_eq!(reopened_index.count_indexed_points().unwrap(), 3);
 
         // Direct API parity: deleted point reads as empty; live points don't.
-        assert!(reopened_index.values_is_empty(1));
-        assert!(!reopened_index.values_is_empty(0));
-        assert!(!reopened_index.values_is_empty(2));
+        assert!(reopened_index.values_is_empty(1).unwrap());
+        assert!(!reopened_index.values_is_empty(0).unwrap());
+        assert!(!reopened_index.values_is_empty(2).unwrap());
     }
 }

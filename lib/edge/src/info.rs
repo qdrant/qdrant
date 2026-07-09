@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry;
 use segment::types::{PayloadIndexInfo, PayloadKeyType};
 
@@ -22,7 +23,7 @@ pub struct ShardInfo {
 }
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
-    pub(crate) fn info(&self) -> ShardInfo {
+    pub(crate) fn info(&self) -> OperationResult<ShardInfo> {
         let mut segments_count = 0;
         let mut points_count = 0;
         let mut indexed_vectors_count = 0;
@@ -31,7 +32,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         for segment in &self.segments {
             segments_count += 1;
 
-            let segment_info = segment.read_segment().info();
+            let segment_info = segment.read_segment().info()?;
 
             points_count += segment_info.num_points;
             indexed_vectors_count += segment_info.num_indexed_vectors;
@@ -44,11 +45,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             }
         }
 
-        ShardInfo {
+        Ok(ShardInfo {
             segments_count,
             points_count,
             indexed_vectors_count,
             payload_schema,
-        }
+        })
     }
 }

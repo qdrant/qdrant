@@ -161,8 +161,8 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
 }
 
 impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
-    fn count_indexed_points(&self) -> usize {
-        FullTextIndexRead::points_count(self)
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(FullTextIndexRead::points_count(self))
     }
 
     fn filter<'a>(

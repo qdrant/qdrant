@@ -37,16 +37,16 @@ mod tests {
         builder.add_point(2, &[&json!(false)], &hw_counter).unwrap();
 
         let mut index = builder.finalize().unwrap();
-        assert_eq!(index.get_point_values(1), vec![true; 1]);
-        assert_eq!(index.count_indexed_points(), 3);
+        assert_eq!(index.get_point_values(1).unwrap(), vec![true; 1]);
+        assert_eq!(index.count_indexed_points().unwrap(), 3);
 
         index.remove_point(1).unwrap();
-        assert_eq!(index.get_point_values(1), vec![true; 0]);
-        assert_eq!(index.count_indexed_points(), 2);
+        assert_eq!(index.get_point_values(1).unwrap(), vec![true; 0]);
+        assert_eq!(index.count_indexed_points().unwrap(), 2);
 
         index.remove_point(1).unwrap();
-        assert_eq!(index.get_point_values(1), vec![true; 0]);
-        assert_eq!(index.count_indexed_points(), 2);
+        assert_eq!(index.get_point_values(1).unwrap(), vec![true; 0]);
+        assert_eq!(index.count_indexed_points().unwrap(), 2);
     }
 
     #[test]
@@ -68,7 +68,7 @@ mod tests {
         let opened_index = ImmutableBoolIndex::open(dir.path(), &deleted)
             .unwrap()
             .unwrap();
-        assert_eq!(opened_index.get_point_values(1), vec![true; 0]);
-        assert_eq!(opened_index.count_indexed_points(), 2);
+        assert_eq!(opened_index.get_point_values(1).unwrap(), vec![true; 0]);
+        assert_eq!(opened_index.count_indexed_points().unwrap(), 2);
     }
 }

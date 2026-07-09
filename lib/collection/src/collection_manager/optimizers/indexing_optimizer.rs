@@ -183,7 +183,7 @@ mod tests {
         let infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info())
+            .map(|(_sid, segment)| segment.get().read().info().unwrap())
             .collect_vec();
         let configs = locked_holder
             .read()
@@ -367,7 +367,7 @@ mod tests {
         let infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info())
+            .map(|(_sid, segment)| segment.get().read().info().unwrap())
             .collect_vec();
         assert!(
             infos
@@ -547,7 +547,7 @@ mod tests {
         let infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info())
+            .map(|(_sid, segment)| segment.get().read().info().unwrap())
             .collect_vec();
         let configs = locked_holder
             .read()
@@ -638,7 +638,7 @@ mod tests {
         let new_infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info())
+            .map(|(_sid, segment)| segment.get().read().info().unwrap())
             .collect_vec();
         let new_smallest_size = new_infos
             .iter()
@@ -666,7 +666,7 @@ mod tests {
         let new_infos2 = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info())
+            .map(|(_sid, segment)| segment.get().read().info().unwrap())
             .collect_vec();
 
         let mut has_empty = false;

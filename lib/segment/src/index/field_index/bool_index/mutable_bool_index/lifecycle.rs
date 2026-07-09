@@ -56,11 +56,13 @@ impl MutableBoolIndex {
         let falses_slice = DynamicStoredFlags::open(&MmapFs, &falses_path, Populate::No)?;
         let falses_flags = RoaringFlags::new(MmapFs, falses_slice)?;
 
-        let trues_count = trues_flags.count_trues();
-        let falses_count = falses_flags.count_trues();
+        // Infallible for the writable variant: its bitmaps are materialized by
+        // `RoaringFlags::new` above.
+        let trues_count = trues_flags.count_trues()?;
+        let falses_count = falses_flags.count_trues()?;
         let indexed_count = {
-            let trues = trues_flags.get_bitmap();
-            let falses = falses_flags.get_bitmap();
+            let trues = trues_flags.get_bitmap()?;
+            let falses = falses_flags.get_bitmap()?;
             trues.union_len(falses) as usize
         };
 

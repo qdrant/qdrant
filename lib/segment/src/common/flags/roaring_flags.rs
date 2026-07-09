@@ -24,31 +24,49 @@ pub trait RoaringFlagsRead {
     }
 
     /// Underlying in-memory roaring bitmap of "true" positions.
-    fn get_bitmap(&self) -> &RoaringBitmap;
+    ///
+    /// Fallible because a read-only variant may only materialize the bitmap on
+    /// first use, by scanning its backing file — see
+    /// [`ReadOnlyRoaringFlags`](super::read_only_roaring_flags::ReadOnlyRoaringFlags).
+    /// Once materialized the bitmap is cached, so repeated calls are free.
+    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap>;
 
-    fn get(&self, index: PointOffsetType) -> bool {
-        self.get_bitmap().contains(index)
+    /// The bitmap if it is already in RAM, without materializing it.
+    ///
+    /// Only for callers that must not pay for (or cannot fail on) a scan —
+    /// [`ram_usage_bytes`][Self::ram_usage_bytes] being the motivating one, for
+    /// which an unmaterialized bitmap genuinely occupies nothing.
+    fn bitmap_if_materialized(&self) -> Option<&RoaringBitmap>;
+
+    fn get(&self, index: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.get_bitmap()?.contains(index))
     }
 
-    fn iter_trues(&self) -> roaring::bitmap::Iter<'_> {
-        self.get_bitmap().iter()
+    fn iter_trues(&self) -> OperationResult<roaring::bitmap::Iter<'_>> {
+        Ok(self.get_bitmap()?.iter())
     }
 
-    fn iter_falses(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn iter_falses(&self) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         // potential optimization:
         //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
         //      This will help by not checking the bitmap for indices that are already known to be false.
         let len = self.len() as PointOffsetType;
-        let bitmap = self.get_bitmap();
-        Box::new((0..len).filter(move |i| !bitmap.contains(*i)))
+        let bitmap = self.get_bitmap()?;
+        Ok(Box::new((0..len).filter(move |i| !bitmap.contains(*i))))
     }
 
-    fn count_trues(&self) -> usize {
-        self.get_bitmap().len() as usize
+    fn count_trues(&self) -> OperationResult<usize> {
+        Ok(self.get_bitmap()?.len() as usize)
     }
 
-    fn count_falses(&self) -> usize {
-        self.len().saturating_sub(self.count_trues())
+    fn count_falses(&self) -> OperationResult<usize> {
+        Ok(self.len().saturating_sub(self.count_trues()?))
+    }
+
+    /// RAM held by the in-memory bitmap. Zero while it is not materialized.
+    fn ram_usage_bytes(&self) -> usize {
+        self.bitmap_if_materialized()
+            .map_or(0, |bitmap| bitmap.serialized_size())
     }
 
     /// Fill RAM cache with the backing file pages.
@@ -99,8 +117,13 @@ where
         self.len
     }
 
-    fn get_bitmap(&self) -> &RoaringBitmap {
-        &self.bitmap
+    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap> {
+        Ok(&self.bitmap)
+    }
+
+    fn bitmap_if_materialized(&self) -> Option<&RoaringBitmap> {
+        // The writable variant materializes on construction and never drops it.
+        Some(&self.bitmap)
     }
 
     fn clear_cache(&self) -> OperationResult<()> {
@@ -234,21 +257,21 @@ mod tests_mod {
             let roaring_flags = RoaringFlags::new(Fs::default(), mmap_flags).unwrap();
 
             // Verify iteration consistency after reload
-            let iter_trues: Vec<_> = roaring_flags.iter_trues().collect();
+            let iter_trues: Vec<_> = roaring_flags.iter_trues().unwrap().collect();
 
             // Verify expected values
             assert_eq!(iter_trues, vec![0, 5, 10, 15]);
 
             // Verify count consistency
-            assert_eq!(roaring_flags.count_trues(), 4);
+            assert_eq!(roaring_flags.count_trues().unwrap(), 4);
             assert_eq!(
-                roaring_flags.count_falses(),
-                roaring_flags.len() - roaring_flags.count_trues()
+                roaring_flags.count_falses().unwrap(),
+                roaring_flags.len() - roaring_flags.count_trues().unwrap()
             );
 
             // Verify iteration covers all indices
-            let all_trues: Vec<_> = roaring_flags.iter_trues().collect();
-            let all_falses: Vec<_> = roaring_flags.iter_falses().collect();
+            let all_trues: Vec<_> = roaring_flags.iter_trues().unwrap().collect();
+            let all_falses: Vec<_> = roaring_flags.iter_falses().unwrap().collect();
             let mut all_indices = all_trues;
             all_indices.extend(all_falses);
             all_indices.sort();
