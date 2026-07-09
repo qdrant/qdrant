@@ -146,7 +146,7 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         })
     }
 
-    fn retrieve_raw(
+    fn retrieve_raw_one(
         &self,
         point_id: PointIdType,
         with_payload: &WithPayload,
@@ -155,7 +155,7 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Option<SegmentRecordRaw>> {
         self.with_view(|view| {
-            view.retrieve_raw(
+            view.retrieve_raw_one(
                 point_id,
                 with_payload,
                 with_vector,

@@ -108,7 +108,7 @@ pub trait ReadSegmentEntry {
     /// transfer).
     ///
     /// Returns `None` if the point is not found.
-    fn retrieve_raw(
+    fn retrieve_raw_one(
         &self,
         point_id: PointIdType,
         with_payload: &WithPayload,
@@ -435,7 +435,7 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
 
     /// Byte-blob analogue of [`SegmentEntry::upsert_point`]: vector values are
     /// storage-native bytes in the exact form returned by
-    /// [`ReadSegmentEntry::retrieve_raw`], so requantized (e.g. TurboQuant)
+    /// [`ReadSegmentEntry::retrieve_raw_one`], so requantized (e.g. TurboQuant)
     /// vectors relocate without a lossy decode/re-encode round-trip.
     ///
     /// The bytes carry no encoding/version tag: the target segment must have

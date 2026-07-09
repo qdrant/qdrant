@@ -1035,7 +1035,7 @@ impl SegmentHolder {
                         // the lossy dequantize→requantize round-trip of
                         // TurboQuant-as-datatype storages.
                         let record = write_segment
-                            .retrieve_raw(
+                            .retrieve_raw_one(
                                 point_id,
                                 &WithPayload {
                                     enable: true,

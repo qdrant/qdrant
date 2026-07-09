@@ -662,7 +662,7 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 6);
 }
 
-/// `retrieve_raw` on a plain dense segment must return the verbatim f32 bytes
+/// `retrieve_raw_one` on a plain dense segment must return the verbatim f32 bytes
 /// of the stored vector (zero-copy `bytemuck` cast), with payload untouched.
 #[test]
 fn test_retrieve_raw_dense_bytes() {
@@ -679,7 +679,7 @@ fn test_retrieve_raw_dense_bytes() {
         .unwrap();
 
     let record = segment
-        .retrieve_raw(
+        .retrieve_raw_one(
             7.into(),
             &WithPayload::default(),
             &true.into(),
@@ -698,7 +698,7 @@ fn test_retrieve_raw_dense_bytes() {
     assert_eq!(bytes.as_slice(), expected);
 }
 
-/// `retrieve_raw` over a multi-dense (ColBERT-style) storage must return the
+/// `retrieve_raw_one` over a multi-dense (ColBERT-style) storage must return the
 /// flattened inner vectors as raw bytes; the inner count is derived from the
 /// byte length, so the blob must cover all inner vectors, not just the first.
 #[test]
@@ -744,7 +744,7 @@ fn test_retrieve_raw_multivec_bytes() {
         .unwrap();
 
     let record = segment
-        .retrieve_raw(
+        .retrieve_raw_one(
             4.into(),
             &WithPayload::default(),
             &true.into(),
@@ -763,7 +763,7 @@ fn test_retrieve_raw_multivec_bytes() {
     assert_eq!(bytes.as_slice(), expected);
 }
 
-/// `retrieve_raw` over a sparse storage must return the on-disk
+/// `retrieve_raw_one` over a sparse storage must return the on-disk
 /// `StoredSparseVector` bincode form, which decodes back to the original vector.
 #[test]
 fn test_retrieve_raw_sparse_bytes() {
@@ -806,7 +806,7 @@ fn test_retrieve_raw_sparse_bytes() {
         .unwrap();
 
     let record = segment
-        .retrieve_raw(
+        .retrieve_raw_one(
             7.into(),
             &WithPayload::default(),
             &true.into(),
@@ -825,11 +825,11 @@ fn test_retrieve_raw_sparse_bytes() {
     assert_eq!(decoded, sparse);
 }
 
-/// Fetch one named vector of one point via `retrieve_raw`.
+/// Fetch one named vector of one point via `retrieve_raw_one`.
 fn retrieve_raw_vector(segment: &Segment, point_id: PointIdType, name: &str) -> Vec<u8> {
     let hw_counter = HardwareCounterCell::new();
     let record = segment
-        .retrieve_raw(
+        .retrieve_raw_one(
             point_id,
             &WithPayload::default(),
             &true.into(),
@@ -846,7 +846,7 @@ fn retrieve_raw_vector(segment: &Segment, point_id: PointIdType, name: &str) -> 
         .expect("vector must be present")
 }
 
-/// `upsert_point_raw` with `retrieve_raw` bytes must reproduce the point: the
+/// `upsert_point_raw` with `retrieve_raw_one` bytes must reproduce the point: the
 /// destination decodes to the original vector and re-serializes to identical
 /// bytes. Also covers the replace path (raw upsert over an existing point).
 #[test]
@@ -960,7 +960,7 @@ fn test_upsert_raw_append_only_replace() {
 }
 
 /// Multi-dense raw round-trip: the flattened inner-vector blob must survive
-/// `retrieve_raw` → `upsert_point_raw` byte-identically and decode to the
+/// `retrieve_raw_one` → `upsert_point_raw` byte-identically and decode to the
 /// original multivector.
 #[test]
 fn test_upsert_raw_multivec_roundtrip() {
@@ -1069,7 +1069,7 @@ fn test_upsert_raw_sparse_roundtrip() {
 }
 
 /// Byte/half dense raw round-trip: the packed `[T]` blob must survive
-/// `retrieve_raw` → `upsert_point_raw` byte-identically for the narrow
+/// `retrieve_raw_one` → `upsert_point_raw` byte-identically for the narrow
 /// element types too — the `T` → `f32` → `T` hop through the regular insert
 /// path is lossless.
 #[test]
@@ -1148,7 +1148,7 @@ fn test_upsert_raw_malformed_blob_rejected() {
 }
 
 /// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested
-/// verbatim — byte-identical after `upsert_point_raw` → `retrieve_raw`, with
+/// verbatim — byte-identical after `upsert_point_raw` → `retrieve_raw_one`, with
 /// no dequantize/requantize drift (destination decodes exactly like the
 /// source).
 #[test]
@@ -1919,7 +1919,7 @@ fn test_deferred_point_read_operations() {
 
 /// A deferred point is invisible to ordinary (`VisibleOnly`) per-point reads,
 /// but the copy-on-write move path must still be able to read its data via
-/// `retrieve`/`retrieve_raw` with `DeferredBehavior::WithDeferred`.
+/// `retrieve`/`retrieve_raw_one` with `DeferredBehavior::WithDeferred`.
 ///
 /// Regression test for a spurious "No point with id ... found" error: the CoW
 /// move path read the source point's payload with `VisibleOnly`, which raised
@@ -1991,7 +1991,7 @@ fn test_deferred_point_with_deferred_reads() {
     );
 
     // WithDeferred resolves the deferred point with its real data — this is
-    // what the CoW move path uses (via `retrieve_raw`), fixing the spurious
+    // what the CoW move path uses (via `retrieve_raw_one`), fixing the spurious
     // PointNotFound.
     let records = segment
         .retrieve(

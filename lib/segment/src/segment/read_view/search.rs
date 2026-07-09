@@ -129,7 +129,7 @@ where
     /// Single-point byte-blob analogue of [`Self::retrieve`]: vectors are read
     /// as storage-native bytes (`Vec<u8>`) to avoid a lossy round-trip when
     /// relocating points. Returns `None` if the point is not found.
-    pub fn retrieve_raw(
+    pub fn retrieve_raw_one(
         &self,
         point_id: PointIdType,
         with_payload: &WithPayload,
@@ -167,7 +167,7 @@ where
         Ok(Some(SegmentRecordRaw { vectors, payload }))
     }
 
-    /// Vector-reading body of [`Self::retrieve_raw`]: the storage-native bytes
+    /// Vector-reading body of [`Self::retrieve_raw_one`]: the storage-native bytes
     /// of the named vectors of one point. Names whose vector is absent or
     /// deleted are skipped, like in [`Self::vector_bytes_by_offsets`].
     fn retrieve_raw_vectors<'a>(

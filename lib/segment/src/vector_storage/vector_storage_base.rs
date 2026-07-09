@@ -167,7 +167,7 @@ pub trait VectorStorageRead {
     }
 
     /// Owned counterpart of [`VectorStorageRead::with_vector_bytes_opt`], for
-    /// callers that need a `Vec<u8>` (e.g. `retrieve_raw`).
+    /// callers that need a `Vec<u8>` (e.g. `retrieve_raw_one`).
     ///
     /// Default copies the borrowed bytes once; [`VectorStorageEnum`] returns the
     /// already-owned sparse buffer directly to skip a redundant copy.
@@ -774,7 +774,7 @@ impl VectorStorageEnum {
     ///
     /// The bytes carry no encoding/version tag, so they must come from a
     /// storage with the same configuration (kind, datatype, dim) — in
-    /// practice, from `retrieve_raw` on a segment with a matching config.
+    /// practice, from `retrieve_raw_one` on a segment with a matching config.
     /// TurboQuant storages ingest the encoded bytes verbatim, avoiding the
     /// lossy dequantize/requantize round-trip; all other storages decode
     /// losslessly and reuse their regular insert path.

@@ -7,7 +7,7 @@ use crate::types::{Payload, PointIdType, VectorNameBuf};
 pub type NamedVectorsOwned = Vec<(VectorNameBuf, VectorInternal)>;
 
 /// Storage-native named vectors of one point: the `(name, bytes)` list read
-/// by `retrieve_raw`. Inline capacity follows [`tiny_map::CAPACITY`] for the
+/// by `retrieve_raw_one`. Inline capacity follows [`tiny_map::CAPACITY`] for the
 /// same reason `NamedVectors` does — points rarely carry more named vectors
 /// than that, so the common case doesn't heap-allocate the list itself.
 pub type RawNamedVectors = SmallVec<[(VectorNameBuf, Vec<u8>); tiny_map::CAPACITY]>;

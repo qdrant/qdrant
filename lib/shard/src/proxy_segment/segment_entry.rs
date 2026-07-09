@@ -284,7 +284,7 @@ impl ReadSegmentEntry for ProxySegment {
         )
     }
 
-    fn retrieve_raw(
+    fn retrieve_raw_one(
         &self,
         point_id: PointIdType,
         with_payload: &WithPayload,
@@ -301,7 +301,7 @@ impl ReadSegmentEntry for ProxySegment {
         let with_vector = self
             .changed_vector_names
             .redact_with_vector(with_vector, &self.wrapped_config);
-        self.wrapped_segment.get().read().retrieve_raw(
+        self.wrapped_segment.get().read().retrieve_raw_one(
             point_id,
             with_payload,
             with_vector.as_ref(),
