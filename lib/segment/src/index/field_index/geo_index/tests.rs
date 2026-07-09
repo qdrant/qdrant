@@ -199,6 +199,18 @@ fn build_random_index(
     (index, temp_dir, db)
 }
 
+/// Reopen a persisted index from disk. Mmap indices don't persist runtime
+/// deletions, so the deletion bitslice must be re-supplied on reload.
+fn reload_index(index_type: IndexType, temp_dir: &TempDir, deleted: &BitVec) -> GeoIndex {
+    match index_type {
+        IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true),
+        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, deleted),
+        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, deleted),
+    }
+    .unwrap()
+    .unwrap()
+}
+
 const EARTH_RADIUS_METERS: f64 = 6371.0 * 1000.;
 const LON_RANGE: Range<f64> = -180.0..180.0;
 const LAT_RANGE: Range<f64> = -90.0..90.0;
@@ -541,21 +553,7 @@ fn load_from_disk(#[case] index_type: IndexType) {
         temp_dir
     };
 
-    let new_index = match index_type {
-        IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
-            .unwrap()
-            .unwrap(),
-        IndexType::OnDisk => {
-            GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &empty_deleted())
-                .unwrap()
-                .unwrap()
-        }
-        IndexType::Immutable => {
-            GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &empty_deleted())
-                .unwrap()
-                .unwrap()
-        }
-    };
+    let new_index = reload_index(index_type, &temp_dir, &empty_deleted());
 
     let berlin_geo_radius = GeoRadius {
         center: BERLIN,
@@ -597,21 +595,7 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
         temp_dir
     };
 
-    let new_index = match index_type {
-        IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
-            .unwrap()
-            .unwrap(),
-        IndexType::OnDisk => {
-            GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &deleted_with(&[1]))
-                .unwrap()
-                .unwrap()
-        }
-        IndexType::Immutable => {
-            GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &deleted_with(&[1]))
-                .unwrap()
-                .unwrap()
-        }
-    };
+    let new_index = reload_index(index_type, &temp_dir, &deleted_with(&[1]));
     assert_eq!(new_index.points_count(), 1);
     if index_type != IndexType::OnDisk {
         assert_eq!(new_index.points_values_count(), 2);
@@ -1134,18 +1118,7 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
         temp_dir
     };
 
-    let deleted = deleted_with(&[2, 3, 6]);
-    let new_index = match index_type {
-        IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true)
-            .unwrap()
-            .unwrap(),
-        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
-            .unwrap()
-            .unwrap(),
-        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &deleted)
-            .unwrap()
-            .unwrap(),
-    };
+    let new_index = reload_index(index_type, &temp_dir, &deleted_with(&[2, 3, 6]));
 
     assert_eq!(new_index.points_count(), 4);
 
@@ -1199,17 +1172,7 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
 
     let mut short_deleted = BitVec::repeat(false, 2);
     short_deleted.set(1, true);
-    let new_index = match index_type {
-        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, &short_deleted)
-            .unwrap()
-            .unwrap(),
-        IndexType::Immutable => {
-            GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, &short_deleted)
-                .unwrap()
-                .unwrap()
-        }
-        IndexType::Mutable => unreachable!(),
-    };
+    let new_index = reload_index(index_type, &temp_dir, &short_deleted);
 
     let berlin_radius = GeoRadius {
         center: BERLIN,
