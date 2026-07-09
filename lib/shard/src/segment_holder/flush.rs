@@ -30,7 +30,10 @@ impl SegmentHolder {
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, mode: FlushMode, force: bool) -> OperationResult<SeqNumberType> {
-        let sync = mode == FlushMode::Sync;
+        let sync = match mode {
+            FlushMode::Sync => true,
+            FlushMode::Background => false,
+        };
         let lock_order: Vec<_> = self.non_appendable_then_appendable_segments_ids().collect();
 
         // Grab and keep to segment RwLock's until the end of this function
