@@ -19,7 +19,9 @@ use super::on_disk_geo_index::OnDiskGeoIndex;
 use super::read_ops::GeoIndexRead;
 use super::{GEO_QUERY_MAX_REGION, GeoIndex};
 use crate::fixtures::payload_fixtures::random_geo_payload;
-use crate::index::field_index::geo_hash::{GeoHash, circle_hashes, polygon_hashes};
+use crate::index::field_index::geo_hash::{
+    GeoHash, circle_hashes, encode_max_precision, polygon_hashes,
+};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
@@ -599,6 +601,50 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
     assert_eq!(new_index.points_count(), 1);
     if index_type != IndexType::OnDisk {
         assert_eq!(new_index.points_values_count(), 2);
+    }
+}
+
+#[rstest]
+#[case(IndexType::Mutable)]
+#[case(IndexType::OnDisk)]
+#[case(IndexType::Immutable)]
+fn same_geo_index_between_points_with_dups_test(#[case] index_type: IndexType) {
+    let temp_dir = {
+        let (mut builder, temp_dir, _) = create_builder(index_type);
+
+        let geo_values = json!([BERLIN, BERLIN, POTSDAM]); // Berlin twice
+        let hw_counter = HardwareCounterCell::new();
+        let payload = [&geo_values];
+        builder.add_point(1, &payload, &hw_counter).unwrap();
+        builder.add_point(2, &payload, &hw_counter).unwrap();
+        let mut index = builder.finalize().unwrap();
+
+        index.remove_point(1).unwrap();
+        index.flusher()().unwrap();
+
+        assert_eq!(index.points_count(), 1);
+        if index_type != IndexType::OnDisk {
+            assert_eq!(index.points_values_count(), 3);
+        }
+        drop(index);
+        temp_dir
+    };
+
+    let new_index = reload_index(index_type, &temp_dir, &deleted_with(&[1]));
+    assert_eq!(new_index.points_count(), 1);
+    if index_type != IndexType::OnDisk {
+        assert_eq!(new_index.points_values_count(), 3);
+
+        let hw_counter = HardwareCounterCell::disposable();
+        let berlin_hash = encode_max_precision(BERLIN.lon.0, BERLIN.lat.0).unwrap();
+        assert_eq!(
+            new_index.values_of_hash(berlin_hash, &hw_counter).unwrap(),
+            2
+        );
+        assert_eq!(
+            new_index.points_of_hash(berlin_hash, &hw_counter).unwrap(),
+            1
+        );
     }
 }
 
