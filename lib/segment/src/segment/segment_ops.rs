@@ -19,6 +19,7 @@ use crate::common::operation_error::{
 };
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::tiny_map::TinyMap;
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
 use crate::id_tracker::{IdTracker, IdTrackerRead};
@@ -279,8 +280,8 @@ impl Segment {
     /// Step order:
     ///
     /// 1. Read all named vectors at `old_id` as storage-native bytes into an
-    ///    owned `(name, bytes)` list, and the full payload at `old_id` into
-    ///    an owned `Payload`.
+    ///    owned name → bytes map, and the full payload at `old_id` into an
+    ///    owned `Payload`.
     /// 2. Call `mutate(&mut raw_vectors, &mut updated_vectors, &mut payload)`
     ///    to apply the op-specific change in memory: drop raw entries to
     ///    delete names, insert decoded vectors into the (initially empty)
@@ -323,7 +324,7 @@ impl Segment {
     ) -> OperationResult<(R, PointOffsetType)>
     where
         F: FnOnce(
-            &mut Vec<(VectorNameBuf, Vec<u8>)>,
+            &mut TinyMap<VectorNameBuf, Vec<u8>>,
             &mut NamedVectors<'static>,
             &mut Payload,
         ) -> OperationResult<R>,
@@ -339,15 +340,17 @@ impl Segment {
         //    bitslice carry leftover default-vector bytes from the original
         //    `update_vector(_, None, _)` insert — including those would
         //    promote phantom data into the fresh slot, so we skip them
-        //    and write `None` at new_id (re-tombstoning the slot).
-        let mut raw_vectors: Vec<(VectorNameBuf, Vec<u8>)> = Vec::new();
+        //    and write `None` at new_id (re-tombstoning the slot). `TinyMap`
+        //    keeps the container inline (no allocation), like the decoded
+        //    `NamedVectors` snapshot this replaced.
+        let mut raw_vectors: TinyMap<VectorNameBuf, Vec<u8>> = TinyMap::new();
         for (vector_name, vector_data) in self.vector_data.iter() {
             let storage = vector_data.vector_storage.borrow();
             if storage.is_deleted_vector(old_id) {
                 continue;
             }
             if let Some(bytes) = storage.vector_bytes_opt::<Random>(old_id)? {
-                raw_vectors.push((vector_name.clone(), bytes));
+                raw_vectors.insert(vector_name.clone(), bytes);
             }
         }
         let mut updated_vectors: NamedVectors<'static> = NamedVectors::default();
@@ -373,7 +376,7 @@ impl Segment {
                 Some(vector) => vector_index.update_vector(new_id, Some(vector), hw_counter)?,
                 None => vector_index.update_vector_raw(
                     new_id,
-                    find_raw_vector(&raw_vectors, vector_name),
+                    raw_vectors.get(vector_name).map(Vec::as_slice),
                     hw_counter,
                 )?,
             }
@@ -441,7 +444,7 @@ impl Segment {
     where
         InPlace: FnOnce(&mut Segment, PointOffsetType) -> OperationResult<bool>,
         SnapshotMutate: FnOnce(
-            &mut Vec<(VectorNameBuf, Vec<u8>)>,
+            &mut TinyMap<VectorNameBuf, Vec<u8>>,
             &mut NamedVectors<'static>,
             &mut Payload,
         ) -> OperationResult<bool>,

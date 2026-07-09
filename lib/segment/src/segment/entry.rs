@@ -969,7 +969,7 @@ impl SegmentEntry for Segment {
                 vector_storage.delete_vector(internal_id)
             },
             |raw_vectors, _updated_vectors, _payload| {
-                raw_vectors.retain(|(name, _)| name != vector_name);
+                raw_vectors.remove(vector_name);
                 Ok(was_present)
             },
         )?;
