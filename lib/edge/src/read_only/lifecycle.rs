@@ -62,8 +62,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Internal seam: [`open`](Self::open) always discovers via the manifest, but tests inject other
     /// discovery strategies (e.g. a directory scan) here.
     ///
-    /// Every segment reported by the enumerator is opened read-only; the enumerator only reports
-    /// segments the leader considers ready, so a failure to open one is a genuine error.
+    /// Every segment reported by the enumerator is opened read-only. The manifest is superset-biased,
+    /// so segments that cannot be loaded (not yet finalized, already deleted, or appendable) are
+    /// skipped rather than failing the open.
     pub(crate) fn open_with_enumerator(
         fs: S::Fs,
         path: &Path,
@@ -80,7 +81,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         let search_pool = crate::pool::build_search_pool(provided_config.search_thread_count())?;
 
         let mut loaded =
-            load_segments_parallel::<S>(&search_pool, &fs, enumerator.list_segments()?)?;
+            load_segments_parallel::<S>(&search_pool, &fs, enumerator.list_segments()?);
         // Fold the derived config in UUID order so the derivation is deterministic.
         loaded.sort_unstable_by_key(|(uuid, _)| *uuid);
         let mut holder = ReadOnlySegmentHolder::default();
