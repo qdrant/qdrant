@@ -17,7 +17,6 @@ use crate::tests::fixtures::create_collection_config;
 /// With the `write_segment_manifest` flag enabled, building a shard writes `segments_manifest.json`
 /// (next to the `segments/` directory) listing the shard's segments as `active`.
 #[tokio::test]
-#[allow(clippy::field_reassign_with_default)]
 async fn writes_segment_manifest_when_flag_enabled() {
     let mut flags = FeatureFlags::default();
     flags.write_segment_manifest = true;

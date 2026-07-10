@@ -1196,7 +1196,6 @@ pub(super) async fn apply_scroll_ordered(
     assert_id_sets_eq(&returned_ids, &expected_ids, "ordered scroll");
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn apply_recommend(
     collection: &Collection,
     model: &Model,
