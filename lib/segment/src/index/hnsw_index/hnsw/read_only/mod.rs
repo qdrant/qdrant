@@ -23,7 +23,7 @@ use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::types::HnswConfig;
+use crate::types::{HnswConfig, Memory};
 use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
@@ -67,6 +67,28 @@ type ReadView<'a, S> = HNSWIndexReadView<
     >,
 >;
 
+/// Effective residency of the graph links, and whether the graph counts as
+/// on-disk: the `memory` parameter (falling back to the deprecated `on_disk`
+/// flag), degraded at load time by the node-wide low-memory mode. Mirrors the
+/// writable [`HNSWIndex::open`][1].
+///
+/// [1]: super::super::HNSWIndex::open
+fn graph_residency(hnsw_config: &HnswConfig) -> (GraphLinksResidency, bool) {
+    let memory = hnsw_config.memory_placement().clamp_to_low_memory();
+    let is_on_disk = memory.is_on_disk();
+
+    let residency = match memory {
+        // Keep the links cold: lazily loaded from disk, cached with usage
+        Memory::Cold => GraphLinksResidency::Cold,
+        // Pre-populate the links into the page cache on load
+        Memory::Cached => GraphLinksResidency::Cached,
+        // Materialize the links on heap, so they are never evicted by cache pressure
+        Memory::Pinned => GraphLinksResidency::Pinned,
+    };
+
+    (residency, is_on_disk)
+}
+
 impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
     pub fn preopen(
@@ -79,12 +101,7 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             .ok_not_found()?;
 
         // Graph data and links
-        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
-        let residency = if is_on_disk {
-            GraphLinksResidency::Cold
-        } else {
-            GraphLinksResidency::Cached
-        };
+        let (residency, _is_on_disk) = graph_residency(hnsw_config);
         GraphLayers::preopen_universal(fs, path, residency)?;
 
         Ok(())
@@ -133,16 +150,9 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             }
         };
 
-        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
-
-        // Keep the graph cold (lazily on disk) when configured so; otherwise
-        // pre-populate it into the page cache on load. Note that non-borrowable
-        // backends materialize the links into heap RAM either way.
-        let residency = if is_on_disk {
-            GraphLinksResidency::Cold
-        } else {
-            GraphLinksResidency::Cached
-        };
+        // Note that non-borrowable backends materialize the links into heap
+        // RAM whatever the residency.
+        let (residency, is_on_disk) = graph_residency(&hnsw_config);
         let graph = GraphLayers::load_universal(fs, path, residency)?;
 
         Ok(Self {

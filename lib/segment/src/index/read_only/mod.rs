@@ -34,7 +34,8 @@ use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::index::vector_index_base::VectorIndexRead;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
-    Filter, Indexes, SearchParams, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
+    Filter, Indexes, Memory, SearchParams, SparseVectorDataConfig, VectorDataConfig,
+    VectorStorageDatatype,
 };
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
@@ -122,24 +123,29 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             return Ok(());
         }
 
-        // Low-memory mode downgrades `ImmutableRam` to `Mmap` (same on-disk format).
-        let effective_index_type = match sparse_vector_config.index.index_type {
-            SparseIndexType::ImmutableRam if low_memory_mode().prefer_disk() => {
-                SparseIndexType::Mmap
-            }
-            SparseIndexType::ImmutableRam => SparseIndexType::ImmutableRam,
-            SparseIndexType::MutableRam => SparseIndexType::MutableRam,
-            SparseIndexType::Mmap => SparseIndexType::Mmap,
-        };
-
-        let populate = match effective_index_type {
+        // MutableRam has no persisted representation; mirror `open_sparse`.
+        match sparse_vector_config.index.index_type {
             SparseIndexType::MutableRam => {
                 return Err(OperationError::service_error(
                     "MutableRam sparse index has no read-only representation",
                 ));
             }
-            SparseIndexType::ImmutableRam => Populate::PreferBackground,
-            SparseIndexType::Mmap => Populate::No,
+            SparseIndexType::ImmutableRam | SparseIndexType::Mmap => {}
+        }
+
+        // The effective placement (structural index type refined by the
+        // `memory` parameter, degraded by low-memory mode — which is also
+        // what downgrades the pinned immutable-RAM open to the lazy mmap
+        // one) decides whether the index data is warmed: the immutable-RAM
+        // open reads it in full, `cached` keeps it mmap-backed with the page
+        // cache primed, and `cold` reads lazily.
+        let placement = sparse_vector_config
+            .index
+            .memory_placement()
+            .clamp_to_low_memory();
+        let populate = match placement {
+            Memory::Pinned | Memory::Cached => Populate::PreferBackground,
+            Memory::Cold => Populate::No,
         };
 
         // Inverted index
