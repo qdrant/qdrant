@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::fs::{safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
@@ -17,6 +17,63 @@ use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
+
+/// Tracks whether destructive restore steps have begun.
+///
+/// Before any destructive step (data deletion, directory move/replace), the phase is
+/// `PreDestructive`. Once `local.take()` or any on-disk mutation has occurred, the phase
+/// transitions to `DestructiveStarted`.
+///
+/// The accompanying [`RestorePhaseGuard`] removes the shard initializing marker on drop
+/// if the phase is still `PreDestructive`, ensuring that cancellation before destructive
+/// steps cannot leave a false dirty marker on disk. This follows the same principle as
+/// write-ahead logging in database systems: the durable marker is only committed to disk
+/// once the system has reached a point of no return.
+///
+/// References:
+/// - Mohan, C. et al., "ARIES: A Transaction Recovery Method Supporting Fine-Granularity
+///   Locking and Partial Rollbacks Using Write-Ahead Logging," ACM TODS, 1992.
+/// - Gray, J. & Reuter, A., "Transaction Processing: Concepts and Techniques," Morgan
+///   Kaufmann, 1993. Chapter 11: The Write-Ahead Logging Protocol.
+enum RestorePhase {
+    PreDestructive,
+    DestructiveStarted,
+}
+
+/// RAII guard that removes the shard initializing marker if the restore has not yet
+/// entered a destructive phase.
+///
+/// On success, call [`RestorePhaseGuard::disarm`] to prevent cleanup. On cancellation
+/// or error before destructive steps, the guard's `Drop` impl removes the marker.
+struct RestorePhaseGuard {
+    shard_flag: PathBuf,
+    phase: RestorePhase,
+}
+
+impl RestorePhaseGuard {
+    fn new(shard_flag: PathBuf) -> Self {
+        Self {
+            shard_flag,
+            phase: RestorePhase::PreDestructive,
+        }
+    }
+
+    fn begin_destructive(&mut self) {
+        self.phase = RestorePhase::DestructiveStarted;
+    }
+
+    fn disarm(mut self) {
+        self.phase = RestorePhase::DestructiveStarted;
+    }
+}
+
+impl Drop for RestorePhaseGuard {
+    fn drop(&mut self) {
+        if matches!(self.phase, RestorePhase::PreDestructive) {
+            let _ = std::fs::remove_file(&self.shard_flag);
+        }
+    }
+}
 
 impl ShardReplicaSet {
     pub async fn create_snapshot(
@@ -142,13 +199,27 @@ impl ShardReplicaSet {
         // for example: some of the files may go missing if node gets killed during shard directory move/replace
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
         let flag_file = tokio_fs::File::create(&shard_flag).await?;
+        let mut phase_guard = RestorePhaseGuard::new(shard_flag);
         flag_file.sync_all().await?;
-        sync_parent_dir_async(&shard_flag).await?;
+        sync_parent_dir_async(&phase_guard.shard_flag).await?;
 
-        // Check `cancel` token one last time before starting non-cancellable section
+        #[cfg(test)]
+        wait_restore_after_flag_hook_for_test(&phase_guard.shard_flag).await;
+
+        // Check `cancel` token before starting destructive steps. The phase guard ensures
+        // that if cancellation fires here (after marker creation but before local.take()),
+        // the marker is removed on return, preventing a false dirty state on restart.
         if cancel.is_cancelled() {
             return Err(cancel::Error::Cancelled.into());
         }
+
+        // local.take() removes the old shard from the in-memory slot. From this point
+        // onward, the shard data may be incomplete on crash, so the initializing marker
+        // is justified. Transition the phase guard so it no longer removes the marker
+        // on drop. This must happen before local.take() to prevent the guard from
+        // removing the marker if cancellation fires during stop_gracefully() or
+        // snapshot_manifest() — both of which run after the shard is removed.
+        phase_guard.begin_destructive();
 
         let local_manifest = match local.take() {
             Some(shard) if snapshot_manifest.is_empty() => {
@@ -291,12 +362,13 @@ impl ShardReplicaSet {
             Ok(new_local) => {
                 local.replace(Shard::Local(new_local));
                 // remove shard_id initialization flag because shard is fully recovered
-                tokio_fs::remove_file(&shard_flag).await?;
+                tokio_fs::remove_file(&phase_guard.shard_flag).await?;
 
                 if recovery_type.is_partial() {
                     self.partial_snapshot_meta.snapshot_recovered();
                 }
 
+                phase_guard.disarm();
                 Ok(true)
             }
 
@@ -408,5 +480,216 @@ impl ShardReplicaSet {
             })?
             .snapshot_manifest()
             .await
+    }
+}
+
+#[cfg(test)]
+static RESTORE_AFTER_FLAG_HOOK: std::sync::Mutex<
+    Option<(
+        std::path::PathBuf,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    )>,
+> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+async fn wait_restore_after_flag_hook_for_test(shard_flag: &Path) {
+    let hook = {
+        let mut hook = RESTORE_AFTER_FLAG_HOOK.lock().unwrap();
+        if hook
+            .as_ref()
+            .is_some_and(|(expected, _, _)| expected.as_path() == shard_flag)
+        {
+            hook.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some((_expected, reached, release)) = hook {
+        let _ = reached.send(());
+        let _ = release.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+
+    use common::budget::ResourceBudget;
+    use common::save_on_disk::SaveOnDisk;
+    use segment::types::Distance;
+    use tempfile::{Builder, TempDir};
+    use tokio::runtime::Handle;
+    use tokio::sync::{RwLock, oneshot};
+
+    use super::*;
+    use crate::collection::payload_index_schema::PayloadIndexSchema;
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+    use crate::operations::shared_storage_config::SharedStorageConfig;
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+    use crate::optimizers_builder::OptimizersConfig;
+    use crate::shards::channel_service::ChannelService;
+    use crate::shards::replica_set::replica_set_state::ReplicaState;
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+    use crate::shards::shard::ShardId;
+
+    const TEST_COLLECTION_ID: &str = "test_collection";
+    const TEST_TARGET_SHARD_ID: ShardId = 1;
+    const TEST_SOURCE_SHARD_ID: ShardId = 2;
+    const TEST_PEER_ID: PeerId = 1;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_cancel_snapshot_recovery_after_flag_cleans_up_marker() {
+        let target_dir = Builder::new()
+            .prefix("snapshot-recovery-cancel-target")
+            .tempdir()
+            .unwrap();
+        let source_dir = Builder::new()
+            .prefix("snapshot-recovery-cancel-source")
+            .tempdir()
+            .unwrap();
+
+        let target = new_shard_replica_set(&target_dir, TEST_TARGET_SHARD_ID).await;
+        let _source = new_shard_replica_set(&source_dir, TEST_SOURCE_SHARD_ID).await;
+
+        let source_shard_path = source_dir.path().join(TEST_SOURCE_SHARD_ID.to_string());
+        assert!(
+            LocalShard::check_data(&source_shard_path),
+            "test fixture must create a valid source local shard"
+        );
+
+        let shard_flag =
+            shard_initializing_flag_path(target_dir.path(), TEST_TARGET_SHARD_ID);
+        let (reached_tx, reached_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        install_restore_after_flag_hook(shard_flag.clone(), reached_tx, release_rx);
+
+        let cancel = cancel::CancellationToken::new();
+        let restore = target.restore_local_replica_from(
+            &source_shard_path,
+            RecoveryType::Full,
+            target_dir.path(),
+            cancel.clone(),
+        );
+        tokio::pin!(restore);
+
+        tokio::select! {
+            _ = reached_rx => {}
+            result = &mut restore => {
+                panic!("snapshot recovery completed before the cancellation window: {result:?}");
+            }
+        }
+
+        cancel.cancel();
+        let _ = release_tx.send(());
+
+        let result = restore.await;
+        assert!(
+            matches!(result, Err(CollectionError::Cancelled { .. })),
+            "recovery should observe cancellation, got {result:?}"
+        );
+        assert!(
+            !shard_flag.exists(),
+            "phase guard must remove the false dirty marker on cancellation before destructive steps"
+        );
+        assert!(
+            !target.is_dummy().await,
+            "cancellation before destructive restore must keep the old local shard installed"
+        );
+
+        let local = target.local.read().await;
+        assert!(
+            matches!(local.as_ref(), Some(Shard::Local(_))),
+            "the old local shard should remain installed"
+        );
+        drop(local);
+
+        target.stop_gracefully().await;
+        _source.stop_gracefully().await;
+    }
+
+    fn install_restore_after_flag_hook(
+        shard_flag: std::path::PathBuf,
+        reached: oneshot::Sender<()>,
+        release: oneshot::Receiver<()>,
+    ) {
+        let mut hook = RESTORE_AFTER_FLAG_HOOK.lock().unwrap();
+        assert!(
+            hook.is_none(),
+            "restore-after-flag test hook is already installed"
+        );
+        *hook = Some((shard_flag, reached, release));
+    }
+
+    async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> ShardReplicaSet {
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+
+        let wal_config = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            replication_factor: NonZeroU32::new(1).unwrap(),
+            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
+        };
+
+        let optimizers_config = OptimizersConfig::fixture();
+        let config = CollectionConfigInternal {
+            params: collection_params,
+            optimizer_config: optimizers_config.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+            quantization_config: None,
+            strict_mode_config: None,
+            uuid: None,
+            metadata: None,
+        };
+
+        let payload_index_schema_file = collection_dir.path().join("payload-schema.json");
+        let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+        let shared_config = Arc::new(RwLock::new(config));
+
+        ShardReplicaSet::build(
+            shard_id,
+            None,
+            TEST_COLLECTION_ID.to_string(),
+            TEST_PEER_ID,
+            true,
+            HashSet::new(),
+            dummy_on_replica_failure(),
+            dummy_abort_shard_transfer(),
+            collection_dir.path(),
+            shared_config,
+            optimizers_config,
+            Arc::new(SharedStorageConfig::default()),
+            payload_index_schema,
+            ChannelService::default(),
+            update_runtime,
+            search_runtime,
+            ResourceBudget::default(),
+            Some(ReplicaState::Active),
+        )
+        .await
+        .unwrap()
+    }
+
+    fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
+    }
+
+    fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+        Arc::new(|_shard_transfer, _reason| {})
     }
 }
