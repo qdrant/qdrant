@@ -473,7 +473,11 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::{MmapFile, MmapFs};
+    use std::borrow::Borrow;
+
+    #[cfg(target_os = "linux")]
+    use common::universal_io::IoUringFs;
+    use common::universal_io::MmapFs;
     use itertools::Itertools;
     use tempfile::Builder;
 
@@ -481,130 +485,69 @@ mod tests {
     use crate::types::GeoPoint;
 
     #[test]
-    fn test_mmap_point_to_values_string() {
-        let values: Vec<Vec<String>> = vec![
-            vec![
-                "fox".to_owned(),
-                "driver".to_owned(),
-                "point".to_owned(),
-                "it".to_owned(),
-                "box".to_owned(),
-            ],
-            vec![
-                "alice".to_owned(),
-                "red".to_owned(),
-                "yellow".to_owned(),
-                "blue".to_owned(),
-                "apple".to_owned(),
-            ],
-            vec![
-                "box".to_owned(),
-                "qdrant".to_owned(),
-                "line".to_owned(),
-                "bash".to_owned(),
-                "reproduction".to_owned(),
-            ],
-            vec![
-                "list".to_owned(),
-                "vitamin".to_owned(),
-                "one".to_owned(),
-                "two".to_owned(),
-                "three".to_owned(),
-            ],
-            vec![
-                "tree".to_owned(),
-                "metallic".to_owned(),
-                "ownership".to_owned(),
-            ],
+    fn test_point_to_values() {
+        let gp = |x, y| GeoPoint::new_unchecked(x, y);
+
+        let str_data: &[&[&str]] = &[
+            &["fox", "driver", "point", "it", "box"],
+            &["alice", "red", "yellow", "blue", "apple"],
+            &["box", "qdrant", "line", "bash", "reproduction"],
+            &["list", "vitamin", "one", "two", "three"],
+            &["tree", "metallic", "ownership"],
+            &[],
+            &["slice"],
+            &["red", "pink"],
+        ];
+        let geo_data = &[
+            vec![gp(6., 2.), gp(4., 3.), gp(2., 5.), gp(8., 7.), gp(1., 9.)],
+            vec![gp(8., 1.), gp(3., 3.), gp(5., 9.), gp(1., 8.), gp(7., 2.)],
+            vec![gp(6., 3.), gp(4., 4.), gp(3., 7.), gp(1., 2.), gp(4., 8.)],
+            vec![gp(1., 3.), gp(3., 9.), gp(7., 0.)],
             vec![],
-            vec!["slice".to_owned()],
-            vec!["red".to_owned(), "pink".to_owned()],
+            vec![gp(8., 5.)],
+            vec![gp(9., 4.)],
         ];
 
-        let dir = Builder::new()
-            .prefix("mmap_point_to_values")
-            .tempdir()
-            .unwrap();
-        OnDiskPointToValues::<str, MmapFile>::build_from_iter(
-            dir.path(),
-            values
-                .iter()
-                .enumerate()
-                .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.as_str()))),
-        )
-        .unwrap();
-        let point_to_values =
-            OnDiskPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+        let str_data = str_data
+            .iter()
+            .map(|arr| arr.iter().map(|s| s.to_string()).collect_vec())
+            .collect_vec();
 
-        for (idx, values) in values.iter().enumerate() {
-            let v = point_to_values
-                .values_iter(idx as PointOffsetType, ConditionedCounter::never())
-                .unwrap()
-                .unwrap()
-                .map(|s| s.into_owned())
-                .collect_vec();
-            assert_eq!(&v, values);
-        }
+        check_point_to_values::<str, _>(&MmapFs, &str_data);
+        #[cfg(target_os = "linux")]
+        check_point_to_values::<str, _>(&IoUringFs, &str_data);
+
+        check_point_to_values::<GeoPoint, _>(&MmapFs, geo_data);
+        #[cfg(target_os = "linux")]
+        check_point_to_values::<GeoPoint, _>(&IoUringFs, geo_data);
     }
 
-    #[test]
-    fn test_mmap_point_to_values_geo() {
-        let values: Vec<Vec<GeoPoint>> = vec![
-            vec![
-                GeoPoint::new_unchecked(6.0, 2.0),
-                GeoPoint::new_unchecked(4.0, 3.0),
-                GeoPoint::new_unchecked(2.0, 5.0),
-                GeoPoint::new_unchecked(8.0, 7.0),
-                GeoPoint::new_unchecked(1.0, 9.0),
-            ],
-            vec![
-                GeoPoint::new_unchecked(8.0, 1.0),
-                GeoPoint::new_unchecked(3.0, 3.0),
-                GeoPoint::new_unchecked(5.0, 9.0),
-                GeoPoint::new_unchecked(1.0, 8.0),
-                GeoPoint::new_unchecked(7.0, 2.0),
-            ],
-            vec![
-                GeoPoint::new_unchecked(6.0, 3.0),
-                GeoPoint::new_unchecked(4.0, 4.0),
-                GeoPoint::new_unchecked(3.0, 7.0),
-                GeoPoint::new_unchecked(1.0, 2.0),
-                GeoPoint::new_unchecked(4.0, 8.0),
-            ],
-            vec![
-                GeoPoint::new_unchecked(1.0, 3.0),
-                GeoPoint::new_unchecked(3.0, 9.0),
-                GeoPoint::new_unchecked(7.0, 0.0),
-            ],
-            vec![],
-            vec![GeoPoint::new_unchecked(8.0, 5.0)],
-            vec![GeoPoint::new_unchecked(9.0, 4.0)],
-        ];
-
-        let dir = Builder::new()
-            .prefix("mmap_point_to_values")
-            .tempdir()
-            .unwrap();
-        OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
+    fn check_point_to_values<T, Fs>(fs: &Fs, values: &[Vec<T::Owned>])
+    where
+        T: StoredValue + ?Sized,
+        T::Owned: Borrow<T> + PartialEq + std::fmt::Debug,
+        Fs: UniversalReadFs,
+    {
+        let dir = Builder::new().prefix("point_to_values").tempdir().unwrap();
+        OnDiskPointToValues::<T, Fs::File>::build_from_iter(
             dir.path(),
             values
                 .iter()
                 .enumerate()
-                .map(|(id, values)| (id as PointOffsetType, values.iter())),
+                .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.borrow()))),
         )
         .unwrap();
-        let point_to_values =
-            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let ppv = OnDiskPointToValues::<T, Fs::File>::open(fs, dir.path(), Populate::No).unwrap();
 
+        // Roundtrip check
         for (idx, values) in values.iter().enumerate() {
-            let iter = point_to_values
+            let v = ppv
                 .values_iter(idx as PointOffsetType, ConditionedCounter::never())
-                .unwrap();
-            let v: Vec<GeoPoint> = iter
-                .map(|iter| iter.map(Cow::into_owned).collect_vec())
-                .unwrap_or_default();
-            assert_eq!(&v, values);
+                .unwrap()
+                .unwrap()
+                .map(Cow::into_owned)
+                .collect_vec();
+            assert_eq!(&v, values, "roundtrip check");
         }
     }
 }
