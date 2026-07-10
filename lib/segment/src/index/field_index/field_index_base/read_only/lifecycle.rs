@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::bitvec::BitSlice;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::ReadOnlyFieldIndex;
 use crate::common::operation_error::OperationResult;
@@ -42,11 +42,21 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         field: &JsonPath,
+        payload_schema: &PayloadFieldSchema,
         index_type: &FullPayloadIndexType,
     ) -> OperationResult<bool> {
         let mode = match index_type.storage_type {
             StorageType::Gridstore => ReadMode::Appendable,
             StorageType::Mmap { is_on_disk } => ReadMode::Immutable { is_on_disk },
+        };
+
+        // Derive whether how to populate from the payload schema
+        let schema_populate = || {
+            if payload_schema.memory_placement().populate_on_open() {
+                Populate::PreferBackground
+            } else {
+                Populate::No
+            }
         };
 
         let preopened = match index_type.index_type {
@@ -155,14 +165,15 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     )?
                 }
             },
-            // Bool and null are roaring-flag backed: a single read-only `preopen`
-            // serves both modes (neither consumes the immutable-only
-            // `is_on_disk` / `deleted_points`).
+            // Bool and null keep a single roaring-flag format, but we can choose populate
+            // param based on schema placement.
             PayloadIndexType::BoolIndex => {
-                ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field))?
+                let populate = schema_populate();
+                ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field), populate)?
             }
             PayloadIndexType::NullIndex => {
-                ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field))?
+                let populate = schema_populate();
+                ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field), populate)?
             }
         };
 

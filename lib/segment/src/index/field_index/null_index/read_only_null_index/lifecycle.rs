@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_null_index::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME};
 use super::{ReadOnlyNullIndex, ReadOnlyStorage};
@@ -15,9 +15,15 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
     /// absence check: only a missing *pair* of flag directories means no index,
     /// so a half-present (corrupt) layout is reported as existing here and left
     /// for `open` to reject.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<bool> {
-        let has_values = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(HAS_VALUES_DIRNAME))?;
-        let is_null = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(IS_NULL_DIRNAME))?;
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        let has_values =
+            ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(HAS_VALUES_DIRNAME), populate)?;
+        let is_null =
+            ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(IS_NULL_DIRNAME), populate)?;
         Ok(has_values || is_null)
     }
 
