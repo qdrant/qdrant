@@ -16,9 +16,21 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::point_ops::{ConditionalInsertOperationInternal, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use crate::shards::shard::{PeerId, ShardId};
+
+/// Outcome of a resharding pre-check: whether caller should run the operation,
+/// or treat it as already-applied no-op.
+///
+/// On `NoOp` caller must return early, *without* modifying resharding state.
+/// Only pre-check compares resharding key, update steps act unconditionally.
+/// So running them for a stale operation targeting an earlier, already
+/// finished/aborted resharding would modify the current, unrelated one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReshardingCheck {
+    Proceed,
+    NoOp,
+}
 
 impl ShardHolder {
     pub fn resharding_state(&self) -> Option<ReshardState> {
@@ -326,32 +338,49 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_abort_resharding(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+    pub fn check_abort_resharding(
+        &self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<ReshardingCheck> {
         let state = self.resharding_state.read();
 
         let Some(state) = state.deref() else {
-            // Idempotent: no resharding in progress means the abort (or finish)
-            // was already applied, or the start was never applied on this node.
-            // Returning an error here would be silently swallowed by apply_entries,
-            // causing permanent state divergence between peers.
+            // Resharding is not in progress.
+            //
+            // Either resharding was never started, or it is already finished,
+            // or it was already aborted.
+            //
+            // Treat as a no-op.
+
             log::warn!(
-                "check_abort_resharding: no resharding in progress for {resharding_key}, treating as already aborted",
+                "check_abort_resharding: \
+                 resharding is not in progress, \
+                 treating resharding {resharding_key} as already aborted",
             );
-            return Ok(());
+
+            return Ok(ReshardingCheck::NoOp);
         };
 
         if !state.matches(resharding_key) {
-            // Idempotent: a different resharding is active, so the one we're
-            // trying to abort was already handled. Same reasoning as above.
+            // A different resharding is in progress.
+            //
+            // Either requested resharding was never started, or it is already finished,
+            // or it was already aborted.
+            //
+            // Treat as a no-op.
+
             log::warn!(
-                "check_abort_resharding: resharding {resharding_key} not found, current resharding has key {}, treating as already aborted",
+                "check_abort_resharding: \
+                 resharding {} is in progress, \
+                 treating resharding {resharding_key} as already aborted",
                 state.key(),
             );
-            return Ok(());
+
+            return Ok(ReshardingCheck::NoOp);
         }
 
         if state.stage < ReshardingStage::ReadHashRingCommitted {
-            return Ok(());
+            return Ok(ReshardingCheck::Proceed);
         }
 
         Err(CollectionError::bad_request(format!(
@@ -510,35 +539,6 @@ impl ShardHolder {
             Some(state) if state.matches(resharding_key) => Some(None),
             _ => None,
         })?;
-
-        Ok(())
-    }
-
-    pub async fn abort_resharding(
-        &mut self,
-        resharding_key: ReshardKey,
-        force: bool,
-    ) -> CollectionResult<()> {
-        log::warn!("Aborting resharding {resharding_key} (force: {force})");
-
-        // Scale-down: revert replicas in `ReshardingScaleDown` state back to `Active`.
-        for (shard_id, peer_id) in self.scale_down_replicas(&resharding_key) {
-            if let Some(shard) = self.shards.get(&shard_id) {
-                shard.set_replica_state(peer_id, ReplicaState::Active).await?;
-            }
-        }
-
-        // Scale-down: delete points transferred from target shard during resharding
-        self.scale_down_cleanup_points(&resharding_key).await?;
-
-        // Roll hash ring back
-        self.revert_resharding_hashring(&resharding_key);
-
-        // Scale-up: drop target shard that resharding created
-        self.scale_up_drop_target_shard(&resharding_key).await?;
-
-        // Clear persisted resharding state
-        self.clear_resharding_state(&resharding_key)?;
 
         Ok(())
     }

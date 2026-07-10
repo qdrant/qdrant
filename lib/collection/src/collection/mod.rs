@@ -33,6 +33,7 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
+pub use self::resharding::AbortReshardingScope;
 use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
@@ -492,7 +493,8 @@ impl Collection {
                 // Drop replica set `Arc`, so that `abort_resharding` can drop shard cleanly
                 drop(replica_set);
 
-                self.abort_resharding(reshard_key, false).await?;
+                self.abort_resharding(reshard_key, false, AbortReshardingScope::default())
+                    .await?;
 
                 // Check if shard was dropped (when resharding up), and return early if so
                 let Some(rs) = self.shards_holder.read().await.get_shard(shard_id).cloned() else {
@@ -685,7 +687,9 @@ impl Collection {
             .filter(|state| state.peer_id == peer_id);
 
         if let Some(state) = resharding_state
-            && let Err(err) = self.abort_resharding(state.key(), true).await
+            && let Err(err) = self
+                .abort_resharding(state.key(), true, AbortReshardingScope::default())
+                .await
         {
             log::error!(
                 "Failed to abort resharding {} while removing peer {peer_id}: {err}",
