@@ -58,7 +58,6 @@ pub fn retrieve_blocking(
 /// Generic over the segment type `R` so callers with a homogeneous snapshot (e.g. a follower's
 /// `ReadOnlySegment<S>`) are monomorphized; the heterogeneous leader instantiates `R = dyn
 /// ReadSegmentEntry`.
-#[allow(clippy::too_many_arguments)]
 pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
     segments: Vec<Arc<RwLock<R>>>,
     points: &[PointIdType],

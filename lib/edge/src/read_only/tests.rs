@@ -458,7 +458,6 @@ fn manifest_enumerator_requires_manifest() {
 /// With the `write_segment_manifest` flag enabled, the leader `EdgeShard` writes a manifest listing
 /// its segments, and a follower opened over the same directory loads through it.
 #[test]
-#[allow(clippy::field_reassign_with_default)]
 fn leader_writes_manifest_and_follower_loads_it() {
     let mut flags = FeatureFlags::default();
     flags.write_segment_manifest = true;
