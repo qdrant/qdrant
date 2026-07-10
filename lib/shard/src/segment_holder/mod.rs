@@ -970,8 +970,9 @@ impl SegmentHolder {
     /// `point_cow_operation` receives the moved point's vectors twice: as
     /// storage-native bytes (as read from the source; remove a named vector by
     /// `retain`ing on the list) and as an initially empty decoded overlay
-    /// (insert fresh vectors there to overwrite names). Untouched names travel
-    /// to the destination as verbatim bytes, which keeps requantizing storages
+    /// (insert fresh vectors there to overwrite names; entries may borrow from
+    /// the operation data via `'op`). Untouched names travel to the
+    /// destination as verbatim bytes, which keeps requantizing storages
     /// (TurboQuant-as-datatype) lossless across moves.
     ///
     /// # Warning
@@ -982,7 +983,7 @@ impl SegmentHolder {
     /// 1. moving a point first and deleting it after is unnecessary overhead.
     /// 2. this leaves older point versions in place, which may accidentally be revived by some
     ///    other operation later.
-    pub fn apply_points_with_conditional_move<F, G>(
+    pub fn apply_points_with_conditional_move<'op, F, G>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
@@ -995,7 +996,7 @@ impl SegmentHolder {
         G: FnMut(
             PointIdType,
             &mut Vec<(VectorNameBuf, Vec<u8>)>,
-            &mut NamedVectors<'static>,
+            &mut NamedVectors<'op>,
             &mut Payload,
         ),
     {

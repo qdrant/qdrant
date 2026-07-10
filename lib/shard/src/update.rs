@@ -221,9 +221,7 @@ where
                 // `upsert_with_payload` path (`replace_all_vectors` +
                 // clear/set payload).
                 raw_vectors.clear();
-                for (name, vec) in point.get_vectors() {
-                    updated_vectors.insert(VectorNameBuf::from(name), vec.to_owned());
-                }
+                *updated_vectors = point.get_vectors();
                 *old_payload = point.payload.clone().unwrap_or_default();
             },
             hw_counter,
@@ -675,7 +673,7 @@ fn update_vectors(
             },
             |id, _raw_vectors, updated_vectors, _| {
                 for (vector_name, vector_ref) in points_map[&id].iter() {
-                    updated_vectors.insert(vector_name.to_owned(), vector_ref.to_owned());
+                    updated_vectors.insert_ref(vector_name, vector_ref);
                 }
             },
             hw_counter,
