@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::ReadOnlySparseVectorStorage;
@@ -15,19 +15,21 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
     /// Absent files are skipped rather than reported: the subsequent open is
     /// the one to produce the error.
     pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+        // Gridstore reader
         GridstoreReader::<StoredSparseVector, S>::preopen(
             fs,
             path.join(STORAGE_DIRNAME),
             Populate::No,
         )
-        .ok_not_found()
         .map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to preopen read-only sparse vector storage: {err}"
             ))
         })?;
 
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIRNAME)).ok_not_found()?;
+        // Deleted flags
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIRNAME))?;
+
         Ok(())
     }
 

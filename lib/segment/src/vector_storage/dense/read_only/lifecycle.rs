@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::AdviceSetting;
-use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyChunkedDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -24,9 +24,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
         advice: AdviceSetting,
         populate: Populate,
     ) -> OperationResult<()> {
-        ChunkedVectorsRead::<T, S>::preopen(fs, &path.join(VECTORS_DIR_PATH), advice, populate)
-            .ok_not_found()?;
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH)).ok_not_found()?;
+        // Vectors
+        ChunkedVectorsRead::<T, S>::preopen(fs, &path.join(VECTORS_DIR_PATH), advice, populate)?;
+
+        // Deleted flags
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+
         Ok(())
     }
 

@@ -66,8 +66,13 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
         advice: AdviceSetting,
         populate: Populate,
     ) -> OperationResult<()> {
+        // Config file
         fs.schedule_prefetch(&Self::config_file(directory), None, None)?;
+
+        // Status file
         fs.schedule_prefetch(&Self::status_file(directory), None, None)?;
+
+        // Chunks
         preopen_chunks(fs, directory, advice, populate)?;
         Ok(())
     }

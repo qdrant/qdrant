@@ -46,9 +46,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
     ) -> OperationResult<()> {
         let datatype = vector_config.datatype.unwrap_or_default();
 
-        // No on-disk data to prefetch for these storage types: no-op.
         let Some((advice, populate, chunked)) = storage_type_params(vector_config.storage_type)
         else {
+            // No on-disk data to prefetch for these storage types: no-op.
             return Ok(());
         };
 

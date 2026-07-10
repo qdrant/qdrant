@@ -3,9 +3,7 @@ use std::path::Path;
 use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
-};
+use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyImmutableDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -18,12 +16,14 @@ use crate::vector_storage::dense::immutable_dense_vectors::{
 };
 
 /// Read-only mmap options: never writable, lazily paged, nothing populated.
-const READ_ONLY_OPTIONS: OpenOptions = OpenOptions {
-    writeable: false,
-    need_sequential: false,
-    populate: Populate::No,
-    advice: AdviceSetting::Global,
-};
+fn bitslice_open_options(populate: Populate) -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate,
+        advice: AdviceSetting::Global,
+    }
+}
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorStorage<T, S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
@@ -35,10 +35,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorSt
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        ImmutableDenseVectorData::<T, S>::preopen(fs, &path.join(VECTORS_PATH), populate)
-            .ok_not_found()?;
-        fs.schedule_prefetch(&path.join(DELETED_PATH), Some(READ_ONLY_OPTIONS), None)
-            .ok_not_found()?;
+        // Vectors
+        ImmutableDenseVectorData::<T, S>::preopen(fs, &path.join(VECTORS_PATH), populate)?;
+
+        // Deleted flags
+        fs.schedule_prefetch(
+            &path.join(DELETED_PATH),
+            Some(bitslice_open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
         Ok(())
     }
 
@@ -73,8 +79,12 @@ fn open_deleted_flags<S: UniversalRead>(
     deleted_path: &Path,
     num_vectors: usize,
 ) -> OperationResult<InMemoryBitvecFlags> {
-    let stored =
-        StoredBitSlice::<S>::open(fs, deleted_path, READ_ONLY_OPTIONS, Default::default())?;
+    let stored = StoredBitSlice::<S>::open(
+        fs,
+        deleted_path,
+        bitslice_open_options(Populate::No),
+        Default::default(),
+    )?;
     let all = stored.read_all()?;
 
     let start = deleted_mmap_data_start() * 8;

@@ -57,7 +57,9 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         vectors_path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
+        // Vector data
         fs.schedule_prefetch(vectors_path, Some(Self::open_options(populate)), None)?;
+
         Ok(())
     }
 
