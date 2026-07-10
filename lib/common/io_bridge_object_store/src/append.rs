@@ -232,6 +232,12 @@ async fn append_request(
         let write_offset_conflict = match status {
             http::StatusCode::BAD_REQUEST => body_text.contains(INVALID_WRITE_OFFSET_CODE),
             http::StatusCode::PRECONDITION_FAILED => true,
+            // A missing object while a nonzero offset was expected is a
+            // stale view of the object (deleted behind our back) — the same
+            // reopen-and-retry recovery as an offset mismatch, matching the
+            // in-memory emulation. At offset 0 a 404 is a genuine
+            // missing-target error (e.g. missing bucket).
+            http::StatusCode::NOT_FOUND => offset > 0,
             _ => false,
         };
 
