@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use common::universal_io::{CachedReadFs, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};
@@ -17,9 +17,13 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// absence check: only a missing *pair* of flag directories means no index,
     /// so a half-present (corrupt) layout is reported as existing here and left
     /// for `open` to reject.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<bool> {
-        let trues = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME))?;
-        let falses = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME))?;
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        let trues = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME), populate)?;
+        let falses = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME), populate)?;
         Ok(trues || falses)
     }
 

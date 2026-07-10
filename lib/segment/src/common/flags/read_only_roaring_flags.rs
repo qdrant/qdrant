@@ -50,22 +50,18 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     directory: PathBuf,
 }
 
-/// Read-only open options shared by every file this storage maps: never
-/// writable, lazily paged under the global mmap advice, nothing populated up
-/// front. `OpenOptions` has no general constructor by design (callers spell the
-/// knobs out), so this one value keeps the read path's opens identical.
-const READ_ONLY_OPTIONS: OpenOptions = OpenOptions {
-    writeable: false,
-    need_sequential: false,
-    populate: Populate::No,
-    advice: AdviceSetting::Global,
-};
+fn open_options(populate: Populate) -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate,
+        advice: AdviceSetting::Global,
+    }
+}
 
 /// Read the logical flag length from the status struct, opened read-only.
 ///
-/// `StoredStruct` is write-bound, so the read goes through the read-only
-/// `TypedStorage`. Returns `Ok(None)` when the status file is absent — the flag
-/// directory doesn't exist — matching the read path's never-create contract.
+/// Returns `Ok(None)` when the status file is absent
 fn read_status_len<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
@@ -73,7 +69,7 @@ fn read_status_len<S: UniversalRead>(
     let Some(file) = fs
         .open(
             status_file(directory),
-            READ_ONLY_OPTIONS,
+            open_options(Populate::No),
             Default::default(),
         )
         .ok_not_found()?
@@ -84,53 +80,40 @@ fn read_status_len<S: UniversalRead>(
     Ok(Some(status.read_whole()?[0].len()))
 }
 
-/// Open the flags bitslice read-only. The handle is retained, not read: the
-/// bitmap scan happens lazily in [`ReadOnlyRoaringFlags::bitmap`], and
-/// `live_reload` reopens this same handle.
-fn open_flags_storage<S: UniversalRead>(
-    fs: &impl UniversalReadFs<File = S>,
-    directory: &Path,
-) -> OperationResult<StoredBitSlice<S>> {
-    Ok(StoredBitSlice::<S>::open(
-        fs,
-        directory.join(FLAGS_FILE),
-        READ_ONLY_OPTIONS,
-        Default::default(),
-    )?)
-}
-
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
-    /// Schedule background prefetch of the two files this storage reads, with
-    /// the same open options they will use, so the prefetch pool can serve them.
+    /// Schedule background prefetch of the two files this storage reads.
     ///
-    /// Returns whether the flag directory exists, probed — as in [`Self::open`]
-    /// — through the status file: `false` means [`Self::open`] would return
-    /// [`Ok(None)`], and the flags file is then not scheduled.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, directory: &Path) -> OperationResult<bool> {
-        // Status file. A missing one means the index isn't present on disk.
+    /// Returns whether the flag directory exists.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        directory: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Status file.
         if fs
-            .schedule_prefetch(&status_file(directory), Some(READ_ONLY_OPTIONS), None)
+            .schedule_prefetch(
+                &status_file(directory),
+                Some(open_options(Populate::PreferBackground)),
+                None,
+            )
             .ok_not_found()?
             .is_none()
         {
             return Ok(false);
         }
 
-        // Flags bitslice. `open` does not read it — [`Self::bitmap`] scans it end
-        // to end on first use — so this warms the pages that scan will need.
-        fs.schedule_prefetch(&directory.join(FLAGS_FILE), Some(READ_ONLY_OPTIONS), None)?;
+        // Bitslice
+        fs.schedule_prefetch(
+            &directory.join(FLAGS_FILE),
+            Some(open_options(populate)),
+            None,
+        )?;
 
         Ok(true)
     }
 
     /// Open persisted flags read-only, retaining the bitslice handle for
     /// [`Self::bitmap`] and [`LiveReload`].
-    ///
-    /// Read-only counterpart of [`RoaringFlags::new`][1]: every file is opened
-    /// through `fs` non-writable, nothing is created and nothing is written.
-    /// The logical length comes from the status file (the flags file is padded
-    /// past it). Unlike the writable path, the flags file itself is *not* read
-    /// here — see [`Self::bitmap`]; opening touches only the status file.
     ///
     /// Returns [`Ok(None)`] when the flag directory doesn't exist (the status
     /// file is absent), matching the read path's never-create contract.
@@ -145,9 +128,12 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             return Ok(None);
         };
 
-        // The bitslice handle is opened but not read: the bitmap is built on
-        // first use, and `live_reload` reopens this handle to see appended points.
-        let storage = open_flags_storage::<S>(fs, directory)?;
+        let storage = StoredBitSlice::<S>::open(
+            fs,
+            directory.join(FLAGS_FILE),
+            open_options(Populate::No),
+            Default::default(),
+        )?;
 
         Ok(Some(Self {
             bitmap: OnceLock::new(),

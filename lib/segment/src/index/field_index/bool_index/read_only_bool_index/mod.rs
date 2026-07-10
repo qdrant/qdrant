@@ -109,25 +109,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
         Ok(())
     }
 
-    /// Reports the on-disk format's mutability, mirroring
-    /// [`BoolIndex::get_mutability_type`][1].
-    ///
-    /// [`MutableBoolIndex`][2] and [`ImmutableBoolIndex`][3] share the same
-    /// on-disk roaring-flags layout — the writable [`BoolIndex::Mmap`][1]
-    /// arm itself "can be both mutable and immutable, so we pick mutable",
-    /// per the writable enum's comment. The read path cannot distinguish
-    /// them from the files alone, and the read-only wrapper denies mutation
-    /// either way, so it conservatively reports
-    /// [`IndexMutability::Immutable`]. If a future caller needs to preserve
-    /// the writable-side label exactly (e.g. for round-tripping
-    /// [`FullPayloadIndexType`][4] against the persisted schema), the
-    /// mutability should be threaded through [`Self::open`] and stored on
-    /// the struct.
-    ///
-    /// [1]: super::super::BoolIndex::get_mutability_type
-    /// [2]: super::super::mutable_bool_index::MutableBoolIndex
-    /// [3]: super::super::immutable_bool_index::ImmutableBoolIndex
-    /// [4]: crate::index::payload_config::FullPayloadIndexType
+    /// Reports the on-disk format's mutability
     pub fn get_mutability_type(&self) -> IndexMutability {
         IndexMutability::Immutable
     }
@@ -139,7 +121,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::sorted_slice::SortedSlice;
     use common::universal_io::{
-        CachedFs, CachedReadFs, MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps,
+        CachedFs, CachedReadFs, MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFileOps,
     };
     use itertools::Itertools as _;
     use serde_json::json;
@@ -487,7 +469,14 @@ mod tests {
         // Same order as the segment open path: snapshot, then preopen, then open.
         let mut cached_fs = CachedFs::new(fs.clone(), dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
-        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(&cached_fs, dir.path()).unwrap());
+        assert!(
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(
+                &cached_fs,
+                dir.path(),
+                Populate::PreferBackground
+            )
+            .unwrap()
+        );
 
         // Everything `open` reads must now come from the prefetch pool.
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
@@ -523,7 +512,12 @@ mod tests {
         let mut empty_fs = CachedFs::new(fs, empty.path()).unwrap();
         empty_fs.cache_file_info().unwrap();
         assert!(
-            !ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(&empty_fs, empty.path()).unwrap()
+            !ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(
+                &empty_fs,
+                empty.path(),
+                Populate::PreferBackground
+            )
+            .unwrap()
         );
         assert!(
             ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&empty_fs, empty.path())

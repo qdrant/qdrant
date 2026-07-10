@@ -33,7 +33,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
         // Payload indexes
         for (field, indexed) in config.indices.iter() {
             for index_type in &indexed.types {
-                ReadOnlyFieldIndex::preopen(fs, path, field, index_type)?;
+                ReadOnlyFieldIndex::preopen(fs, path, field, &indexed.schema, index_type)?;
             }
         }
 
