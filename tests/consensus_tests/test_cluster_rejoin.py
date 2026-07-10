@@ -451,6 +451,11 @@ def test_replace_peer_without_shards_same_uri(tmp_path: pathlib.Path):
     # Remember the peer ID of the extra peer
     extra_peer_id = get_cluster_info(extra_peer_api_uri)['peer_id']
 
+    # Wait for the collection metadata to propagate to the extra peer before
+    # querying it. Being online and present in consensus does not guarantee the
+    # peer has already applied the collection-creation Raft entry locally.
+    wait_collection_on_all_peers("test_collection", [extra_peer_api_uri])
+
     # Verify extra peer has no shards
     collection_cluster_info = get_collection_cluster_info(extra_peer_api_uri, "test_collection")
     assert len(collection_cluster_info["local_shards"]) == 0
@@ -513,6 +518,11 @@ def test_replace_running_peer_without_shards_same_uri(tmp_path: pathlib.Path):
     # Remember the peer ID and p2p URI of the extra peer
     extra_peer_id = get_cluster_info(extra_peer_api_uri)['peer_id']
     extra_peer_p2p_uri = get_uri(extra_peer_port)
+
+    # Wait for the collection metadata to propagate to the extra peer before
+    # querying it. Being online and present in consensus does not guarantee the
+    # peer has already applied the collection-creation Raft entry locally.
+    wait_collection_on_all_peers("test_collection", [extra_peer_api_uri])
 
     # Verify extra peer has no shards
     collection_cluster_info = get_collection_cluster_info(extra_peer_api_uri, "test_collection")
