@@ -80,7 +80,10 @@ def test_reinit_consensus(tmp_path: pathlib.Path):
     peer_urls_new = []
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_restarted.log", reinit=True)
     peer_urls_new.append(bootstrap_api_uri)
-    leader = wait_peer_added(bootstrap_api_uri, expected_size=2)
+    # `--reinit` founds a fresh single-member cluster: the old peers (and their
+    # old addresses) are dropped from the address book, the other peers re-join
+    # below and re-register their new addresses.
+    leader = wait_peer_added(bootstrap_api_uri, expected_size=1)
     for i in range(1, len(peer_dirs)):
         peer_urls_new.append(start_peer(peer_dirs[i], f"peer_{i}_restarted.log", bootstrap_uri, reinit=True))
     wait_for_uniform_cluster_status(peer_urls_new, leader)
