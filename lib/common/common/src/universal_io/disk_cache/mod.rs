@@ -140,7 +140,8 @@ impl UniversalReadFs for BlockCacheFs {
         } = options;
         debug_assert!(!writeable);
 
-        Ok(CachedSlice::open(&self.controller, path.as_ref())?)
+        CachedSlice::open(&self.controller, path.as_ref())
+            .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))
     }
 }
 
@@ -155,7 +156,8 @@ impl UniversalRead for CachedSlice {
 
     fn reopen(&mut self) -> Result<()> {
         // TODO: revise if this is the best way to reopen
-        *self = CachedSlice::open(&self.controller, &self.path)?;
+        *self = CachedSlice::open(&self.controller, &self.path)
+            .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
         Ok(())
     }
 

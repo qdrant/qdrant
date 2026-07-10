@@ -160,7 +160,10 @@ impl UniversalRead for MmapFile {
 
     fn reopen(&mut self) -> Result<()> {
         let old_len = self.len as u64;
-        let new_len = fs_err::File::open(self.path())?.metadata()?.len();
+        let new_len = fs_err::File::open(self.path())
+            .map_err(|err| UniversalIoError::extract_not_found(err, self.path()))?
+            .metadata()?
+            .len();
         if new_len < old_len {
             return Err(UniversalIoError::Io(io::Error::new(
                 ErrorKind::UnexpectedEof,

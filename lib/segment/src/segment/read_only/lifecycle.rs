@@ -142,10 +142,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
         if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
-            return Err(OperationError::service_error(format!(
-                "Segment version file not found in segment: {}",
-                segment_path.display(),
-            )));
+            // `FileNotFound`, not a service error: the version file is written last, so
+            // its absence means the segment vanished mid-open (or was never completed) —
+            // a follower resolves that against the segment manifest.
+            return Err(OperationError::FileNotFound {
+                path: segment_path.join(VERSION_FILE),
+            });
         }
 
         let is_appendable = config.is_appendable();
