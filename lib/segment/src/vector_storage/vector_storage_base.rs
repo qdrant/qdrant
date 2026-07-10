@@ -876,10 +876,16 @@ fn insert_dense_bytes<T: PrimitiveVectorElement, S: DenseVectorStorageRead<T> + 
             bytes.len(),
         )));
     }
-    // `pod_collect_to_vec` instead of `cast_slice`: incoming bytes may not be
-    // aligned for `T`.
-    let elements: Vec<T> = bytemuck::allocation::pod_collect_to_vec(bytes);
-    let vector = T::slice_to_float_cow(Cow::Owned(elements));
+
+    // Zero-copy cast when the byte buffer is aligned for `T` (heap
+    // allocations virtually always are); the length already matches, so
+    // misalignment is the only way the cast can fail, and
+    // `pod_collect_to_vec` then copies into an aligned buffer.
+    let elements: Cow<'_, [T]> = match bytemuck::try_cast_slice(bytes) {
+        Ok(slice) => Cow::Borrowed(slice),
+        Err(_) => Cow::Owned(bytemuck::allocation::pod_collect_to_vec(bytes)),
+    };
+    let vector = T::slice_to_float_cow(elements);
     storage.insert_vector(key, VectorRef::from(vector.as_ref()), hw_counter)
 }
 
@@ -898,11 +904,18 @@ fn insert_multi_bytes<T: PrimitiveVectorElement, S: MultiVectorStorageRead<T> + 
             bytes.len(),
         )));
     }
-    let elements: Vec<T> = bytemuck::allocation::pod_collect_to_vec(bytes);
     let dim = storage.vector_dim();
-    let multi = T::into_float_multivector(CowMultiVector::Owned(TypedMultiDenseVector::new(
-        elements, dim,
-    )));
+    // Zero-copy cast when the byte buffer is aligned for `T` (heap
+    // allocations virtually always are); copy to an aligned buffer otherwise.
+    let multi = match bytemuck::try_cast_slice(bytes) {
+        Ok(slice) => T::into_float_multivector(CowMultiVector::Borrowed(
+            TypedMultiDenseVectorRef::new(slice, dim),
+        )),
+        Err(_) => T::into_float_multivector(CowMultiVector::Owned(TypedMultiDenseVector::new(
+            bytemuck::allocation::pod_collect_to_vec(bytes),
+            dim,
+        ))),
+    };
     storage.insert_vector(key, VectorRef::MultiDense(multi.as_vec_ref()), hw_counter)
 }
 
