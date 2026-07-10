@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use ahash::AHashSet;
-use common::bitvec::BitSliceExt;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead};
