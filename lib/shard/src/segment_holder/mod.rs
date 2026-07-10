@@ -1004,6 +1004,7 @@ impl SegmentHolder {
         let appendable_segments = self.appendable_segments_ids();
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
+        let stopped = AtomicBool::new(false);
 
         let _ = self.apply_points(ids, hw_counter, |point_id, idx, write_segment| {
             if let Some(point_version) = write_segment.point_version(point_id)
@@ -1049,7 +1050,7 @@ impl SegmentHolder {
                                 },
                                 &WithVector::Bool(true),
                                 hw_counter,
-                                &AtomicBool::new(false),
+                                &stopped,
                                 DeferredBehavior::WithDeferred,
                             )?
                             .remove(&point_id)

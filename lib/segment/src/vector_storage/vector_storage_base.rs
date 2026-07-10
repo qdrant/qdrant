@@ -877,7 +877,10 @@ fn insert_dense_bytes<T: PrimitiveVectorElement, S: DenseVectorStorageRead<T> + 
         )));
     }
 
-    // Try to avoid allocation if possible.
+    // Zero-copy cast when the byte buffer is aligned for `T` (heap
+    // allocations virtually always are); the length already matches, so
+    // misalignment is the only way the cast can fail, and
+    // `pod_collect_to_vec` then copies into an aligned buffer.
     let elements: Cow<'_, [T]> = match bytemuck::try_cast_slice(bytes) {
         Ok(slice) => Cow::Borrowed(slice),
         Err(_) => Cow::Owned(bytemuck::allocation::pod_collect_to_vec(bytes)),
