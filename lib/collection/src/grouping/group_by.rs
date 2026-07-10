@@ -28,7 +28,7 @@ use crate::operations::types::{
 use crate::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
-use crate::operations::universal_query::shard_query::{self, ShardPrefetch, ShardQueryRequest};
+use crate::operations::universal_query::shard_query::{self, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::recommendations::recommend_into_core_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
@@ -543,7 +543,19 @@ fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
     any_variants
 }
 
+/// Recursively multiplies prefetch limits by `group_size` to ensure enough candidates
+/// are fetched to fill groups. Fusion-level prefetches are skipped because their limits
+/// must stay consistent with the non-grouping path to produce identical fusion scores.
 fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
+    if matches!(shard_prefetch.query.as_ref(), Some(ScoringQuery::Fusion(_))) {
+        shard_prefetch
+            .prefetches
+            .iter_mut()
+            .for_each(|prefetch| {
+                increase_limit_for_group(prefetch, group_size);
+            });
+        return;
+    }
     shard_prefetch.limit *= group_size;
     shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
         increase_limit_for_group(prefetch, group_size);
@@ -557,7 +569,9 @@ mod tests {
     use segment::payload_json;
     use segment::types::{Payload, ScoredPoint};
 
+    use super::increase_limit_for_group;
     use crate::grouping::types::Group;
+    use crate::operations::universal_query::shard_query::{FusionInternal, ScoringQuery, ShardPrefetch};
 
     fn make_scored_point(id: u64, score: f32, payload: Option<Payload>) -> ScoredPoint {
         ScoredPoint {
@@ -632,6 +646,156 @@ mod tests {
             b.hits
                 .iter()
                 .all(|x| x.payload.as_ref() == Some(&payload_b)),
+        );
+    }
+
+    #[test]
+    fn test_increase_limit_for_group_skips_fusion_prefetches() {
+        let group_size = 3;
+
+        let mut prefetch = ShardPrefetch {
+            prefetches: vec![
+                ShardPrefetch {
+                    prefetches: vec![],
+                    query: None,
+                    limit: 10,
+                    params: None,
+                    filter: None,
+                    score_threshold: None,
+                },
+                ShardPrefetch {
+                    prefetches: vec![],
+                    query: None,
+                    limit: 10,
+                    params: None,
+                    filter: None,
+                    score_threshold: None,
+                },
+            ],
+            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+                k: 60,
+                weights: None,
+            })),
+            limit: 10,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        };
+
+        increase_limit_for_group(&mut prefetch, group_size);
+
+        assert_eq!(
+            prefetch.limit, 10,
+            "fusion-level prefetch limit must not be multiplied"
+        );
+        assert_eq!(
+            prefetch.prefetches[0].limit,
+            10 * group_size,
+            "leaf prefetch limits must be multiplied"
+        );
+        assert_eq!(
+            prefetch.prefetches[1].limit,
+            10 * group_size,
+            "leaf prefetch limits must be multiplied"
+        );
+    }
+
+    #[test]
+    fn test_increase_limit_for_group_multiplies_non_fusion() {
+        let group_size = 3;
+
+        let mut prefetch = ShardPrefetch {
+            prefetches: vec![ShardPrefetch {
+                prefetches: vec![],
+                query: None,
+                limit: 10,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: None,
+            limit: 10,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        };
+
+        increase_limit_for_group(&mut prefetch, group_size);
+
+        assert_eq!(
+            prefetch.limit,
+            10 * group_size,
+            "non-fusion prefetch limit must be multiplied"
+        );
+        assert_eq!(
+            prefetch.prefetches[0].limit,
+            10 * group_size,
+            "leaf prefetch limit must be multiplied"
+        );
+    }
+
+    #[test]
+    fn test_increase_limit_for_group_nested_fusion() {
+        let group_size = 3;
+
+        let mut root = ShardPrefetch {
+            prefetches: vec![ShardPrefetch {
+                prefetches: vec![
+                    ShardPrefetch {
+                        prefetches: vec![],
+                        query: None,
+                        limit: 10,
+                        params: None,
+                        filter: None,
+                        score_threshold: None,
+                    },
+                    ShardPrefetch {
+                        prefetches: vec![],
+                        query: None,
+                        limit: 10,
+                        params: None,
+                        filter: None,
+                        score_threshold: None,
+                    },
+                ],
+                query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+                    k: 60,
+                    weights: None,
+                })),
+                limit: 10,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: None,
+            limit: 10,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        };
+
+        increase_limit_for_group(&mut root, group_size);
+
+        assert_eq!(
+            root.limit,
+            10 * group_size,
+            "non-fusion root limit must be multiplied"
+        );
+        let nested = &root.prefetches[0];
+        assert_eq!(
+            nested.limit,
+            10,
+            "nested fusion limit must not be multiplied"
+        );
+        assert_eq!(
+            nested.prefetches[0].limit,
+            10 * group_size,
+            "nested leaf limits must be multiplied"
+        );
+        assert_eq!(
+            nested.prefetches[1].limit,
+            10 * group_size,
+            "nested leaf limits must be multiplied"
         );
     }
 }
