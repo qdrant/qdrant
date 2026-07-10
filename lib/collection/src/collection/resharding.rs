@@ -222,15 +222,29 @@ impl Collection {
             .commit_write_hashring(resharding_key)
     }
 
+    /// Finish a resharding operation.
+    ///
+    /// Every step is idempotent, and resharding state is cleared *last*,
+    /// so it gates the whole operation:
+    ///
+    /// - If we crash *before* resharding state is cleared, on replay the check
+    ///   finds a matching state and every step re-runs with the same result.
+    /// - If we crash *after*, on replay the check finds no matching state and
+    ///   the whole operation is a no-op.
+    ///
+    /// If current resharding does *not* match `resharding_key`, this means
+    /// another/newer resharding is in progress, so we return an error.
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let mut shard_holder = self.shards_holder.write().await;
 
-        // Each step below is individually idempotent, so on replay (e.g. after
-        // a crash that applied only part of the operation) we fall through
-        // every step to reconcile any partially-applied state instead of
-        // short-circuiting on the first condition that already holds.
-        shard_holder.check_finish_resharding(&resharding_key)?;
-        shard_holder.finish_resharding_unchecked(&resharding_key)?;
+        // Check that resharding state mathes expected key.
+        //
+        // Steps below modify state unconditionally, so running them on mismatched key
+        // would modify unrelated resharding.
+        match shard_holder.check_finish_resharding(&resharding_key)? {
+            ReshardingCheck::Proceed => {}
+            ReshardingCheck::NoOp => return Ok(()),
+        }
 
         if resharding_key.direction == ReshardingDirection::Down {
             // Remove the shard we've now migrated all points out of
@@ -275,6 +289,10 @@ impl Collection {
                 .drop_and_remove_shard(resharding_key.shard_id)
                 .await?;
         }
+
+        // Clear persisted resharding state. This is the *last* step,
+        // so a crash at any earlier point replays the whole operation.
+        shard_holder.clear_resharding_state(&resharding_key)?;
 
         Ok(())
     }

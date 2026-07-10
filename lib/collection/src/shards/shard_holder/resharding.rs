@@ -265,13 +265,25 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        // Idempotent: if no resharding is active, finish was already applied.
+    pub fn check_finish_resharding(
+        &mut self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<ReshardingCheck> {
         if self.resharding_state.read().is_none() {
+            // Resharding is not in progress.
+            //
+            // Either it was never started, or it is already finished,
+            // or it was already aborted. Treat as a no-op.
+            //
+            // A *mismatched* state, is rejected with an error by `check_resharding` below.
+
             log::warn!(
-                "check_finish_resharding: no resharding in progress for {resharding_key}, treating as already finished",
+                "check_finish_resharding: \
+                 resharding is not in progress, \
+                 treating resharding {resharding_key} as already finished",
             );
-            return Ok(());
+
+            return Ok(ReshardingCheck::NoOp);
         }
 
         self.check_resharding(
@@ -279,19 +291,7 @@ impl ShardHolder {
             check_stage(ReshardingStage::WriteHashRingCommitted),
         )?;
 
-        Ok(())
-    }
-
-    pub fn finish_resharding_unchecked(&mut self, _: &ReshardKey) -> CollectionResult<()> {
-        // Idempotent: if state is already cleared (replay after a successful
-        // finish/abort), leave it alone so we don't spuriously touch the file.
-        self.resharding_state.write_optional(
-            |state| {
-                if state.is_some() { Some(None) } else { None }
-            },
-        )?;
-
-        Ok(())
+        Ok(ReshardingCheck::Proceed)
     }
 
     fn check_resharding(
@@ -348,9 +348,7 @@ impl ShardHolder {
             // Resharding is not in progress.
             //
             // Either resharding was never started, or it is already finished,
-            // or it was already aborted.
-            //
-            // Treat as a no-op.
+            // or it was already aborted. Treat as a no-op.
 
             log::warn!(
                 "check_abort_resharding: \
@@ -365,9 +363,7 @@ impl ShardHolder {
             // A different resharding is in progress.
             //
             // Either requested resharding was never started, or it is already finished,
-            // or it was already aborted.
-            //
-            // Treat as a no-op.
+            // or it was already aborted. Treat as a no-op.
 
             log::warn!(
                 "check_abort_resharding: \
@@ -1010,25 +1006,56 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // finish_resharding_unchecked idempotency
+    // clear_resharding_state idempotency (the finish/abort last write)
     // ------------------------------------------------------------------
 
     #[test]
-    fn test_finish_unchecked_idempotent_when_no_resharding_active() {
-        let (_dir, mut holder) = make_holder();
+    fn test_clear_resharding_state_idempotent_when_no_resharding_active() {
+        let (_dir, holder) = make_holder();
         let key = make_reshard_key(1);
 
-        // Replay `finish` after the resharding state has already been cleared
-        // (partial apply between the state write and a subsequent step).
-        // The unchecked helper must not panic or error in this case.
-        let result = holder.finish_resharding_unchecked(&key);
+        // Replay `finish`/`abort` after the resharding state has already been
+        // cleared (replay after a successful apply, or crash after the final
+        // clear). The primitive must not panic or error in this case.
+        let result = holder.clear_resharding_state(&key);
         assert!(
             result.is_ok(),
-            "finish_resharding_unchecked must return Ok when no resharding state is present, got error: {result:?}",
+            "clear_resharding_state must return Ok when no resharding state is present, got error: {result:?}",
         );
         assert!(
             holder.resharding_state.read().is_none(),
-            "state must remain cleared after idempotent finish",
+            "state must remain cleared after idempotent clear",
+        );
+    }
+
+    #[test]
+    fn test_clear_resharding_state_leaves_mismatched_state_untouched() {
+        let (_dir, holder) = make_holder();
+
+        // If current resharding does *not* match `resharding_key`, this means
+        // another/newer resharding is in progress, so `clear_resharding_state`
+        // should be a no-op.
+
+        let active_key = make_reshard_key(1);
+        let active_state = ReshardState::new(
+            active_key.uuid,
+            active_key.direction,
+            active_key.peer_id,
+            active_key.shard_id,
+            active_key.shard_key.clone(),
+        );
+        holder
+            .resharding_state
+            .write(|state| *state = Some(active_state.clone()))
+            .unwrap();
+
+        let stale_key = make_reshard_key(2);
+        holder.clear_resharding_state(&stale_key).unwrap();
+
+        assert_eq!(
+            holder.resharding_state.read().clone(),
+            Some(active_state),
+            "a mismatched resharding state must be left untouched by clear_resharding_state",
         );
     }
 
