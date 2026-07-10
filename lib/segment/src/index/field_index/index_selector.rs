@@ -564,6 +564,49 @@ impl IndexSelector<'_> {
     }
 }
 
+impl PayloadIndexType {
+    /// The on-disk directory where an index of this type stores `field`'s data,
+    /// under the payload index root `dir`.
+    ///
+    /// This is the single source of truth for [`wipe_field_dirs`]. The match is
+    /// deliberately exhaustive: a new index type does not compile until its storage
+    /// directory is declared here, and it is then wiped on rebuilds automatically.
+    pub(crate) fn storage_dir(&self, dir: &Path, field: &JsonPath) -> PathBuf {
+        match self {
+            PayloadIndexType::IntIndex
+            | PayloadIndexType::DatetimeIndex
+            | PayloadIndexType::FloatIndex => numeric_dir(dir, field),
+            PayloadIndexType::IntMapIndex
+            | PayloadIndexType::KeywordIndex
+            | PayloadIndexType::GeoIndex
+            | PayloadIndexType::UuidIndex
+            | PayloadIndexType::UuidMapIndex => map_dir(dir, field),
+            PayloadIndexType::FullTextIndex => text_dir(dir, field),
+            PayloadIndexType::BoolIndex => bool_dir(dir, field),
+            PayloadIndexType::NullIndex => null_dir(dir, field),
+        }
+    }
+}
+
+/// Remove all on-disk leftovers of `field`'s indexes under the payload index root `dir`.
+///
+/// A full rebuild must start from a clean slate: files can be left behind by a build
+/// that crashed before its config entry was written, or by an index that failed to
+/// load. Appendable builders open existing storages, so leftovers would leak stale
+/// postings into the fresh build.
+///
+/// Covers every [`PayloadIndexType`] by construction: the candidate set is derived
+/// by iterating the enum through [`PayloadIndexType::storage_dir`].
+pub(crate) fn wipe_field_dirs(dir: &Path, field: &JsonPath) -> std::io::Result<()> {
+    for index_type in <PayloadIndexType as strum::IntoEnumIterator>::iter() {
+        let candidate = index_type.storage_dir(dir, field);
+        if candidate.exists() {
+            fs_err::remove_dir_all(&candidate)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn map_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-map", field.filename()))
 }
