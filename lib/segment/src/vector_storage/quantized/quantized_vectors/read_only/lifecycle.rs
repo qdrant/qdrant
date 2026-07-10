@@ -24,31 +24,28 @@ use crate::vector_storage::quantized::quantized_vectors::{
 };
 
 impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
+    pub fn preopen_config(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+        let config_path = QuantizedVectors::get_config_path(path);
+
+        fs.schedule_prefetch(&config_path, None, None)
+            .ok_not_found()?;
+
+        Ok(())
+    }
+
     /// Schedule background prefetch of every file [`Self::open`] will read.
-    ///
-    /// Reads the quantization config to learn the layout — and then schedules
-    /// it, so `open`'s own read is served from the prefetch pool. A missing
-    /// config means quantization isn't built: nothing to schedule, like
-    /// `open`'s `Ok(None)`. `multivector` stands in for `open`'s
-    /// `multivector_config`: only presence changes the file set.
-    ///
-    /// Unlike `open` there is no dispatch on the storage kind: which flat
-    /// reader (RAM oneshot vs mmap) later consumes the data file doesn't
-    /// change the file set, only flat vs chunked does — and that is the
-    /// storage *type*. Absent files are skipped rather than reported: the
-    /// subsequent open is the one to produce the error.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         multivector: bool,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<Option<QuantizedVectorsConfig>> {
+        // Config
         let config_path = QuantizedVectors::get_config_path(path);
-        let config: Option<QuantizedVectorsConfig> =
-            read_json_via(fs, &config_path).ok_not_found()?;
-        let Some(config) = config else {
-            return Ok(());
+        let Some(config) =
+            read_json_via::<_, QuantizedVectorsConfig>(fs, &config_path).ok_not_found()?
+        else {
+            return Ok(None);
         };
-        fs.schedule_prefetch(&config_path, None, None)?;
 
         // Per-method metadata.
         fs.schedule_prefetch(&QuantizedVectors::get_meta_path(path), None, None)
@@ -80,7 +77,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
                 }
             }
         }
-        Ok(())
+        Ok(Some(config))
     }
 
     /// Open existing quantized vectors read-only through the [`UniversalRead`] backend `S`.
@@ -97,15 +94,18 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
+        known_quantized_config: Option<QuantizedVectorsConfig>,
         distance: Distance,
         datatype: VectorStorageDatatype,
         multivector_config: Option<&MultiVectorConfig>,
         on_disk_vector_storage: bool,
     ) -> OperationResult<Option<Self>> {
         let config_path = QuantizedVectors::get_config_path(path);
-        let config: Option<QuantizedVectorsConfig> =
-            read_json_via(fs, &config_path).ok_not_found()?;
-        let Some(config) = config else {
+
+        let Some(config) = (match known_quantized_config {
+            Some(config) => Some(config),
+            None => read_json_via(fs, &config_path).ok_not_found()?,
+        }) else {
             return Ok(None);
         };
 

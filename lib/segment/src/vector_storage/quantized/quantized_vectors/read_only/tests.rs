@@ -126,6 +126,7 @@ fn read_only_matches_read_write(
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &MmapFs,
         quant_dir.path(),
+        None,
         storage.distance(),
         storage.datatype(),
         None,
@@ -208,6 +209,7 @@ fn read_only_matches_read_write_multivector(
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &MmapFs,
         quant_dir.path(),
+        None,
         storage.distance(),
         storage.datatype(),
         Some(&multivector_config),
@@ -299,6 +301,7 @@ fn preopen_then_open_through_cached_fs(
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &cached_fs,
         quant_dir.path(),
+        None,
         storage.distance(),
         storage.datatype(),
         None,
@@ -370,6 +373,7 @@ fn preopen_then_open_multivector_through_cached_fs(
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &cached_fs,
         quant_dir.path(),
+        None,
         storage.distance(),
         storage.datatype(),
         Some(&multivector_config),
@@ -447,6 +451,7 @@ fn live_reload_chunked_preserves_scores() {
     let mut ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &MmapFs,
         quant_dir.path(),
+        None,
         storage.distance(),
         storage.datatype(),
         None,

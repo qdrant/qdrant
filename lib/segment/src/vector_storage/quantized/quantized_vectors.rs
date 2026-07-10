@@ -89,7 +89,7 @@ impl QuantizedVectors {
             .raw_internal_scorer(point_id, hardware_counter)
     }
 
-    pub(in crate::vector_storage::quantized) fn get_config_path(path: &Path) -> PathBuf {
+    pub fn get_config_path(path: &Path) -> PathBuf {
         path.join(QUANTIZED_CONFIG_PATH)
     }
 
