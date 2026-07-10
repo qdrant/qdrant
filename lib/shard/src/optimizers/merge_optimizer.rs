@@ -130,8 +130,12 @@ impl SegmentOptimizer for MergeOptimizer {
         let mut taken_candidates = 0;
         let mut last_candidate =
             (planner.expected_segments_number() + 2).saturating_sub(self.default_segments_number);
-        while taken_candidates < last_candidate.min(candidates.len()) {
-            let batch = candidates[taken_candidates..last_candidate.min(candidates.len())]
+        loop {
+            let batch_end = last_candidate.min(candidates.len());
+            if taken_candidates >= batch_end {
+                break;
+            }
+            let batch = candidates[taken_candidates..batch_end]
                 .iter()
                 .scan(0, |size_sum, &(segment_id, size)| {
                     *size_sum += size;
