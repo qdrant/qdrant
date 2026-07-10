@@ -267,7 +267,9 @@ pub(super) fn random_partial_named_vectors(
 /// Build a random vector matching the kind metadata associated with `name`.
 fn random_vector_for_name(rng: &mut impl Rng, name: &str) -> VectorValue {
     match kind_of(name) {
-        VectorKind::Dense(dim) => VectorValue::Dense(random_dense_vec(rng, dim)),
+        VectorKind::Dense(dim) | VectorKind::DenseTurbo(dim) => {
+            VectorValue::Dense(random_dense_vec(rng, dim))
+        }
         VectorKind::Sparse => VectorValue::Sparse(random_sparse_vector(rng)),
         VectorKind::MultiDense(dim) => VectorValue::MultiDense(random_multi_dense(rng, dim)),
     }
