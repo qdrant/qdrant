@@ -118,6 +118,82 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
     }
 }
 
+/// Puts buffer both the value data and the mapping in memory: nothing lands on disk until a
+/// flush, which batches everything into a single write per file.
+#[test]
+fn test_put_buffers_value_and_mapping_until_flush() {
+    let dir = TempDir::new().unwrap();
+    let options = StorageOptions {
+        compression: Some(Compression::None),
+        mode: Some(Mode::AppendOnly),
+        ..Default::default()
+    };
+    let mut storage = Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let page_path = dir.path().join("append_only_page_0.dat");
+    let tracker_path = dir.path().join("append_only_tracker.dat");
+
+    for point_offset in 0..3 {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
+            .unwrap();
+    }
+
+    // Nothing is written to disk until a flush
+    assert_eq!(fs::metadata(&page_path).unwrap().len(), 0);
+    assert_eq!(fs::metadata(&tracker_path).unwrap().len(), 0);
+
+    // The buffered values are still fully readable, served from memory
+    assert_eq!(storage.max_point_offset(), 3);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 2 * 128 + 100);
+    for point_offset in 0..3 {
+        assert_eq!(
+            storage
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            Some(vec![point_offset as u8; 100]),
+        );
+    }
+
+    // The flush lands all buffered values and mappings at once, in exactly their extents
+    storage.flusher()().unwrap();
+    assert_eq!(
+        fs::metadata(&page_path).unwrap().len(),
+        2 * 128 + 100,
+        "the page file must hold exactly the appended values",
+    );
+    assert_eq!(
+        fs::metadata(&tracker_path).unwrap().len(),
+        3 * TRACKER_ENTRY_SIZE,
+        "the tracker file must hold exactly the appended mappings",
+    );
+
+    // The values remain readable, now served from the files, and survive a reopen
+    for point_offset in 0..3 {
+        assert_eq!(
+            storage
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            Some(vec![point_offset as u8; 100]),
+        );
+    }
+    drop(storage);
+    let storage =
+        Gridstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert_eq!(storage.max_point_offset(), 3);
+    for point_offset in 0..3 {
+        assert_eq!(
+            storage
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            Some(vec![point_offset as u8; 100]),
+        );
+    }
+}
+
 #[test]
 fn test_put_rejects_out_of_order_point_offsets() {
     let (_dir, mut storage) = empty_byte_storage(Compression::None);
@@ -316,7 +392,7 @@ fn test_empty_and_huge_values() {
 }
 
 #[test]
-fn test_unflushed_mappings_are_lost_after_reopen() {
+fn test_unflushed_puts_are_lost_after_reopen() {
     let dir = TempDir::new().unwrap();
     let options = StorageOptions {
         compression: Some(Compression::None),
@@ -328,8 +404,7 @@ fn test_unflushed_mappings_are_lost_after_reopen() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
-    // Value data is written through to the page file, but the mappings are only appended to
-    // the tracker file on flush
+    // Both the value data and the mappings are buffered in memory until the next flush
     for point_offset in 0..3 {
         storage
             .put_value(point_offset, &vec![7; 100], hw_counter_ref)
@@ -337,17 +412,17 @@ fn test_unflushed_mappings_are_lost_after_reopen() {
     }
     drop(storage);
 
-    // Without a flush, the mappings are gone after reopening
+    // Without a flush, the puts are gone after reopening, and left nothing behind on disk
     let mut storage =
         Gridstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 0);
     assert_eq!(storage.get_value::<Random>(0, &hw_counter).unwrap(), None);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 
-    // The unreferenced value data is left behind in the page file, new appends land past it
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 2 * 128 + 100);
+    // New puts start from a clean page file
     storage.put_value(0, &vec![9; 10], hw_counter_ref).unwrap();
     storage.flusher()().unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 3 * 128 + 10);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 10);
     assert_eq!(
         storage.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(vec![9; 10]),
@@ -378,10 +453,20 @@ fn test_stale_flusher_is_noop() {
         .unwrap();
     storage.flusher()().unwrap();
     assert_eq!(tracker_file_len(&dir), 4 * TRACKER_ENTRY_SIZE);
+    let page_len = fs::metadata(dir.path().join("append_only_page_0.dat"))
+        .unwrap()
+        .len();
 
-    // The stale flusher must not write anything again, its mappings are already persisted
+    // The stale flusher must not write anything again, its values and mappings are already
+    // persisted
     stale_flusher().unwrap();
     assert_eq!(tracker_file_len(&dir), 4 * TRACKER_ENTRY_SIZE);
+    assert_eq!(
+        fs::metadata(dir.path().join("append_only_page_0.dat"))
+            .unwrap()
+            .len(),
+        page_len,
+    );
 
     drop(storage);
     let storage =
@@ -606,12 +691,12 @@ fn test_reader_live_reload() {
         );
     }
 
-    // Value data appended without a flush is not readable yet (no mappings), but a live
-    // reload still refreshes the reported storage size
+    // An unflushed put is buffered in the writer and puts nothing on disk, so a live reload
+    // sees no change at all
     storage.put_value(6, &vec![6; 10], hw_counter_ref).unwrap();
     reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 6);
-    assert_eq!(reader.get_storage_size_bytes(), 6 * 128 + 10);
+    assert_eq!(reader.get_storage_size_bytes(), 5 * 128 + 10);
 }
 
 #[test]
@@ -766,9 +851,13 @@ fn test_writes_only_append() {
         "tracker must hold the first mapping",
     );
 
-    // Putting and flushing more values must only extend both files
+    // Puts alone buffer in memory and leave both files byte-for-byte untouched
     put(&mut storage, 1, "second value");
     put(&mut storage, 2, "third value");
+    assert_eq!(fs::read(&page_path).unwrap(), page_snapshot);
+    assert_eq!(fs::read(&tracker_path).unwrap(), tracker_snapshot);
+
+    // Flushing the puts must only extend both files
     storage.flusher()().unwrap();
 
     let page_grown = fs::read(&page_path).unwrap();
@@ -1046,11 +1135,22 @@ fn test_flusher_persists_mappings_up_to_creation() {
             .unwrap();
     }
 
-    // The flusher only persists the mappings that existed when it was created
+    // The flusher only persists the values and mappings that existed when it was created
     flusher().unwrap();
     assert_eq!(tracker_file_len(&dir), 3 * TRACKER_ENTRY_SIZE);
 
-    // In this session all values are readable, the later ones from pending mappings
+    // The page file holds exactly the extent of the values covered by the flusher
+    let covered_pointer = storage.get_pointer(2).unwrap();
+    let covered_extent =
+        u64::from(covered_pointer.block_offset) * 128 + u64::from(covered_pointer.length);
+    assert_eq!(
+        fs::metadata(dir.path().join("append_only_page_0.dat"))
+            .unwrap()
+            .len(),
+        covered_extent,
+    );
+
+    // In this session all values are readable, the later ones from the in-memory buffers
     for (point_offset, payload) in payloads.iter().enumerate() {
         assert_eq!(
             storage
@@ -1394,6 +1494,23 @@ fn test_reopen_always_exposes_flushed_prefix() {
                 .len(),
             flushed.len() as u64 * TRACKER_ENTRY_SIZE,
         );
+
+        // The page file holds exactly the flushed values, unflushed puts leave no bytes behind
+        let flushed_extent = flushed
+            .len()
+            .checked_sub(1)
+            .and_then(|last| storage.get_pointer(last as u32))
+            .map_or(0, |pointer| {
+                u64::from(pointer.block_offset) * 128 + u64::from(pointer.length)
+            });
+        assert_eq!(
+            fs::metadata(path.join("append_only_page_0.dat"))
+                .unwrap()
+                .len(),
+            flushed_extent,
+            "the page file must hold exactly the flushed values",
+        );
+
         for (point_offset, payload) in flushed.iter().enumerate() {
             assert_eq!(
                 storage

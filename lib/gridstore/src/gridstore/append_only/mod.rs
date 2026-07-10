@@ -161,8 +161,8 @@ where
 
     /// Put a value in the storage.
     ///
-    /// The value data is appended to the page file right away, its mapping is buffered in memory
-    /// until the next flush.
+    /// Both the value data and its mapping are buffered in memory until the next flush, which
+    /// batches them into a single write per file. Reads transparently serve buffered values.
     ///
     /// Values must be put at monotonically increasing point offsets: each offset must be larger
     /// than every offset put before it. Putting a value twice or at an old point offset is
@@ -177,7 +177,7 @@ where
         value: &V,
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool> {
-        // Validate before writing anything, a rejected put must not leave data behind
+        // Validate before buffering anything, a rejected put must not leave data behind
         let next = self.tracker.read().pointer_count();
         if point_offset < next {
             return Err(GridstoreError::unsupported_operation(format!(
@@ -197,10 +197,10 @@ where
             .map_err(|_| GridstoreError::service_error("value is too large"))?;
 
         let block_size_bytes = self.config.block_size_bytes as u64;
-        let block_offset =
-            self.page
-                .write()
-                .append_value(&self.fs, &comp_value, block_size_bytes)?;
+        let block_offset = self
+            .page
+            .write()
+            .append_value(&comp_value, block_size_bytes)?;
 
         self.tracker
             .write()
@@ -360,14 +360,17 @@ where
 impl<V, S: UniversalWrite + 'static> AppendOnlyGridstore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     ///
-    /// Syncs the page file first, then appends all pending mappings to the tracker file with a
-    /// single write and syncs it. This order guarantees that a mapping on disk never points at
-    /// value data that is not durable yet.
+    /// Appends all buffered value data to the page file with a single write and syncs it, then
+    /// does the same for the pending mappings in the tracker file. This order guarantees that a
+    /// mapping on disk never points at value data that is not durable yet.
     pub(super) fn flusher(&self) -> Flusher {
-        // Only mappings up to this point are persisted, mappings put during the flush stay
-        // pending for the next flush
+        // Only values and mappings put up to this point are persisted, puts made during the
+        // flush stay buffered for the next flush. The two watermarks are consistent with each
+        // other: puts take &mut self, so no put can happen between capturing them.
         let target = self.tracker.read().pointer_count();
+        let target_page_len = self.page.read().len();
 
+        let fs = self.fs.clone();
         let tracker = Arc::downgrade(&self.tracker);
         let page = Arc::downgrade(&self.page);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
@@ -382,7 +385,11 @@ impl<V, S: UniversalWrite + 'static> AppendOnlyGridstore<V, S> {
                 return Err(GridstoreError::FlushCancelled);
             };
 
-            let page_flusher = page.read().flusher();
+            let page_flusher = {
+                let mut page_guard = page.write();
+                page_guard.write_pending(&fs, target_page_len)?;
+                page_guard.flusher()
+            };
             page_flusher()?;
 
             let tracker_flusher = {
