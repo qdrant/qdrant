@@ -10,7 +10,46 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
-use crate::shards::transfer::ShardTransferConsensus;
+use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_holder::ReshardingCheck;
+use crate::shards::transfer::{ShardTransferConsensus, ShardTransferKey};
+
+/// State updates that `Collection::abort_resharding` must skip,
+/// because the caller performs them itself.
+///
+/// Few different consensus operations might trigger resharding abort:
+/// `Resharding::Abort`, `SetReplicaState(Dead)` and `Transfer::Abort`.
+///
+/// `SetReplicaState(Dead)` and `Transfer::Abort` decide whether to abort
+/// resharding by checking a piece of state (replica state, transfer record)
+/// that resharding abort also updates. If resharding abort updated that state,
+/// and we crashed before the operation completed, on replay the operation
+/// would see the updated state and skip both the resharding abort and its own
+/// remaining steps, leaving them permanently unapplied on this peer.
+///
+/// So these operations must perform such state updates themselves, *last*,
+/// after resharding abort is complete, and resharding abort must leave
+/// the state untouched.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct AbortReshardingScope {
+    /// Replica that the caller updates itself.
+    ///
+    /// `SetReplicaState(Dead)` aborts resharding when the target replica is
+    /// in a resharding state, then marks the replica as `Dead`.
+    /// Resharding abort must not revert this replica to `Active`:
+    /// the replica has to stay in a resharding state until the caller's
+    /// final `Dead` write, so that replay after a crash re-runs the whole operation.
+    pub skip_replica: Option<(ShardId, PeerId)>,
+
+    /// Transfer that the caller aborts itself.
+    ///
+    /// `Transfer::Abort` aborts resharding when the transfer being aborted is
+    /// a resharding transfer, then aborts the transfer itself.
+    /// Resharding abort must not abort this transfer during its own transfer cleanup:
+    /// the transfer has to stay registered until resharding state is cleared,
+    /// so that replay after a crash re-runs the whole operation.
+    pub skip_transfer: Option<ShardTransferKey>,
+}
 
 impl Collection {
     pub async fn resharding_state(&self) -> Option<ReshardState> {
@@ -183,15 +222,29 @@ impl Collection {
             .commit_write_hashring(resharding_key)
     }
 
+    /// Finish a resharding operation.
+    ///
+    /// Every step is idempotent, and resharding state is cleared *last*,
+    /// so it gates the whole operation:
+    ///
+    /// - If we crash *before* resharding state is cleared, on replay the check
+    ///   finds a matching state and every step re-runs with the same result.
+    /// - If we crash *after*, on replay the check finds no matching state and
+    ///   the whole operation is a no-op.
+    ///
+    /// If current resharding does *not* match `resharding_key`, this means
+    /// another/newer resharding is in progress, so we return an error.
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let mut shard_holder = self.shards_holder.write().await;
 
-        // Each step below is individually idempotent, so on replay (e.g. after
-        // a crash that applied only part of the operation) we fall through
-        // every step to reconcile any partially-applied state instead of
-        // short-circuiting on the first condition that already holds.
-        shard_holder.check_finish_resharding(&resharding_key)?;
-        shard_holder.finish_resharding_unchecked(&resharding_key)?;
+        // Check that resharding state mathes expected key.
+        //
+        // Steps below modify state unconditionally, so running them on mismatched key
+        // would modify unrelated resharding.
+        match shard_holder.check_finish_resharding(&resharding_key)? {
+            ReshardingCheck::Proceed => {}
+            ReshardingCheck::NoOp => return Ok(()),
+        }
 
         if resharding_key.direction == ReshardingDirection::Down {
             // Remove the shard we've now migrated all points out of
@@ -237,55 +290,107 @@ impl Collection {
                 .await?;
         }
 
+        // Clear persisted resharding state. This is the *last* step,
+        // so a crash at any earlier point replays the whole operation.
+        shard_holder.clear_resharding_state(&resharding_key)?;
+
         Ok(())
     }
 
+    /// Abort a resharding operation.
+    ///
+    /// Every step is idempotent, and resharding state is cleared *last*,
+    /// so it gates the whole operation:
+    ///
+    /// - If we crash *before* resharding state is cleared, on replay the check
+    ///   finds a matching state and every step re-runs with the same result.
+    /// - If we crash *after*, on replay the check finds no matching state and
+    ///   the whole operation is a no-op.
+    ///
+    /// If current resharding does *not* match `resharding_key`, this means
+    /// another/newer resharding is in progress, so we treat operation as no-op.
+    ///
+    /// `force` skips the pre-check, if resharding must be aborted unconditionally
+    /// (e.g. when removing a peer or dropping a shard key).
     pub async fn abort_resharding(
         &self,
         resharding_key: ReshardKey,
         force: bool,
+        scope: AbortReshardingScope,
     ) -> CollectionResult<()> {
         log::warn!(
             "Invalidating local cleanup tasks and aborting resharding {resharding_key} (force: {force})"
         );
 
-        let shard_holder = self.shards_holder.read().await;
-
-        // Each step below is individually idempotent, so on replay (e.g. after
-        // a crash that applied only part of the abort) we fall through every
-        // step to reconcile any partially-applied state instead of
-        // short-circuiting on the first condition that already holds.
+        // Proceed only if resharding currently in progress matches `resharding_key`.
+        // If it doesn't (the abort was already applied, or a new resharding has
+        // started since), return early: the steps below act unconditionally, without
+        // checking resharding key, so running them here would tear down the current,
+        // unrelated resharding.
         if !force {
-            shard_holder.check_abort_resharding(&resharding_key)?;
+            let check = self
+                .shards_holder
+                .read()
+                .await
+                .check_abort_resharding(&resharding_key)?;
+
+            match check {
+                ReshardingCheck::Proceed => (),
+                ReshardingCheck::NoOp => return Ok(()),
+            }
         } else {
             log::warn!("Force-aborting resharding {resharding_key}");
         }
 
-        // Invalidate clean state for shards we copied new points into
-        // These shards must be cleaned or dropped to ensure they don't contain irrelevant points
-        match resharding_key.direction {
-            // On resharding up: new shard now has invalid points, shard will likely be dropped
-            ReshardingDirection::Up => {
-                self.invalidate_clean_local_shards([resharding_key.shard_id])
-                    .await;
-            }
-            // On resharding down: existing shards may have new points moved
-            // into them. Use the router's node set, which works regardless of
-            // whether the ring has already been rolled back to `Single` on a
-            // replay.
-            ReshardingDirection::Down => {
-                if let Some(ring) = shard_holder.rings.get(&resharding_key.shard_key) {
-                    self.invalidate_clean_local_shards(ring.nodes().clone())
+        // 1. Invalidate clean state for shards affected by (partial) resharding.
+        //    These shards must be cleaned or dropped to ensure they don't contain irrelevant points.
+        {
+            let shard_holder = self.shards_holder.read().await;
+            match resharding_key.direction {
+                // Up: the new shard now has invalid points, and will likely be dropped.
+                ReshardingDirection::Up => {
+                    self.invalidate_clean_local_shards([resharding_key.shard_id])
                         .await;
+                }
+                // Down: existing shards may have new points moved into them. Use
+                // the router's node set, which works regardless of whether the
+                // ring has already been rolled back to `Single` on a replay.
+                ReshardingDirection::Down => {
+                    if let Some(ring) = shard_holder.rings.get(&resharding_key.shard_key) {
+                        self.invalidate_clean_local_shards(ring.nodes().clone())
+                            .await;
+                    }
                 }
             }
         }
 
-        drop(shard_holder); // drop the read lock before acquiring write lock
         let mut shard_holder = self.shards_holder.write().await;
 
-        // Decrement and persist shard count *before* aborting resharding, so crash
-        // doesn't leave `shard_number` pointing at deleted dir, which would panic on startup
+        // 2. Scale-down: revert replicas in `ReshardingScaleDown` state back to `Active`.
+        //    Skip the replica the caller updates itself (see `AbortReshardingScope::skip_replica`).
+        for (shard_id, peer_id) in shard_holder.scale_down_replicas(&resharding_key) {
+            if scope.skip_replica == Some((shard_id, peer_id)) {
+                continue;
+            }
+
+            if let Some(shard) = shard_holder.get_shard(shard_id) {
+                shard
+                    .set_replica_state(peer_id, ReplicaState::Active)
+                    .await?;
+            }
+        }
+
+        // 3. Scale-down: delete points transferred from target shard during resharding
+        shard_holder
+            .scale_down_cleanup_points(&resharding_key)
+            .await?;
+
+        // 4. Roll hash ring back
+        shard_holder.revert_resharding_hashring(&resharding_key);
+
+        // 5. Scale-up: decrement and persist shard count *before* dropping shard directory,
+        //    so crash doesn't leave `shard_number` pointing at deleted dir,
+        //    which would panic on startup
         if resharding_key.direction == ReshardingDirection::Up {
             let mut config = self.collection_config.write().await;
 
@@ -317,33 +422,27 @@ impl Collection {
             }
         }
 
-        // Abort resharding before the related transfers to keep this
-        // idempotent on replay: if we aborted a transfer first and crashed,
-        // on restart the transfer would be gone and we'd no longer detect
-        // it as resharding-related, leaving resharding running.
+        // 6. Scale-up: drop target shard that resharding created
         shard_holder
-            .abort_resharding(resharding_key.clone(), force)
+            .scale_up_drop_target_shard(&resharding_key)
             .await?;
 
         let shard_holder = RwLockWriteGuard::downgrade(shard_holder);
 
-        // Abort all resharding transfer related to this specific resharding operation
-        let resharding_transfers =
-            shard_holder.get_transfers(|t| t.is_related_to_resharding(&resharding_key));
-
-        // Staging-only: pause after clearing resharding state but before aborting the transfer, so a test can kill this peer mid-abort.
-        #[cfg(feature = "staging")]
-        if !resharding_transfers.is_empty()
-            && let Ok(secs) = std::env::var("QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC")
-            && let Ok(secs) = secs.parse::<f64>()
-        {
-            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
-        }
+        // 7. Abort all transfers related to this specific resharding operation.
+        //    Skip the transfer the caller aborts itself (see `AbortReshardingScope::skip_transfer`).
+        let resharding_transfers = shard_holder.get_transfers(|transfer| {
+            transfer.is_related_to_resharding(&resharding_key)
+                && scope.skip_transfer != Some(transfer.key())
+        });
 
         for transfer in resharding_transfers {
             self.abort_shard_transfer(transfer, &shard_holder).await?;
         }
-        drop(shard_holder);
+
+        // 8. Clear persisted resharding state. This is the *last* step,
+        //    so a crash at any earlier point replays the whole operation.
+        shard_holder.clear_resharding_state(&resharding_key)?;
 
         Ok(())
     }

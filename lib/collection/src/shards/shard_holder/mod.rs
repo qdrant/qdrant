@@ -1,5 +1,6 @@
 pub mod recovery_guard;
 mod resharding;
+pub(crate) use resharding::ReshardingCheck;
 pub(crate) mod shard_mapping;
 pub mod shared_shard_holder;
 

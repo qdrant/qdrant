@@ -16,9 +16,21 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::point_ops::{ConditionalInsertOperationInternal, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
-use crate::shards::shard::ShardId;
+use crate::shards::shard::{PeerId, ShardId};
+
+/// Outcome of a resharding pre-check: whether caller should run the operation,
+/// or treat it as already-applied no-op.
+///
+/// On `NoOp` caller must return early, *without* modifying resharding state.
+/// Only pre-check compares resharding key, update steps act unconditionally.
+/// So running them for a stale operation targeting an earlier, already
+/// finished/aborted resharding would modify the current, unrelated one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReshardingCheck {
+    Proceed,
+    NoOp,
+}
 
 impl ShardHolder {
     pub fn resharding_state(&self) -> Option<ReshardState> {
@@ -253,13 +265,25 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        // Idempotent: if no resharding is active, finish was already applied.
+    pub fn check_finish_resharding(
+        &mut self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<ReshardingCheck> {
         if self.resharding_state.read().is_none() {
+            // Resharding is not in progress.
+            //
+            // Either it was never started, or it is already finished,
+            // or it was already aborted. Treat as a no-op.
+            //
+            // A *mismatched* state, is rejected with an error by `check_resharding` below.
+
             log::warn!(
-                "check_finish_resharding: no resharding in progress for {resharding_key}, treating as already finished",
+                "check_finish_resharding: \
+                 resharding is not in progress, \
+                 treating resharding {resharding_key} as already finished",
             );
-            return Ok(());
+
+            return Ok(ReshardingCheck::NoOp);
         }
 
         self.check_resharding(
@@ -267,19 +291,7 @@ impl ShardHolder {
             check_stage(ReshardingStage::WriteHashRingCommitted),
         )?;
 
-        Ok(())
-    }
-
-    pub fn finish_resharding_unchecked(&mut self, _: &ReshardKey) -> CollectionResult<()> {
-        // Idempotent: if state is already cleared (replay after a successful
-        // finish/abort), leave it alone so we don't spuriously touch the file.
-        self.resharding_state.write_optional(
-            |state| {
-                if state.is_some() { Some(None) } else { None }
-            },
-        )?;
-
-        Ok(())
+        Ok(ReshardingCheck::Proceed)
     }
 
     fn check_resharding(
@@ -326,32 +338,45 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_abort_resharding(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+    pub fn check_abort_resharding(
+        &self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<ReshardingCheck> {
         let state = self.resharding_state.read();
 
         let Some(state) = state.deref() else {
-            // Idempotent: no resharding in progress means the abort (or finish)
-            // was already applied, or the start was never applied on this node.
-            // Returning an error here would be silently swallowed by apply_entries,
-            // causing permanent state divergence between peers.
+            // Resharding is not in progress.
+            //
+            // Either resharding was never started, or it is already finished,
+            // or it was already aborted. Treat as a no-op.
+
             log::warn!(
-                "check_abort_resharding: no resharding in progress for {resharding_key}, treating as already aborted",
+                "check_abort_resharding: \
+                 resharding is not in progress, \
+                 treating resharding {resharding_key} as already aborted",
             );
-            return Ok(());
+
+            return Ok(ReshardingCheck::NoOp);
         };
 
         if !state.matches(resharding_key) {
-            // Idempotent: a different resharding is active, so the one we're
-            // trying to abort was already handled. Same reasoning as above.
+            // A different resharding is in progress.
+            //
+            // Either requested resharding was never started, or it is already finished,
+            // or it was already aborted. Treat as a no-op.
+
             log::warn!(
-                "check_abort_resharding: resharding {resharding_key} not found, current resharding has key {}, treating as already aborted",
+                "check_abort_resharding: \
+                 resharding {} is in progress, \
+                 treating resharding {resharding_key} as already aborted",
                 state.key(),
             );
-            return Ok(());
+
+            return Ok(ReshardingCheck::NoOp);
         }
 
         if state.stage < ReshardingStage::ReadHashRingCommitted {
-            return Ok(());
+            return Ok(ReshardingCheck::Proceed);
         }
 
         Err(CollectionError::bad_request(format!(
@@ -361,124 +386,153 @@ impl ShardHolder {
         )))
     }
 
-    pub async fn abort_resharding(
-        &mut self,
-        resharding_key: ReshardKey,
-        force: bool,
-    ) -> CollectionResult<()> {
-        log::warn!("Aborting resharding {resharding_key} (force: {force})");
+    /// Scale-down resharding only. Returns replicas in `ReshardingScaleDown` state,
+    /// that require cleanup on abort.
+    pub fn scale_down_replicas(&self, resharding_key: &ReshardKey) -> Vec<(ShardId, PeerId)> {
+        if resharding_key.direction != ReshardingDirection::Down {
+            return Vec::new();
+        }
 
-        let ReshardKey {
-            uuid: _,
-            direction,
-            peer_id: _,
-            shard_id,
-            ref shard_key,
-        } = resharding_key;
+        let mut replicas = Vec::new();
 
-        // Cleanup existing shards if resharding down
-        if direction == ReshardingDirection::Down {
-            for (&id, shard) in self.shards.iter() {
-                // Skip shards that does not belong to resharding shard key
-                if self.shard_id_to_key_mapping.get(&id) != shard_key.as_ref() {
-                    continue;
+        for (&id, shard) in self.shards.iter() {
+            // Skip shards that do not belong to the resharding shard key
+            if self.shard_id_to_key_mapping.get(&id) != resharding_key.shard_key.as_ref() {
+                continue;
+            }
+
+            // Skip target shard
+            if id == resharding_key.shard_id {
+                continue;
+            }
+
+            for (peer, state) in shard.peers() {
+                if state.is_resharding() {
+                    replicas.push((id, peer));
                 }
-
-                // Skip target shard
-                if id == shard_id {
-                    continue;
-                }
-
-                // Revert replicas in `Resharding` state back into `Active` state
-                for (peer, state) in shard.peers() {
-                    if state.is_resharding() {
-                        shard.set_replica_state(peer, ReplicaState::Active).await?;
-                    }
-                }
-
-                // We only cleanup local shards
-                if !shard.is_local().await {
-                    continue;
-                }
-
-                // Remove any points that might have been transferred from target shard
-                // Replica may be dead, so we force the delete operation
-                let filter = self.hash_ring_filter(id).expect("hash ring filter");
-                let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
-                shard
-                    .delete_local_points(
-                        filter,
-                        // Internal operation, no performance tracking needed
-                        HwMeasurementAcc::disposable(),
-                        true,
-                        DeferredBehavior::WithDeferred,
-                    )
-                    .await?;
             }
         }
 
-        if let Some(ring) = self.rings.get_mut(shard_key) {
-            log::debug!("reverting resharding hashring for shard {shard_id}");
-            ring.abort_resharding(shard_id, direction);
-        } else {
+        replicas
+    }
+
+    /// Scale-down resharding only. Delete points that were transferred from target
+    /// shard during scale-down resharding.
+    pub async fn scale_down_cleanup_points(
+        &self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<()> {
+        if resharding_key.direction != ReshardingDirection::Down {
+            return Ok(());
+        }
+
+        for (&id, shard) in self.shards.iter() {
+            // Skip shards that do not belong to the resharding shard key
+            if self.shard_id_to_key_mapping.get(&id) != resharding_key.shard_key.as_ref() {
+                continue;
+            }
+
+            // Skip target shard
+            if id == resharding_key.shard_id {
+                continue;
+            }
+
+            // We only cleanup local shards
+            if !shard.is_local().await {
+                continue;
+            }
+
+            // Remove any points that might have been transferred from target shard
+            // Replica may be dead, so we force the delete operation
+            let filter = self.hash_ring_filter(id).expect("hash ring filter");
+            let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
+            shard
+                .delete_local_points(
+                    filter,
+                    // Internal operation, no performance tracking needed
+                    HwMeasurementAcc::disposable(),
+                    true,
+                    DeferredBehavior::WithDeferred,
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Revert resharding hash-ring into regular mode.
+    pub fn revert_resharding_hashring(&mut self, resharding_key: &ReshardKey) {
+        let Some(ring) = self.rings.get_mut(&resharding_key.shard_key) else {
             log::warn!(
                 "aborting resharding {resharding_key}, \
-                 but {shard_key:?} hashring does not exist"
+                 but {:?} hashring does not exist",
+                resharding_key.shard_key,
             );
+
+            return;
+        };
+
+        log::debug!(
+            "reverting resharding hashring for shard {}",
+            resharding_key.shard_id,
+        );
+
+        ring.abort_resharding(resharding_key.shard_id, resharding_key.direction);
+    }
+
+    /// Scale-up resharding only. Drop the target shard that scale-up resharding created.
+    pub async fn scale_up_drop_target_shard(
+        &mut self,
+        resharding_key: &ReshardKey,
+    ) -> CollectionResult<()> {
+        let ReshardKey {
+            direction,
+            shard_id,
+            ref shard_key,
+            ..
+        } = *resharding_key;
+
+        if direction != ReshardingDirection::Up {
+            return Ok(());
         }
 
-        // Remove new shard if resharding up
-        if direction == ReshardingDirection::Up {
-            if let Some(shard) = self.get_shard(shard_id) {
-                // Remove all replicas from shard
-                for (peer_id, replica_state) in shard.peers() {
-                    log::debug!(
-                        "removing peer {peer_id} with state {replica_state:?} from replica set {shard_id}",
-                    );
-                    shard.remove_peer(peer_id).await?;
-                }
+        if !self.shards.contains_key(&shard_id) {
+            log::warn!(
+                "aborting resharding {resharding_key}, \
+                 but shard holder does not contain {shard_id} replica set",
+            );
 
-                debug_assert!(
-                    shard.peers().is_empty(),
-                    "replica set {shard_id} must be empty after removing all peers",
-                );
-
-                log::debug!("removing replica set {shard_id}");
-
-                // Drop the shard
-                if let Some(shard_key) = shard_key {
-                    // Idempotent: only rewrite the mapping if the shard id is
-                    // actually present under this key. A replay after a
-                    // successful abort finds nothing to remove and skips the
-                    // unnecessary disk write.
-                    self.key_mapping.write_optional(|key_mapping| {
-                        let shard_ids = key_mapping.get(shard_key)?;
-                        if !shard_ids.contains(&shard_id) {
-                            return None;
-                        }
-
-                        let mut key_mapping = key_mapping.clone();
-                        key_mapping.get_mut(shard_key).unwrap().remove(&shard_id);
-
-                        Some(key_mapping)
-                    })?;
-                }
-
-                self.drop_and_remove_shard(shard_id).await?;
-                self.shard_id_to_key_mapping.remove(&shard_id);
-            } else {
-                log::warn!(
-                    "aborting resharding {resharding_key}, \
-                     but shard holder does not contain {shard_id} replica set",
-                );
-            }
+            return Ok(());
         }
 
-        // Idempotent: if state is already cleared, or holds a different
-        // resharding (already superseded), leave it alone. Only clear a state
-        // that matches the resharding_key we are aborting.
+        log::debug!("removing replica set {shard_id}");
+
+        if let Some(shard_key) = shard_key {
+            self.key_mapping.write_optional(|key_mapping| {
+                if !key_mapping.get(shard_key)?.contains(&shard_id) {
+                    return None;
+                }
+
+                let mut key_mapping = key_mapping.clone();
+                key_mapping.get_mut(shard_key)?.remove(&shard_id);
+                Some(key_mapping)
+            })?;
+        }
+
+        // No need to remove individual replicas from replica set one-by-one,
+        // because replica set directory (and `replica_set.json` that it contains)
+        // would be removed at once
+
+        self.drop_and_remove_shard(shard_id).await?;
+        self.shard_id_to_key_mapping.remove(&shard_id);
+
+        Ok(())
+    }
+
+    /// Clear `resharding_state.json` file, if persisted state matches `resharding_key`.
+    pub fn clear_resharding_state(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.resharding_state.write_optional(|state| match state {
-            Some(state) if state.matches(&resharding_key) => Some(None),
+            Some(state) if state.matches(resharding_key) => Some(None),
             _ => None,
         })?;
 
@@ -824,10 +878,12 @@ mod tests {
         // resharding state is not cleared on this peer while it IS cleared on
         // peers where the operation succeeded.
         let result = holder.check_abort_resharding(&key);
-        assert!(
-            result.is_ok(),
-            "check_abort_resharding must return Ok when no resharding is active \
-             (idempotent: already aborted or never started), got error: {result:?}",
+        assert_eq!(
+            result.ok(),
+            Some(ReshardingCheck::NoOp),
+            "check_abort_resharding must signal NoOp when no resharding is active \
+             (idempotent: already aborted or never started) so the caller does not \
+             fall through to the destructive teardown",
         );
     }
 
@@ -854,10 +910,12 @@ mod tests {
         // the original resharding was already aborted and a new one was started.
         let other_key = make_reshard_key(2);
         let result = holder.check_abort_resharding(&other_key);
-        assert!(
-            result.is_ok(),
-            "check_abort_resharding must return Ok when a different resharding is active \
-             (the one we're aborting was already handled), got error: {result:?}"
+        assert_eq!(
+            result.ok(),
+            Some(ReshardingCheck::NoOp),
+            "check_abort_resharding must signal NoOp when a different resharding is active \
+             (the one we're aborting was already handled, or this is a stale abort \
+             targeting an earlier resharding that a newer one has since replaced)",
         );
     }
 
@@ -905,9 +963,46 @@ mod tests {
         let key = make_reshard_key(1);
 
         let result = holder.check_finish_resharding(&key);
+        assert_eq!(
+            result.ok(),
+            Some(ReshardingCheck::NoOp),
+            "check_finish_resharding must signal NoOp when no resharding is active \
+             (idempotent: already finished) so the caller does not fall through to the \
+             destructive down-branch teardown",
+        );
+    }
+
+    #[test]
+    fn test_finish_check_dismisses_stale_duplicate() {
+        let (_dir, mut holder) = make_holder();
+
+        // A different resharding is active: a stale finish targeting an earlier
+        // resharding that a newer one has since replaced. Finish rejects a
+        // mismatched key with `bad_request`, so the destructive down-branch never
+        // runs against the newer resharding's shard.
+        let active_key = make_reshard_key(1);
+        holder
+            .rings
+            .get_mut(&None)
+            .unwrap()
+            .start_resharding(active_key.shard_id, active_key.direction);
+        holder
+            .resharding_state
+            .write(|state| {
+                *state = Some(ReshardState::new(
+                    active_key.uuid,
+                    active_key.direction,
+                    active_key.peer_id,
+                    active_key.shard_id,
+                    active_key.shard_key.clone(),
+                ));
+            })
+            .unwrap();
+
+        let stale_key = make_reshard_key(2);
         assert!(
-            result.is_ok(),
-            "check_finish_resharding must return Ok when no resharding is active (idempotent: already finished), got error: {result:?}",
+            holder.check_finish_resharding(&stale_key).is_err(),
+            "a stale-duplicate finish (mismatched key) must be dismissed, not proceed",
         );
     }
 
@@ -952,25 +1047,56 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // finish_resharding_unchecked idempotency
+    // clear_resharding_state idempotency (the finish/abort last write)
     // ------------------------------------------------------------------
 
     #[test]
-    fn test_finish_unchecked_idempotent_when_no_resharding_active() {
-        let (_dir, mut holder) = make_holder();
+    fn test_clear_resharding_state_idempotent_when_no_resharding_active() {
+        let (_dir, holder) = make_holder();
         let key = make_reshard_key(1);
 
-        // Replay `finish` after the resharding state has already been cleared
-        // (partial apply between the state write and a subsequent step).
-        // The unchecked helper must not panic or error in this case.
-        let result = holder.finish_resharding_unchecked(&key);
+        // Replay `finish`/`abort` after the resharding state has already been
+        // cleared (replay after a successful apply, or crash after the final
+        // clear). The primitive must not panic or error in this case.
+        let result = holder.clear_resharding_state(&key);
         assert!(
             result.is_ok(),
-            "finish_resharding_unchecked must return Ok when no resharding state is present, got error: {result:?}",
+            "clear_resharding_state must return Ok when no resharding state is present, got error: {result:?}",
         );
         assert!(
             holder.resharding_state.read().is_none(),
-            "state must remain cleared after idempotent finish",
+            "state must remain cleared after idempotent clear",
+        );
+    }
+
+    #[test]
+    fn test_clear_resharding_state_leaves_mismatched_state_untouched() {
+        let (_dir, holder) = make_holder();
+
+        // If current resharding does *not* match `resharding_key`, this means
+        // another/newer resharding is in progress, so `clear_resharding_state`
+        // should be a no-op.
+
+        let active_key = make_reshard_key(1);
+        let active_state = ReshardState::new(
+            active_key.uuid,
+            active_key.direction,
+            active_key.peer_id,
+            active_key.shard_id,
+            active_key.shard_key.clone(),
+        );
+        holder
+            .resharding_state
+            .write(|state| *state = Some(active_state.clone()))
+            .unwrap();
+
+        let stale_key = make_reshard_key(2);
+        holder.clear_resharding_state(&stale_key).unwrap();
+
+        assert_eq!(
+            holder.resharding_state.read().clone(),
+            Some(active_state),
+            "a mismatched resharding state must be left untouched by clear_resharding_state",
         );
     }
 
@@ -1054,13 +1180,62 @@ mod tests {
         let result_a = holder_a.check_abort_resharding(&key);
         let result_b = holder_b.check_abort_resharding(&key);
 
-        assert!(
-            result_a.is_ok(),
-            "Peer A (has resharding state) must succeed: {result_a:?}"
+        assert_eq!(
+            result_a.ok(),
+            Some(ReshardingCheck::Proceed),
+            "Peer A (has matching resharding state) must proceed with the abort",
         );
-        assert!(
-            result_b.is_ok(),
-            "Peer B (no resharding state) must also succeed to prevent divergence: {result_b:?}"
+        assert_eq!(
+            result_b.ok(),
+            Some(ReshardingCheck::NoOp),
+            "Peer B (no resharding state) must signal NoOp (not error) to prevent divergence",
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // A stale abort must not touch a newer resharding
+    // ------------------------------------------------------------------
+
+    /// [abort A][start B reusing shard id][stale abort of A]: the stale abort
+    /// of A arrives after a new resharding B has reused the same shard id. It
+    /// must be a complete no-op — the pre-check signals NoOp (so the caller
+    /// never runs the destructive teardown that would drop B's shard) and, even
+    /// if the teardown's last write were reached, `clear_resharding_state`
+    /// refuses to clear B's state because it does not match A.
+    #[test]
+    fn test_stale_duplicate_abort_leaves_newer_resharding_untouched() {
+        let (_dir, holder) = make_holder();
+
+        // Resharding A completed its abort: state is cleared.
+        let key_a = make_reshard_key(1);
+        holder.clear_resharding_state(&key_a).unwrap();
+
+        // Resharding B started, reusing shard id 1.
+        let key_b = make_reshard_key(1);
+        let state_b = ReshardState::new(
+            key_b.uuid,
+            key_b.direction,
+            key_b.peer_id,
+            key_b.shard_id,
+            key_b.shard_key.clone(),
+        );
+        holder
+            .resharding_state
+            .write(|state| *state = Some(state_b.clone()))
+            .unwrap();
+
+        // A stale duplicate abort of A arrives.
+        assert_eq!(
+            holder.check_abort_resharding(&key_a).ok(),
+            Some(ReshardingCheck::NoOp),
+            "stale abort of A must signal NoOp while B is active",
+        );
+        holder.clear_resharding_state(&key_a).unwrap();
+
+        assert_eq!(
+            holder.resharding_state.read().clone(),
+            Some(state_b),
+            "B's resharding state must survive a stale abort of A",
         );
     }
 }

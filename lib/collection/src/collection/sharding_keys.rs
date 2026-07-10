@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ShardKey;
 
-use crate::collection::Collection;
+use crate::collection::{AbortReshardingScope, Collection};
 use crate::config::ShardingMethod;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{
@@ -166,7 +166,8 @@ impl Collection {
             .filter(|state| state.shard_key.as_ref() == Some(&shard_key));
 
         if let Some(state) = resharding_state {
-            self.abort_resharding(state.key(), true).await?;
+            self.abort_resharding(state.key(), true, AbortReshardingScope::default())
+                .await?;
         }
 
         // Invalidate local shard cleanup tasks
