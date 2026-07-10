@@ -178,7 +178,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// [`UniversalRead`](common::universal_io::UniversalRead) handle `fs` (the map, numeric, geo and full-text leaves
     /// are all fs-generic), so the dispatcher needn't fix a concrete backend.
     ///
-    /// `` is consulted only by the full-text arm (it carries the
+    /// `payload_schema` is consulted only by the full-text arm (it carries the
     /// [`TextIndexParams`] the leaf open needs) and `total_point_count` only by
     /// the null arm (it is segment-wide, not recoverable from the index files);
     /// the other arms ignore both, mirroring the writable selector.
