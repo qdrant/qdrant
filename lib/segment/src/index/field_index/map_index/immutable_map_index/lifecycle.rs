@@ -223,13 +223,14 @@ where
                     value.borrow(),
                     idx,
                 );
-
-                // Update storage
-                self.storage.remove_point(idx);
                 removed_values_count += 1;
             }
 
             if removed_values_count > 0 {
+                // `storage.remove_point` marks the point as deleted; it is
+                // per-point (idempotent in `idx`), so it only needs to run once
+                // rather than once per removed value.
+                self.storage.remove_point(idx);
                 self.indexed_points = self.indexed_points.saturating_sub(1);
             }
             self.values_count = self.values_count.saturating_sub(removed_values_count);
