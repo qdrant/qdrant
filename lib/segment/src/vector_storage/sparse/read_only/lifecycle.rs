@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 use gridstore::GridstoreReader;
 
 use super::ReadOnlySparseVectorStorage;
@@ -10,6 +10,27 @@ use crate::vector_storage::sparse::mmap_sparse_vector_storage::{DELETED_DIRNAME,
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
 
 impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// Absent files are skipped rather than reported: the subsequent open is
+    /// the one to produce the error.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+        GridstoreReader::<StoredSparseVector, S>::preopen(
+            fs,
+            path.join(STORAGE_DIRNAME),
+            Populate::No,
+        )
+        .ok_not_found()
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to preopen read-only sparse vector storage: {err}"
+            ))
+        })?;
+
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIRNAME)).ok_not_found()?;
+        Ok(())
+    }
+
     /// Open the read-only counterpart of the mmap sparse storage at `path`,
     /// threading every file open through `fs`; reads the existing layout but
     /// creates and writes nothing. `next_point_offset` is reconstructed like the

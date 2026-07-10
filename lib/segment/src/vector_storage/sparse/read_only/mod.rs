@@ -22,7 +22,7 @@ mod tests {
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs};
     use sparse::common::sparse_vector::SparseVector;
     use tempfile::Builder;
 
@@ -31,7 +31,9 @@ mod tests {
     use crate::data_types::named_vectors::CowVector;
     use crate::data_types::vectors::VectorRef;
     use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
-    use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+    use crate::vector_storage::sparse::mmap_sparse_vector_storage::{
+        DELETED_DIRNAME, MmapSparseVectorStorage, STORAGE_DIRNAME,
+    };
     use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
     /// Write sparse vectors (deleting some) through the writable mmap storage,
@@ -93,6 +95,70 @@ mod tests {
                 CowVector::Dense(_) | CowVector::MultiDense(_) => {
                     panic!("expected sparse vector for point {id}")
                 }
+            }
+        }
+    }
+
+    /// `preopen` must schedule exactly the files `open` goes on to consume.
+    ///
+    /// Merely opening after a `preopen` proves nothing: `CachedFs` falls back
+    /// to a plain inner open for any path that was never scheduled, so a
+    /// scheduled-vs-opened path mismatch would still yield a correct storage.
+    /// To make the prefetch pool the *only* possible source, the storage
+    /// directories are removed between `preopen` and `open`: the already-open
+    /// handles parked in the pool stay readable, while any fallback open hits
+    /// `NotFound`.
+    #[test]
+    fn preopen_then_open_through_cached_fs() {
+        const POINT_COUNT: PointOffsetType = 500;
+
+        let dir = Builder::new()
+            .prefix("ro_sparse_preopen")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let sparse_vectors: Vec<SparseVector> = (0..POINT_COUNT)
+            .map(|id| {
+                let value = id as f32;
+                SparseVector {
+                    indices: vec![1, 5, 9],
+                    values: vec![value + 0.1, value + 0.2, value + 0.3],
+                }
+            })
+            .collect();
+
+        {
+            let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+            for (id, vector) in sparse_vectors.iter().enumerate() {
+                storage
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+
+        // Same order as the segment open path: snapshot, then preopen, then open.
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        ReadOnlySparseVectorStorage::<MmapFile>::preopen(&cached_fs, dir.path()).unwrap();
+
+        // Everything `open` reads must now come from the prefetch pool.
+        for dir_name in [STORAGE_DIRNAME, DELETED_DIRNAME] {
+            fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
+        }
+
+        let storage =
+            ReadOnlySparseVectorStorage::<MmapFile>::open(&cached_fs, dir.path()).unwrap();
+
+        assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
+        match storage.get_vector::<Random>(7) {
+            CowVector::Sparse(got) => {
+                assert_eq!(got.indices, sparse_vectors[7].indices);
+                assert_eq!(got.values, sparse_vectors[7].values);
+            }
+            CowVector::Dense(_) | CowVector::MultiDense(_) => {
+                panic!("expected sparse vector for point 7")
             }
         }
     }

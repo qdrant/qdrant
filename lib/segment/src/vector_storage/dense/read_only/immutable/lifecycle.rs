@@ -3,7 +3,9 @@ use std::path::Path;
 use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+};
 
 use super::ReadOnlyImmutableDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -24,6 +26,22 @@ const READ_ONLY_OPTIONS: OpenOptions = OpenOptions {
 };
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorStorage<T, S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// Absent files are skipped rather than reported: the subsequent open is
+    /// the one to produce the error.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        ImmutableDenseVectorData::<T, S>::preopen(fs, &path.join(VECTORS_PATH), populate)
+            .ok_not_found()?;
+        fs.schedule_prefetch(&path.join(DELETED_PATH), Some(READ_ONLY_OPTIONS), None)
+            .ok_not_found()?;
+        Ok(())
+    }
+
     /// Open the read-only counterpart of the immutable dense storage at `path`,
     /// threading every file open through `fs`; reads the existing layout but
     /// creates and writes nothing. `populate` warms the vector data.

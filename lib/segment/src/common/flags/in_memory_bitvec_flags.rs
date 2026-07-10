@@ -4,7 +4,9 @@ use common::bitvec::{BitSlice, BitVec};
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
+};
 
 use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -35,6 +37,13 @@ const READ_ONLY_OPTIONS: OpenOptions = OpenOptions {
 
 #[allow(dead_code)] // pending: read-only vector storages will use these
 impl InMemoryBitvecFlags {
+    /// Schedule background prefetch of the two files [`Self::open`] reads.
+    pub fn preopen(fs: &impl CachedReadFs, directory: &Path) -> OperationResult<()> {
+        fs.schedule_prefetch(&status_file(directory), Some(READ_ONLY_OPTIONS), None)?;
+        fs.schedule_prefetch(&directory.join(FLAGS_FILE), Some(READ_ONLY_OPTIONS), None)?;
+        Ok(())
+    }
+
     /// Open persisted flags read-only into an owned `BitVec`; creates and writes
     /// nothing. The flags file is padded past the logical length (held in the
     /// status file), so the bitvec is truncated to it and `count` is exact.

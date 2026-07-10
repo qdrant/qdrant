@@ -7,12 +7,12 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    Populate, ReadPipeline, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
+    CachedReadFs, Populate, ReadPipeline, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
     UniversalReadFs, UserData, read_json_via, read_whole_via,
 };
 use num_traits::AsPrimitive;
 
-use super::chunks::{chunk_name, read_chunks};
+use super::chunks::{chunk_name, preopen_chunks, read_chunks};
 use super::config::{CONFIG_FILE_NAME, ChunkedVectorsConfig, STATUS_FILE_NAME};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
@@ -57,6 +57,19 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Schedule background prefetch of every file [`Self::open`] will read.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        directory: &Path,
+        advice: AdviceSetting,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        fs.schedule_prefetch(&Self::config_file(directory), None, None)?;
+        fs.schedule_prefetch(&Self::status_file(directory), None, None)?;
+        preopen_chunks(fs, directory, advice, populate)?;
+        Ok(())
     }
 
     /// Open an existing chunked-vectors directory in read-only mode.
