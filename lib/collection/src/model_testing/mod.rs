@@ -25,9 +25,9 @@ use crate::shards::shard::PeerId;
 const PEER_ID: PeerId = 1;
 const COLLECTION_NAME: &str = "test";
 
-/// Static metadata for every vector name the test might ever activate. Four names start
-/// active in the fixture; the remaining two are exclusively reachable through
-/// `Op::CreateVectorName`.
+/// Static metadata for every vector name the test might ever activate. Six names start
+/// active in the fixture ("a", "b", "i", "s", "m", "q", see `INITIAL_ACTIVE`); "c" and
+/// "u" are reachable through `Op::CreateVectorName`.
 pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     VectorCandidate {
         name: "a",
@@ -60,10 +60,14 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "m",
         kind: VectorKind::MultiDense(4),
     },
+    VectorCandidate {
+        name: "q",
+        kind: VectorKind::DenseTurbo(8),
+    },
 ];
 
 /// Names present in the collection schema at fixture time.
-pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s", "m"];
+pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s", "m", "q"];
 
 /// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
 pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
@@ -80,6 +84,9 @@ pub(super) enum VectorKind {
     /// ColBERT-style multi-vector: each point stores a matrix of `dim`-wide rows. Scoring
     /// uses MaxSim across query rows × stored rows.
     MultiDense(u64),
+    /// Dense vector stored with the `Turbo4` (TurboQuant 4-bit) storage datatype, the
+    /// primary quantized storage, applied to appendable segments too.
+    DenseTurbo(u64),
 }
 
 pub(super) fn kind_of(name: &str) -> VectorKind {

@@ -6,7 +6,9 @@ use segment::json_path::JsonPath;
 use segment::types::{Payload, PayloadFieldSchema, PointIdType, VectorNameBuf};
 
 use super::super::Model;
-use super::super::op::{NamedVectors, match_num_filter, model_entry_from, num_matches};
+use super::super::op::{
+    NamedVectors, match_num_filter, model_entry_from, model_vector, num_matches,
+};
 use super::{apply_update, to_named_persisted};
 use crate::collection::Collection;
 use crate::operations::CollectionUpdateOperations;
@@ -350,7 +352,9 @@ pub(super) async fn apply_update_vectors(
             let passes = condition_num.is_none_or(|n| num_matches(&entry.payload, n));
             if passes {
                 for (name, value) in partial {
-                    entry.vectors.insert(name.clone(), value.clone());
+                    entry
+                        .vectors
+                        .insert(name.clone(), model_vector(name, value));
                 }
             }
         }

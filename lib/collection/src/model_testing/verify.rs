@@ -7,7 +7,7 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use segment::types::{PointIdType, VectorNameBuf, WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
 
-use super::op::canonical_sparse;
+use super::op::{canonical_sparse, dense_diff, dense_matches};
 use super::{Model, ModelEntry, VectorValue};
 use crate::collection::Collection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -91,9 +91,31 @@ pub(super) fn assert_matches_model(actual: &Model, expected: &Model, ctx: &str) 
             .get(id)
             .unwrap_or_else(|| panic!("{ctx}: missing id {id:?}"));
         assert_eq!(
-            actual_entry.vectors, expected_entry.vectors,
-            "{ctx}: vectors mismatch for id {id:?}",
+            actual_entry.vectors.keys().collect::<Vec<_>>(),
+            expected_entry.vectors.keys().collect::<Vec<_>>(),
+            "{ctx}: vector names mismatch for id {id:?}",
         );
+        for (name, expected_value) in &expected_entry.vectors {
+            let actual_value = &actual_entry.vectors[name];
+            // Turbo4 dense values get a few-ulp tolerance (see `dense_matches`);
+            // everything else stays exact.
+            let matches = match (actual_value, expected_value) {
+                (VectorValue::Dense(a), VectorValue::Dense(e)) => dense_matches(name, a, e),
+                _ => actual_value == expected_value,
+            };
+            if !matches {
+                // Dense mismatches get a per-component diff so a uniform rescale
+                // is distinguishable from noise at a glance.
+                let detail = match (actual_value, expected_value) {
+                    (VectorValue::Dense(a), VectorValue::Dense(e)) => dense_diff(a, e),
+                    _ => String::new(),
+                };
+                panic!(
+                    "{ctx}: vector `{name}` value divergence for id {id:?}: \
+                     engine {actual_value:?}, model {expected_value:?}; {detail}",
+                );
+            }
+        }
         assert_eq!(
             actual_entry.payload, expected_entry.payload,
             "{ctx}: payload mismatch for id {id:?}",
