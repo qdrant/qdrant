@@ -6,10 +6,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::VecExt;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFs, Result, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    CachedReadFs, MmapFs, Populate, Result, UniversalRead, UniversalReadFs, UniversalWrite,
+    UserData,
 };
 
-use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
+use super::inverted_index_compressed_mmap::{InvertedIndexCompressedMmap, index_open_options};
 use super::inverted_index_ram::InvertedIndexRam;
 use super::{InvertedIndex, out_of_bounds};
 use crate::common::sparse_vector::RemappedSparseVector;
@@ -39,7 +40,21 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     }
 
     fn preopen_ro<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<()> {
-        InvertedIndexCompressedMmap::<W, S>::preopen_ro(fs, path)
+        // Config
+        fs.schedule_prefetch(
+            &InvertedIndexCompressedMmap::<W, S>::index_config_file_path(path),
+            None,
+            None,
+        )?;
+
+        // Index data: unlike the plain mmap index, this open materializes the
+        // whole index into RAM, so the prefetch populates it.
+        fs.schedule_prefetch(
+            &InvertedIndexCompressedMmap::<W, S>::index_file_path(path),
+            Some(index_open_options(Populate::PreferBackground)),
+            None,
+        )?;
+        Ok(())
     }
 }
 

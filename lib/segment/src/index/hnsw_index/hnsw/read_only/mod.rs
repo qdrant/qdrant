@@ -69,25 +69,24 @@ type ReadView<'a, S> = HNSWIndexReadView<
 
 impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
-    ///
-    /// Absent files are skipped rather than reported: the graph config may
-    /// legitimately be missing (`open` derives defaults), and for the rest the
-    /// subsequent open is the one to produce the error.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         hnsw_config: &HnswConfig,
     ) -> OperationResult<()> {
+        // Graph config; may legitimately be absent (`open` derives defaults).
         fs.schedule_prefetch(&HnswGraphConfig::get_config_path(path), None, None)
             .ok_not_found()?;
 
+        // Graph data and links
         let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
         let residency = if is_on_disk {
             GraphLinksResidency::Cold
         } else {
             GraphLinksResidency::Cached
         };
-        GraphLayers::preopen_universal(fs, path, residency).ok_not_found()?;
+        GraphLayers::preopen_universal(fs, path, residency)?;
+
         Ok(())
     }
 

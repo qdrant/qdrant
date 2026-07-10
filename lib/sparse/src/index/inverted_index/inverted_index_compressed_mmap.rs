@@ -43,11 +43,11 @@ impl StorageVersion for Version {
     }
 }
 
-fn index_open_options() -> OpenOptions {
+pub(super) fn index_open_options(populate: Populate) -> OpenOptions {
     OpenOptions {
         writeable: false,
         need_sequential: false,
-        populate: Populate::No,
+        populate,
         advice: AdviceSetting::Advice(Advice::Normal),
     }
 }
@@ -61,7 +61,7 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 
         let storage = fs.open(
             Self::index_file_path(path),
-            index_open_options(),
+            index_open_options(Populate::No),
             Default::default(),
         )?;
 
@@ -83,10 +83,13 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     }
 
     fn preopen_ro<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<()> {
+        // Config
         fs.schedule_prefetch(&Self::index_config_file_path(path), None, None)?;
+
+        // Index data: read lazily, so the parked handle stays cold.
         fs.schedule_prefetch(
             &Self::index_file_path(path),
-            Some(index_open_options()),
+            Some(index_open_options(Populate::No)),
             None,
         )?;
         Ok(())

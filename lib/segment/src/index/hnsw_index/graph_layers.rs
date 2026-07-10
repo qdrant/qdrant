@@ -33,7 +33,9 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::atomic_save;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{CachedReadFs, MmapFs, UniversalReadFs, read_bin_via};
+use common::universal_io::{
+    CachedReadFs, MmapFs, OpenOptions, Populate, UniversalReadFs, read_bin_via,
+};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -656,8 +658,23 @@ impl GraphLayers {
         dir: &Path,
         residency: GraphLinksResidency,
     ) -> OperationResult<()> {
+        // Graph data
         fs.schedule_prefetch(&Self::get_path(dir), None, None)?;
 
+        // The load reads `Cached` links with a *blocking* populate and
+        // materializes `Pinned` links into heap; at prefetch time both become
+        // a background populate so the fetch overlaps the rest of the open.
+        // `Cold` links stay unpopulated, matching the load.
+        let populate = match residency {
+            GraphLinksResidency::Cold => Populate::No,
+            GraphLinksResidency::Cached | GraphLinksResidency::Pinned => Populate::PreferBackground,
+        };
+        let options = OpenOptions {
+            populate,
+            ..GraphLinks::open_options(residency)
+        };
+
+        // Links
         for format in [
             GraphLinksFormat::CompressedWithVectors,
             GraphLinksFormat::Compressed,
@@ -665,7 +682,7 @@ impl GraphLayers {
         ] {
             let path = Self::get_links_path(dir, format);
             if fs.exists(&path)? {
-                fs.schedule_prefetch(&path, Some(GraphLinks::open_options(residency)), None)?;
+                fs.schedule_prefetch(&path, Some(options), None)?;
                 break;
             }
         }
@@ -822,9 +839,13 @@ mod tests {
     /// parked in the pool stay readable, while any fallback open hits
     /// `NotFound`.
     #[rstest]
-    #[case::uncompressed(GraphLinksFormat::Plain)]
-    #[case::compressed(GraphLinksFormat::Compressed)]
-    fn preopen_then_load_through_cached_fs(#[case] format: GraphLinksFormat) {
+    #[case::uncompressed(GraphLinksFormat::Plain, GraphLinksResidency::Cold)]
+    #[case::compressed(GraphLinksFormat::Compressed, GraphLinksResidency::Cold)]
+    #[case::compressed_cached(GraphLinksFormat::Compressed, GraphLinksResidency::Cached)]
+    fn preopen_then_load_through_cached_fs(
+        #[case] format: GraphLinksFormat,
+        #[case] residency: GraphLinksResidency,
+    ) {
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let num_vectors = 100;
@@ -859,15 +880,14 @@ mod tests {
         // Same order as the segment open path: snapshot, then preopen, then load.
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
-        GraphLayers::preopen_universal(&cached_fs, dir.path(), GraphLinksResidency::Cold).unwrap();
+        GraphLayers::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
 
         // Everything `load_universal` reads must now come from the prefetch pool.
         for entry in fs_err::read_dir(dir.path()).unwrap() {
             fs_err::remove_file(entry.unwrap().path()).unwrap();
         }
 
-        let graph =
-            GraphLayers::load_universal(&cached_fs, dir.path(), GraphLinksResidency::Cold).unwrap();
+        let graph = GraphLayers::load_universal(&cached_fs, dir.path(), residency).unwrap();
         assert_eq!(
             search_in_graph(&query, top, &vector_holder, &graph),
             expected

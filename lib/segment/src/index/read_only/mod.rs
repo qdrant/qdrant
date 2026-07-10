@@ -91,13 +91,14 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     }
 
     /// Schedule background prefetch of every file [`Self::open_sparse`] will
-    /// read, mirroring its `(index_type, datatype)` dispatch.
+    /// read, mirroring its `(index_type, datatype)` dispatch — including the
+    /// low-memory downgrade of `ImmutableRam` to `Mmap`, which decides whether
+    /// the index data is populated by the prefetch (the immutable-RAM open
+    /// reads it in full) or parked cold (the mmap open reads it lazily).
     ///
     /// Reads the sparse index config to dispatch — and then schedules it, so
     /// `open_sparse`'s own read is served from the prefetch pool. A missing
-    /// config is tolerated: `open_sparse` is the one to report it. The
-    /// low-memory downgrade of `ImmutableRam` to `Mmap` is not applied — the
-    /// former's preopen forwards to the latter's anyway.
+    /// config is tolerated: `open_sparse` is the one to report it.
     pub fn preopen_sparse(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
         let config_path = SparseIndexConfig::get_config_path(path);
         let Some(config) = SparseIndexConfig::load_universal(fs, &config_path).ok_not_found()?
@@ -105,6 +106,16 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             return Ok(());
         };
         fs.schedule_prefetch(&config_path, None, None)?;
+
+        // Low-memory mode downgrades `ImmutableRam` to `Mmap` (same on-disk format).
+        let effective_index_type = match config.index_type {
+            SparseIndexType::ImmutableRam if low_memory_mode().prefer_disk() => {
+                SparseIndexType::Mmap
+            }
+            SparseIndexType::ImmutableRam => SparseIndexType::ImmutableRam,
+            SparseIndexType::MutableRam => SparseIndexType::MutableRam,
+            SparseIndexType::Mmap => SparseIndexType::Mmap,
+        };
 
         fn preopen<S, Fs, TInvertedIndex>(fs: &Fs, path: &Path) -> OperationResult<()>
         where
@@ -115,7 +126,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             ReadOnlySparseVectorIndex::<S, TInvertedIndex>::preopen(fs, path)
         }
 
-        match (config.index_type, config.datatype.unwrap_or_default()) {
+        match (effective_index_type, config.datatype.unwrap_or_default()) {
             (SparseIndexType::MutableRam, _) => Err(OperationError::service_error(
                 "MutableRam sparse index has no read-only representation",
             )),
