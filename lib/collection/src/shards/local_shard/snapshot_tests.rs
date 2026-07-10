@@ -81,7 +81,6 @@ fn test_snapshot_all() {
 /// (`segments_manifest.json`, next to the `segments/` directory) listing every snapshotted segment
 /// as `active`.
 #[test]
-#[allow(clippy::field_reassign_with_default)]
 fn test_snapshot_includes_segment_manifest() {
     let mut flags = FeatureFlags::default();
     flags.write_segment_manifest = true;
