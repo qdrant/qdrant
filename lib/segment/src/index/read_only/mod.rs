@@ -33,7 +33,9 @@ use crate::index::sparse_index::sparse_vector_index::read_only::{
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::index::vector_index_base::VectorIndexRead;
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, Indexes, SearchParams, VectorDataConfig, VectorStorageDatatype};
+use crate::types::{
+    Filter, Indexes, SearchParams, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
+};
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -95,26 +97,33 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     }
 
     /// Schedule background prefetch of every file [`Self::open_sparse`] will
-    /// read: the inverted index (config and data), its version file and the
-    /// indices tracker. All readable variants share the compressed-mmap
-    /// on-disk format, so the datatype plays no role here; the (effective)
-    /// index type only decides whether the index data is populated by the
-    /// prefetch (the immutable-RAM open reads it in full) or parked cold (the
-    /// mmap open reads it lazily).
+    /// read: the sparse index config, the inverted index, its version file
+    /// and the indices tracker. All readable variants share the
+    /// compressed-mmap on-disk format, so the datatype plays no role here;
+    /// the (effective) index type only decides whether the index data is
+    /// populated by the prefetch (the immutable-RAM open reads it in full) or
+    /// parked cold (the mmap open reads it lazily) — and it comes from the
+    /// segment config's `sparse_vector_config`, so nothing is read here.
     ///
-    /// Reads the sparse index config to dispatch — and then schedules it, so
-    /// `open_sparse`'s own read is served from the prefetch pool. A missing
-    /// config is tolerated: `open_sparse` is the one to report it.
-    pub fn preopen_sparse(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+    /// An absent index config file means the index isn't persisted: nothing
+    /// is scheduled, and `open_sparse` is the one to report it.
+    pub fn preopen_sparse(
+        fs: &impl CachedReadFs<File = S>,
+        sparse_vector_config: &SparseVectorDataConfig,
+        path: &Path,
+    ) -> OperationResult<()> {
+        // Sparse index config; `open_sparse` reads it off the parked handle.
         let config_path = SparseIndexConfig::get_config_path(path);
-        let Some(config) = SparseIndexConfig::load_universal(fs, &config_path).ok_not_found()?
-        else {
+        if fs
+            .schedule_prefetch(&config_path, None, None)
+            .ok_not_found()?
+            .is_none()
+        {
             return Ok(());
-        };
-        fs.schedule_prefetch(&config_path, None, None)?;
+        }
 
         // Low-memory mode downgrades `ImmutableRam` to `Mmap` (same on-disk format).
-        let effective_index_type = match config.index_type {
+        let effective_index_type = match sparse_vector_config.index.index_type {
             SparseIndexType::ImmutableRam if low_memory_mode().prefer_disk() => {
                 SparseIndexType::Mmap
             }
@@ -143,7 +152,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         fs.schedule_prefetch(&IndicesTracker::file_path(path), None, None)?;
 
         Ok(())
-
     }
 
     /// Open the read-only dense vector index from its config (sparse: follow-up).
