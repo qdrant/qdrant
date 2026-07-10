@@ -175,7 +175,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             name,
             config,
             new_config,
-            None,
             self.id_tracker.clone(),
             self.payload_index.clone(),
             storage,

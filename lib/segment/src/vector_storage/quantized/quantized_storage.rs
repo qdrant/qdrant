@@ -52,7 +52,7 @@ impl QuantizedStorage<MmapFile> {
     /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
     pub(crate) fn reload(&mut self) -> OperationResult<()> {
         let path = self.path.clone();
-        *self = Self::open(&MmapFs, &path, self.quantized_vector_size.get())?;
+        *self = Self::from_file(&MmapFs, &path, self.quantized_vector_size.get())?;
         Ok(())
     }
 }
@@ -71,38 +71,39 @@ pub struct QuantizedStorageBuilder<S> {
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
-    pub(in crate::vector_storage::quantized) fn open_options() -> OpenOptions {
+    fn open_options(populate: Populate) -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::No,
+            populate,
             advice: AdviceSetting::Global,
         }
     }
 
-    /// Schedule background prefetch of the data file [`Self::open`] reads.
+    /// Schedule background prefetch of the data file [`Self::from_file`] reads.
     ///
-    /// The data is read lazily, except the first vector, which the load reads
-    /// to validate the stored vector size — populate that prefix, so the
-    /// validation doesn't cost a round-trip.
+    /// The storage reads lazily through its mmap-style handle; `populate`
+    /// warms the parked handle for the `cached` memory placement.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
-        quantized_vector_size: usize,
+        populate: Populate,
     ) -> OperationResult<()> {
-        let mut options = Self::open_options();
-        options.populate = options.populate.or_partial(0..quantized_vector_size as u64);
-        fs.schedule_prefetch(path, Some(options), None)?;
-
+        fs.schedule_prefetch(path, Some(Self::open_options(populate)), None)?;
         Ok(())
     }
 
-    pub fn open(
+    pub fn from_file(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
-        let storage = ReadOnly::open(fs, path, Self::open_options(), Default::default())?;
+        let storage = ReadOnly::open(
+            fs,
+            path,
+            Self::open_options(Populate::No),
+            Default::default(),
+        )?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -124,7 +125,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 
     /// Open the encoded vectors at `path`, creating an empty storage if the file does not yet exist.
-    pub fn open_or_create(
+    pub fn open(
         fs: &S::Fs,
         path: &Path,
         quantized_vector_size: usize,
@@ -135,14 +136,14 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         }
 
         // Ensure the backing file exists without clobbering existing data:
-        // `open` mmaps the file read-only and fails if it is missing.
+        // `from_file` mmaps the file read-only and fails if it is missing.
         fs_err::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(false)
             .open(path)?;
 
-        let storage = Self::open(fs, path, quantized_vector_size)?;
+        let storage = Self::from_file(fs, path, quantized_vector_size)?;
 
         if prefault {
             storage.populate();
@@ -223,7 +224,12 @@ impl quantization::EncodedStorageBuilder for QuantizedStorageBuilder<MmapFile> {
     fn build(self) -> OperationResult<QuantizedStorage<MmapFile>> {
         self.mmap.flush()?;
 
-        let storage = ReadOnly::open(&MmapFs, &self.path, Self::Storage::open_options(), ())?;
+        let storage = ReadOnly::open(
+            &MmapFs,
+            &self.path,
+            Self::Storage::open_options(Populate::No),
+            (),
+        )?;
 
         Ok(QuantizedStorage {
             storage,

@@ -112,8 +112,9 @@ impl QuantizedVectors {
         let in_ram = config.is_ram(on_disk_vector_storage);
 
         // Open the flat (RAM / mmap) or appendable chunked storage selected for this config.
-        let ram = || QuantizedRamStorage::open::<ReadFile>(&READ_FS, data_path.as_path(), size);
-        let mmap = || QuantizedStorage::open(&READ_FS, data_path.as_path(), size);
+        let ram =
+            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
+        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
         let chunked =
             || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
 
@@ -168,8 +169,9 @@ impl QuantizedVectors {
 
         // Open the inner quantized storage and the matching offsets storage for the
         // selected backend.
-        let ram = || QuantizedRamStorage::open::<ReadFile>(&READ_FS, data_path.as_path(), size);
-        let mmap = || QuantizedStorage::open(&READ_FS, data_path.as_path(), size);
+        let ram =
+            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
+        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
         let chunked =
             || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
         let ram_offsets = || MultivectorOffsetsStorageRam::load(&offsets_path);

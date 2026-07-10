@@ -27,9 +27,7 @@ use crate::types::{
     VectorNameBuf,
 };
 use crate::vector_storage::VectorStorageRead;
-use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectorsConfig, ReadOnlyQuantizedVectors,
-};
+use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
@@ -86,14 +84,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
         let (segment_config, payload_config) = Self::first_preopen(&cached_fs, segment_path)?;
-        let quantization_configs = Self::second_preopen(&cached_fs, segment_path, &segment_config)?;
         Self::open_via(
             &cached_fs,
             fs,
             segment_path,
             segment_config,
             payload_config,
-            quantization_configs,
             uuid,
             deferred_internal_id,
         )
@@ -123,10 +119,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             let path = get_vector_storage_path(segment_path, vector_name);
             VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path)?;
 
-            if config.quantization_config(vector_name).is_some() {
-                // Quantized storages have their own config file in the vector storage directory.
-                ReadOnlyQuantizedVectors::<S>::preopen_config(fs, &path)?;
-            }
+            // Quantized vectors live in the vector storage directory; a no-op
+            // when quantization isn't configured for this vector.
+            ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config)?;
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
@@ -140,28 +135,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         Ok((config, payload_config))
     }
 
-    fn second_preopen(
-        fs: &impl CachedReadFs<File = S>,
-        segment_path: &Path,
-        config: &SegmentConfig,
-    ) -> OperationResult<HashMap<String, QuantizedVectorsConfig>> {
-        let mut quantized_config = HashMap::new();
-
-        // Quantized vector storages, now that we preloaded their config
-        for (vector_name, vector_config) in &config.vector_data {
-            let path = get_vector_storage_path(segment_path, vector_name);
-
-            if config.quantization_config(vector_name).is_some()
-                && let Some(quant_config) =
-                    ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config)?
-            {
-                quantized_config.insert(vector_name.clone(), quant_config);
-            }
-        }
-
-        Ok(quantized_config)
-    }
-
     /// Read-only mirror of `load_segment`: assembles every read-only component
     /// from `fs` (id tracker, payload storage+index, per-vector storage/index). No writes.
     ///
@@ -171,16 +144,14 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// stores a filesystem handle to re-open appended files later (the
     /// appendable id tracker): a caching wrapper's snapshot would go stale.
     ///
-    /// `config` and `payload_config` are the ones [`first_preopen`](Self::first_preopen)
-    /// already parsed off `fs`.
-    #[expect(clippy::too_many_arguments)]
+    /// `config` and `payload_config` are the ones
+    /// [`first_preopen`](Self::first_preopen) already parsed off `fs`.
     pub(crate) fn open_via(
         fs: &impl CachedReadFs<File = S>,
         raw_fs: &S::Fs,
         segment_path: &Path,
         config: SegmentConfig,
         payload_config: PayloadConfig,
-        mut quantized_configs: HashMap<VectorNameBuf, QuantizedVectorsConfig>,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
@@ -252,7 +223,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 vector_name,
                 vector_config,
                 &config,
-                quantized_configs.remove(vector_name),
                 id_tracker.clone(),
                 payload_index.clone(),
                 vector_storage,
@@ -302,7 +272,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         vector_name: &VectorName,
         vector_config: &VectorDataConfig,
         segment_config: &SegmentConfig,
-        known_quantized_config: Option<QuantizedVectorsConfig>,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
@@ -318,7 +287,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
             ReadOnlyQuantizedVectors::open(
                 fs,
                 &vector_storage_path,
-                known_quantized_config,
                 distance,
                 datatype,
                 vector_config.multivector_config.as_ref(),

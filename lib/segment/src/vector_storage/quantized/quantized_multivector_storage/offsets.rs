@@ -54,16 +54,16 @@ impl MultivectorOffsetsStorageRam {
             advice: AdviceSetting::Global,
         }
     }
-    pub fn preopen<S: UniversalRead>(
-        fs: &impl CachedReadFs<File = S>,
-        path: &Path,
-    ) -> OperationResult<()> {
+
+    /// Schedule background prefetch of the offsets file [`Self::open`] reads.
+    ///
+    /// The open reads the whole file, so the prefetch populates it.
+    pub fn preopen(fs: &impl CachedReadFs, path: &Path) -> OperationResult<()> {
         fs.schedule_prefetch(
             path,
             Some(Self::open_options(Populate::PreferBackground)),
             None,
         )?;
-
         Ok(())
     }
 
@@ -162,16 +162,25 @@ impl MultivectorOffsetsStorageMmap<MmapFile> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
-    const OPEN_OPTIONS: OpenOptions = OpenOptions {
-        writeable: false,
-        need_sequential: false,
-        populate: Populate::No,
-        advice: AdviceSetting::Global,
-    };
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
 
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
-        fs.schedule_prefetch(path, Some(Self::OPEN_OPTIONS), None)?;
-
+    /// Schedule background prefetch of the offsets file [`Self::open`] reads.
+    ///
+    /// The offsets are read lazily; `populate` warms the parked handle for
+    /// the `cached` memory placement.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        fs.schedule_prefetch(path, Some(Self::open_options(populate)), None)?;
         Ok(())
     }
 
@@ -181,7 +190,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
     pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
         let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.open(
             path,
-            Self::OPEN_OPTIONS,
+            Self::open_options(Populate::No),
             Default::default(),
         )?);
 
@@ -400,12 +409,19 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+    ///
+    /// `populate` warms the parked chunks for the `cached` memory placement;
+    /// the open itself always maps them lazily.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
         ChunkedVectorsRead::<MultivectorOffset, S>::preopen(
             fs,
             path,
             AdviceSetting::Global,
-            Populate::No,
+            populate,
         )
     }
 
