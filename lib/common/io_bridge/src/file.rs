@@ -248,9 +248,14 @@ impl<A: AsyncAppend + Clone> UniversalAppend for BlobFile<A> {
     ) -> Result<ByteOffset> {
         // Concatenate into a single buffer so the whole batch lands in one
         // request.
-        let mut buffer = Vec::new();
-        for item in items {
-            buffer.extend_from_slice(bytemuck::cast_slice(item));
+        let slices: Vec<&[u8]> = items
+            .into_iter()
+            .map(|item| bytemuck::cast_slice(item))
+            .collect();
+        let total: usize = slices.iter().map(|slice| slice.len()).sum();
+        let mut buffer = Vec::with_capacity(total);
+        for slice in slices {
+            buffer.extend_from_slice(slice);
         }
 
         self.append_bytes(Bytes::from(buffer))
