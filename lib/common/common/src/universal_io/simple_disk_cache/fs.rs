@@ -208,6 +208,10 @@ where
 
                 State::OpenPrefill { pipeline }
             }
+            // Special case of no known length and empty range. Don't initialize.
+            (None, Populate::Partial(range)) if range.into_byte_range::<u8>().is_empty() => {
+                State::Uninit
+            }
             // Schedule a partial block-aligned read.
             (known_len, Populate::Partial(range)) => {
                 let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
@@ -218,28 +222,28 @@ where
                     None => remote.len::<u8>()?,
                 };
 
-                let mut pipeline = OwnedPipeline::new(remote)?;
-
                 let requested_byte_range = range.into_byte_range::<u8>();
 
-                let (blocks_range, byte_range) =
-                    block_aligned_fetch(requested_byte_range.clone(), file_len).ok_or_else(
-                        || UniversalIoError::OutOfBounds {
-                            start: requested_byte_range.start,
-                            end: requested_byte_range.end,
-                            elements: requested_byte_range
-                                .end
-                                .saturating_sub(requested_byte_range.start)
-                                as usize,
-                        },
+                if let Some((blocks_range, byte_range)) =
+                    block_aligned_fetch(requested_byte_range.clone(), file_len)
+                {
+                    let mut pipeline = OwnedPipeline::new(remote)?;
+
+                    // FIXME: check `can_schedule` in a loop first
+                    pipeline.schedule::<Sequential>(
+                        blocks_range,
+                        byte_range,
+                        REMOTE_READ_ALIGNMENT,
                     )?;
 
-                // FIXME: check `can_schedule` in a loop first
-                pipeline.schedule::<Sequential>(blocks_range, byte_range, REMOTE_READ_ALIGNMENT)?;
-
-                State::PartialPrefill {
-                    pipeline,
-                    len: file_len,
+                    State::PartialPrefill {
+                        pipeline,
+                        len: file_len,
+                    }
+                } else {
+                    // empty byte range, just initialize with length.
+                    let local = LocalState::new(&local_path, file_len, options)?;
+                    State::Ready { remote, local }
                 }
             }
         };
