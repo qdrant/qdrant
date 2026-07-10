@@ -87,19 +87,6 @@ pub trait ReadSegmentEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>>;
 
-    /// Like [`SegmentEntry::all_vectors`], but with explicit deferred semantics.
-    ///
-    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
-    /// the point, including a deferred head that is invisible to ordinary reads.
-    /// Used by the copy-on-write move path so deferred points are relocated with
-    /// their actual data instead of an empty/visible-only snapshot.
-    fn all_vectors_with_behavior(
-        &self,
-        point_id: PointIdType,
-        deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors<'_>>;
-
     /// Reads Records from the segment, according to specified selectors and a list of point ids.
     ///
     /// WARNING:
@@ -135,19 +122,6 @@ pub trait ReadSegmentEntry {
     fn payload(
         &self,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
-
-    /// Like [`SegmentEntry::payload`], but with explicit deferred semantics.
-    ///
-    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
-    /// the point, including a deferred head that is invisible to ordinary reads.
-    /// Used by the copy-on-write move path so deferred points are relocated with
-    /// their actual payload instead of failing with `PointIdError`.
-    fn payload_with_behavior(
-        &self,
-        point_id: PointIdType,
-        deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 

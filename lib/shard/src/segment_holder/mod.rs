@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -31,7 +31,10 @@ use segment::entry::{
 };
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
-use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
+use segment::types::{
+    ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf,
+    WithPayload, WithVector,
+};
 use smallvec::SmallVec;
 
 use crate::locked_segment::{DropDataOutcome, LockedSegment};
@@ -965,6 +968,14 @@ impl SegmentHolder {
     ///
     /// Returns set of point ids which were successfully (already) applied to segments.
     ///
+    /// `point_cow_operation` receives the moved point's vectors twice: as
+    /// storage-native bytes (as read from the source; remove a named vector by
+    /// `retain`ing on the list) and as an initially empty decoded overlay
+    /// (insert fresh vectors there to overwrite names; entries may borrow from
+    /// the operation data via `'op`). Untouched names travel to the
+    /// destination as verbatim bytes, which keeps requantizing storages
+    /// (TurboQuant-as-datatype) lossless across moves.
+    ///
     /// # Warning
     ///
     /// This function must not be used to apply point deletions, and [`apply_points`] must be used
@@ -973,7 +984,7 @@ impl SegmentHolder {
     /// 1. moving a point first and deleting it after is unnecessary overhead.
     /// 2. this leaves older point versions in place, which may accidentally be revived by some
     ///    other operation later.
-    pub fn apply_points_with_conditional_move<F, G>(
+    pub fn apply_points_with_conditional_move<'op, F, G>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
@@ -983,12 +994,18 @@ impl SegmentHolder {
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
-        for<'n, 'o, 'p> G: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
+        G: FnMut(
+            PointIdType,
+            &mut Vec<(VectorNameBuf, Vec<u8>)>,
+            &mut NamedVectors<'op>,
+            &mut Payload,
+        ),
     {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
+        let stopped = AtomicBool::new(false);
 
         let _ = self.apply_points(ids, hw_counter, |point_id, idx, write_segment| {
             if let Some(point_version) = write_segment.point_version(point_id)
@@ -1017,29 +1034,88 @@ impl SegmentHolder {
                         // Read the latest head of the point, including a
                         // deferred head that is invisible to ordinary
                         // (`VisibleOnly`) reads. A deferred source point would
-                        // otherwise yield empty vectors and make `payload`
-                        // fail with `PointIdError`, surfacing as a spurious
+                        // otherwise yield no record, surfacing as a spurious
                         // "No point with id ... found" on a plain upsert that
                         // races a `prevent_unoptimized` optimization.
-                        let mut all_vectors = write_segment.all_vectors_with_behavior(
-                            point_id,
-                            DeferredBehavior::WithDeferred,
-                            hw_counter,
-                        )?;
-                        let mut payload = write_segment.payload_with_behavior(
-                            point_id,
-                            DeferredBehavior::WithDeferred,
-                            hw_counter,
-                        )?;
+                        //
+                        // Vectors are read as storage-native bytes: names the
+                        // operation does not touch travel verbatim, avoiding
+                        // the lossy dequantize→requantize round-trip of
+                        // TurboQuant-as-datatype storages.
+                        let mut record = write_segment
+                            .retrieve_raw(
+                                &[point_id],
+                                &WithPayload {
+                                    enable: true,
+                                    payload_selector: None,
+                                },
+                                &WithVector::Bool(true),
+                                hw_counter,
+                                &stopped,
+                                DeferredBehavior::WithDeferred,
+                            )?
+                            .remove(&point_id)
+                            .ok_or(OperationError::PointIdError {
+                                missed_point_id: point_id,
+                            })?;
 
-                        point_cow_operation(point_id, &mut all_vectors, &mut payload);
+                        let mut raw_vectors = record.vectors.take().unwrap_or_default();
+                        let mut payload = record.payload.take().unwrap_or_default();
+                        let mut updated_vectors = NamedVectors::default();
 
-                        appendable_write_segment.upsert_point(
+                        point_cow_operation(
+                            point_id,
+                            &mut raw_vectors,
+                            &mut updated_vectors,
+                            &mut payload,
+                        );
+
+                        // Names overlaid with fresh data don't travel as bytes.
+                        raw_vectors
+                            .retain(|(name, _)| updated_vectors.get(name).is_none());
+
+                        // Byte portability requires encoding-compatible vector
+                        // configs on both sides (size, distance, datatype,
+                        // multivector config). Segment-role fields — storage
+                        // type, index, quantization — legitimately differ
+                        // between an optimized source and an appendable
+                        // destination; `check_compatible` ignores them.
+                        debug_assert!(
+                            raw_vectors.iter().all(|(name, _)| {
+                                let src = write_segment.config();
+                                let dst = appendable_write_segment.config();
+                                let dense = (src.vector_data.get(name), dst.vector_data.get(name));
+                                let sparse = (
+                                    src.sparse_vector_data.get(name),
+                                    dst.sparse_vector_data.get(name),
+                                );
+                                match (dense, sparse) {
+                                    ((Some(src), Some(dst)), (None, None)) => {
+                                        src.check_compatible(dst).is_ok()
+                                    }
+                                    ((None, None), (Some(src), Some(dst))) => {
+                                        src.check_compatible(dst).is_ok()
+                                    }
+                                    _ => false,
+                                }
+                            }),
+                            "CoW raw move requires encoding-compatible vector configs on source and destination",
+                        );
+
+                        appendable_write_segment.upsert_point_raw(
                             op_num,
                             point_id,
-                            all_vectors,
+                            &raw_vectors,
                             hw_counter,
                         )?;
+                        if !updated_vectors.is_empty() {
+                            appendable_write_segment.update_vectors(
+                                op_num,
+                                point_id,
+                                updated_vectors,
+                                hw_counter,
+                            )?;
+                        }
                         appendable_write_segment
                             .set_full_payload(op_num, point_id, &payload, hw_counter)?;
 

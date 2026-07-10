@@ -1929,15 +1929,15 @@ fn test_deferred_point_read_operations() {
 }
 
 /// A deferred point is invisible to ordinary (`VisibleOnly`) per-point reads,
-/// but the copy-on-write move path must still be able to read its data via the
-/// `*_with_behavior(WithDeferred)` accessors.
+/// but the copy-on-write move path must still be able to read its data via
+/// `retrieve`/`retrieve_raw` with `DeferredBehavior::WithDeferred`.
 ///
 /// Regression test for a spurious "No point with id ... found" error: the CoW
 /// move path read the source point's payload with `VisibleOnly`, which raised
 /// `PointIdError` for a deferred source point (e.g. a point upserted under
 /// `prevent_unoptimized` whose internal id is beyond the deferred threshold).
 #[test]
-fn test_deferred_point_with_behavior_accessors() {
+fn test_deferred_point_with_deferred_reads() {
     let hw_counter = HardwareCounterCell::new();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
@@ -2002,18 +2002,37 @@ fn test_deferred_point_with_behavior_accessors() {
     );
 
     // WithDeferred resolves the deferred point with its real data — this is
-    // what the CoW move path now uses, fixing the spurious PointNotFound.
-    let with_deferred_payload = segment
-        .payload_with_behavior(point_id, DeferredBehavior::WithDeferred, &hw_counter)
-        .expect("WithDeferred payload read must resolve a deferred point");
-    assert_eq!(with_deferred_payload, payload);
-
-    let with_deferred_vectors = segment
-        .all_vectors_with_behavior(point_id, DeferredBehavior::WithDeferred, &hw_counter)
-        .expect("WithDeferred vector read must resolve a deferred point");
+    // what the CoW move path uses (via `retrieve_raw`), fixing the spurious
+    // PointNotFound.
+    let records = segment
+        .retrieve(
+            &[point_id],
+            &WithPayload {
+                enable: true,
+                payload_selector: None,
+            },
+            &WithVector::Bool(true),
+            &hw_counter,
+            &AtomicBool::new(false),
+            DeferredBehavior::WithDeferred,
+        )
+        .unwrap();
+    let record = records
+        .get(&point_id)
+        .expect("WithDeferred retrieve must resolve a deferred point");
+    assert_eq!(
+        record.payload.clone().unwrap_or_default(),
+        payload,
+        "WithDeferred retrieve must return the deferred point's payload",
+    );
     assert!(
-        with_deferred_vectors.contains_key(DEFAULT_VECTOR_NAME),
-        "WithDeferred vector read must return the deferred point's vector",
+        record
+            .vectors
+            .as_ref()
+            .expect("vectors were requested")
+            .iter()
+            .any(|(name, _)| name == DEFAULT_VECTOR_NAME),
+        "WithDeferred retrieve must return the deferred point's vector",
     );
 }
 
