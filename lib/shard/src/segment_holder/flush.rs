@@ -181,6 +181,28 @@ impl SegmentHolder {
         final_order
     }
 
+    /// Run `f` serialized with the flush pipeline.
+    ///
+    /// Flusher executions must be serialized end-to-end with their capture: component
+    /// flushers capture pending state by value (e.g. Gridstore clones its pending update
+    /// set) and their execution frees storage superseded by that state. Running an extra
+    /// flush between another flusher's capture and its execution makes the pending sets
+    /// overlap, and the later execution double-frees blocks that may already have been
+    /// reused — corrupting the storage. This joins any in-flight background flush (whose
+    /// flushers were captured earlier) and holds the flush lock while `f` runs, so a
+    /// flush performed inside `f` cannot interleave with a captured-but-unrun pass.
+    ///
+    /// Deadlock note: callers may hold segment locks; `flush_all` acquires segment locks
+    /// before this lock, and flush executions take no segment locks, so the ordering
+    /// [segment locks → flush lock] is consistent.
+    pub fn with_flush_serialized<T>(
+        &self,
+        f: impl FnOnce() -> OperationResult<T>,
+    ) -> OperationResult<T> {
+        let _flush_lock = self.lock_flushing()?;
+        f()
+    }
+
     // Joins flush thread if exists
     // Returns lock to guarantee that there will be no other flush in a different thread
     pub(super) fn lock_flushing(

@@ -666,6 +666,17 @@ impl NonAppendableSegmentEntry for Segment {
             }
         };
 
+        // Persist the built index here, in the build phase, so `apply_index` can
+        // durably list it in the config without doing any I/O under the segment
+        // write lock (builds run under a lock that still admits reads; apply does
+        // not). Safe outside the shard flush serialization: these storages are not
+        // installed yet, so no previously captured flusher can overlap with them.
+        // If the apply never happens, the leftover files are wiped by the next
+        // build of this field.
+        for index in &field_index {
+            index.flusher()()?;
+        }
+
         Ok(BuildFieldIndexResult::Built {
             indexes: field_index,
             schema: field_type.clone(),

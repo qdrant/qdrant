@@ -140,7 +140,7 @@ impl PayloadFieldSchemaWithIndexType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, strum::EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadIndexType {
     IntIndex,

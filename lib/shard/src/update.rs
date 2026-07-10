@@ -988,6 +988,26 @@ pub fn create_field_index(
             segment.delete_field_index_if_incompatible(op_num, field_name, field_schema)
         })?;
 
+        // Pin the state the build will observe before the index config durably marks
+        // the index as complete. The build reads the live id tracker and payload
+        // storage, which may hold changes that are not flushed yet; if such a change
+        // were lost in a crash, the durable index (and the config that WAL replay
+        // trusts via `AlreadyBuilt`) would permanently disagree with the durable
+        // payload. Flushing the whole segment first makes every crash outcome
+        // consistent: either the config is not durable yet and replay rebuilds, or
+        // config, index data, and observed state are durable together.
+        //
+        // Serialized with the flush pipeline: an extra flush run between another
+        // flusher's capture and its execution corrupts storage (see
+        // `SegmentHolder::with_flush_serialized`). Skipped for idempotent
+        // ensure-calls (index already present with an identical schema), which must
+        // stay cheap; those resolve to `AlreadyExists` in the build below.
+        let already_indexed =
+            write_segment.get_indexed_fields().get(field_name) == Some(field_schema);
+        if !already_indexed {
+            segments.with_flush_serialized(|| write_segment.flush(true))?;
+        }
+
         let (schema, indexes) =
             match write_segment.build_field_index(op_num, field_name, field_schema, hw_counter)? {
                 BuildFieldIndexResult::SkippedByVersion => {
@@ -1140,8 +1160,9 @@ mod test {
     };
     use crate::segment_holder::{FlushMode, SegmentHolder};
     use crate::update::{
-        clear_payload_by_filter, delete_payload_by_filter, delete_points_by_filter,
-        delete_vectors_by_filter, overwrite_payload_by_filter, set_payload_by_filter,
+        clear_payload_by_filter, create_field_index, delete_payload_by_filter,
+        delete_points_by_filter, delete_vectors_by_filter, overwrite_payload_by_filter,
+        set_payload_by_filter,
     };
 
     #[test]
@@ -1791,5 +1812,92 @@ mod test {
         upsert_points(&holder, 101, [&incoming], &hw_counter).unwrap();
         let segment = holder.get(sid).unwrap().get();
         check(&*segment.read(), "CoW move");
+    }
+
+    /// Failure-direction regression test for the payload index durability fix: an
+    /// index built while a payload change is still pending must not let the durable
+    /// index config outrun the state the build observed. `create_field_index` flushes
+    /// the segment (serialized with the flush pipeline) before building, so the
+    /// pending change becomes durable together with the index: after a crash the
+    /// reloaded segment sees the cleared payload, the re-applied `CreateFieldIndex`
+    /// (WAL replay) stays a truthful no-op (`AlreadyBuilt`), and filtered reads agree
+    /// with full scans.
+    ///
+    /// Without the pre-build flush, the reloaded segment resurrects the cleared
+    /// payload row while the durable index has no posting for it, and the row stays
+    /// invisible to filtered reads forever.
+    #[test]
+    fn create_field_index_pins_pending_payload_state() {
+        use std::sync::atomic::AtomicBool;
+
+        use common::types::DeferredBehavior;
+        use segment::entry::{NonAppendableSegmentEntry as _, StorageSegmentEntry as _};
+        use segment::segment_constructor::load_segment;
+        use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+        use uuid::Uuid;
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        let key: PayloadKeyType = "city".parse().unwrap();
+        let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let is_stopped = AtomicBool::new(false);
+
+        let mut seg = empty_segment(dir.path());
+        seg.upsert_point(
+            1,
+            0.into(),
+            only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+        let payload: segment::types::Payload = payload_json! {"city": "Berlin"};
+        seg.set_payload(2, 0.into(), &payload, &None, &hw_counter)
+            .unwrap();
+        seg.flush(true).unwrap();
+
+        // Pending payload clear: stays in memory until the next flush cycle.
+        seg.clear_payload(3, 0.into(), &hw_counter).unwrap();
+        let segment_path = seg.segment_path.clone();
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(seg);
+
+        // The build observes the cleared row and must pin it durably before the
+        // index config becomes durable.
+        create_field_index(&holder, 4, &key, Some(&schema), &hw_counter).unwrap();
+
+        // Simulated crash: dropped without any flush after the op.
+        drop(holder);
+
+        let mut segment = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false))
+            .expect("segment must load after simulated crash");
+
+        // The pre-build flush persisted the pending clear together with the index.
+        let reloaded = segment.payload(0.into(), &hw_counter).unwrap();
+        assert!(
+            !reloaded.0.contains_key("city"),
+            "the payload state observed by the index build must be durable",
+        );
+
+        // WAL replay re-applies the CreateFieldIndex op; the config is truthful, so
+        // `AlreadyBuilt` is a correct no-op.
+        segment
+            .create_field_index(4, &key, Some(&schema), &hw_counter)
+            .unwrap();
+
+        let hits = segment
+            .read_filtered(
+                None,
+                None,
+                Some(&city_filter("Berlin")),
+                &is_stopped,
+                &hw_counter,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+        assert!(
+            hits.is_empty(),
+            "filtered reads must agree with payload storage: the row was cleared",
+        );
     }
 }

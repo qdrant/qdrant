@@ -46,6 +46,13 @@ impl PayloadIndex for StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<()> {
+        // Contract: `field_index` data must already be durable when this is called —
+        // the config saved below is the durable commit marker the loader and WAL
+        // replay trust, and it must never list an index whose postings only exist in
+        // memory. Live builds persist in `Segment::build_field_index` (build phase,
+        // so no index I/O happens here under the segment write lock); the load-time
+        // rebuild persists in `load_from_db`; `SegmentBuilder` segments are exempt
+        // because they are not loadable until the builder flushes and promotes them.
         let index_types: Vec<_> = field_index
             .iter()
             .map(|i| i.get_full_index_type())
