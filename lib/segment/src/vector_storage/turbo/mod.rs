@@ -327,7 +327,7 @@ pub fn turbo_storage_roundtrip(vector: &[f32], distance: Distance) -> Vec<f32> {
         dim,
         TQDT_BITS,
         TQDT_MODE,
-        distance.into(),
+        quantization::DistanceType::from(distance),
         TQDT_ROTATION,
         None,
     );

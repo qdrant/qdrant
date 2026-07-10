@@ -25,10 +25,9 @@ use crate::shards::shard::PeerId;
 const PEER_ID: PeerId = 1;
 const COLLECTION_NAME: &str = "test";
 
-/// Static metadata for every vector name the test might ever activate. Four names start
-/// active in the fixture ("a", "b", "s", "q"); "c" and "u" are reachable through
-/// `Op::CreateVectorName`; "m" stays unreachable while multivectors are disabled (see
-/// the note on `INITIAL_ACTIVE`).
+/// Static metadata for every vector name the test might ever activate. Six names start
+/// active in the fixture ("a", "b", "i", "s", "m", "q", see `INITIAL_ACTIVE`); "c" and
+/// "u" are reachable through `Op::CreateVectorName`.
 pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     VectorCandidate {
         name: "a",

@@ -890,7 +890,13 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
             // CreateVectorName generator arm above).
             VectorValue::Dense(turbo_storage_roundtrip(v, Distance::Dot))
         }
-        _ => value.clone(),
+        (
+            VectorKind::Dense(_) | VectorKind::Sparse | VectorKind::MultiDense(_),
+            VectorValue::Dense(_) | VectorValue::Sparse(_) | VectorValue::MultiDense(_),
+        ) => value.clone(),
+        (VectorKind::DenseTurbo(_), VectorValue::Sparse(_) | VectorValue::MultiDense(_)) => {
+            panic!("model_vector: non-dense value for Turbo4 name `{name}`: {value:?}")
+        }
     }
 }
 
@@ -899,16 +905,18 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
 /// relative tolerance: a copy-on-write point move re-quantizes the dequantized
 /// read-back, and although the codes and the centroid norm are reproduced, the
 /// re-measured stored norm passes through two f64 rotation round-trips and can
-/// land a few ulps off, uniformly rescaling the read-back at ulp scale. Real
-/// divergences (wrong codes, stale vector) are orders of magnitude larger than
-/// this tolerance.
+/// land a few ulps off, uniformly rescaling the read-back at ulp scale. The
+/// budget of 16 ulps (relative) absorbs that wobble even accumulated across
+/// repeated moves, while real divergences (wrong codes, stale vector, a bad
+/// norm divisor) are orders of magnitude larger. Purely relative on purpose:
+/// an absolute floor would accept sign flips of near-zero components.
 pub(super) fn dense_matches(name: &str, actual: &[f32], expected: &[f32]) -> bool {
     if actual.len() != expected.len() {
         return false;
     }
     match kind_of(name) {
         VectorKind::DenseTurbo(_) => actual.iter().zip(expected).all(|(&a, &e)| {
-            let tol = f32::max(1e-5 * f32::max(a.abs(), e.abs()), 1e-6);
+            let tol = 16.0 * f32::EPSILON * f32::max(a.abs(), e.abs());
             (a - e).abs() <= tol
         }),
         VectorKind::Dense(_) | VectorKind::Sparse | VectorKind::MultiDense(_) => actual == expected,
