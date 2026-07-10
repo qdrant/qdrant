@@ -23,8 +23,20 @@ pub struct QuantizedChunkedStorageRead<S: UniversalRead> {
 
 impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
-        ChunkedVectorsRead::<u8, S>::preopen(fs, path, AdviceSetting::Global, Populate::No)
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// The chunks are read lazily, except the first vector (in the first
+    /// chunk), which the load reads to validate the stored vector size —
+    /// populate that prefix of every chunk, so the validation doesn't cost a
+    /// round-trip. (Only the first chunk's prefix is consumed; a per-chunk
+    /// exception isn't worth the plumbing for a few KB per chunk.)
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        quantized_vector_size: usize,
+    ) -> OperationResult<()> {
+        let populate = Populate::No.or_partial(0..quantized_vector_size as u64);
+        ChunkedVectorsRead::<u8, S>::preopen(fs, path, AdviceSetting::Global, populate)
     }
 
     pub fn open(

@@ -80,8 +80,19 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         }
     }
 
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
-        fs.schedule_prefetch(path, Some(Self::open_options()), None)?;
+    /// Schedule background prefetch of the data file [`Self::open`] reads.
+    ///
+    /// The data is read lazily, except the first vector, which the load reads
+    /// to validate the stored vector size — populate that prefix, so the
+    /// validation doesn't cost a round-trip.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        quantized_vector_size: usize,
+    ) -> OperationResult<()> {
+        let mut options = Self::open_options();
+        options.populate = options.populate.or_partial(0..quantized_vector_size as u64);
+        fs.schedule_prefetch(path, Some(options), None)?;
 
         Ok(())
     }

@@ -59,6 +59,9 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
             .is_some()
             .then(|| QuantizedVectors::get_offsets_path(path, config.storage_type));
 
+        let quantized_vector_size =
+            config.quantized_vector_size(vector_config.multivector_config.is_some());
+
         let on_disk_vector_storage = !vector_config.storage_type.is_pinned();
         match config.storage_kind(on_disk_vector_storage)? {
             QuantizedStorageKind::ScalarRam
@@ -77,13 +80,13 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
                 if let Some(offsets_path) = offsets_path {
                     MultivectorOffsetsStorageMmap::preopen(fs, &offsets_path)?;
                 }
-                QuantizedStorage::preopen(fs, &data_path)?
+                QuantizedStorage::preopen(fs, &data_path, quantized_vector_size)?
             }
             QuantizedStorageKind::BinaryChunked | QuantizedStorageKind::TqChunked => {
                 if let Some(offsets_path) = offsets_path {
                     MultivectorOffsetsStorageChunkedRead::<S>::preopen(fs, &offsets_path)?;
                 }
-                QuantizedChunkedStorageRead::preopen(fs, &data_path)?
+                QuantizedChunkedStorageRead::preopen(fs, &data_path, quantized_vector_size)?
             }
         }
         Ok(Some(config))
