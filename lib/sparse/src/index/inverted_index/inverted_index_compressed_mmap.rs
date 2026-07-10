@@ -43,13 +43,43 @@ impl StorageVersion for Version {
     }
 }
 
-pub(super) fn index_open_options(populate: Populate) -> OpenOptions {
+fn index_open_options(populate: Populate) -> OpenOptions {
     OpenOptions {
         writeable: false,
         need_sequential: false,
         populate,
         advice: AdviceSetting::Advice(Advice::Normal),
     }
+}
+
+/// Schedule background prefetch of the files [`InvertedIndex::open_ro`] reads
+/// for the compressed on-disk format — shared by the mmap index and the
+/// immutable-RAM index, which loads through it.
+///
+/// `populate` warms the index data: pass a populating mode when the open
+/// reads it in full (immutable-RAM), [`Populate::No`] when it reads lazily
+/// (mmap).
+pub fn preopen(fs: &impl CachedReadFs, path: &Path, populate: Populate) -> Result<()> {
+    // Config
+    fs.schedule_prefetch(&index_config_file_path(path), None, None)?;
+
+    // Index data
+    fs.schedule_prefetch(
+        &index_file_path(path),
+        Some(index_open_options(populate)),
+        None,
+    )?;
+    Ok(())
+}
+
+/// See [`InvertedIndexCompressedMmap::index_file_path`].
+pub fn index_file_path(path: &Path) -> PathBuf {
+    path.join(INDEX_FILE_NAME)
+}
+
+/// See [`InvertedIndexCompressedMmap::index_config_file_path`].
+pub fn index_config_file_path(path: &Path) -> PathBuf {
+    path.join(INDEX_CONFIG_FILE_NAME)
 }
 
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
@@ -80,19 +110,6 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
         }
 
         Ok(index)
-    }
-
-    fn preopen_ro<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<()> {
-        // Config
-        fs.schedule_prefetch(&Self::index_config_file_path(path), None, None)?;
-
-        // Index data: read lazily, so the parked handle stays cold.
-        fs.schedule_prefetch(
-            &Self::index_file_path(path),
-            Some(index_open_options(Populate::No)),
-            None,
-        )?;
-        Ok(())
     }
 }
 
@@ -300,11 +317,11 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     const HEADER_SIZE: usize = size_of::<PostingListFileHeader<W>>();
 
     pub fn index_file_path(path: &Path) -> PathBuf {
-        path.join(INDEX_FILE_NAME)
+        index_file_path(path)
     }
 
     pub fn index_config_file_path(path: &Path) -> PathBuf {
-        path.join(INDEX_CONFIG_FILE_NAME)
+        index_config_file_path(path)
     }
 
     #[cfg(test)]
@@ -660,10 +677,10 @@ mod tests {
         assert!(index.get(100, &arena, &hw_counter).is_err());
     }
 
-    /// `preopen_ro` must schedule exactly the files `open_ro` goes on to
+    /// `preopen` must schedule exactly the files `open_ro` goes on to
     /// consume.
     ///
-    /// Merely opening after a `preopen_ro` proves nothing: `CachedFs` falls
+    /// Merely opening after a `preopen` proves nothing: `CachedFs` falls
     /// back to a plain inner open for any path that was never scheduled. To
     /// make the prefetch pool the *only* possible source, the index directory
     /// is emptied between the two calls: the already-open handles parked in
@@ -705,7 +722,7 @@ mod tests {
         // Same order as the segment open path: snapshot, then preopen, then open.
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
-        InvertedIndexCompressedMmap::<f32, MmapFile>::preopen_ro(&cached_fs, dir.path()).unwrap();
+        preopen(&cached_fs, dir.path(), Populate::No).unwrap();
 
         // Everything `open_ro` reads must now come from the prefetch pool.
         for entry in fs_err::read_dir(dir.path()).unwrap() {

@@ -7,12 +7,15 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
+use common::storage_version::VERSION_FILE;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::{CachedReadFs, OkNotFound, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalReadFs};
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
-use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::{
+    self as inverted_index_compressed_mmap, InvertedIndexCompressedMmap,
+};
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -22,6 +25,7 @@ use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::hnsw_index::hnsw::read_only::ReadOnlyHNSWIndex;
 use crate::index::plain_vector_index::read_only::ReadOnlyPlainVectorIndex;
+use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::read_only::{
     ReadOnlySparseVectorIndex, ReadOnlySparseVectorIndexOpenArgs,
@@ -91,10 +95,12 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     }
 
     /// Schedule background prefetch of every file [`Self::open_sparse`] will
-    /// read, mirroring its `(index_type, datatype)` dispatch — including the
-    /// low-memory downgrade of `ImmutableRam` to `Mmap`, which decides whether
-    /// the index data is populated by the prefetch (the immutable-RAM open
-    /// reads it in full) or parked cold (the mmap open reads it lazily).
+    /// read: the inverted index (config and data), its version file and the
+    /// indices tracker. All readable variants share the compressed-mmap
+    /// on-disk format, so the datatype plays no role here; the (effective)
+    /// index type only decides whether the index data is populated by the
+    /// prefetch (the immutable-RAM open reads it in full) or parked cold (the
+    /// mmap open reads it lazily).
     ///
     /// Reads the sparse index config to dispatch — and then schedules it, so
     /// `open_sparse`'s own read is served from the prefetch pool. A missing
@@ -117,44 +123,27 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             SparseIndexType::Mmap => SparseIndexType::Mmap,
         };
 
-        fn preopen<S, Fs, TInvertedIndex>(fs: &Fs, path: &Path) -> OperationResult<()>
-        where
-            S: UniversalReadExt + 'static,
-            Fs: CachedReadFs<File = S>,
-            TInvertedIndex: InvertedIndexReadOnly<S>,
-        {
-            ReadOnlySparseVectorIndex::<S, TInvertedIndex>::preopen(fs, path)
-        }
+        let populate = match effective_index_type {
+            SparseIndexType::MutableRam => {
+                return Err(OperationError::service_error(
+                    "MutableRam sparse index has no read-only representation",
+                ));
+            }
+            SparseIndexType::ImmutableRam => Populate::PreferBackground,
+            SparseIndexType::Mmap => Populate::No,
+        };
 
-        match (effective_index_type, config.datatype.unwrap_or_default()) {
-            (SparseIndexType::MutableRam, _) => Err(OperationError::service_error(
-                "MutableRam sparse index has no read-only representation",
-            )),
-            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
-                preopen::<S, _, InvertedIndexCompressedImmutableRam<f32>>(fs, path)
-            }
-            (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
-                preopen::<S, _, InvertedIndexCompressedMmap<f32, S>>(fs, path)
-            }
-            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
-                preopen::<S, _, InvertedIndexCompressedImmutableRam<f16>>(fs, path)
-            }
-            (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
-                preopen::<S, _, InvertedIndexCompressedMmap<f16, S>>(fs, path)
-            }
-            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
-                preopen::<S, _, InvertedIndexCompressedImmutableRam<QuantizedU8>>(fs, path)
-            }
-            (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
-                preopen::<S, _, InvertedIndexCompressedMmap<QuantizedU8, S>>(fs, path)
-            }
-            (
-                SparseIndexType::ImmutableRam | SparseIndexType::Mmap,
-                VectorStorageDatatype::Turbo4,
-            ) => Err(OperationError::service_error(
-                "Turbo4 datatype storage is not yet supported",
-            )),
-        }
+        // Inverted index
+        inverted_index_compressed_mmap::preopen(fs, path, populate)?;
+
+        // Version check
+        fs.schedule_prefetch(&path.join(VERSION_FILE), None, None)?;
+
+        // Indices tracker
+        fs.schedule_prefetch(&IndicesTracker::file_path(path), None, None)?;
+
+        Ok(())
+
     }
 
     /// Open the read-only dense vector index from its config (sparse: follow-up).
