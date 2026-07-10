@@ -11,8 +11,8 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange, TypedStorage,
-    UniversalRead, UniversalReadFs,
+    CachedReadFs, MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange,
+    TypedStorage, UniversalRead, UniversalReadFs,
 };
 use fs_err::{File, OpenOptions};
 
@@ -42,6 +42,27 @@ where
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S> {
+    fn open_options(populate: Populate) -> UniversalOpenOptions {
+        UniversalOpenOptions {
+            writeable: false,
+            need_sequential: true,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of the vector blob [`Self::open`] reads.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        vectors_path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        // Vector data
+        fs.schedule_prefetch(vectors_path, Some(Self::open_options(populate)), None)?;
+
+        Ok(())
+    }
+
     /// Open the immutable vector blob read-only through `fs`. The file must
     /// already exist (the writer creates it); nothing is created here.
     pub fn open(
@@ -50,12 +71,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         dim: usize,
         populate: Populate,
     ) -> OperationResult<Self> {
-        let options = UniversalOpenOptions {
-            writeable: false,
-            need_sequential: true,
-            populate,
-            advice: AdviceSetting::Global,
-        };
+        let options = Self::open_options(populate);
         let read_only =
             ReadOnly::open(fs, vectors_path, options, Default::default()).map_err(|e| {
                 crate::common::operation_error::OperationError::service_error(format!(

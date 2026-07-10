@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
-    UniversalWrite,
+    CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalReadFs, UniversalWrite,
 };
 
 use super::config::{MMAP_CHUNKS_PATTERN_END, MMAP_CHUNKS_PATTERN_START};
@@ -16,6 +16,46 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .strip_prefix(MMAP_CHUNKS_PATTERN_START)
         .and_then(|file_name| file_name.strip_suffix(MMAP_CHUNKS_PATTERN_END))
         .and_then(|file_name| file_name.parse::<usize>().ok())
+}
+
+pub fn chunk_open_options(
+    advice: AdviceSetting,
+    populate: Populate,
+    writeable: bool,
+) -> OpenOptions {
+    OpenOptions {
+        writeable,
+        need_sequential: *MULTI_MMAP_IS_SUPPORTED,
+        populate,
+        advice,
+    }
+}
+
+/// Schedule background prefetch of every chunk file [`read_chunks`] will open.
+pub fn preopen_chunks(
+    fs: &impl CachedReadFs,
+    directory: &Path,
+    advice: AdviceSetting,
+    populate: Populate,
+) -> Result<(), UniversalIoError> {
+    let chunks_prefix = directory.join(MMAP_CHUNKS_PATTERN_START);
+    for listed in fs.list_files(&chunks_prefix)? {
+        let is_chunk = listed
+            .path
+            .file_name()
+            .and_then(|file_name| file_name.to_str())
+            .and_then(check_mmap_file_name_pattern)
+            .is_some();
+
+        if is_chunk {
+            fs.schedule_prefetch(
+                &listed.path,
+                Some(chunk_open_options(advice, populate, false)),
+                None,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
@@ -66,12 +106,7 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
         let chunk = TypedStorage::open(
             fs,
             &chunk_path,
-            OpenOptions {
-                writeable,
-                need_sequential: *MULTI_MMAP_IS_SUPPORTED,
-                populate,
-                advice,
-            },
+            chunk_open_options(advice, populate, writeable),
             Default::default(),
         )?;
 

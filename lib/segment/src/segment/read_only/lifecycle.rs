@@ -114,6 +114,16 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         // Id tracker
         ReadOnlyIdTrackerEnum::preopen(fs, segment_path)?;
 
+        // Vector storages
+        for (vector_name, vector_config) in &config.vector_data {
+            let path = get_vector_storage_path(segment_path, vector_name);
+            VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path)?;
+        }
+        for vector_name in config.sparse_vector_data.keys() {
+            let path = get_vector_storage_path(segment_path, vector_name);
+            ReadOnlySparseVectorStorage::<S>::preopen(fs, &path)?;
+        }
+
         // Payload indexes
         let payload_config =
             ReadOnlyStructPayloadIndex::preopen(fs, &get_payload_index_path(segment_path))?;

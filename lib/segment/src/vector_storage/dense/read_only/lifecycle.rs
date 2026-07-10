@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::mmap::AdviceSetting;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyChunkedDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -14,6 +14,25 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
 };
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStorage<T, S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// Absent files are skipped rather than reported: the subsequent open is
+    /// the one to produce the error.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        advice: AdviceSetting,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        // Vectors
+        ChunkedVectorsRead::<T, S>::preopen(fs, &path.join(VECTORS_DIR_PATH), advice, populate)?;
+
+        // Deleted flags
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+
+        Ok(())
+    }
+
     /// Open the read-only counterpart of the appendable dense storage at `path`,
     /// threading every file open through `fs`; reads the existing layout but
     /// creates and writes nothing. `populate` warms the vector chunks.

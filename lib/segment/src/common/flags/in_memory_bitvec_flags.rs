@@ -4,7 +4,9 @@ use common::bitvec::{BitSlice, BitVec};
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
+};
 
 use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -26,15 +28,34 @@ pub struct InMemoryBitvecFlags {
 }
 
 /// Read-only mmap options: never writable, lazily paged, nothing populated.
-const READ_ONLY_OPTIONS: OpenOptions = OpenOptions {
-    writeable: false,
-    need_sequential: false,
-    populate: Populate::No,
-    advice: AdviceSetting::Global,
-};
+fn bitslice_open_options(populate: Populate) -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate,
+        advice: AdviceSetting::Global,
+    }
+}
 
-#[allow(dead_code)] // pending: read-only vector storages will use these
 impl InMemoryBitvecFlags {
+    /// Schedule background prefetch of the two files [`Self::open`] reads.
+    pub fn preopen(fs: &impl CachedReadFs, directory: &Path) -> OperationResult<()> {
+        // Status file
+        fs.schedule_prefetch(
+            &status_file(directory),
+            Some(bitslice_open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
+        // Bitslice
+        fs.schedule_prefetch(
+            &directory.join(FLAGS_FILE),
+            Some(bitslice_open_options(Populate::PreferBackground)),
+            None,
+        )?;
+        Ok(())
+    }
+
     /// Open persisted flags read-only into an owned `BitVec`; creates and writes
     /// nothing. The flags file is padded past the logical length (held in the
     /// status file), so the bitvec is truncated to it and `count` is exact.
@@ -45,7 +66,7 @@ impl InMemoryBitvecFlags {
         // Length via TypedStorage; StoredStruct is write-bound.
         let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
             status_file(directory),
-            READ_ONLY_OPTIONS,
+            bitslice_open_options(Populate::No),
             Default::default(),
         )?);
         let len = status
@@ -54,8 +75,12 @@ impl InMemoryBitvecFlags {
             .map_or(0, DynamicFlagsStatus::len);
 
         let flags_path = directory.join(FLAGS_FILE);
-        let flags =
-            StoredBitSlice::<S>::open(fs, &flags_path, READ_ONLY_OPTIONS, Default::default())?;
+        let flags = StoredBitSlice::<S>::open(
+            fs,
+            &flags_path,
+            bitslice_open_options(Populate::No),
+            Default::default(),
+        )?;
         let bits = flags.read_all()?;
         let bitvec = bits.get(..len).map(BitVec::from_bitslice).ok_or_else(|| {
             OperationError::service_error(format!(

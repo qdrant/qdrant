@@ -163,14 +163,12 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             return Ok(());
         }
 
-        let mut open_options = open_arguments.unwrap_or(OpenOptions {
+        let open_options = open_arguments.unwrap_or(OpenOptions {
             writeable: false,
             need_sequential: false,
             populate: Populate::PreferBackground,
             advice: AdviceSetting::Global,
         });
-
-        open_options.populate = Populate::PreferBackground;
 
         let mut open_extra = open_extra.unwrap_or_default();
         if let Some(info) = self.file_info(path) {

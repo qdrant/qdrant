@@ -76,12 +76,14 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -96,10 +98,14 @@ mod tests {
         Distance, Indexes, MultiVectorConfig, VectorDataConfig, VectorStorageDatatype,
         VectorStorageType,
     };
-    use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage_impl;
-    use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
+    use crate::vector_storage::dense::appendable_dense_vector_storage::{
+        self, open_appendable_memmap_vector_storage_impl,
+    };
+    use crate::vector_storage::dense::dense_vector_storage::{self, open_dense_vector_storage};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_impl;
+    use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
+        self, open_appendable_memmap_multi_vector_storage_impl,
+    };
     use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
     const DIM: usize = 16;
@@ -274,6 +280,181 @@ mod tests {
             storage,
             VectorStorageReadEnum::MultiDenseChunked(_)
         ));
+        assert_eq!(storage.total_vector_count(), multis.len());
+        let stored = storage.get_vector::<Random>(5);
+        let multi: TypedMultiDenseVectorRef<VectorElementType> =
+            stored.as_vec_ref().try_into().unwrap();
+        assert_eq!(multi.to_owned(), multis[5]);
+    }
+
+    /// Build a per-directory `CachedFs` with the listing snapshot taken, the
+    /// way the segment open path does before `preopen`.
+    fn snapshot_cached_fs(dir: &Path) -> CachedFs<MmapFs> {
+        let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        cached_fs
+    }
+
+    /// `preopen` must schedule exactly the files `open` goes on to consume.
+    ///
+    /// Merely opening after a `preopen` proves nothing: `CachedFs` falls back
+    /// to a plain inner open for any path that was never scheduled, so a
+    /// scheduled-vs-opened path mismatch would still yield a correct storage.
+    /// To make the prefetch pool the *only* possible source, the storage files
+    /// are unlinked between `preopen` and `open`: the already-open handles
+    /// parked in the pool stay readable, while any fallback open hits
+    /// `NotFound`.
+    #[test]
+    fn preopen_then_open_chunked_through_cached_fs() {
+        let dir = Builder::new().prefix("preopen_chunked").tempdir().unwrap();
+        let mut rng = StdRng::seed_from_u64(4);
+        let hw = HardwareCounterCell::disposable();
+        let vectors: Vec<DenseVector> = (0..300).map(|_| rand_vec(&mut rng)).collect();
+
+        {
+            let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                AdviceSetting::Global,
+                false,
+            )
+            .unwrap();
+            for (id, vector) in vectors.iter().enumerate() {
+                storage
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+
+        let config = dense_config(VectorStorageType::ChunkedMmap, None);
+        let cached_fs = snapshot_cached_fs(dir.path());
+        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path()).unwrap();
+
+        // Everything `open` reads must now come from the prefetch pool.
+        for dir_name in [
+            appendable_dense_vector_storage::VECTORS_DIR_PATH,
+            appendable_dense_vector_storage::DELETED_DIR_PATH,
+        ] {
+            fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
+        }
+
+        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path())
+            .unwrap()
+            .unwrap();
+        assert_eq!(storage.total_vector_count(), vectors.len());
+        let got: DenseVector = storage
+            .get_vector::<Random>(7)
+            .to_owned()
+            .try_into()
+            .unwrap();
+        assert_eq!(got, vectors[7]);
+    }
+
+    /// [`preopen_then_open_chunked_through_cached_fs`], for the immutable
+    /// (plain mmap) dense storage.
+    #[test]
+    fn preopen_then_open_mmap_through_cached_fs() {
+        let dir = Builder::new().prefix("preopen_mmap").tempdir().unwrap();
+        let mut rng = StdRng::seed_from_u64(5);
+        let hw = HardwareCounterCell::disposable();
+        let vectors: Vec<DenseVector> = (0..3).map(|_| rand_vec(&mut rng)).collect();
+
+        {
+            // The immutable mmap storage is built by copying from another storage.
+            let mut storage =
+                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+            let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
+            for (id, vector) in vectors.iter().enumerate() {
+                staging
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .unwrap();
+            }
+            merge_from_single_source(&mut storage, &staging, vectors.len() as PointOffsetType)
+                .unwrap();
+            storage.flusher()().unwrap();
+        }
+
+        let config = dense_config(VectorStorageType::Mmap, None);
+        let cached_fs = snapshot_cached_fs(dir.path());
+        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path()).unwrap();
+
+        // Everything `open` reads must now come from the prefetch pool.
+        for file_name in [
+            dense_vector_storage::VECTORS_PATH,
+            dense_vector_storage::DELETED_PATH,
+        ] {
+            fs_err::remove_file(dir.path().join(file_name)).unwrap();
+        }
+
+        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path())
+            .unwrap()
+            .unwrap();
+        assert_eq!(storage.total_vector_count(), vectors.len());
+        let got: DenseVector = storage
+            .get_vector::<Random>(1)
+            .to_owned()
+            .try_into()
+            .unwrap();
+        assert_eq!(got, vectors[1]);
+    }
+
+    /// [`preopen_then_open_chunked_through_cached_fs`], for the chunked
+    /// multi-dense storage (which adds the offsets directory).
+    #[test]
+    fn preopen_then_open_multi_through_cached_fs() {
+        let dir = Builder::new().prefix("preopen_multi").tempdir().unwrap();
+        let mut rng = StdRng::seed_from_u64(6);
+        let hw = HardwareCounterCell::disposable();
+        let multis: Vec<MultiDenseVectorInternal> = (0..200)
+            .map(|_| {
+                let inner = rng.random_range(1..=3);
+                let vectors = std::iter::repeat_with(|| rand_vec(&mut rng))
+                    .take(inner)
+                    .collect::<Vec<_>>();
+                MultiDenseVectorInternal::try_from(vectors).unwrap()
+            })
+            .collect();
+
+        {
+            let mut storage =
+                open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+                    dir.path(),
+                    DIM,
+                    Distance::Dot,
+                    MultiVectorConfig::default(),
+                    AdviceSetting::Global,
+                    false,
+                )
+                .unwrap();
+            for (id, multivec) in multis.iter().enumerate() {
+                storage
+                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                    .unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+
+        let config = dense_config(
+            VectorStorageType::ChunkedMmap,
+            Some(MultiVectorConfig::default()),
+        );
+        let cached_fs = snapshot_cached_fs(dir.path());
+        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path()).unwrap();
+
+        // Everything `open` reads must now come from the prefetch pool.
+        for dir_name in [
+            appendable_mmap_multi_dense_vector_storage::VECTORS_DIR_PATH,
+            appendable_mmap_multi_dense_vector_storage::OFFSETS_DIR_PATH,
+            appendable_mmap_multi_dense_vector_storage::DELETED_DIR_PATH,
+        ] {
+            fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
+        }
+
+        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path())
+            .unwrap()
+            .unwrap();
         assert_eq!(storage.total_vector_count(), multis.len());
         let stored = storage.get_vector::<Random>(5);
         let multi: TypedMultiDenseVectorRef<VectorElementType> =
