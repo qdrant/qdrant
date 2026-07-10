@@ -1469,13 +1469,15 @@ fn test_upsert_raw_multivec_turbo_bytes() {
 /// don't touch them — e.g. payload-only ops — without degrading.
 ///
 /// On an append-only segment every mutating op routes through
-/// `Segment::clone_and_mutate_point`, which snapshots the point's vectors
-/// decoded to `f32` and rewrites them at a fresh internal id — so a
-/// TQ-datatype vector is dequantized and requantized on every mutation, even
-/// one that only touches the payload. TurboQuant requantization is not
+/// `Segment::clone_and_mutate_point`, which rewrites the point at a fresh
+/// internal id. It used to snapshot the point's vectors decoded to `f32`,
+/// dequantizing and requantizing a TQ-datatype vector on every mutation,
+/// even one that only touched the payload. TurboQuant requantization is not
 /// idempotent — for Dot/L2 the stored per-vector scale factor picks up the
-/// centroid-norm bias on every cycle — so each op degrades the vector a
+/// centroid-norm bias on every cycle — so each op degraded the vector a
 /// little further beyond the initial (expected, one-off) quantization loss.
+/// Vectors the op doesn't overwrite now travel to the fresh id as
+/// storage-native bytes, verbatim; this test guards that.
 ///
 /// This is the segment-level analogue of the segment-holder test
 /// `test_cow_move_does_not_degrade_turbo_vectors` (CoW moves between
