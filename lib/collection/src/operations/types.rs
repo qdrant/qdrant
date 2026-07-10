@@ -952,6 +952,13 @@ pub enum CollectionError {
     ShardUnavailable { description: String },
 }
 
+/// Which rate limiter rejected an operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RateLimiterKind {
+    Read,
+    Write,
+}
+
 impl CollectionError {
     pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
@@ -1024,9 +1031,12 @@ impl CollectionError {
     pub fn rate_limit_error(
         rate_limit_error: RateLimitError,
         cost: usize,
-        write_limit_type: bool, // false = read rate limit; true = write rate limit.
+        rate_limiter_kind: RateLimiterKind,
     ) -> Self {
-        let rate_limiter_type = if write_limit_type { "Write" } else { "Read" };
+        let rate_limiter_type = match rate_limiter_kind {
+            RateLimiterKind::Read => "Read",
+            RateLimiterKind::Write => "Write",
+        };
         let (description, retry_after) = match rate_limit_error {
             RateLimitError::AlwaysOverBudget(msg) => {
                 let description = format!("{rate_limiter_type} rate limit exceeded, {msg}",);
