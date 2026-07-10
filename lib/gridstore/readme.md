@@ -67,10 +67,13 @@ mapped and the configured universal IO backend is not used in this mode.
   header: the entry index is the point offset, and the mapping count is
   defined by the exact file length. Skipped point offsets are backfilled as
   zeroed entries, which decode as `None`.
-- Flushing syncs the page file first, then appends all pending mappings to the
-  tracker with a single write and syncs it. A mapping on disk therefore never
-  points at value data that is not durable. A flush with a stale target is a
-  no-op, appended bytes are never written twice.
+- Puts buffer both the value data and the mapping in memory; nothing lands on
+  disk between flushes, and reads transparently serve buffered values.
+- Flushing appends all buffered value data to the page file with a single
+  write and syncs it, then does the same for the pending mappings in the
+  tracker file. A mapping on disk therefore never points at value data that is
+  not durable. A flush with a stale target is a no-op, appended bytes are
+  never written twice.
 - A write may be torn. If the tracker file length is not a multiple of the
   entry size, the trailing partial entry is ignored when reading, and
   truncated away when opening writable.

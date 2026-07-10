@@ -57,8 +57,9 @@ pub enum Mode {
     /// bytes are never rewritten. Values cannot be updated or deleted, and must be put in
     /// monotonically increasing point offset order.
     ///
-    /// Always reads and writes its files directly on the local filesystem, the configured
-    /// universal IO backend is not used in this mode.
+    /// Puts buffer both the value data and the mapping in memory; each flush batches them into a
+    /// single append per file. Value data goes through the configured universal IO backend, the
+    /// tracker file is read and written directly on the local filesystem.
     AppendOnly,
 }
 
